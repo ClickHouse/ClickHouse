@@ -1,0 +1,79 @@
+cross
+1	1	1	1
+1	1	1	2
+2	2	2	\N
+1	1	1	1
+1	1	1	2
+2	2	2	\N
+cross nullable
+1	1	1	1
+2	2	1	2
+1	1	1	1
+2	2	1	2
+cross nullable vs not nullable
+1	1	1	1
+2	2	1	2
+1	1	1	1
+2	2	1	2
+cross self
+1	1	1	1
+2	2	2	2
+1	1	1	1
+2	2	2	2
+cross one table expr
+1	1	1	1
+1	1	1	2
+1	1	2	\N
+1	1	3	\N
+2	2	1	1
+2	2	1	2
+2	2	2	\N
+2	2	3	\N
+1	1	1	1
+1	1	1	2
+1	1	2	\N
+1	1	3	\N
+2	2	1	1
+2	2	1	2
+2	2	2	\N
+2	2	3	\N
+cross multiple ands
+1	1	1	1
+1	1	1	1
+cross and inside and
+1	1	1	1
+1	1	1	1
+cross split conjunction
+1	1	1	1
+1	1	1	1
+comma
+1	1	1	1
+1	1	1	2
+2	2	2	\N
+comma nullable
+1	1	1	1
+2	2	1	2
+cross
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function equals (children 1)\n     ExpressionList (children 2)\n      Identifier t1.a\n      Identifier t2.a\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 2)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function equals (children 1)\n        ExpressionList (children 2)\n         Identifier t1.a\n         Identifier t2.a\n      TableExpression (children 1)\n       Identifier t2\n
+cross nullable
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function equals (children 1)\n     ExpressionList (children 2)\n      Identifier t1.a\n      Identifier t2.a\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 2)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function equals (children 1)\n        ExpressionList (children 2)\n         Identifier t1.a\n         Identifier t2.a\n      TableExpression (children 1)\n       Identifier t2\n
+cross nullable vs not nullable
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function equals (children 1)\n     ExpressionList (children 2)\n      Identifier t1.a\n      Identifier t2.b\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 2)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function equals (children 1)\n        ExpressionList (children 2)\n         Identifier t1.a\n         Identifier t2.b\n      TableExpression (children 1)\n       Identifier t2\n
+cross self
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1 (alias x)\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t1 (alias y)\n      TableJoin\n    Function and (children 1)\n     ExpressionList (children 2)\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier x.a\n        Identifier y.a\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier x.b\n        Identifier y.b\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 2)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1 (alias x)\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function and (children 1)\n        ExpressionList (children 2)\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier x.a\n           Identifier y.a\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier x.b\n           Identifier y.b\n      TableExpression (children 1)\n       Identifier t1 (alias y)\n
+cross one table expr
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function equals (children 1)\n     ExpressionList (children 2)\n      Identifier t1.a\n      Identifier t1.b\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin\n      TableExpression (children 1)\n       Identifier t2\n    Function equals (children 1)\n     ExpressionList (children 2)\n      Identifier t1.a\n      Identifier t1.b\n
+cross multiple ands
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function and (children 1)\n     ExpressionList (children 2)\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.a\n        Identifier t2.a\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.b\n        Identifier t2.b\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 2)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function and (children 1)\n        ExpressionList (children 2)\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier t1.a\n           Identifier t2.a\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier t1.b\n           Identifier t2.b\n      TableExpression (children 1)\n       Identifier t2\n
+cross and inside and
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function and (children 1)\n     ExpressionList (children 2)\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.a\n        Identifier t2.a\n      Function and (children 1)\n       ExpressionList (children 2)\n        Function equals (children 1)\n         ExpressionList (children 2)\n          Identifier t1.a\n          Identifier t2.a\n        Function and (children 1)\n         ExpressionList (children 2)\n          Function equals (children 1)\n           ExpressionList (children 2)\n            Identifier t1.a\n            Identifier t2.a\n          Function equals (children 1)\n           ExpressionList (children 2)\n            Identifier t1.b\n            Identifier t2.b\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 2)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function and (children 1)\n        ExpressionList (children 4)\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier t1.a\n           Identifier t2.a\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier t1.a\n           Identifier t2.a\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier t1.a\n           Identifier t2.a\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier t1.b\n           Identifier t2.b\n      TableExpression (children 1)\n       Identifier t2\n
+cross split conjunction
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function and (children 1)\n     ExpressionList (children 4)\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.a\n        Identifier t2.a\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.b\n        Identifier t2.b\n      Function greaterOrEquals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.a\n        Literal UInt64_1\n      Function greater (children 1)\n       ExpressionList (children 2)\n        Identifier t2.b\n        Literal UInt64_0\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function and (children 1)\n        ExpressionList (children 2)\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier t1.a\n           Identifier t2.a\n         Function equals (children 1)\n          ExpressionList (children 2)\n           Identifier t1.b\n           Identifier t2.b\n      TableExpression (children 1)\n       Identifier t2\n    Function and (children 1)\n     ExpressionList (children 4)\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.a\n        Identifier t2.a\n      Function equals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.b\n        Identifier t2.b\n      Function greaterOrEquals (children 1)\n       ExpressionList (children 2)\n        Identifier t1.a\n        Literal UInt64_1\n      Function greater (children 1)\n       ExpressionList (children 2)\n        Identifier t2.b\n        Literal UInt64_0\n

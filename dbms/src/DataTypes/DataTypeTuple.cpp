@@ -407,6 +407,12 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
+void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    for (const auto i : ext::range(0, ext::size(elems)))
+        elems[i]->serializeProtobuf(extractElementColumn(column, i), row_num, protobuf);
+}
+
 MutableColumnPtr DataTypeTuple::createColumn() const
 {
     size_t size = elems.size();

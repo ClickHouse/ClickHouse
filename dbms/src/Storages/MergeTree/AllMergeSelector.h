@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// Select all parts within partition (having at least two parts) with minumum total size.
+/// Select all parts within partition (having at least two parts) with minimum total size.
 class AllMergeSelector : public IMergeSelector
 {
 public:

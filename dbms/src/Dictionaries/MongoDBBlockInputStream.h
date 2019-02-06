@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include "ExternalResultDescription.h"
 
 
@@ -18,7 +18,7 @@ namespace MongoDB
 namespace DB
 {
 /// Converts MongoDB Cursor to a stream of Blocks
-class MongoDBBlockInputStream final : public IProfilingBlockInputStream
+class MongoDBBlockInputStream final : public IBlockInputStream
 {
 public:
     MongoDBBlockInputStream(

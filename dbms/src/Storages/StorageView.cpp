@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>

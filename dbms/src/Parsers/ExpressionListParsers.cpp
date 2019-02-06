@@ -138,7 +138,6 @@ static bool parseOperator(IParser::Pos & pos, const char * op, Expected & expect
 bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
-    Pos begin = pos;
 
     while (1)
     {
@@ -174,16 +173,12 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
                 return false;
 
             /// the first argument of the function is the previous element, the second is the next one
-            function->range.first = begin->begin;
-            function->range.second = pos->begin;
             function->name = it[1];
             function->arguments = exp_list;
             function->children.push_back(exp_list);
 
             exp_list->children.push_back(node);
             exp_list->children.push_back(elem);
-            exp_list->range.first = begin->begin;
-            exp_list->range.second = pos->begin;
 
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
@@ -243,8 +238,6 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ASTPtr left;
     ASTPtr right;
 
-    Pos begin = pos;
-
     if (!elem_parser.parse(pos, subject, expected))
         return false;
 
@@ -279,14 +272,10 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         args_le->children.emplace_back(subject);
         args_le->children.emplace_back(right);
 
-        f_ge->range.first = begin->begin;
-        f_ge->range.second = pos->begin;
         f_ge->name = "greaterOrEquals";
         f_ge->arguments = args_ge;
         f_ge->children.emplace_back(f_ge->arguments);
 
-        f_le->range.first = begin->begin;
-        f_le->range.second = pos->begin;
         f_le->name = "lessOrEquals";
         f_le->arguments = args_le;
         f_le->children.emplace_back(f_le->arguments);
@@ -294,8 +283,6 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         args_and->children.emplace_back(f_ge);
         args_and->children.emplace_back(f_le);
 
-        f_and->range.first = begin->begin;
-        f_and->range.second = pos->begin;
         f_and->name = "and";
         f_and->arguments = args_and;
         f_and->children.emplace_back(f_and->arguments);
@@ -314,8 +301,6 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expect
     ASTPtr elem_cond;
     ASTPtr elem_then;
     ASTPtr elem_else;
-
-    Pos begin = pos;
 
     if (!elem_parser.parse(pos, elem_cond, expected))
         return false;
@@ -339,8 +324,6 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expect
         /// function arguments
         auto exp_list = std::make_shared<ASTExpressionList>();
 
-        function->range.first = begin->begin;
-        function->range.second = pos->begin;
         function->name = "if";
         function->arguments = exp_list;
         function->children.push_back(exp_list);
@@ -348,8 +331,6 @@ bool ParserTernaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expect
         exp_list->children.push_back(elem_cond);
         exp_list->children.push_back(elem_then);
         exp_list->children.push_back(elem_else);
-        exp_list->range.first = begin->begin;
-        exp_list->range.second = pos->begin;
 
         node = function;
     }
@@ -423,7 +404,6 @@ bool ParserLambdaExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// try to find any of the valid operators
-    Pos begin = pos;
     const char ** it;
     for (it = operators; *it; it += 2)
     {
@@ -471,15 +451,11 @@ bool ParserPrefixUnaryOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Ex
         /// function arguments
         auto exp_list = std::make_shared<ASTExpressionList>();
 
-        function->range.first = begin->begin;
-        function->range.second = pos->begin;
         function->name = it[1];
         function->arguments = exp_list;
         function->children.push_back(exp_list);
 
         exp_list->children.push_back(elem);
-        exp_list->range.first = begin->begin;
-        exp_list->range.second = pos->begin;
 
         node = function;
     }
@@ -595,8 +571,6 @@ bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     /// If no INTERVAL keyword, go to nested parser.
     if (!ParserKeyword("INTERVAL").ignore(pos, expected))
         return next_parser.parse(pos, node, expected);
@@ -620,15 +594,11 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     auto exp_list = std::make_shared<ASTExpressionList>();
 
     /// the first argument of the function is the previous element, the second is the next one
-    function->range.first = begin->begin;
-    function->range.second = pos->begin;
     function->name = function_name;
     function->arguments = exp_list;
     function->children.push_back(exp_list);
 
     exp_list->children.push_back(expr);
-    exp_list->range.first = begin->begin;
-    exp_list->range.second = pos->begin;
 
     node = function;
     return true;

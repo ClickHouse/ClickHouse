@@ -52,7 +52,7 @@ namespace
 }
 
 
-class ColumnsBlockInputStream : public IProfilingBlockInputStream
+class ColumnsBlockInputStream : public IBlockInputStream
 {
 public:
     ColumnsBlockInputStream(

@@ -61,7 +61,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 База данных по умолчанию.
 
-Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases).
+Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/misc.md#show-databases).
 
 **Пример**
 
@@ -131,7 +131,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 
 
-## graphite
+## graphite {#server_settings-graphite}
 
 Отправка даных в [Graphite](https://github.com/graphite-project).
 
@@ -268,11 +268,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 **Пример**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 
-## listen_host
+## listen_host {#server_settings-listen_host}
 
 Ограничение по хостам, с которых может прийти запрос. Если необходимо, чтобы сервер отвечал всем, то надо указать `::`.
 
@@ -284,7 +284,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## logger
+## logger {#server_settings-logger}
 
 Настройки логгирования.
 
@@ -602,7 +602,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## tcp_port
+## tcp_port {#server_settings-tcp_port}
 
 Порт для взаимодействия с клиентами по протоколу TCP.
 

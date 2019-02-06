@@ -1,27 +1,11 @@
 # Usage Recommendations
 
-## CPU
-
-The SSE 4.2 instruction set must be supported. Modern processors (since 2008) support it.
-
-When choosing a processor, prefer a large number of cores and slightly slower clock rate over fewer cores and a higher clock rate.
-For example, 16 cores with 2600 MHz is better than 8 cores with 3600 MHz.
-
-## Hyper-threading
-
-Don't disable hyper-threading. It helps for some queries, but not for others.
-
-## Turbo Boost
-
-Turbo Boost is highly recommended. It significantly improves performance with a typical load.
-You can use `turbostat` to view the CPU's actual clock rate under a load.
-
 ## CPU Scaling Governor
 
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
-sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## CPU Limitations
@@ -39,10 +23,6 @@ Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should
 ```
 echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
-
-## Swap File
-
-Always disable the swap file. The only reason for not doing this is if you are using ClickHouse on your personal laptop.
 
 ## Huge Pages
 

@@ -18,7 +18,8 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes -
     python-pip \
     tzdata \
     libreadline-dev \
-    libicu-dev
+    libicu-dev \
+    curl
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

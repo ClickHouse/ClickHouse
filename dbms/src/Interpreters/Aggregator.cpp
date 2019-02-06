@@ -10,7 +10,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
@@ -768,11 +768,12 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         materialized_columns.push_back(block.safeGetByPosition(params.keys[i]).column->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back().get();
 
-        if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
+        if (!result.isLowCardinality())
         {
-            if (!result.isLowCardinality())
+            auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
+            if (column_no_lc.get() != key_columns[i])
             {
-                materialized_columns.push_back(low_cardinality_column->convertToFullColumn());
+                materialized_columns.emplace_back(std::move(column_no_lc));
                 key_columns[i] = materialized_columns.back().get();
             }
         }
@@ -788,9 +789,10 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
             materialized_columns.push_back(block.safeGetByPosition(params.aggregates[i].arguments[j]).column->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
-            if (auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(aggregate_columns[i][j]))
+            auto column_no_lc = recursiveRemoveLowCardinality(aggregate_columns[i][j]->getPtr());
+            if (column_no_lc.get() != aggregate_columns[i][j])
             {
-                materialized_columns.push_back(col_low_cardinality->convertToFullColumn());
+                materialized_columns.emplace_back(std::move(column_no_lc));
                 aggregate_columns[i][j] = materialized_columns.back().get();
             }
         }
@@ -1723,7 +1725,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
   * (This is important for distributed processing.)
   * In doing so, it can handle different buckets in parallel, using up to `threads` threads.
   */
-class MergingAndConvertingBlockInputStream : public IProfilingBlockInputStream
+class MergingAndConvertingBlockInputStream : public IBlockInputStream
 {
 public:
     /** The input is a set of non-empty sets of partially aggregated data,

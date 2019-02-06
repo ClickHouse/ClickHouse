@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
   * Unlike UnionBlockInputStream, it does this sequentially.
   * Blocks of different sources are not interleaved with each other.
   */
-class ConcatBlockInputStream : public IProfilingBlockInputStream
+class ConcatBlockInputStream : public IBlockInputStream
 {
 public:
     ConcatBlockInputStream(BlockInputStreams inputs_)

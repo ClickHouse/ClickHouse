@@ -22,6 +22,8 @@ using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
+class ProtobufWriter;
+
 
 /** Properties of data type.
   * Contains methods for serialization/deserialization.
@@ -254,6 +256,9 @@ public:
         serializeText(column, row_num, ostr, settings);
     }
 
+    /** Serialize to a protobuf. */
+    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const = 0;
+
     /** Create empty column for corresponding type.
       */
     virtual MutableColumnPtr createColumn() const = 0;
@@ -267,6 +272,15 @@ public:
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
       */
     virtual Field getDefault() const = 0;
+
+    /** The data type can be promoted in order to try to avoid overflows.
+      * Data types which can be promoted are typically Number or Decimal data types.
+      */
+    virtual bool canBePromoted() const { return false; }
+
+    /** Return the promoted numeric data type of the current data type. Throw an exception if `canBePromoted() == false`.
+      */
+    virtual DataTypePtr promoteNumericType() const;
 
     /** Directly insert default value into a column. Default implementation use method IColumn::insertDefault.
       * This should be overriden if data type default value differs from column default value (example: Enum data types).

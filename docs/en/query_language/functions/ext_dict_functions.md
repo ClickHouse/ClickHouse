@@ -21,7 +21,7 @@ If there is no `id` key in the dictionary, it returns the default value specifie
 
 ## dictGetTOrDefault {#ext_dict_functions_dictGetTOrDefault}
 
-`dictGetT('dict_name', 'attr_name', id, default)`
+`dictGetTOrDefault('dict_name', 'attr_name', id, default)`
 
 The same as the `dictGetT` functions, but the default value is taken from the function's last argument.
 

@@ -4,6 +4,7 @@
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MutationCommands.h>
+#include <map>
 
 
 namespace DB

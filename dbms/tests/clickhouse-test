@@ -328,6 +328,14 @@ def main(args):
         print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), "green", attrs=["bold"]))
         sys.exit(0)
 
+def find_binary(name):
+    paths = os.environ.get("PATH").split(':')
+    for path in paths:
+        if os.access(os.path.join(path, name), os.X_OK):
+            return True
+
+    # maybe it wasn't in PATH
+    return os.access(os.path.join('/usr/bin', name), os.X_OK)
 
 if __name__ == '__main__':
     parser = ArgumentParser(description = 'ClickHouse functional tests')
@@ -369,12 +377,16 @@ if __name__ == '__main__':
             args.tmp = '/tmp/clickhouse-test'
     if args.tmp is None:
         args.tmp = args.queries
-
     if args.client is None:
-        if os.access(args.binary + '-client', os.X_OK):
+        if find_binary(args.binary + '-client'):
             args.client = args.binary + '-client'
-        else:
+        elif find_binary(args.binary):
             args.client = args.binary + ' client'
+        else:
+            print("No 'clickhouse' binary found in PATH")
+            parser.print_help()
+            exit(1)
+
         if args.configclient:
             args.client += ' --config-file=' + args.configclient
         if os.getenv("CLICKHOUSE_HOST"):

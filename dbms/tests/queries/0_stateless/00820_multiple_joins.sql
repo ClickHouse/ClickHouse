@@ -17,6 +17,8 @@ INSERT INTO table5 SELECT number * 5, number * 50, number * 500 FROM numbers(10)
 
 SET allow_experimental_multiple_joins_emulation = 1;
 
+SELECT 1 LIMIT 0;
+
 -- FIXME: wrong names qualification
 select a, b, c from table1 as t1 join table2 as t2 on t1.a = t2.a join table3 as t3 on b = t3.b;
 select a, b, c from table1 as t1 join table2 as t2 on t1.a = t2.a join table5 as t5 on a = t5.a AND b = t5.b;
