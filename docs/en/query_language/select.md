@@ -97,20 +97,10 @@ In this example, the sample is the 1/10th of all data:
 Example 2.
 
 ``` sql
-SAMPLE 1/10 OFFSET 1/10
-```
-
-Here, the sample (10% of all data) is offset by 1/10th of data.
-
-`[--++----------------]`
-
-Example 3.
-
-``` sql
 SAMPLE 1/10 OFFSET 1/2
 ```
 
-Here, the sample (10% of all data) is taken from the second half of data.
+Here, the sample of 10% is taken from the second half of data.
 
 `[----------++--------]`
 
