@@ -61,6 +61,15 @@ struct AnalyzedJoin
     /// It's columns_from_joined_table without duplicate columns and possibly modified types.
     JoinedColumnsList available_joined_columns;
 
+    void addSimpleKey(const ASTPtr & ast)
+    {
+        key_names_left.push_back(ast->getColumnName());
+        key_names_right.push_back(ast->getAliasOrColumnName());
+
+        key_asts_left.push_back(ast);
+        key_asts_right.push_back(ast);
+    }
+
     ExpressionActionsPtr createJoinedBlockActions(
         const JoinedColumnsList & columns_added_by_join, /// Subset of available_joined_columns.
         const ASTSelectQuery * select_query_with_join,
