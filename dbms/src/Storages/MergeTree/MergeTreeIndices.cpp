@@ -55,8 +55,15 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
 }
 
 
-MergeTreeIndexFactory::Creator minmaxIndexCreator;
-MergeTreeIndexFactory::Creator uniqueIndexCreator;
+std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
+        const NamesAndTypesList & columns,
+        std::shared_ptr<ASTIndexDeclaration> node,
+        const Context & context);
+
+std::unique_ptr<IMergeTreeIndex> uniqueIndexCreator(
+        const NamesAndTypesList & columns,
+        std::shared_ptr<ASTIndexDeclaration> node,
+        const Context & context);
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
