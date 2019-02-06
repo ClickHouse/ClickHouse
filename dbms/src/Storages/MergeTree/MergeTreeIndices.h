@@ -118,7 +118,7 @@ public:
     const auto & getAllIndexes() const { return indexes; }
 
 protected:
-    MergeTreeIndexFactory() = default;
+    MergeTreeIndexFactory();
 
 private:
     using Indexes = std::unordered_map<std::string, Creator>;

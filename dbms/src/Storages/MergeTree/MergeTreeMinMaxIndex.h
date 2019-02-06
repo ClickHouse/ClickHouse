@@ -70,7 +70,4 @@ public:
 
 };
 
-std::unique_ptr<IMergeTreeIndex> MergeTreeMinMaxIndexCreator(
-    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
-
 }

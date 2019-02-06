@@ -86,7 +86,4 @@ public:
     size_t max_rows = 0;
 };
 
-std::unique_ptr<IMergeTreeIndex> MergeTreeUniqueIndexCreator(
-    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
-
 }
