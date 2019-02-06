@@ -6,6 +6,7 @@
   - [Мониторинг](monitoring.md)
   - [Решение проблем](troubleshooting.md)
   - [Советы по эксплуатации](tips.md)
+  - [Процедура обновления](update.md)
   - [Права доступа](access_rights.md)
   - [Резервное копирование](backup.md)
   - [Конфигурационные файлы](configuration_files.md)
