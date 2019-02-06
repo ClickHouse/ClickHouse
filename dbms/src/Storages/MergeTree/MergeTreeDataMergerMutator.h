@@ -120,7 +120,7 @@ public:
     enum class MergeAlgorithm
     {
         Horizontal, /// per-row merge of all columns
-        Vertical    /// per-row merge of PK columns, per-column gather for non-PK columns
+        Vertical    /// per-row merge of PK and secondary indices columns, per-column gather for non-PK columns
     };
 
 private:

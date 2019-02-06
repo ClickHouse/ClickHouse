@@ -35,7 +35,8 @@ std::string ReportBuilder::getCurrentTime() const
 
 std::string ReportBuilder::buildFullReport(
     const PerformanceTestInfo & test_info,
-    std::vector<TestStats> & stats) const
+    std::vector<TestStats> & stats,
+    const std::vector<std::size_t> & queries_to_run) const
 {
     JSONString json_output;
 
@@ -46,6 +47,7 @@ std::string ReportBuilder::buildFullReport(
     json_output.set("server_version", server_version);
     json_output.set("time", getCurrentTime());
     json_output.set("test_name", test_info.test_name);
+    json_output.set("path", test_info.path);
     json_output.set("main_metric", test_info.main_metric);
 
     auto has_metric = [&test_info] (const std::string & metric_name)
@@ -84,6 +86,9 @@ std::string ReportBuilder::buildFullReport(
     std::vector<JSONString> run_infos;
     for (size_t query_index = 0; query_index < test_info.queries.size(); ++query_index)
     {
+        if (!queries_to_run.empty() && std::find(queries_to_run.begin(), queries_to_run.end(), query_index) == queries_to_run.end())
+            continue;
+
         for (size_t number_of_launch = 0; number_of_launch < test_info.times_to_run; ++number_of_launch)
         {
             size_t stat_index = number_of_launch * test_info.queries.size() + query_index;
@@ -96,6 +101,7 @@ std::string ReportBuilder::buildFullReport(
 
             auto query = std::regex_replace(test_info.queries[query_index], QUOTE_REGEX, "\\\"");
             runJSON.set("query", query);
+            runJSON.set("query_index", query_index);
             if (!statistics.exception.empty())
                 runJSON.set("exception", statistics.exception);
 
@@ -170,13 +176,17 @@ std::string ReportBuilder::buildFullReport(
 
 std::string ReportBuilder::buildCompactReport(
     const PerformanceTestInfo & test_info,
-    std::vector<TestStats> & stats) const
+    std::vector<TestStats> & stats,
+    const std::vector<std::size_t> & queries_to_run) const
 {
 
     std::ostringstream output;
 
     for (size_t query_index = 0; query_index < test_info.queries.size(); ++query_index)
     {
+        if (!queries_to_run.empty() && std::find(queries_to_run.begin(), queries_to_run.end(), query_index) == queries_to_run.end())
+            continue;
+
         for (size_t number_of_launch = 0; number_of_launch < test_info.times_to_run; ++number_of_launch)
         {
             if (test_info.queries.size() > 1)
@@ -191,5 +201,4 @@ std::string ReportBuilder::buildCompactReport(
     }
     return output.str();
 }
-
 }

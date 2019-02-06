@@ -185,8 +185,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_REPLICATED_SENDS:
             startStopAction(context, query, ActionLocks::PartsSend, false);
             break;
-        case Type::START_REPLICATEDS_SENDS:
-            startStopAction(context, query, ActionLocks::PartsSend, false);
+        case Type::START_REPLICATED_SENDS:
+            startStopAction(context, query, ActionLocks::PartsSend, true);
             break;
         case Type::STOP_REPLICATION_QUEUES:
             startStopAction(context, query, ActionLocks::ReplicationQueue, false);
@@ -252,7 +252,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         create.attach = true;
 
         std::string data_path = database->getDataPath();
-        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns, system_context);
+        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
