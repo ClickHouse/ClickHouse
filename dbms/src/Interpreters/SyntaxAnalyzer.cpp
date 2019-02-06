@@ -612,30 +612,16 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery * s
     const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
     DatabaseAndTableWithAlias joined_table_name(table_expression, context.getCurrentDatabase());
 
-    auto add_name_to_join_keys = [&](Names & join_keys, ASTs & join_asts, const ASTPtr & ast, bool right_table)
-    {
-        String name;
-        if (right_table)
-        {
-            name = ast->getAliasOrColumnName();
-            if (source_columns.count(name))
-                name = joined_table_name.getQualifiedNamePrefix() + name;
-        }
-        else
-            name = ast->getColumnName();
-
-        join_keys.push_back(name);
-        join_asts.push_back(ast);
-    };
-
     if (table_join.using_expression_list)
     {
         auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
         for (const auto & key : keys.children)
-        {
-            add_name_to_join_keys(analyzed_join.key_names_left, analyzed_join.key_asts_left, key, false);
-            add_name_to_join_keys(analyzed_join.key_names_right, analyzed_join.key_asts_right, key, true);
-        }
+            analyzed_join.addSimpleKey(key);
+
+        /// @warning wrong qualification if the right key is an alias
+        for (auto & name : analyzed_join.key_names_right)
+            if (source_columns.count(name))
+                name = joined_table_name.getQualifiedNamePrefix() + name;
     }
     else if (table_join.on_expression)
         collectJoinedColumnsFromJoinOnExpr(analyzed_join, select_query, source_columns, context);
