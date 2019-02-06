@@ -26,7 +26,7 @@ void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creat
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(
+std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
     const NamesAndTypesList & columns,
     std::shared_ptr<ASTIndexDeclaration> node,
     const Context & context) const
