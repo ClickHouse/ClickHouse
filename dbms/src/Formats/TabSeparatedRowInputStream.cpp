@@ -86,7 +86,7 @@ bool TabSeparatedRowInputStream::read(MutableColumns & columns, RowReadExtension
 
     for (size_t i = 0; i < size; ++i)
     {
-        data_types[i]->deserializeTextEscaped(*columns[i], istr, format_settings);
+        data_types[i]->deserializeAsTextEscaped(*columns[i], istr, format_settings);
 
         /// skip separators
         if (i + 1 == size)
@@ -183,7 +183,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns &
 
         try
         {
-            data_types[i]->deserializeTextEscaped(*columns[i], istr, format_settings);
+            data_types[i]->deserializeAsTextEscaped(*columns[i], istr, format_settings);
         }
         catch (...)
         {
