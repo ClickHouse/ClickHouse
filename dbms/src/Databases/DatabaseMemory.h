@@ -29,7 +29,7 @@ public:
         bool has_force_restore_data_flag) override;
 
 
-    void loadDictionaries(Context &, ThreadPool *, bool) override
+    void loadDictionaries(Context &, ThreadPool *) override
     {
     }
 
@@ -60,6 +60,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(

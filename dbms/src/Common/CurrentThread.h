@@ -69,7 +69,7 @@ public:
     static void finalizePerformanceCounters();
 
     /// Returns a non-empty string if the thread is attached to a query
-    static std::string getCurrentQueryID();
+    static const std::string & getQueryId();
 
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();

@@ -43,7 +43,7 @@ private:
 };
 
 
-StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_, size_t offset_)
+StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<size_t> limit_, size_t offset_)
     : name(name_), multithreaded(multithreaded_), limit(limit_), offset(offset_)
 {
     setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
@@ -60,9 +60,9 @@ BlockInputStreams StorageSystemNumbers::read(
 {
     check(column_names);
 
-    if (limit && limit < max_block_size)
+    if (limit && *limit < max_block_size)
     {
-        max_block_size = std::min(max_block_size, limit);
+        max_block_size = std::min(max_block_size, *limit);
         multithreaded = false;
     }
 
@@ -75,7 +75,7 @@ BlockInputStreams StorageSystemNumbers::read(
         res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
 
         if (limit)  /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
-            res[i] = std::make_shared<LimitBlockInputStream>(res[i], limit * (i + 1) / num_streams - limit * i / num_streams, 0);
+            res[i] = std::make_shared<LimitBlockInputStream>(res[i], *limit * (i + 1) / num_streams - *limit * i / num_streams, 0);
     }
 
     return res;

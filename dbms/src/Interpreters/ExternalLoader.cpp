@@ -118,7 +118,6 @@ void ExternalLoader::addObjectFromDatabase(
     std::shared_ptr<IExternalLoadable> loadable_object)
 {
     std::string name = database_name + '.' + object_name;
-    LOG_DEBUG(log, "ADD OBJECT " + name);
 
     std::lock_guard map_lock{database_objects_map_mutex};
     if (loadable_objects_from_databases.find(name) != std::end(loadable_objects_from_databases))
@@ -242,7 +241,6 @@ void ExternalLoader::updateObjects(
         std::lock_guard lock{mutex};
         for (auto & [name, object] : loadable_objects)
         {
-            LOG_DEBUG(log, "CHECK OBJECT " + name);
             if (checkLoadableObjectToUpdate(object))
                 objects_to_update.emplace_back(name, object.loadable);
         }
@@ -250,7 +248,6 @@ void ExternalLoader::updateObjects(
 
     for (auto & [name, current] : objects_to_update)
     {
-        LOG_DEBUG(log, "TO UPDATE OBJECT " + name);
         LoadablePtr new_version;
         std::exception_ptr exception;
 
@@ -345,7 +342,6 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
     if (!force_reload && last_modified <= config_last_modified)
         return;
 
-    // TODO: maybe insert here if
     auto loaded_config = config_repository->load(config_path, config_main.getString("path", DBMS_DEFAULT_PATH));
     loadable_objects_defined_in_config[config_path].clear();
 
@@ -389,6 +385,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                 std::lock_guard lock{map_mutex};
                 object_it = loadable_objects_from_filesystem.find(name);
 
+                // TODO: bug. we don't need check DDL here
                 /// Object with the same name was declared in other config file.
                 if (object_it != std::end(loadable_objects_from_filesystem) &&
                     object_it->second.source_type == ConfigurationSourceType::DDL)
@@ -411,7 +408,6 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
             {
                 // TODO: maybe carry out in separate method
                 std::chrono::seconds delay(update_settings.backoff_initial_sec);
-                // TODO: maybe we need mutex for failed_loadable_objects
                 const auto failed_dict_it = failed_loadable_objects.find(name);
                 FailedLoadableInfo info{std::move(object_ptr), std::chrono::system_clock::now() + delay, 0};
                 if (failed_dict_it != std::end(failed_loadable_objects))
@@ -491,7 +487,6 @@ void ExternalLoader::reload()
 
 void ExternalLoader::reload(const std::string & name)
 {
-    // TODO: некорретно работает, если вызвать из reloadDictionary
     reloadFromConfigFiles(true, true, name);
 
     /// Check that specified object was loaded

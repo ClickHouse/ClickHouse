@@ -27,18 +27,20 @@ StorageDictionary::StorageDictionary(
     const String & table_name_,
     const String & database_name_,
     const ColumnsDescription & columns_,
-    std::optional<std::reference_wrapper<const DictionaryStructure>> dictionary_structure_,
-    const String & dictionary_name_,
-    bool attach_)
+    const Context & context,
+    bool attach,
+    const String & dictionary_name_)
     : IStorage{columns_}
     , table_name(table_name_)
     , database_name(database_name_)
     , dictionary_name(dictionary_name_)
     , logger(&Poco::Logger::get("StorageDictionary"))
 {
-    if (!attach_)
+    if (!attach)
     {
-        checkNamesAndTypesCompatibleWithDictionary(*dictionary_structure_);
+        const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+        const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+        checkNamesAndTypesCompatibleWithDictionary(dictionary_structure);
     }
 }
 
@@ -87,11 +89,11 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const
 {
     auto dictionary_names_and_types = getNamesAndTypes(dictionary_structure);
-    std::set<NameAndTypePair> namesAndTypesSet(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
+    std::set<NameAndTypePair> names_and_types_set(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
 
-    for (auto & column : getColumns().ordinary)
+    for (const auto & column : getColumns().ordinary)
     {
-        if (namesAndTypesSet.find(column) == namesAndTypesSet.end())
+        if (names_and_types_set.find(column) == names_and_types_set.end())
         {
             std::string message = "Not found column ";
             message += column.name + " " + column.type->getName();
@@ -120,27 +122,8 @@ void registerStorageDictionary(StorageFactory & factory)
             dictionary_name = dictionary_name.substr(pos + 1);
         }
 
-        if (args.attach)
-        {
-            DictionaryStructure empty_structure;
-            return StorageDictionary::create(
-                    args.table_name, database_name, args.columns, std::cref(empty_structure), dictionary_name, true);
-        }
-
-        DictionaryPtr dictionary;
-        if (database_name.empty())
-        {
-            dictionary = args.context.getExternalDictionaries().getDictionary(dictionary_name);
-        }
-        else
-        {
-            auto db = args.context.getDatabase(database_name);
-            dictionary = db->getDictionary(args.context, dictionary_name);
-        }
-
-        const DictionaryStructure & dictionary_structure = dictionary->getStructure();
         return StorageDictionary::create(
-            args.table_name, database_name, args.columns, std::cref(dictionary_structure), dictionary_name, false);
+            args.table_name, database_name, args.columns, args.context, args.attach, dictionary_name);
     });
 }
 

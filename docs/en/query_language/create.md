@@ -10,7 +10,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
 
 
-## CREATE TABLE
+## CREATE TABLE {#create-table-query}
 
 The `CREATE TABLE` query can have several forms.
 

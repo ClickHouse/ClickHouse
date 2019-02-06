@@ -70,6 +70,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(
@@ -86,8 +87,7 @@ public:
 
     void loadDictionaries(
         Context & context,
-        ThreadPool * thread_pool,
-        bool has_force_restore_data_flag) override;
+        ThreadPool * thread_pool) override;
 
     void createDictionary(
         Context & context,

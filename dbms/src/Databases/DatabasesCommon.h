@@ -106,9 +106,9 @@ public:
 
     void removeDictionary(Context & context, const String & dictionary_name) override;
 
-    void loadDictionaries(Context & context,
-        ThreadPool * thread_pool,
-        bool has_force_restore_data_flag) override;
+    void loadDictionaries(
+        Context & context,
+        ThreadPool * thread_pool) override;
 
     DatabaseIteratorPtr getDictionaryIterator(const Context&) override { return {}; }
 
