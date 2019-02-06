@@ -26,7 +26,7 @@ DataTypeDateTime::DataTypeDateTime(const std::string & time_zone_name)
 {
 }
 
-std::string DataTypeDateTime::getName() const
+std::string DataTypeDateTime::doGetName() const
 {
     if (!has_explicit_time_zone)
         return "DateTime";
