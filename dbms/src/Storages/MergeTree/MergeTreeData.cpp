@@ -1148,7 +1148,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-    const IndicesAsts & old_indices, const IndicesAsts & new_indices, ExpressionActionsPtr & out_expression,
+    const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
     NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
     out_expression = nullptr;
@@ -1308,7 +1308,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const DataPartPtr & part,
     const NamesAndTypesList & new_columns,
-    const IndicesAsts & new_indices,
+    const IndicesASTs & new_indices,
     bool skip_sanity_checks)
 {
     ExpressionActionsPtr expression;
