@@ -54,4 +54,14 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
     return it->second(columns, node, context);
 }
 
+
+MergeTreeIndexFactory::Creator minmaxIndexCreator;
+MergeTreeIndexFactory::Creator uniqueIndexCreator;
+
+MergeTreeIndexFactory::MergeTreeIndexFactory()
+{
+    registerIndex("minmax", minmaxIndexCreator);
+    registerIndex("unique", uniqueIndexCreator);
+}
+
 }

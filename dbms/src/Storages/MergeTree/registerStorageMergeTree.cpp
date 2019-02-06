@@ -624,14 +624,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
-static void registerMergeTreeSkipIndices()
-{
-    auto & factory = MergeTreeIndexFactory::instance();
-    factory.registerIndex("minmax", MergeTreeMinMaxIndexCreator);
-    factory.registerIndex("unique", MergeTreeUniqueIndexCreator);
-}
-
-
 void registerStorageMergeTree(StorageFactory & factory)
 {
     factory.registerStorage("MergeTree", create);
@@ -649,8 +641,6 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create);
-
-    registerMergeTreeSkipIndices();
 }
 
 }

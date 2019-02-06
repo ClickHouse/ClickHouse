@@ -118,7 +118,7 @@ IndexConditionPtr MergeTreeMinMaxIndex::createIndexCondition(
 };
 
 
-std::unique_ptr<IMergeTreeIndex> MergeTreeMinMaxIndexCreator(
+std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
     const Context & context)

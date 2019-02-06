@@ -295,7 +295,7 @@ bool UniqueCondition::operatorFromAST(ASTPtr & node) const
     return true;
 }
 
-bool checkAtomName(const String & name)
+static bool checkAtomName(const String & name)
 {
     static std::set<String> atoms = {
             "notEquals",
@@ -353,7 +353,7 @@ IndexConditionPtr MergeTreeUniqueIndex::createIndexCondition(
 };
 
 
-std::unique_ptr<IMergeTreeIndex> MergeTreeUniqueIndexCreator(
+std::unique_ptr<IMergeTreeIndex> uniqueIndexCreator(
         const NamesAndTypesList & new_columns,
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context)
