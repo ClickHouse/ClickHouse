@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/// Class for reading a single conlumn (or index).
+/// Class for reading a single column (or index).
 class MergeTreeReaderStream
 {
 public:
