@@ -66,13 +66,15 @@ struct AnalyzedJoin
         const ASTSelectQuery * select_query_with_join,
         const Context & context) const;
 
-    /// Columns which will be used in query from joined table.
-    NameSet getRequiredColumnsFromJoinedTable(const JoinedColumnsList & columns_added_by_join,
-                                              const ExpressionActionsPtr & joined_block_actions) const;
+    Names getOriginalColumnNames(const NameSet & required_columns) const;
 
     const JoinedColumnsList & getColumnsFromJoinedTable(const NameSet & source_columns,
                                                         const Context & context,
                                                         const ASTSelectQuery * select_query_with_join);
+    void calculateAvailableJoinedColumns(const NameSet & source_columns,
+                                         const Context & context,
+                                         const ASTSelectQuery * select_query_with_join,
+                                         bool make_nullable);
 };
 
 struct ASTTableExpression;

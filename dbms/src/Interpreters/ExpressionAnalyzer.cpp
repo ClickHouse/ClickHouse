@@ -510,6 +510,17 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
                                                             columns_added_by_join_list));
 }
 
+static void appendRequiredColumns(NameSet & required_columns, const Block & sample, const AnalyzedJoin & analyzed_join)
+{
+    for (auto & column : analyzed_join.key_names_right)
+        if (!sample.has(column))
+            required_columns.insert(column);
+
+    for (auto & column : analyzed_join.columns_from_joined_table)
+        if (!sample.has(column.name_and_type.name))
+            required_columns.insert(column.name_and_type.name);
+}
+
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
 {
     assertSelect();
@@ -566,6 +577,11 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
     if (!subquery_for_set.join)
     {
+        auto & analyzed_join = analyzedJoin();
+        /// Actions which need to be calculated on joined block.
+        ExpressionActionsPtr joined_block_actions =
+            analyzed_join.createJoinedBlockActions(columns_added_by_join, select_query, context);
+
         /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
           * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
           *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
@@ -582,15 +598,15 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             else if (table_to_join.database_and_table_name)
                 table = table_to_join.database_and_table_name;
 
-            const JoinedColumnsList & columns_from_joined_table = analyzedJoin().columns_from_joined_table;
+            Names action_columns = joined_block_actions->getRequiredColumns();
+            NameSet required_columns(action_columns.begin(), action_columns.end());
 
-            Names original_columns;
-            for (const auto & column : columns_from_joined_table)
-                if (required_columns_from_joined_table.count(column.name_and_type.name))
-                    original_columns.emplace_back(column.original_name);
+            appendRequiredColumns(required_columns, joined_block_actions->getSampleBlock(), analyzed_join);
+
+            Names original_columns = analyzed_join.getOriginalColumnNames(required_columns);
 
             auto interpreter = interpretSubquery(table, context, subquery_depth, original_columns);
-            subquery_for_set.makeSource(interpreter, columns_from_joined_table, required_columns_from_joined_table);
+            subquery_for_set.makeSource(interpreter, analyzed_join.columns_from_joined_table, required_columns);
         }
 
         Block sample_block = subquery_for_set.renamedSampleBlock();
@@ -1038,9 +1054,6 @@ void ExpressionAnalyzer::collectUsedColumns()
 
             required.swap(fixed_required);
         }
-
-        joined_block_actions = analyzed_join.createJoinedBlockActions(columns_added_by_join, select_query, context);
-        required_columns_from_joined_table = analyzed_join.getRequiredColumnsFromJoinedTable(columns_added_by_join, joined_block_actions);
     }
 
     if (columns_context.has_array_join)
