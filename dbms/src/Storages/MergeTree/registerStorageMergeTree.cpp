@@ -3,7 +3,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
-#include <Storages/MergeTree/MergeTreeUniqueIndex.h>
+#include <Storages/MergeTree/MergeTreeSetSkippingIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>

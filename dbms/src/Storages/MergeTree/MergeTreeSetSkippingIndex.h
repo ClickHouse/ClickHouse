@@ -12,11 +12,11 @@
 namespace DB
 {
 
-class MergeTreeUniqueIndex;
+class MergeTreeSetSkippingIndex;
 
-struct MergeTreeUniqueGranule : public IMergeTreeIndexGranule
+struct MergeTreeSetIndexGranule : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeUniqueGranule(const MergeTreeUniqueIndex & index);
+    explicit MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
@@ -27,26 +27,26 @@ struct MergeTreeUniqueGranule : public IMergeTreeIndexGranule
     void update(const Block & block, size_t * pos, size_t limit) override;
     Block getElementsBlock() const;
 
-    ~MergeTreeUniqueGranule() override = default;
+    ~MergeTreeSetIndexGranule() override = default;
 
-    const MergeTreeUniqueIndex & index;
+    const MergeTreeSetSkippingIndex & index;
     std::unique_ptr<Set> set;
 };
 
 
-class UniqueCondition : public IIndexCondition
+class SetIndexCondition : public IIndexCondition
 {
 public:
-    UniqueCondition(
+    SetIndexCondition(
             const SelectQueryInfo & query,
             const Context & context,
-            const MergeTreeUniqueIndex & index);
+            const MergeTreeSetSkippingIndex & index);
 
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
-    ~UniqueCondition() override = default;
+    ~SetIndexCondition() override = default;
 private:
     void traverseAST(ASTPtr & node) const;
     bool atomFromAST(ASTPtr & node) const;
@@ -54,7 +54,7 @@ private:
 
     bool checkASTUseless(const ASTPtr &node, bool atomic = false) const;
 
-    const MergeTreeUniqueIndex & index;
+    const MergeTreeSetSkippingIndex & index;
 
     bool useless;
     std::set<String> key_columns;
@@ -63,10 +63,10 @@ private:
 };
 
 
-class MergeTreeUniqueIndex : public IMergeTreeIndex
+class MergeTreeSetSkippingIndex : public IMergeTreeIndex
 {
 public:
-    MergeTreeUniqueIndex(
+    MergeTreeSetSkippingIndex(
         String name_,
         ExpressionActionsPtr expr_,
         const Names & columns_,
@@ -76,7 +76,7 @@ public:
         size_t max_rows_)
         : IMergeTreeIndex(std::move(name_), std::move(expr_), columns_, data_types_, header_, granularity_), max_rows(max_rows_) {}
 
-    ~MergeTreeUniqueIndex() override = default;
+    ~MergeTreeSetSkippingIndex() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 

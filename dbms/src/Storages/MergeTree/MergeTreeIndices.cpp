@@ -60,7 +60,7 @@ std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context);
 
-std::unique_ptr<IMergeTreeIndex> uniqueIndexCreator(
+std::unique_ptr<IMergeTreeIndex> setIndexCreator(
         const NamesAndTypesList & columns,
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context);
@@ -68,7 +68,7 @@ std::unique_ptr<IMergeTreeIndex> uniqueIndexCreator(
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
     registerIndex("minmax", minmaxIndexCreator);
-    registerIndex("unique", uniqueIndexCreator);
+    registerIndex("set", setIndexCreator);
 }
 
 }
