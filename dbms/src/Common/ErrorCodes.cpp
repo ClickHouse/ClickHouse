@@ -420,6 +420,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DICTIONARY = 443;
     extern const int STORAGE_IS_NOT_READY = 444;
     extern const int EXTERNAL_LOADABLE_IS_MISSING = 445;
+    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING = 446;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

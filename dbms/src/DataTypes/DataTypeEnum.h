@@ -61,7 +61,7 @@ public:
     explicit DataTypeEnum(const Values & values_);
 
     const Values & getValues() const { return values; }
-    std::string getName() const override { return type_name; }
+    std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
 
     TypeIndex getTypeId() const override { return sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16; }

@@ -123,7 +123,7 @@ This table contains a single row with a single 'dummy' UInt8 column containing t
 This table is used if a SELECT query doesn't specify the FROM clause.
 This is similar to the DUAL table found in other DBMSs.
 
-## system.parts
+## system.parts {#system_tables-parts}
 
 Contains information about parts of [MergeTree](table_engines/mergetree.md) tables.
 
@@ -200,7 +200,7 @@ query String             - The query text. For INSERT, it doesn't include the da
 query_id String          - Query ID, if defined.
 ```
 
-## system.replicas
+## system.replicas {#system_tables-replicas}
 
 Contains information and status for replicated tables residing on the local server.
 This table can be used for monitoring. The table contains a row for every Replicated\* table.
