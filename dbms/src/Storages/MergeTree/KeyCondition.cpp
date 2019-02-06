@@ -24,25 +24,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
-
-String Range::toString() const
-{
-    std::stringstream str;
-
-    if (!left_bounded)
-        str << "(-inf, ";
-    else
-        str << (left_included ? '[' : '(') << applyVisitor(FieldVisitorToString(), left) << ", ";
-
-    if (!right_bounded)
-        str << "+inf)";
-    else
-        str << applyVisitor(FieldVisitorToString(), right) << (right_included ? ']' : ')');
-
-    return str.str();
-}
-
-
 /// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
 static String extractFixedPrefixFromLikePattern(const String & like_pattern)
 {

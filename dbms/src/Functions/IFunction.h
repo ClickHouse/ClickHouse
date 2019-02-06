@@ -8,7 +8,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
-
+#include <Storages/MergeTree/FieldRange.h>
 
 namespace llvm
 {
@@ -216,6 +216,29 @@ public:
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
     {
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /* Lets you know if one can check, whether there exists a point X in a given parallelogram P,
+     * such that f(X) lies in a given range [L, R]. The number of arguments is not limited to one.
+     * This is used to work with the index in a sorted chunk of data and allows to efficiently
+     * use the index when the conditions are in the form `f(X) >= const`.
+     */
+    virtual bool hasInformationAboutRangeValuePossibilityOnDomainRange() const { return false; }
+
+    virtual bool canSatisfyRangeOnParallelogram(const std::vector<Range> & /*parallelogram*/, const Range & /*value range*/) const
+    {
+        throw Exception("Function " + getName() + " cannot perform such checks.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /** This is used to work with the index in a sorted chunk of data and allows to efficiently
+      * use the index when the conditions are in the form `f(X) >= const`.
+      */
+    virtual bool isInvertible() const { return false; }
+
+    /// Computes the inverse image of given range of values in the form of a vector of parallelograms.
+    virtual std::vector<std::vector<Range>> invertRange(const Range& /*value range*/) const
+    {
+        throw Exception("Function " + getName() + " cannot be inverted.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 

@@ -39,6 +39,7 @@ void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
+void registerFunctionsZOrder(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
 
 #if USE_ICU
@@ -79,6 +80,7 @@ void registerFunctions()
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionTransform(factory);
+    registerFunctionsZOrder(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
