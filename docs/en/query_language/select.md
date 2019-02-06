@@ -46,7 +46,7 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 ### SAMPLE Clause {#select-sample-clause}
 
-The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by \*MergeTree type tables, and only if the sampling expression was specified during table creation (see the section [MergeTree engine](../operations/table_engines/mergetree.md)).
+The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by the tables in the `MergeTree` family, and only if the sampling expression was specified during table creation (see the section [MergeTree engine](../operations/table_engines/mergetree.md)).
 
 `SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
 
@@ -82,7 +82,7 @@ For example, a sample of user IDs takes rows with the same subset of all the pos
 
 **SAMPLE OFFSET**
 
-You can specify the `SAMPLE k OFFSET n` clause, where `k` and `n` are decimal numbers from 0 to 1. Examples are shown below.
+You can specify the `SAMPLE k OFFSET n` clause, where `k` and `n` are numbers from 0 to 1. Examples are shown below.
 
 Example 1.
 
