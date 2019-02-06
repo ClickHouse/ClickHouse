@@ -61,7 +61,12 @@ public:
 
     bool isInserted() const { return inserted; }
     auto & getMapped() const { return value; }
-    void setMapped(const Mapped & mapped) { value = cached_value = mapped; }
+
+    void setMapped(const Mapped & mapped)
+    {
+        cached_value = mapped;
+        value = mapped;
+    }
 };
 
 template <>
