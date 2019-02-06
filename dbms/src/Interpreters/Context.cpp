@@ -150,7 +150,7 @@ struct ContextShared
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
-    SystemLogsPtr system_logs;                              /// Used to log queries and operations on parts
+    std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -1549,7 +1549,7 @@ void Context::initializeSystemLogs()
     if (!global_context)
         throw Exception("Logical error: no global context for system logs", ErrorCodes::LOGICAL_ERROR);
 
-    shared->system_logs = std::make_shared<SystemLogs>(*global_context, getConfigRef());
+    shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
 
