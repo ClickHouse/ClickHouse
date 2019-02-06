@@ -20,7 +20,7 @@ function ch_url() {
 
 # Check correct exceptions handling
 
-exception_pattern="displayText() = DB::Exception:[[:print:]]* e\.what() = DB::Exception"
+exception_pattern="displayText() = DB::Exception:[[:print:]]*"
 
 function check_only_exception() {
     local res=`ch_url "$1" "$2"`
