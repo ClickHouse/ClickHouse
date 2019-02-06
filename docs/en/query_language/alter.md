@@ -33,10 +33,10 @@ Deletes the column with the name 'name'.
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
 ``` sql
-CLEAR COLUMN column_name IN PARTITION partition_name
+CLEAR COLUMN name IN PARTITION partition_name
 ```
 
-Clears data in a column in a specified partition.
+Clears all data in a column in a specified partition.
 
 ``` sql
 MODIFY COLUMN name [type] [default_expr]
@@ -90,7 +90,7 @@ to the sorting key (only columns added by the `ADD COLUMN` command in the same `
 
 ### Manipulations With Partitions and Parts {#alter_manipulations-with-partitions}
 
-The following operations are available:
+The following operations with [partitions](../operations/table_engines/custom_partitioning_key.md) are available:
 
 - [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the 'detached' directory and forget it.
 - [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
@@ -100,107 +100,15 @@ The following operations are available:
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
 - [FETCH PARTITION](#alter_fetch-partition) – Downloads a partition from another server.
 
-A partition is a logic combination of records by a certain criterion. For example, you can set a partition by month, by day or by an hour. Each partition is stored separately in order to simplify manipulations with data.
-
-The partition is specified in the clause `PARTITION BY` when creating a table. For details, see the section [Custom Partitioning Key](../operations/table_engines/custom_partitioning_key.md).
-
-A "part" in a table is a part of data in a single partition, sorted by the primary key. When inserting new data to a partition, this data is stored as a separate part (chunk). In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
-
-To view the table parts and partitions, use the [system.parts](../operations/system_tables.md#system_tables-parts) table. For example, let's assume that we have a table `visits` with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
-
-``` sql
-SELECT 
-    partition,
-    name, 
-    active
-FROM system.parts 
-WHERE table = 'visits'
-```
-
-```
-┌─partition─┬─name─────────┬─active─┐
-│ 201901    │ 201901_1_1_0 │      1 │
-│ 201901    │ 201901_2_2_0 │      1 │
-│ 201901    │ 201901_3_3_0 │      1 │
-│ 201901    │ 201901_7_7_0 │      1 │
-│ 201902    │ 201902_4_4_0 │      1 │
-│ 201902    │ 201902_5_5_0 │      1 │
-│ 201902    │ 201902_6_6_0 │      1 │
-└───────────┴──────────────┴────────┘
-```
-
-The `partition` column contains the names of the partitions. There are two partitions in this example: `201901` and `201902`. You can use this column value to specify the partition name in [ALTER ... PARTITION](#alter_manipulations-with-partitions) queries.
-
-The `name` column contains the names of the partition data parts. You can use this column to specify the name of the part in the [ALTER ATTACH PART](#alter_attach-partition) query.
- 
-The `active` column shows the status of the part. `1` is active; `0` is inactive. The inactive parts are, for example, source parts remaining after merging to a larger part. The corrupted data parts are also indicated as inactive.
-
-Let's break down the name of the first part: `201901_1_1_0`:
-
-- `201901` is the partition name.
-- `1` is the minimum number of the data block.
-- `1` is the maximum number of the data block.
-- `0` is the chunk level (the depth of the merge tree it is formed from).
-
-Note: The parts of old-type tables have the name: `20190117_20190123_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
-
-As you can see in the example, there are several separated parts in the same partition (for example, `201901_1_1_0` and `201901_2_2_0`). It means that these parts are not merged yet. ClickHouse merges the inserted parts of data periodically, approximately in 15 minutes after inserting. Also, you can perform non-scheduled merge, using the [OPTIMIZE](misc.md#misc_operations-optimize) query. Example:
-
-``` sql
-OPTIMIZE TABLE visits PARTITION 201901;
-OPTIMIZE TABLE visits PARTITION 201902;
-```
-
-```
-┌─partition─┬─name─────────┬─active─┐
-│ 201901    │ 201901_1_1_0 │      0 │
-│ 201901    │ 201901_1_7_1 │      1 │
-│ 201901    │ 201901_2_2_0 │      0 │
-│ 201901    │ 201901_3_3_0 │      0 │
-│ 201901    │ 201901_7_7_0 │      0 │
-│ 201902    │ 201902_4_4_0 │      0 │
-│ 201902    │ 201902_4_6_1 │      1 │
-│ 201902    │ 201902_5_5_0 │      0 │
-│ 201902    │ 201902_6_6_0 │      0 │
-└───────────┴──────────────┴────────┘
-```
-
-Inactive parts will be deleted approximately in 10 minutes after merging. 
- 
-Another way to view a set of parts and partitions, is to go into the directory of the table: `/var/lib/clickhouse/data/<database>/<table>/`. For example: 
-
-```bash
-dev:/var/lib/clickhouse/data/default/visits$ ls -l
-total 44
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:47 201901_1_1_0
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:48 201901_1_7_1
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:47 201901_2_2_0
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:47 201901_3_3_0
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:48 201901_7_7_0
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:47 201902_4_4_0
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:48 201902_4_6_1
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:47 201902_5_5_0
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:47 201902_6_6_0
-drwxr-xr-x 2 clickhouse clickhouse 4096 Jan 28 14:47 detached
-
-```
-
-The folders '201901_1_1_0', '201901_1_7_1' and so on, are the directories of the parts. Each part relates to a corresponding partition and contains data just for a certain month (the table in this example has partitioning by month).
-
-The 'detached' directory contains parts that were detached from the table using the [DETACH](#alter_detach-partition) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from 'detached' directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you make the [ATTACH](#alter_attach-partition) query.
-
-!!! info
-    On the operating server, you cannot manually change the set of parts or their data on the file system, since the server will not know about it.
-    For non-replicated tables, you can do this when the server is stopped, but we do not recommend it.
-    For replicated tables, the set of parts cannot be changed in any case.
-
 #### DETACH PARTITION {#alter_detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr
 ```
 
-Moves all data for the specified partition to the 'detached' directory (read about setting the partition in a section [how to specify the partition expression](#alter-how-to-specify-part-expr)). The server forgets about the detached partition. Example:
+Moves all data for the specified partition to the 'detached' directory ([how to specify the partition expression](#alter-how-to-specify-part-expr)). The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
+
+Example:
 
 ``` sql
 ALTER TABLE visits DETACH PARTITION 201901
@@ -258,7 +166,7 @@ Read about setting the partition expression in a section [How to specify the par
 ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ```
 
-Resets values in the specified column in a partition. If the `DEFAULT` clause was determined when creating a table, this query sets the column value to a specified default value.
+Resets all values in the specified column in a partition. If the `DEFAULT` clause was determined when creating a table, this query sets the column value to a specified default value.
 
 Example:
 
@@ -293,9 +201,9 @@ As an alternative, you can manually copy data from the `/var/lib/clickhouse/data
 
 To add the data to a table from a backup, do the following:
 
-- Use the `CREATE` query to create the table if it does not exist. To view the query, use the .sql file (replace `ATTACH` in it with `CREATE`).
-- Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
-- Run `ALTER TABLE ... ATTACH PARTITION` queries to add the data to a table.
+1. Use the `CREATE` query to create the table if it does not exist. To view the query, use the .sql file (replace `ATTACH` in it with `CREATE`).
+2. Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
+3. Run `ALTER TABLE ... ATTACH PARTITION` queries to add the data to a table.
 
 Restoring from a backup does not require stopping the server.
 
@@ -319,13 +227,13 @@ ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
 
-Before downloading, the system checks if the partition exists and the tables structure matches. The most appropriate replica is selected automatically from the healthy replicas.
+Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
 
 Although the query is called `ALTER TABLE`, it does not change the table structure and does not immediately change the data available in the table.
 
 The `ALTER ... FETCH PARTITION` query is not replicated. It places the partition to the 'detached' directory only on the local server. Note that when you perform the `ALTER TABLE ... ATTACH` query, it adds the data to all replicas. The data is added to one of the replicas from the 'detached' directory, and to the others - from neighboring replicas.
 
-#### How to set the partition expression {#alter-how-to-specify-part-expr}
+#### How To Set Partition Expression {#alter-how-to-specify-part-expr}
 
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
 
