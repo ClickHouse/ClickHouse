@@ -9,28 +9,29 @@
 namespace DB
 {
 
+/// Class for reading a single conlumn (or index).
 class MergeTreeReaderStream
 {
 public:
     MergeTreeReaderStream(
-            const String &path_prefix_, const String &extension_, size_t marks_count_,
-            const MarkRanges &all_mark_ranges,
-            MarkCache *mark_cache, bool save_marks_in_cache,
-            UncompressedCache *uncompressed_cache,
+            const String & path_prefix_, const String & extension_, size_t marks_count_,
+            const MarkRanges & all_mark_ranges,
+            MarkCache * mark_cache, bool save_marks_in_cache,
+            UncompressedCache * uncompressed_cache,
             size_t aio_threshold, size_t max_read_buffer_size,
-            const ReadBufferFromFileBase::ProfileCallback &profile_callback, clockid_t clock_type);
+            const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void seekToMark(size_t index);
 
     void seekToStart();
 
-    ReadBuffer *data_buffer;
+    ReadBuffer * data_buffer;
 
 private:
     MergeTreeReaderStream() = default;
 
     /// NOTE: lazily loads marks from the marks cache.
-    const MarkInCompressedFile &getMark(size_t index);
+    const MarkInCompressedFile & getMark(size_t index);
 
     void loadMarks();
 
@@ -39,7 +40,7 @@ private:
 
     size_t marks_count;
 
-    MarkCache *mark_cache;
+    MarkCache * mark_cache;
     bool save_marks_in_cache;
     MarkCache::MappedPtr marks;
 
