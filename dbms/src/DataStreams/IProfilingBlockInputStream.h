@@ -242,6 +242,11 @@ private:
                 if (f(*p_child))
                     return;
     }
+
+#ifndef NDEBUG
+    bool read_prefix_is_called = false;
+    bool read_suffix_is_called = false;
+#endif
 };
 
 }
