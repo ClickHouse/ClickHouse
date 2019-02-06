@@ -83,6 +83,19 @@ rows are ordered by the sorting key expression you cannot add expressions contai
 to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
 
 
+### Manipulations With Data Skipping Indices
+
+It only works for tables in the [`*MergeTree`](../operations/table_engines/mergetree.md) family (including
+[replicated](../operations/table_engines/replication.md) tables). The following operations
+are available:
+
+* `ALTER ADD INDEX name expression TYPE type GRANULARITY value AFTER name [AFTER name2]` - Adds index description to tables metadata.
+
+* `ALTER DROP INDEX name` - Removes index description from tables metadata and deletes index files from disk.
+
+These commands are lightweight in a sense that they only change metadata or remove files.
+Also, they are replicated (syncing indices metadata through ZooKeeper).
+
 ### Manipulations With Partitions and Parts
 
 It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including

@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <ctime>
 #include <memory>
 #include <functional>
@@ -115,6 +116,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.

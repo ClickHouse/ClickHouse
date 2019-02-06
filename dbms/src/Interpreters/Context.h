@@ -113,8 +113,6 @@ private:
     using Shared = std::shared_ptr<ContextShared>;
     Shared shared;
 
-    std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
-
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
 
@@ -148,7 +146,7 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
+    static Context createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
     Context(const Context &) = default;
