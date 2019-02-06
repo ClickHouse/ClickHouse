@@ -13,7 +13,7 @@ namespace DB
 class MergeTreeMinMaxIndex;
 
 
-struct MergeTreeMinMaxGranule : public MergeTreeIndexGranule
+struct MergeTreeMinMaxGranule : public IMergeTreeIndexGranule
 {
     explicit MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index);
 
@@ -30,7 +30,7 @@ struct MergeTreeMinMaxGranule : public MergeTreeIndexGranule
 };
 
 
-class MinMaxCondition : public IndexCondition
+class MinMaxCondition : public IIndexCondition
 {
 public:
     MinMaxCondition(
@@ -49,7 +49,7 @@ private:
 };
 
 
-class MergeTreeMinMaxIndex : public MergeTreeIndex
+class MergeTreeMinMaxIndex : public IMergeTreeIndex
 {
 public:
     MergeTreeMinMaxIndex(
@@ -59,7 +59,7 @@ public:
         const DataTypes & data_types_,
         const Block & header_,
         size_t granularity_)
-        : MergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_) {}
+        : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_) {}
 
     ~MergeTreeMinMaxIndex() override = default;
 
@@ -70,7 +70,7 @@ public:
 
 };
 
-std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
+std::unique_ptr<IMergeTreeIndex> MergeTreeMinMaxIndexCreator(
     const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
 
 }

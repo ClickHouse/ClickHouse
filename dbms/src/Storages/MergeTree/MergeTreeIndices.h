@@ -18,46 +18,51 @@ namespace DB
 {
 
 class MergeTreeData;
-class MergeTreeIndex;
+class IMergeTreeIndex;
 
-using MergeTreeIndexPtr = std::shared_ptr<const MergeTreeIndex>;
-using MutableMergeTreeIndexPtr = std::shared_ptr<MergeTreeIndex>;
+using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
+using MutableMergeTreeIndexPtr = std::shared_ptr<IMergeTreeIndex>;
 
 
-struct MergeTreeIndexGranule
+/// Stores some info about a single block of data.
+struct IMergeTreeIndexGranule
 {
-    virtual ~MergeTreeIndexGranule() = default;
+    virtual ~IMergeTreeIndexGranule() = default;
 
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
     virtual bool empty() const = 0;
+
+    /// Updates the stored info using rows of the specified block.
+    /// Reads no more than `limit` rows.
+    /// After finishing updating `pos` will store the position of the first row which was not read.
     virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
 };
 
-
-using MergeTreeIndexGranulePtr = std::shared_ptr<MergeTreeIndexGranule>;
+using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 
+
 /// Condition on the index.
-class IndexCondition
+class IIndexCondition
 {
 public:
-    virtual ~IndexCondition() = default;
+    virtual ~IIndexCondition() = default;
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 };
 
-using IndexConditionPtr = std::shared_ptr<IndexCondition>;
+using IndexConditionPtr = std::shared_ptr<IIndexCondition>;
 
 
 /// Structure for storing basic index info like columns, expression, arguments, ...
-class MergeTreeIndex
+class IMergeTreeIndex
 {
 public:
-    MergeTreeIndex(
+    IMergeTreeIndex(
         String name,
         ExpressionActionsPtr expr,
         const Names & columns,
@@ -71,7 +76,7 @@ public:
         , header(header)
         , granularity(granularity) {}
 
-    virtual ~MergeTreeIndex() = default;
+    virtual ~IMergeTreeIndex() = default;
 
     /// gets filename without extension
     String getFileName() const { return INDEX_FILE_PREFIX + name; }
@@ -89,7 +94,6 @@ public:
     size_t granularity;
 };
 
-
 using MergeTreeIndices = std::vector<MutableMergeTreeIndexPtr>;
 
 
@@ -99,12 +103,12 @@ class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>
 
 public:
     using Creator = std::function<
-            std::unique_ptr<MergeTreeIndex>(
+            std::unique_ptr<IMergeTreeIndex>(
                     const NamesAndTypesList & columns,
                     std::shared_ptr<ASTIndexDeclaration> node,
                     const Context & context)>;
 
-    std::unique_ptr<MergeTreeIndex> get(
+    std::unique_ptr<IMergeTreeIndex> get(
         const NamesAndTypesList & columns,
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context) const;

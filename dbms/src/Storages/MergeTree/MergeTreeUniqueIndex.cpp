@@ -21,7 +21,7 @@ const Field UNKNOWN_FIELD(3);
 
 
 MergeTreeUniqueGranule::MergeTreeUniqueGranule(const MergeTreeUniqueIndex & index)
-        : MergeTreeIndexGranule(), index(index), set(new Set(SizeLimits{}, true))
+        : IMergeTreeIndexGranule(), index(index), set(new Set(SizeLimits{}, true))
 {
     set->setHeader(index.header);
 }
@@ -79,6 +79,11 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
 
 void MergeTreeUniqueGranule::update(const Block & new_block, size_t * pos, size_t limit)
 {
+    if (*pos >= new_block.rows())
+        throw Exception(
+                "The provided position is not less than the number of block rows. Position: "
+                + toString(*pos) + ", Block rows: " + toString(new_block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+
     size_t rows_read = std::min(limit, new_block.rows() - *pos);
 
     if (index.max_rows && size() > index.max_rows)
@@ -116,7 +121,7 @@ UniqueCondition::UniqueCondition(
         const SelectQueryInfo & query,
         const Context & context,
         const MergeTreeUniqueIndex &index)
-        : IndexCondition(), index(index)
+        : IIndexCondition(), index(index)
 {
     for (size_t i = 0, size = index.columns.size(); i < size; ++i)
     {
@@ -163,7 +168,7 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     auto granule = std::dynamic_pointer_cast<MergeTreeUniqueGranule>(idx_granule);
     if (!granule)
         throw Exception(
-                "Unique index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
+                "Unique index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
     if (useless)
         return true;
@@ -348,7 +353,7 @@ IndexConditionPtr MergeTreeUniqueIndex::createIndexCondition(
 };
 
 
-std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
+std::unique_ptr<IMergeTreeIndex> MergeTreeUniqueIndexCreator(
         const NamesAndTypesList & new_columns,
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context)

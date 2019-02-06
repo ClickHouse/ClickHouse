@@ -14,7 +14,7 @@ namespace DB
 
 class MergeTreeUniqueIndex;
 
-struct MergeTreeUniqueGranule : public MergeTreeIndexGranule
+struct MergeTreeUniqueGranule : public IMergeTreeIndexGranule
 {
     explicit MergeTreeUniqueGranule(const MergeTreeUniqueIndex & index);
 
@@ -34,7 +34,7 @@ struct MergeTreeUniqueGranule : public MergeTreeIndexGranule
 };
 
 
-class UniqueCondition : public IndexCondition
+class UniqueCondition : public IIndexCondition
 {
 public:
     UniqueCondition(
@@ -63,7 +63,7 @@ private:
 };
 
 
-class MergeTreeUniqueIndex : public MergeTreeIndex
+class MergeTreeUniqueIndex : public IMergeTreeIndex
 {
 public:
     MergeTreeUniqueIndex(
@@ -74,7 +74,7 @@ public:
         const Block & header_,
         size_t granularity_,
         size_t max_rows_)
-        : MergeTreeIndex(std::move(name_), std::move(expr_), columns_, data_types_, header_, granularity_), max_rows(max_rows_) {}
+        : IMergeTreeIndex(std::move(name_), std::move(expr_), columns_, data_types_, header_, granularity_), max_rows(max_rows_) {}
 
     ~MergeTreeUniqueIndex() override = default;
 
@@ -86,7 +86,7 @@ public:
     size_t max_rows = 0;
 };
 
-std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
+std::unique_ptr<IMergeTreeIndex> MergeTreeUniqueIndexCreator(
     const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
 
 }

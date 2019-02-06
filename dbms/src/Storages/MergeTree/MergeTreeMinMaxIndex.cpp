@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 
 MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index)
-    : MergeTreeIndexGranule(), index(index), parallelogram()
+    : IMergeTreeIndexGranule(), index(index), parallelogram()
 {
 }
 
@@ -54,6 +54,11 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
 
 void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
 {
+    if (*pos >= block.rows())
+        throw Exception(
+                "The provided position is not less than the number of block rows. Position: "
+                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
     for (size_t i = 0; i < index.columns.size(); ++i)
@@ -82,7 +87,7 @@ MinMaxCondition::MinMaxCondition(
     const SelectQueryInfo &query,
     const Context &context,
     const MergeTreeMinMaxIndex &index)
-    : IndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
+    : IIndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
 
 bool MinMaxCondition::alwaysUnknownOrTrue() const
 {
@@ -95,7 +100,7 @@ bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
         = std::dynamic_pointer_cast<MergeTreeMinMaxGranule>(idx_granule);
     if (!granule)
         throw Exception(
-            "Minmax index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
+            "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
     return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
 }
@@ -109,11 +114,11 @@ MergeTreeIndexGranulePtr MergeTreeMinMaxIndex::createIndexGranule() const
 IndexConditionPtr MergeTreeMinMaxIndex::createIndexCondition(
     const SelectQueryInfo & query, const Context & context) const
 {
-return std::make_shared<MinMaxCondition>(query, context, *this);
+    return std::make_shared<MinMaxCondition>(query, context, *this);
 };
 
 
-std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
+std::unique_ptr<IMergeTreeIndex> MergeTreeMinMaxIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
     const Context & context)
