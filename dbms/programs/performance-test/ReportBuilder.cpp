@@ -116,26 +116,29 @@ std::string ReportBuilder::buildFullReport(
                 /// in seconds
                 runJSON.set("min_time", statistics.min_time / double(1000));
 
-                JSONString quantiles(4); /// here, 4 is the size of \t padding
-                for (double percent = 10; percent <= 90; percent += 10)
+                if (statistics.sampler.size() != 0)
                 {
-                    std::string quantile_key = std::to_string(percent / 100.0);
-                    while (quantile_key.back() == '0')
-                        quantile_key.pop_back();
+                    JSONString quantiles(4); /// here, 4 is the size of \t padding
+                    for (double percent = 10; percent <= 90; percent += 10)
+                    {
+                        std::string quantile_key = std::to_string(percent / 100.0);
+                        while (quantile_key.back() == '0')
+                            quantile_key.pop_back();
 
-                    quantiles.set(quantile_key,
-                        statistics.sampler.quantileInterpolated(percent / 100.0));
+                        quantiles.set(quantile_key,
+                            statistics.sampler.quantileInterpolated(percent / 100.0));
+                    }
+                    quantiles.set("0.95",
+                        statistics.sampler.quantileInterpolated(95 / 100.0));
+                    quantiles.set("0.99",
+                        statistics.sampler.quantileInterpolated(99 / 100.0));
+                    quantiles.set("0.999",
+                        statistics.sampler.quantileInterpolated(99.9 / 100.0));
+                    quantiles.set("0.9999",
+                        statistics.sampler.quantileInterpolated(99.99 / 100.0));
+
+                    runJSON.set("quantiles", quantiles.asString());
                 }
-                quantiles.set("0.95",
-                    statistics.sampler.quantileInterpolated(95 / 100.0));
-                quantiles.set("0.99",
-                    statistics.sampler.quantileInterpolated(99 / 100.0));
-                quantiles.set("0.999",
-                    statistics.sampler.quantileInterpolated(99.9 / 100.0));
-                quantiles.set("0.9999",
-                    statistics.sampler.quantileInterpolated(99.99 / 100.0));
-
-                runJSON.set("quantiles", quantiles.asString());
 
                 runJSON.set("total_time", statistics.total_time);
 
