@@ -160,6 +160,7 @@ nav:
   - 'Мониторинг': 'operations/monitoring.md'
   - 'Решение проблем': 'operations/troubleshooting.md'
   - 'Советы по эксплуатации': 'operations/tips.md'
+  - 'Обновление ClickHouse': 'operations/update.md'
   - 'Права доступа': 'operations/access_rights.md'
   - 'Резервное копирование': 'operations/backup.md'
   - 'Конфигурационные файлы': 'operations/configuration_files.md'

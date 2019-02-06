@@ -162,6 +162,7 @@ nav:
   - 'Monitoring': 'operations/monitoring.md'
   - 'Troubleshooting': 'operations/troubleshooting.md'
   - 'Usage Recommendations': 'operations/tips.md'
+  - 'ClickHouse Update': 'operations/update.md'
   - 'Access Rights': 'operations/access_rights.md'
   - 'Data Backup': 'operations/backup.md'
   - 'Configuration Files': 'operations/configuration_files.md'
