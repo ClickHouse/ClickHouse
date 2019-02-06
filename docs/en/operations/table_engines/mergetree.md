@@ -250,7 +250,7 @@ CREATE TABLE table_name
     s String,
     ...
     INDEX a (u64 * i32, s) TYPE minmax GRANULARITY 3,
-    INDEX b (u64 * length(s)) TYPE unique GRANULARITY 4
+    INDEX b (u64 * length(s)) TYPE set GRANULARITY 4
 ) ENGINE = MergeTree()
 ...
 ```
@@ -266,14 +266,14 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 * `minmax`
 Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of the data like the primary key.
 
-* `unique(max_rows)`
+* `set(max_rows)`
 Stores unique values of the specified expression (no more than `max_rows` rows), use them to check if the `WHERE` expression is not satisfiable on a block of the data.
-If `max_rows=0`, then there are no limits for storing values. `unique` without parameters is equal to `unique(0)`.  
+If `max_rows=0`, then there are no limits for storing values. `set` without parameters is equal to `set(0)`.  
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE unique GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE unique(100) GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 ```
 
 
