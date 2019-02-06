@@ -33,7 +33,6 @@ public:
     std::string main_metric;
 
     Strings queries;
-    Strings metrics;
 
     Settings settings;
     ExecutionType exec_type;
