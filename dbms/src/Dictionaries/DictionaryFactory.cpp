@@ -14,7 +14,6 @@ namespace ErrorCodes
 
 void DictionaryFactory::registerLayout(const std::string & layout_type, Creator create_layout)
 {
-    //LOG_DEBUG(log, "Register dictionary layout type `" + layout_type + "`");
     if (!registered_layouts.emplace(layout_type, std::move(create_layout)).second)
         throw Exception("DictionaryFactory: the layout name '" + layout_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }

@@ -546,6 +546,7 @@ void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & table_name,
     const ColumnsDescription & columns,
+    const IndicesDescription & indices,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -567,7 +568,14 @@ void DatabaseOrdinary::alterTable(
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
-    ast_create_query.replace(ast_create_query.columns, new_columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
+
+    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+
+    if (ast_create_query.columns_list->indices)
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
+    else
+        ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);
@@ -603,7 +611,7 @@ void DatabaseOrdinary::drop()
 }
 
 
-void DatabaseOrdinary::loadDictionaries(Context & context, ThreadPool *, bool)
+void DatabaseOrdinary::loadDictionaries(Context & context, ThreadPool *)
 {
     LOG_INFO(log, "Loading dictionaries.");
 

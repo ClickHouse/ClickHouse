@@ -476,8 +476,6 @@ void addLayoutFieldsFromAST(
         layout_type_parameter_element->appendChild(doc->createTextNode(toString(literal->value.get<UInt64>())));
         layout_type_element->appendChild(layout_type_parameter_element);
     }
-
-    // TODO: add here parameter in layout_type_element
 }
 
 
@@ -520,6 +518,9 @@ void addStructureFieldsFromAST(
     Poco::AutoPtr<Poco::XML::Element> root,
     const ASTCreateQuery & create)
 {
+    if (create.dictionary_source == nullptr)
+        throw Exception("Can't construct configuration without dictionary structure", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
     const auto * source = create.dictionary_source;
     Poco::AutoPtr<Poco::XML::Element> structure_element = doc->createElement("structure");
     root->appendChild(structure_element);
@@ -538,9 +539,13 @@ void addStructureFieldsFromAST(
         name_element->appendChild(doc->createTextNode(column_name));
     }
 
-    for (size_t index = 0; index != create.columns->children.size(); ++index)
+    if (create.columns_list == nullptr)
+        throw Exception("Can't construct configuration without columns declaration", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
+    const ASTExpressionList * columns = create.columns_list->columns;
+    for (size_t index = 0; index != columns->children.size(); ++index)
     {
-        const auto * child = create.columns->children[index].get();
+        const auto * child = columns->children[index].get();
         const ASTColumnDeclaration * column_declaration = typeid_cast<const ASTColumnDeclaration *>(child);
 
         if (!column_declaration->type || !column_declaration->default_expression)

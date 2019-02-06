@@ -6,7 +6,6 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
-#include <Poco/Path.h>
 
 namespace Poco
 {
@@ -16,7 +15,6 @@ namespace Poco
 
 namespace DB
 {
-class ExternalDictionaries;
 
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
@@ -24,7 +22,7 @@ class ExternalDictionaries;
 class DatabaseDictionary : public IDatabase
 {
 public:
-    DatabaseDictionary(const String & name_, const Poco::Path & metadata_path_, const Context & context_);
+    DatabaseDictionary(const String & name_);
 
     String getDatabaseName() const override;
 
@@ -40,8 +38,7 @@ public:
 
     void loadDictionaries(
         Context & context,
-        ThreadPool * thread_pool,
-        bool has_force_restore_data_flag) override;
+        ThreadPool * thread_pool) override;
 
     bool isTableExist(
         const Context & context,
@@ -106,6 +103,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(
@@ -122,21 +120,15 @@ public:
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
-    String getMetadataPath() const override;
-
     void shutdown() override;
 
 private:
     const String name;
-    Poco::Path metadata_path;
     mutable std::mutex mutex;
-    const ExternalDictionaries & external_dictionaries;
-    std::unordered_set<String> deleted_tables;
 
     Poco::Logger * log;
 
-    Tables loadTables();
-
+    Tables listTables(const Context & context);
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 

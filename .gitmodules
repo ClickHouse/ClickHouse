@@ -64,3 +64,6 @@
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
 	url = https://github.com/mfontanini/cppkafka.git
+[submodule "contrib/pdqsort"]
+	path = contrib/pdqsort
+	url = https://github.com/orlp/pdqsort

@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Dictionaries/IDictionary.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <ctime>
 #include <memory>
 #include <functional>
@@ -67,12 +68,10 @@ public:
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) = 0;
 
-    // TODO: может быть, has_restore_data_flag не нужен
     /// Load a set of existing dictionaries.
     virtual void loadDictionaries(
         Context & context,
-        ThreadPool * thread_pool,
-        bool has_force_restore_data_flag) = 0;
+        ThreadPool * thread_pool) = 0;
 
     /// Check the existence of the table.
     virtual bool isTableExist(
@@ -154,6 +153,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.

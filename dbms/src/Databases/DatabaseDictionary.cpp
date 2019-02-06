@@ -1,21 +1,14 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseDictionary.h>
-#include <Databases/DatabaseOrdinary.h>
-#include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Storages/StorageDictionary.h>
 #include <common/logger_useful.h>
 #include <Parsers/IAST.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-
-#include <Poco/DirectoryIterator.h>
-
 
 namespace DB
 {
@@ -26,15 +19,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int SYNTAX_ERROR;
-    extern const int INCORRECT_FILE_NAME;
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
 }
 
-DatabaseDictionary::DatabaseDictionary(const String & name_, const Poco::Path & metadata_path_, const Context & context_)
-    : name(name_)
-    , metadata_path(metadata_path_)
-    , external_dictionaries(context_.getExternalDictionaries())
-    , log(&Logger::get("DatabaseDictionary(" + name + ")"))
+DatabaseDictionary::DatabaseDictionary(const String & name_)
+    : name(name_),
+      log(&Logger::get("DatabaseDictionary(" + name + ")"))
 {
 }
 
@@ -42,29 +31,21 @@ void DatabaseDictionary::loadTables(Context &, ThreadPool *, bool)
 {
 }
 
-Tables DatabaseDictionary::loadTables()
+Tables DatabaseDictionary::listTables(const Context & context)
 {
-    auto objects_map = external_dictionaries.getObjectsMap();
+    auto objects_map = context.getExternalDictionaries().getObjectsMap();
     const auto & dictionaries = objects_map.get();
 
     Tables tables;
     for (const auto & pair : dictionaries)
     {
-        const std::string & dict_name = pair.first;
-        if (deleted_tables.count(dict_name))
-            continue;
         auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(pair.second.loadable);
         if (dict_ptr)
         {
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            tables[dict_name] = StorageDictionary::create(
-                dict_name,
-                /*database_name*/ "",
-                ColumnsDescription{columns},
-                std::cref(dictionary_structure),
-                dict_name,
-                false);
+            const std::string & dict_name = pair.first;
+            tables[dict_name] = StorageDictionary::create(dict_name, "", ColumnsDescription{columns}, context, true, dict_name);
         }
     }
 
@@ -72,17 +53,18 @@ Tables DatabaseDictionary::loadTables()
 }
 
 
-void DatabaseDictionary::loadDictionaries(Context &, ThreadPool *, bool)
+void DatabaseDictionary::loadDictionaries(Context &, ThreadPool *)
 {
 }
 
+
 bool DatabaseDictionary::isTableExist(
-    const Context & /*context*/,
+    const Context & context,
     const String & table_name) const
 {
-    auto objects_map = external_dictionaries.getObjectsMap();
+    auto objects_map = context.getExternalDictionaries().getObjectsMap();
     const auto & dictionaries = objects_map.get();
-    return dictionaries.count(table_name) && !deleted_tables.count(table_name);
+    return dictionaries.count(table_name) > 0;
 }
 
 
@@ -93,14 +75,12 @@ bool DatabaseDictionary::isDictionaryExist(const Context & /*context*/, const St
 
 
 StoragePtr DatabaseDictionary::tryGetTable(
-    const Context & /*context*/,
+    const Context & context,
     const String & table_name) const
 {
-    auto objects_map = external_dictionaries.getObjectsMap();
+    auto objects_map = context.getExternalDictionaries().getObjectsMap();
     const auto & dictionaries = objects_map.get();
 
-    if (deleted_tables.count(table_name))
-        return {};
     {
         auto it = dictionaries.find(table_name);
         if (it != dictionaries.end())
@@ -110,13 +90,7 @@ StoragePtr DatabaseDictionary::tryGetTable(
             {
                 const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
                 auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-                return StorageDictionary::create(
-                    table_name,
-                    /*database_name*/ "",
-                    ColumnsDescription{columns},
-                    std::cref(dictionary_structure),
-                    table_name,
-                    false);
+                return StorageDictionary::create(table_name, "", ColumnsDescription{columns}, context, true, table_name);
             }
         }
     }
@@ -138,10 +112,11 @@ DictionaryPtr DatabaseDictionary::getDictionary(
     throw Exception("Database with engine = Dictionary doesn't contain dictionaries", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & /*context*/)
+
+DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context)
 {
     std::lock_guard lock(mutex);
-    return std::make_unique<DatabaseSnapshotIterator>(loadTables());
+    return std::make_unique<DatabaseSnapshotIterator>(listTables(context));
 }
 
 
@@ -150,12 +125,12 @@ DatabaseIteratorPtr DatabaseDictionary::getDictionaryIterator(const Context & /*
     throw Exception("DatabaseDictionary: getDictionaryIterator() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-bool DatabaseDictionary::empty(const Context & /*context*/) const
+bool DatabaseDictionary::empty(const Context & context) const
 {
-    auto objects_map = external_dictionaries.getObjectsMap();
+    auto objects_map = context.getExternalDictionaries().getObjectsMap();
     const auto & dictionaries = objects_map.get();
     for (const auto & pair : dictionaries)
-        if (pair.second.loadable && !deleted_tables.count(pair.first))
+        if (pair.second.loadable)
             return false;
     return true;
 }
@@ -171,19 +146,19 @@ void DatabaseDictionary::attachTable(const String & /*table_name*/, const Storag
 }
 
 void DatabaseDictionary::createTable(
-    const Context & /*context*/,
-    const String & /*table_name*/,
-    const StoragePtr & /*table*/,
-    const ASTPtr & /*query*/)
+    const Context &,
+    const String &,
+    const StoragePtr &,
+    const ASTPtr &)
 {
     throw Exception("DatabaseDictionary: createTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
-void DatabaseDictionary::createDictionary(Context & /*context*/,
-                                          const String & /*dictionary_name*/,
-                                          const DictionaryPtr & /*dict_ptr*/,
-                                          const ASTPtr & /*query*/)
+void DatabaseDictionary::createDictionary(Context &,
+                                          const String &,
+                                          const DictionaryPtr &,
+                                          const ASTPtr &)
 {
     throw Exception("DatabaseDictionary: createDictionary() is not supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
@@ -194,15 +169,12 @@ void DatabaseDictionary::attachDictionary(const String & /*dictionary_name*/, Di
     throw Exception("DatabaseDictionary: attachDictionary() is not supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void DatabaseDictionary::removeTable(
-    const Context & context,
-    const String & table_name)
-{
-    if (!isTableExist(context, table_name))
-        throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    auto objects_map = external_dictionaries.getObjectsMap();
-    deleted_tables.insert(table_name);
+void DatabaseDictionary::removeTable(
+    const Context &,
+    const String &)
+{
+    throw Exception("DatabaseDictionary: removeTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
@@ -225,6 +197,7 @@ void DatabaseDictionary::alterTable(
     const Context &,
     const String &,
     const ColumnsDescription &,
+    const IndicesDescription &,
     const ASTModifier &)
 {
     throw Exception("DatabaseDictionary: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -289,12 +262,6 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & /*context*/) c
 
 void DatabaseDictionary::shutdown()
 {
-}
-
-
-String DatabaseDictionary::getMetadataPath() const
-{
-    return metadata_path.toString();
 }
 
 

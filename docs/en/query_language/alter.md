@@ -83,6 +83,19 @@ rows are ordered by the sorting key expression you cannot add expressions contai
 to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
 
 
+### Manipulations With Data Skipping Indices
+
+It only works for tables in the [`*MergeTree`](../operations/table_engines/mergetree.md) family (including
+[replicated](../operations/table_engines/replication.md) tables). The following operations
+are available:
+
+* `ALTER ADD INDEX name expression TYPE type GRANULARITY value AFTER name [AFTER name2]` - Adds index description to tables metadata.
+
+* `ALTER DROP INDEX name` - Removes index description from tables metadata and deletes index files from disk.
+
+These commands are lightweight in a sense that they only change metadata or remove files.
+Also, they are replicated (syncing indices metadata through ZooKeeper).
+
 ### Manipulations With Partitions and Parts
 
 It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
@@ -228,11 +241,11 @@ For non-replicatable tables, all `ALTER` queries are performed synchronously. Fo
 For `ALTER ... ATTACH|DETACH|DROP` queries, you can use the `replication_alter_partitions_sync` setting to set up waiting.
 Possible values: `0` – do not wait; `1` – only wait for own execution (default); `2` – wait for all.
 
-### Mutations {#query_language_queries_show_databases}
+### Mutations {#alter-mutations}
 
 Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table.
 
-The functionality is in beta stage and is available starting with the 1.1.54388 version. Currently *MergeTree table engines are supported (both replicated and unreplicated).
+The functionality is in beta stage and is available starting with the 1.1.54388 version. Currently `*MergeTree` table engines are supported (both replicated and unreplicated).
 
 Existing tables are ready for mutations as-is (no conversion necessary), but after the first mutation is applied to a table, its metadata format becomes incompatible with previous server versions and falling back to a previous version becomes impossible.
 

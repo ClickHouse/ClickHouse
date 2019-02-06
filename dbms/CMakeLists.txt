@@ -206,6 +206,8 @@ target_link_libraries (clickhouse_common_io
     ${CMAKE_DL_LIBS}
 )
 
+target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
+
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 
 if(CPUID_LIBRARY)
@@ -282,6 +284,7 @@ target_link_libraries (dbms PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
     target_link_libraries (dbms PRIVATE ${ICU_LIBRARIES})
+    target_include_directories (dbms SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
 endif ()
 
 if (USE_CAPNP)

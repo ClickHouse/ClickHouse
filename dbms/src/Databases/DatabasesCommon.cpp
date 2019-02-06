@@ -69,10 +69,10 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
-    if (!ast_create_query.columns)
+    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns, context);
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
 
     return
     {
@@ -113,7 +113,7 @@ std::pair<String, DictionaryPtr> createDictionaryFromDefinition(
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
     ast_create_query.database = database_name;
 
-    if (!ast_create_query.columns)
+    if (!ast_create_query.columns_list)
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
     auto dictionary_ptr = DictionaryFactory::instance().create(ast_create_query.dictionary, ast_create_query, context);
@@ -165,7 +165,7 @@ DictionaryPtr DatabaseWithOwnTablesBase::getDictionary(
 }
 
 
-void DatabaseWithOwnTablesBase::loadDictionaries(Context &, ThreadPool *, bool)
+void DatabaseWithOwnTablesBase::loadDictionaries(Context &, ThreadPool *)
 {
 }
 

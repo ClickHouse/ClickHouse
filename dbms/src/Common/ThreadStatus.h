@@ -116,7 +116,7 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    String getQueryID();
+    const std::string & getQueryId() const;
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
@@ -159,6 +159,8 @@ protected:
     Context * global_context = nullptr;
     /// Use it only from current thread
     Context * query_context = nullptr;
+
+    String query_id;
 
     /// A logs queue used by TCPHandler to pass logs to a client
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
