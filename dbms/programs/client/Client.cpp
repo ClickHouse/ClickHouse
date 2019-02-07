@@ -1031,7 +1031,8 @@ private:
 
         // TODO: get the poll_interval from commandline.
         const auto receive_timeout = connection->getTimeouts().receive_timeout;
-        constexpr size_t default_poll_interval = 1000000, min_poll_interval = 5000; /// in microseconds
+        constexpr size_t default_poll_interval = 1000000; /// in microseconds
+        constexpr size_t min_poll_interval = 5000; /// in microseconds
         const size_t poll_interval
             = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
 
@@ -1333,7 +1334,11 @@ private:
 
     void onProgress(const Progress & value)
     {
-        progress.incrementPiecewiseAtomically(value);
+        if (!progress.incrementPiecewiseAtomically(value))
+        {
+            // Just a keep-alive update.
+            return;
+        }
         if (block_out_stream)
             block_out_stream->onProgress(value);
         writeProgress();
