@@ -137,7 +137,7 @@ A test query (`TEST`) only checks the user's rights and displays a list of queri
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/misc/) <!--hide-->
 
-## OPTIMIZE
+## OPTIMIZE {#misc_operations-optimize}
 
 ``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]

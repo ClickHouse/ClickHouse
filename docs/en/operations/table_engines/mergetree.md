@@ -69,7 +69,7 @@ For a description of request parameters, see [request description](../../query_l
     `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
-    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192.
+    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
 
 **Example of sections setting**
 
@@ -124,7 +124,7 @@ For each data part, ClickHouse creates an index file that contains the primary k
 
 You can use a single large table and continually add data to it in small chunks – this is what the `MergeTree` engine is intended for.
 
-## Primary Keys and Indexes in Queries
+## Primary Keys and Indexes in Queries {#primary-keys-and-indexes-in-queries}
 
 Let's take the `(CounterID, Date)` primary key. In this case, the sorting and index can be illustrated as follows:
 
