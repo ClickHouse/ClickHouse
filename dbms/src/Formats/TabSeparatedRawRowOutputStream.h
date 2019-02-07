@@ -18,7 +18,7 @@ public:
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override
     {
-        type.serializeText(column, row_num, ostr, format_settings);
+        type.serializeAsText(column, row_num, ostr, format_settings);
     }
 };
 

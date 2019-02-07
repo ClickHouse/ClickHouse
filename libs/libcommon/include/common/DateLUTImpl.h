@@ -284,6 +284,15 @@ public:
     inline time_t toStartOfFiveMinute(time_t t) const { return t / 300 * 300; }
     inline time_t toStartOfFifteenMinutes(time_t t) const { return t / 900 * 900; }
 
+    inline time_t toStartOfTenMinutes(time_t t) const
+    {
+        if (offset_is_whole_number_of_hours_everytime)
+            return t / 600 * 600;
+
+        time_t date = find(t).date;
+        return date + (t - date) / 600 * 600;
+    }
+
     inline time_t toStartOfHour(time_t t) const
     {
         if (offset_is_whole_number_of_hours_everytime)

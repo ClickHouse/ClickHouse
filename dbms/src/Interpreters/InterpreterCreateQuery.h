@@ -2,6 +2,7 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <Common/ThreadPool.h>
 
 
@@ -28,6 +29,8 @@ public:
     /// List of columns and their types in AST.
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
+
+    static ASTPtr formatIndices(const IndicesDescription & indices);
 
     void setDatabaseLoadingThreadpool(ThreadPool & thread_pool_)
     {

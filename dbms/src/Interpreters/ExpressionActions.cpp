@@ -160,15 +160,13 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
 ExpressionAction ExpressionAction::ordinaryJoin(
     std::shared_ptr<const Join> join_,
     const Names & join_key_names_left,
-    const NamesAndTypesList & columns_added_by_join_,
-    const NameSet & columns_added_by_join_from_right_keys_)
+    const NamesAndTypesList & columns_added_by_join_)
 {
     ExpressionAction a;
     a.type = JOIN;
     a.join = std::move(join_);
     a.join_key_names_left = join_key_names_left;
     a.columns_added_by_join = columns_added_by_join_;
-    a.columns_added_by_join_from_right_keys = columns_added_by_join_from_right_keys_;
     return a;
 }
 
@@ -463,7 +461,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
         case JOIN:
         {
-            join->joinBlock(block, join_key_names_left, columns_added_by_join_from_right_keys);
+            join->joinBlock(block, join_key_names_left, columns_added_by_join);
             break;
         }
 
@@ -1115,7 +1113,8 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
 {
     for (const auto & action : actions)
         if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))
-            return action.join->createStreamWithNonJoinedRows(source_header, action.join_key_names_left, max_block_size);
+            return action.join->createStreamWithNonJoinedRows(
+                source_header, action.join_key_names_left, action.columns_added_by_join, max_block_size);
 
     return {};
 }
