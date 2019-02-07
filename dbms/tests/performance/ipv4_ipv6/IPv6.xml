@@ -3,9 +3,6 @@
 
     <type>loop</type>
 
-    <tags>
-    </tags>
-
     <stop_conditions>
         <all_of>
             <total_time_ms>30000</total_time_ms>
@@ -40,4 +37,6 @@
 
     <query tag="IPv6StringToNum">SELECT count() FROM ips_v6 WHERE NOT ignore(IPv6StringToNum(materialize(ip)))</query>
     <query tag="IPv6NumToString+IPv6StringToNum">SELECT count() FROM ips_v6 WHERE NOT ignore(IPv6NumToString(IPv6StringToNum(materialize(ip))))</query>
+
+    <drop_query>DROP TABLE IF EXISTS ips_v6</drop_query>
 </test>
