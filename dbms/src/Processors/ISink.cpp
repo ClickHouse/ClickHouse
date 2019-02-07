@@ -11,20 +11,19 @@ ISink::ISink(Block header)
 
 ISink::Status ISink::prepare()
 {
-    if (current_block)
+    if (has_input)
         return Status::Ready;
-
-    if (input.hasData())
-    {
-        current_block = input.pull();
-        return Status::Ready;
-    }
 
     if (input.isFinished())
         return Status::Finished;
 
     input.setNeeded();
-    return Status::NeedData;
+    if (!input.hasData())
+        return Status::NeedData;
+
+    current_block = input.pull();
+    has_input = true;
+    return Status::Ready;
 }
 
 void ISink::work()

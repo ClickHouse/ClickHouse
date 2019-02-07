@@ -21,10 +21,98 @@ class Port
 
 protected:
     /// Shared state of two connected ports.
-    struct State
+    class State
     {
+    public:
+        State() = default;
+
+        void push(Block block)
+        {
+            if (finished)
+                throw Exception("Cannot push block to finished port.", ErrorCodes::LOGICAL_ERROR);
+
+            if (!needed)
+                throw Exception("Cannot push block to port which is not needed.", ErrorCodes::LOGICAL_ERROR);
+
+            if (has_data)
+                throw Exception("Cannot push block to port which already has data.", ErrorCodes::LOGICAL_ERROR);
+
+            data = std::move(block);
+            has_data = true;
+        }
+
+        Block pull()
+        {
+            if (!needed)
+                throw Exception("Cannot pull block from port which is not needed.", ErrorCodes::LOGICAL_ERROR);
+
+            if (!has_data)
+                throw Exception("Cannot pull block from port which has no data.", ErrorCodes::LOGICAL_ERROR);
+
+            has_data = false;
+            return std::move(data);
+        }
+
+        bool hasData() const
+        {
+            if (finished)
+                throw Exception("Finished port can't has data.", ErrorCodes::LOGICAL_ERROR);
+
+            if (!needed)
+                throw Exception("Cannot check if not needed port has data.", ErrorCodes::LOGICAL_ERROR);
+
+            return has_data;
+        }
+
+        /// Only for output port.
+        /// If port still has data, it will be finished after pulling.
+        void finish()
+        {
+            finished = true;
+        }
+
+        /// Only for input port. Removes data if has.
+        void close()
+        {
+            finished = true;
+            has_data = false;
+            data.clear();
+        }
+
+        /// Only empty ports are finished.
+        bool isFinished() const { return finished && !has_data; }
+        bool isSetFinished() const { return finished; }
+
+        void setNeeded()
+        {
+            if (finished)
+                throw Exception("Can't set port needed if it is finished.", ErrorCodes::LOGICAL_ERROR);
+
+//            if (has_data)
+//                throw Exception("Can't set port needed if it has data.", ErrorCodes::LOGICAL_ERROR);
+
+            needed = true;
+        }
+
+        void setNotNeeded()
+        {
+//            if (finished)
+//                throw Exception("Can't set port not needed if it is finished.", ErrorCodes::LOGICAL_ERROR);
+
+            needed = false;
+        }
+
+        /// Only for output port.
+        bool isNeeded() const { return needed && !finished; }
+
+    private:
         Block data;
+        /// Use special flag to check if block has data. This allows to send empty blocks between processors.
+        bool has_data = false;
+        /// Block is not needed right now, but may be will be needed later.
+        /// This allows to pause calculations if we are not sure that we need more data.
         bool needed = false;
+        /// Port was set finished or closed.
         bool finished = false;
     };
 
@@ -34,8 +122,7 @@ protected:
     IProcessor * processor = nullptr;
 
 public:
-    Port(const Block & header)
-        : header(header) {}
+    Port(Block header) : header(std::move(header)) {}
 
     const Block & getHeader() const { return header; }
     bool isConnected() const { return state != nullptr; }
@@ -49,13 +136,7 @@ public:
     bool hasData() const
     {
         assumeConnected();
-        return state->data;
-    }
-
-    bool isNeeded() const
-    {
-        assumeConnected();
-        return state->needed;
+        return state->hasData();
     }
 
     IProcessor & getProcessor()
@@ -73,7 +154,11 @@ public:
     }
 };
 
-
+/// Invariants:
+///   * If you close port, it isFinished().
+///   * If port isFinished(), you can do nothing with it.
+///   * If port is not needed, you can only setNeeded() or close() it.
+///   * You can pull only if port hasData().
 class InputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &);
@@ -86,28 +171,32 @@ public:
 
     Block pull()
     {
-        if (!hasData())
-            throw Exception("Port has no data", ErrorCodes::LOGICAL_ERROR);
-
-        return std::move(state->data);
+        assumeConnected();
+        return state->pull();
     }
 
     bool isFinished() const
     {
         assumeConnected();
-        return state->finished;
+        return state->isFinished();
     }
 
     void setNeeded()
     {
         assumeConnected();
-        state->needed = true;
+        state->setNeeded();
     }
 
     void setNotNeeded()
     {
         assumeConnected();
-        state->needed = false;
+        state->setNotNeeded();
+    }
+
+    void close()
+    {
+        assumeConnected();
+        state->close();
     }
 
     OutputPort & getOutputPort()
@@ -124,6 +213,11 @@ public:
 };
 
 
+/// Invariants:
+///   * If you finish port, it isFinished().
+///   * If port isFinished(), you can do nothing with it.
+///   * If port not isNeeded(), you can only finish() it.
+///   * You can hush only if port doesn't hasData().
 class OutputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &);
@@ -136,17 +230,29 @@ public:
 
     void push(Block block)
     {
-        if (hasData())
-            throw Exception("Port already has data", ErrorCodes::LOGICAL_ERROR);
-
-        state->data = std::move(block);
+        assumeConnected();
+        state->push(std::move(block));
     }
 
-    void setFinished()
+    void finish()
     {
         assumeConnected();
-        state->finished = true;
+        state->finish();
     }
+
+    bool isNeeded() const
+    {
+        assumeConnected();
+        return state->isNeeded();
+    }
+
+    bool isFinished() const
+    {
+        assumeConnected();
+        return state->isSetFinished();
+    }
+
+    bool canPush() const { return isNeeded() && !hasData(); }
 
     InputPort & getInputPort()
     {

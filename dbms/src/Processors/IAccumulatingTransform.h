@@ -18,7 +18,9 @@ protected:
 
     Block current_input_block;
     Block current_output_block;
-    bool finished = false;
+    bool has_input = false;
+    bool finished_input = false;
+    bool finished_generate = false;
 
     virtual void consume(Block block) = 0;
     virtual Block generate() = 0;

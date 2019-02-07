@@ -10,6 +10,7 @@ class ISource : public IProcessor
 {
 protected:
     OutputPort & output;
+    bool has_input = false;
     bool finished = false;
     Block current_block;
 

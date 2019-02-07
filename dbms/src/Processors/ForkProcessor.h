@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/** Has one input and arbitary non zero number of outputs.
+/** Has one input and arbitrary non zero number of outputs.
   * All of them have the same structure.
   *
   * Pulls data input and copies it to every output.
@@ -18,7 +18,7 @@ namespace DB
 class ForkProcessor : public IProcessor
 {
 public:
-    ForkProcessor(Block header, size_t num_outputs)
+    ForkProcessor(const Block & header, size_t num_outputs)
         : IProcessor(InputPorts{header}, OutputPorts(num_outputs, header))
     {
     }

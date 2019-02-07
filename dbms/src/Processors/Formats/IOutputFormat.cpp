@@ -11,25 +11,28 @@ IOutputFormat::IOutputFormat(Block header, WriteBuffer & out)
 
 IOutputFormat::Status IOutputFormat::prepare()
 {
-    if (current_block)
+    if (has_input)
         return Status::Ready;
 
     for (auto kind : {Main, Totals, Extremes})
     {
         auto & input = inputs[kind];
 
-        if (input.hasData())
-        {
-            current_block = input.pull();
-            current_block_kind = kind;
-            return Status::Ready;
-        }
+        if (kind != Main && !input.isConnected())
+            continue;
 
-        if (!input.isFinished())
-        {
-            input.setNeeded();
+        if (input.isFinished())
+            continue;
+
+        input.setNeeded();
+
+        if (!input.hasData())
             return Status::NeedData;
-        }
+
+        current_block = input.pull();
+        current_block_kind = kind;
+        has_input = true;
+        return Status::Ready;
     }
 
     return Status::Finished;
@@ -49,6 +52,8 @@ void IOutputFormat::work()
             consumeExtremes(std::move(current_block));
             break;
     }
+
+    has_input = false;
 }
 
 }

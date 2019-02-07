@@ -11,6 +11,7 @@ class ISink : public IProcessor
 protected:
     InputPort & input;
     Block current_block;
+    bool has_input;
 
     virtual void consume(Block block) = 0;
 

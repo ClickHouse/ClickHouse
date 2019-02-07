@@ -122,15 +122,15 @@ public:
         /// You need to run another processor to generate required input and then call 'prepare' again.
         NeedData,
 
-        /// Processor cannot proceed because output port is full.
+        /// Processor cannot proceed because output port is full or not isNeeded().
         /// You need to transfer data from output port to the input port of another processor and then call 'prepare' again.
         PortFull,
 
-        /// All work is done, nothing more to do.
+        /// All work is done (all data is processed or all output are closed), nothing more to do.
         Finished,
 
         /// No one needs data on output ports.
-        Unneeded,
+        /// Unneeded,
 
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,

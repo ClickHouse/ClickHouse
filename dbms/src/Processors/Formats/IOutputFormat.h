@@ -28,6 +28,7 @@ protected:
 
     Block current_block;
     PortKind current_block_kind;
+    bool has_input = false;
 
     virtual void consume(Block) = 0;
     virtual void consumeTotals(Block) {}

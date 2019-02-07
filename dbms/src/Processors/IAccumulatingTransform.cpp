@@ -12,49 +12,62 @@ IAccumulatingTransform::IAccumulatingTransform(Block input_header, Block output_
 
 IAccumulatingTransform::Status IAccumulatingTransform::prepare()
 {
-    if (!output.isNeeded())
-        return Status::Unneeded;
+    /// Check can output.
+    if (output.isFinished())
+    {
+        input.close();
+        return Status::Finished;
+    }
 
-    if (current_input_block)
-        return Status::Ready;
+    if (!output.canPush())
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
 
+    /// Output if has data.
     if (current_output_block)
+        output.push(std::move(current_output_block));
+
+    if (finished_generate)
     {
-        if (output.hasData())
-            return Status::PortFull;
-        else
-            output.push(std::move(current_output_block));
+        output.finish();
+        return Status::Finished;
     }
 
-    if (input.hasData())
+    /// Check can input.
+    if (!has_input)
     {
+        /// Generate output block.
+        if (input.isFinished())
+        {
+            finished_input = true;
+            return Status::Ready;
+        }
+
+        input.setNeeded();
+        if (!input.hasData())
+            return Status::NeedData;
+
         current_input_block = input.pull();
-        return Status::Ready;
+        has_input = true;
     }
 
-    if (input.isFinished())
-    {
-        if (finished)
-            return Status::Finished;
-
-        return Status::Ready;
-    }
-
-    input.setNeeded();
-    return Status::NeedData;
+    return Status::Ready;
 }
 
 void IAccumulatingTransform::work()
 {
-    if (current_input_block)
+    if (!finished_input)
     {
         consume(std::move(current_input_block));
+        has_input = false;
     }
     else
     {
         current_output_block = generate();
         if (!current_output_block)
-            finished = true;
+            finished_generate = true;
     }
 }
 
