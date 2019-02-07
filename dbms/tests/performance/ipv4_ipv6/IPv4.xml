@@ -3,9 +3,6 @@
 
     <type>loop</type>
 
-    <tags>
-    </tags>
-
     <stop_conditions>
         <all_of>
             <total_time_ms>30000</total_time_ms>
