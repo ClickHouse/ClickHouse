@@ -33,7 +33,7 @@ void ODBCDriverBlockOutputStream::write(const Block & block)
 
             {
                 WriteBufferFromString text_out(text_value);
-                col.type->serializeText(*col.column, i, text_out, format_settings);
+                col.type->serializeAsText(*col.column, i, text_out, format_settings);
             }
 
             writeStringBinary(text_value, out);

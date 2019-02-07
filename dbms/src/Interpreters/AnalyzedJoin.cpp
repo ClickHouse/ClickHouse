@@ -16,8 +16,7 @@ namespace DB
 ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     const JoinedColumnsList & columns_added_by_join,
     const ASTSelectQuery * select_query_with_join,
-    const Context & context,
-    NameSet & required_columns_from_joined_table) const
+    const Context & context) const
 {
     if (!select_query_with_join)
         return nullptr;
@@ -48,8 +47,14 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
 
     ASTPtr query = expression_list;
     auto syntax_result = SyntaxAnalyzer(context).analyze(query, source_column_names, required_columns);
-    ExpressionAnalyzer analyzer(query, syntax_result, context, {}, required_columns);
-    auto joined_block_actions = analyzer.getActions(false);
+    ExpressionAnalyzer analyzer(query, syntax_result, context, {}, required_columns_set);
+    return analyzer.getActions(false);
+}
+
+NameSet AnalyzedJoin::getRequiredColumnsFromJoinedTable(const JoinedColumnsList & columns_added_by_join,
+                                                        const ExpressionActionsPtr & joined_block_actions) const
+{
+    NameSet required_columns_from_joined_table;
 
     auto required_action_columns = joined_block_actions->getRequiredColumns();
     required_columns_from_joined_table.insert(required_action_columns.begin(), required_action_columns.end());
@@ -63,7 +68,7 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
         if (!sample.has(column.name_and_type.name))
             required_columns_from_joined_table.insert(column.name_and_type.name);
 
-    return joined_block_actions;
+    return required_columns_from_joined_table;
 }
 
 const JoinedColumnsList & AnalyzedJoin::getColumnsFromJoinedTable(

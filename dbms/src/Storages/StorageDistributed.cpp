@@ -339,9 +339,10 @@ void StorageDistributed::alter(const AlterCommands & params, const String & data
 {
     auto lock = lockStructureForAlter();
 
-    ColumnsDescription new_columns = getColumns();
+    auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, {});
+    context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 

@@ -16,5 +16,8 @@ Uses a linear congruential generator.
 Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
 Uses a linear congruential generator.
 
+## randConstant
+
+Returns a pseudo-random UInt32 number, The value is one for different blocks.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/random_functions/) <!--hide-->
