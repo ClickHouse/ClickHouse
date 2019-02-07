@@ -146,7 +146,11 @@ BlockIO InterpreterInsertQuery::execute()
     else if (query.data)
     {
         auto data_in = std::make_unique<ReadBufferFromMemory>(query.data, query.end - query.data);
-        res.in = context.getInputFormat("Values", *data_in, table->getSampleBlock(), context.getSettingsRef().max_insert_block_size);
+        std::string format = "Values";
+        if (!query.format.empty())
+            format = query.format;
+
+        res.in = context.getInputFormat(format, *data_in, table->getSampleBlock(), context.getSettingsRef().max_insert_block_size);
         res.in = std::make_shared<OwningBlockInputStream<ReadBufferFromMemory>>(res.in, std::move(data_in));
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
 
