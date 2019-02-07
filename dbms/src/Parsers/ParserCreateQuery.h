@@ -147,7 +147,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (!s_default.check_without_moving(pos, expected) &&
         !s_materialized.check_without_moving(pos, expected) &&
         !s_alias.check_without_moving(pos, expected) &&
-        !s_comment.check_without_moving(pos, expected) && // TODO: maybe it should be deleted
+        !s_comment.check_without_moving(pos, expected) &&
         !s_codec.check_without_moving(pos, expected))
     {
         if (!type_parser.parse(pos, type, expected))

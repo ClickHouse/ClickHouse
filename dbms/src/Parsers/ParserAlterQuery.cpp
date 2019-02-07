@@ -71,10 +71,18 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!parser_col_decl.parse(pos, command->col_decl, expected))
             return false;
 
-        if (s_after.ignore(pos, expected))
+        const ASTColumnDeclaration * col_decl = typeid_cast<const ASTColumnDeclaration *>(command->col_decl.get());
+        const ASTPtr & list = col_decl->expr_list;
+        if (list->children.size() >= 2)
+            return false;
+
+        if (list->children.size() == 1)
         {
-            if (!parser_name.parse(pos, command->column, expected))
+            const ASTPair * pair = typeid_cast<const ASTPair *>(list->children.at(0).get());
+            if (pair->first != "after")
                 return false;
+
+            command->column = pair->second;
         }
 
         command->type = ASTAlterCommand::ADD_COLUMN;
