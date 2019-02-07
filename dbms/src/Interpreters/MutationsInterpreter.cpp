@@ -53,7 +53,7 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
     select->select_expression_list->children.push_back(count_func);
 
     if (commands.size() == 1)
-        select->where_expression = commands[0].predicate;
+        select->where_expression = commands[0].predicate->clone();
     else
     {
         auto coalesced_predicates = std::make_shared<ASTFunction>();
@@ -62,7 +62,7 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
         coalesced_predicates->children.push_back(coalesced_predicates->arguments);
 
         for (const MutationCommand & command : commands)
-            coalesced_predicates->arguments->children.push_back(command.predicate);
+            coalesced_predicates->arguments->children.push_back(command.predicate->clone());
 
         select->where_expression = std::move(coalesced_predicates);
     }

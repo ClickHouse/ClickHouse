@@ -347,7 +347,7 @@ struct ConvertImplGenericToString
         FormatSettings format_settings;
         for (size_t i = 0; i < size; ++i)
         {
-            type.serializeText(col_from, i, write_buffer, format_settings);
+            type.serializeAsText(col_from, i, write_buffer, format_settings);
             writeChar(0, write_buffer);
             offsets_to[i] = write_buffer.count();
         }
@@ -631,7 +631,7 @@ struct ConvertImplGenericFromString
             {
                 ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
-                data_type_to.deserializeTextEscaped(column_to, read_buffer, format_settings);
+                data_type_to.deserializeAsTextEscaped(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
                     throwExceptionForIncompletelyParsedValue(read_buffer, block, result);

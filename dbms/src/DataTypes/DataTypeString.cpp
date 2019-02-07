@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -21,7 +22,6 @@
 
 namespace DB
 {
-
 
 void DataTypeString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -301,6 +301,12 @@ void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, Wr
 void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     read(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
+}
+
+
+void DataTypeString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeString(static_cast<const ColumnString &>(column).getDataAt(row_num));
 }
 
 

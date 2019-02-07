@@ -12,7 +12,7 @@ Examples: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 For integer arguments, it makes sense to round with a negative 'N' value (for non-negative 'N', the function doesn't do anything).
 If rounding causes overflow (for example, floor(-128, -1)), an implementation-specific result is returned.
 
-## ceil(x\[, N\])
+## ceil(x\[, N\]), ceiling(x\[, N\])
 
 Returns the smallest round number that is greater than or equal to 'x'. In every other way, it is the same as the 'floor' function (see above).
 
@@ -66,5 +66,8 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. This function is specific to Yandex.Metrica and used for implementing the report on user age.
 
+## roundDown(num, arr)
+
+Accept a number, round it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->
