@@ -722,7 +722,7 @@ private:
 
                 try
                 {
-                    if (!processSingleQuery(str, ast) && !ignore_error)
+                    if (!processSingleQuery(str) && !ignore_error)
                         return false;
                 }
                 catch (...)
