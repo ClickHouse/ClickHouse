@@ -326,7 +326,9 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
     std::unordered_map<String, ASTPtr> aliases;
     std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
 
-    TranslateQualifiedNamesVisitor::Data qn_visitor_data{{}, tables};
+    std::vector<TableWithColumnNames> tables_with_columns;
+    TranslateQualifiedNamesVisitor::Data::setTablesOnly(tables, tables_with_columns);
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data{{}, tables_with_columns};
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};

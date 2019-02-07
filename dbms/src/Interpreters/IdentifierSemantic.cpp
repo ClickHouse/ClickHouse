@@ -37,6 +37,12 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
     return {};
 }
 
+
+void IdentifierSemantic::setNeedLongName(ASTIdentifier & identifier, bool value)
+{
+    identifier.semantic->need_long_name = value;
+}
+
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
     if (identifier.name_parts.size() > 2)
@@ -97,10 +103,17 @@ void IdentifierSemantic::setColumnShortName(ASTIdentifier & identifier, size_t t
     identifier.name.swap(new_name);
 }
 
-void IdentifierSemantic::setColumnQualifiedName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
+void IdentifierSemantic::setColumnNormalName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
-    String prefix = db_and_table.getQualifiedNamePrefix();
-    identifier.name.insert(identifier.name.begin(), prefix.begin(), prefix.end());
+    size_t match = IdentifierSemantic::canReferColumnToTable(identifier, db_and_table);
+
+    setColumnShortName(identifier, match);
+
+    if (identifier.semantic->need_long_name)
+    {
+        String prefix = db_and_table.getQualifiedNamePrefix();
+        identifier.name.insert(identifier.name.begin(), prefix.begin(), prefix.end());
+    }
 }
 
 }
