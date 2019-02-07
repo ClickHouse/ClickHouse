@@ -8,45 +8,59 @@ ForkProcessor::Status ForkProcessor::prepare()
 {
     auto & input = inputs[0];
 
-    bool all_outputs_unneeded = true;
+    /// Check can output.
+
+    bool all_finished = true;
+    bool all_can_push = true;
 
     for (const auto & output : outputs)
     {
-        if (output.isNeeded())
+        if (!output.isFinished())
         {
-            all_outputs_unneeded = false;
-            if (output.hasData())
-                return Status::PortFull;
+            all_finished = false;
+
+            /// The order is important.
+            if (!output.canPush())
+                all_can_push = false;
         }
     }
 
-    if (all_outputs_unneeded)
+    if (all_finished)
+    {
+        input.close();
+        return Status::Finished;
+    }
+
+    if (!all_can_push)
     {
         input.setNotNeeded();
-        return Status::Unneeded;
+        return Status::PortFull;
+    }
+
+    /// Check can input.
+
+    if (input.isFinished())
+    {
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
     }
 
     input.setNeeded();
 
     if (!input.hasData())
-    {
-        if (input.isFinished())
-        {
-            input.setNotNeeded();
-            for (auto & output : outputs)
-                output.setFinished();
-            return Status::Finished;
-        }
-        else
-            return Status::NeedData;
-    }
+        return Status::NeedData;
+
+    /// Move data.
 
     auto data = input.pull();
 
     for (auto & output : outputs)
-        if (output.isNeeded())
-            output.push(data);
+        if (!output.isFinished())  /// Skip finished outputs.
+            output.push(data);  /// Can push because no full or unneeded outputs.
 
+    /// Now, we pulled from input. It must be empty.
     return Status::NeedData;
 }
 

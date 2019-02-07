@@ -17,6 +17,8 @@ private:
     size_t rows_read = 0; /// including the last read block
     bool always_read_till_end;
 
+    bool has_block = false;
+    bool block_processed = false;
     Block current_block;
 
 public:

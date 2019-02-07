@@ -6,74 +6,112 @@ namespace DB
 
 ResizeProcessor::Status ResizeProcessor::prepare()
 {
-    while (true)
+    auto cur_output = outputs.begin();
+    bool all_outs_full_or_unneeded = true;
+    bool all_outs_finished = true;
+
+    /// Find next output where can push.
+    auto get_next_out = [&, this]() -> OutputPorts::iterator
     {
-        bool all_outputs_full = true;
-        bool all_outputs_unneeded = true;
-
-        for (const auto & output : outputs)
+        while (cur_output != outputs.end())
         {
-            if (!output.hasData())
-                all_outputs_full = false;
+            if (!cur_output->isFinished())
+            {
+                all_outs_finished = false;
 
-            if (output.isNeeded())
-                all_outputs_unneeded = false;
+                if (cur_output->canPush())
+                {
+                    all_outs_full_or_unneeded = false;
+                    ++cur_output;
+                    return std::prev(cur_output);
+                }
+            }
+
+            ++cur_output;
         }
 
-        if (all_outputs_full)
-            return Status::PortFull;
+        return cur_output;
+    };
 
-        if (all_outputs_unneeded)
+    auto cur_input = inputs.begin();
+    bool all_inputs_finished = true;
+
+    /// Find next input from where can pull.
+    auto get_next_input = [&, this]() -> InputPorts::iterator
+    {
+        while (cur_input != inputs.end())
         {
-            for (auto & input : inputs)
-                input.setNotNeeded();
-
-            return Status::Unneeded;
-        }
-
-        bool all_inputs_finished = true;
-        bool all_inputs_have_no_data = true;
-
-        for (auto & input : inputs)
-        {
-            if (!input.isFinished())
+            if (!cur_input->isFinished())
             {
                 all_inputs_finished = false;
 
-                input.setNeeded();
-                if (input.hasData())
-                    all_inputs_have_no_data = false;
-            }
-        }
-
-        if (all_inputs_have_no_data)
-        {
-            if (all_inputs_finished)
-            {
-                for (auto & output : outputs)
-                    output.setFinished();
-                return Status::Finished;
-            }
-            else
-                return Status::NeedData;
-        }
-
-        for (auto & input : inputs)
-        {
-            if (input.hasData())
-            {
-                for (auto & output : outputs)
+                cur_input->setNeeded();
+                if (cur_input->hasData())
                 {
-                    if (!output.hasData())
-                    {
-                        output.push(input.pull());
-                        break;
-                    }
+                    ++cur_input;
+                    return std::prev(cur_input);
                 }
-                break;
             }
+
+            ++cur_input;
         }
+
+        return cur_input;
+    };
+
+    auto get_status_if_no_outputs = [&]() -> Status
+    {
+        if (all_outs_finished)
+        {
+            for (auto & in : inputs)
+                in.close();
+
+            return Status::Finished;
+        }
+
+        if (all_outs_full_or_unneeded)
+        {
+            for (auto & in : inputs)
+                in.setNotNeeded();
+
+            return Status::PortFull;
+        }
+
+        /// Now, we pushed to output, and it must be full.
+        return Status::PortFull;
+    };
+
+    auto get_status_if_no_inputs = [&]() -> Status
+    {
+        if (all_inputs_finished)
+        {
+            for (auto & out : outputs)
+                out.finish();
+
+            return Status::Finished;
+        }
+
+        return Status::NeedData;
+    };
+
+    while (cur_input != inputs.end() && cur_output != outputs.end())
+    {
+        auto output = get_next_out();
+        if (output == outputs.end())
+            return get_status_if_no_outputs();
+
+        auto input = get_next_input();
+        if (input == inputs.end())
+            return get_status_if_no_inputs();
+
+        output->push(input->pull());
     }
+
+    if (cur_output == outputs.end())
+        return get_status_if_no_outputs();
+
+    /// cur_input == inputs_end()
+    return get_status_if_no_inputs();
 }
 
 }

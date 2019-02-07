@@ -16,6 +16,7 @@ protected:
     OutputPort & output;
 
     Block current_block;
+    bool has_input = false;
     bool transformed = false;
 
     virtual void transform(Block & block) = 0;

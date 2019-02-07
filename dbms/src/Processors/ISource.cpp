@@ -13,20 +13,25 @@ ISource::Status ISource::prepare()
 {
     if (finished)
     {
-        output.setFinished();
+        output.finish();
         return Status::Finished;
     }
 
-    if (output.hasData())
+    /// Check can output.
+    if (output.isFinished())
+        return Status::Finished;
+
+    if (!output.canPush())
         return Status::PortFull;
 
-    if (!output.isNeeded())
-        return Status::Unneeded;
+    if (!has_input)
+        return Status::Ready;
 
-    if (current_block)
-        output.push(std::move(current_block));
+    output.push(std::move(current_block));
+    has_input = false;
 
-    return Status::Ready;
+    /// Now, we pushed to output, and it must be full.
+    return Status::PortFull;
 }
 
 void ISource::work()
@@ -34,6 +39,8 @@ void ISource::work()
     current_block = generate();
     if (!current_block)
         finished = true;
+    else
+        has_input = true;
 }
 
 }

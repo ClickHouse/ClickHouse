@@ -14,40 +14,66 @@ LimitTransform::LimitTransform(Block header, size_t limit, size_t offset, bool a
 
 LimitTransform::Status LimitTransform::prepare()
 {
-    if (current_block)
-    {
-        if (output.hasData())
-            return Status::PortFull;
+    /// Check can output.
 
-        output.push(std::move(current_block));
+    if (output.isFinished())
+    {
+        input.close();
+        return Status::Finished;
     }
 
-    if (rows_read >= offset + limit)
+    if (!output.canPush())
     {
-        output.setFinished();
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
+
+    /// Push block if can.
+    if (block_processed)
+    {
+        output.push(std::move(current_block));
+        has_block = false;
+        block_processed = false;
+    }
+
+    /// Check if we are done with pushing.
+    bool pushing_is_finished = rows_read >= offset + limit;
+    if (pushing_is_finished)
+    {
+        output.finish();
         if (!always_read_till_end)
         {
-            input.setNotNeeded();
+            input.close();
             return Status::Finished;
         }
     }
 
-    if (!output.isNeeded())
-        return Status::Unneeded;
+    /// Check can input.
+
+    if (input.isFinished())
+    {
+        output.finish();
+        return Status::Finished;
+    }
 
     input.setNeeded();
-
     if (!input.hasData())
         return Status::NeedData;
 
     current_block = input.pull();
+    has_block = true;
 
-    /// Skip block (for 'always_read_till_end' case)
-    if (rows_read >= offset + limit)
+    /// Skip block (for 'always_read_till_end' case).
+    if (pushing_is_finished)
     {
         current_block.clear();
+        has_block = false;
+
+        /// Now, we pulled from input, and it must be empty.
         return Status::NeedData;
     }
+
+    /// Process block.
 
     size_t rows = current_block.rows();
     rows_read += rows;
@@ -55,16 +81,21 @@ LimitTransform::Status LimitTransform::prepare()
     if (rows_read <= offset)
     {
         current_block.clear();
+        has_block = false;
+
+        /// Now, we pulled from input, and it must be empty.
         return Status::NeedData;
     }
 
-    /// return the whole block
+    /// Return the whole block.
     if (rows_read >= offset + rows && rows_read <= offset + limit)
     {
         if (output.hasData())
             return Status::PortFull;
 
         output.push(std::move(current_block));
+        has_block = false;
+
         return Status::NeedData;
     }
 
@@ -89,6 +120,8 @@ void LimitTransform::work()
 
     for (size_t i = 0; i < columns; ++i)
         current_block.getByPosition(i).column = current_block.getByPosition(i).column->cut(start, length);
+
+    block_processed = true;
 }
 
 }
