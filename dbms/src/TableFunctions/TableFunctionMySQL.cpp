@@ -79,7 +79,7 @@ DataTypePtr getDataType(const String & mysql_data_type, bool is_nullable, bool i
     else
         /// Also String is fallback for all unknown types.
         res = std::make_shared<DataTypeString>();
-    if(is_nullable)
+    if (is_nullable)
         res = std::make_shared<DataTypeNullable>(res);
     return res;
 }
