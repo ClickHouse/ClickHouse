@@ -188,6 +188,22 @@ struct ToStartOfFiveMinuteImpl
     using FactorTransform = ZeroTransform;
 };
 
+struct ToStartOfTenMinutesImpl
+{
+    static constexpr auto name = "toStartOfTenMinutes";
+
+    static inline UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toStartOfTenMinutes(t);
+    }
+    static inline UInt32 execute(UInt16, const DateLUTImpl &)
+    {
+        return dateIsNotSupported(name);
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToStartOfFifteenMinutesImpl
 {
     static constexpr auto name = "toStartOfFifteenMinutes";
