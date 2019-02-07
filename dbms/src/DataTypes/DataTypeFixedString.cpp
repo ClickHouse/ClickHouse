@@ -32,7 +32,7 @@ namespace ErrorCodes
 }
 
 
-std::string DataTypeFixedString::getName() const
+std::string DataTypeFixedString::doGetName() const
 {
     return "FixedString(" + toString(n) + ")";
 }

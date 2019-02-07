@@ -46,7 +46,7 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 ### SAMPLE Clause {#select-sample-clause}
 
-The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
+The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by the tables in the `MergeTree` family, and only if the sampling expression was specified during table creation (see the section [MergeTree engine](../operations/table_engines/mergetree.md)).
 
 `SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
 
@@ -80,6 +80,29 @@ A sample with a relative coefficient is "consistent": if we look at all possible
 
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
+**SAMPLE OFFSET**
+
+You can specify the `SAMPLE k OFFSET n` clause, where `k` and `n` are numbers from 0 to 1. Examples are shown below.
+
+Example 1.
+
+``` sql
+SAMPLE 1/10
+```
+
+In this example, the sample is the 1/10th of all data:
+
+`[++------------------]`
+
+Example 2.
+
+``` sql
+SAMPLE 1/10 OFFSET 1/2
+```
+
+Here, the sample of 10% is taken from the second half of data.
+
+`[----------++--------]`
 
 ### ARRAY JOIN Clause {#select-array-join-clause}
 
