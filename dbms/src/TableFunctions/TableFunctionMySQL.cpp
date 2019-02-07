@@ -159,7 +159,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
                 getDataType(
                     (*block.getByPosition(1).column)[i].safeGet<String>(),
                     (*block.getByPosition(2).column)[i].safeGet<UInt64>() 
-                         && context.getSettings().external_tables_use_nulls,
+                    && context.getSettings().external_tables_use_nulls,
                     (*block.getByPosition(3).column)[i].safeGet<UInt64>(),
                     (*block.getByPosition(4).column)[i].safeGet<UInt64>()));
 
