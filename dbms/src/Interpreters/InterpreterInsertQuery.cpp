@@ -1,10 +1,13 @@
 #include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <Common/typeid_cast.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/CountingBlockOutputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
@@ -139,6 +142,15 @@ BlockIO InterpreterInsertQuery::execute()
                 if (in_header.has(name_type.name))
                     throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
+    }
+    else if (query.data)
+    {
+        auto data_in = std::make_unique<ReadBufferFromMemory>(query.data, query.end - query.data);
+        res.in = context.getInputFormat("Values", *data_in, table->getSampleBlock(), context.getSettingsRef().max_insert_block_size);
+        res.in = std::make_shared<OwningBlockInputStream<ReadBufferFromMemory>>(res.in, std::move(data_in));
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
+
+        res.out = nullptr;
     }
 
     return res;
