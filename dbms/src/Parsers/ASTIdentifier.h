@@ -42,6 +42,13 @@ public:
         name_parts.clear();
     }
 
+    const String & shortName() const
+    {
+        if (!name_parts.empty())
+            return name_parts.back();
+        return name;
+    }
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;

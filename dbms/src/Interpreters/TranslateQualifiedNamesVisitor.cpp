@@ -50,25 +50,24 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data &
     return {};
 }
 
-std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr & ast, Data & data)
+std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, Data & data)
 {
     if (IdentifierSemantic::getColumnName(identifier))
     {
         size_t best_table_pos = 0;
         size_t best_match = 0;
         for (size_t i = 0; i < data.tables.size(); ++i)
-            if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, data.tables[i]))
+            if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, data.tables[i].first))
                 if (match > best_match)
                 {
                     best_match = match;
                     best_table_pos = i;
                 }
 
-        IdentifierSemantic::setColumnShortName(identifier, best_match);
-
         /// In case if column from the joined table are in source columns, change it's name to qualified.
-        if (best_table_pos && data.source_columns.count(ast->getColumnName()))
-            IdentifierSemantic::setColumnQualifiedName(identifier, data.tables[best_table_pos]);
+        if (best_table_pos && data.source_columns.count(identifier.shortName()))
+            IdentifierSemantic::setNeedLongName(identifier, true);
+        IdentifierSemantic::setColumnNormalName(identifier, data.tables[best_table_pos].first);
     }
 
     return {};
@@ -85,7 +84,7 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAs
     DatabaseAndTableWithAlias db_and_table(ident);
 
     for (const auto & known_table : data.tables)
-        if (db_and_table.satisfies(known_table, true))
+        if (db_and_table.satisfies(known_table.first, true))
             return {};
 
     throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
@@ -93,10 +92,11 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAs
 
 std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data &)
 {
-    /// Don't translate on_expression here in order to resolve equation parts later.
     std::vector<ASTPtr *> out;
     if (join.using_expression_list)
         out.push_back(&join.using_expression_list);
+    else if (join.on_expression)
+        out.push_back(&join.on_expression);
     return out;
 }
 
