@@ -54,8 +54,9 @@ NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & 
                         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
 }
 
-void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
-                     const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
+SetPtr makeExplicitSet(
+    const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
+    const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
 {
     const IAST & args = *node->arguments;
 
@@ -64,6 +65,21 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
 
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
+
+    const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
+
+    DataTypes set_element_types = {left_arg_type};
+    auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
+    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+        set_element_types = left_tuple_type->getElements();
+
+    for (auto & element_type : set_element_types)
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
+            element_type = low_cardinality_type->getDictionaryType();
+
+    auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
+    if (prepared_sets.count(set_key))
+        return prepared_sets.at(set_key); /// Already prepared.
 
     auto getTupleTypeFromAst = [&context](const ASTPtr & tuple_ast) -> DataTypePtr
     {
@@ -79,7 +95,6 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
         return evaluateConstantExpression(tuple_ast, context).second;
     };
 
-    const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
     const DataTypePtr & right_arg_type = getTupleTypeFromAst(right_arg);
 
     std::function<size_t(const DataTypePtr &)> getTupleDepth;
@@ -93,15 +108,6 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
 
     size_t left_tuple_depth = getTupleDepth(left_arg_type);
     size_t right_tuple_depth = getTupleDepth(right_arg_type);
-
-    DataTypes set_element_types = {left_arg_type};
-    auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
-    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
-        set_element_types = left_tuple_type->getElements();
-
-    for (auto & element_type : set_element_types)
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-            element_type = low_cardinality_type->getDictionaryType();
 
     ASTPtr elements_ast = nullptr;
 
@@ -131,7 +137,8 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
 
     SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set);
     set->createFromAST(set_element_types, elements_ast, context);
-    prepared_sets[right_arg->range] = std::move(set);
+    prepared_sets[set_key] = set;
+    return set;
 }
 
 static String getUniqueName(const Block & block, const String & prefix)
@@ -305,6 +312,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             return;
         }
 
+        SetPtr prepared_set;
         if (functionIsInOrGlobalInOperator(node->name))
         {
             /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
@@ -313,7 +321,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             if (!no_subqueries)
             {
                 /// Transform tuple or subquery into a set.
-                makeSet(node, actions_stack.getSampleBlock());
+                prepared_set = makeSet(node, actions_stack.getSampleBlock());
             }
             else
             {
@@ -349,7 +357,18 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             ? context.getQueryContext()
             : context;
 
-        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, function_context);
+        FunctionBuilderPtr function_builder;
+        try
+        {
+            function_builder = FunctionFactory::instance().get(node->name, function_context);
+        }
+        catch (DB::Exception & e)
+        {
+            auto hints = AggregateFunctionFactory::instance().getHints(node->name);
+            if (!hints.empty())
+                e.addMessage("Or unknown aggregate function " + node->name + ". Maybe you meant: " + toString(hints));
+            e.rethrow();
+        }
 
         Names argument_names;
         DataTypes argument_types;
@@ -380,23 +399,21 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 /// Select the name in the next cycle.
                 argument_names.emplace_back();
             }
-            else if (prepared_sets.count(child->range) && functionIsInOrGlobalInOperator(node->name) && arg == 1)
+            else if (functionIsInOrGlobalInOperator(node->name) && arg == 1 && prepared_set)
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
-                const SetPtr & set = prepared_sets[child->range];
-
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
-                if (!set->empty())
+                if (!prepared_set->empty())
                     column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
                 else
                     column.name = child_column_name;
 
                 if (!actions_stack.getSampleBlock().has(column.name))
                 {
-                    column.column = ColumnSet::create(1, set);
+                    column.column = ColumnSet::create(1, prepared_set);
 
                     actions_stack.addAction(ExpressionAction::addColumn(column));
                 }
@@ -522,7 +539,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
     }
 }
 
-void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_block)
+SetPtr ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_block)
 {
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
@@ -531,14 +548,14 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
     const IAST & args = *node->arguments;
     const ASTPtr & arg = args.children.at(1);
 
-    /// Already converted.
-    if (prepared_sets.count(arg->range))
-        return;
-
     /// If the subquery or table name for SELECT.
     const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(arg.get());
     if (typeid_cast<const ASTSubquery *>(arg.get()) || identifier)
     {
+        auto set_key = PreparedSetKey::forSubquery(*arg);
+        if (prepared_sets.count(set_key))
+            return prepared_sets.at(set_key);
+
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
@@ -549,11 +566,10 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
             if (table)
             {
                 StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
-
                 if (storage_set)
                 {
-                    prepared_sets[arg->range] = storage_set->getSet();
-                    return;
+                    prepared_sets[set_key] = storage_set->getSet();
+                    return storage_set->getSet();
                 }
             }
         }
@@ -566,8 +582,8 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
         /// If you already created a Set with the same subquery / table.
         if (subquery_for_set.set)
         {
-            prepared_sets[arg->range] = subquery_for_set.set;
-            return;
+            prepared_sets[set_key] = subquery_for_set.set;
+            return subquery_for_set.set;
         }
 
         SetPtr set = std::make_shared<Set>(set_size_limit, false);
@@ -612,12 +628,13 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
         }
 
         subquery_for_set.set = set;
-        prepared_sets[arg->range] = set;
+        prepared_sets[set_key] = set;
+        return set;
     }
     else
     {
         /// An explicit enumeration of values in parentheses.
-        makeExplicitSet(node, sample_block, false, context, set_size_limit, prepared_sets);
+        return makeExplicitSet(node, sample_block, false, context, set_size_limit, prepared_sets);
     }
 }
 

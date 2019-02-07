@@ -31,6 +31,11 @@ void ITableDeclaration::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
+void ITableDeclaration::setIndicesDescription(IndicesDescription indices_)
+{
+    indices = std::move(indices_);
+}
+
 
 bool ITableDeclaration::hasColumn(const String & column_name) const
 {

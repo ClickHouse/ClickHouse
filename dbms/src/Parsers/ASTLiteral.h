@@ -22,6 +22,8 @@ public:
 
     ASTPtr clone() const override { return std::make_shared<ASTLiteral>(*this); }
 
+    void updateTreeHashImpl(SipHash & hash_state) const override;
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {

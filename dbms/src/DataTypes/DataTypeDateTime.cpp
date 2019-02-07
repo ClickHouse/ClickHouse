@@ -6,6 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -25,7 +26,7 @@ DataTypeDateTime::DataTypeDateTime(const std::string & time_zone_name)
 {
 }
 
-std::string DataTypeDateTime::getName() const
+std::string DataTypeDateTime::doGetName() const
 {
     if (!has_explicit_time_zone)
         return "DateTime";
@@ -136,6 +137,11 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
         assertChar(maybe_quote, istr);
 
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
+}
+
+void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeDateTime(static_cast<const ColumnUInt32 &>(column).getData()[row_num]);
 }
 
 bool DataTypeDateTime::equals(const IDataType & rhs) const

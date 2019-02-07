@@ -8,6 +8,7 @@
 #include <mutex>
 #include <map>
 #include <IO/AIO.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -32,7 +33,7 @@ class AIOContextPool : public ext::singleton<AIOContextPool>
     std::map<ID, std::promise<BytesRead>> promises;
 
     std::atomic<bool> cancelled{false};
-    std::thread io_completion_monitor{&AIOContextPool::doMonitor, this};
+    ThreadFromGlobalPool io_completion_monitor{&AIOContextPool::doMonitor, this};
 
     ~AIOContextPool();
 

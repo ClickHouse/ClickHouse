@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataTypeDomain.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -7,7 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Common/StringUtils/StringUtils.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -73,21 +74,7 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
         return get("LowCardinality", low_cardinality_params);
     }
 
-    {
-        DataTypesDictionary::const_iterator it = data_types.find(family_name);
-        if (data_types.end() != it)
-            return it->second(parameters);
-    }
-
-    String family_name_lowercase = Poco::toLower(family_name);
-
-    {
-        DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
-        if (case_insensitive_data_types.end() != it)
-            return it->second(parameters);
-    }
-
-    throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
+    return findCreatorByName(family_name)(parameters);
 }
 
 
@@ -128,6 +115,49 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
     }, case_sensitiveness);
 }
 
+void DataTypeFactory::registerDataTypeDomain(const String & type_name, DataTypeDomainPtr domain, CaseSensitiveness case_sensitiveness)
+{
+    all_domains.reserve(all_domains.size() + 1);
+
+    auto data_type = get(type_name);
+    setDataTypeDomain(*data_type, *domain);
+
+    registerDataType(domain->getName(), [data_type](const ASTPtr & /*ast*/)
+    {
+        return data_type;
+    }, case_sensitiveness);
+
+    all_domains.emplace_back(std::move(domain));
+}
+
+const DataTypeFactory::Creator& DataTypeFactory::findCreatorByName(const String & family_name) const
+{
+    {
+        DataTypesDictionary::const_iterator it = data_types.find(family_name);
+        if (data_types.end() != it)
+            return it->second;
+    }
+
+    String family_name_lowercase = Poco::toLower(family_name);
+
+    {
+        DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
+        if (case_insensitive_data_types.end() != it)
+            return it->second;
+    }
+
+    auto hints = this->getHints(family_name);
+    if (!hints.empty())
+        throw Exception("Unknown data type family: " + family_name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_TYPE);
+    else
+        throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
+}
+
+void DataTypeFactory::setDataTypeDomain(const IDataType & data_type, const IDataTypeDomain & domain)
+{
+    data_type.setDomain(&domain);
+}
+
 void registerDataTypeNumbers(DataTypeFactory & factory);
 void registerDataTypeDecimal(DataTypeFactory & factory);
 void registerDataTypeDate(DataTypeFactory & factory);
@@ -144,6 +174,7 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
+void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 
 
 DataTypeFactory::DataTypeFactory()
@@ -164,6 +195,10 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
+    registerDataTypeDomainIPv4AndIPv6(*this);
 }
+
+DataTypeFactory::~DataTypeFactory()
+{}
 
 }

@@ -81,6 +81,9 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
+## insert_sample_with_metadata
+
+For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
 
 ## join_default_strictness
 
@@ -108,7 +111,7 @@ Blocks the size of `max_block_size` are not always loaded from the table. If it 
 
 Used for the same purpose as `max_block_size`, but it sets the recommended block size in bytes by adapting it to the number of rows in the block.
 However, the block size cannot be more than `max_block_size` rows.
-Disabled by default (set to 0). It only works when reading from MergeTree engines.
+By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
 
@@ -189,7 +192,7 @@ Disables lagging replicas for distributed queries. See "[Replication](../../oper
 
 Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
-Default value: 0 (off).
+Default value: 300.
 
 Used when performing `SELECT` from a distributed table that points to replicated tables.
 
@@ -202,7 +205,7 @@ The maximum number of query processing threads
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
 For example, if reading from a table, evaluating expressions with functions, filtering with WHERE and pre-aggregating for GROUP BY can all be done in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
 
-By default, 8.
+By default, 2.
 
 If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
 
@@ -243,11 +246,7 @@ The interval in microseconds for checking whether request execution has been can
 
 By default, 100,000 (check for canceling and send progress ten times per second).
 
-## connect_timeout
-
-## receive_timeout
-
-## send_timeout
+## connect_timeout, receive_timeout, send_timeout
 
 Timeouts in seconds on the socket used for communicating with the client.
 
@@ -263,7 +262,7 @@ By default, 10.
 
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
-By default, 100.
+By default, 1024.
 
 The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
 
@@ -271,7 +270,7 @@ The following parameters are only used when creating Distributed tables (and whe
 
 The maximum number of simultaneous connections with remote servers for distributed processing of all queries to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
-By default, 128.
+By default, 1024.
 
 ## connect_timeout_with_failover_ms
 
@@ -291,10 +290,9 @@ By default, 3.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 
-
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
-Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
+Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 1 (enabled).
 The uncompressed cache (only for tables in the MergeTree family) allows significantly reducing latency and increasing throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed; the least-used data is automatically deleted.
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically in order to save space for truly small queries. So you can keep the 'use_uncompressed_cache' setting always set to 1.
@@ -355,15 +353,8 @@ See the section "WITH TOTALS modifier".
 
 ## totals_auto_threshold
 
-The threshold for ` totals_mode = 'auto'`.
+The threshold for `totals_mode = 'auto'`.
 See the section "WITH TOTALS modifier".
-
-## default_sample
-
-Floating-point number from 0 to 1. By default, 1.
-Allows you to set the default sampling ratio for all SELECT queries.
-(For tables that do not support sampling, it throws an exception.)
-If set to 1, sampling is not performed by default.
 
 ## max_parallel_replicas
 
@@ -400,13 +391,11 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
-
 ## join_use_nulls
 
 Affects the behavior of [JOIN](../../query_language/select.md).
 
 With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
-
 
 ## insert_quorum
 

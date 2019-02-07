@@ -310,7 +310,6 @@ private:
         Range range;
         size_t key_column = 0;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
-        ASTPtr in_function;
         using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
@@ -320,7 +319,7 @@ private:
     using RPN = std::vector<RPNElement>;
     using ColumnIndices = std::map<String, size_t>;
 
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const ASTPtr & node)>;
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value)>;
 
 public:
     static const AtomMap atom_map;
@@ -363,21 +362,13 @@ private:
         Field & out_value,
         DataTypePtr & out_type);
 
-    void getKeyTuplePositionMapping(
-        const ASTPtr & node,
-        const Context & context,
-        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-        const size_t tuple_index,
-        size_t & out_key_column_num);
-
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
     bool tryPrepareSetIndex(
-        const ASTPtr & node,
+        const ASTs & args,
         const Context & context,
         RPNElement & out,
-        const SetPtr & prepared_set,
         size_t & out_key_column_num);
 
     RPN rpn;

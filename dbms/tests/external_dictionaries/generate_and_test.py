@@ -394,8 +394,8 @@ def generate_dictionaries(args):
             </source>
 
             <lifetime>
-                <min>0</min>
-                <max>0</max>
+                <min>5</min>
+                <max>15</max>
             </lifetime>
 
             <layout>

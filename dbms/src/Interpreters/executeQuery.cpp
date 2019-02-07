@@ -22,10 +22,12 @@
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
+#include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/executeQuery.h>
 #include "DNSCacheUpdater.h"
 
@@ -150,7 +152,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast;
-    size_t query_size;
+    const char * query_end;
 
     /// Don't limit the size of internal queries.
     size_t max_query_size = 0;
@@ -162,10 +164,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-        if (!(begin <= ast->range.first && ast->range.second <= end))
-            throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
-        query_size = ast->range.second - begin;
+        const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+        if (insert_query && insert_query->data)
+            query_end = insert_query->data;
+        else
+            query_end = end;
     }
     catch (...)
     {
@@ -180,7 +183,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    String query(begin, query_size);
+    /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+    String query(begin, query_end);
     BlockIO res;
 
     try
@@ -188,11 +192,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (!internal)
             logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
 
-        if (settings.allow_experimental_multiple_joins_emulation)
+        if (!internal && settings.allow_experimental_multiple_joins_emulation)
         {
             JoinToSubqueryTransformVisitor::Data join_to_subs_data;
             JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
             if (join_to_subs_data.done)
+                logQuery(queryToString(*ast), context);
+        }
+
+        if (!internal && settings.allow_experimental_cross_to_join_conversion)
+        {
+            CrossToInnerJoinVisitor::Data cross_to_inner;
+            CrossToInnerJoinVisitor(cross_to_inner).visit(ast);
+            if (cross_to_inner.done)
                 logQuery(queryToString(*ast), context);
         }
 
@@ -432,7 +444,8 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &)> set_content_type)
+    std::function<void(const String &)> set_content_type,
+    std::function<void(const String &)> set_query_id)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -496,6 +509,9 @@ void executeQuery(
                 ? *getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
+            if (ast_query_with_output && ast_query_with_output->settings_ast)
+                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
+
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
@@ -511,6 +527,9 @@ void executeQuery(
 
             if (set_content_type)
                 set_content_type(out->getContentType());
+
+            if (set_query_id)
+                set_query_id(context.getClientInfo().current_query_id);
 
             copyData(*streams.in, *out);
         }

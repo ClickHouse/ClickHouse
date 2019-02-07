@@ -86,7 +86,7 @@ public:
     }
 
     const char * getFamilyName() const override { return "Decimal"; }
-    std::string getName() const override;
+    std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeId<T>::value; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -100,7 +100,11 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+
     Field getDefault() const override;
+    bool canBePromoted() const override { return true; }
+    DataTypePtr promoteNumericType() const override;
     MutableColumnPtr createColumn() const override;
     bool equals(const IDataType & rhs) const override;
 
