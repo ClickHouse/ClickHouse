@@ -39,4 +39,38 @@ struct AIOContext : private boost::noncopyable
     ~AIOContext();
 };
 
+#elif defined(__FreeBSD__)
+
+#include <boost/noncopyable.hpp>
+#include <aio.h>
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
+
+typedef struct kevent io_event;
+typedef int aio_context_t;
+
+struct iocb {
+    struct aiocb aio;
+    long aio_data;
+};
+
+int io_setup(void);
+
+int io_destroy(void);
+
+/// last argument is an array of pointers technically speaking
+int io_submit(int ctx, long nr, struct iocb * iocbpp[]);
+
+int io_getevents(int ctx, long min_nr, long max_nr, struct kevent * events, struct timespec * timeout);
+
+
+struct AIOContext : private boost::noncopyable
+{
+    int ctx;
+
+    AIOContext(unsigned int nr_events = 128);
+    ~AIOContext();
+};
+
 #endif
