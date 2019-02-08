@@ -18,7 +18,7 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/kafka.xml'],
                                 with_kafka=True)
-kafka_id = instance.cluster.kafka_docker_id
+kafka_id = ''
 
 
 # Helpers
@@ -75,7 +75,9 @@ def  kafka_check_result(result):
 @pytest.fixture(scope="module")
 def kafka_cluster():
     try:
+        global kafka_id
         cluster.start()
+        kafka_id = instance.cluster.kafka_docker_id
         instance.query('CREATE DATABASE test')
 
         yield cluster
