@@ -1109,7 +1109,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     {
         if (data.hasNullKeyData())
         {
-            key_columns[0]->insert(Field()); /// Null
+            key_columns[0]->insertDefault();
 
             for (size_t i = 0; i < params.aggregates_size; ++i)
                 aggregate_functions[i]->insertResultInto(
@@ -1128,7 +1128,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
                 *final_aggregate_columns[i]);
     }
 
-    destroyImpl<Method>(data);      /// NOTE You can do better.
+    destroyImpl<Method>(data);
 }
 
 template <typename Method, typename Table>
@@ -1142,7 +1142,7 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
     {
         if (data.hasNullKeyData())
         {
-            key_columns[0]->insert(Field()); /// Null
+            key_columns[0]->insertDefault();
 
             for (size_t i = 0; i < params.aggregates_size; ++i)
                 aggregate_columns[i]->push_back(data.getNullKeyData() + offsets_of_aggregate_states[i]);
