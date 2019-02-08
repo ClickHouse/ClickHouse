@@ -38,10 +38,10 @@ std::string errnoToString(int code, int e)
 #endif
     {
         std::string tmp = std::to_string(code);
-        const char * code = tmp.c_str();
+        const char * code_str = tmp.c_str();
         const char * unknown_message = "Unknown error ";
         strcpy(buf, unknown_message);
-        strcpy(buf + strlen(unknown_message), code);
+        strcpy(buf + strlen(unknown_message), code_str);
     }
     return "errno: " + toString(e) + ", strerror: " + std::string(buf);
 #else
