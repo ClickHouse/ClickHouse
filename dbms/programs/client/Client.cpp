@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
+#include <ext/scope_guard.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
@@ -400,6 +401,7 @@ private:
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
 #if USE_READLINE
+            SCOPE_EXIT({ Suggest::instance().finalize(); });
             if (server_revision >= Suggest::MIN_SERVER_REVISION
                 && !config().getBool("disable_suggestion", false))
             {
