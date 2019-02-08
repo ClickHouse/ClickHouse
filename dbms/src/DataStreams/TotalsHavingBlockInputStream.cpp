@@ -127,10 +127,7 @@ Block TotalsHavingBlockInputStream::readImpl()
             expression->execute(finalized);
 
             size_t filter_column_pos = finalized.getPositionByName(filter_column_name);
-            ColumnPtr filter_column_ptr = finalized.safeGetByPosition(filter_column_pos).column;
-
-            if (ColumnPtr materialized = filter_column_ptr->convertToFullColumnIfConst())
-                filter_column_ptr = materialized;
+            ColumnPtr filter_column_ptr = finalized.safeGetByPosition(filter_column_pos).column->convertToFullColumnIfConst();
 
             FilterDescription filter_description(*filter_column_ptr);
 

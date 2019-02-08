@@ -17,7 +17,7 @@ void test(size_t data_size)
     std::vector<size_t> block_sizes = {56, 128, 513, 2048, 3055, 4097, 4096};
     for (size_t read_buffer_block_size : block_sizes)
     {
-        std::cout  << "block size " << read_buffer_block_size << std::endl;
+        std::cout << "block size " << read_buffer_block_size << std::endl;
         std::stringstream io;
         DB::WriteBufferFromOStream out_(io);
         DB::HashingWriteBuffer out(out_);
@@ -33,9 +33,7 @@ void test(size_t data_size)
         bool failed_to_read = false;
         for (size_t i = 0; i < data_size; ++i)
             if (read_buf[i] != vec[i])
-            {
                 failed_to_read = true;
-            }
 
         if (failed_to_read)
         {
@@ -47,9 +45,7 @@ void test(size_t data_size)
         }
 
         if (buf.getHash() != reference)
-        {
             FAIL("failed on data size " << data_size << " reading by blocks of size " << read_buffer_block_size);
-        }
         if (buf.getHash() != out.getHash())
             FAIL("Hash of HashingReadBuffer doesn't match with hash of HashingWriteBuffer on data size " << data_size << " reading by blocks of size " << read_buffer_block_size);
     }

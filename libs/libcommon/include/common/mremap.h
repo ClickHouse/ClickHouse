@@ -2,7 +2,7 @@
 
 #include <cstddef>
 #include <sys/types.h>
-#if !_MSC_VER
+#if !defined(_MSC_VER)
 #include <sys/mman.h>
 #endif
 

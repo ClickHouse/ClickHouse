@@ -124,13 +124,13 @@ public:
     template <typename... Args>
     EntryPtr insert(Args &&... args)
     {
-        std::lock_guard<std::mutex> lock{mutex};
+        std::lock_guard lock{mutex};
         return std::make_unique<Entry>(*this, merges.emplace(merges.end(), std::forward<Args>(args)...));
     }
 
     info_container_t get() const
     {
-        std::lock_guard<std::mutex> lock{mutex};
+        std::lock_guard lock{mutex};
         info_container_t res;
         for (const auto & merge_element : merges)
             res.emplace_back(merge_element.getInfo());
@@ -141,7 +141,7 @@ public:
 
 inline MergeListEntry::~MergeListEntry()
 {
-    std::lock_guard<std::mutex> lock{list.mutex};
+    std::lock_guard lock{list.mutex};
     list.merges.erase(it);
 }
 

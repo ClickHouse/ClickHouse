@@ -2,12 +2,13 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
+#include <Common/ThreadPool.h>
 
-
-class ThreadPool;
 
 namespace DB
 {
+
 class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
@@ -29,6 +30,8 @@ public:
     static ASTPtr formatColumns(const NamesAndTypesList & columns);
     static ASTPtr formatColumns(const ColumnsDescription & columns);
 
+    static ASTPtr formatIndices(const IndicesDescription & indices);
+
     void setDatabaseLoadingThreadpool(ThreadPool & thread_pool_)
     {
         thread_pool = &thread_pool_;
@@ -44,7 +47,7 @@ public:
         internal = internal_;
     }
 
-    /// Obtain information about columns, their types and default values, for case when columns in CREATE query is specified explicitly.
+    /// Obtain information about columns, their types, default values and column comments, for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context);
     /// Check that column types are allowed for usage in table according to settings.
     static void checkSupportedTypes(const ColumnsDescription & columns, const Context & context);

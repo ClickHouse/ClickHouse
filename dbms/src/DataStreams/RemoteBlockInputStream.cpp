@@ -45,7 +45,7 @@ RemoteBlockInputStream::RemoteBlockInputStream(
     create_multiplexed_connections = [this, connections, throttler]() mutable
     {
         return std::make_unique<MultiplexedConnections>(
-                std::move(connections), context.getSettingsRef(), throttler, append_extra_info);
+            std::move(connections), context.getSettingsRef(), throttler);
     };
 }
 
@@ -74,7 +74,7 @@ RemoteBlockInputStream::RemoteBlockInputStream(
             connections = pool->getMany(&current_settings, pool_mode);
 
         return std::make_unique<MultiplexedConnections>(
-                std::move(connections), current_settings, throttler, append_extra_info);
+            std::move(connections), current_settings, throttler);
     };
 }
 
@@ -86,11 +86,6 @@ RemoteBlockInputStream::~RemoteBlockInputStream()
       */
     if (established || isQueryPending())
         multiplexed_connections->disconnect();
-}
-
-void RemoteBlockInputStream::appendExtraInfo()
-{
-    append_extra_info = true;
 }
 
 void RemoteBlockInputStream::readPrefix()
@@ -109,13 +104,12 @@ void RemoteBlockInputStream::cancel(bool kill)
         return;
 
     {
-        std::lock_guard<std::mutex> lock(external_tables_mutex);
+        std::lock_guard lock(external_tables_mutex);
 
         /// Stop sending external data.
         for (auto & vec : external_tables_data)
             for (auto & elem : vec)
-                if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(elem.first.get()))
-                    stream->cancel(kill);
+                elem.first->cancel(kill);
     }
 
     if (!isQueryPending() || hasThrownException())
@@ -129,7 +123,7 @@ void RemoteBlockInputStream::sendExternalTables()
     size_t count = multiplexed_connections->size();
 
     {
-        std::lock_guard<std::mutex> lock(external_tables_mutex);
+        std::lock_guard lock(external_tables_mutex);
 
         external_tables_data.reserve(count);
 

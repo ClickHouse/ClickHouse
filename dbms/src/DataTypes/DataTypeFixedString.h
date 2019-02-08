@@ -64,6 +64,8 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override
@@ -82,6 +84,7 @@ public:
     size_t getSizeOfValueInMemory() const override { return n; }
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideLowCardinality() const override { return true; }
 };
 
 }

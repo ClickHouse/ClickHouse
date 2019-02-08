@@ -14,12 +14,12 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
     : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
     , out(out_)
 {
-    zstr.zalloc    = nullptr;
-    zstr.zfree     = nullptr;
-    zstr.opaque    = nullptr;
-    zstr.next_in   = nullptr;
-    zstr.avail_in  = 0;
-    zstr.next_out  = nullptr;
+    zstr.zalloc = nullptr;
+    zstr.zfree = nullptr;
+    zstr.opaque = nullptr;
+    zstr.next_in = nullptr;
+    zstr.avail_in = 0;
+    zstr.next_out = nullptr;
     zstr.avail_out = 0;
 
     int window_bits = 15;
@@ -93,12 +93,14 @@ void ZlibDeflatingWriteBuffer::finish()
         out.position() = out.buffer().end() - zstr.avail_out;
 
         if (rc == Z_STREAM_END)
+        {
+            finished = true;
             return;
+        }
+
         if (rc != Z_OK)
             throw Exception(std::string("deflate finish failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
-
-    finished = true;
 }
 
 }

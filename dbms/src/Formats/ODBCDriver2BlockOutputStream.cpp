@@ -27,33 +27,41 @@ void writeODBCString(WriteBuffer & out, const std::string & str)
     out.write(str.data(), str.size());
 }
 
-void ODBCDriver2BlockOutputStream::write(const Block & block)
+static void writeRow(const Block & block, size_t row_idx, WriteBuffer & out, const FormatSettings & format_settings, std::string & buffer)
 {
-    const size_t rows = block.rows();
-    const size_t columns = block.columns();
-    String text_value;
-
-    for (size_t i = 0; i < rows; ++i)
+    size_t columns = block.columns();
+    for (size_t column_idx = 0; column_idx < columns; ++column_idx)
     {
-        for (size_t j = 0; j < columns; ++j)
-        {
-            text_value.resize(0);
-            const ColumnWithTypeAndName & col = block.getByPosition(j);
+        buffer.clear();
+        const ColumnWithTypeAndName & col = block.getByPosition(column_idx);
 
-            if (col.column->isNullAt(i))
+        if (col.column->isNullAt(row_idx))
+        {
+            writeIntBinary(Int32(-1), out);
+        }
+        else
+        {
             {
-                writeIntBinary(Int32(-1), out);
+                WriteBufferFromString text_out(buffer);
+                col.type->serializeText(*col.column, row_idx, text_out, format_settings);
             }
-            else
-            {
-                {
-                    WriteBufferFromString text_out(text_value);
-                    col.type->serializeText(*col.column, i, text_out, format_settings);
-                }
-                writeODBCString(out, text_value);
-            }
+            writeODBCString(out, buffer);
         }
     }
+}
+
+void ODBCDriver2BlockOutputStream::write(const Block & block)
+{
+    String text_value;
+    const size_t rows = block.rows();
+    for (size_t i = 0; i < rows; ++i)
+        writeRow(block, i, out, format_settings, text_value);
+}
+
+void ODBCDriver2BlockOutputStream::writeSuffix()
+{
+    if (totals)
+        write(totals);
 }
 
 void ODBCDriver2BlockOutputStream::writePrefix()

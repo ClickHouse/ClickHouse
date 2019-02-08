@@ -4,7 +4,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
-
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
@@ -44,6 +45,10 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     input_buffer_contacenated = std::make_unique<ConcatReadBuffer>(buffers);
 
     res_stream = context.getInputFormat(format, *input_buffer_contacenated, streams.out->getHeader(), context.getSettings().max_insert_block_size);
+
+    auto columns_description = ColumnsDescription::loadFromContext(context, ast_insert_query->database, ast_insert_query->table);
+    if (columns_description && !columns_description->defaults.empty())
+        res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, columns_description->defaults, context);
 }
 
 }

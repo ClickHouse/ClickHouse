@@ -8,11 +8,12 @@
 
 #include <common/logger_useful.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
@@ -39,22 +40,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/** Union mode.
-  */
-enum class StreamUnionMode
-{
-    Basic = 0, /// take out blocks
-    ExtraInfo  /// take out blocks + additional information
-};
-
 /// Example of the handler.
 struct ParallelInputsHandler
 {
     /// Processing the data block.
     void onBlock(Block & /*block*/, size_t /*thread_num*/) {}
-
-    /// Processing the data block + additional information.
-    void onBlock(Block & /*block*/, BlockExtraInfo & /*extra_info*/, size_t /*thread_num*/) {}
 
     /// Called for each thread, when the thread has nothing else to do.
     /// Due to the fact that part of the sources has run out, and now there are fewer sources left than streams.
@@ -70,7 +60,7 @@ struct ParallelInputsHandler
 };
 
 
-template <typename Handler, StreamUnionMode mode = StreamUnionMode::Basic>
+template <typename Handler>
 class ParallelInputsProcessor
 {
 public:
@@ -107,8 +97,26 @@ public:
         active_threads = max_threads;
         threads.reserve(max_threads);
         auto thread_group = CurrentThread::getGroup();
-        for (size_t i = 0; i < max_threads; ++i)
-            threads.emplace_back([=] () { thread(thread_group, i); } );
+
+        try
+        {
+            for (size_t i = 0; i < max_threads; ++i)
+                threads.emplace_back([=] () { thread(thread_group, i); });
+        }
+        catch (...)
+        {
+            cancel(false);
+            wait();
+            if (active_threads)
+            {
+                active_threads = 0;
+                /// handler.onFinish() is supposed to be called from one of the threads when the number of
+                /// finished threads reaches max_threads. But since we weren't able to launch all threads,
+                /// we have to call onFinish() manually here.
+                handler.onFinish();
+            }
+            throw;
+        }
     }
 
     /// Ask all sources to stop earlier than they run out.
@@ -118,20 +126,17 @@ public:
 
         for (auto & input : inputs)
         {
-            if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*input))
+            try
             {
-                try
-                {
-                    child->cancel(kill);
-                }
-                catch (...)
-                {
-                    /** If you can not ask one or more sources to stop.
-                      * (for example, the connection is broken for distributed query processing)
-                      * - then do not care.
-                      */
-                    LOG_ERROR(log, "Exception while cancelling " << child->getName());
-                }
+                input->cancel(kill);
+            }
+            catch (...)
+            {
+                /** If you can not ask one or more sources to stop.
+                  * (for example, the connection is broken for distributed query processing)
+                  * - then do not care.
+                  */
+                LOG_ERROR(log, "Exception while cancelling " << input->getName());
             }
         }
     }
@@ -165,15 +170,9 @@ private:
         InputData(const BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
     };
 
-    void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num)
+    void publishPayload(Block & block, size_t thread_num)
     {
-        if constexpr (mode == StreamUnionMode::Basic)
-            handler.onBlock(block, thread_num);
-        else
-        {
-            BlockExtraInfo extra_info = stream->getBlockExtraInfo();
-            handler.onBlock(block, extra_info, thread_num);
-        }
+        handler.onBlock(block, thread_num);
     }
 
     void thread(ThreadGroupStatusPtr thread_group, size_t thread_num)
@@ -184,13 +183,14 @@ private:
         try
         {
             setThreadName("ParalInputsProc");
-            CurrentThread::attachTo(thread_group);
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
 
             while (!finish)
             {
                 InputData unprepared_input;
                 {
-                    std::lock_guard<std::mutex> lock(unprepared_inputs_mutex);
+                    std::lock_guard lock(unprepared_inputs_mutex);
 
                     if (unprepared_inputs.empty())
                         break;
@@ -202,7 +202,7 @@ private:
                 unprepared_input.in->readPrefix();
 
                 {
-                    std::lock_guard<std::mutex> lock(available_inputs_mutex);
+                    std::lock_guard lock(available_inputs_mutex);
                     available_inputs.push(unprepared_input);
                 }
             }
@@ -231,7 +231,7 @@ private:
                 {
                     additional_input_at_end->readPrefix();
                     while (Block block = additional_input_at_end->read())
-                        publishPayload(additional_input_at_end, block, thread_num);
+                        publishPayload(block, thread_num);
                 }
                 catch (...)
                 {
@@ -256,7 +256,7 @@ private:
 
             /// Select the next source.
             {
-                std::lock_guard<std::mutex> lock(available_inputs_mutex);
+                std::lock_guard lock(available_inputs_mutex);
 
                 /// If there are no free sources, then this thread is no longer needed. (But other threads can work with their sources.)
                 if (available_inputs.empty())
@@ -277,7 +277,7 @@ private:
 
                 /// If this source is not run out yet, then put the resulting block in the ready queue.
                 {
-                    std::lock_guard<std::mutex> lock(available_inputs_mutex);
+                    std::lock_guard lock(available_inputs_mutex);
 
                     if (block)
                     {
@@ -294,7 +294,7 @@ private:
                     break;
 
                 if (block)
-                    publishPayload(input.in, block, thread_num);
+                    publishPayload(block, thread_num);
             }
         }
     }
@@ -305,8 +305,8 @@ private:
 
     Handler & handler;
 
-    /// Streams.
-    using ThreadsData = std::vector<std::thread>;
+    /// Threads.
+    using ThreadsData = std::vector<ThreadFromGlobalPool>;
     ThreadsData threads;
 
     /** A set of available sources that are not currently processed by any thread.

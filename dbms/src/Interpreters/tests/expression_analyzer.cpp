@@ -20,6 +20,14 @@
 
 using namespace DB;
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int SYNTAX_ERROR;
+    }
+}
+
 struct TestEntry
 {
     String query;
@@ -31,7 +39,7 @@ struct TestEntry
     {
         ASTPtr ast = parse(query);
 
-        auto res =  SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
+        auto res = SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
         return checkAliases(*res);
     }
 
@@ -67,7 +75,7 @@ private:
         auto text = query.data();
         if (ASTPtr ast = tryParseQuery(parser, text, text + query.size(), message, false, "", false, 0))
             return ast;
-        throw Exception(message);
+        throw Exception(message, ErrorCodes::SYNTAX_ERROR);
     }
 };
 

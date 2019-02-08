@@ -324,9 +324,9 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
             result_column = execute<DateMap, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column));
         else if (which.isDateTime())
             result_column = execute<DateTimeMap, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
-        else if(which.isString())
+        else if (which.isString())
             result_column = execute<StringMap, ColumnString, false>(arrays, std::move(column));
-        else if(which.isFixedString())
+        else if (which.isFixedString())
             result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column));
         else
         {

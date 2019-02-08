@@ -53,7 +53,7 @@ private:
 
 
     mysqlxx::Pool pool;
-    const Context & context;
+    Context global_context;
 };
 
 }

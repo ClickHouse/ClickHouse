@@ -84,7 +84,7 @@ class InterserverIOHandler
 public:
     void addEndpoint(const String & name, InterserverIOEndpointPtr endpoint)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         bool inserted = endpoint_map.try_emplace(name, std::move(endpoint)).second;
         if (!inserted)
             throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
@@ -92,7 +92,7 @@ public:
 
     void removeEndpoint(const String & name)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         if (!endpoint_map.erase(name))
             throw Exception("No interserver IO endpoint named " + name, ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT);
     }
@@ -100,7 +100,7 @@ public:
     InterserverIOEndpointPtr getEndpoint(const String & name)
     try
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         return endpoint_map.at(name);
     }
     catch (...)

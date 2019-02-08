@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Common/Exception.h>
 #include <ext/size.h>
 
@@ -30,7 +29,7 @@ DataTypePtr FieldToDataType::operator() (const Null &) const
 
 DataTypePtr FieldToDataType::operator() (const UInt64 & x) const
 {
-    if (x <= std::numeric_limits<UInt8>::max())  return std::make_shared<DataTypeUInt8>();
+    if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
     if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
     if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
     return std::make_shared<DataTypeUInt64>();
@@ -43,7 +42,7 @@ DataTypePtr FieldToDataType::operator() (const UInt128 &) const
 
 DataTypePtr FieldToDataType::operator() (const Int64 & x) const
 {
-    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min())   return std::make_shared<DataTypeInt8>();
+    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
     if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min()) return std::make_shared<DataTypeInt16>();
     if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min()) return std::make_shared<DataTypeInt32>();
     return std::make_shared<DataTypeInt64>();

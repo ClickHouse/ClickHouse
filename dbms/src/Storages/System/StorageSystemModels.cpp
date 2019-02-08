@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModels.h>
-#include <Dictionaries/CatBoostModel.h>
+#include <Interpreters/CatBoostModel.h>
 namespace DB
 {
 

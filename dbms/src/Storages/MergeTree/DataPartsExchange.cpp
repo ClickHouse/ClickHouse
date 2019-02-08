@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -78,7 +79,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     try
     {
-        auto storage_lock = owned_storage->lockStructure(false, __PRETTY_FUNCTION__);
+        auto storage_lock = owned_storage->lockStructure(false);
 
         MergeTreeData::DataPartPtr part = findPart(part_name);
 
@@ -185,7 +186,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         creds.setPassword(password);
     }
 
-    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts, creds};
+    PooledReadWriteBufferFromHTTP in{
+        uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        {},
+        timeouts,
+        creds,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        data.settings.replicated_max_parallel_fetches_for_host
+    };
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
@@ -232,7 +241,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         readPODBinary(expected_hash, in);
 
         if (expected_hash != hashing_out.getHash())
-            throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path);
+            throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path,
+                ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt")

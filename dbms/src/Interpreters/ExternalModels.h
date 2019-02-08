@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Dictionaries/CatBoostModel.h>
+#include <Interpreters/CatBoostModel.h>
 #include <Interpreters/ExternalLoader.h>
 #include <common/logger_useful.h>
 #include <memory>

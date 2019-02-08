@@ -32,7 +32,7 @@ void setThreadName(const char * name)
 #else
     if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))
 #endif
-        DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)");
+        DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)", DB::ErrorCodes::PTHREAD_ERROR);
 }
 
 std::string getThreadName()
@@ -48,7 +48,7 @@ std::string getThreadName()
 //        throw DB::Exception("Cannot get thread name with pthread_get_name_np()", DB::ErrorCodes::PTHREAD_ERROR);
 #else
     if (0 != prctl(PR_GET_NAME, name.data(), 0, 0, 0))
-        DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)");
+        DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)", DB::ErrorCodes::PTHREAD_ERROR);
 #endif
 
     name.resize(std::strlen(name.data()));

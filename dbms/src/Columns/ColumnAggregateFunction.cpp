@@ -378,7 +378,7 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
       *  as we cannot legally compare pointers after last element + 1 of some valid memory region.
       *  Probably this will not work under UBSan.
       */
-    ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena);
+    ReadBufferFromMemory read_buffer(src_arena, std::numeric_limits<char *>::max() - src_arena - 1);
     func->deserialize(data.back(), read_buffer, &dst_arena);
 
     return read_buffer.position();

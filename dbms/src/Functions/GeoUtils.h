@@ -199,8 +199,8 @@ UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
     size += polygons.capacity() * sizeof(MultiPolygon);
     size += getPolygonAllocatedBytes(polygon);
 
-    for (const auto & polygon : polygons)
-        size += getMultiPolygonAllocatedBytes(polygon);
+    for (const auto & elem : polygons)
+        size += getMultiPolygonAllocatedBytes(elem);
 
     return size;
 }
@@ -312,24 +312,23 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
             return cell.half_planes[0].contains(x, y);
         case CellType::pairOfLinesSingleConvexPolygon:
             return cell.half_planes[0].contains(x, y) && cell.half_planes[1].contains(x, y);
-        case CellType::pairOfLinesDifferentPolygons:
+        case CellType::pairOfLinesDifferentPolygons: [[fallthrough]];
         case CellType::pairOfLinesSingleNonConvexPolygons:
             return cell.half_planes[0].contains(x, y) || cell.half_planes[1].contains(x, y);
         case CellType::complexPolygon:
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
-        default:
-            return false;
-
     }
+
+    __builtin_unreachable();
 }
 
 template <typename CoordinateType>
 typename PointInPolygonWithGrid<CoordinateType>::Distance
 PointInPolygonWithGrid<CoordinateType>::distance(
         const PointInPolygonWithGrid<CoordinateType>::Point & point,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & polygon)
+        const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
 {
-    const auto & outer = polygon.outer();
+    const auto & outer = poly.outer();
     Distance distance = 0;
     for (auto i : ext::range(0, outer.size() - 1))
     {
@@ -341,9 +340,9 @@ PointInPolygonWithGrid<CoordinateType>::distance(
 }
 
 template <typename CoordinateType>
-bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & polygon)
+bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
 {
-    const auto & outer = polygon.outer();
+    const auto & outer = poly.outer();
     /// Segment or point.
     if (outer.size() < 4)
         return false;

@@ -1,11 +1,10 @@
-<a name="table_functions-url"></a>
 
 # url
 
 `url(URL, format, structure)` - returns a table created from the `URL` with given
 `format` and `structure`.
 
-URL - HTTP or HTTPS server address, which can accept  `GET` and/or `POST` requests.
+URL - HTTP or HTTPS server address, which can accept `GET` and/or `POST` requests.
 
 format - [format](../../interfaces/formats.md#formats) of the data.
 

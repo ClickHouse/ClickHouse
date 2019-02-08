@@ -1,17 +1,15 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
-#include <Interpreters/Context.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTFunction.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
 {
 
-/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
-/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
+class Context;
+class ASTSubquery;
+class ASTFunction;
+struct ASTTableExpression;
 
 /** Replace subqueries that return exactly one row
     * ("scalar" subqueries) to the corresponding constants.
@@ -29,51 +27,25 @@ namespace DB
     * Scalar subqueries are executed on the request-initializer server.
     * The request is sent to remote servers with already substituted constants.
     */
-class ExecuteScalarSubqueriesVisitor
+class ExecuteScalarSubqueriesMatcher
 {
 public:
-    ExecuteScalarSubqueriesVisitor(const Context & context_, size_t subquery_depth_, std::ostream * ostr_ = nullptr)
-    :   context(context_),
-        subquery_depth(subquery_depth_),
-        visit_depth(0),
-        ostr(ostr_)
-    {}
-
-    void visit(ASTPtr & ast) const
+    struct Data
     {
-        if (!tryVisit<ASTSubquery>(ast) &&
-            !tryVisit<ASTTableExpression>(ast) &&
-            !tryVisit<ASTFunction>(ast))
-            visitChildren(ast);
-    }
+        const Context & context;
+        size_t subquery_depth;
+    };
+
+    static constexpr const char * label = "ExecuteScalarSubqueries";
+
+    static bool needChildVisit(ASTPtr & node, const ASTPtr &);
+    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
 
 private:
-    const Context & context;
-    size_t subquery_depth;
-    mutable size_t visit_depth;
-    std::ostream * ostr;
-
-    void visit(const ASTSubquery & subquery, ASTPtr & ast) const;
-    void visit(const ASTFunction & func, ASTPtr & ast) const;
-    void visit(const ASTTableExpression &, ASTPtr &) const;
-
-    void visitChildren(ASTPtr & ast) const
-    {
-        for (auto & child : ast->children)
-            visit(child);
-    }
-
-    template <typename T>
-    bool tryVisit(ASTPtr & ast) const
-    {
-        if (const T * t = typeid_cast<const T *>(ast.get()))
-        {
-            DumpASTNode dump(*ast, ostr, visit_depth, "executeScalarSubqueries");
-            visit(*t, ast);
-            return true;
-        }
-        return false;
-    }
+    static void visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data);
+    static std::vector<ASTPtr *> visit(const ASTFunction & func, ASTPtr & ast, Data & data);
 };
+
+using ExecuteScalarSubqueriesVisitor = InDepthNodeVisitor<ExecuteScalarSubqueriesMatcher, true>;
 
 }

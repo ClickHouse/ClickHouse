@@ -27,6 +27,9 @@ if (HAVE_SSE41)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
+if (ARCH_PPC64LE)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+endif ()
 
 # gcc -dM -E -msse4.2 - < /dev/null | sort > gcc-dump-sse42
 #define __SSE4_2__ 1
@@ -45,6 +48,38 @@ if (HAVE_SSE42)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
+set (TEST_FLAG "-mssse3")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+check_cxx_source_compiles("
+    #include <tmmintrin.h>
+    int main() {
+        __m64 a = _mm_abs_pi8(__m64());
+        (void)a;
+        return 0;
+    }
+" HAVE_SSSE3)
+
+set (TEST_FLAG "-mavx")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+check_cxx_source_compiles("
+    #include <immintrin.h>
+    int main() {
+        auto a = _mm256_insert_epi8(__m256i(), 0, 0);
+        (void)a;
+        return 0;
+    }
+" HAVE_AVX)
+
+set (TEST_FLAG "-mavx2")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+check_cxx_source_compiles("
+    #include <immintrin.h>
+    int main() {
+        auto a = _mm256_add_epi16(__m256i(), __m256i());
+        (void)a;
+        return 0;
+    }
+" HAVE_AVX2)
 
 # gcc -dM -E -mpopcnt - < /dev/null | sort > gcc-dump-popcnt
 #define __POPCNT__ 1
@@ -65,5 +100,3 @@ if (HAVE_POPCNT AND NOT ARCH_AARCH64)
 endif ()
 
 cmake_pop_check_state ()
-
-# TODO: add here sse3 test if you want use it

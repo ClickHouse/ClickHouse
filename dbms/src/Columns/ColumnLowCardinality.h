@@ -73,8 +73,6 @@ public:
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions);
 
     void insertData(const char * pos, size_t length) override;
-    void insertDataWithTerminatingZero(const char * pos, size_t length) override;
-
 
     void popBack(size_t n) override { idx.popBack(n); }
 
@@ -135,7 +133,7 @@ public:
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
-    bool isFixedAndContiguous() const override { return getDictionary().isFixedAndContiguous(); }
+    bool isFixedAndContiguous() const override { return false; }
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }

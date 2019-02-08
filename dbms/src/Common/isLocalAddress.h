@@ -22,7 +22,7 @@ namespace DB
      * - only the first address is taken for each network interface;
      * - the routing rules that affect which network interface we go to the specified address are not checked.
      */
-    bool isLocalAddress(const Poco::Net::SocketAddress  & address, UInt16 clickhouse_port);
+    bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port);
 
     bool isLocalAddress(const Poco::Net::SocketAddress & address);
 

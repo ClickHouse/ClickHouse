@@ -25,13 +25,13 @@ using MergeTreeBlockSizePredictorPtr = std::unique_ptr<MergeTreeBlockSizePredict
 NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData::DataPartPtr & part, Names & columns);
 
 
-/// A batch of work for MergeTreeThreadBlockInputStream
+/// A batch of work for MergeTreeThreadSelectBlockInputStream
 struct MergeTreeReadTask
 {
     /// data part which should be read while performing this task
     MergeTreeData::DataPartPtr data_part;
     /** Ranges to read from `data_part`.
-     *    Specified in reverse order for MergeTreeThreadBlockInputStream's convenience of calling .pop_back(). */
+     *    Specified in reverse order for MergeTreeThreadSelectBlockInputStream's convenience of calling .pop_back(). */
     MarkRanges mark_ranges;
     /// for virtual `part_index` virtual column
     size_t part_index_in_query;

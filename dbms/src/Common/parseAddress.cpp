@@ -1,7 +1,7 @@
 #include <Common/parseAddress.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 
 
 namespace DB

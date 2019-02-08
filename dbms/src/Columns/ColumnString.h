@@ -19,7 +19,7 @@ namespace DB
 class ColumnString final : public COWPtrHelper<IColumn, ColumnString>
 {
 public:
-    using Chars_t = PaddedPODArray<UInt8>;
+    using Chars = PaddedPODArray<UInt8>;
 
 private:
     friend class COWPtrHelper<IColumn, ColumnString>;
@@ -29,12 +29,12 @@ private:
 
     /// Bytes of strings, placed contiguously.
     /// For convenience, every string ends with terminating zero byte. Note that strings could contain zero bytes in the middle.
-    Chars_t chars;
+    Chars chars;
 
-    size_t ALWAYS_INLINE offsetAt(size_t i) const { return i == 0 ? 0 : offsets[i - 1]; }
+    size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[i - 1]; }
 
     /// Size of i-th element, including terminating zero.
-    size_t ALWAYS_INLINE sizeAt(size_t i) const { return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
+    size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
 
     template <bool positive>
     struct less;
@@ -153,12 +153,14 @@ public:
         const size_t new_size = old_size + length + 1;
 
         chars.resize(new_size);
-        memcpy(&chars[old_size], pos, length);
+        if (length)
+            memcpy(&chars[old_size], pos, length);
         chars[old_size + length] = 0;
         offsets.push_back(new_size);
     }
 
-    void insertDataWithTerminatingZero(const char * pos, size_t length) override
+    /// Like getData, but inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
+    void insertDataWithTerminatingZero(const char * pos, size_t length)
     {
         const size_t old_size = chars.size();
         const size_t new_size = old_size + length;
@@ -202,7 +204,7 @@ public:
     void insertDefault() override
     {
         chars.push_back(0);
-        offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
+        offsets.push_back(offsets.back() + 1);
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
@@ -245,8 +247,8 @@ public:
     bool canBeInsideNullable() const override { return true; }
 
 
-    Chars_t & getChars() { return chars; }
-    const Chars_t & getChars() const { return chars; }
+    Chars & getChars() { return chars; }
+    const Chars & getChars() const { return chars; }
 
     Offsets & getOffsets() { return offsets; }
     const Offsets & getOffsets() const { return offsets; }

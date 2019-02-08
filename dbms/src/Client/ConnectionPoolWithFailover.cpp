@@ -203,7 +203,7 @@ ConnectionPoolWithFailover::tryGetEntry(
             LOG_TRACE(
                     log, "Server " << result.entry->getDescription() << " has unacceptable replica delay "
                     << "for table " << table_to_check->database << "." << table_to_check->table
-                    << ": "  << delay);
+                    << ": " << delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
         }
     }

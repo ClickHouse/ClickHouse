@@ -10,12 +10,12 @@
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
     #include <smmintrin.h>
 #endif
 
@@ -77,7 +77,7 @@ DefineStringRef(StringRef_Compare16_1_byMemcmp)
 DefineStringRef(StringRef_Compare16_1_byUInt64_logicAnd)
 DefineStringRef(StringRef_Compare16_1_byUInt64_bitAnd)
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
 DefineStringRef(StringRef_Compare16_1_byIntSSE)
 DefineStringRef(StringRef_Compare16_1_byFloatSSE)
 DefineStringRef(StringRef_Compare16_1_bySSE4)
@@ -196,7 +196,7 @@ inline bool compare_byUInt64_bitAnd(const char * p1, const char * p2)
          & (reinterpret_cast<const UInt64 *>(p1)[1] == reinterpret_cast<const UInt64 *>(p2)[1]);
 }
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
 
 inline bool compare_byIntSSE(const char * p1, const char * p2)
 {
@@ -247,24 +247,24 @@ inline bool memequal(const char * p1, const char * p2, size_t size)
         case 12: if (reinterpret_cast<const UInt32 *>(p1)[2] == reinterpret_cast<const UInt32 *>(p2)[2]) goto l8; else return false;
         case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
         case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
-        case 9:  if (p1[8] != p2[8]) return false;
+        case 9: if (p1[8] != p2[8]) return false;
     l8: [[fallthrough]];
-        case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
-        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
-        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
-        case 4:  return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
-        case 2:  return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
-        case 0:  break;
+        case 8: return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
+        case 7: if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6: if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5: if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4: return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
+        case 3: if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2: return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
+        case 1: if (p1[0] != p2[0]) return false; [[fallthrough]];
+        case 0: break;
     }
 
     return true;
 }
 
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
 
 inline bool memequal_sse41(const char * p1, const char * p2, size_t size)
 {
@@ -303,17 +303,17 @@ inline bool memequal_sse41(const char * p1, const char * p2, size_t size)
         case 12: if (reinterpret_cast<const UInt32 *>(p1)[2] == reinterpret_cast<const UInt32 *>(p2)[2]) goto l8; else return false;
         case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
         case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
-        case 9:  if (p1[8] != p2[8]) return false;
+        case 9: if (p1[8] != p2[8]) return false;
     l8: [[fallthrough]];
-        case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
-        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
-        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
-        case 4:  return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
-        case 2:  return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
-        case 0:  break;
+        case 8: return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
+        case 7: if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6: if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5: if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4: return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
+        case 3: if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2: return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
+        case 1: if (p1[0] != p2[0]) return false; [[fallthrough]];
+        case 0: break;
     }
 
     return true;
@@ -433,17 +433,17 @@ inline bool memequal_sse41_wide(const char * p1, const char * p2, size_t size)
         case 12: if (reinterpret_cast<const UInt32 *>(p1)[2] == reinterpret_cast<const UInt32 *>(p2)[2]) goto l8; else return false;
         case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
         case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
-        case 9:  if (p1[8] != p2[8]) return false;
+        case 9: if (p1[8] != p2[8]) return false;
     l8: [[fallthrough]];
-        case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
-        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
-        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
-        case 4:  return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
-        case 2:  return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
-        case 0:  break;
+        case 8: return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
+        case 7: if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6: if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5: if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4: return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
+        case 3: if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2: return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
+        case 1: if (p1[0] != p2[0]) return false; [[fallthrough]];
+        case 0: break;
     }
 
     return true;
@@ -485,17 +485,17 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
         case 12: if (reinterpret_cast<const UInt32 *>(p1)[2] == reinterpret_cast<const UInt32 *>(p2)[2]) goto l8; else return false;
         case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
         case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
-        case 9:  if (p1[8] != p2[8]) return false;
+        case 9: if (p1[8] != p2[8]) return false;
     l8: [[fallthrough]];
-        case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
-        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
-        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
-        case 4:  return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
-        case 2:  return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
-        case 0:  break;
+        case 8: return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
+        case 7: if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6: if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5: if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4: return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
+        case 3: if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2: return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
+        case 1: if (p1[0] != p2[0]) return false; [[fallthrough]];
+        case 0: break;
     }
 
     return true;
@@ -520,7 +520,7 @@ Op(byMemcmp)
 Op(byUInt64_logicAnd)
 Op(byUInt64_bitAnd)
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
 
 Op(byIntSSE)
 Op(byFloatSSE)
@@ -654,7 +654,7 @@ int main(int argc, char ** argv)
     if (!m || m == 5) bench<StringRef_Compare16_1_byMemcmp>         (data, "StringRef_Compare16_1_byMemcmp");
     if (!m || m == 6) bench<StringRef_Compare16_1_byUInt64_logicAnd>(data, "StringRef_Compare16_1_byUInt64_logicAnd");
     if (!m || m == 7) bench<StringRef_Compare16_1_byUInt64_bitAnd>  (data, "StringRef_Compare16_1_byUInt64_bitAnd");
-#if __SSE4_1__
+#ifdef __SSE4_1__
     if (!m || m == 8) bench<StringRef_Compare16_1_byIntSSE>         (data, "StringRef_Compare16_1_byIntSSE");
     if (!m || m == 9) bench<StringRef_Compare16_1_byFloatSSE>       (data, "StringRef_Compare16_1_byFloatSSE");
     if (!m || m == 10) bench<StringRef_Compare16_1_bySSE4>          (data, "StringRef_Compare16_1_bySSE4");

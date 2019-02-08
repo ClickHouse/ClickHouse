@@ -52,7 +52,7 @@ public:
 
     String getDataPath() const override { return full_path(); }
 
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
 private:
     String path;

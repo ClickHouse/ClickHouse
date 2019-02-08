@@ -130,9 +130,6 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
 
     factory.registerFunction("uniqExact",
         createAggregateFunctionUniq<true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactData<String>>);
-
-    factory.registerFunction("uniqCombined",
-        createAggregateFunctionUniq<false, AggregateFunctionUniqCombinedData, AggregateFunctionUniqCombinedData<UInt64>>);
 }
 
 }

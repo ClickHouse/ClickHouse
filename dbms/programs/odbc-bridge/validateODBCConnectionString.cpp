@@ -2,7 +2,7 @@
 #include <cstring>
 #include <algorithm>
 #include <Poco/String.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include "validateODBCConnectionString.h"
@@ -22,7 +22,7 @@ std::string validateODBCConnectionString(const std::string & connection_string)
     /// Connection string is a list of name, value pairs.
     /// name and value are separated by '='.
     /// names are case insensitive.
-    /// name=value pairs are sepated by ';'.
+    /// name=value pairs are separated by ';'.
     /// ASCII whitespace characters are skipped before and after delimiters.
     /// value may be optionally enclosed by {}
     /// in enclosed value, } is escaped as }}.

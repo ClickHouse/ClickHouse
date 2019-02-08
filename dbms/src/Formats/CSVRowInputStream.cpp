@@ -111,7 +111,7 @@ void CSVRowInputStream::readPrefix()
 }
 
 
-bool CSVRowInputStream::read(MutableColumns & columns)
+bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     if (istr.eof())
         return false;

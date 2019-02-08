@@ -5,7 +5,7 @@
 
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataStreams/MarkInCompressedFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <Common/CurrentMetrics.h>
 
@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_MARK;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
@@ -29,12 +30,13 @@ namespace ErrorCodes
 namespace
 {
 
-/** To read and checksum single stream (a pair of .bin, .mrk files) for a single column.
+/** To read and checksum single stream (a pair of .bin, .mrk files) for a single column or secondary index.
   */
 class Stream
 {
 public:
     String base_name;
+    String bin_file_ext;
     String bin_file_path;
     String mrk_file_path;
 private:
@@ -49,10 +51,11 @@ private:
 public:
     HashingReadBuffer mrk_hashing_buf;
 
-    Stream(const String & path, const String & base_name)
+    Stream(const String & path, const String & base_name, const String & bin_file_ext = ".bin")
         :
         base_name(base_name),
-        bin_file_path(path + base_name + ".bin"),
+        bin_file_ext(bin_file_ext),
+        bin_file_path(path + base_name + bin_file_ext),
         mrk_file_path(path + base_name + ".mrk"),
         file_buf(bin_file_path),
         compressed_hashing_buf(file_buf),
@@ -117,7 +120,7 @@ public:
 
     void saveChecksums(MergeTreeData::DataPart::Checksums & checksums)
     {
-        checksums.files[base_name + ".bin"] = MergeTreeData::DataPart::Checksums::Checksum(
+        checksums.files[base_name + bin_file_ext] = MergeTreeData::DataPart::Checksums::Checksum(
             compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
             uncompressed_hashing_buf.count(), uncompressed_hashing_buf.getHash());
 
@@ -134,6 +137,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     size_t index_granularity,
     bool require_checksums,
     const DataTypes & primary_key_data_types,
+    const MergeTreeIndices & indices,
     std::function<bool()> is_cancelled)
 {
     Logger * log = &Logger::get("checkDataPart");
@@ -238,6 +242,48 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         rows = count;
     }
 
+    /// Read and check skip indices.
+    for (const auto & index : indices)
+    {
+        Stream stream(path, index->getFileName(), ".idx");
+        size_t mark_num = 0;
+
+        while (!stream.uncompressed_hashing_buf.eof())
+        {
+            if (stream.mrk_hashing_buf.eof())
+                throw Exception("Unexpected end of mrk file while reading index " + index->name,
+                                ErrorCodes::CORRUPTED_DATA);
+            try
+            {
+                stream.assertMark();
+            }
+            catch (Exception &e)
+            {
+                e.addMessage("Cannot read mark " + toString(mark_num)
+                             + " in file " + stream.mrk_file_path
+                             + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+                throw;
+            }
+            try
+            {
+                index->createIndexGranule()->deserializeBinary(stream.uncompressed_hashing_buf);
+            }
+            catch (Exception &e)
+            {
+                e.addMessage("Cannot read granule " + toString(mark_num)
+                          + " in file " + stream.bin_file_path
+                          + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+                throw;
+            }
+            ++mark_num;
+            if (is_cancelled())
+                return {};
+        }
+
+        stream.assertEnd();
+        stream.saveChecksums(checksums_data);
+    }
+
     /// Read all columns, calculate checksums and validate marks.
     for (const NameAndTypePair & name_type : columns)
     {
@@ -285,7 +331,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                 auto stream_it = streams.find(file_name);
                 if (stream_it == streams.end())
-                    throw Exception("Logical error: cannot find stream " + file_name);
+                    throw Exception("Logical error: cannot find stream " + file_name, ErrorCodes::LOGICAL_ERROR);
                 return &stream_it->second.uncompressed_hashing_buf;
             };
 
@@ -319,7 +365,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                 auto stream_it = streams.find(file_name);
                 if (stream_it == streams.end())
-                    throw Exception("Logical error: cannot find stream " + file_name);
+                    throw Exception("Logical error: cannot find stream " + file_name, ErrorCodes::LOGICAL_ERROR);
 
                 stream_it->second.assertEnd();
                 stream_it->second.saveChecksums(checksums_data);

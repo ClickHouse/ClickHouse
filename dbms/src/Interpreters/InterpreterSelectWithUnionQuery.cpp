@@ -213,7 +213,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     }
     else
     {
-        result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, settings.max_threads);
+        result_stream = std::make_shared<UnionBlockInputStream>(nested_streams, nullptr, settings.max_threads);
         nested_streams.clear();
     }
 

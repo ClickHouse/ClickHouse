@@ -15,11 +15,8 @@ String ExpressionBlockInputStream::getName() const { return "Expression"; }
 
 Block ExpressionBlockInputStream::getTotals()
 {
-    if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
-    {
-        totals = child->getTotals();
-        expression->executeOnTotals(totals);
-    }
+    totals = children.back()->getTotals();
+    expression->executeOnTotals(totals);
 
     return totals;
 }
@@ -27,7 +24,7 @@ Block ExpressionBlockInputStream::getTotals()
 Block ExpressionBlockInputStream::getHeader() const
 {
     Block res = children.back()->getHeader();
-    expression->execute(res);
+    expression->execute(res, true);
     return res;
 }
 

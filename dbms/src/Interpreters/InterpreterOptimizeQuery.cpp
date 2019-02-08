@@ -23,7 +23,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context, {ast.database});
 
     StoragePtr table = context.getTable(ast.database, ast.table);
-    auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
+    auto table_lock = table->lockStructure(true);
     table->optimize(query_ptr, ast.partition, ast.final, ast.deduplicate, context);
     return {};
 }

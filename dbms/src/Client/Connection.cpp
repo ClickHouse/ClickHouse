@@ -2,8 +2,8 @@
 
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
@@ -21,12 +21,12 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
+#include <Compression/CompressionFactory.h>
 
 #include <Common/config.h>
 #if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
-
 
 namespace CurrentMetrics
 {
@@ -56,7 +56,7 @@ void Connection::connect()
             disconnect();
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user
-        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed") );
+        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
 
         if (static_cast<bool>(secure))
         {
@@ -108,14 +108,14 @@ void Connection::connect()
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -354,7 +354,19 @@ void Connection::sendQuery(
     if (!connected)
         connect();
 
-    compression_settings = settings ? CompressionSettings(*settings) : CompressionSettings(CompressionMethod::LZ4);
+    if (settings)
+    {
+        std::optional<int> level;
+        std::string method = settings->network_compression_method;
+
+        /// Bad custom logic
+        if (method == "ZSTD")
+            level = settings->network_zstd_compression_level;
+
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
+    }
+    else
+        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
 
@@ -427,7 +439,7 @@ void Connection::sendData(const Block & block, const String & name)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_settings);
+            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_codec);
         else
             maybe_compressed_out = out;
 
@@ -604,6 +616,10 @@ Connection::Packet Connection::receivePacket()
                 res.block = receiveLogData();
                 return res;
 
+            case Protocol::Server::TableColumns:
+                res.multistring_message = receiveMultistringMessage(res.type);
+                return res;
+
             case Protocol::Server::EndOfStream:
                 return res;
 
@@ -696,7 +712,7 @@ void Connection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(resolved_address.port());
-    auto ip_address =  resolved_address.host().toString();
+    auto ip_address = resolved_address.host().toString();
 
     if (host != ip_address)
         description += ", " + ip_address;
@@ -710,6 +726,16 @@ std::unique_ptr<Exception> Connection::receiveException()
     Exception e;
     readException(e, *in, "Received from " + getDescription());
     return std::unique_ptr<Exception>{ e.clone() };
+}
+
+
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+{
+    size_t num = Protocol::Server::stringsInMessage(msg_type);
+    std::vector<String> strings(num);
+    for (size_t i = 0; i < num; ++i)
+        readStringBinary(strings[i], *in);
+    return strings;
 }
 
 
@@ -730,14 +756,6 @@ BlockStreamProfileInfo Connection::receiveProfileInfo()
     return profile_info;
 }
 
-void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
-{
-    info.is_valid = true;
-    info.host = host;
-    info.resolved_address = getResolvedAddress().toString();
-    info.port = port;
-    info.user = user;
-}
 
 void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
 {

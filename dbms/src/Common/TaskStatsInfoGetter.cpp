@@ -80,11 +80,6 @@ struct NetlinkMessage
         ::nlmsgerr error;
     };
 
-    size_t payload_size() const
-    {
-        return header.nlmsg_len - sizeof(header) - sizeof(generic_header);
-    }
-
     const Attribute * end() const
     {
         return reinterpret_cast<const Attribute *>(reinterpret_cast<const char *>(this) + header.nlmsg_len);
@@ -155,7 +150,7 @@ NetlinkMessage query(
     request.generic_header.version = 1;
 
     request.payload.attribute.header.nla_type = attribute_type;
-    request.payload.attribute.header.nla_len = attribute_size + 1 + NLA_HDRLEN;
+    request.payload.attribute.header.nla_len = attribute_size + NLA_HDRLEN;
 
     memcpy(&request.payload.attribute.payload, attribute_data, attribute_size);
 

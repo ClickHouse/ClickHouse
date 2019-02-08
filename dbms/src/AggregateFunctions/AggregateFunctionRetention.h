@@ -86,7 +86,7 @@ public:
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        events_size = arguments.size();
+        events_size = static_cast<UInt8>(arguments.size());
     }
 
 

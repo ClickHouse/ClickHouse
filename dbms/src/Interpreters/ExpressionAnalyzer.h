@@ -43,7 +43,7 @@ struct ExpressionAnalyzerData
     NamesAndTypesList source_columns;
 
     /// If non-empty, ignore all expressions in  not from this list.
-    Names required_result_columns;
+    NameSet required_result_columns;
 
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
@@ -57,10 +57,6 @@ struct ExpressionAnalyzerData
     AggregateDescriptions aggregate_descriptions;
 
     bool has_global_subqueries = false;
-
-    /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
-    /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
-    NameToNameMap array_join_result_to_source;
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
@@ -77,13 +73,9 @@ struct ExpressionAnalyzerData
     /// Columns which will be used in query from joined table. Duplicate names are qualified.
     NameSet required_columns_from_joined_table;
 
-    /// Such columns will be copied from left join keys during join.
-    /// Example: select right from tab1 join tab2 on left + 1 = right
-    NameSet columns_added_by_join_from_right_keys;
-
 protected:
     ExpressionAnalyzerData(const NamesAndTypesList & source_columns_,
-                           const Names & required_result_columns_,
+                           const NameSet & required_result_columns_,
                            const SubqueriesForSets & subqueries_for_sets_)
     :   source_columns(source_columns_),
         required_result_columns(required_result_columns_),
@@ -113,7 +105,6 @@ private:
         /// for ExpressionAnalyzer
         const bool asterisk_left_columns_only;
         const bool use_index_for_in_with_subqueries;
-        const bool enable_conditional_computation;
         const bool join_use_nulls;
         const SizeLimits size_limits_for_set;
         const SizeLimits size_limits_for_join;
@@ -127,7 +118,6 @@ private:
             enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
             asterisk_left_columns_only(settings.asterisk_left_columns_only),
             use_index_for_in_with_subqueries(settings.use_index_for_in_with_subqueries),
-            enable_conditional_computation(settings.enable_conditional_computation),
             join_use_nulls(settings.join_use_nulls),
             size_limits_for_set(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode),
             size_limits_for_join(settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode),
@@ -142,7 +132,7 @@ public:
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         const NamesAndTypesList & additional_source_columns = {},
-        const Names & required_result_columns_ = {},
+        const NameSet & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
         bool do_global_ = false,
         const SubqueriesForSets & subqueries_for_set_ = {});
@@ -156,7 +146,7 @@ public:
     /** Get a set of columns that are enough to read from the table to evaluate the expression.
       * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredSourceColumns() const;
+    Names getRequiredSourceColumns() const { return source_columns.getNames(); }
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -176,9 +166,8 @@ public:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
     /// remove_filter is set in ExpressionActionsChain::finalize();
-    /// sampling_expression and primary_expression are needed in order to not remove columns are used in it.
-    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types,
-                        const ASTPtr & sampling_expression, const ASTPtr & primary_expression);
+    /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
+    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -239,19 +228,16 @@ private:
     const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
-      * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
-      * as well as the columns added by JOIN (`columns_added_by_join`).
+      * At the same time, form a set of columns added by JOIN (`columns_added_by_join`).
       */
     void collectUsedColumns();
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
 
-    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
+    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
-
-    bool isThereArrayJoin(const ASTPtr & ast);
 
     /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
     void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions);
@@ -276,12 +262,12 @@ private:
     void assertAggregation() const;
 
     /**
-      * Create Set from a subuqery or a table expression in the query. The created set is suitable for using the index.
+      * Create Set from a subuquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
-    void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
+    void makeSetsForIndexImpl(const ASTPtr & node);
 
     bool isRemoteStorage() const;
 };

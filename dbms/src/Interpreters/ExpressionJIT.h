@@ -14,19 +14,23 @@
 namespace DB
 {
 
-struct LLVMContext;
 using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &, const ValuePlaceholders &)>;
+
+struct LLVMModuleState;
 
 class LLVMFunction : public IFunctionBase
 {
     std::string name;
     Names arg_names;
     DataTypes arg_types;
-    std::shared_ptr<LLVMContext> context;
+
     std::vector<FunctionBasePtr> originals;
     std::unordered_map<StringRef, CompilableExpression> subexpressions;
+
+    std::unique_ptr<LLVMModuleState> module_state;
+
 public:
-    LLVMFunction(const ExpressionActions::Actions & actions, std::shared_ptr<LLVMContext> context, const Block & sample_block);
+    LLVMFunction(const ExpressionActions::Actions & actions, const Block & sample_block);
 
     bool isCompilable() const override { return true; }
 
@@ -54,8 +58,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override;
 
-    std::shared_ptr<LLVMContext> getContext() const { return context; }
-
+    const LLVMModuleState * getLLVMModuleState() const { return module_state.get(); }
 };
 
 /** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
@@ -63,13 +66,9 @@ public:
  */
 class CompiledExpressionCache : public LRUCache<UInt128, LLVMFunction, UInt128Hash>
 {
-private:
-    using Base = LRUCache<UInt128, LLVMFunction, UInt128Hash>;
-
 public:
+    using Base = LRUCache<UInt128, LLVMFunction, UInt128Hash>;
     using Base::Base;
-
-    size_t weight() const;
 };
 
 /// For each APPLY_FUNCTION action, try to compile the function to native code; if the only uses of a compilable

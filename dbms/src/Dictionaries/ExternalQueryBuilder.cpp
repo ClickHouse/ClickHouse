@@ -1,16 +1,15 @@
-#include <ext/range.h>
-#include <boost/range/join.hpp>
+#include "ExternalQueryBuilder.h"
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Dictionaries/writeParenthesisedString.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
+#include <boost/range/join.hpp>
+#include <ext/range.h>
+#include "DictionaryStructure.h"
+#include "writeParenthesisedString.h"
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
@@ -164,7 +163,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
     else
         update_query = " WHERE " + update_field + " >= '" + time_point + "'";
 
-    return out.insert(out.size()-1, update_query); ///This is done to insert "update_query" before "out"'s semicolon
+    return out.insert(out.size() - 1, update_query); ///This is done to insert "update_query" before "out"'s semicolon
 }
 
 
@@ -238,10 +237,8 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 }
 
 
-std::string ExternalQueryBuilder::composeLoadKeysQuery(
-    const Columns & key_columns,
-    const std::vector<size_t> & requested_rows,
-    LoadKeysMethod method)
+std::string
+ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method)
 {
     if (!dict_struct.key)
         throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};

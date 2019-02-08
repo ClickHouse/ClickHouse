@@ -1,4 +1,4 @@
-#include <Dictionaries/LibraryDictionarySourceExternal.h>
+#include "LibraryDictionarySourceExternal.h"
 #include <common/logger_useful.h>
 
 namespace
@@ -44,8 +44,6 @@ void ClickHouseLibrary::log(ClickHouseLibrary::LogLevel level, ClickHouseLibrary
         case LogLevel::FATAL:
             if (logger.fatal())
                 logger.fatal(msg);
-            break;
-        default:
             break;
     }
 }

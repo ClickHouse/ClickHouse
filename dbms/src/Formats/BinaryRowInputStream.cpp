@@ -14,7 +14,7 @@ BinaryRowInputStream::BinaryRowInputStream(ReadBuffer & istr_, const Block & hea
 }
 
 
-bool BinaryRowInputStream::read(MutableColumns & columns)
+bool BinaryRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     if (istr.eof())
         return false;

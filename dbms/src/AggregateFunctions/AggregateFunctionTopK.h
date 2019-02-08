@@ -93,7 +93,7 @@ public:
         auto result_vec = set.topK(threshold);
         size_t size = result_vec.size();
 
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+        offsets_to.push_back(offsets_to.back() + size);
 
         typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
@@ -123,7 +123,7 @@ struct AggregateFunctionTopKGenericData
 };
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
- *  For such columns topK() can be implemented more efficently (especially for small numeric arrays).
+ *  For such columns topK() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false>
 class AggregateFunctionTopKGeneric : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column>>
@@ -212,7 +212,7 @@ public:
         IColumn & data_to = arr_to.getData();
 
         auto result_vec = this->data(place).value.topK(threshold);
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + result_vec.size());
+        offsets_to.push_back(offsets_to.back() + result_vec.size());
 
         for (auto & elem : result_vec)
         {

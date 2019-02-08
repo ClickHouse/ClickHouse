@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -64,7 +65,7 @@ void DataTypeFixedString::serializeBinary(const IColumn & column, size_t row_num
 
 void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    ColumnFixedString::Chars_t & data = static_cast<ColumnFixedString &>(column).getChars();
+    ColumnFixedString::Chars & data = static_cast<ColumnFixedString &>(column).getChars();
     size_t old_size = data.size();
     data.resize(old_size + n);
     try
@@ -81,7 +82,7 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr)
 
 void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-    const ColumnFixedString::Chars_t & data = typeid_cast<const ColumnFixedString &>(column).getChars();
+    const ColumnFixedString::Chars & data = typeid_cast<const ColumnFixedString &>(column).getChars();
 
     size_t size = data.size() / n;
 
@@ -95,7 +96,7 @@ void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffe
 
 void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
-    ColumnFixedString::Chars_t & data = typeid_cast<ColumnFixedString &>(column).getChars();
+    ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 
     size_t initial_size = data.size();
     size_t max_bytes = limit * n;
@@ -126,7 +127,7 @@ void DataTypeFixedString::serializeTextEscaped(const IColumn & column, size_t ro
 template <typename Reader>
 static inline void read(const DataTypeFixedString & self, IColumn & column, Reader && reader)
 {
-    ColumnFixedString::Chars_t & data = typeid_cast<ColumnFixedString &>(column).getChars();
+    ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
     size_t prev_size = data.size();
 
     try
@@ -152,7 +153,7 @@ static inline void read(const DataTypeFixedString & self, IColumn & column, Read
 
 void DataTypeFixedString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readEscapedStringInto(data, istr); });
+    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readEscapedStringInto(data, istr); });
 }
 
 
@@ -165,7 +166,7 @@ void DataTypeFixedString::serializeTextQuoted(const IColumn & column, size_t row
 
 void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
+    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 
@@ -178,7 +179,7 @@ void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_n
 
 void DataTypeFixedString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readJSONStringInto(data, istr); });
+    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readJSONStringInto(data, istr); });
 }
 
 
@@ -198,7 +199,14 @@ void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_nu
 
 void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr, csv); });
+    read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars & data) { readCSVStringInto(data, istr, csv); });
+}
+
+
+void DataTypeFixedString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
+    protobuf.writeString(StringRef(pos, n));
 }
 
 

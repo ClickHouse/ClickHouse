@@ -23,7 +23,6 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionMACStringTo<ParseOUIImpl>>();
     factory.registerFunction<FunctionUUIDNumToString>();
     factory.registerFunction<FunctionUUIDStringToNum>();
-    factory.registerFunction<FunctionGenerateUUIDv4>();
     factory.registerFunction<FunctionHex>();
     factory.registerFunction<FunctionUnhex>();
     factory.registerFunction<FunctionBitmaskToArray>();

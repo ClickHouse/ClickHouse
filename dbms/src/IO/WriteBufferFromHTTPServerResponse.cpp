@@ -68,7 +68,7 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         startSendHeaders();
 
@@ -147,7 +147,7 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 
 void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     /// Cannot add new headers if body was started to send.
     if (headers_finished_sending)
@@ -181,7 +181,7 @@ void WriteBufferFromHTTPServerResponse::finalize()
     else
     {
         /// If no remaining data, just send headers.
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         startSendHeaders();
         finishSendHeaders();
     }

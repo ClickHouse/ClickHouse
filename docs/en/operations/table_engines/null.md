@@ -1,3 +1,4 @@
+
 # Null
 
 When writing to a Null table, data is ignored. When reading from a Null table, the response is empty.

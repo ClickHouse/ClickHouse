@@ -6,7 +6,7 @@
 
 #include <Common/HTMLForm.h>
 #include <Common/setThreadName.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -19,9 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 

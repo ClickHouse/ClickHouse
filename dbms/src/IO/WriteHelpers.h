@@ -9,8 +9,8 @@
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
-#include <common/find_first_symbols.h>
-#include <common/intExp.h>
+#include <common/find_symbols.h>
+#include <Common/intExp.h>
 
 #include <Core/Types.h>
 #include <Core/UUID.h>

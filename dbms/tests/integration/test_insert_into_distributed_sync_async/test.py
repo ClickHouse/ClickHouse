@@ -49,6 +49,28 @@ def test_insertion_sync(started_cluster):
 
     assert node2.query("SELECT count() FROM local_table").rstrip() == '20000'
 
+    # Insert with explicitly specified columns.
+    node1.query('''
+    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    INSERT INTO distributed_table(date, val) VALUES ('2000-01-01', 100500)''')
+
+    # Insert with columns specified in different order.
+    node1.query('''
+    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    INSERT INTO distributed_table(val, date) VALUES (100500, '2000-01-01')''')
+
+    # Insert with an incomplete list of columns.
+    node1.query('''
+    SET insert_distributed_sync = 1, insert_distributed_timeout = 1;
+    INSERT INTO distributed_table(val) VALUES (100500)''')
+
+    expected = TSV('''
+0000-00-00	100500
+2000-01-01	100500
+2000-01-01	100500''')
+    assert TSV(node2.query('SELECT date, val FROM local_table WHERE val = 100500 ORDER BY date')) == expected
+
+
 """
 def test_insertion_sync_fails_on_error(started_cluster):
     with PartitionManager() as pm:

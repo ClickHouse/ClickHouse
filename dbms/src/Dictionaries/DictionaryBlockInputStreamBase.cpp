@@ -1,8 +1,7 @@
-#include <Dictionaries/DictionaryBlockInputStreamBase.h>
+#include "DictionaryBlockInputStreamBase.h"
 
 namespace DB
 {
-
 DictionaryBlockInputStreamBase::DictionaryBlockInputStreamBase(size_t rows_count, size_t max_block_size)
     : rows_count(rows_count), max_block_size(max_block_size)
 {

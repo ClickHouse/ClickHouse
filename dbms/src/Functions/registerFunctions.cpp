@@ -36,11 +36,10 @@ void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
-void registerFunctionsTransform(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
-void registerFunctionsProjection(FunctionFactory &);
+void registerFunctionTransform(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -76,11 +75,10 @@ void registerFunctions()
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
-    registerFunctionsTransform(factory);
     registerFunctionsGeo(factory);
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
-    registerFunctionsProjection(factory);
+    registerFunctionTransform(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

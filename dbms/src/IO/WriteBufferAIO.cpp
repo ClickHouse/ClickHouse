@@ -121,7 +121,7 @@ void WriteBufferAIO::nextImpl()
     {
         if (errno != EINTR)
         {
-            aio_failed =  true;
+            aio_failed = true;
             throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::CANNOT_IO_SUBMIT);
         }
     }

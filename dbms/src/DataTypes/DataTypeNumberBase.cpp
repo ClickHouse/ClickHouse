@@ -1,4 +1,4 @@
-#include <type_traits>
+﻿#include <type_traits>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
@@ -7,6 +7,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 
 
 namespace DB
@@ -144,14 +145,14 @@ void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & is
 template <typename T>
 Field DataTypeNumberBase<T>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type();
+    return NearestFieldType<FieldType>();
 }
 
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
+    typename ColumnVector<T>::value_type x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -160,7 +161,7 @@ void DataTypeNumberBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) 
 {
     typename ColumnVector<T>::value_type x;
     readBinary(x, istr);
-    field = typename NearestFieldType<FieldType>::Type(x);
+    field = NearestFieldType<FieldType>(x);
 }
 
 template <typename T>
@@ -200,6 +201,14 @@ void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer &
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::value_type) * limit);
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::value_type));
 }
+
+
+template <typename T>
+void DataTypeNumberBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeNumber(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+}
+
 
 template <typename T>
 MutableColumnPtr DataTypeNumberBase<T>::createColumn() const

@@ -11,6 +11,7 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 
 
@@ -76,9 +77,19 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (!format_p.parse(pos, query_with_output.format, expected))
             return false;
-        typeid_cast<ASTIdentifier &>(*(query_with_output.format)).setSpecial();
+        setIdentifierSpecial(query_with_output.format);
 
         query_with_output.children.push_back(query_with_output.format);
+    }
+
+    // SETTINGS key1 = value1, key2 = value2, ...
+    ParserKeyword s_settings("SETTINGS");
+    if (s_settings.ignore(pos, expected))
+    {
+        ParserSetQuery parser_settings(true);
+        if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
+            return false;
+        query_with_output.children.push_back(query_with_output.settings_ast);
     }
 
     if (explain_ast)

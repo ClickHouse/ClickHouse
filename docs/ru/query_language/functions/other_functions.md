@@ -111,13 +111,12 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
-<a name="other_functions-transform"></a>
 
 ## transform
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
 Имеется два варианта функции:
 
-1.  `transform(x, array_from, array_to, default)`
+1. `transform(x, array_from, array_to, default)`
 
 `x` - что преобразовывать.
 
@@ -159,7 +158,7 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-2.  `transform(x, array_from, array_to)`
+2. `transform(x, array_from, array_to)`
 
 Отличается от первого варианта отсутствующим аргументом default.
 Если значение x равно одному из элементов массива array_from, то возвращает соответствующий (такой же по номеру) элемент массива array_to; иначе возвращает x.
@@ -276,7 +275,7 @@ FROM
 
 ## getSizeOfEnumType
 
-Возвращает количество полей в [Enum](../../data_types/enum.md#data_type-enum).
+Возвращает количество полей в [Enum](../../data_types/enum.md).
 
 ```
 getSizeOfEnumType(value)
@@ -386,7 +385,7 @@ defaultValueOfArgumentType(expression)
 
 - `0` для чисел;
 - Пустая строка для строк;
-- `ᴺᵁᴸᴸ` для [Nullable](../../data_types/nullable.md#data_type-nullable).
+- `ᴺᵁᴸᴸ` для [Nullable](../../data_types/nullable.md).
 
 **Пример**
 
@@ -426,7 +425,7 @@ SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 
 **Пример**
 
-Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime).
+Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md).
 
 ```
 SELECT count() FROM ontime

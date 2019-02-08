@@ -50,7 +50,7 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
             return 20;
         default:
             break;
-    };
+    }
     return 0;
 }
 
@@ -100,7 +100,11 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+
     Field getDefault() const override;
+    bool canBePromoted() const override { return true; }
+    DataTypePtr promoteNumericType() const override;
     MutableColumnPtr createColumn() const override;
     bool equals(const IDataType & rhs) const override;
 
@@ -152,7 +156,7 @@ public:
 
     /// @returns multiplier for U to become T with correct scale
     template <typename U>
-    T scaleFactorFor(const DataTypeDecimal<U> & x, bool ) const
+    T scaleFactorFor(const DataTypeDecimal<U> & x, bool) const
     {
         if (getScale() < x.getScale())
             throw Exception("Decimal result's scale is less then argiment's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);

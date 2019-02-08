@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal  than log(value, base)
+/// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal than log(value, base)
 static constexpr UInt32 intLog(const UInt32 value, const UInt32 base, const bool carry)
 {
     return value >= base ? 1 + intLog(value / base, base, value % base || carry) : value % base > 1 || carry;

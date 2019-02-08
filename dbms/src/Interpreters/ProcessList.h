@@ -70,6 +70,14 @@ struct QueryStatusInfo
     std::shared_ptr<Settings> query_settings;
 };
 
+enum class CancellationCode
+{
+    NotFound = 0,                     /// already cancelled
+    QueryIsNotInitializedYet = 1,
+    CancelCannotBeSent = 2,
+    CancelSent = 3,
+    Unknown
+};
 
 /// Query and information about its execution.
 class QueryStatus
@@ -192,6 +200,8 @@ public:
     /// Get query in/out pointers from BlockIO
     bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
 
+    CancellationCode cancelQuery(bool kill);
+
     bool isKilled() const { return is_killed; }
 };
 
@@ -308,18 +318,9 @@ public:
 
     void setMaxSize(size_t max_size_)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         max_size = max_size_;
     }
-
-    enum class CancellationCode
-    {
-        NotFound = 0,                     /// already cancelled
-        QueryIsNotInitializedYet = 1,
-        CancelCannotBeSent = 2,
-        CancelSent = 3,
-        Unknown
-    };
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);

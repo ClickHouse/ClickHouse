@@ -8,6 +8,7 @@ namespace DB
 {
 
 /** Allows to read from another ReadBuffer no more than the specified number of bytes.
+  * Note that the nested ReadBuffer may read slightly more data internally to fill its buffer.
   */
 class LimitReadBuffer : public ReadBuffer
 {

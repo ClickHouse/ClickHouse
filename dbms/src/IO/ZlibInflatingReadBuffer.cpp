@@ -14,12 +14,12 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
     , in(in_)
     , eof(false)
 {
-    zstr.zalloc    = nullptr;
-    zstr.zfree     = nullptr;
-    zstr.opaque    = nullptr;
-    zstr.next_in   = nullptr;
-    zstr.avail_in  = 0;
-    zstr.next_out  = nullptr;
+    zstr.zalloc = nullptr;
+    zstr.zfree = nullptr;
+    zstr.opaque = nullptr;
+    zstr.next_in = nullptr;
+    zstr.avail_in = 0;
+    zstr.next_out = nullptr;
     zstr.avail_out = 0;
 
     int window_bits = 15;

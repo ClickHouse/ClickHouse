@@ -65,7 +65,7 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
 private:
     SetPtr set;

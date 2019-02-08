@@ -22,8 +22,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    if (ColumnPtr nested_column_materialized = getNestedColumn().convertToFullColumnIfConst())
-        nested_column = nested_column_materialized;
+    nested_column = getNestedColumn().convertToFullColumnIfConst();
 
     if (!getNestedColumn().canBeInsideNullable())
         throw Exception{getNestedColumn().getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};

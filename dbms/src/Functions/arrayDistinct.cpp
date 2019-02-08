@@ -151,7 +151,7 @@ bool FunctionArrayDistinct::executeNumber(
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
     if (nullable_col)
-        src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
+        src_null_map = &nullable_col->getNullMapData();
 
     using Set = ClearableHashSet<T,
         DefaultHash<T>,
@@ -210,7 +210,7 @@ bool FunctionArrayDistinct::executeString(
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
     if (nullable_col)
-        src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
+        src_null_map = &nullable_col->getNullMapData();
 
     Set set;
 
@@ -257,7 +257,7 @@ void FunctionArrayDistinct::executeHashed(
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
     if (nullable_col)
-        src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
+        src_null_map = &nullable_col->getNullMapData();
 
     Set set;
 

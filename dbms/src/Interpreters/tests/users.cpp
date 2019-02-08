@@ -161,11 +161,6 @@ TestSet test_set =
     }
 };
 
-std::string createTmpPath(const std::string & filename);
-void createFile(const std::string & filename, const char * data);
-void runOneTest(const TestDescriptor & test_descriptor);
-auto runTestSet(const TestSet & test_set);
-
 std::string createTmpPath(const std::string & filename)
 {
     char pattern[] = "/tmp/fileXXXXXX";
@@ -189,11 +184,11 @@ void runOneTest(const TestDescriptor & test_descriptor)
     const auto path_name = createTmpPath("users.xml");
     createFile(path_name, test_descriptor.config_content);
 
-    ConfigurationPtr config;
+    DB::ConfigurationPtr config;
 
     try
     {
-        config = ConfigProcessor(path_name).loadConfig().configuration;
+        config = DB::ConfigProcessor(path_name).loadConfig().configuration;
     }
     catch (const Poco::Exception & ex)
     {
@@ -241,7 +236,7 @@ void runOneTest(const TestDescriptor & test_descriptor)
     fs::remove_all(fs::path(path_name).parent_path().string());
 }
 
-auto runTestSet(const TestSet & test_set)
+auto runTestSet()
 {
     size_t test_num = 1;
     size_t failure_count = 0;
@@ -277,7 +272,7 @@ int main()
     size_t test_count;
     size_t failure_count;
 
-    std::tie(test_count, failure_count) = runTestSet(test_set);
+    std::tie(test_count, failure_count) = runTestSet();
 
     std::cout << (test_count - failure_count) << " test(s) passed out of " << test_count << "\n";
 

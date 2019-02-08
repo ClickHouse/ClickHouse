@@ -86,6 +86,14 @@ public:
             return true;
     }
 
+    /* The same, but never move the position and do not write the result to node.
+     */
+    bool check_without_moving(Pos pos, Expected & expected)
+    {
+        ASTPtr node;
+        return parse(pos, node, expected);
+    }
+
     virtual ~IParser() {}
 };
 

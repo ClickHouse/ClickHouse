@@ -15,11 +15,15 @@ constexpr decltype(ConfigReloader::reload_interval) ConfigReloader::reload_inter
 ConfigReloader::ConfigReloader(
         const std::string & path_,
         const std::string & include_from_path_,
+        const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
+        const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_,
         bool already_loaded)
     : path(path_), include_from_path(include_from_path_)
+    , preprocessed_dir(preprocessed_dir_)
     , zk_node_cache(std::move(zk_node_cache_))
+    , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
 {
     if (!already_loaded)
@@ -29,7 +33,7 @@ ConfigReloader::ConfigReloader(
 
 void ConfigReloader::start()
 {
-    thread = std::thread(&ConfigReloader::run, this);
+    thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
 }
 
 
@@ -38,7 +42,7 @@ ConfigReloader::~ConfigReloader()
     try
     {
         quit = true;
-        zk_node_cache.getChangedEvent().set();
+        zk_changed_event->set();
 
         if (thread.joinable())
             thread.join();
@@ -58,7 +62,7 @@ void ConfigReloader::run()
     {
         try
         {
-            bool zk_changed = zk_node_cache.getChangedEvent().tryWait(std::chrono::milliseconds(reload_interval).count());
+            bool zk_changed = zk_changed_event->tryWait(std::chrono::milliseconds(reload_interval).count());
             if (quit)
                 return;
 
@@ -74,10 +78,10 @@ void ConfigReloader::run()
 
 void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
 {
-    std::lock_guard<std::mutex> lock(reload_mutex);
+    std::lock_guard lock(reload_mutex);
 
     FilesChangesTracker new_files = getNewFileList();
-    if (force || new_files.isDifferOrNewerThan(files))
+    if (force || need_reload_from_zk || new_files.isDifferOrNewerThan(files))
     {
         ConfigProcessor config_processor(path);
         ConfigProcessor::LoadedConfig loaded_config;
@@ -88,7 +92,18 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                        zk_node_cache, fallback_to_preprocessed);
+                    zk_node_cache, zk_changed_event, fallback_to_preprocessed);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+                need_reload_from_zk = true;
+
+            if (throw_on_error)
+                throw;
+
+            tryLogCurrentException(log, "ZooKeeper error when loading config from `" + path + "'");
+            return;
         }
         catch (...)
         {
@@ -98,7 +113,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             tryLogCurrentException(log, "Error loading config from `" + path + "'");
             return;
         }
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
         /** We should remember last modification time if and only if config was sucessfully loaded
          * Otherwise a race condition could occur during config files update:
@@ -106,7 +121,10 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
          *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
          */
         if (!loaded_config.loaded_from_preprocessed)
+        {
             files = std::move(new_files);
+            need_reload_from_zk = false;
+        }
 
         try
         {

@@ -70,6 +70,8 @@ public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override { return Null(); }
@@ -91,6 +93,7 @@ public:
     bool isNullable() const override { return true; }
     size_t getSizeOfValueInMemory() const override;
     bool onlyNull() const override;
+    bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 

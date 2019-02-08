@@ -37,7 +37,7 @@ ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & hea
 }
 
 
-bool ValuesRowInputStream::read(MutableColumns & columns)
+bool ValuesRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     size_t num_columns = columns.size();
 

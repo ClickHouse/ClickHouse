@@ -25,16 +25,17 @@ Various possible options. We are not going to automate testing all of them.
 
 #### CPU architectures:
 - x86_64;
-- AArch64.
+- AArch64;
+- PowerPC64LE.
 
-x86_64 is the main CPU architecture. We also have minimal support for AArch64.
+x86_64 is the main CPU architecture. We also have minimal support for AArch64 and PowerPC64LE.
 
 #### Operating systems:
 - Linux;
 - FreeBSD.
 
-We also target Mac OS X, but it's more difficult to test.  
-Linux is the main. FreeBSD is also supported as production OS.  
+We also target Mac OS X, but it's more difficult to test.
+Linux is the main. FreeBSD is also supported as production OS.
 Mac OS is intended only for development and have minimal support: client should work, server should just start.
 
 #### Linux distributions:
@@ -98,14 +99,14 @@ We also have intent to build RPM and simple tgz packages.
 - from contrib directory (submodules);
 - from OS packages.
 
-The only production option is to use libraries from contrib directory.  
+The only production option is to use libraries from contrib directory.
 Using libraries from OS packages is discouraged, but we also support this option.
 
 #### Linkage types:
 - static;
 - shared;
 
-Static linking is the only option for production usage.  
+Static linking is the only option for production usage.
 We also have support for shared linking, but it is indended only for developers.
 
 #### Make tools:

@@ -17,17 +17,15 @@ namespace DB
 NamesAndTypesList StorageSystemMutations::getNamesAndTypes()
 {
     return {
-        { "database",                             std::make_shared<DataTypeString>()      },
-        { "table",                                std::make_shared<DataTypeString>()      },
-        { "mutation_id",                          std::make_shared<DataTypeString>()      },
-        { "command",                              std::make_shared<DataTypeString>()      },
-        { "create_time",                          std::make_shared<DataTypeDateTime>()    },
-        { "block_numbers.partition_id",           std::make_shared<DataTypeArray>(
-                                                      std::make_shared<DataTypeString>()) },
-        { "block_numbers.number",                 std::make_shared<DataTypeArray>(
-                                                      std::make_shared<DataTypeInt64>())  },
-        { "parts_to_do",                          std::make_shared<DataTypeInt64>()      },
-        { "is_done",                              std::make_shared<DataTypeUInt8>()      },
+        { "database",                   std::make_shared<DataTypeString>() },
+        { "table",                      std::make_shared<DataTypeString>() },
+        { "mutation_id",                std::make_shared<DataTypeString>() },
+        { "command",                    std::make_shared<DataTypeString>() },
+        { "create_time",                std::make_shared<DataTypeDateTime>() },
+        { "block_numbers.partition_id", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "block_numbers.number",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()) },
+        { "parts_to_do",                std::make_shared<DataTypeInt64>() },
+        { "is_done",                    std::make_shared<DataTypeUInt8>() },
     };
 }
 

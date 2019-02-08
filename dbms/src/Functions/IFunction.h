@@ -40,7 +40,7 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
+    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run) = 0;
 };
 
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
@@ -52,7 +52,7 @@ using PreparedFunctionLowCardinalityResultCachePtr = std::shared_ptr<PreparedFun
 class PreparedFunctionImpl : public IPreparedFunction
 {
 public:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final;
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run = false) final;
 
     /// Create cache which will be used to store result of function executed on LowCardinality column.
     /// Only for default LowCardinality implementation.
@@ -61,6 +61,10 @@ public:
 
 protected:
     virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
+    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    {
+        executeImpl(block, arguments, result, input_rows_count);
+    }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
@@ -94,11 +98,11 @@ protected:
 
 private:
     bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
-                                       size_t input_rows_count);
+                                       size_t input_rows_count, bool dry_run);
     bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
-                                                   size_t input_rows_count);
+                                                   size_t input_rows_count, bool dry_run);
     void executeWithoutLowCardinalityColumns(Block & block, const ColumnNumbers & arguments, size_t result,
-                                             size_t input_rows_count);
+                                             size_t input_rows_count, bool dry_run);
 
     /// Cache is created by function createLowCardinalityResultCache()
     PreparedFunctionLowCardinalityResultCachePtr low_cardinality_result_cache;
@@ -123,9 +127,9 @@ public:
     virtual PreparedFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
 
     /// TODO: make const
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run = false)
     {
-        return prepare(block, arguments, result)->execute(block, arguments, result, input_rows_count);
+        return prepare(block, arguments, result)->execute(block, arguments, result, input_rows_count, dry_run);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -147,6 +151,8 @@ public:
 
 #endif
 
+    virtual bool isStateful() const { return false; }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -159,7 +165,7 @@ public:
       * Function could be injective with some arguments fixed to some constant values.
       * Examples:
       *  plus(const, x);
-      *  multiply(const, x) where x is an integer and constant is not divisable by two;
+      *  multiply(const, x) where x is an integer and constant is not divisible by two;
       *  concat(x, 'const');
       *  concat(x, 'const', y) where const contain at least one non-numeric character;
       *  concat with FixedString
@@ -225,6 +231,9 @@ public:
 
     /// Get the main function name.
     virtual String getName() const = 0;
+
+    /// Override and return true if function needs to depend on the state of the data.
+    virtual bool isStateful() const { return false; }
 
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
@@ -318,6 +327,9 @@ class IFunction : public std::enable_shared_from_this<IFunction>,
 {
 public:
     String getName() const override = 0;
+
+    bool isStateful() const override { return false; }
+
     /// TODO: make const
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override = 0;
 
@@ -330,6 +342,7 @@ public:
     bool canBeExecutedOnLowCardinalityDictionary() const override { return isDeterministicInScopeOfQuery(); }
 
     using PreparedFunctionImpl::execute;
+    using PreparedFunctionImpl::executeImplDryRun;
     using FunctionBuilderImpl::getReturnTypeImpl;
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
     using FunctionBuilderImpl::getReturnType;
@@ -404,6 +417,10 @@ protected:
     {
         return function->executeImpl(block, arguments, result, input_rows_count);
     }
+    void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    {
+        return function->executeImplDryRun(block, arguments, result, input_rows_count);
+    }
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
@@ -469,6 +486,7 @@ public:
     }
 
     String getName() const override { return function->getName(); }
+    bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 

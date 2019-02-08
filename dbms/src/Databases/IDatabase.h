@@ -3,15 +3,14 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <ctime>
 #include <memory>
 #include <functional>
 #include <Poco/File.h>
 #include <Common/escapeForFileName.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
-
-
-class ThreadPool;
 
 
 namespace DB
@@ -91,7 +90,7 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) = 0;
 
-    /// Delete the table from the database and return it. Delete the metadata.
+    /// Delete the table from the database. Delete the metadata.
     virtual void removeTable(
         const Context & context,
         const String & name) = 0;
@@ -117,6 +116,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
