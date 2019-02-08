@@ -1049,6 +1049,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     if (!unknown_required_source_columns.empty())
     {
         std::stringstream ss;
+        ss << "query: '" << query << "'" << std::endl;
         ss << columns_context;
         ss << "source_columns: ";
         for (const auto & name : source_columns)

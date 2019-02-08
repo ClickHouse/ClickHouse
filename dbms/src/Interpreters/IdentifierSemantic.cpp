@@ -112,8 +112,21 @@ void IdentifierSemantic::setColumnNormalName(ASTIdentifier & identifier, const D
     if (identifier.semantic->need_long_name)
     {
         String prefix = db_and_table.getQualifiedNamePrefix();
-        identifier.name.insert(identifier.name.begin(), prefix.begin(), prefix.end());
+        if (!prefix.empty())
+        {
+            String short_name = identifier.shortName();
+            identifier.name = prefix + short_name;
+            prefix.resize(prefix.size() - 1); /// crop dot
+            identifier.name_parts = {prefix, short_name};
+        }
     }
+}
+
+String IdentifierSemantic::columnNormalName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
+{
+    ASTPtr copy = identifier.clone();
+    setColumnNormalName(typeid_cast<ASTIdentifier &>(*copy), db_and_table);
+    return copy->getAliasOrColumnName();
 }
 
 }

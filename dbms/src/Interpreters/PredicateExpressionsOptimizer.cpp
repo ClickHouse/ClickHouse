@@ -236,10 +236,22 @@ void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
         {
             if (alias == qualified_name)
             {
-                if (!isIdentifier(ast) && ast->tryGetAlias().empty())
-                    ast->setAlias(ast->getColumnName());
+                String name;
+                if (auto * id = typeid_cast<const ASTIdentifier *>(ast.get()))
+                {
+                    name = id->tryGetAlias();
+                    if (name.empty())
+                        name = id->shortName();
+                }
+                else
+                {
+                    if (ast->tryGetAlias().empty())
+                        ast->setAlias(ast->getColumnName());
+                    name = ast->getAliasOrColumnName();
+                }
 
-                identifier->resetWithAlias(ast->getAliasOrColumnName());
+                IdentifierSemantic::setNeedLongName(*identifier, false);
+                identifier->setShortName(name);
             }
         }
     }
