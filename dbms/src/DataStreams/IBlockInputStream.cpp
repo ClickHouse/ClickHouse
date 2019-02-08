@@ -119,7 +119,7 @@ void IBlockInputStream::readSuffix()
     if (!read_suffix_is_called)
         read_suffix_is_called = true;
     else
-        throw Exception("readSuffix is called twice", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("readSuffix is called twice for " + getName() + " stream", ErrorCodes::LOGICAL_ERROR);
 #endif
 
     forEachChild([&] (IBlockInputStream & child)
