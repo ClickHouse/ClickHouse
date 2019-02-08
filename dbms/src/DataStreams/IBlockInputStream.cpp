@@ -100,7 +100,7 @@ void IBlockInputStream::readPrefix()
     if (!read_prefix_is_called)
         read_prefix_is_called = true;
     else
-        throw Exception("readPrefix is called twice", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("readPrefix is called twice for " + getName() + " stream", ErrorCodes::LOGICAL_ERROR);
 #endif
 
     readPrefixImpl();
