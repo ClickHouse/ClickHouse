@@ -2,7 +2,7 @@
 
 ## generateUUIDv4 {#uuid_function-generate}
 
-Создает идентификатор [UUID версии 4](https://tools.ietf.org/html/rfc4122#section-4.4).
+Генерирует идентификатор [UUID версии 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
 ```sql
 generateUUIDv4()
