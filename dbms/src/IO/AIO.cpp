@@ -55,14 +55,14 @@ AIOContext::~AIOContext()
 
 #elif defined(__FreeBSD__)
 
-#include <boost/noncopyable.hpp>
-#include <Common/Exception.h>
-#include <sys/types.h>
-#include <sys/event.h>
-#include <sys/time.h>
-#include <aio.h>
+#    include <aio.h>
+#    include <boost/noncopyable.hpp>
+#    include <sys/event.h>
+#    include <sys/time.h>
+#    include <sys/types.h>
+#    include <Common/Exception.h>
 
-#include <IO/AIO.h>
+#    include <IO/AIO.h>
 
 
 /** Small wrappers for asynchronous I/O.
@@ -70,10 +70,10 @@ AIOContext::~AIOContext()
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int CANNOT_IOSETUP;
-    }
+namespace ErrorCodes
+{
+    extern const int CANNOT_IOSETUP;
+}
 }
 
 
@@ -89,47 +89,46 @@ int io_destroy(int ctx)
 
 int io_submit(int ctx, long nr, struct iocb * iocbpp[])
 {
-    long i;
-    int r;
-    struct sigevent *se;
-    struct aiocb *iocb;
+    for (long i = 0; i < nr; i++)
+    {
+        struct aiocb * iocb = &iocbpp[i]->aio;
 
-    for (i = 0; i < nr; i ++) {
-	iocb = &iocbpp[i]->aio;
+        struct sigevent * se = &iocb->aio_sigevent;
+        se->sigev_notify_kqueue = ctx;
+        se->sigev_notify_kevent_flags = 0;
+        se->sigev_notify = SIGEV_KEVENT;
+        se->sigev_value.sival_ptr = iocbpp[i];
 
-	se = &iocb->aio_sigevent;
-	se->sigev_notify_kqueue = ctx;
-	se->sigev_notify_kevent_flags = 0;
-	se->sigev_notify = SIGEV_KEVENT;
-	se->sigev_value.sival_ptr = iocbpp[i];
-
-	switch(iocb->aio_lio_opcode) {
-	    case LIO_READ:
-		r = aio_read(iocb);
-		break;
-	    case LIO_WRITE:
-		r = aio_write(iocb);
-		break;
-	    default: break;
-	}
-	if (r < 0) {
-	    return r;
-	}
+        switch (iocb->aio_lio_opcode)
+        {
+            case LIO_READ:
+            {
+                int r = aio_read(iocb);
+                if (r < 0)
+                    return r;
+                break;
+            }
+            case LIO_WRITE:
+            {
+                int r = aio_write(iocb);
+                if (r < 0)
+                    return r;
+                break;
+            }
+        }
     }
 
-    return i;
+    return nr;
 }
 
-int io_getevents(int ctx, long min_nr, long max_nr, struct kevent * events, struct timespec * timeout)
+int io_getevents(int ctx, long, long max_nr, struct kevent * events, struct timespec * timeout)
 {
-    min_nr = 0;
     return kevent(ctx, NULL, 0, events, max_nr, timeout);
 }
 
 
-AIOContext::AIOContext(unsigned int nr_events)
+AIOContext::AIOContext(unsigned int)
 {
-    nr_events = 0;
     ctx = io_setup();
     if (ctx < 0)
         DB::throwFromErrno("io_setup failed", DB::ErrorCodes::CANNOT_IOSETUP);

@@ -95,7 +95,7 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
         }
 
 #if defined(__FreeBSD__)
-        it->second.set_value(aio_return((struct aiocb *)event.udata));
+        it->second.set_value(aio_return(reinterpret_cast<struct aiocb *>(event.udata)));
 #else
         it->second.set_value(event.res);
 #endif
