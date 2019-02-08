@@ -36,7 +36,7 @@ public:
     bool compound() const { return !name_parts.empty(); }
     bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
 
-    void resetWithAlias(const String & new_name)
+    void setShortName(const String & new_name)
     {
         name = new_name;
         name_parts.clear();
