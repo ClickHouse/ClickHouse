@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeArray.h>
+//#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
