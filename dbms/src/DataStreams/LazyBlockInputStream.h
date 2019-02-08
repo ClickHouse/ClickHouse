@@ -32,6 +32,9 @@ public:
         return header;
     }
 
+    /// We call readPrefix lazily. Suppress default behaviour.
+    void readPrefix() override {}
+
 protected:
     Block readImpl() override
     {
