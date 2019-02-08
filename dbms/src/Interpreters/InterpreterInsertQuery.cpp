@@ -11,6 +11,7 @@
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/copyData.h>
 
 #include <Parsers/ASTInsertQuery.h>
@@ -109,11 +110,12 @@ BlockIO InterpreterInsertQuery::execute()
         out = std::make_shared<SquashingBlockOutputStream>(
             out, table->getSampleBlock(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
+    auto query_sample_block = getSampleBlock(query, table);
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), table->getSampleBlock(), table->getColumns().defaults, context);
+        out, query_sample_block, table->getSampleBlock(), table->getColumns().defaults, context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -143,17 +145,10 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
-    else if (query.data)
+    else if (query.data && !query.has_tail) /// can execute without additional data
     {
-        auto data_in = std::make_unique<ReadBufferFromMemory>(query.data, query.end - query.data);
-        std::string format = "Values";
-        if (!query.format.empty())
-            format = query.format;
-
-        res.in = context.getInputFormat(format, *data_in, table->getSampleBlock(), context.getSettingsRef().max_insert_block_size);
-        res.in = std::make_shared<OwningBlockInputStream<ReadBufferFromMemory>>(res.in, std::move(data_in));
+        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
-
         res.out = nullptr;
     }
 
