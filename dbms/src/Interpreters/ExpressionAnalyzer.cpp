@@ -941,15 +941,6 @@ void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptio
     aggregates = aggregate_descriptions;
 }
 
-/// db.table.column -> table.column / table.column -> column
-static String cropDatabaseOrTableName(const String & name)
-{
-    size_t pos = name.find('.', 0);
-    if (pos != std::string::npos)
-        return name.substr(pos + 1, name.size() - pos - 1);
-    return name;
-}
-
 void ExpressionAnalyzer::collectUsedColumns()
 {
     /** Calculate which columns are required to execute the expression.
@@ -1008,51 +999,6 @@ void ExpressionAnalyzer::collectUsedColumns()
                 columns_added_by_join.push_back(joined_column);
                 required.erase(name);
             }
-        }
-
-        /// @fix filter required columns according to misqualified names in JOIN ON
-        if (columns_context.has_table_join &&
-            columns_context.tables.size() >= 2 &&
-            columns_context.tables[1].join &&
-            columns_context.tables[1].join->on_expression)
-        {
-            NameSet fixed_required;
-
-            for (const auto & req_name : required)
-            {
-                bool collated = false;
-                String cropped_name = req_name;
-                static const constexpr size_t max_column_prefix = 2;
-
-                for (size_t i = 0; i < max_column_prefix && !collated; ++i)
-                {
-                    cropped_name = cropDatabaseOrTableName(cropped_name);
-
-                    if (avaliable_columns.count(cropped_name))
-                    {
-                        fixed_required.insert(cropped_name);
-                        collated = true;
-                        break;
-                    }
-
-                    for (const auto & joined_column : analyzed_join.available_joined_columns)
-                    {
-                        auto & name = joined_column.name_and_type.name;
-
-                        if (cropped_name == name)
-                        {
-                            columns_added_by_join.push_back(joined_column);
-                            collated = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!collated)
-                    fixed_required.insert(req_name);
-            }
-
-            required.swap(fixed_required);
         }
     }
 
