@@ -233,7 +233,20 @@ SELECT
 
 ## dateDiff('unit', t1, t2, \[timezone\])
 
-Return the difference between two times, t1 and t2 can be Date or DateTime, If timezone is specified, it applied to both arguments. If not, timezones from datatypes t1 and t2 are used. If that timezones are not the same, the result is unspecified.
+Return the difference between two times expressed in 'unit' e.g. `'hours'`. 't1' and 't2' can be Date or DateTime, If 'timezone' is specified, it applied to both arguments. If not, timezones from datatypes 't1' and 't2' are used. If that timezones are not the same, the result is unspecified.
+
+Supported unit values:
+
+| unit   | 
+| ------ |
+|second  |
+|minute  |
+|hour    |
+|day     |
+|week    |
+|month   |
+|quarter |
+|year    |
 
 ## timeSlots(StartTime, Duration,\[, Size\])
 
