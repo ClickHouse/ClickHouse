@@ -19,6 +19,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <Processors/Executors/PipelineExecutor.h>
 
 
 using namespace DB;
@@ -60,23 +62,24 @@ public:
     String getName() const override { return "SleepyNumbers"; }
 
     SleepyNumbersSource(UInt64 start_number, unsigned sleep_useconds)
-        : IProcessor({}, {std::move(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}))}), output(outputs.front()), current_number(start_number), sleep_useconds(sleep_useconds)
+        : IProcessor({}, {Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})})
+        , output(outputs.front()), current_number(start_number), sleep_useconds(sleep_useconds)
     {
     }
 
     Status prepare() override
     {
-        if (!output.isNeeded())
-            return Status::Unneeded;
-
         if (active)
             return Status::Wait;
 
+        if (output.isFinished())
+            return Status::Finished;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
         if (!current_block)
             return Status::Async;
-
-        if (output.hasData())
-            return Status::PortFull;
 
         output.push(std::move(current_block));
         return Status::Async;
@@ -206,28 +209,16 @@ try
 
     connect(limit->getOutputPort(), sink->getPort());
 
-    printPipeline({source0, source1, source2, source3, source4, limit0, limit3, limit4, limit, queue, concat, fork, print_after_concat, resize, sink});
+    WriteBufferFromOStream out(std::cout);
+    std::vector<ProcessorPtr> processors = {source0, source1, source2, source3, source4, limit0, limit3, limit4, limit,
+                                            queue, concat, fork, print_after_concat, resize, sink};
+    printPipeline(processors, out);
 
-    ThreadPool pool(4, 4, 10);
-    ParallelPipelineExecutor executor({sink, print_after_concat}, pool);
-    //SequentialPipelineExecutor executor({sink});
+    // ThreadPool pool(4, 4, 10);
+    PipelineExecutor executor(processors);
+    /// SequentialPipelineExecutor executor({sink});
 
-    EventCounter watch;
-    while (true)
-    {
-        IProcessor::Status status = executor.prepare();
-
-        if (status == IProcessor::Status::Finished)
-            break;
-        else if (status == IProcessor::Status::Ready)
-            executor.work();
-        else if (status == IProcessor::Status::Async)
-            executor.schedule(watch);
-        else if (status == IProcessor::Status::Wait)
-            watch.wait();
-        else
-            throw Exception("Bad status", ErrorCodes::LOGICAL_ERROR);
-    }
+    executor.execute();
 
     return 0;
 }
