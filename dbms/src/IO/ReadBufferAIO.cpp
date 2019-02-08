@@ -122,14 +122,17 @@ bool ReadBufferAIO::nextImpl()
 
 #if defined(__FreeBSD__)
     request.aio.aio_lio_opcode = LIO_READ;
-    request.aio.aio_buf = reinterpret_cast<volatile void *>(buffer_begin);
-#else
-    request.aio_lio_opcode = IOCB_CMD_PREAD;
-    request.aio_buf = reinterpret_cast<UInt64>(buffer_begin);
-#endif
     request.aio.aio_fildes = fd;
+    request.aio.aio_buf = reinterpret_cast<volatile void *>(buffer_begin);
     request.aio.aio_nbytes = region_aligned_size;
     request.aio.aio_offset = region_aligned_begin;
+#else
+    request.aio_lio_opcode = IOCB_CMD_PREAD;
+    request.aio_fildes = fd;
+    request.aio_buf = reinterpret_cast<UInt64>(buffer_begin);
+    request.aio_nbytes = region_aligned_size;
+    request.aio_offset = region_aligned_begin;
+#endif
 
     /// Send the request.
     try

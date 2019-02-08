@@ -50,7 +50,8 @@ struct AIOContext : private boost::noncopyable
 typedef struct kevent io_event;
 typedef int aio_context_t;
 
-struct iocb {
+struct iocb
+{
     struct aiocb aio;
     long aio_data;
 };
