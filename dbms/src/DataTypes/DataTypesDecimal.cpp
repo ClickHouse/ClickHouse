@@ -28,7 +28,7 @@ bool decimalCheckArithmeticOverflow(const Context & context) { return context.ge
 //
 
 template <typename T>
-std::string DataTypeDecimal<T>::getName() const
+std::string DataTypeDecimal<T>::doGetName() const
 {
     std::stringstream ss;
     ss << "Decimal(" << precision << ", " << scale << ")";
