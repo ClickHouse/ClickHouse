@@ -80,7 +80,7 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-# Column Compression Codecs
+## Column Compression Codecs
 
 Besides default data compression, defined in [server settings](../operations/server_settings/settings.md#compression), per-column specification is also available.
 

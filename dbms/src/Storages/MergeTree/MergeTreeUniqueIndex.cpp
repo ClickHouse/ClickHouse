@@ -387,7 +387,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
     }
 
     return std::make_unique<MergeTreeUniqueIndex>(
-            node->name, std::move(unique_expr), columns, data_types, header, node->granularity.get<size_t>(), max_rows);;
+        node->name, std::move(unique_expr), columns, data_types, header, node->granularity.get<size_t>(), max_rows);
 }
 
 }

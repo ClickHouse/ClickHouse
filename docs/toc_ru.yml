@@ -155,11 +155,12 @@ nav:
   - 'Общий синтаксис': 'query_language/syntax.md'
 
 - 'Эксплуатация':
-  - 'hidden': 'operations/index.md'
+  - 'Введение': 'operations/index.md'
   - 'Требования': 'operations/requirements.md'
   - 'Мониторинг': 'operations/monitoring.md'
   - 'Решение проблем': 'operations/troubleshooting.md'
   - 'Советы по эксплуатации': 'operations/tips.md'
+  - 'Обновление ClickHouse': 'operations/update.md'
   - 'Права доступа': 'operations/access_rights.md'
   - 'Резервное копирование': 'operations/backup.md'
   - 'Конфигурационные файлы': 'operations/configuration_files.md'
