@@ -70,10 +70,6 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
     createAttributes();
 }
 
-ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other)
-    : ComplexKeyCacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
-{
-}
 
 void ComplexKeyCacheDictionary::getString(
     const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const

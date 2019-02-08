@@ -50,12 +50,6 @@ FlatDictionary::FlatDictionary(
     creation_time = std::chrono::system_clock::now();
 }
 
-FlatDictionary::FlatDictionary(const FlatDictionary & other)
-    : FlatDictionary{
-          other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty, other.saved_block}
-{
-}
-
 
 void FlatDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {

@@ -12,7 +12,7 @@
   * - in typical implementation of standard library, hash function for integers is trivial and just use lower bits;
   * - traffic is non-uniformly distributed across a day;
   * - we are using open-addressing linear probing hash tables that are most critical to hash function quality,
-  *   and trivial hash function gives disasterous results.
+  *   and trivial hash function gives disastrous results.
   */
 
 /** Taken from MurmurHash. This is Murmur finalizer.
@@ -160,7 +160,7 @@ struct TrivialHash
   * NOTE Salting is far from perfect, because it commutes with first steps of calculation.
   *
   * NOTE As mentioned, this function is slower than intHash64.
-  * But occasionaly, it is faster, when written in a loop and loop is vectorized.
+  * But occasionally, it is faster, when written in a loop and loop is vectorized.
   */
 template <DB::UInt64 salt>
 inline DB::UInt32 intHash32(DB::UInt64 key)

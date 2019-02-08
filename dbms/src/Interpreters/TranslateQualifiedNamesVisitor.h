@@ -30,7 +30,7 @@ public:
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    static std::vector<ASTPtr *> visit(const ASTIdentifier & node, ASTPtr & ast, Data &);
+    static std::vector<ASTPtr *> visit(ASTIdentifier & node, ASTPtr & ast, Data &);
     static std::vector<ASTPtr *> visit(const ASTQualifiedAsterisk & node, const ASTPtr & ast, Data &);
     static std::vector<ASTPtr *> visit(ASTTableJoin & node, const ASTPtr & ast, Data &);
     static std::vector<ASTPtr *> visit(ASTSelectQuery & node, const ASTPtr & ast, Data &);

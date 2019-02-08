@@ -11,7 +11,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -35,7 +35,7 @@ IStorageURLBase::IStorageURLBase(const Poco::URI & uri_,
 
 namespace
 {
-    class StorageURLBlockInputStream : public IProfilingBlockInputStream
+    class StorageURLBlockInputStream : public IBlockInputStream
     {
     public:
         StorageURLBlockInputStream(const Poco::URI & uri,

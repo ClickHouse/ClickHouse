@@ -123,7 +123,7 @@ struct AggregateFunctionTopKGenericData
 };
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
- *  For such columns topK() can be implemented more efficently (especially for small numeric arrays).
+ *  For such columns topK() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false>
 class AggregateFunctionTopKGeneric : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column>>

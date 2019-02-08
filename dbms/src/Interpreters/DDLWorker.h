@@ -3,6 +3,7 @@
 #include <Interpreters/Cluster.h>
 #include <DataStreams/BlockIO.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 
 #include <atomic>
@@ -90,7 +91,7 @@ private:
 
     std::shared_ptr<Poco::Event> event_queue_updated;
     std::atomic<bool> stop_flag{false};
-    std::thread thread;
+    ThreadFromGlobalPool thread;
 
     Int64 last_cleanup_time_seconds = 0;
 

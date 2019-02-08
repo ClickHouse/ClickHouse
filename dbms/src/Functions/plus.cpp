@@ -18,7 +18,7 @@ struct PlusImpl
         return static_cast<Result>(a) + b;
     }
 
-    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false othervise.
+    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false otherwise.
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {

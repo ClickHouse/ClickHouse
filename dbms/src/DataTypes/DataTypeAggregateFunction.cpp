@@ -9,6 +9,7 @@
 #include <Common/AlignedBuffer.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -31,7 +32,7 @@ namespace ErrorCodes
 }
 
 
-std::string DataTypeAggregateFunction::getName() const
+std::string DataTypeAggregateFunction::doGetName() const
 {
     std::stringstream stream;
     stream << "AggregateFunction(" << function->getName();
@@ -245,6 +246,12 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
     String s;
     readCSV(s, istr, settings.csv);
     deserializeFromString(function, column, s);
+}
+
+
+void DataTypeAggregateFunction::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeAggregateFunction(function, static_cast<const ColumnAggregateFunction &>(column).getData()[row_num]);
 }
 
 

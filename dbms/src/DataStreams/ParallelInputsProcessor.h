@@ -8,11 +8,12 @@
 
 #include <common/logger_useful.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
@@ -125,20 +126,17 @@ public:
 
         for (auto & input : inputs)
         {
-            if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*input))
+            try
             {
-                try
-                {
-                    child->cancel(kill);
-                }
-                catch (...)
-                {
-                    /** If you can not ask one or more sources to stop.
-                      * (for example, the connection is broken for distributed query processing)
-                      * - then do not care.
-                      */
-                    LOG_ERROR(log, "Exception while cancelling " << child->getName());
-                }
+                input->cancel(kill);
+            }
+            catch (...)
+            {
+                /** If you can not ask one or more sources to stop.
+                  * (for example, the connection is broken for distributed query processing)
+                  * - then do not care.
+                  */
+                LOG_ERROR(log, "Exception while cancelling " << input->getName());
             }
         }
     }
@@ -185,7 +183,8 @@ private:
         try
         {
             setThreadName("ParalInputsProc");
-            CurrentThread::attachTo(thread_group);
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
 
             while (!finish)
             {
@@ -306,8 +305,8 @@ private:
 
     Handler & handler;
 
-    /// Streams.
-    using ThreadsData = std::vector<std::thread>;
+    /// Threads.
+    using ThreadsData = std::vector<ThreadFromGlobalPool>;
     ThreadsData threads;
 
     /** A set of available sources that are not currently processed by any thread.

@@ -18,9 +18,8 @@ add_library (common ${LINK_MODE}
     src/mremap.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
-    src/ThreadPool.cpp
     src/demangle.cpp
-    src/SetTerminalEcho.cpp
+    src/setTerminalEcho.cpp
 
     include/common/Types.h
     include/common/DayNum.h
@@ -34,14 +33,13 @@ add_library (common ${LINK_MODE}
     include/common/mremap.h
     include/common/likely.h
     include/common/logger_useful.h
-    include/common/MultiVersion.h
     include/common/strong_typedef.h
     include/common/JSON.h
     include/common/getMemoryAmount.h
-    include/common/ThreadPool.h
     include/common/demangle.h
-    include/common/SetTerminalEcho.h
+    include/common/setTerminalEcho.h
     include/common/find_symbols.h
+    include/common/constexpr_helpers.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -108,7 +106,7 @@ target_link_libraries (common
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
     ${MALLOC_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)

@@ -2,7 +2,7 @@
 
 #include <string>
 #include <Core/Block.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Poco/Data/RecordSet.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
@@ -12,7 +12,7 @@
 namespace DB
 {
 /// Allows processing results of a query to ODBC source as a sequence of Blocks, simplifies chaining
-class ODBCBlockInputStream final : public IProfilingBlockInputStream
+class ODBCBlockInputStream final : public IBlockInputStream
 {
 public:
     ODBCBlockInputStream(

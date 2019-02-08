@@ -4,4 +4,5 @@ target_link_libraries (clickhouse-extract-from-config-lib PRIVATE clickhouse_com
 if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-extract-from-config clickhouse-extract-from-config.cpp)
     target_link_libraries (clickhouse-extract-from-config PRIVATE clickhouse-extract-from-config-lib)
+    install (TARGETS clickhouse-extract-from-config ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()

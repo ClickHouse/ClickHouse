@@ -2,7 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/range.h>

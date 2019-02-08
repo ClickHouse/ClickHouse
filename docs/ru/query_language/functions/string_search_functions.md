@@ -14,6 +14,21 @@
 
 Для поиска без учета регистра используйте функцию `positionCaseInsensitiveUTF8`.
 
+## multiPosition(haystack, [needle_1, needle_2, ..., needle_n])
+Так же, как и `position`, только возвращает `Array` первых вхождений.
+
+Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiPositionCaseInsensitive, multiPositionUTF8, multiPositionCaseInsensitiveUTF8`.
+
+## firstMatch(haystack, [needle_1, needle_2, ..., needle_n])
+Возвращает индекс `i` (нумерация с единицы) первой найденной строки `needle_i` в строке `haystack` и 0 иначе.
+
+Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `firstMatchCaseInsensitive, firstMatchUTF8, firstMatchCaseInsensitiveUTF8`.
+
+## multiSearch(haystack, [needle_1, needle_2, ..., needle_n])
+Возвращает 1, если хотя бы одна подстрока `needle_i` нашлась в строке `haystack` и 0 иначе.
+
+Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchCaseInsensitive, multiSearchUTF8, multiSearchCaseInsensitiveUTF8`.
+
 ## match(haystack, pattern)
 Проверка строки на соответствие регулярному выражению pattern. Регулярное выражение **re2**. Синтаксис регулярных выражений **re2** является более ограниченным по сравнению с регулярными выражениями **Perl** ([подробнее](https://github.com/google/re2/wiki/Syntax)).
 Возвращает 0 (если не соответствует) или 1 (если соответствует).

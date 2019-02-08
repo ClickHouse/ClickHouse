@@ -2,7 +2,7 @@
 
 #include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
 /** Takes stream already sorted by `x` and finishes sorting it by (`x`, `y`).
  *  During sorting only blocks with rows that equal by `x` saved in RAM.
  * */
-class FinishSortingBlockInputStream : public IProfilingBlockInputStream
+class FinishSortingBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.

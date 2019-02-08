@@ -2,7 +2,7 @@
 
 #include <Core/SortDescription.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
 /** Sorts each block individually by the values of the specified columns.
   * At the moment, not very optimal algorithm is used.
   */
-class PartialSortingBlockInputStream : public IProfilingBlockInputStream
+class PartialSortingBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, then you can sort each block not completely, but only `limit` first rows by order.

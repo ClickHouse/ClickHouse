@@ -16,7 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -48,7 +48,7 @@ namespace ErrorCodes
 }
 
 
-class StripeLogBlockInputStream final : public IProfilingBlockInputStream
+class StripeLogBlockInputStream final : public IBlockInputStream
 {
 public:
     StripeLogBlockInputStream(StorageStripeLog & storage_, size_t max_read_buffer_size_,
