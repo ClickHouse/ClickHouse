@@ -1,20 +1,24 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <unordered_map>
 #include <queue>
+#include <IO/WriteBufferFromString.h>
+#include <Processors/printPipeline.h>
+#include <Common/EventCounter.h>
 
 namespace DB
 {
 
-namespace
+PipelineExecutor::PipelineExecutor(Processors processors, ThreadPool * pool)
+    : processors(std::move(processors)), pool(pool)
 {
-
-
+    buildGraph();
 }
+
 
 void PipelineExecutor::buildGraph()
 {
-    std::unordered_map<const IProcessor *, size_t> proc_map;
-    size_t num_processors = processors.size();
+    std::unordered_map<const IProcessor *, UInt64> proc_map;
+    UInt64 num_processors = processors.size();
 
     auto throwUnknownProcessor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
     {
@@ -25,156 +29,288 @@ void PipelineExecutor::buildGraph()
     };
 
     graph.resize(num_processors);
-    for (size_t node = 0; node < num_processors; ++node)
+    for (UInt64 node = 0; node < num_processors; ++node)
     {
         IProcessor * proc = processors[node].get();
         proc_map[proc] = node;
         graph[node].processor = proc;
     }
 
-    for (size_t node = 0; node < num_processors; ++node)
+    for (UInt64 node = 0; node < num_processors; ++node)
     {
         const IProcessor * cur = graph[node].processor;
 
-        for (const InputPort & input_port : processors[node]->getInputs())
+        for (InputPort & input_port : processors[node]->getInputs())
         {
-            const IProcessor * proc = &input_port.getProcessor();
+            const IProcessor * proc = &input_port.getOutputPort().getProcessor();
 
             auto it = proc_map.find(proc);
             if (it == proc_map.end())
                 throwUnknownProcessor(proc, cur, true);
 
-            size_t proc_num = it->second;
-            bool new_edge = true;
-            for (size_t edge = 0; new_edge && edge < graph[node].backEdges.size(); ++edge)
-                if (graph[node].backEdges[edge].from == proc_num)
-                    new_edge = false;
+            UInt64 proc_num = it->second;
+            Edge * edge_ptr = nullptr;
 
-            if (new_edge)
+            for (auto & edge : graph[node].backEdges)
+                if (edge.to == proc_num)
+                    edge_ptr = &edge;
+
+            if (!edge_ptr)
             {
-                graph[node].backEdges.emplace_back();
-                graph[node].backEdges.back().from = proc_num;
+                edge_ptr = &graph[node].backEdges.emplace_back();
+                edge_ptr->to = proc_num;
             }
+
+            input_port.setVersion(&edge_ptr->version);
         }
 
-        for (const OutputPort & output_port : processors[node]->getOutputs())
+        for (OutputPort & output_port : processors[node]->getOutputs())
         {
-            const IProcessor * proc = &output_port.getProcessor();
+            const IProcessor * proc = &output_port.getInputPort().getProcessor();
 
             auto it = proc_map.find(proc);
             if (it == proc_map.end())
                 throwUnknownProcessor(proc, cur, true);
 
-            size_t proc_num = it->second;
-            bool new_edge = true;
-            for (size_t edge = 0; new_edge && edge < graph[node].directEdges.size(); ++edge)
-                if (graph[node].directEdges[edge].to == proc_num)
-                    new_edge = false;
+            UInt64 proc_num = it->second;
+            Edge * edge_ptr = nullptr;
 
-            if (new_edge)
+            for (auto & edge : graph[node].directEdges)
+                if (edge.to == proc_num)
+                    edge_ptr = &edge;
+
+            if (!edge_ptr)
             {
-                graph[node].directEdges.emplace_back();
-                graph[node].directEdges.back().to = proc_num;
+                edge_ptr = &graph[node].directEdges.emplace_back();
+                edge_ptr->to = proc_num;
             }
+
+            output_port.setVersion(&edge_ptr->version);
         }
     }
 }
 
-void PipelineExecutor::prepareProcessor(std::queue<size_t> & jobs, size_t pid)
+void PipelineExecutor::addChildlessProcessorsToQueue()
+{
+    UInt64 num_processors = processors.size();
+    for (UInt64 proc = 0; proc < num_processors; ++proc)
+    {
+        if (graph[proc].directEdges.empty())
+        {
+            prepare_queue.push(proc);
+            graph[proc].status = ExecStatus::Preparing;
+        }
+    }
+}
+
+void PipelineExecutor::processFinishedExecutionQueue()
+{
+    while (!finished_execution_queue.empty())
+    {
+        UInt64 proc = finished_execution_queue.front();
+        finished_execution_queue.pop();
+
+        graph[proc].status = ExecStatus::Preparing;
+        prepare_queue.push(proc);
+    }
+}
+
+void PipelineExecutor::processFinishedExecutionQueueSafe()
+{
+    if (pool)
+    {
+        exception_handler.throwIfException();
+        std::lock_guard lock(finished_execution_mutex);
+        processFinishedExecutionQueue();
+    }
+    else
+        processFinishedExecutionQueue();
+}
+
+bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge)
+{
+    /// Don't add processor if nothing was read from port.
+    if (edge.version == edge.prev_version)
+        return false;
+
+    edge.prev_version = edge.version;
+
+    auto & node = graph[edge.to];
+    if (node.status == ExecStatus::Idle)
+    {
+        prepare_queue.push(edge.to);
+        node.status = ExecStatus::Preparing;
+        return true;
+    }
+
+    return false;
+}
+
+void PipelineExecutor::addJob(UInt64 pid)
+{
+    if (pool)
+    {
+        auto job = [this, pid]()
+        {
+            graph[pid].processor->work();
+
+            {
+                std::lock_guard lock(finished_execution_mutex);
+                finished_execution_queue.push(pid);
+            }
+
+            event_counter.notify();
+        };
+
+        pool->schedule(createExceptionHandledJob(std::move(job), exception_handler));
+        ++num_tasks_to_wait;
+    }
+    else
+    {
+        /// Execute task in main thread.
+        graph[pid].processor->work();
+        finished_execution_queue.push(pid);
+    }
+}
+
+void PipelineExecutor::addAsyncJob(UInt64 pid)
+{
+    graph[pid].processor->schedule(event_counter);
+    graph[pid].status = ExecStatus::Async;
+    ++num_tasks_to_wait;
+}
+
+void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
 {
     auto & node = graph[pid];
     auto status = node.processor->prepare();
+    node.last_processor_status = status;
+
+    auto add_neighbours_to_prepare_queue = [&, this]
+    {
+        for (auto & edge : node.directEdges)
+            addProcessorToPrepareQueueIfUpdated(edge);
+
+        for (auto & edge : node.backEdges)
+            addProcessorToPrepareQueueIfUpdated(edge);
+    };
 
     switch (status)
     {
         case IProcessor::Status::NeedData:
-        case IProcessor::Status::PortFull:
-        case IProcessor::Status::Unneeded:
         {
+            add_neighbours_to_prepare_queue();
             node.status = ExecStatus::Idle;
-            node.idle_status = status;
+            break;
+        }
+        case IProcessor::Status::PortFull:
+        {
+            add_neighbours_to_prepare_queue();
+            node.status = ExecStatus::Idle;
             break;
         }
         case IProcessor::Status::Finished:
         {
+            add_neighbours_to_prepare_queue();
             node.status = ExecStatus::Finished;
             break;
         }
         case IProcessor::Status::Ready:
         {
-            jobs.push(pid);
+            node.status = ExecStatus::Executing;
+            addJob(pid);
             break;
         }
         case IProcessor::Status::Async:
         {
-            throw Exception("Async is not supported for PipelineExecutor", ErrorCodes::LOGICAL_ERROR);
+            node.status = ExecStatus::Executing;
+            addAsyncJob(pid);
+            break;
         }
         case IProcessor::Status::Wait:
         {
-            throw Exception("Wait is not supported for PipelineExecutor", ErrorCodes::LOGICAL_ERROR);
+            if (!async)
+                throw Exception("Processor returned status Wait before Async.", ErrorCodes::LOGICAL_ERROR);
         }
     }
 }
 
-void PipelineExecutor::traverse(std::queue<size_t> & preparing, size_t pid)
+void PipelineExecutor::processPrepareQueue()
 {
-    for (const auto & edge : graph[pid].directEdges)
+    while (!prepare_queue.empty())
     {
-        auto & node = graph[edge.to];
-        if (node.status == ExecStatus::Idle)
-        {
-            preparing.push(edge.to);
-            node.status = ExecStatus::Preparing;
-        }
-    }
+        UInt64 proc = prepare_queue.front();
+        prepare_queue.pop();
 
-    for (const auto & edge : graph[pid].backEdges)
-    {
-        auto & node = graph[edge.from];
-        if (node.status == ExecStatus::Idle)
-        {
-            preparing.push(edge.from);
-            node.status = ExecStatus::Preparing;
-        }
+        prepareProcessor(proc, false);
+
     }
+}
+
+void PipelineExecutor::processAsyncQueue()
+{
+    UInt64 num_processors = processors.size();
+    for (UInt64 node = 0; node < num_processors; ++node)
+        if (graph[node].status == ExecStatus::Async)
+            prepareProcessor(node, true);
 }
 
 void PipelineExecutor::execute()
 {
-    std::queue<size_t> jobs;
-    std::queue<size_t> preparing;
+    addChildlessProcessorsToQueue();
 
-    size_t num_nodes = graph.size();
-    for (size_t i = 0; i < num_nodes; ++i)
+    while (true)
     {
-        if (graph[i].directEdges.empty())
+        processFinishedExecutionQueueSafe();
+        processPrepareQueue();
+        processAsyncQueue();
+
+        if (prepare_queue.empty())
         {
-            preparing.push(i);
-            graph[i].status = ExecStatus::Preparing;
+            /// For single-thread executor.
+            if (!pool && !finished_execution_queue.empty())
+                continue;
+
+            if (num_tasks_to_wait > num_waited_tasks)
+            {
+                /// Try wait anything.
+                event_counter.wait();
+                ++num_waited_tasks;
+            }
+            else
+            {
+                /// Here prepare_queue is empty and we have nobody to wait for. Exiting.
+                break;
+            }
         }
     }
 
-    if (preparing.empty())
-        throw Exception("No sync processors were found.", ErrorCodes::LOGICAL_ERROR);
+    bool all_processors_finished = true;
+    for (auto & node : graph)
+        if (node.status != ExecStatus::Finished)
+            all_processors_finished = false;
 
-    while (!jobs.empty() || !preparing.empty())
+    if (!all_processors_finished)
     {
-        while (!jobs.empty())
+        /// It seems that pipeline has stuck.
+
+        std::vector<IProcessor::Status> statuses;
+        std::vector<IProcessor *> proc_list;
+        statuses.reserve(graph.size());
+        proc_list.reserve(graph.size());
+
+        for (auto & proc : graph)
         {
-            size_t pid = jobs.front();
-            jobs.pop();
-            addJob(pid);
-            /// Make a job
+            proc_list.emplace_back(proc.processor);
+            statuses.emplace_back(proc.last_processor_status);
         }
 
-        while (!preparing.empty())
-        {
-            size_t pid = preparing.front();
-            preparing.pop();
-            prepareProcessor(jobs, pid);
-        }
+        WriteBufferFromOwnString out;
+        printPipeline(processors, statuses, out);
+        out.finish();
+
+        throw Exception("Pipeline stuck. Current state:\n" + out.str(), ErrorCodes::LOGICAL_ERROR);
     }
-
 }
 
 }

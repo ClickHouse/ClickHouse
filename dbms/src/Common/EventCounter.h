@@ -5,7 +5,7 @@
 #include <condition_variable>
 
 
-/** Allow to subscribe for multiple events and wait for them one by one in arbitary order.
+/** Allow to subscribe for multiple events and wait for them one by one in arbitrary order.
   */
 class EventCounter
 {

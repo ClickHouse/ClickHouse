@@ -29,6 +29,7 @@ ISink::Status ISink::prepare()
 void ISink::work()
 {
     consume(std::move(current_block));
+    has_input = false;
 }
 
 }
