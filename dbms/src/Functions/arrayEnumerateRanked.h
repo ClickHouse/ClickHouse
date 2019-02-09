@@ -95,6 +95,8 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(/*Block & block,*/ const 
             }
         }
     }
+    if (depth > max_array_depth)
+        DUMP("IMPOSSIBLE");
     return std::make_tuple(depth, depths, max_array_depth);
 }
 
@@ -146,7 +148,7 @@ public:
     std::tie(depth, depths, max_array_depth) = getDepths(arguments);
 
         if (arguments.size() == 0)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                 + toString(arguments.size()) + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -237,7 +239,9 @@ private:
     template <typename Method, bool has_null_map>
     void executeMethodImpl(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, const Sizes & key_sizes,
                            const NullMap * null_map, ColumnUInt32::Container & res_values,
-                           typename Method::Set &indices);
+                           typename Method::Set &indices,
+                           DepthType depth
+    );
 
     template <typename T>
     bool executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
@@ -282,6 +286,11 @@ DUMP(depth, depths, max_array_depth);
 
     Columns array_holders;
     ColumnPtr offsets_column;
+    size_t array_num = 0;
+
+    size_t sub_array_num = 0; // TODO for(...
+
+
     for (size_t i = 0; i < num_arguments; ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
@@ -297,11 +306,25 @@ DUMP(depth, depths, max_array_depth);
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
 */
+
+
 //            if (const_array) {
             array_holders.emplace_back(const_array->convertToFullColumn());
             array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
 //            }
         }
+
+             DUMP("wantdepth=", depths[array_num], "of", array);
+             if (depths[array_num] == 2) {
+                 DUMP("get subarray here", array[sub_array_num]);
+                 array = checkAndGetColumn<ColumnArray>(&array[sub_array_num]);
+DUMP(array);
+if (!array) {
+DUMP("no nested array");
+    continue;
+}
+             }
+
 
         const ColumnArray::Offsets & offsets_i = array->getOffsets();
         //if (i == 0)
@@ -316,6 +339,7 @@ DUMP(depth, depths, max_array_depth);
 
         auto * array_data = &array->getData();
         data_columns.emplace_back(array_data);
+        ++array_num;
     }
 
     //DUMP(data_columns);
@@ -375,7 +399,19 @@ DUMP(offsets, null_map, data_columns);
     typename MethodHashed::Set indices;
     //ecuteMethod<MethodHashed>(offsets, data_columns, {}, nullptr, res_values);
     //executeMethodImpl<MethodHashed, false>(offsets, data_columns, key_sizes, null_map, res_values, indices);
-    executeMethodImpl<MethodHashed, false>(*offsets, data_columns, {}, nullptr, res_values, indices);
+
+    if (max_array_depth == 1)
+    {
+         executeMethodImpl<MethodHashed, false>(*offsets, data_columns, {}, nullptr, res_values, indices, depth);
+    }
+    else if (max_array_depth == 2)
+    {
+// for...
+         if (depth == 2)
+             indices.clear();
+         executeMethodImpl<MethodHashed, false>(*offsets, data_columns, {}, nullptr, res_values, indices, depth);
+
+    }
 
 DUMP("=========================================");
 
@@ -390,8 +426,11 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         const Sizes & key_sizes,
         [[maybe_unused]] const NullMap * null_map,
         ColumnUInt32::Container & res_values,
-        typename Method::Set &indices)
+        typename Method::Set &indices,
+        DepthType depth
+)
 {
+(void)depth;
     //typename Method::Set indices;
     typename Method::Method method(columns, key_sizes, nullptr);
     Arena pool; /// Won't use it;
