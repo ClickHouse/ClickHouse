@@ -607,6 +607,7 @@ void DatabaseOrdinary::alterTable(
 void DatabaseOrdinary::drop()
 {
     Poco::File(data_path).remove(false);
+    Poco::File(dictionaries_metadata_path).remove(false);
     Poco::File(metadata_path).remove(false);
 }
 

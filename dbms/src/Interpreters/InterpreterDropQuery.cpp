@@ -172,6 +172,13 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
                 executeToTable(database_name, current_table_name, kind, false, false);
             }
 
+
+            for (auto iterator = database->getDictionaryIterator(context); iterator->isValid(); iterator->next())
+            {
+                String current_dictionary_name = iterator->dictionary()->getName();
+                executeToDictionary(database_name, current_dictionary_name, kind, false);
+            }
+
             auto context_lock = context.getLock();
 
             /// Someone could have time to delete the database before us.
