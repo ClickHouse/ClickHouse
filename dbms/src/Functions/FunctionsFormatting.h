@@ -74,24 +74,25 @@ private:
     template <typename T>
     inline static void writeBitmask(T x, WriteBuffer & out)
     {
+        using UnsignedT = std::make_unsigned_t<T>;
+        UnsignedT u_x = x;
+
         bool first = true;
-        while (x)
+        while (u_x)
         {
-            T y = x & (x - 1);
-            T bit = x ^ y;
-            x = y;
+            UnsignedT y = u_x & (u_x - 1);
+            UnsignedT bit = u_x ^ y;
+            u_x = y;
             if (!first)
                 writeChar(',', out);
             first = false;
-            writeIntText(bit, out);
+            writeIntText(T(bit), out);
         }
     }
 
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        using UnsignedT = std::make_unsigned_t<T>;
-
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnString::create();
@@ -107,7 +108,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                writeBitmask<UnsignedT>(vec_from[i], buf_to);
+                writeBitmask<T>(vec_from[i], buf_to);
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
