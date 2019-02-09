@@ -135,7 +135,7 @@ namespace {
     void queryProfilerTimerHandler(int /* sig */, siginfo_t * /* info */, void * context) {
         DB::WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1]);
 
-        const std::string & query_id = CurrentThread::getCurrentQueryID();
+        const std::string & query_id = CurrentThread::getQueryId();
 
         DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
         DB::writeStringBinary(query_id, out);

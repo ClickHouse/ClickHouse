@@ -274,7 +274,15 @@ struct ContextShared
             databases.clear();
         }
 
-<<<<<<< HEAD
+        /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
+        /// TODO: Get rid of this.
+
+        embedded_dictionaries.reset();
+        external_dictionaries.reset();
+        external_models.reset();
+        background_pool.reset();
+        schedule_pool.reset();
+
         /// Close trace pipe - definitely nobody needs to write there after
         /// databases shutdown
         trace_pipe.close();
@@ -288,16 +296,6 @@ struct ContextShared
         trace_pipe.open();
         trace_collector.reset(new TraceCollector(trace_log, trace_collector_stop.get_future()));
         trace_collector_thread.start(*trace_collector);
-=======
-        /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
-        /// TODO: Get rid of this.
-
-        embedded_dictionaries.reset();
-        external_dictionaries.reset();
-        external_models.reset();
-        background_pool.reset();
-        schedule_pool.reset();
->>>>>>> parent/master
     }
 
 private:
@@ -1623,10 +1621,10 @@ TraceLog * Context::getTraceLog()
 {
     auto lock = getLock();
 
-    if (!system_logs || !system_logs->trace_log)
+    if (!shared->system_logs || !shared->system_logs->trace_log)
         return nullptr;
 
-    return system_logs->trace_log.get();
+    return shared->system_logs->trace_log.get();
 }
 
 
