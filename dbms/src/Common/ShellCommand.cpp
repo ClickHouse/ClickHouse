@@ -8,7 +8,7 @@
 #include <IO/WriteHelpers.h>
 #include <port/unistd.h>
 #include <csignal>
-#include <Common/Pipe.h>
+#include <common/Pipe.h>
 
 
 namespace DB
@@ -81,15 +81,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         /// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
 
         /// Replace the file descriptors with the ends of our pipes.
-        if (STDIN_FILENO != dup2(pipe_stdin.read_fd, STDIN_FILENO))
+        if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
             _exit(int(ReturnCodes::CANNOT_DUP_STDIN));
 
         if (!pipe_stdin_only)
         {
-            if (STDOUT_FILENO != dup2(pipe_stdout.write_fd, STDOUT_FILENO))
+            if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
                 _exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
 
-            if (STDERR_FILENO != dup2(pipe_stderr.write_fd, STDERR_FILENO))
+            if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
                 _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
@@ -99,12 +99,12 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         _exit(int(ReturnCodes::CANNOT_EXEC));
     }
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.write_fd, pipe_stdout.read_fd, pipe_stderr.read_fd, terminate_in_destructor));
+    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
 
     /// Now the ownership of the file descriptors is passed to the result.
-    pipe_stdin.write_fd = -1;
-    pipe_stdout.read_fd = -1;
-    pipe_stderr.read_fd = -1;
+    pipe_stdin.fds_rw[1] = -1;
+    pipe_stdout.fds_rw[0] = -1;
+    pipe_stderr.fds_rw[0] = -1;
 
     return res;
 }

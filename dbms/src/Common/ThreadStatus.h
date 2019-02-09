@@ -11,6 +11,7 @@
 #include <shared_mutex>
 #include <functional>
 #include <boost/noncopyable.hpp>
+#include <signal.h>
 
 
 namespace Poco
@@ -164,6 +165,12 @@ protected:
     /// Use it only from current thread
     Context * query_context = nullptr;
 
+    // Previous signal handler to restore after query profiler exits
+    struct sigaction * previous_handler = nullptr;
+
+    // Pause signal to interrupt threads to get traces
+    const int pause_signal = SIGALRM;
+
     /// A logs queue used by TCPHandler to pass logs to a client
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
@@ -173,7 +180,7 @@ protected:
     size_t queries_started = 0;
 
     bool has_query_profiler = false;
-    timer_t query_profiler_timer_id = 0;
+    timer_t query_profiler_timer_id = nullptr;
 
     Poco::Logger * log = nullptr;
 

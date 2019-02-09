@@ -1,33 +1,39 @@
 #include "TraceCollector.h"
+
 #include <common/Backtrace.h>
 #include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
-#include <ctime>
+#include <IO/ReadBufferFromFileDescriptor.h>
+#include <Common/Exception.h>
 
 
 namespace DB {
+    LazyPipe trace_pipe;
 
-    const size_t TraceCollector::buf_size = sizeof(int) + sizeof(siginfo_t) + sizeof(ucontext_t);
-
-    TraceCollector::TraceCollector(TraceLog * trace_log)
+    TraceCollector::TraceCollector(TraceLog * trace_log, std::future<void>&& stop_future)
         : log(&Logger::get("TraceCollector"))
         , trace_log(trace_log)
+        , stop_future(std::move(stop_future))
     {
     }
 
     void TraceCollector::run()
     {
-        DB::ReadBufferFromFileDescriptor in(TracePipe::instance().read_fd);
+        DB::ReadBufferFromFileDescriptor in(trace_pipe.fds_rw[0]);
 
-        while (true)
+        while (stop_future.wait_for(std::chrono::milliseconds(1)) == std::future_status::timeout)
         {
             ucontext_t context;
-            std::string queryID;
+            std::string query_id;
 
-            DB::readPODBinary(context, in);
-            DB::readStringBinary(queryID, in);
-
-            LOG_INFO(log, queryID);
+            try {
+                DB::readPODBinary(context, in);
+                DB::readStringBinary(query_id, in);
+            } catch (Exception) {
+                /// Pipe was closed - looks like server is about to shutdown
+                /// Let us wait for stop_future
+                continue;
+            }
 
             if (trace_log != nullptr) {
                 std::vector<void *> frames = getBacktraceFrames(context);
@@ -37,15 +43,10 @@ namespace DB {
                     trace.push_back(reinterpret_cast<uintptr_t>(frame));
                 }
 
-                TraceLogElement element{std::time(nullptr), queryID, trace};
+                TraceLogElement element{std::time(nullptr), query_id, trace};
 
                 trace_log->add(element);
-
-                LOG_INFO(log, "TraceCollector added row");
             }
         }
-
-        LOG_INFO(log, "TraceCollector exited");
     }
-
 }

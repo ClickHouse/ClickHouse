@@ -1,6 +1,6 @@
 #include <common/Backtrace.h>
 #include <daemon/BaseDaemon.h>
-#include <daemon/Pipe.h>
+#include <common/Pipe.h>
 #include <daemon/OwnFormattingChannel.h>
 #include <daemon/OwnPatternFormatter.h>
 
@@ -86,7 +86,7 @@ using signal_function = void(int, siginfo_t*, void*);
 static void writeSignalIDtoSignalPipe(int sig)
 {
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
     DB::writeBinary(sig, out);
     out.next();
 }
@@ -114,7 +114,7 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     already_signal_handled = true;
 
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
@@ -152,7 +152,7 @@ public:
     void run()
     {
         char buf[buf_size];
-        DB::ReadBufferFromFileDescriptor in(signal_pipe.read_fd, buf_size, buf);
+        DB::ReadBufferFromFileDescriptor in(signal_pipe.fds_rw[0], buf_size, buf);
 
         while (!in.eof())
         {
@@ -256,7 +256,7 @@ static void terminate_handler()
         log_message.resize(buf_size - 16);
 
     char buf[buf_size];
-    DB::WriteBufferFromFileDescriptor out(signal_pipe.write_fd, buf_size, buf);
+    DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
     DB::writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
     DB::writeBinary(Poco::ThreadNumber::get(), out);
@@ -631,7 +631,7 @@ void BaseDaemon::closeFDs()
         for (const auto & fd_str : fds)
         {
             int fd = DB::parse<int>(fd_str);
-            if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+            if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
     }
@@ -644,7 +644,7 @@ void BaseDaemon::closeFDs()
 #endif
             max_fd = 256; /// bad fallback
         for (int fd = 3; fd < max_fd; ++fd)
-            if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+            if (fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
     }
 }

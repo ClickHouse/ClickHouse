@@ -9,6 +9,7 @@
 std::vector<void *> backtraceLibUnwind(size_t max_frames, ucontext_t & context)
 {
     std::vector<void *> out_frames;
+    out_frames.reserve(max_frames);
     unw_cursor_t cursor;
 
     if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) >= 0)
