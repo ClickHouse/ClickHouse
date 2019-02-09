@@ -83,12 +83,12 @@ MODIFY ORDER BY new_expression
 
 Добавить или удалить индекс можно с помощью операций 
 ```
-ALTER ADD INDEX name expression TYPE type GRANULARITY value [AFTER name]
-ALTER DROP INDEX name
+ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value [AFTER name]
+ALTER TABLE [db].name DROP INDEX name
 ```
 Поддерживается только таблицами семейства `*MergeTree`.
 
-Команда `ALTER ADD INDEX` добавляет описание индексов в метаданные, а `ALTER DROP INDEX` удаляет индекс из метаданных и стирает файлы индекса с диска, поэтому они легковесные и работают мгновенно.
+Команда `ADD INDEX` добавляет описание индексов в метаданные, а `DROP INDEX` удаляет индекс из метаданных и стирает файлы индекса с диска, поэтому они легковесные и работают мгновенно.
 
 Если индекс появился в метаданных, то он начнет считаться в последующих слияниях и записях в таблицу, а не сразу после выполнения операции `ALTER`.
 

@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeUniqueIndex.h>
+#include <Storages/MergeTree/MergeTreeSetSkippingIndex.h>
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -7,8 +7,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-
-#include <Poco/Logger.h>
 
 
 namespace DB
@@ -19,13 +17,17 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
-MergeTreeUniqueGranule::MergeTreeUniqueGranule(const MergeTreeUniqueIndex & index)
-        : MergeTreeIndexGranule(), index(index), set(new Set(SizeLimits{}, true))
+/// 0b11 -- can be true and false at the same time
+const Field UNKNOWN_FIELD(3);
+
+
+MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index)
+        : IMergeTreeIndexGranule(), index(index), set(new Set(SizeLimits{}, true))
 {
     set->setHeader(index.header);
 }
 
-void MergeTreeUniqueGranule::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
@@ -49,7 +51,7 @@ void MergeTreeUniqueGranule::serializeBinary(WriteBuffer & ostr) const
     }
 }
 
-void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
+void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
 {
     if (!set->empty())
     {
@@ -76,31 +78,13 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
     set->insertFromBlock(block);
 }
 
-String MergeTreeUniqueGranule::toString() const
+void MergeTreeSetIndexGranule::update(const Block & new_block, size_t * pos, size_t limit)
 {
-    String res = "";
+    if (*pos >= new_block.rows())
+        throw Exception(
+                "The provided position is not less than the number of block rows. Position: "
+                + toString(*pos) + ", Block rows: " + toString(new_block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & columns = set->getSetElements();
-    for (size_t i = 0; i < index.columns.size(); ++i)
-    {
-        const auto & column = columns[i];
-        res += " [";
-        for (size_t j = 0; j < column->size(); ++j)
-        {
-            if (j != 0)
-                res += ", ";
-            Field field;
-            column->get(j, field);
-            res += applyVisitor(FieldVisitorToString(), field);
-        }
-        res += "]\n";
-    }
-
-    return res;
-}
-
-void MergeTreeUniqueGranule::update(const Block & new_block, size_t * pos, size_t limit)
-{
     size_t rows_read = std::min(limit, new_block.rows() - *pos);
 
     if (index.max_rows && size() > index.max_rows)
@@ -126,7 +110,7 @@ void MergeTreeUniqueGranule::update(const Block & new_block, size_t * pos, size_
     *pos += rows_read;
 }
 
-Block MergeTreeUniqueGranule::getElementsBlock() const
+Block MergeTreeSetIndexGranule::getElementsBlock() const
 {
     if (index.max_rows && size() > index.max_rows)
         return index.header;
@@ -134,11 +118,11 @@ Block MergeTreeUniqueGranule::getElementsBlock() const
 }
 
 
-UniqueCondition::UniqueCondition(
+SetIndexCondition::SetIndexCondition(
         const SelectQueryInfo & query,
         const Context & context,
-        const MergeTreeUniqueIndex &index)
-        : IndexCondition(), index(index)
+        const MergeTreeSetSkippingIndex &index)
+        : IIndexCondition(), index(index)
 {
     for (size_t i = 0, size = index.columns.size(); i < size; ++i)
     {
@@ -151,29 +135,22 @@ UniqueCondition::UniqueCondition(
 
     /// Replace logical functions with bit functions.
     /// Working with UInt8: last bit = can be true, previous = can be false.
-    ASTPtr new_expression;
     if (select.where_expression && select.prewhere_expression)
-        new_expression = makeASTFunction(
+        expression_ast = makeASTFunction(
                 "and",
                 select.where_expression->clone(),
                 select.prewhere_expression->clone());
     else if (select.where_expression)
-        new_expression = select.where_expression->clone();
+        expression_ast = select.where_expression->clone();
     else if (select.prewhere_expression)
-        new_expression = select.prewhere_expression->clone();
+        expression_ast = select.prewhere_expression->clone();
     else
-        /// 0b11 -- can be true and false at the same time
-        new_expression = std::make_shared<ASTLiteral>(Field(3));
+        expression_ast = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 
-    useless = checkASTAlwaysUnknownOrTrue(new_expression);
+    useless = checkASTUseless(expression_ast);
     /// Do not proceed if index is useless for this query.
     if (useless)
         return;
-
-    expression_ast = makeASTFunction(
-            "bitAnd",
-            new_expression,
-            std::make_shared<ASTLiteral>(Field(1)));
 
     traverseAST(expression_ast);
 
@@ -182,17 +159,17 @@ UniqueCondition::UniqueCondition(
     actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
 }
 
-bool UniqueCondition::alwaysUnknownOrTrue() const
+bool SetIndexCondition::alwaysUnknownOrTrue() const
 {
     return useless;
 }
 
-bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    auto granule = std::dynamic_pointer_cast<MergeTreeUniqueGranule>(idx_granule);
+    auto granule = std::dynamic_pointer_cast<MergeTreeSetIndexGranule>(idx_granule);
     if (!granule)
         throw Exception(
-                "Unique index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
+                "Unique index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
     if (useless)
         return true;
@@ -203,17 +180,16 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     Block result = granule->getElementsBlock();
     actions->execute(result);
 
-
     const auto & column = result.getByName(expression_ast->getColumnName()).column;
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getBool(i))
+        if (column->getInt(i) & 1)
             return true;
 
     return false;
 }
 
-void UniqueCondition::traverseAST(ASTPtr & node) const
+void SetIndexCondition::traverseAST(ASTPtr & node) const
 {
     if (operatorFromAST(node))
     {
@@ -226,10 +202,10 @@ void UniqueCondition::traverseAST(ASTPtr & node) const
     }
 
     if (!atomFromAST(node))
-        node = std::make_shared<ASTLiteral>(Field(3)); /// can_be_true=1 can_be_false=1
+        node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 }
 
-bool UniqueCondition::atomFromAST(ASTPtr & node) const
+bool SetIndexCondition::atomFromAST(ASTPtr & node) const
 {
     /// Function, literal or column
 
@@ -260,14 +236,14 @@ bool UniqueCondition::atomFromAST(ASTPtr & node) const
     return false;
 }
 
-bool UniqueCondition::operatorFromAST(ASTPtr & node) const
+bool SetIndexCondition::operatorFromAST(ASTPtr & node) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
     auto * func = typeid_cast<ASTFunction *>(&*node);
     if (!func)
         return false;
 
-    const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+    ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
     if (func->name == "not")
     {
@@ -277,16 +253,50 @@ bool UniqueCondition::operatorFromAST(ASTPtr & node) const
         func->name = "__bitSwapLastTwo";
     }
     else if (func->name == "and" || func->name == "indexHint")
-        func->name = "bitAnd";
+    {
+        auto last_arg = args.back();
+        args.pop_back();
+
+        ASTPtr new_func;
+        if (args.size() > 1)
+            new_func = makeASTFunction(
+                    "bitAnd",
+                    node,
+                    last_arg);
+        else
+            new_func = makeASTFunction(
+                    "bitAnd",
+                    args.back(),
+                    last_arg);
+
+        node = new_func;
+    }
     else if (func->name == "or")
-        func->name = "bitOr";
+    {
+        auto last_arg = args.back();
+        args.pop_back();
+
+        ASTPtr new_func;
+        if (args.size() > 1)
+            new_func = makeASTFunction(
+                    "bitOr",
+                    node,
+                    last_arg);
+        else
+            new_func = makeASTFunction(
+                    "bitOr",
+                    args.back(),
+                    last_arg);
+
+        node = new_func;
+    }
     else
         return false;
 
     return true;
 }
 
-bool checkAtomName(const String & name)
+static bool checkAtomName(const String & name)
 {
     static std::set<String> atoms = {
             "notEquals",
@@ -302,7 +312,7 @@ bool checkAtomName(const String & name)
     return atoms.find(name) != atoms.end();
 }
 
-bool UniqueCondition::checkASTAlwaysUnknownOrTrue(const ASTPtr & node, bool atomic) const
+bool SetIndexCondition::checkASTUseless(const ASTPtr &node, bool atomic) const
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
     {
@@ -312,16 +322,16 @@ bool UniqueCondition::checkASTAlwaysUnknownOrTrue(const ASTPtr & node, bool atom
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
         if (func->name == "and" || func->name == "indexHint")
-            return checkASTAlwaysUnknownOrTrue(args[0], atomic) && checkASTAlwaysUnknownOrTrue(args[1], atomic);
+            return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
         else if (func->name == "or")
-            return checkASTAlwaysUnknownOrTrue(args[0], atomic) || checkASTAlwaysUnknownOrTrue(args[1], atomic);
+            return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
         else if (func->name == "not")
-            return checkASTAlwaysUnknownOrTrue(args[0], atomic);
+            return checkASTUseless(args[0], atomic);
         else if (!atomic && checkAtomName(func->name))
-            return checkASTAlwaysUnknownOrTrue(node, true);
+            return checkASTUseless(node, true);
         else
             return std::any_of(args.begin(), args.end(),
-                    [this, &atomic](const auto & arg) { return checkASTAlwaysUnknownOrTrue(arg, atomic); });
+                    [this, &atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
     }
     else if (const auto * literal = typeid_cast<const ASTLiteral *>(node.get()))
         return !atomic && literal->value.get<bool>();
@@ -332,19 +342,19 @@ bool UniqueCondition::checkASTAlwaysUnknownOrTrue(const ASTPtr & node, bool atom
 }
 
 
-MergeTreeIndexGranulePtr MergeTreeUniqueIndex::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeSetSkippingIndex::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeUniqueGranule>(*this);
+    return std::make_shared<MergeTreeSetIndexGranule>(*this);
 }
 
-IndexConditionPtr MergeTreeUniqueIndex::createIndexCondition(
+IndexConditionPtr MergeTreeSetSkippingIndex::createIndexCondition(
         const SelectQueryInfo & query, const Context & context) const
 {
-    return std::make_shared<UniqueCondition>(query, context, *this);
+    return std::make_shared<SetIndexCondition>(query, context, *this);
 };
 
 
-std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
+std::unique_ptr<IMergeTreeIndex> setIndexCreator(
         const NamesAndTypesList & new_columns,
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context)
@@ -386,8 +396,8 @@ std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
         header.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
     }
 
-    return std::make_unique<MergeTreeUniqueIndex>(
-        node->name, std::move(unique_expr), columns, data_types, header, node->granularity.get<size_t>(), max_rows);
+    return std::make_unique<MergeTreeSetSkippingIndex>(
+        node->name, std::move(unique_expr), columns, data_types, header, node->granularity, max_rows);
 }
 
 }

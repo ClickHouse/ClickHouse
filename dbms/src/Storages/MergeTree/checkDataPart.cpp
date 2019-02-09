@@ -257,7 +257,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             {
                 stream.assertMark();
             }
-            catch (Exception &e)
+            catch (Exception & e)
             {
                 e.addMessage("Cannot read mark " + toString(mark_num)
                              + " in file " + stream.mrk_file_path
@@ -268,7 +268,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             {
                 index->createIndexGranule()->deserializeBinary(stream.uncompressed_hashing_buf);
             }
-            catch (Exception &e)
+            catch (Exception & e)
             {
                 e.addMessage("Cannot read granule " + toString(mark_num)
                           + " in file " + stream.bin_file_path

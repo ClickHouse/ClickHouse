@@ -520,6 +520,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     RangesInDataParts parts_with_ranges;
 
+    std::vector<std::pair<MergeTreeIndexPtr, IndexConditionPtr>> useful_indices;
+    for (const auto & index : data.skip_indices)
+    {
+        auto condition = index->createIndexCondition(query_info, context);
+        if (!condition->alwaysUnknownOrTrue())
+            useful_indices.emplace_back(index, condition);
+    }
+
     /// Let's find what range to read from each part.
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
@@ -532,16 +540,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         else
             ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
 
-        /// It can be done in multiple threads (one thread for each part).
-        /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
-        for (const auto & index : data.skip_indices)
-        {
-            auto condition = index->createIndexCondition(query_info, context);
-            if (!condition->alwaysUnknownOrTrue())
-            {
-                ranges.ranges = filterMarksUsingIndex(index, condition, part, ranges.ranges, settings);
-            }
-        }
+        for (const auto & index_and_condition : useful_indices)
+            ranges.ranges = filterMarksUsingIndex(
+                    index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings);
 
         if (!ranges.ranges.empty())
         {

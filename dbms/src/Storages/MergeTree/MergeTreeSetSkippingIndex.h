@@ -12,50 +12,49 @@
 namespace DB
 {
 
-class MergeTreeUniqueIndex;
+class MergeTreeSetSkippingIndex;
 
-struct MergeTreeUniqueGranule : public MergeTreeIndexGranule
+struct MergeTreeSetIndexGranule : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeUniqueGranule(const MergeTreeUniqueIndex & index);
+    explicit MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
-    String toString() const override;
     size_t size() const { return set->getTotalRowCount(); }
     bool empty() const override { return !size(); }
 
     void update(const Block & block, size_t * pos, size_t limit) override;
     Block getElementsBlock() const;
 
-    ~MergeTreeUniqueGranule() override = default;
+    ~MergeTreeSetIndexGranule() override = default;
 
-    const MergeTreeUniqueIndex & index;
+    const MergeTreeSetSkippingIndex & index;
     std::unique_ptr<Set> set;
 };
 
 
-class UniqueCondition : public IndexCondition
+class SetIndexCondition : public IIndexCondition
 {
 public:
-    UniqueCondition(
+    SetIndexCondition(
             const SelectQueryInfo & query,
             const Context & context,
-            const MergeTreeUniqueIndex & index);
+            const MergeTreeSetSkippingIndex & index);
 
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
-    ~UniqueCondition() override = default;
+    ~SetIndexCondition() override = default;
 private:
     void traverseAST(ASTPtr & node) const;
     bool atomFromAST(ASTPtr & node) const;
     bool operatorFromAST(ASTPtr & node) const;
 
-    bool checkASTAlwaysUnknownOrTrue(const ASTPtr & node, bool atomic = false) const;
+    bool checkASTUseless(const ASTPtr &node, bool atomic = false) const;
 
-    const MergeTreeUniqueIndex & index;
+    const MergeTreeSetSkippingIndex & index;
 
     bool useless;
     std::set<String> key_columns;
@@ -64,10 +63,10 @@ private:
 };
 
 
-class MergeTreeUniqueIndex : public MergeTreeIndex
+class MergeTreeSetSkippingIndex : public IMergeTreeIndex
 {
 public:
-    MergeTreeUniqueIndex(
+    MergeTreeSetSkippingIndex(
         String name_,
         ExpressionActionsPtr expr_,
         const Names & columns_,
@@ -75,9 +74,9 @@ public:
         const Block & header_,
         size_t granularity_,
         size_t max_rows_)
-        : MergeTreeIndex(std::move(name_), std::move(expr_), columns_, data_types_, header_, granularity_), max_rows(max_rows_) {}
+        : IMergeTreeIndex(std::move(name_), std::move(expr_), columns_, data_types_, header_, granularity_), max_rows(max_rows_) {}
 
-    ~MergeTreeUniqueIndex() override = default;
+    ~MergeTreeSetSkippingIndex() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 
@@ -86,8 +85,5 @@ public:
 
     size_t max_rows = 0;
 };
-
-std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
-    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
 
 }
