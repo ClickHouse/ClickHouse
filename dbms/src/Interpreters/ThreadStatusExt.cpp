@@ -131,8 +131,10 @@ void ThreadStatus::finalizePerformanceCounters()
     }
 }
 
-namespace {
-    void queryProfilerTimerHandler(int /* sig */, siginfo_t * /* info */, void * context) {
+namespace
+{
+    void queryProfilerTimerHandler(int /* sig */, siginfo_t * /* info */, void * context)
+    {
         DB::WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1]);
 
         const std::string & query_id = CurrentThread::getQueryId();
@@ -143,59 +145,51 @@ namespace {
     }
 }
 
-void ThreadStatus::initQueryProfiler() {
-    if (!query_context) {
-        LOG_INFO(log, "Query profiler disabled - no context");
+void ThreadStatus::initQueryProfiler()
+{
+    if (!query_context)
         return;
-    }
 
     struct sigevent sev;
     sev.sigev_notify = SIGEV_THREAD_ID;
     sev.sigev_signo = pause_signal;
     sev._sigev_un._tid = os_thread_id;
     // TODO(laplab): get clock type from settings
-    if (timer_create(CLOCK_REALTIME, &sev, &query_profiler_timer_id)) {
+    if (timer_create(CLOCK_REALTIME, &sev, &query_profiler_timer_id))
         throw Poco::Exception("Failed to create query profiler timer");
-    }
 
     // TODO(laplab): get period from settings
     struct timespec period{.tv_sec = 0, .tv_nsec = 200000000};
     struct itimerspec timer_spec = {.it_interval = period, .it_value = period};
-    if (timer_settime(query_profiler_timer_id, 0, &timer_spec, nullptr)) {
+    if (timer_settime(query_profiler_timer_id, 0, &timer_spec, nullptr))
         throw Poco::Exception("Failed to set query profiler timer");
-    }
 
     struct sigaction sa{};
     sa.sa_sigaction = queryProfilerTimerHandler;
     sa.sa_flags = SA_SIGINFO;
 
-    if (sigemptyset(&sa.sa_mask)) {
+    if (sigemptyset(&sa.sa_mask))
         throw Poco::Exception("Failed to clean signal mask for query profiler");
-    }
 
-    if (sigaddset(&sa.sa_mask, pause_signal)) {
+    if (sigaddset(&sa.sa_mask, pause_signal))
         throw Poco::Exception("Failed to add signal to mask for query profiler");
-    }
 
-    if (sigaction(pause_signal, &sa, previous_handler)) {
+    if (sigaction(pause_signal, &sa, previous_handler))
         throw Poco::Exception("Failed to setup signal handler for query profiler");
-    }
 
     has_query_profiler = true;
 }
 
-void ThreadStatus::finalizeQueryProfiler() {
-    if (!has_query_profiler) {
+void ThreadStatus::finalizeQueryProfiler()
+{
+    if (!has_query_profiler)
         return;
-    }
 
-    if (timer_delete(query_profiler_timer_id)) {
+    if (timer_delete(query_profiler_timer_id))
         throw Poco::Exception("Failed to delete query profiler timer");
-    }
 
-    if (sigaction(pause_signal, previous_handler, nullptr)) {
+    if (sigaction(pause_signal, previous_handler, nullptr))
         throw Poco::Exception("Failed to restore signal handler after query profiler");
-    }
 
     has_query_profiler = false;
 }
