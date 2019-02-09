@@ -11,7 +11,7 @@ namespace
 {
 
 using FuncLinearRegression = AggregateFunctionMLMethod<LinearModelData, NameLinearRegression>;
-
+using FuncLogisticRegression = AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression>;
 template <class Method>
 AggregateFunctionPtr createAggregateFunctionMLMethod(
         const std::string & name, const DataTypes & argument_types, const Array & parameters)
@@ -46,6 +46,9 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     if (std::is_same<Method, FuncLinearRegression>::value)
     {
        gc = std::make_shared<LinearRegression>(argument_types.size());
+    } else if (std::is_same<Method, FuncLogisticRegression>::value)
+    {
+       gc = std::make_shared<LogisticRegression>(argument_types.size());
     } else
     {
         throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -55,6 +58,9 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
         if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{1.0})
         {
             wu = std::make_shared<StochasticGradientDescent>();
+        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{2.0})
+        {
+            wu = std::make_shared<Momentum>();
         } else
         {
             throw Exception("Such weights updater is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -75,6 +81,7 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("LinearRegression", createAggregateFunctionMLMethod<FuncLinearRegression>);
+    factory.registerFunction("LogisticRegression", createAggregateFunctionMLMethod<FuncLogisticRegression>);
 }
 
 }
