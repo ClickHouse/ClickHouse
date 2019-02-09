@@ -25,10 +25,12 @@ AggregateFunctionPtr createAggregateFunctionEntropy(const std::string & name, co
     size_t num_args = argument_types.size();
     if (num_args == 1)
     {
+        /// Specialized implementation for single argument of numeric type.
         if (auto res = createWithNumericBasedType<AggregateFunctionEntropy>(*argument_types[0], num_args))
             return AggregateFunctionPtr(res);
     }
 
+    /// Generic implementation for other types or for multiple arguments.
     return std::make_shared<AggregateFunctionEntropy<UInt128>>(num_args);
 }
 
