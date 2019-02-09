@@ -66,8 +66,8 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
-
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+    CancellationCode killMutation(const String & mutation_id) override;
 
     void drop() override;
     void truncate(const ASTPtr &, const Context &) override;
@@ -120,7 +120,8 @@ private:
 
     mutable std::mutex currently_merging_mutex;
     MergeTreeData::DataParts currently_merging;
-    std::multimap<Int64, MergeTreeMutationEntry> current_mutations_by_version;
+    std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
+    std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     Logger * log;
 
