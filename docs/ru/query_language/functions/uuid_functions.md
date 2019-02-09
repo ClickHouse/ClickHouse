@@ -1,22 +1,20 @@
-# Functions for working with UUID
-
-The functions for working with UUID are listed below.
+# Функции для работы с UUID
 
 ## generateUUIDv4 {#uuid_function-generate}
 
-Generates the [UUID](../../data_types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
+Генерирует идентификатор [UUID версии 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
 ```sql
 generateUUIDv4()
 ```
 
-**Returned value**
+**Возвращаемое значение**
 
-The UUID type value.
+Значение типа [UUID](../../data_types/uuid.md).
 
-**Usage example**
+**Пример использования**
 
-This example demonstrates creating a table with the UUID type column and inserting a value into the table.
+Этот пример демонстрирует, как создать таблицу с UUID-колонкой и добавить в нее сгенерированный UUID.
 
 ``` sql
 :) CREATE TABLE t_uuid (x UUID) ENGINE=TinyLog
@@ -24,29 +22,33 @@ This example demonstrates creating a table with the UUID type column and inserti
 :) INSERT INTO t_uuid SELECT generateUUIDv4()
 
 :) SELECT * FROM t_uuid
+```
 
+```
 ┌────────────────────────────────────x─┐
 │ f4bf890f-f9dc-4332-ad5c-0c18e73f28e9 │
 └──────────────────────────────────────┘
 ```
 
-## toUUID (x)	
+## toUUID (x)
 
-Converts String type value to UUID type. 
+Преобразует значение типа String в тип UUID.
 
 ```sql
 toUUID(String)
 ```
 
-**Returned value**
+**Возвращаемое значение**
 
-The UUID type value.
+Значение типа UUID.
 
-**Usage example**
+**Пример использования**
 
 ``` sql
 :) SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
+```
 
+```
 ┌─────────────────────────────────uuid─┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
@@ -54,23 +56,25 @@ The UUID type value.
 
 ## UUIDStringToNum
 
-Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns it as a set of bytes in a [FixedString(16)](../../data_types/fixedstring.md).
+Принимает строку, содержащую 36 символов в формате `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, и возвращает в виде набора байт в [FixedString(16)](../../data_types/fixedstring.md).
 
 ``` sql
 UUIDStringToNum(String)
 ```
 
-**Returned value**
+**Возвращаемое значение**
 
 FixedString(16)
 
-**Usage examples**
+**Пример использования**
 
 ``` sql
 :) SELECT 
     '612f3c40-5d3b-217e-707b-6a546a3d7b29' AS uuid, 
     UUIDStringToNum(uuid) AS bytes
+```
 
+```
 ┌─uuid─────────────────────────────────┬─bytes────────────┐
 │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │ a/<@];!~p{jTj={) │
 └──────────────────────────────────────┴──────────────────┘
@@ -78,31 +82,34 @@ FixedString(16)
 
 ## UUIDNumToString
 
-Accepts a [FixedString(16)](../../data_types/fixedstring.md) value, and returns a string containing 36 characters in text format.
+Принимает значение типа [FixedString(16)](../../data_types/fixedstring.md). Возвращает строку из 36 символов в текстовом виде.
 
 ``` sql
 UUIDNumToString(FixedString(16))
 ```
 
-**Returned value**
+**Возвращаемое значение**
 
-String.
+Значение типа String.
 
-**Usage example**
+**Пример использования**
 
 ``` sql
 SELECT 
     'a/<@];!~p{jTj={)' AS bytes, 
     UUIDNumToString(toFixedString(bytes, 16)) AS uuid
+```
 
+```
 ┌─bytes────────────┬─uuid─────────────────────────────────┐
 │ a/<@];!~p{jTj={) │ 612f3c40-5d3b-217e-707b-6a546a3d7b29 │
 └──────────────────┴──────────────────────────────────────┘
 ```
 
-## See also
+## См. также:
 
 - [dictGetUUID](ext_dict_functions.md)
-- [dictGetUUIDOrDefault](ext_dict_functions#ext_dict_functions_dictGetTOrDefault)
+- [dictGetUUIDOrDefault](ext_dict_functions.md)
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/uuid_function/) <!--hide-->
+
