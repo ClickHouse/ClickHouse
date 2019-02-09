@@ -236,8 +236,7 @@ private:
 
     template <typename Method, bool has_null_map>
     void executeMethodImpl(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, const Sizes & key_sizes,
-                           const NullMap * null_map, ColumnUInt32::Container & res_values,
-                           typename Method::Set &indices);
+                           const NullMap * null_map, ColumnUInt32::Container & res_values);
 
     template <typename T>
     bool executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
@@ -346,7 +345,6 @@ DUMP(depth, depths, max_array_depth);
 DUMP(offsets, null_map, data_columns);
 
 
-/*
     //if (num_arguments == 1)
     if (data_columns.size() == 1)
     {
@@ -369,13 +367,6 @@ DUMP(offsets, null_map, data_columns);
         if (!execute128bit(*offsets, data_columns, res_values))
             executeHashed(*offsets, data_columns, res_values);
     }
-*/
-
-    //typename Method::Set indices;
-    typename MethodHashed::Set indices;
-    //ecuteMethod<MethodHashed>(offsets, data_columns, {}, nullptr, res_values);
-    //executeMethodImpl<MethodHashed, false>(offsets, data_columns, key_sizes, null_map, res_values, indices);
-    executeMethodImpl<MethodHashed, false>(*offsets, data_columns, {}, nullptr, res_values, indices);
 
 DUMP("=========================================");
 
@@ -389,10 +380,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         const ColumnRawPtrs & columns,
         const Sizes & key_sizes,
         [[maybe_unused]] const NullMap * null_map,
-        ColumnUInt32::Container & res_values,
-        typename Method::Set &indices)
+        ColumnUInt32::Container & res_values)
 {
-    //typename Method::Set indices;
+    typename Method::Set indices;
     typename Method::Method method(columns, key_sizes, nullptr);
     Arena pool; /// Won't use it;
 
@@ -483,7 +473,6 @@ DUMP(j, idx, rank);
 DUMP(res_values);
 }
 
-/*
 template <typename Derived>
 template <typename Method>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethod(
@@ -561,7 +550,6 @@ DUMP(offsets, columns, key_sizes, nullptr, res_values);
     executeMethod<MethodFixed>(offsets, columns, key_sizes, nullptr, res_values);
     return true;
 }
-*/
 
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeHashed(
