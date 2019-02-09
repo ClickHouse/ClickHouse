@@ -12,7 +12,6 @@ add_library (daemon ${LINK_MODE}
     include/daemon/OwnPatternFormatter.h
     include/daemon/OwnFormattingChannel.h
     include/daemon/OwnSplitChannel.h
-    include/daemon/Pipe.h
 )
 
 target_include_directories (daemon PUBLIC include)

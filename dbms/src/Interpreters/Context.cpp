@@ -1,5 +1,6 @@
 #include <map>
 #include <set>
+#include <future>
 #include <boost/functional/hash/hash.hpp>
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
@@ -155,6 +156,7 @@ struct ContextShared
 
     Poco::Thread trace_collector_thread;                    /// Thread collecting traces from threads executing queries
     std::unique_ptr<Poco::Runnable> trace_collector;
+    std::promise<void> trace_collector_stop;                /// Promise to stop trace_collector_thread;
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -268,10 +270,19 @@ struct ContextShared
             std::lock_guard lock(mutex);
             databases.clear();
         }
+
+        /// Close trace pipe - definitely nobody needs to write there after
+        /// databases shutdown
+        trace_pipe.close();
+
+        /// Stop trace collector
+        trace_collector_stop.set_value();
+        trace_collector_thread.join();
     }
 
     void initializeTraceCollector(TraceLog * trace_log) {
-        trace_collector.reset(new TraceCollector(trace_log));
+        trace_pipe.open();
+        trace_collector.reset(new TraceCollector(trace_log, trace_collector_stop.get_future()));
         trace_collector_thread.start(*trace_collector);
     }
 

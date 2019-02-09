@@ -42,6 +42,7 @@ add_library (common ${LINK_MODE}
     include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
+    include/common/Pipe.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h

@@ -131,12 +131,12 @@ void ThreadStatus::finalizePerformanceCounters()
 
 namespace {
     void queryProfilerTimerHandler(int /* sig */, siginfo_t * /* info */, void * context) {
-        DB::WriteBufferFromFileDescriptor out(TracePipe::instance().write_fd);
+        DB::WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1]);
 
-        std::string queryID = CurrentThread::getCurrentQueryID();
+        const std::string & query_id = CurrentThread::getCurrentQueryID();
 
         DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
-        DB::writeStringBinary(queryID, out);
+        DB::writeStringBinary(query_id, out);
         out.next();
     }
 }
@@ -146,8 +146,6 @@ void ThreadStatus::initQueryProfiler() {
         LOG_INFO(log, "Query profiler disabled - no context");
         return;
     }
-
-    const auto pause_signal = SIGALRM;
 
     struct sigevent sev;
     sev.sigev_notify = SIGEV_THREAD_ID;
@@ -165,8 +163,7 @@ void ThreadStatus::initQueryProfiler() {
         throw Poco::Exception("Failed to set query profiler timer");
     }
 
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
+    struct sigaction sa{};
     sa.sa_sigaction = queryProfilerTimerHandler;
     sa.sa_flags = SA_SIGINFO;
 
@@ -178,7 +175,7 @@ void ThreadStatus::initQueryProfiler() {
         throw Poco::Exception("Failed to add signal to mask for query profiler");
     }
 
-    if (sigaction(pause_signal, &sa, nullptr)) {
+    if (sigaction(pause_signal, &sa, previous_handler)) {
         throw Poco::Exception("Failed to setup signal handler for query profiler");
     }
 
@@ -192,6 +189,10 @@ void ThreadStatus::finalizeQueryProfiler() {
 
     if (timer_delete(query_profiler_timer_id)) {
         throw Poco::Exception("Failed to delete query profiler timer");
+    }
+
+    if (sigaction(pause_signal, previous_handler, nullptr)) {
+        throw Poco::Exception("Failed to restore signal handler after query profiler");
     }
 
     has_query_profiler = false;
