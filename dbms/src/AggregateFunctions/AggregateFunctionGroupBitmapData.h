@@ -1,15 +1,14 @@
 #pragma once
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <boost/noncopyable.hpp>
-#include <Common/HashTable/SmallTable.h>
-#include <roaring.hh>
 #include <roaring.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <boost/noncopyable.hpp>
+#include <roaring.hh>
+#include <Common/HashTable/SmallTable.h>
 
 namespace DB
 {
-
 /**
   * For a small number of values - an array of fixed size "on the stack".
   * For large, roaring_bitmap_t is allocated.
@@ -43,7 +42,8 @@ public:
             roaring_bitmap_free(rb);
     }
 
-    void add(T value) {
+    void add(T value)
+    {
         if (isSmall())
         {
             if (small.find(value) == small.end())
@@ -61,10 +61,7 @@ public:
             roaring_bitmap_add(rb, value);
     }
 
-    UInt64 size() const
-    {
-        return isSmall() ? small.size() : roaring_bitmap_get_cardinality( rb );
-    }
+    UInt64 size() const { return isSmall() ? small.size() : roaring_bitmap_get_cardinality(rb); }
 
     void merge(const RoaringBitmapWithSmallSet & r1)
     {
@@ -73,7 +70,7 @@ public:
             if (isSmall())
                 toLarge();
 
-            roaring_bitmap_or_inplace( rb, r1.rb );
+            roaring_bitmap_or_inplace(rb, r1.rb);
         }
         else
         {
@@ -91,8 +88,8 @@ public:
         {
             toLarge();
             UInt32 cardinality;
-            readBinary( cardinality, in );
-            db_roaring_bitmap_add_many( in, rb, cardinality );
+            readBinary(cardinality, in);
+            db_roaring_bitmap_add_many(in, rb, cardinality);
         }
         else
             small.read(in);
@@ -105,22 +102,17 @@ public:
         if (isLarge())
         {
             UInt32 cardinality = roaring_bitmap_get_cardinality(rb);
-            writePODBinary( cardinality, out );
-            db_ra_to_uint32_array( out, &rb->high_low_container );
-        } else
+            writePODBinary(cardinality, out);
+            db_ra_to_uint32_array(out, &rb->high_low_container);
+        }
+        else
             small.write(out);
     }
 
 
-    roaring_bitmap_t * getRb() const
-    {
-        return rb;
-    }
+    roaring_bitmap_t * getRb() const { return rb; }
 
-    Small& getSmall() const
-    {
-        return small;
-    }
+    Small & getSmall() const { return small; }
 
     /**
      * Get a new roaring_bitmap_t from elements of small
@@ -139,11 +131,12 @@ public:
     void rb_and(const RoaringBitmapWithSmallSet & r1)
     {
         ValueBuffer buffer;
-        if(isSmall() &&  r1.isSmall())
+        if (isSmall() && r1.isSmall())
         {
             // intersect
             for (const auto & value : this->small)
-                if (r1.small.find(value) != r1.small.end())  buffer.push_back(value);
+                if (r1.small.find(value) != r1.small.end())
+                    buffer.push_back(value);
 
             // Clear out the original values
             this->small.clear();
@@ -152,9 +145,12 @@ public:
                 this->small.insert(value);
 
             buffer.clear();
-        } else if(isSmall() &&  r1.isLarge()){
+        }
+        else if (isSmall() && r1.isLarge())
+        {
             for (const auto & value : this->small)
-                if( roaring_bitmap_contains( r1.rb, value ) )  buffer.push_back( value );
+                if (roaring_bitmap_contains(r1.rb, value))
+                    buffer.push_back(value);
 
             // Clear out the original values
             this->small.clear();
@@ -163,30 +159,32 @@ public:
                 this->small.insert(value);
 
             buffer.clear();
-        } else {
+        }
+        else
+        {
             roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-            roaring_bitmap_and_inplace( rb, rb1 );
-            if ( r1.isSmall() ) roaring_bitmap_free(rb1);
+            roaring_bitmap_and_inplace(rb, rb1);
+            if (r1.isSmall())
+                roaring_bitmap_free(rb1);
         }
     }
 
     /**
      * Computes the union between two bitmaps.
      */
-    void rb_or(const RoaringBitmapWithSmallSet & r1)
-    {
-        this->merge( r1 );
-    }
+    void rb_or(const RoaringBitmapWithSmallSet & r1) { this->merge(r1); }
 
     /**
      * Computes the symmetric difference (xor) between two bitmaps.
      */
     void rb_xor(const RoaringBitmapWithSmallSet & r1)
     {
-        if( this->isSmall() ) toLarge();
+        if (this->isSmall())
+            toLarge();
         roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-        roaring_bitmap_xor_inplace( rb, rb1 );
-        if ( r1.isSmall() ) roaring_bitmap_free(rb1);
+        roaring_bitmap_xor_inplace(rb, rb1);
+        if (r1.isSmall())
+            roaring_bitmap_free(rb1);
     }
 
     /**
@@ -195,11 +193,12 @@ public:
     void rb_andnot(const RoaringBitmapWithSmallSet & r1)
     {
         ValueBuffer buffer;
-        if(isSmall() &&  r1.isSmall())
+        if (isSmall() && r1.isSmall())
         {
             // subtract
             for (const auto & value : this->small)
-                if (r1.small.find(value) == r1.small.end())  buffer.push_back(value);
+                if (r1.small.find(value) == r1.small.end())
+                    buffer.push_back(value);
 
             // Clear out the original values
             this->small.clear();
@@ -208,9 +207,12 @@ public:
                 this->small.insert(value);
 
             buffer.clear();
-        } else if(isSmall() &&  r1.isLarge()){
+        }
+        else if (isSmall() && r1.isLarge())
+        {
             for (const auto & value : this->small)
-                if( !roaring_bitmap_contains( r1.rb, value ) )  buffer.push_back( value );
+                if (!roaring_bitmap_contains(r1.rb, value))
+                    buffer.push_back(value);
 
             // Clear out the original values
             this->small.clear();
@@ -219,10 +221,13 @@ public:
                 this->small.insert(value);
 
             buffer.clear();
-        } else {
+        }
+        else
+        {
             roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-            roaring_bitmap_andnot_inplace( rb, rb1 );
-            if ( r1.isSmall() ) roaring_bitmap_free(rb1);
+            roaring_bitmap_andnot_inplace(rb, rb1);
+            if (r1.isSmall())
+                roaring_bitmap_free(rb1);
         }
     }
 
@@ -232,16 +237,24 @@ public:
     UInt64 rb_and_cardinality(const RoaringBitmapWithSmallSet & r1) const
     {
         UInt64 retSize = 0;
-        if( isSmall() &&  r1.isSmall() ){
+        if (isSmall() && r1.isSmall())
+        {
             for (const auto & value : this->small)
-                if (r1.small.find( value ) != r1.small.end()) retSize++;
-        } else if( isSmall() &&  r1.isLarge() ){
+                if (r1.small.find(value) != r1.small.end())
+                    retSize++;
+        }
+        else if (isSmall() && r1.isLarge())
+        {
             for (const auto & value : this->small)
-                if( roaring_bitmap_contains( r1.rb, value ) )   retSize++;
-        } else {
+                if (roaring_bitmap_contains(r1.rb, value))
+                    retSize++;
+        }
+        else
+        {
             roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-            retSize = roaring_bitmap_and_cardinality( rb, rb1 );
-            if ( r1.isSmall() ) roaring_bitmap_free(rb1);
+            retSize = roaring_bitmap_and_cardinality(rb, rb1);
+            if (r1.isSmall())
+                roaring_bitmap_free(rb1);
         }
         return retSize;
     }
@@ -253,7 +266,7 @@ public:
     {
         UInt64 c1 = this->size();
         UInt64 c2 = r1.size();
-        UInt64 inter = this->rb_and_cardinality( r1 );
+        UInt64 inter = this->rb_and_cardinality(r1);
         return c1 + c2 - inter;
     }
 
@@ -264,7 +277,7 @@ public:
     {
         UInt64 c1 = this->size();
         UInt64 c2 = r1.size();
-        UInt64 inter = this->rb_and_cardinality( r1 );
+        UInt64 inter = this->rb_and_cardinality(r1);
         return c1 + c2 - 2 * inter;
     }
 
@@ -274,7 +287,7 @@ public:
     UInt64 rb_andnot_cardinality(const RoaringBitmapWithSmallSet & r1) const
     {
         UInt64 c1 = this->size();
-        UInt64 inter = this->rb_and_cardinality( r1 );
+        UInt64 inter = this->rb_and_cardinality(r1);
         return c1 - inter;
     }
 
@@ -283,10 +296,12 @@ public:
      */
     UInt8 rb_equals(const RoaringBitmapWithSmallSet & r1)
     {
-        if( this->isSmall() ) toLarge();
+        if (this->isSmall())
+            toLarge();
         roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-        UInt8 is_true = roaring_bitmap_equals( rb, rb1 );
-        if ( r1.isSmall() ) roaring_bitmap_free(rb1);
+        UInt8 is_true = roaring_bitmap_equals(rb, rb1);
+        if (r1.isSmall())
+            roaring_bitmap_free(rb1);
         return is_true;
     }
 
@@ -295,10 +310,12 @@ public:
      */
     UInt8 rb_intersect(const RoaringBitmapWithSmallSet & r1)
     {
-        if( this->isSmall() ) toLarge();
+        if (this->isSmall())
+            toLarge();
         roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
-        UInt8 is_true = roaring_bitmap_intersect( rb, rb1 );
-        if ( r1.isSmall() ) roaring_bitmap_free(rb1);
+        UInt8 is_true = roaring_bitmap_intersect(rb, rb1);
+        if (r1.isSmall())
+            roaring_bitmap_free(rb1);
         return is_true;
     }
 
@@ -307,8 +324,9 @@ public:
      */
     void rb_remove(UInt64 offsetid)
     {
-        if( this->isSmall() ) toLarge();
-        roaring_bitmap_remove( rb, offsetid );
+        if (this->isSmall())
+            toLarge();
+        roaring_bitmap_remove(rb, offsetid);
     }
 
     /**
@@ -319,8 +337,9 @@ public:
      */
     void rb_flip(UInt64 offsetstart, UInt64 offsetend)
     {
-        if( this->isSmall() ) toLarge();
-        roaring_bitmap_flip_inplace( rb, offsetstart, offsetend );
+        if (this->isSmall())
+            toLarge();
+        roaring_bitmap_flip_inplace(rb, offsetstart, offsetend);
     }
 
     /**
@@ -328,8 +347,9 @@ public:
      */
     UInt64 rb_rank(UInt64 offsetid)
     {
-        if( this->isSmall() ) toLarge();
-        return roaring_bitmap_rank( rb, offsetid );
+        if (this->isSmall())
+            toLarge();
+        return roaring_bitmap_rank(rb, offsetid);
     }
 
     /**
@@ -346,10 +366,12 @@ public:
                 res_data.emplace_back(x);
                 count++;
             }
-        } else {
+        }
+        else
+        {
             roaring_uint32_iterator_t iterator;
             roaring_init_iterator(rb, &iterator);
-            while(iterator.has_value)
+            while (iterator.has_value)
             {
                 res_data.emplace_back(iterator.current_value);
                 roaring_advance_uint32_iterator(&iterator);
@@ -361,78 +383,80 @@ public:
 
 private:
     /// To read and write the DB Buffer directly, migrate code from CRoaring
-    void db_roaring_bitmap_add_many( DB::ReadBuffer & dbBuf, roaring_bitmap_t * r, size_t n_args ) {
-        void *container = NULL;  // hold value of last container touched
-        uint8_t typecode = 0;    // typecode of last container touched
-        uint32_t prev = 0;       // previous valued inserted
-        size_t i = 0;            // index of value
+    void db_roaring_bitmap_add_many(DB::ReadBuffer & dbBuf, roaring_bitmap_t * r, size_t n_args)
+    {
+        void * container = NULL; // hold value of last container touched
+        uint8_t typecode = 0; // typecode of last container touched
+        uint32_t prev = 0; // previous valued inserted
+        size_t i = 0; // index of value
         int containerindex = 0;
-        if (n_args == 0) return;
+        if (n_args == 0)
+            return;
         uint32_t val;
-        readBinary( val, dbBuf );
+        readBinary(val, dbBuf);
         container = containerptr_roaring_bitmap_add(r, val, &typecode, &containerindex);
         prev = val;
         i++;
-        for (; i < n_args; i++) {
-            readBinary( val, dbBuf );
-            if (((prev ^ val) >> 16) ==
-                0) {  // no need to seek the container, it is at hand
+        for (; i < n_args; i++)
+        {
+            readBinary(val, dbBuf);
+            if (((prev ^ val) >> 16) == 0)
+            { // no need to seek the container, it is at hand
                 // because we already have the container at hand, we can do the
                 // insertion
                 // automatically, bypassing the roaring_bitmap_add call
                 uint8_t newtypecode = typecode;
-                void * container2 =
-                        container_add(container, val & 0xFFFF, typecode, &newtypecode);
+                void * container2 = container_add(container, val & 0xFFFF, typecode, &newtypecode);
                 // rare instance when we need to
                 if (container2 != container)
                 {
                     // change the container type
                     container_free(container, typecode);
-                    ra_set_container_at_index(&r->high_low_container,
-                                              containerindex, container2,
-                                              newtypecode);
+                    ra_set_container_at_index(&r->high_low_container, containerindex, container2, newtypecode);
                     typecode = newtypecode;
                     container = container2;
                 }
-            } else {
-                container = containerptr_roaring_bitmap_add(r, val, &typecode,
-                                                            &containerindex);
+            }
+            else
+            {
+                container = containerptr_roaring_bitmap_add(r, val, &typecode, &containerindex);
             }
             prev = val;
         }
     }
 
-    void db_ra_to_uint32_array( DB::WriteBuffer & dbBuf, roaring_array_t * ra ) const {
+    void db_ra_to_uint32_array(DB::WriteBuffer & dbBuf, roaring_array_t * ra) const
+    {
         size_t ctr = 0;
         for (Int32 i = 0; i < ra->size; ++i)
         {
-            Int32 num_added = db_container_to_uint32_array( dbBuf, ra->containers[i], ra->typecodes[i],
-                                                             ((UInt32)ra->keys[i]) << 16);
+            Int32 num_added = db_container_to_uint32_array(dbBuf, ra->containers[i], ra->typecodes[i], ((UInt32)ra->keys[i]) << 16);
             ctr += num_added;
         }
     }
-	
-    UInt32 db_container_to_uint32_array( DB::WriteBuffer & dbBuf, const void * container, UInt8 typecode, UInt32 base) const {
+
+    UInt32 db_container_to_uint32_array(DB::WriteBuffer & dbBuf, const void * container, UInt8 typecode, UInt32 base) const
+    {
         container = container_unwrap_shared(container, &typecode);
-        switch (typecode) {
+        switch (typecode)
+        {
             case BITSET_CONTAINER_TYPE_CODE:
-                return db_bitset_container_to_uint32_array( dbBuf,
-                (const bitset_container_t *)container, base);
+                return db_bitset_container_to_uint32_array(dbBuf, (const bitset_container_t *)container, base);
             case ARRAY_CONTAINER_TYPE_CODE:
-                return db_array_container_to_uint32_array( dbBuf,
-                (const array_container_t *)container, base);
+                return db_array_container_to_uint32_array(dbBuf, (const array_container_t *)container, base);
             case RUN_CONTAINER_TYPE_CODE:
-                return db_run_container_to_uint32_array( dbBuf,
-                (const run_container_t *)container, base);
+                return db_run_container_to_uint32_array(dbBuf, (const run_container_t *)container, base);
         }
         return 0;
     }
-	
-    UInt32 db_bitset_container_to_uint32_array( DB::WriteBuffer & dbBuf, const bitset_container_t * cont, UInt32 base) const {
-        return (UInt32) db_bitset_extract_setbits( dbBuf, cont->array, BITSET_CONTAINER_SIZE_IN_WORDS, base);
+
+    UInt32 db_bitset_container_to_uint32_array(DB::WriteBuffer & dbBuf, const bitset_container_t * cont, UInt32 base) const
+    {
+        return (UInt32)db_bitset_extract_setbits(dbBuf, cont->array, BITSET_CONTAINER_SIZE_IN_WORDS, base);
     }
 
-    size_t db_bitset_extract_setbits( DB::WriteBuffer & dbBuf, UInt64 * bitset, size_t length, UInt32 base) const {
+    size_t db_bitset_extract_setbits(DB::WriteBuffer & dbBuf, UInt64 * bitset, size_t length, UInt32 base) const
+    {
         UInt32 outpos = 0;
         for (size_t i = 0; i < length; ++i)
         {
@@ -442,7 +466,7 @@ private:
                 UInt64 t = w & (~w + 1); // on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
                 UInt32 r = __builtin_ctzll(w); // on x64, should compile to TZCNT
                 UInt32 val = r + base;
-				writePODBinary( val, dbBuf );
+                writePODBinary(val, dbBuf);
                 outpos++;
                 w ^= t;
             }
@@ -451,18 +475,20 @@ private:
         return outpos;
     }
 
-    int db_array_container_to_uint32_array( DB::WriteBuffer & dbBuf, const array_container_t * cont, UInt32 base) const {
+    int db_array_container_to_uint32_array(DB::WriteBuffer & dbBuf, const array_container_t * cont, UInt32 base) const
+    {
         UInt32 outpos = 0;
-        for ( Int32 i = 0; i < cont->cardinality; ++i)
+        for (Int32 i = 0; i < cont->cardinality; ++i)
         {
             const UInt32 val = base + cont->array[i];
-			writePODBinary( val, dbBuf );
+            writePODBinary(val, dbBuf);
             outpos++;
         }
         return outpos;
     }
 
-    int db_run_container_to_uint32_array( DB::WriteBuffer & dbBuf, const run_container_t * cont, UInt32 base) const {
+    int db_run_container_to_uint32_array(DB::WriteBuffer & dbBuf, const run_container_t * cont, UInt32 base) const
+    {
         UInt32 outpos = 0;
         for (Int32 i = 0; i < cont->n_runs; ++i)
         {
@@ -471,20 +497,18 @@ private:
             for (Int32 j = 0; j <= le; ++j)
             {
                 UInt32 val = run_start + j;
-				writePODBinary( val, dbBuf );
+                writePODBinary(val, dbBuf);
                 outpos++;
             }
         }
         return outpos;
     }
-	
-	
 };
 
 template <typename T>
 struct AggregateFunctionGroupBitmapData
 {
-    RoaringBitmapWithSmallSet<T,32> rbs;
+    RoaringBitmapWithSmallSet<T, 32> rbs;
     static const char * name() { return "groupBitmap"; }
 };
 
