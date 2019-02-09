@@ -13,7 +13,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
@@ -45,7 +45,7 @@ namespace ErrorCodes
 }
 
 
-class LogBlockInputStream final : public IProfilingBlockInputStream
+class LogBlockInputStream final : public IBlockInputStream
 {
 public:
     LogBlockInputStream(

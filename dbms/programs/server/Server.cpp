@@ -11,6 +11,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/HelpFormatter.h>
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -27,6 +28,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -46,6 +48,7 @@
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
+#include "Common/config_version.h"
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
@@ -115,6 +118,26 @@ void Server::uninitialize()
     BaseDaemon::uninitialize();
 }
 
+int Server::run()
+{
+    if (config().hasOption("help"))
+    {
+        Poco::Util::HelpFormatter helpFormatter(Server::options());
+        std::stringstream header;
+        header << commandName() << " [OPTION] [-- [ARG]...]\n";
+        header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
+        helpFormatter.setHeader(header.str());
+        helpFormatter.format(std::cout);
+        return 0;
+    }
+    if (config().hasOption("version"))
+    {
+        std::cout << DBMS_NAME << " server version " << VERSION_STRING << "." << std::endl;
+        return 0;
+    }
+    return Application::run();
+}
+
 void Server::initialize(Poco::Util::Application & self)
 {
     BaseDaemon::initialize(self);
@@ -126,11 +149,27 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
+void Server::defineOptions(Poco::Util::OptionSet & _options)
+{
+    _options.addOption(
+        Poco::Util::Option("help", "h", "show help and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("help"));
+    _options.addOption(
+        Poco::Util::Option("version", "V", "show version and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("version"));
+    BaseDaemon::defineOptions(_options);
+}
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
-
     UseSSL use_ssl;
+
+    ThreadStatus thread_status;
 
     registerFunctions();
     registerAggregateFunctions();
@@ -418,7 +457,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path.path() + "/");
+    global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata.");

@@ -46,7 +46,7 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 ### SAMPLE Clause {#select-sample-clause}
 
-The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
+The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by the tables in the `MergeTree` family, and only if the sampling expression was specified during table creation (see the section [MergeTree engine](../operations/table_engines/mergetree.md)).
 
 `SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
 
@@ -80,6 +80,29 @@ A sample with a relative coefficient is "consistent": if we look at all possible
 
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
+**SAMPLE OFFSET**
+
+You can specify the `SAMPLE k OFFSET n` clause, where `k` and `n` are numbers from 0 to 1. Examples are shown below.
+
+Example 1.
+
+``` sql
+SAMPLE 1/10
+```
+
+In this example, the sample is the 1/10th of all data:
+
+`[++------------------]`
+
+Example 2.
+
+``` sql
+SAMPLE 1/10 OFFSET 1/2
+```
+
+Here, the sample of 10% is taken from the second half of data.
+
+`[----------++--------]`
 
 ### ARRAY JOIN Clause {#select-array-join-clause}
 
@@ -334,7 +357,7 @@ The query can only specify a single ARRAY JOIN clause.
 The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
 
-### JOIN Clause
+### JOIN Clause {#select-join}
 
 Joins the data in the usual [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
 
@@ -469,7 +492,7 @@ A query may simultaneously specify PREWHERE and WHERE. In this case, PREWHERE pr
 
 If the 'optimize_move_to_prewhere' setting is set to 1 and PREWHERE is omitted, the system uses heuristics to automatically move parts of expressions from WHERE to PREWHERE.
 
-### GROUP BY Clause
+### GROUP BY Clause {#select-group-by-clause}
 
 This is one of the most important parts of a column-oriented DBMS.
 
@@ -566,7 +589,7 @@ If `max_rows_to_group_by` and `group_by_overflow_mode = 'any'` are not used, all
 
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause (in this case, the respective total values are combined).
 
-#### GROUP BY in External Memory
+#### GROUP BY in External Memory {#select-group-by-in-external-memory}
 
 You can enable dumping temporary data to the disk to restrict memory usage during GROUP BY.
 The `max_bytes_before_external_group_by` setting determines the threshold RAM consumption for dumping GROUP BY temporary data to the file system. If set to 0 (the default), it is disabled.
@@ -682,7 +705,7 @@ More specifically, expressions are analyzed that are above the aggregate functio
 The aggregate functions and everything below them are calculated during aggregation (GROUP BY).
 These expressions work as if they are applied to separate rows in the result.
 
-### DISTINCT Clause
+### DISTINCT Clause {#select-distinct}
 
 If DISTINCT is specified, only a single row will remain out of all the sets of fully matching rows in the result.
 The result will be the same as if GROUP BY were specified across all the fields specified in SELECT without aggregate functions. But there are several differences from GROUP BY:

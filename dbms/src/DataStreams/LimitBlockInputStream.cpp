@@ -58,8 +58,10 @@ Block LimitBlockInputStream::readImpl()
     for (size_t i = 0; i < res.columns(); ++i)
         res.safeGetByPosition(i).column = res.safeGetByPosition(i).column->cut(start, length);
 
+    // TODO: we should provide feedback to child-block, so it will know how many rows are actually consumed.
+    //       It's crucial for streaming engines like Kafka.
+
     return res;
 }
 
 }
-

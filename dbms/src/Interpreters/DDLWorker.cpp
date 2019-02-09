@@ -9,7 +9,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -241,7 +241,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
 
     event_queue_updated = std::make_shared<Poco::Event>();
 
-    thread = std::thread(&DDLWorker::run, this);
+    thread = ThreadFromGlobalPool(&DDLWorker::run, this);
 }
 
 
@@ -528,7 +528,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     {
         current_context = std::make_unique<Context>(context);
         current_context->setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, *current_context, nullptr);
+        executeQuery(istr, ostr, false, *current_context, {}, {});
     }
     catch (...)
     {
@@ -975,7 +975,7 @@ void DDLWorker::run()
 }
 
 
-class DDLQueryStatusInputSream : public IProfilingBlockInputStream
+class DDLQueryStatusInputSream : public IBlockInputStream
 {
 public:
 

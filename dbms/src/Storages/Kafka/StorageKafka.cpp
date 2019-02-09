@@ -2,7 +2,7 @@
 
 #if USE_RDKAFKA
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -131,7 +131,7 @@ public:
     }
 };
 
-class KafkaBlockInputStream : public IProfilingBlockInputStream
+class KafkaBlockInputStream : public IBlockInputStream
 {
 public:
     KafkaBlockInputStream(StorageKafka & storage_, const Context & context_, const String & schema, size_t max_block_size_)
@@ -492,11 +492,10 @@ bool StorageKafka::streamToViews()
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
-        IProfilingBlockInputStream::LocalLimits limits;
+        IBlockInputStream::LocalLimits limits;
         limits.max_execution_time = settings.stream_flush_interval_ms;
         limits.timeout_overflow_mode = OverflowMode::BREAK;
-        if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
-            p_stream->setLimits(limits);
+        stream->setLimits(limits);
     }
 
     // Join multiple streams if necessary
@@ -513,11 +512,8 @@ bool StorageKafka::streamToViews()
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;
-    if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(in.get()))
-    {
-        const BlockStreamProfileInfo & info = p_stream->getProfileInfo();
-        limits_applied = info.hasAppliedLimit();
-    }
+    const BlockStreamProfileInfo & info = in->getProfileInfo();
+    limits_applied = info.hasAppliedLimit();
 
     return limits_applied;
 }

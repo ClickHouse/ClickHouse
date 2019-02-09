@@ -195,7 +195,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
+        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(),
+        NameSet(required_result_column_names.begin(), required_result_column_names.end()), subquery_depth, !only_analyze);
 
     if (!only_analyze)
     {
@@ -379,8 +380,9 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
         if (query_analyzer->appendJoin(chain, dry_run || !res.first_stage))
         {
-            res.has_join = true;
             res.before_join = chain.getLastActions();
+            if (!res.hasJoin())
+                throw Exception("No expected JOIN", ErrorCodes::LOGICAL_ERROR);
             chain.addStep();
         }
 
@@ -547,7 +549,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
         if (expressions.first_stage)
         {
-            if (expressions.has_join)
+            if (expressions.hasJoin())
             {
                 const ASTTableJoin & join = static_cast<const ASTTableJoin &>(*query.join()->table_join);
                 if (join.kind == ASTTableJoin::Kind::Full || join.kind == ASTTableJoin::Kind::Right)
@@ -978,8 +980,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         /// Set the limits and quota for reading data, the speed and time of the query.
         {
-            IProfilingBlockInputStream::LocalLimits limits;
-            limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
+            IBlockInputStream::LocalLimits limits;
+            limits.mode = IBlockInputStream::LIMITS_TOTAL;
             limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
             limits.max_execution_time = settings.max_execution_time;
             limits.timeout_overflow_mode = settings.timeout_overflow_mode;
@@ -1001,13 +1003,10 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             pipeline.transform([&](auto & stream)
             {
-                if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
-                {
-                    p_stream->setLimits(limits);
+                stream->setLimits(limits);
 
-                    if (to_stage == QueryProcessingStage::Complete)
-                        p_stream->setQuota(quota);
-                }
+                if (to_stage == QueryProcessingStage::Complete)
+                    stream->setQuota(quota);
             });
         }
     }
@@ -1260,8 +1259,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
         auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
 
         /// Limits on sorting
-        IProfilingBlockInputStream::LocalLimits limits;
-        limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_TOTAL;
         limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
         sorting_stream->setLimits(limits);
 
@@ -1459,8 +1458,7 @@ void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
 
     pipeline.transform([&](auto & stream)
     {
-        if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
-            p_stream->enableExtremes();
+        stream->enableExtremes();
     });
 }
 
@@ -1506,4 +1504,3 @@ void InterpreterSelectQuery::initSettings()
 }
 
 }
-

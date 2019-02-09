@@ -427,6 +427,18 @@ Names Block::getNames() const
 }
 
 
+DataTypes Block::getDataTypes() const
+{
+    DataTypes res;
+    res.reserve(columns());
+
+    for (const auto & elem : data)
+        res.push_back(elem.type);
+
+    return res;
+}
+
+
 template <typename ReturnType>
 static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description)
 {

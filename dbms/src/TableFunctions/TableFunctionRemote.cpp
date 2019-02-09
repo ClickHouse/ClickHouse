@@ -9,6 +9,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>

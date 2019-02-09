@@ -105,7 +105,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         const ASTStorage & storage = *create.storage;
         const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
-        if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key || storage.order_by || storage.sample_by || storage.settings)
+        if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key
+            || storage.order_by || storage.sample_by || storage.settings ||
+            (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
         {
             std::stringstream ostr;
             formatAST(storage, ostr, false, false);
@@ -339,13 +341,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = column.name;
 
-        StringPtr type_name = std::make_shared<String>(column.type->getName());
-        auto pos = type_name->data();
-        const auto end = pos + type_name->size();
-
         ParserIdentifierWithOptionalParameters storage_p;
+        String type_name = column.type->getName();
+        auto pos = type_name.data();
+        const auto end = pos + type_name.size();
         column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
-        column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -363,13 +363,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         column_declaration->name = column.name;
 
-        StringPtr type_name = std::make_shared<String>(column.type->getName());
-        auto type_name_pos = type_name->data();
-        const auto type_name_end = type_name_pos + type_name->size();
-
         ParserIdentifierWithOptionalParameters storage_p;
+        String type_name = column.type->getName();
+        auto type_name_pos = type_name.data();
+        const auto type_name_end = type_name_pos + type_name.size();
         column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0);
-        column_declaration->type->owned_string = type_name;
 
         const auto defaults_it = columns.defaults.find(column.name);
         if (defaults_it != std::end(columns.defaults))
@@ -399,6 +397,16 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
     }
 
     return columns_list;
+}
+
+ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
+{
+    auto res = std::make_shared<ASTExpressionList>();
+
+    for (const auto & index : indices.indices)
+        res->children.push_back(index->clone());
+
+    return res;
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns, const Context & context)
@@ -453,9 +461,9 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 {
     ColumnsDescription res;
 
-    if (create.columns)
+    if (create.columns_list && create.columns_list->columns)
     {
-        res = getColumnsDescription(*create.columns, context);
+        res = getColumnsDescription(*create.columns_list->columns, context);
     }
     else if (!create.as_table.empty())
     {
@@ -471,10 +479,16 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(res);
-    if (create.columns)
-        create.replace(create.columns, new_columns);
+    if (!create.columns_list)
+    {
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        create.set(create.columns_list, new_columns_list);
+    }
+
+    if (create.columns_list->columns)
+        create.columns_list->replace(create.columns_list->columns, new_columns);
     else
-        create.set(create.columns, new_columns);
+        create.columns_list->set(create.columns_list->columns, new_columns);
 
     /// Check for duplicates
     std::set<String> all_columns;
@@ -554,7 +568,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String table_name_escaped = escapeForFileName(table_name);
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && !create.storage && !create.columns)
+    if (create.attach && !create.storage && !create.columns_list)
     {
         // Table SQL definition is available even if the table is detached
         auto query = context.getCreateTableQuery(database_name, table_name);
@@ -573,7 +587,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     Block as_select_sample;
-    if (create.select && (!create.attach || !create.columns))
+    if (create.select && (!create.attach || !create.columns_list))
         as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context);
 
     String as_database_name = create.as_database.empty() ? current_database : create.as_database;

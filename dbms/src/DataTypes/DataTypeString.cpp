@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -21,7 +22,6 @@
 
 namespace DB
 {
-
 
 void DataTypeString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -129,7 +129,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         if (size)
         {
-#ifdef __SSE2__
+#ifdef __x86_64__
             /// An optimistic branch in which more efficient copying is possible.
             if (offset + 16 * UNROLL_TIMES <= data.allocated_bytes() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
             {
@@ -301,6 +301,12 @@ void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, Wr
 void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     read(column, [&](ColumnString::Chars & data) { readCSVStringInto(data, istr, settings.csv); });
+}
+
+
+void DataTypeString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeString(static_cast<const ColumnString &>(column).getDataAt(row_num));
 }
 
 
