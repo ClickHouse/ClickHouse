@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include <type_traits>
 
 
 namespace DB
@@ -76,11 +77,11 @@ private:
         bool first = true;
         while (x)
         {
-            T y = (x & (x - 1));
+            T y = x & (x - 1);
             T bit = x ^ y;
             x = y;
             if (!first)
-                out.write(",", 1);
+                writeChar(',', out);
             first = false;
             writeIntText(bit, out);
         }
@@ -89,6 +90,8 @@ private:
     template <typename T>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
+        using UnsignedT = std::make_unsigned_t<T>;
+
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_to = ColumnString::create();
@@ -104,7 +107,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                writeBitmask<T>(vec_from[i], buf_to);
+                writeBitmask<UnsignedT>(vec_from[i], buf_to);
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
