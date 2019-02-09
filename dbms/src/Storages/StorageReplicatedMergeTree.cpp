@@ -113,7 +113,6 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace ActionLocks

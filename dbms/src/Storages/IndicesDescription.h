@@ -6,11 +6,11 @@
 namespace DB
 {
 
-using IndicesAsts = std::vector<std::shared_ptr<ASTIndexDeclaration>>;
+using IndicesASTs = std::vector<std::shared_ptr<ASTIndexDeclaration>>;
 
 struct IndicesDescription
 {
-    IndicesAsts indices;
+    IndicesASTs indices;
 
     IndicesDescription() = default;
 
