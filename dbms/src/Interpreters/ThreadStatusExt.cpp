@@ -17,6 +17,8 @@
 #include <unistd.h>
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
+/// TODO It doesn't make sense.
+
 namespace DB
 {
 
@@ -26,21 +28,20 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
-    if (!thread_group)
-        return;
+    query_id = query_context->getCurrentQueryId();
 
-    std::unique_lock lock(thread_group->mutex);
-    thread_group->query_context = query_context;
-    if (!thread_group->global_context)
-        thread_group->global_context = global_context;
+    if (thread_group)
+    {
+        std::lock_guard lock(thread_group->mutex);
+        thread_group->query_context = query_context;
+        if (!thread_group->global_context)
+            thread_group->global_context = global_context;
+    }
 }
 
-String ThreadStatus::getQueryID()
+const std::string & ThreadStatus::getQueryId() const
 {
-    if (query_context)
-        return query_context->getClientInfo().current_query_id;
-
-    return {};
+    return query_id;
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -59,8 +60,9 @@ void ThreadStatus::initializeQuery()
     memory_tracker.setParent(&thread_group->memory_tracker);
     thread_group->memory_tracker.setDescription("(for query)");
 
-    thread_group->master_thread = this;
-    thread_group->thread_statuses.emplace(thread_number, this);
+    thread_group->thread_numbers.emplace_back(thread_number);
+    thread_group->master_thread_number = thread_number;
+    thread_group->master_thread_os_id = os_thread_id;
 
     initPerformanceCounters();
     thread_state = ThreadState::AttachedToQuery;
@@ -87,7 +89,7 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     memory_tracker.setParent(&thread_group->memory_tracker);
 
     {
-        std::unique_lock lock(thread_group->mutex);
+        std::lock_guard lock(thread_group->mutex);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
         query_context = thread_group->query_context;
@@ -96,7 +98,7 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
             global_context = thread_group->global_context;
 
         /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
-        thread_group->thread_statuses.emplace(thread_number, this);
+        thread_group->thread_numbers.emplace_back(thread_number);
     }
 
     initPerformanceCounters();
@@ -246,13 +248,10 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     if (thread_group)
     {
         {
-            std::shared_lock lock(thread_group->mutex);
+            std::lock_guard lock(thread_group->mutex);
 
-            if (thread_group->master_thread)
-            {
-                elem.master_thread_number = thread_group->master_thread->thread_number;
-                elem.master_os_thread_id = thread_group->master_thread->os_thread_id;
-            }
+            elem.master_thread_number = thread_group->master_thread_number;
+            elem.master_os_thread_id = thread_group->master_thread_os_id;
 
             elem.query = thread_group->query;
         }
@@ -290,11 +289,9 @@ void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group
     get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
-std::string CurrentThread::getCurrentQueryID()
+const std::string & CurrentThread::getQueryId()
 {
-    if (!current_thread)
-        return {};
-    return get().getQueryID();
+    return get().getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)

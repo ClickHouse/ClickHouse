@@ -180,8 +180,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     dir.createDirectories();
 
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey())
-        data.sorting_key_expr->execute(block);
+    if (data.hasSortingKey() || data.hasSkipIndices())
+        data.sorting_key_and_skip_indices_expr->execute(block);
 
     Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;

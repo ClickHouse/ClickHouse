@@ -26,7 +26,6 @@ namespace DB
 class Context;
 class QueryStatus;
 class ThreadStatus;
-using ThreadStatusPtr = ThreadStatus*;
 class QueryThreadLog;
 struct TasksStatsCounters;
 struct RUsageCounters;
@@ -47,7 +46,7 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 class ThreadGroupStatus
 {
 public:
-    mutable std::shared_mutex mutex;
+    mutable std::mutex mutex;
 
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
@@ -57,12 +56,11 @@ public:
 
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
-    /// Key is Poco's thread_id
-    using QueryThreadStatuses = std::map<UInt32, ThreadStatusPtr>;
-    QueryThreadStatuses thread_statuses;
+    std::vector<UInt32> thread_numbers;
 
     /// The first thread created this thread group
-    ThreadStatusPtr master_thread;
+    UInt32 master_thread_number = 0;
+    Int32 master_thread_os_id = -1;
 
     String query;
 };
@@ -70,7 +68,7 @@ public:
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
 
-extern thread_local ThreadStatusPtr current_thread;
+extern thread_local ThreadStatus * current_thread;
 
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
   * The object must be created in thread function and destroyed in the same thread before the exit.
@@ -117,7 +115,7 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    String getQueryID();
+    const std::string & getQueryId() const;
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
@@ -170,6 +168,8 @@ protected:
 
     // Pause signal to interrupt threads to get traces
     const int pause_signal = SIGALRM;
+
+    String query_id;
 
     /// A logs queue used by TCPHandler to pass logs to a client
     InternalTextLogsQueueWeakPtr logs_queue_ptr;

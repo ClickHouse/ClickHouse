@@ -83,19 +83,20 @@ def test_reconnect(started_cluster):
     with PartitionManager() as pm:
         # Open a connection for insertion.
         instance.query("INSERT INTO distributed VALUES (1)")
-        time.sleep(0.5)
+        time.sleep(1)
         assert remote.query("SELECT count(*) FROM local1").strip() == '1'
 
         # Now break the connection.
         pm.partition_instances(instance, remote, action='REJECT --reject-with tcp-reset')
         instance.query("INSERT INTO distributed VALUES (2)")
-        time.sleep(0.5)
+        time.sleep(1)
 
         # Heal the partition and insert more data.
         # The connection must be reestablished and after some time all data must be inserted.
         pm.heal_all()
+        time.sleep(1)
         instance.query("INSERT INTO distributed VALUES (3)")
-        time.sleep(0.5)
+        time.sleep(1)
 
         assert remote.query("SELECT count(*) FROM local1").strip() == '3'
 
@@ -191,4 +192,3 @@ def test_inserts_low_cardinality(started_cluster):
     instance.query("INSERT INTO low_cardinality_all (d,x,s) VALUES ('2018-11-12',1,'123')")
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM low_cardinality_all").strip() == '1'
-
