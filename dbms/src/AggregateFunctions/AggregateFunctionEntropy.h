@@ -1,43 +1,41 @@
 #pragma once
 
-#include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/NaNUtils.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
-#include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Columns/ColumnVector.h>
 
 #include <cmath>
+
 
 namespace DB
 {
 
-/** Calculates Shannon Entropy, using HashMap and computing empirical distribution function
+/** Calculates Shannon Entropy, using HashMap and computing empirical distribution function.
+  * Entropy is measured in bits (base-2 logarithm is used).
   */
-template <typename Value, bool is_hashed>
+template <typename Value>
 struct EntropyData
 {
     using Weight = UInt64;
-    using HashingMap = HashMap <
-    Value, Weight,
-    HashCRC32<Value>,
-    HashTableGrower<4>,
-    HashTableAllocatorWithStackMemory<sizeof(std::pair<Value, Weight>) * (1 << 3)>
-    >;
 
-    using TrivialMap = HashMap <
-    Value, Weight,
-    UInt128TrivialHash,
-    HashTableGrower<4>,
-    HashTableAllocatorWithStackMemory<sizeof(std::pair<Value, Weight>) * (1 << 3)>
-    >;
+    using HashingMap = HashMap<
+        Value, Weight,
+        HashCRC32<Value>,
+        HashTableGrower<4>,
+        HashTableAllocatorWithStackMemory<sizeof(std::pair<Value, Weight>) * (1 << 3)>>;
 
-    /// If column value is UInt128 then there is no need to hash values
-    using Map = std::conditional_t<is_hashed, TrivialMap, HashingMap>;
+    /// For the case of pre-hashed values.
+    using TrivialMap = HashMap<
+        Value, Weight,
+        UInt128TrivialHash,
+        HashTableGrower<4>,
+        HashTableAllocatorWithStackMemory<sizeof(std::pair<Value, Weight>) * (1 << 3)>>;
+
+    using Map = std::conditional_t<std::is_same_v<UInt128, Value>, TrivialMap, HashingMap>;
 
     Map map;
 
@@ -69,38 +67,39 @@ struct EntropyData
         typename Map::Reader reader(buf);
         while (reader.next())
         {
-            const auto &pair = reader.get();
+            const auto & pair = reader.get();
             map[pair.first] = pair.second;
         }
     }
 
     Float64 get() const
     {
-        Float64 shannon_entropy = 0;
         UInt64 total_value = 0;
         for (const auto & pair : map)
-        {
             total_value += pair.second;
-        }
-        Float64 cur_proba;
-        Float64 log2e = 1 / std::log(2);
+
+        Float64 shannon_entropy = 0;
         for (const auto & pair : map)
         {
-            cur_proba = Float64(pair.second) / total_value;
-            shannon_entropy -= cur_proba * std::log(cur_proba) * log2e;
+            Float64 frequency = Float64(pair.second) / total_value;
+            shannon_entropy -= frequency * log2(frequency);
         }
 
         return shannon_entropy;
     }
 };
 
-template <typename Value, bool is_hashed = false>
-class AggregateFunctionEntropy final : public IAggregateFunctionDataHelper<EntropyData<Value, is_hashed>,
-        AggregateFunctionEntropy<Value>>
+
+template <typename Value>
+class AggregateFunctionEntropy final : public IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>
 {
+private:
+    size_t num_args;
+
 public:
-    AggregateFunctionEntropy()
-    {}
+    AggregateFunctionEntropy(size_t num_args) : num_args(num_args)
+    {
+    }
 
     String getName() const override { return "entropy"; }
 
@@ -114,13 +113,12 @@ public:
         if constexpr (!std::is_same_v<UInt128, Value>)
         {
             /// Here we manage only with numerical types
-            const auto &column = static_cast<const ColumnVector <Value> &>(*columns[0]);
+            const auto & column = static_cast<const ColumnVector <Value> &>(*columns[0]);
             this->data(place).add(column.getData()[row_num]);
         }
         else
         {
-            this->data(place).add(UniqVariadicHash<true, false>::apply(1, columns, row_num));
-
+            this->data(place).add(UniqVariadicHash<true, false>::apply(num_args, columns, row_num));
         }
     }
 
@@ -141,12 +139,11 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
+        auto & column = static_cast<ColumnVector<Float64> &>(to);
         column.getData().push_back(this->data(place).get());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
-
 };
 
 }

@@ -1,6 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionEntropy.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Helpers.h>
+
 
 namespace DB
 {
@@ -20,32 +22,14 @@ AggregateFunctionPtr createAggregateFunctionEntropy(const std::string & name, co
         throw Exception("Incorrect number of arguments for aggregate function " + name,
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    WhichDataType which(argument_types[0]);
-    if (isNumber(argument_types[0]))
+    size_t num_args = argument_types.size();
+    if (num_args == 1)
     {
-        if (which.isUInt64())
-        {
-            return std::make_shared<AggregateFunctionEntropy<UInt64>>();
-        }
-        else if (which.isInt64())
-        {
-            return std::make_shared<AggregateFunctionEntropy<Int64>>();
-        }
-        else if (which.isInt32())
-        {
-            return std::make_shared<AggregateFunctionEntropy<Int32>>();
-        }
-        else if (which.isUInt32())
-        {
-            return std::make_shared<AggregateFunctionEntropy<UInt32>>();
-        }
-        else if (which.isUInt128())
-        {
-            return std::make_shared<AggregateFunctionEntropy<UInt128, true>>();
-        }
+        if (auto res = createWithNumericBasedType<AggregateFunctionEntropy>(*argument_types[0], num_args))
+            return AggregateFunctionPtr(res);
     }
 
-    return std::make_shared<AggregateFunctionEntropy<UInt128>>();
+    return std::make_shared<AggregateFunctionEntropy<UInt128>>(num_args);
 }
 
 }
