@@ -7,6 +7,7 @@ endif ()
 if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-client clickhouse-client.cpp)
     target_link_libraries (clickhouse-client PRIVATE clickhouse-client-lib)
+    install (TARGETS clickhouse-client ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()
 
 install (FILES clickhouse-client.xml DESTINATION ${CLICKHOUSE_ETC_DIR}/clickhouse-client COMPONENT clickhouse-client RENAME config.xml)

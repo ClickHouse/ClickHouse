@@ -9,7 +9,7 @@
 
 #include <Common/typeid_cast.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -75,30 +75,22 @@ void NO_INLINE Set::insertFromBlockImplCase(
     const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
-    ConstNullMapPtr null_map,
-    ColumnUInt8::Container * out_filter)
+    [[maybe_unused]] ConstNullMapPtr null_map,
+    [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
-    typename Method::State state;
-    state.init(key_columns);
+    typename Method::State state(key_columns, key_sizes, nullptr);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
     {
-        if (has_null_map && (*null_map)[i])
-            continue;
+        if constexpr (has_null_map)
+            if ((*null_map)[i])
+                continue;
 
-        /// Obtain a key to insert to the set
-        typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
-        typename Method::Data::iterator it;
-        bool inserted;
-        method.data.emplace(key, it, inserted);
-
-        if (inserted)
-            method.onNewKey(*it, keys_size, variants.string_pool);
-
-        if (build_filter)
-            (*out_filter)[i] = inserted;
+        if constexpr (build_filter)
+            (*out_filter)[i] = emplace_result.isInserted();
     }
 }
 
@@ -392,10 +384,10 @@ void NO_INLINE Set::executeImplCase(
     size_t rows,
     ConstNullMapPtr null_map) const
 {
-    typename Method::State state;
-    state.init(key_columns);
+    Arena pool;
+    typename Method::State state(key_columns, key_sizes, nullptr);
 
-    /// NOTE Optimization is not used for consecutive identical values.
+    /// NOTE Optimization is not used for consecutive identical strings.
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -404,9 +396,8 @@ void NO_INLINE Set::executeImplCase(
             vec_res[i] = negative;
         else
         {
-            /// Build the key
-            typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
-            vec_res[i] = negative ^ method.data.has(key);
+            auto find_result = state.findKey(method.data, i, pool);
+            vec_res[i] = negative ^ find_result.isFound();
         }
     }
 }

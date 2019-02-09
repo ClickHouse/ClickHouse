@@ -194,6 +194,12 @@ public:
         });
     }
 
+    void finalize()
+    {
+        if (loading_thread.joinable())
+            loading_thread.join();
+    }
+
     /// A function for readline.
     static char * generator(const char * text, int state)
     {
@@ -211,8 +217,7 @@ public:
 
     ~Suggest()
     {
-        if (loading_thread.joinable())
-            loading_thread.join();
+        finalize();
     }
 };
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/Aliases.h>
 
 namespace DB
 {
@@ -16,7 +17,6 @@ struct SyntaxAnalyzerResult
 
     NamesAndTypesList source_columns;
 
-    using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;
 
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.

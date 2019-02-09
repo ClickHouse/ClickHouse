@@ -17,6 +17,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -102,7 +103,7 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     Logger * log = &logger();
-
+    ThreadStatus thread_status;
     UseSSL use_ssl;
 
     if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
@@ -296,7 +297,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {}, {});
         }
         catch (...)
         {

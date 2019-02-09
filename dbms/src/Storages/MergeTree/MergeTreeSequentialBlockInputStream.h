@@ -1,5 +1,5 @@
 #pragma once
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Lightweight (in terms of logic) stream for reading single part from MergeTree
-class MergeTreeSequentialBlockInputStream : public IProfilingBlockInputStream
+class MergeTreeSequentialBlockInputStream : public IBlockInputStream
 {
 public:
     MergeTreeSequentialBlockInputStream(

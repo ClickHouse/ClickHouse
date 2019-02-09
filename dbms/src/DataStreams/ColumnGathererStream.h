@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <IO/ReadBuffer.h>
 #include <Common/PODArray.h>
 
@@ -53,7 +53,7 @@ using MergedRowSources = PODArray<RowSourcePart>;
   * Stream mask maps row number to index of source stream.
   * Streams should contain exactly one column.
   */
-class ColumnGathererStream : public IProfilingBlockInputStream
+class ColumnGathererStream : public IBlockInputStream
 {
 public:
     ColumnGathererStream(

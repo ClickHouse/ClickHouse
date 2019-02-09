@@ -1,8 +1,6 @@
 #pragma once
 
-#include <unordered_map>
-
-#include <Parsers/IAST.h>
+#include <Interpreters/Aliases.h>
 
 namespace DB
 {
@@ -12,8 +10,6 @@ namespace DB
 class OptimizeIfWithConstantConditionVisitor
 {
 public:
-    using Aliases = std::unordered_map<String, ASTPtr>;
-
     OptimizeIfWithConstantConditionVisitor(Aliases & aliases_)
         : aliases(aliases_)
     {}

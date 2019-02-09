@@ -1,15 +1,29 @@
+#include <iostream>
+
 #include <Common/typeid_cast.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <iostream>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/queryToString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
-#include "TranslateQualifiedNamesVisitor.h"
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/FindIdentifierBestTableVisitor.h>
+#include <Interpreters/ExtractFunctionDataVisitor.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -28,6 +42,7 @@ PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
 {
 }
 
+
 bool PredicateExpressionsOptimizer::optimize()
 {
     if (!settings.enable_optimize_predicate_expression || !ast_select || !ast_select->tables || ast_select->tables->children.empty())
@@ -36,47 +51,50 @@ bool PredicateExpressionsOptimizer::optimize()
     if (!ast_select->where_expression && !ast_select->prewhere_expression)
         return false;
 
-    SubqueriesProjectionColumns all_subquery_projection_columns;
-    getAllSubqueryProjectionColumns(all_subquery_projection_columns);
+    SubqueriesProjectionColumns all_subquery_projection_columns = getAllSubqueryProjectionColumns();
 
     bool is_rewrite_subqueries = false;
     if (!all_subquery_projection_columns.empty())
     {
-        is_rewrite_subqueries |= optimizeImpl(ast_select->where_expression, all_subquery_projection_columns, false);
-        is_rewrite_subqueries |= optimizeImpl(ast_select->prewhere_expression, all_subquery_projection_columns, true);
+        is_rewrite_subqueries |= optimizeImpl(ast_select->where_expression, all_subquery_projection_columns, OptimizeKind::PUSH_TO_WHERE);
+        is_rewrite_subqueries |= optimizeImpl(ast_select->prewhere_expression, all_subquery_projection_columns, OptimizeKind::PUSH_TO_PREWHERE);
     }
     return is_rewrite_subqueries;
 }
 
 bool PredicateExpressionsOptimizer::optimizeImpl(
-    ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, bool is_prewhere)
+    ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind expression_kind)
 {
     /// split predicate with `and`
-    PredicateExpressions outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
+    std::vector<ASTPtr> outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
 
     std::vector<DatabaseAndTableWithAlias> database_and_table_with_aliases =
         getDatabaseAndTables(*ast_select, context.getCurrentDatabase());
 
     bool is_rewrite_subquery = false;
-    for (const auto & outer_predicate : outer_predicate_expressions)
+    for (auto & outer_predicate : outer_predicate_expressions)
     {
         if (isArrayJoinFunction(outer_predicate))
             continue;
 
-        IdentifiersWithQualifiedNameSet outer_predicate_dependencies;
-        getDependenciesAndQualifiedOfExpression(outer_predicate, outer_predicate_dependencies, database_and_table_with_aliases);
+        auto outer_predicate_dependencies = getDependenciesAndQualifiers(outer_predicate, database_and_table_with_aliases);
 
         /// TODO: remove origin expression
-        for (const auto & subquery_projection_columns : subqueries_projection_columns)
+        for (const auto & [subquery, projection_columns] : subqueries_projection_columns)
         {
-            auto subquery = static_cast<ASTSelectQuery *>(subquery_projection_columns.first);
-            const ProjectionsWithAliases projection_columns = subquery_projection_columns.second;
-
             OptimizeKind optimize_kind = OptimizeKind::NONE;
-            if (!cannotPushDownOuterPredicate(projection_columns, subquery, outer_predicate_dependencies, is_prewhere, optimize_kind))
+            if (allowPushDown(subquery) && canPushDownOuterPredicate(projection_columns, outer_predicate_dependencies, optimize_kind))
             {
-                ASTPtr inner_predicate;
-                cloneOuterPredicateForInnerPredicate(outer_predicate, projection_columns, database_and_table_with_aliases, inner_predicate);
+                if (optimize_kind == OptimizeKind::NONE)
+                    optimize_kind = expression_kind;
+
+                ASTPtr inner_predicate = outer_predicate->clone();
+                cleanExpressionAlias(inner_predicate); /// clears the alias name contained in the outer predicate
+
+                std::vector<IdentifierWithQualifier> inner_predicate_dependencies =
+                    getDependenciesAndQualifiers(inner_predicate, database_and_table_with_aliases);
+
+                setNewAliasesForInnerPredicate(projection_columns, inner_predicate_dependencies);
 
                 switch (optimize_kind)
                 {
@@ -91,9 +109,30 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
     return is_rewrite_subquery;
 }
 
-PredicateExpressions PredicateExpressionsOptimizer::splitConjunctionPredicate(ASTPtr & predicate_expression)
+bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquery)
 {
-    PredicateExpressions predicate_expressions;
+    if (subquery && !subquery->final() && !subquery->limit_by_expression_list && !subquery->limit_length && !subquery->with_expression_list)
+    {
+        ASTPtr expr_list = ast_select->select_expression_list;
+        ExtractFunctionVisitor::Data extract_data;
+        ExtractFunctionVisitor(extract_data).visit(expr_list);
+
+        for (const auto & subquery_function : extract_data.functions)
+        {
+            const auto & function = FunctionFactory::instance().get(subquery_function->name, context);
+            if (function->isStateful())
+                return false;
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(ASTPtr & predicate_expression)
+{
+    std::vector<ASTPtr> predicate_expressions;
 
     if (predicate_expression)
     {
@@ -127,77 +166,95 @@ PredicateExpressions PredicateExpressionsOptimizer::splitConjunctionPredicate(AS
     return predicate_expressions;
 }
 
-void PredicateExpressionsOptimizer::getDependenciesAndQualifiedOfExpression(const ASTPtr & expression,
-                                                                            IdentifiersWithQualifiedNameSet & dependencies_and_qualified,
-                                                                            std::vector<DatabaseAndTableWithAlias> & tables_with_aliases)
+std::vector<PredicateExpressionsOptimizer::IdentifierWithQualifier>
+PredicateExpressionsOptimizer::getDependenciesAndQualifiers(ASTPtr & expression, std::vector<DatabaseAndTableWithAlias> & tables)
 {
-    if (const auto identifier = typeid_cast<ASTIdentifier *>(expression.get()))
+    FindIdentifierBestTableVisitor::Data find_data(tables);
+    FindIdentifierBestTableVisitor(find_data).visit(expression);
+
+    std::vector<IdentifierWithQualifier> dependencies;
+
+    for (const auto & [identifier, table] : find_data.identifier_table)
     {
         String table_alias;
-        if (!identifier->name_parts.empty())
-        {
-            if (!tables_with_aliases.empty())
-                table_alias = tables_with_aliases[0].getQualifiedNamePrefix();
-        }
-        else
-        {
-            size_t best_table_pos = 0;
-            size_t max_num_qualifiers_to_strip = 0;
+        if (table)
+            table_alias = table->getQualifiedNamePrefix();
 
-            /// translate qualifiers for dependent columns
-            for (size_t table_pos = 0; table_pos < tables_with_aliases.size(); ++table_pos)
-            {
-                const auto & table = tables_with_aliases[table_pos];
-                auto num_qualifiers_to_strip = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, table);
-
-                if (num_qualifiers_to_strip > max_num_qualifiers_to_strip)
-                {
-                    max_num_qualifiers_to_strip = num_qualifiers_to_strip;
-                    best_table_pos = table_pos;
-                }
-            }
-
-            table_alias = tables_with_aliases[best_table_pos].getQualifiedNamePrefix();
-        }
-
-        String qualified_name = table_alias + expression->getAliasOrColumnName();
-        dependencies_and_qualified.emplace_back(std::pair(identifier, qualified_name));
+        dependencies.emplace_back(identifier, table_alias);
     }
-    else
-    {
-        for (const auto & child : expression->children)
-            getDependenciesAndQualifiedOfExpression(child, dependencies_and_qualified, tables_with_aliases);
-    }
+
+    return dependencies;
 }
 
-bool PredicateExpressionsOptimizer::cannotPushDownOuterPredicate(
-    const ProjectionsWithAliases & subquery_projection_columns, ASTSelectQuery * subquery,
-    IdentifiersWithQualifiedNameSet & outer_predicate_dependencies, bool & is_prewhere, OptimizeKind & optimize_kind)
+static String qualifiedName(ASTIdentifier * identifier, const String & prefix)
 {
-    if (subquery->final() || subquery->limit_by_expression_list || subquery->limit_length || subquery->with_expression_list)
-        return true;
+    if (identifier->isShort())
+        return prefix + identifier->getAliasOrColumnName();
+    return identifier->getAliasOrColumnName();
+}
 
-    for (auto & predicate_dependency : outer_predicate_dependencies)
+bool PredicateExpressionsOptimizer::canPushDownOuterPredicate(
+    const std::vector<ProjectionWithAlias> & projection_columns,
+    const std::vector<IdentifierWithQualifier> & dependencies,
+    OptimizeKind & optimize_kind)
+{
+    for (const auto & [identifier, prefix] : dependencies)
     {
         bool is_found = false;
+        String qualified_name = qualifiedName(identifier, prefix);
 
-        for (auto projection_column : subquery_projection_columns)
+        for (const auto & [ast, alias] : projection_columns)
         {
-            if (projection_column.second == predicate_dependency.second)
+            if (alias == qualified_name)
             {
                 is_found = true;
-                optimize_kind = isAggregateFunction(projection_column.first) ? OptimizeKind::PUSH_TO_HAVING : optimize_kind;
+                ASTPtr projection_column = ast;
+                ExtractFunctionVisitor::Data extract_data;
+                ExtractFunctionVisitor(extract_data).visit(projection_column);
+
+                if (!extract_data.aggregate_functions.empty())
+                    optimize_kind = OptimizeKind::PUSH_TO_HAVING;
             }
         }
 
         if (!is_found)
-            return true;
+            return false;
     }
 
-    if (optimize_kind == OptimizeKind::NONE)
-        optimize_kind = is_prewhere ? OptimizeKind::PUSH_TO_PREWHERE : OptimizeKind::PUSH_TO_WHERE;
+    return true;
+}
 
-    return false;
+void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
+    const std::vector<ProjectionWithAlias> & projection_columns,
+    const std::vector<IdentifierWithQualifier> & dependencies)
+{
+    for (auto & [identifier, prefix] : dependencies)
+    {
+        String qualified_name = qualifiedName(identifier, prefix);
+
+        for (auto & [ast, alias] : projection_columns)
+        {
+            if (alias == qualified_name)
+            {
+                String name;
+                if (auto * id = typeid_cast<const ASTIdentifier *>(ast.get()))
+                {
+                    name = id->tryGetAlias();
+                    if (name.empty())
+                        name = id->shortName();
+                }
+                else
+                {
+                    if (ast->tryGetAlias().empty())
+                        ast->setAlias(ast->getColumnName());
+                    name = ast->getAliasOrColumnName();
+                }
+
+                IdentifierSemantic::setNeedLongName(*identifier, false);
+                identifier->setShortName(name);
+            }
+        }
+    }
 }
 
 bool PredicateExpressionsOptimizer::isArrayJoinFunction(const ASTPtr & node)
@@ -213,47 +270,6 @@ bool PredicateExpressionsOptimizer::isArrayJoinFunction(const ASTPtr & node)
             return true;
 
     return false;
-}
-
-bool PredicateExpressionsOptimizer::isAggregateFunction(ASTPtr & node)
-{
-    if (auto function = typeid_cast<ASTFunction *>(node.get()))
-    {
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
-            return true;
-    }
-
-    for (auto & child : node->children)
-        if (isAggregateFunction(child))
-            return true;
-
-    return false;
-}
-
-void PredicateExpressionsOptimizer::cloneOuterPredicateForInnerPredicate(
-    const ASTPtr & outer_predicate, const ProjectionsWithAliases & projection_columns,
-    std::vector<DatabaseAndTableWithAlias> & tables, ASTPtr & inner_predicate)
-{
-    inner_predicate = outer_predicate->clone();
-
-    /// clears the alias name contained in the outer predicate
-    cleanExpressionAlias(inner_predicate);
-    IdentifiersWithQualifiedNameSet new_expression_requires;
-    getDependenciesAndQualifiedOfExpression(inner_predicate, new_expression_requires, tables);
-
-    for (auto & require : new_expression_requires)
-    {
-        for (auto projection : projection_columns)
-        {
-            if (require.second == projection.second)
-            {
-                ASTPtr & ast = projection.first;
-                if (!typeid_cast<ASTIdentifier *>(ast.get()) && ast->tryGetAlias().empty())
-                    ast->setAlias(ast->getColumnName());
-                require.first->name = ast->getAliasOrColumnName();
-            }
-        }
-    }
 }
 
 bool PredicateExpressionsOptimizer::optimizeExpression(const ASTPtr & outer_expression, ASTPtr & subquery_expression, ASTSelectQuery * subquery)
@@ -272,33 +288,32 @@ bool PredicateExpressionsOptimizer::optimizeExpression(const ASTPtr & outer_expr
     return true;
 }
 
-void PredicateExpressionsOptimizer::getAllSubqueryProjectionColumns(SubqueriesProjectionColumns & all_subquery_projection_columns)
+PredicateExpressionsOptimizer::SubqueriesProjectionColumns PredicateExpressionsOptimizer::getAllSubqueryProjectionColumns()
 {
-    const auto tables_expression = getSelectTablesExpression(*ast_select);
+    SubqueriesProjectionColumns projection_columns;
 
-    for (const auto & table_expression : tables_expression)
-    {
+    for (const auto & table_expression : getSelectTablesExpression(*ast_select))
         if (table_expression->subquery)
-        {
-            /// Use qualifiers to translate the columns of subqueries
-            DatabaseAndTableWithAlias database_and_table_with_alias(*table_expression, context.getCurrentDatabase());
-            String qualified_name_prefix = database_and_table_with_alias.getQualifiedNamePrefix();
-            getSubqueryProjectionColumns(all_subquery_projection_columns, qualified_name_prefix,
-                                         static_cast<const ASTSubquery *>(table_expression->subquery.get())->children[0]);
-        }
-    }
+            getSubqueryProjectionColumns(table_expression->subquery, projection_columns);
+
+    return projection_columns;
 }
 
-void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(SubqueriesProjectionColumns & all_subquery_projection_columns,
-                                                                 String & qualified_name_prefix, const ASTPtr & subquery)
+void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(const ASTPtr & subquery, SubqueriesProjectionColumns & projection_columns)
 {
-    ASTs select_with_union_projections;
-    auto select_with_union_query = static_cast<ASTSelectWithUnionQuery *>(subquery.get());
+    String qualified_name_prefix = subquery->tryGetAlias();
+    if (!qualified_name_prefix.empty())
+        qualified_name_prefix += '.';
 
-    for (auto & select_without_union_query : select_with_union_query->list_of_selects->children)
+    const ASTPtr & subselect = subquery->children[0];
+
+    ASTs select_with_union_projections;
+    auto select_with_union_query = static_cast<ASTSelectWithUnionQuery *>(subselect.get());
+
+    for (auto & select : select_with_union_query->list_of_selects->children)
     {
-        ProjectionsWithAliases subquery_projections;
-        auto select_projection_columns = getSelectQueryProjectionColumns(select_without_union_query);
+        std::vector<ProjectionWithAlias> subquery_projections;
+        auto select_projection_columns = getSelectQueryProjectionColumns(select);
 
         if (!select_projection_columns.empty())
         {
@@ -309,7 +324,7 @@ void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(SubqueriesProje
                 subquery_projections.emplace_back(std::pair(select_projection_columns[i],
                                                             qualified_name_prefix + select_with_union_projections[i]->getAliasOrColumnName()));
 
-            all_subquery_projection_columns.insert(std::pair(select_without_union_query.get(), subquery_projections));
+            projection_columns.insert(std::pair(static_cast<ASTSelectQuery *>(select.get()), subquery_projections));
         }
     }
 }
@@ -323,7 +338,9 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
     std::unordered_map<String, ASTPtr> aliases;
     std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
 
-    TranslateQualifiedNamesVisitor::Data qn_visitor_data{{}, tables};
+    std::vector<TableWithColumnNames> tables_with_columns;
+    TranslateQualifiedNamesVisitor::Data::setTablesOnly(tables, tables_with_columns);
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data{{}, tables_with_columns};
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};

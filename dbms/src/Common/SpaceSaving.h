@@ -79,7 +79,7 @@ private:
     constexpr uint64_t nextAlphaSize(uint64_t x)
     {
         constexpr uint64_t ALPHA_MAP_ELEMENTS_PER_COUNTER = 6;
-        return 1ULL<<(sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
+        return 1ULL << (sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
     }
 
 public:

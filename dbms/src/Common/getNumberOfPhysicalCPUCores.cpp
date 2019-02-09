@@ -1,19 +1,20 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <thread>
 
-#if defined(__x86_64__)
-
-    #include <libcpuid/libcpuid.h>
-    #include <Common/Exception.h>
-
+#include <Common/config.h>
+#if USE_CPUID
+#   include <libcpuid/libcpuid.h>
+#   include <Common/Exception.h>
     namespace DB { namespace ErrorCodes { extern const int CPUID_ERROR; }}
-
+#elif USE_CPUINFO
+#   include <cpuinfo.h>
 #endif
+
 
 
 unsigned getNumberOfPhysicalCPUCores()
 {
-#if defined(__x86_64__)
+#if USE_CPUID
     cpu_raw_data_t raw_data;
     if (0 != cpuid_get_raw_data(&raw_data))
         throw DB::Exception("Cannot cpuid_get_raw_data: " + std::string(cpuid_error()), DB::ErrorCodes::CPUID_ERROR);
@@ -37,6 +38,13 @@ unsigned getNumberOfPhysicalCPUCores()
 
     if (res != 0)
         return res;
+#elif USE_CPUINFO
+    uint32_t cores = 0;
+    if (cpuinfo_initialize())
+        cores = cpuinfo_get_cores_count();
+
+    if (cores)
+            return cores;
 #endif
 
     /// As a fallback (also for non-x86 architectures) assume there are no hyper-threading on the system.

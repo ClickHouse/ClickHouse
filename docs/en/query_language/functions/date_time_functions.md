@@ -20,17 +20,29 @@ SELECT
 
 Only time zones that differ from UTC by a whole number of hours are supported.
 
+## toTimeZone
+
+Convert time or date and time to the specified time zone.
+
 ## toYear
 
 Converts a date or date with time to a UInt16 number containing the year number (AD).
+
+## toQuarter
+
+Converts a date or date with time to a UInt8 number containing the quarter number.
 
 ## toMonth
 
 Converts a date or date with time to a UInt8 number containing the month number (1-12).
 
+## toDayOfYear
+
+Converts a date or date with time to a UInt8 number containing the number of the day of the year (1-366).
+
 ## toDayOfMonth
 
--Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
+Converts a date or date with time to a UInt8 number containing the number of the day of the month (1-31).
 
 ## toDayOfWeek
 
@@ -50,9 +62,18 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
+## toUnixTimestamp
+
+Converts a date with time to a unix timestamp.
+
 ## toMonday
 
 Rounds down a date or date with time to the nearest Monday.
+Returns the date.
+
+## toStartOfISOYear
+
+Rounds down a date or date with time to the first day of ISO year.
 Returns the date.
 
 ## toStartOfMonth
@@ -104,6 +125,10 @@ Converts a date with time to a certain fixed date, while preserving the time.
 
 Converts a date with time or date to the number of the year, starting from a certain fixed point in the past.
 
+## toRelativeQuarterNum
+
+Converts a date with time or date to the number of the quarter, starting from a certain fixed point in the past.
+
 ## toRelativeMonthNum
 
 Converts a date with time or date to the number of the month, starting from a certain fixed point in the past.
@@ -128,6 +153,14 @@ Converts a date with time or date to the number of the minute, starting from a c
 
 Converts a date with time or date to the number of the second, starting from a certain fixed point in the past.
 
+## toISOYear
+
+Converts a date or date with time to a UInt16 number containing the ISO Year number.
+
+## toISOWeek
+
+Converts a date or date with time to a UInt8 number containing the ISO Week number.
+
 ## now
 
 Accepts zero arguments and returns the current time at one of the moments of request execution.
@@ -147,6 +180,73 @@ The same as 'today() - 1'.
 
 Rounds the time to the half hour.
 This function is specific to Yandex.Metrica, since half an hour is the minimum amount of time for breaking a session into two sessions if a tracking tag shows a single user's consecutive pageviews that differ in time by strictly more than this amount. This means that tuples (the tag ID, user ID, and time slot) can be used to search for pageviews that are included in the corresponding session.
+
+## toYYYYMM
+
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY * 100 + MM).
+
+## toYYYYMMDD
+
+Converts a date or date with time to a UInt32 number containing the year and month number (YYYY * 10000 + MM * 100 + DD).
+
+## toYYYYMMDDhhmmss
+
+Converts a date or date with time to a UInt64 number containing the year and month number (YYYY * 10000000000 + MM * 100000000 + DD * 1000000 + hh * 10000 + mm * 100 + ss).
+
+## addYears, addMonths, addWeeks, addDays, addHours, addMinutes, addSeconds, addQuarters
+
+Function adds a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
+
+```sql
+WITH
+    toDate('2018-01-01') AS date,
+    toDateTime('2018-01-01 00:00:00') AS date_time
+SELECT
+    addYears(date, 1) AS add_years_with_date,
+    addYears(date_time, 1) AS add_years_with_date_time
+```
+
+```
+┌─add_years_with_date─┬─add_years_with_date_time─┐
+│          2019-01-01 │      2019-01-01 00:00:00 │
+└─────────────────────┴──────────────────────────┘
+```
+
+## subtractYears, subtractMonths, subtractWeeks, subtractDays, subtractHours, subtractMinutes, subtractSeconds, subtractQuarters
+
+Function subtract a Date/DateTime interval to a Date/DateTime and then return the Date/DateTime. For example:
+
+```sql
+WITH
+    toDate('2019-01-01') AS date,
+    toDateTime('2019-01-01 00:00:00') AS date_time
+SELECT
+    subtractYears(date, 1) AS subtract_years_with_date,
+    subtractYears(date_time, 1) AS subtract_years_with_date_time
+```
+
+```
+┌─subtract_years_with_date─┬─subtract_years_with_date_time─┐
+│               2018-01-01 │           2018-01-01 00:00:00 │
+└──────────────────────────┴───────────────────────────────┘
+```
+
+## dateDiff('unit', t1, t2, \[timezone\])
+
+Return the difference between two times expressed in 'unit' e.g. `'hours'`. 't1' and 't2' can be Date or DateTime, If 'timezone' is specified, it applied to both arguments. If not, timezones from datatypes 't1' and 't2' are used. If that timezones are not the same, the result is unspecified.
+
+Supported unit values:
+
+| unit   | 
+| ------ |
+|second  |
+|minute  |
+|hour    |
+|day     |
+|week    |
+|month   |
+|quarter |
+|year    |
 
 ## timeSlots(StartTime, Duration,\[, Size\])
 

@@ -1,13 +1,17 @@
+#include <Poco/String.h>
 #include <Core/Names.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Poco/String.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <IO/WriteHelpers.h>
 
@@ -16,9 +20,11 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_AST;
     extern const int CYCLIC_ALIASES;
 }
+
 
 class CheckASTDepth
 {
@@ -100,7 +106,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
-    if (!getColumnIdentifierName(node))
+    if (!IdentifierSemantic::getColumnName(node))
         return;
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
@@ -117,7 +123,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         if (!my_alias.empty() && my_alias != alias_node->getAliasOrColumnName())
         {
             /// Avoid infinite recursion here
-            auto opt_name = getColumnIdentifierName(alias_node);
+            auto opt_name = IdentifierSemantic::getColumnName(alias_node);
             bool is_cycle = opt_name && *opt_name == node.name;
 
             if (!is_cycle)
@@ -135,7 +141,11 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 /// Replace *, alias.*, database.table.* with a list of columns.
 void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & data)
 {
-    auto & tables_with_columns = data.tables_with_columns;
+    if (!data.tables_with_columns)
+        return;
+
+    const auto & tables_with_columns = *data.tables_with_columns;
+    const auto & source_columns_set = data.source_columns_set;
 
     ASTs old_children;
     if (data.processAsterisks())
@@ -162,22 +172,43 @@ void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & dat
     {
         if (typeid_cast<const ASTAsterisk *>(child.get()))
         {
-            for (const auto & pr : tables_with_columns)
-                for (const auto & column_name : pr.second)
-                    node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+            bool first_table = true;
+            for (const auto & [table_name, table_columns] : tables_with_columns)
+            {
+                for (const auto & column_name : table_columns)
+                    if (first_table || !data.join_using_columns.count(column_name))
+                    {
+                        /// qualifed names for duplicates
+                        if (!first_table && source_columns_set && source_columns_set->count(column_name))
+                            node.children.emplace_back(std::make_shared<ASTIdentifier>(table_name.getQualifiedNamePrefix() + column_name));
+                        else
+                            node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+                    }
+
+                first_table = false;
+            }
         }
         else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
         {
             DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
+            bool first_table = true;
             for (const auto & [table_name, table_columns] : tables_with_columns)
             {
                 if (ident_db_and_name.satisfies(table_name, true))
                 {
                     for (const auto & column_name : table_columns)
-                        node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+                    {
+                        /// qualifed names for duplicates
+                        if (!first_table && source_columns_set && source_columns_set->count(column_name))
+                            node.children.emplace_back(std::make_shared<ASTIdentifier>(table_name.getQualifiedNamePrefix() + column_name));
+                        else
+                            node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+                    }
                     break;
                 }
+
+                first_table = false;
             }
         }
         else
@@ -198,6 +229,9 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 /// special visitChildren() for ASTSelectQuery
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & data)
 {
+    if (auto join = select.join())
+        extractJoinUsingColumns(join->table_join, data);
+
     for (auto & child : ast->children)
     {
         if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
@@ -218,7 +252,6 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & 
 }
 
 /// Don't go into subqueries.
-/// Don't go into components of compound identifiers.
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
@@ -239,8 +272,7 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
             visit(child, data);
         }
     }
-    else if (!typeid_cast<ASTIdentifier *>(node.get()) &&
-             !typeid_cast<ASTSelectQuery *>(node.get()))
+    else if (!typeid_cast<ASTSelectQuery *>(node.get()))
     {
         for (auto & child : node->children)
         {
@@ -309,6 +341,29 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
             e.addMessage("(after expansion of aliases)");
             throw;
         }
+    }
+}
+
+/// 'select * from a join b using id' should result one 'id' column
+void QueryNormalizer::extractJoinUsingColumns(const ASTPtr ast, Data & data)
+{
+    const auto & table_join = typeid_cast<const ASTTableJoin &>(*ast);
+
+    if (table_join.using_expression_list)
+    {
+        auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
+        for (const auto & key : keys.children)
+            if (auto opt_column = getIdentifierName(key))
+                data.join_using_columns.insert(*opt_column);
+            else if (typeid_cast<const ASTLiteral *>(key.get()))
+                data.join_using_columns.insert(key->getColumnName());
+            else
+            {
+                String alias = key->tryGetAlias();
+                if (alias.empty())
+                    throw Exception("Logical error: expected identifier or alias, got: " + key->getID(), ErrorCodes::LOGICAL_ERROR);
+                data.join_using_columns.insert(alias);
+            }
     }
 }
 

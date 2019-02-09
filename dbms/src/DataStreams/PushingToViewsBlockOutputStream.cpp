@@ -5,7 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
 namespace DB

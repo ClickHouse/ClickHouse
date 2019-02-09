@@ -8,6 +8,11 @@
 namespace DB
 {
 
+struct IdentifierSemantic;
+struct IdentifierSemanticImpl;
+struct DatabaseAndTableWithAlias;
+
+
 /// Identifier (column, table or alias)
 class ASTIdentifier : public ASTWithAlias
 {
@@ -15,15 +20,8 @@ public:
     /// The composite identifier will have a concatenated name (of the form a.b.c),
     /// and individual components will be available inside the name_parts.
     String name;
-    std::vector<String> name_parts;
 
-    ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {})
-        : name(name_)
-        , name_parts(name_parts_)
-        , special(false)
-    {
-        range = StringRange(name.data(), name.data() + name.size());
-    }
+    ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {});
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name); }
@@ -35,6 +33,22 @@ public:
         set.insert(name);
     }
 
+    bool compound() const { return !name_parts.empty(); }
+    bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
+
+    void setShortName(const String & new_name)
+    {
+        name = new_name;
+        name_parts.clear();
+    }
+
+    const String & shortName() const
+    {
+        if (!name_parts.empty())
+            return name_parts.back();
+        return name;
+    }
+
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
@@ -42,29 +56,21 @@ protected:
 private:
     using ASTWithAlias::children; /// ASTIdentifier is child free
 
-    bool special; /// TODO: it would be ptr to semantic here
+    std::vector<String> name_parts;
+    std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
 
-    static std::shared_ptr<ASTIdentifier> createSpecial(const String & name, std::vector<String> && name_parts = {})
-    {
-        auto ret = std::make_shared<ASTIdentifier>(name, std::move(name_parts));
-        ret->special = true;
-        return ret;
-    }
+    static std::shared_ptr<ASTIdentifier> createSpecial(const String & name, std::vector<String> && name_parts = {});
 
-    void setSpecial() { special = true; }
-
-    friend void setIdentifierSpecial(ASTPtr &);
-    friend std::optional<String> getColumnIdentifierName(const ASTIdentifier & node);
-    friend std::optional<String> getColumnIdentifierName(const ASTPtr & ast);
-    friend std::optional<String> getTableIdentifierName(const ASTIdentifier & node);
-    friend std::optional<String> getTableIdentifierName(const ASTPtr & ast);
+    friend struct IdentifierSemantic;
     friend ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
+    friend void setIdentifierSpecial(ASTPtr & ast);
 };
 
 
 /// ASTIdentifier Helpers: hide casts and semantic.
 
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
+void setIdentifierSpecial(ASTPtr & ast);
 
 bool isIdentifier(const IAST * const ast);
 inline bool isIdentifier(const ASTPtr & ast) { return isIdentifier(ast.get()); }
@@ -73,17 +79,5 @@ std::optional<String> getIdentifierName(const IAST * const ast);
 inline std::optional<String> getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
 bool getIdentifierName(const ASTPtr & ast, String & name);
 
-/// @returns name for column identifiers
-std::optional<String> getColumnIdentifierName(const ASTIdentifier & node);
-std::optional<String> getColumnIdentifierName(const ASTPtr & ast);
-
-/// @returns name for 'not a column' identifiers
-std::optional<String> getTableIdentifierName(const ASTIdentifier & node);
-std::optional<String> getTableIdentifierName(const ASTPtr & ast);
-
-void setIdentifierSpecial(ASTPtr & ast);
-void addIdentifierQualifier(ASTIdentifier & identifier, const String & database, const String & table, const String & alias);
-bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table_or_alias);
-bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);
 
 }

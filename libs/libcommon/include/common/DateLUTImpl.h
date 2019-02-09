@@ -14,6 +14,11 @@
 #define DATE_LUT_MAX_YEAR 2105 /// Last supported year
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
+#if defined(__PPC__)
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+#endif
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -278,6 +283,15 @@ public:
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
     inline time_t toStartOfFiveMinute(time_t t) const { return t / 300 * 300; }
     inline time_t toStartOfFifteenMinutes(time_t t) const { return t / 900 * 900; }
+
+    inline time_t toStartOfTenMinutes(time_t t) const
+    {
+        if (offset_is_whole_number_of_hours_everytime)
+            return t / 600 * 600;
+
+        time_t date = find(t).date;
+        return date + (t - date) / 600 * 600;
+    }
 
     inline time_t toStartOfHour(time_t t) const
     {
@@ -684,3 +698,9 @@ public:
         return s;
     }
 };
+
+#if defined(__PPC__)
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+#endif

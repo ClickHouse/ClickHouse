@@ -27,6 +27,7 @@ deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 Затем для самой установки пакетов выполните:
 
 ```bash
+sudo apt-get install dirmngr    # optional
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
@@ -73,7 +74,7 @@ Server: dbms/programs/clickhouse-server
 Для запуска сервера в качестве демона, выполните:
 
 ``` bash
-% sudo service clickhouse-server start
+$ sudo service clickhouse-server start
 ```
 
 Смотрите логи в директории `/var/log/clickhouse-server/`.
