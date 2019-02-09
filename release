@@ -119,7 +119,7 @@ else
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
 
     if [[ -z `which pbuilder` ]] ; then
-        sudo apt install -y pbuilder fakeroot debhelper debian-archive-keyring debian-keyring lsb-release
+        sudo apt install -y pbuilder devscripts ccache fakeroot debhelper debian-archive-keyring debian-keyring lsb-release
     fi
 
     . $CURDIR/debian/.pbuilderrc

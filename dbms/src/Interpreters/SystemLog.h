@@ -360,7 +360,10 @@ void SystemLog<LogElement>::prepareTable()
         create->table = table_name;
 
         Block sample = LogElement::createBlock();
-        create->set(create->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
+
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
+        create->set(create->columns_list, new_columns_list);
 
         ParserStorage storage_parser;
         ASTPtr storage_ast = parseQuery(

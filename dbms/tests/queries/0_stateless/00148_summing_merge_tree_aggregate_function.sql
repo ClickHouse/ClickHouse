@@ -107,9 +107,9 @@ insert into test.summing_merge_tree_aggregate_function select 1, quantileState(0
 insert into test.summing_merge_tree_aggregate_function select 1, quantileState(0.1)(0.8);
 insert into test.summing_merge_tree_aggregate_function select 1, quantileState(0.1)(0.9);
 insert into test.summing_merge_tree_aggregate_function select 1, quantileState(0.1)(1.0);
-select k, quantileMerge(0.1)(x) from test.summing_merge_tree_aggregate_function group by k;
+select k, round(quantileMerge(0.1)(x), 1) from test.summing_merge_tree_aggregate_function group by k;
 optimize table test.summing_merge_tree_aggregate_function;
-select k, quantileMerge(0.1)(x) from test.summing_merge_tree_aggregate_function group by k;
+select k, round(quantileMerge(0.1)(x), 1) from test.summing_merge_tree_aggregate_function group by k;
 
 drop table test.summing_merge_tree_aggregate_function;
 
