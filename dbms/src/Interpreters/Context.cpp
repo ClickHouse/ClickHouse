@@ -292,7 +292,8 @@ struct ContextShared
         trace_collector_thread.join();
     }
 
-    void initializeTraceCollector(TraceLog * trace_log) {
+    void initializeTraceCollector(TraceLog * trace_log)
+    {
         trace_pipe.open();
         trace_collector.reset(new TraceCollector(trace_log, trace_collector_stop.get_future()));
         trace_collector_thread.start(*trace_collector);

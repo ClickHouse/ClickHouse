@@ -7,7 +7,8 @@
 #include <Common/Exception.h>
 
 
-namespace DB {
+namespace DB
+{
     LazyPipe trace_pipe;
 
     TraceCollector::TraceCollector(TraceLog * trace_log, std::future<void>&& stop_future)
@@ -29,19 +30,21 @@ namespace DB {
             try {
                 DB::readPODBinary(context, in);
                 DB::readStringBinary(query_id, in);
-            } catch (Exception) {
+            }
+            catch (Exception)
+            {
                 /// Pipe was closed - looks like server is about to shutdown
                 /// Let us wait for stop_future
                 continue;
             }
 
-            if (trace_log != nullptr) {
+            if (trace_log != nullptr)
+            {
                 std::vector<void *> frames = getBacktraceFrames(context);
                 std::vector<UInt64> trace;
                 trace.reserve(frames.size());
-                for (void * frame : frames) {
+                for (void * frame : frames)
                     trace.push_back(reinterpret_cast<uintptr_t>(frame));
-                }
 
                 TraceLogElement element{std::time(nullptr), query_id, trace};
 
