@@ -17,15 +17,30 @@ enum {
  *
  */
 
+
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wcast-align"
+#pragma clang diagnostic ignored "-Wcast-qual"
+#pragma clang diagnostic ignored "-Wundef"
+#endif
+
 #ifndef INCLUDE_PORTABILITY_H_
 #define INCLUDE_PORTABILITY_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS 1
-#endif
+//#ifndef __STDC_FORMAT_MACROS
+//#define __STDC_FORMAT_MACROS 1
+//#endif
 
 #if !(defined(_POSIX_C_SOURCE)) || (_POSIX_C_SOURCE < 200809L)
 #define _POSIX_C_SOURCE 200809L
@@ -248,6 +263,10 @@ static inline int hamming(uint64_t x) {
 
 #ifndef UINT32_C
 #define UINT32_C(c) (c##UL)
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* INCLUDE_PORTABILITY_H_ */
@@ -1533,6 +1552,7 @@ inline bool array_container_contains(const array_container_t *arr,
     return false;
 
 }
+
 
 //* Check whether a range of values from range_start (included) to range_end (excluded) is present. */
 static inline bool array_container_contains_range(const array_container_t *arr,
@@ -7163,4 +7183,5 @@ uint32_t roaring_read_uint32_iterator(roaring_uint32_iterator_t *it, uint32_t* b
 #endif
 
 #endif
+
 /* end file /opt/bitmap/CRoaring-0.2.57/include/roaring/roaring.h */
