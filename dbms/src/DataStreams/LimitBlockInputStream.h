@@ -17,7 +17,7 @@ public:
       * If always_read_till_end = true - reads all the data to the end, but ignores them. This is necessary in rare cases:
       *  when otherwise, due to the cancellation of the request, we would not have received the data for GROUP BY WITH TOTALS from the remote server.
       */
-    LimitBlockInputStream(const BlockInputStreamPtr & input, size_t limit_, size_t offset_, bool always_read_till_end_ = false);
+    LimitBlockInputStream(const BlockInputStreamPtr & input, UInt64 limit_, size_t offset_, bool always_read_till_end_ = false);
 
     String getName() const override { return "Limit"; }
 
@@ -27,7 +27,7 @@ protected:
     Block readImpl() override;
 
 private:
-    size_t limit;
+    UInt64 limit;
     size_t offset;
     size_t pos = 0;
     bool always_read_till_end;

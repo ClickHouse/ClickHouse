@@ -141,7 +141,7 @@ public:
         const size_t columns = block.columns();
         const size_t rows = block.rows();
         size_t offsets = 0;
-        size_t limits = max_batch_rows;
+        UInt64 limits = max_batch_rows;
         for (size_t idx = 0; idx < splited_block_size; ++idx)
         {
             /// For last batch, limits should be the remain size
