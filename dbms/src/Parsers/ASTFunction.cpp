@@ -55,7 +55,7 @@ ASTPtr ASTFunction::clone() const
 
 /** A special hack. If it's LIKE or NOT LIKE expression and the right hand side is a string literal,
   *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
-  * Motivation: most people don't aware that _ is a metacharacter and forgot to properly escape it with two backslashes.
+  * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
   * With highlighting we make it clearly obvious.
   *
   * Another case is regexp match. Suppose the user types match(URL, 'www.yandex.ru'). It often means that the user is unaware that . is a metacharacter.
