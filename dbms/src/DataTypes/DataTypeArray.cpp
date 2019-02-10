@@ -100,7 +100,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 
 namespace
 {
-    void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit)
+    void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
     {
         const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
         const ColumnArray::Offsets & offset_values = column_array.getOffsets();

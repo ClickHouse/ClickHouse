@@ -21,7 +21,7 @@ public:
     MutableColumnPtr createColumn() const override;
 
     /// These methods read and write zero bytes just to allow to figure out size of column.
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double avg_value_size_hint) const override;
 
     bool equals(const IDataType & rhs) const override;

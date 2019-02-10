@@ -194,7 +194,7 @@ public:
 
     /** Override these methods for data types that require just single stream (most of data types).
       */
-    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit) const;
+    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const;
     virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double avg_value_size_hint) const;
 
     /** Serialization/deserialization of individual values.

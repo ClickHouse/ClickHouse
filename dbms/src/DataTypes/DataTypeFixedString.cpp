@@ -80,7 +80,7 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr)
 }
 
 
-void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit) const
+void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     const ColumnFixedString::Chars & data = typeid_cast<const ColumnFixedString &>(column).getChars();
 
