@@ -59,9 +59,20 @@ namespace DB
 
         void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
         {
+//            const ColumnAggregateFunction * column_with_states =
+//                typeid_cast<const ColumnAggregateFunction *>(static_cast<const ColumnConst *>(&*block.getByPosition(arguments.at(0)).column));
+
+
+//            std::cout << "\n\n\nHELOOOOO\n\n\n";
             // завести МЛ_аггр_функции как отдельный класс, чтобы тут сразу это проверять, а не делать это внутри predictValues()
             const ColumnAggregateFunction * column_with_states
                     = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
+//            std::cout << "\n\n\nHELOOOOO 2\n\n\n";
+
+//            const ColumnConst * column_with_states
+//                    = typeid_cast<const ColumnConst *>(&*block.getByPosition(arguments.at(0)).column);
+
+
             if (!column_with_states)
                 throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                                 + " of first argument of function "

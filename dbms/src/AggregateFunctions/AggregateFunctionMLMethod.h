@@ -60,6 +60,7 @@ public:
         return batch_gradient;
     }
     virtual Float64 predict(const std::vector<Float64> & predict_feature, const std::vector<Float64> & weights, Float64 bias) const = 0;
+    virtual void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const = 0;
 
 protected:
     std::vector<Float64> batch_gradient;  // gradient for bias lies in batch_gradient[batch_gradient.size() - 1]
@@ -85,7 +86,7 @@ public:
         batch_gradient[weights.size()] += derivative;
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            batch_gradient[i] += derivative * static_cast<const ColumnVector<Float64> &>(*columns[i + 1]).getData()[row_num];;
+            batch_gradient[i] += derivative * static_cast<const ColumnVector<Float64> &>(*columns[i + 1]).getData()[row_num];
         }
     }
     Float64 predict(const std::vector<Float64> & predict_feature, const std::vector<Float64> & weights, Float64 bias) const override
@@ -105,6 +106,36 @@ public:
         res += bias;
 
         return res;
+    }
+    void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const override
+    {
+        size_t rows_num = block.rows();
+        std::cout << "\n\nROWS NUM: " << rows_num << "\n\n";
+        std::vector<Float64> results(rows_num, bias);
+
+
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            ColumnPtr cur_col = block.getByPosition(arguments[i]).column;
+            for (size_t row_num = 0; row_num != rows_num; ++row_num)
+            {
+                const auto &element = (*cur_col)[row_num];
+                if (element.getType() != Field::Types::Float64)
+                    throw Exception("Prediction arguments must be values of type Float",
+                                    ErrorCodes::BAD_ARGUMENTS);
+
+                results[row_num] += weights[row_num] * element.get<Float64>();
+                //            predict_features[i - 1] = element.get<Float64>();
+            }
+        }
+
+        for (size_t row_num = 0; row_num != rows_num; ++row_num)
+        {
+            container.emplace_back(results[row_num]);
+        }
+//        column.getData().push_back(this->data(place).predict(predict_features));
+//        column.getData().push_back(this->data(place).predict_for_all());
+//        this->data(place).predict_for_all(column.getData(), block, arguments);
     }
 };
 class LogisticRegression : public IGradientComputer
@@ -149,6 +180,14 @@ public:
         res = 1 / (1 + exp(-res));
         return res;
     }
+    void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const override
+    {
+        std::ignore = container;
+        std::ignore = block;
+        std::ignore = arguments;
+        std::ignore = weights;
+        std::ignore = bias;
+    }
 };
 
 class IWeightsUpdater
@@ -191,6 +230,7 @@ public:
         }
         bias += hk_[weights.size()] / cur_batch;
     }
+    /// virtual?
     virtual void merge(const std::shared_ptr<IWeightsUpdater> rhs, Float64 frac, Float64 rhs_frac) override {
         auto momentum_rhs = std::dynamic_pointer_cast<Momentum>(rhs);
         for (size_t i = 0; i < hk_.size(); ++i)
@@ -199,9 +239,10 @@ public:
         }
     }
 
-Float64 alpha_{0.1};
-std::vector<Float64> hk_;
+    Float64 alpha_{0.1};
+    std::vector<Float64> hk_;
 };
+
 class LinearModelData
 {
 public:
@@ -221,7 +262,6 @@ public:
         weights.resize(param_num, Float64{0.0});
         cur_batch = 0;
     }
-
 
 
     void add(Float64 target, const IColumn ** columns, size_t row_num)
@@ -284,6 +324,10 @@ public:
 //        }
 
         return gradient_computer->predict(predict_feature, weights, bias);
+    }
+    void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments) const
+    {
+        gradient_computer->predict_for_all(container, block, arguments, weights, bias);
     }
 
 private:
@@ -366,23 +410,28 @@ public:
 
     void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, size_t row_num, const ColumnNumbers & arguments) const
     {
+        std::ignore = row_num;
+        std::cout << "\n\n IM CALLED \n\n";
+
         if (arguments.size() != param_num + 1)
             throw Exception("Predict got incorrect number of arguments. Got: " + std::to_string(arguments.size()) + ". Required: " + std::to_string(param_num + 1),
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
 
-        std::vector<Float64> predict_features(arguments.size() - 1);
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            const auto& element = (*block.getByPosition(arguments[i]).column)[row_num];
-            if (element.getType() != Field::Types::Float64)
-                throw Exception("Prediction arguments must be values of type Float",
-                        ErrorCodes::BAD_ARGUMENTS);
-
-            predict_features[i - 1] = element.get<Float64>();
-        }
-        column.getData().push_back(this->data(place).predict(predict_features));
+//        std::vector<Float64> predict_features(arguments.size() - 1);
+//        for (size_t i = 1; i < arguments.size(); ++i)
+//        {
+//            const auto& element = (*block.getByPosition(arguments[i]).column)[row_num];
+//            if (element.getType() != Field::Types::Float64)
+//                throw Exception("Prediction arguments must be values of type Float",
+//                        ErrorCodes::BAD_ARGUMENTS);
+//
+////            predict_features[i - 1] = element.get<Float64>();
+//        }
+//        column.getData().push_back(this->data(place).predict(predict_features));
+//        column.getData().push_back(this->data(place).predict_for_all());
+        this->data(place).predict_for_all(column.getData(), block, arguments);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
