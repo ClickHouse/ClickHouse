@@ -1056,7 +1056,7 @@ void ExpressionAnalyzer::collectUsedColumns()
             ss << "'" << name.name << "' ";
 
         throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin()
-            + (select_query && !select_query->tables ? ". Note that there is no tables (FROM clause) in your query" : "")
+            + (select_query && !select_query->tables ? ". Note that there are no tables (FROM clause) in your query" : "")
             + ", context: " + ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 }

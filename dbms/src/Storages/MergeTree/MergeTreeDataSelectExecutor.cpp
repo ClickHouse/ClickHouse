@@ -140,7 +140,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
@@ -154,7 +154,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
@@ -624,7 +624,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
-    size_t max_block_size,
+    UInt64 max_block_size,
     bool use_uncompressed_cache,
     const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,
@@ -766,7 +766,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts,
     const Names & column_names,
-    size_t max_block_size,
+    UInt64 max_block_size,
     bool use_uncompressed_cache,
     const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,

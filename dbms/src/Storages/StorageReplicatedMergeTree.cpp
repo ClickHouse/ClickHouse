@@ -2920,7 +2920,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams)
 {
     const Settings & settings = context.getSettingsRef();

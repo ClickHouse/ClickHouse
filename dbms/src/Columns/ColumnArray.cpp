@@ -589,7 +589,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
 }
 
 
-ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnArray::permute(const Permutation & perm, UInt64 limit) const
 {
     size_t size = getOffsets().size();
 
@@ -626,13 +626,13 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
     return res;
 }
 
-ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnArray::index(const IColumn & indexes, UInt64 limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename T>
-ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
+ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, UInt64 limit) const
 {
     if (limit == 0)
         return ColumnArray::create(data);
@@ -664,7 +664,7 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
 
-void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnArray::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const
 {
     size_t s = size();
     if (limit >= s)

@@ -134,7 +134,7 @@ public:
 class KafkaBlockInputStream : public IBlockInputStream
 {
 public:
-    KafkaBlockInputStream(StorageKafka & storage_, const Context & context_, const String & schema, size_t max_block_size_)
+    KafkaBlockInputStream(StorageKafka & storage_, const Context & context_, const String & schema, UInt64 max_block_size_)
         : storage(storage_), context(context_), max_block_size(max_block_size_)
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
@@ -222,7 +222,7 @@ private:
     StorageKafka & storage;
     ConsumerPtr consumer;
     Context context;
-    size_t max_block_size;
+    UInt64 max_block_size;
     Block sample_block;
     std::unique_ptr<ReadBufferFromKafkaConsumer> read_buf;
     BlockInputStreamPtr reader;
@@ -254,7 +254,7 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, char row_delimiter_, const String & schema_name_,
-    size_t num_consumers_, size_t max_block_size_, size_t skip_broken_)
+    size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken_)
     : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), global_context(context_),
     topics(global_context.getMacros()->expand(topics_)),
@@ -724,7 +724,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         // Parse max block size (optional)
-        size_t max_block_size = 0;
+        UInt64 max_block_size = 0;
         if (args_count >= 8)
         {
             auto ast = typeid_cast<const ASTLiteral *>(engine_args[7].get());

@@ -33,7 +33,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const Context &,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
