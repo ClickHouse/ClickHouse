@@ -357,7 +357,18 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             ? context.getQueryContext()
             : context;
 
-        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, function_context);
+        FunctionBuilderPtr function_builder;
+        try
+        {
+            function_builder = FunctionFactory::instance().get(node->name, function_context);
+        }
+        catch (DB::Exception & e)
+        {
+            auto hints = AggregateFunctionFactory::instance().getHints(node->name);
+            if (!hints.empty())
+                e.addMessage("Or unknown aggregate function " + node->name + ". Maybe you meant: " + toString(hints));
+            e.rethrow();
+        }
 
         Names argument_names;
         DataTypes argument_types;

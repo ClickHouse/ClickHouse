@@ -38,6 +38,7 @@ public:
             res->set(res->order_by, order_by->clone());
         if (sample_by)
             res->set(res->sample_by, sample_by->clone());
+
         if (settings)
             res->set(res->settings, settings->clone());
 
@@ -81,6 +82,95 @@ public:
 };
 
 
+class ASTColumns : public IAST
+{
+private:
+    class ASTColumnsElement : public IAST
+    {
+    public:
+        String prefix;
+        IAST * elem;
+
+        String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
+
+        ASTPtr clone() const override
+        {
+            auto res = std::make_shared<ASTColumnsElement>();
+            res->prefix = prefix;
+            if (elem)
+                res->set(res->elem, elem->clone());
+            return res;
+        }
+
+        void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override
+        {
+            if (!elem)
+                return;
+
+            if (prefix.empty())
+            {
+                elem->formatImpl(s, state, frame);
+                return;
+            }
+
+            frame.need_parens = false;
+            std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+            s.ostr << s.nl_or_ws << indent_str;
+            s.ostr << (s.hilite ? hilite_keyword : "") << prefix << (s.hilite ? hilite_none : "");
+
+            FormatSettings nested_settings = s;
+            nested_settings.one_line = true;
+            nested_settings.nl_or_ws = ' ';
+
+            elem->formatImpl(nested_settings, state, frame);
+        }
+    };
+public:
+    ASTExpressionList * columns = nullptr;
+    ASTExpressionList * indices = nullptr;
+
+    String getID(char) const override { return "Columns definition"; }
+
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTColumns>();
+
+        if (columns)
+            res->set(res->columns, columns->clone());
+        if (indices)
+            res->set(res->indices, indices->clone());
+
+        return res;
+    }
+
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override
+    {
+        ASTExpressionList list;
+
+        if (columns)
+            for (const auto & column : columns->children)
+            {
+                auto elem = std::make_shared<ASTColumnsElement>();
+                elem->prefix = "";
+                elem->set(elem->elem, column->clone());
+                list.children.push_back(elem);
+            }
+        if (indices)
+            for (const auto & index : indices->children)
+            {
+                auto elem = std::make_shared<ASTColumnsElement>();
+                elem->prefix = "INDEX";
+                elem->set(elem->elem, index->clone());
+                list.children.push_back(elem);
+            }
+
+        if (!list.children.empty())
+            list.formatImpl(s, state, frame);
+    }
+};
+
+
 /// CREATE TABLE or ATTACH TABLE query
 class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
@@ -90,7 +180,7 @@ public:
     bool is_view{false};
     bool is_materialized_view{false};
     bool is_populate{false};
-    ASTExpressionList * columns = nullptr;
+    ASTColumns * columns_list = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
     ASTStorage * storage = nullptr;
@@ -106,8 +196,8 @@ public:
         auto res = std::make_shared<ASTCreateQuery>(*this);
         res->children.clear();
 
-        if (columns)
-            res->set(res->columns, columns->clone());
+        if (columns_list)
+            res->set(res->columns_list, columns_list->clone());
         if (storage)
             res->set(res->storage, storage->clone());
         if (select)
@@ -175,12 +265,12 @@ protected:
                 << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
         }
 
-        if (columns)
+        if (columns_list)
         {
             settings.ostr << (settings.one_line ? " (" : "\n(");
             FormatStateStacked frame_nested = frame;
             ++frame_nested.indent;
-            columns->formatImpl(settings, state, frame_nested);
+            columns_list->formatImpl(settings, state, frame_nested);
             settings.ostr << (settings.one_line ? ")" : "\n)");
         }
 

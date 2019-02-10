@@ -1,5 +1,7 @@
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -90,6 +92,113 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
         .parse(pos, node, expected);
 }
 
+bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_type("TYPE");
+    ParserKeyword s_granularity("GRANULARITY");
+
+    ParserIdentifier name_p;
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
+    ParserExpression expression_p;
+    ParserUnsignedInteger granularity_p;
+
+    ASTPtr name;
+    ASTPtr expr;
+    ASTPtr type;
+    ASTPtr granularity;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    if (!s_type.ignore(pos, expected))
+        return false;
+
+    if (!ident_with_optional_params_p.parse(pos, type, expected))
+        return false;
+
+    if (!s_granularity.ignore(pos, expected))
+        return false;
+
+    if (!granularity_p.parse(pos, granularity, expected))
+        return false;
+
+    auto index = std::make_shared<ASTIndexDeclaration>();
+    index->name = typeid_cast<const ASTIdentifier &>(*name).name;
+    index->granularity = typeid_cast<const ASTLiteral &>(*granularity).value.get<UInt64>();
+    index->set(index->expr, expr);
+    index->set(index->type, type);
+    node = index;
+
+    return true;
+}
+
+
+bool ParserColumnAndIndexDeclaraion::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_index("INDEX");
+
+    ParserIndexDeclaration index_p;
+    ParserColumnDeclaration column_p;
+
+    ASTPtr new_node = nullptr;
+
+    if (s_index.ignore(pos, expected))
+    {
+        if (!index_p.parse(pos, new_node, expected))
+            return false;
+    }
+    else
+    {
+        if (!column_p.parse(pos, new_node, expected))
+            return false;
+    }
+
+    node = new_node;
+    return true;
+}
+
+bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserIndexDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, node, expected);
+}
+
+
+bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr list;
+    if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaraion>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, list, expected))
+        return false;
+
+    ASTPtr columns = std::make_shared<ASTExpressionList>();
+    ASTPtr indices = std::make_shared<ASTExpressionList>();
+
+    for (const auto & elem : list->children)
+    {
+        if (typeid_cast<const ASTColumnDeclaration *>(elem.get()))
+            columns->children.push_back(elem);
+        else if (typeid_cast<const ASTIndexDeclaration *>(elem.get()))
+            indices->children.push_back(elem);
+        else
+            return false;
+    }
+
+    auto res = std::make_shared<ASTColumns>();
+
+    if (!columns->children.empty())
+        res->set(res->columns, columns);
+    if (!indices->children.empty())
+        res->set(res->indices, indices);
+
+    node = res;
+
+    return true;
+}
+
 
 bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -169,6 +278,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
+
     storage->set(storage->settings, settings);
 
     node = storage;
@@ -193,12 +303,12 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
     ParserIdentifier name_p;
-    ParserColumnDeclarationList columns_p;
+    ParserColumnsOrIndicesDeclarationList columns_or_indices_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr database;
     ASTPtr table;
-    ASTPtr columns;
+    ASTPtr columns_list;
     ASTPtr to_database;
     ASTPtr to_table;
     ASTPtr storage;
@@ -266,7 +376,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// List of columns.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_p.parse(pos, columns, expected))
+            if (!columns_or_indices_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -368,7 +478,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_p.parse(pos, columns, expected))
+            if (!columns_or_indices_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -410,7 +520,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     getIdentifierName(to_database, query->to_database);
     getIdentifierName(to_table, query->to_table);
 
-    query->set(query->columns, columns);
+    query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
 
     getIdentifierName(as_database, query->as_database);

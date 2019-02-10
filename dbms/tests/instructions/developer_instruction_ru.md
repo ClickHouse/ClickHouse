@@ -228,6 +228,8 @@ sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-fil
 
 Разработка тестов: https://clickhouse.yandex/docs/ru/development/tests/
 
+Список задач: https://github.com/yandex/ClickHouse/blob/master/dbms/tests/instructions/easy_tasks_sorted_ru.md
+
 
 # Тестовые данные
 

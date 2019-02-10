@@ -32,6 +32,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
+    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
+    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
 ) ENGINE = MergeTree()
 [PARTITION BY expr]
 [ORDER BY expr]
@@ -223,6 +225,50 @@ SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 Чтобы проверить, сможет ли ClickHouse использовать индекс при выполнении запроса, используйте настройки [force_index_by_date](../settings/settings.md#settings-force_index_by_date) и [force_primary_key](../settings/settings.md).
 
 Ключ партиционирования по месяцам обеспечивает чтение только тех блоков данных, которые содержат даты из нужного диапазона. При этом блок данных может содержать данные за многие даты (до целого месяца). В пределах одного блока данные упорядочены по первичному ключу, который может не содержать дату в качестве первого столбца. В связи с этим, при использовании запроса с указанием условия только на дату, но не на префикс первичного ключа, будет читаться данных больше, чем за одну дату.
+
+### Дополнительные индексы
+
+Для таблиц семейства `*MergeTree` можно задать дополнительные индексы в секции столбцов.
+
+Индексы аггрегируют для заданного выражения некоторые данные, а потом при `SELECT` запросе используют для пропуска боков данных (пропускаемый блок состоих из гранул данных в количестве равном гранулярности данного индекса), на которых секция `WHERE` не может быть выполнена, тем самым уменьшая объем данных читаемых с диска.
+
+Пример
+```sql
+CREATE TABLE table_name
+(
+    u64 UInt64,
+    i32 Int32,
+    s String,
+    ...
+    INDEX a (u64 * i32, s) TYPE minmax GRANULARITY 3,
+    INDEX b (u64 * length(s), i32) TYPE set GRANULARITY 4
+) ENGINE = MergeTree()
+...
+```
+
+Эти индексы смогут использоваться для оптимизации следующих запросов
+```sql
+SELECT count() FROM table WHERE s < 'z'
+SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
+```
+
+#### Доступные индексы
+
+* `minmax`
+Хранит минимум и максимум выражения (если выражение - `tuple`, то для каждого элемента `tuple`), используя их для пропуска блоков аналогично первичному ключу.
+
+* `set(max_rows)`
+Хранит уникальные значения выражения на блоке в количестве не более `max_rows`, используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
+Если `max_rows=0`, то хранит значения выражения без ограничений. Если параметров не передано, то полагается `max_rows=0`.
+
+
+Примеры
+```sql
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE minmax GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
+```
+
 
 ## Конкурентный доступ к данным
 

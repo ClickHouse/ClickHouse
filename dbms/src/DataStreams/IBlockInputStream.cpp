@@ -96,6 +96,13 @@ Block IBlockInputStream::read()
 
 void IBlockInputStream::readPrefix()
 {
+#ifndef NDEBUG
+    if (!read_prefix_is_called)
+        read_prefix_is_called = true;
+    else
+        throw Exception("readPrefix is called twice for " + getName() + " stream", ErrorCodes::LOGICAL_ERROR);
+#endif
+
     readPrefixImpl();
 
     forEachChild([&] (IBlockInputStream & child)
@@ -108,6 +115,13 @@ void IBlockInputStream::readPrefix()
 
 void IBlockInputStream::readSuffix()
 {
+#ifndef NDEBUG
+    if (!read_suffix_is_called)
+        read_suffix_is_called = true;
+    else
+        throw Exception("readSuffix is called twice for " + getName() + " stream", ErrorCodes::LOGICAL_ERROR);
+#endif
+
     forEachChild([&] (IBlockInputStream & child)
     {
         child.readSuffix();
