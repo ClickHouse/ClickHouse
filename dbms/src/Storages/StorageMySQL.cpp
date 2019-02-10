@@ -52,7 +52,7 @@ BlockInputStreams StorageMySQL::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned)
 {
     check(column_names);

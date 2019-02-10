@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 
 AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
-    const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_)
+    const BlockInputStreams & inputs_, const SortDescription & description_, UInt64 max_block_size_)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
 {
     /// Fill in the column numbers that need to be aggregated.
