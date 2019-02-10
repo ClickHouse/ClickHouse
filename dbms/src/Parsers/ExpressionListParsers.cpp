@@ -298,7 +298,7 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         f_combined_expression->arguments = args_combined_expression;
         f_combined_expression->children.emplace_back(f_combined_expression->arguments);
 
-        node = args_combined_expression;
+        node = f_combined_expression;
     }
 
     return true;
