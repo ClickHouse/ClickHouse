@@ -1,4 +1,5 @@
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnsCommon.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
@@ -6,7 +7,6 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <Columns/ColumnsCommon.h>
 
 
 namespace DB
