@@ -247,7 +247,7 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (!s_between.ignore(pos, expected))
     {
         if (negative)
-            return false;   /// Cannot parse NOT BETWEEN.
+            --pos;
 
         /// No operator was parsed, just return element.
         node = subject;
