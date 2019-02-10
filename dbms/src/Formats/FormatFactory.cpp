@@ -197,6 +197,7 @@ void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
+void registerOutputFormatTemplate(FormatFactory &factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
 void registerOutputFormatProcessorNative(FormatFactory & factory);
@@ -270,6 +271,7 @@ FormatFactory::FormatFactory()
     registerInputFormatCapnProto(*this);
     registerInputFormatParquet(*this);
     registerOutputFormatParquet(*this);
+    registerOutputFormatTemplate(*this);
 
     registerOutputFormatMySQLWire(*this);
 
