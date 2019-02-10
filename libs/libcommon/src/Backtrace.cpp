@@ -210,7 +210,7 @@ std::vector<void *> getBacktraceFrames(ucontext_t & context)
     return frames;
 }
 
-std::string backtraceFramesToString(const std::vector<void *> & frames, const std::string delimiter)
+std::string backtraceFramesToString(const std::vector<void *> & frames, const std::string & delimiter)
 {
     std::stringstream backtrace;
     char ** symbols = backtrace_symbols(frames.data(), frames.size());

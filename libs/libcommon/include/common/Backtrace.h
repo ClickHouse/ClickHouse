@@ -22,4 +22,4 @@ void * getCallerAddress(ucontext_t & context);
 
 std::vector<void *> getBacktraceFrames(ucontext_t & context);
 
-std::string backtraceFramesToString(const std::vector<void *> & frames, const std::string delimiter = "");
+std::string backtraceFramesToString(const std::vector<void *> & frames, const std::string & delimiter = "");
