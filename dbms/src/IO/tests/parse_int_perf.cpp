@@ -8,9 +8,9 @@
 #include <IO/WriteIntText.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/AsynchronousWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <IO/AsynchronousWriteBuffer.h>
 
 #include <Common/Stopwatch.h>
 

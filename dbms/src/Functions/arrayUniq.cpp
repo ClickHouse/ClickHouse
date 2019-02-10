@@ -8,9 +8,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
+#include <Common/ColumnsHashing.h>
 #include <Interpreters/AggregationCommon.h>
 #include <IO/WriteHelpers.h>
-#include <Common/ColumnsHashing.h>
 
 
 namespace DB
