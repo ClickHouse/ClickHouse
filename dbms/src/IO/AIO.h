@@ -1,8 +1,8 @@
 #pragma once
 
-#if defined(__linux__)
-
 #include <boost/noncopyable.hpp>
+
+#if defined(__linux__)
 
 /// https://stackoverflow.com/questions/20759750/resolving-redefinition-of-timespec-in-time-h
 #define timespec linux_timespec
@@ -41,7 +41,6 @@ struct AIOContext : private boost::noncopyable
 
 #elif defined(__FreeBSD__)
 
-#include <boost/noncopyable.hpp>
 #include <aio.h>
 #include <sys/types.h>
 #include <sys/event.h>

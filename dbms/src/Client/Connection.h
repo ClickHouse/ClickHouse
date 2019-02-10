@@ -1,7 +1,5 @@
 #pragma once
 
-#include <optional>
-
 #include <common/logger_useful.h>
 
 #include <Poco/Net/StreamSocket.h>
