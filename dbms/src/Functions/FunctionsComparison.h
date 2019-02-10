@@ -17,7 +17,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/getLeastSupertype.h>
 
 #include <Interpreters/castColumn.h>
 

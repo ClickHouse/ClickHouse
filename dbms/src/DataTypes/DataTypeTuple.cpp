@@ -372,7 +372,7 @@ void DataTypeTuple::deserializeBinaryBulkStatePrefix(
 void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
-    size_t limit,
+    UInt64 limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -390,7 +390,7 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
 
 void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t limit,
+    UInt64 limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {

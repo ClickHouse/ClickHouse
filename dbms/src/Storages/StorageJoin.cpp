@@ -194,7 +194,7 @@ size_t rawSize(const StringRef & t)
 class JoinBlockInputStream : public IBlockInputStream
 {
 public:
-    JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block && sample_block_)
+    JoinBlockInputStream(const Join & parent_, UInt64 max_block_size_, Block && sample_block_)
         : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block_))
     {
         columns.resize(sample_block.columns());
@@ -239,7 +239,7 @@ protected:
 private:
     const Join & parent;
     std::shared_lock<std::shared_mutex> lock;
-    size_t max_block_size;
+    UInt64 max_block_size;
     Block sample_block;
 
     ColumnNumbers column_indices;
@@ -362,7 +362,7 @@ BlockInputStreams StorageJoin::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned /*num_streams*/)
 {
     check(column_names);

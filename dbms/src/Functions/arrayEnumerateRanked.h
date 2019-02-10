@@ -10,7 +10,7 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
 
-#include <Core/iostream_debug_helpers.cpp>
+#include <Core/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -294,13 +294,16 @@ DUMP(depth, depths, max_array_depth);
     for (size_t i = 0; i < num_arguments; ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
+DUMP("column", i, array_ptr);
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
                 block.getByPosition(arguments[i]).column.get());
-            if (!const_array)
+            if (!const_array){ 
+DUMP("skip not array", i, array_ptr);
                 continue;
+}
 /*
                 throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
@@ -314,11 +317,12 @@ DUMP(depth, depths, max_array_depth);
 //            }
         }
 
+DUMP("offsets before depth was", array->getOffsets());
              DUMP("wantdepth=", depths[array_num], "of", array);
              if (depths[array_num] == 2) {
                  DUMP("get subarray here", array[sub_array_num]);
                  array = checkAndGetColumn<ColumnArray>(&array[sub_array_num]);
-DUMP(array);
+DUMP("result subarray=", array);
 if (!array) {
 DUMP("no nested array");
     continue;
@@ -332,6 +336,7 @@ DUMP("no nested array");
         {
             offsets = &offsets_i;
             offsets_column = array->getOffsetsPtr();
+DUMP("offsets first=", offsets);
         }
         else if (offsets_i != *offsets)
             throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
@@ -367,7 +372,9 @@ DUMP("no nested array");
     if (!offsets->empty())
         res_values.resize(offsets->back());
 
-DUMP(offsets, null_map, data_columns);
+DUMP(offsets);
+DUMP(null_map);
+DUMP(data_columns);
 
 
 /*
@@ -450,7 +457,7 @@ DUMP(off);
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
-DUMP(j, prev_off);
+DUMP(j, prev_off, off);
                 if constexpr (has_null_map)
                 {
                     if ((*null_map)[j])
@@ -483,7 +490,7 @@ DUMP(off);
             [[maybe_unused]] UInt32 null_index = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
-DUMP(j, prev_off);
+DUMP(j, prev_off, off);
                 if constexpr (has_null_map)
                 {
                     if ((*null_map)[j])

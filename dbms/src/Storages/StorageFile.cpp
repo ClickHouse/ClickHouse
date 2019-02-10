@@ -116,7 +116,7 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size)
         : storage(storage_)
     {
         if (storage.use_table_fd)
@@ -187,7 +187,7 @@ BlockInputStreams StorageFile::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned /*num_streams*/)
 {
     BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);

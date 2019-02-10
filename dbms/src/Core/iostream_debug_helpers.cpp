@@ -13,7 +13,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/IAST.h>
-
+#include <IO/WriteBufferFromOStream.h>
 
 namespace DB
 {
@@ -80,6 +80,17 @@ std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & w
 std::ostream & operator<<(std::ostream & stream, const IColumn & what)
 {
     stream << "IColumn(" << what.dumpStructure() << ")";
+    stream << "{";
+    for (size_t i = 0; i < what.size(); ++i) {
+        const auto & field = what[i];
+        std::vector<Field> array;
+        //Array array();
+        array.emplace_back(field);
+        DB::WriteBufferFromOStream out(stream);
+        writeText(array, out);
+    }
+    stream << "}";
+
     return stream;
 }
 

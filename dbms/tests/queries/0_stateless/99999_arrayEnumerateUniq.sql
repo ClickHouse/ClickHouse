@@ -1,5 +1,7 @@
 
+-- SELECT arrayEnumerateUniq([1,1,2,2,1,1], [1,2,1,2,2,2], [1,2,1,2,2,2]);
 
+--SELECT arrayEnumerateUniqRanked(1, [[1,1,2,2,1,1]],2,                           [[1,2,1,2,2,2]],2); -- 1,2,3,4,1,1
 SELECT arrayEnumerateUniqRanked(1, [1,1,2,2,1,1],1,                           [1,2,1,2,2,2],1); -- 1,2,3,4,1,1
 
 
@@ -40,7 +42,6 @@ SELECT arrayEnumerateUniqRanked(1, [[1,2,3],[2,2,1],[3]],2); --f(1, y,2)=[[1,1,1
 --SELECT arrayEnumerateUniq([[1], [2], [34], [1]]);
 --SELECT arrayEnumerateUniq([(1, 2), (3, 4), (1, 2)]);
 
---SELECT arrayEnumerateUniq([1,1,2,2,1,1],                           [1,2,1,2,2,2]);
 
 --SELECT arrayEnumerateUniq([[1,1],[2,2]], [[1,2],[1,2]]);
 

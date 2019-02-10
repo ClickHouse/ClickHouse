@@ -3,7 +3,6 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Storages/StorageLog.h>
 #include <Formats/FormatFactory.h>
-#include <Interpreters/Context.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>

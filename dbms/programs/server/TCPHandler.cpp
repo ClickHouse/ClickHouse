@@ -6,8 +6,6 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>

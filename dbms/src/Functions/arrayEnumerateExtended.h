@@ -10,6 +10,8 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -175,6 +177,9 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
     if (!offsets->empty())
         res_values.resize(offsets->back());
 
+DUMP(offsets);
+DUMP(data_columns);
+
     if (num_arguments == 1)
     {
         if (!(executeNumber<UInt8>(*offsets, *data_columns[0], null_map, res_values)
@@ -220,10 +225,13 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethodImpl(
         // Unique
         for (size_t off : offsets)
         {
+DUMP(off);
+
             indices.clear();
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
+DUMP(j, prev_off, off);
                 if constexpr (has_null_map)
                 {
                     if ((*null_map)[j])
@@ -248,11 +256,14 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethodImpl(
         // Dense
         for (size_t off : offsets)
         {
+DUMP(off);
             indices.clear();
             UInt32 rank = 0;
             [[maybe_unused]] UInt32 null_index = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
+DUMP(j, prev_off, off);
+
                 if constexpr (has_null_map)
                 {
                     if ((*null_map)[j])
