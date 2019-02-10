@@ -21,7 +21,7 @@ class DistinctSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /// Empty columns_ means all collumns.
-    DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, size_t limit_hint_, const Names & columns);
+    DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, UInt64 limit_hint_, const Names & columns);
 
     String getName() const override { return "DistinctSorted"; }
 
@@ -59,7 +59,7 @@ private:
     Names columns_names;
     ClearableSetVariants data;
     Sizes key_sizes;
-    size_t limit_hint;
+    UInt64 limit_hint;
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;

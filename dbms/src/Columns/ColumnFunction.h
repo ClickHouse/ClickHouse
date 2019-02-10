@@ -32,8 +32,8 @@ public:
     ColumnPtr cut(size_t start, size_t length) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
-    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
+    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
     void insertDefault() override;
     void popBack(size_t n) override;
     std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns,

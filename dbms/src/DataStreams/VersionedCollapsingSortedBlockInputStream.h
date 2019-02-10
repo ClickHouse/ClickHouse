@@ -176,7 +176,7 @@ public:
     /// max_rows_in_queue should be about max_block_size_ if we won't store a lot of extra blocks (RowRef holds SharedBlockPtr).
     VersionedCollapsingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_,
-        const String & sign_column_, size_t max_block_size_,
+        const String & sign_column_, UInt64 max_block_size_,
         WriteBuffer * out_row_sources_buf_ = nullptr);
 
     String getName() const override { return "VersionedCollapsingSorted"; }

@@ -95,7 +95,7 @@ struct PartialSortingLessWithCollation
     }
 };
 
-void sortBlock(Block & block, const SortDescription & description, size_t limit)
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
     if (!block)
         return;

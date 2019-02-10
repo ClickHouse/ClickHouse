@@ -75,7 +75,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         return;
     }
 
-    size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
     if (params.has("max_block_size"))
     {
         std::string max_block_size_str = params.get("max_block_size", "");

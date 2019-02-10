@@ -100,7 +100,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
     column_concrete.getData().push_back(place);
 }
 
-void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
     const ColumnAggregateFunction::Container & vec = real_column.getData();
@@ -115,7 +115,7 @@ void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, Writ
         function->serialize(*it, ostr);
 }
 
-void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double /*avg_value_size_hint*/) const
 {
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container & vec = real_column.getData();

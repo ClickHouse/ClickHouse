@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 
 ODBCBlockInputStream::ODBCBlockInputStream(
-    Poco::Data::Session && session, const std::string & query_str, const Block & sample_block, const size_t max_block_size)
+    Poco::Data::Session && session, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size)
     : session{session}
     , statement{(this->session << query_str, Poco::Data::Keywords::now)}
     , result{statement}

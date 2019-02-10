@@ -1698,7 +1698,7 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const
+BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
 {
     return FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size);
 }
