@@ -3,7 +3,6 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 
 
 int main(int, char **)
