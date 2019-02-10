@@ -1394,7 +1394,7 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
     for (const auto & elem : query.limit_by_expression_list->children)
         columns.emplace_back(elem->getColumnName());
 
-    size_t value = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_by_value).value);
+    UInt64 value = getLimitUIntValue(query.limit_by_value, context);
 
     pipeline.transform([&](auto & stream)
     {
