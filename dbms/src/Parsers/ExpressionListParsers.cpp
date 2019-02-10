@@ -242,8 +242,12 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (!elem_parser.parse(pos, subject, expected))
         return false;
 
+    bool negative = s_not.ignore(pos, expected);
+
     if (!s_between.ignore(pos, expected))
+    {
         node = subject;
+    }
     else
     {
         if (!elem_parser.parse(pos, left, expected))
@@ -271,16 +275,16 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         args_right_expr->children.emplace_back(subject);
         args_right_expr->children.emplace_back(right);
 
-        // NOT BETWEEN
-        if (s_not.ignore(pos, expected))
+        if (negative)
         {
+            /// NOT BETWEEN
             f_left_expr->name = "less";
             f_right_expr->name = "greater";
             f_combined_expression->name = "or";
         }
-        // BETWEEN
         else
         {
+            /// BETWEEN
             f_left_expr->name = "greaterOrEquals";
             f_right_expr->name = "lessOrEquals";
             f_combined_expression->name = "and";
