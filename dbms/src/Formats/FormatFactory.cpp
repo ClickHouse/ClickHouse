@@ -117,6 +117,7 @@ void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
+void registerOutputFormatTemplate(FormatFactory &factory);
 
 /// Output only (presentational) formats.
 
@@ -157,6 +158,7 @@ FormatFactory::FormatFactory()
     registerInputFormatCapnProto(*this);
     registerInputFormatParquet(*this);
     registerOutputFormatParquet(*this);
+    registerOutputFormatTemplate(*this);
 
     registerOutputFormatPretty(*this);
     registerOutputFormatPrettyCompact(*this);
