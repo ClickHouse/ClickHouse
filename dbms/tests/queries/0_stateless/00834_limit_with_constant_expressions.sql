@@ -16,7 +16,7 @@ SELECT count() <= 1 FROM (SELECT number FROM numbers(10) LIMIT randConstant() % 
 SELECT number FROM numbers(10) LIMIT 0 + 1 BY number;
 SELECT number FROM numbers(10) LIMIT 0 BY number;
 
-SELECT TOP(3 + 2) number FROM numbers(10);
+SELECT TOP 5 * FROM numbers(10);
 
 SELECT * FROM numbers(10) LIMIT 0.33 / 0.165 - 0.33 + 0.67; -- { serverError 440 }
 SELECT * FROM numbers(10) LIMIT LENGTH('NNN') + COS(0), toDate('0000-00-02'); -- { serverError 440 }
