@@ -41,7 +41,17 @@ create table test.model engine = Memory as select LinearRegressionState(0.1, 5, 
 -- -- select multiply(param1, param2) from test.defaults;
 --
 -- -- select evalLinReg(LinRegState(0.01)(target, param1, param2), 20.0, 40.0) from test.defaults;
-select evalMLMethod(state, predict1, predict2) from test.model cross join test.defaults;
+
+-- select evalMLMethod(state, predict1, predict2) from test.model cross join test.defaults;
+
+
+-- select evalMLMethod(state, predict1, predict2) from test.model cross join test.defaults;
+
+-- select evalMLMethod(state, 0.1, 0.2) from test.model;
+
+-- with (select state from test.model) as model select evalMLMethod(model, predict1, predict2) from test.defaults;
+
+
 -- -- select evalLinReg(state, predict1, predict2) from test.model inner join (select * from test.tests) using state;
 -- -- select evalLinReg(state1, predict1, predict2) from test.tests;
 --
