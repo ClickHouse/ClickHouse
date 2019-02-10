@@ -924,10 +924,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         max_streams = settings.max_distributed_connections;
     }
 
-    size_t max_block_size = settings.max_block_size;
-
-    if (!max_block_size)
-        throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+    UInt64 max_block_size = settings.max_block_size;
 
     auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
 
@@ -946,9 +943,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         && !query_analyzer->hasAggregation()
         && limit_length + limit_offset < max_block_size)
     {
-        max_block_size = limit_length + limit_offset;
+        max_block_size = std::max(UInt64(1), limit_length + limit_offset);
         max_streams = 1;
     }
+
+    if (!max_block_size)
+        throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (!pipeline.streams.empty())

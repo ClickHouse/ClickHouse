@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 
 GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
-    const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+    const BlockInputStreams & inputs_, const SortDescription & description_, UInt64 max_block_size_,
     const Graphite::Params & params, time_t time_of_merge)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
     params(params), time_of_merge(time_of_merge)

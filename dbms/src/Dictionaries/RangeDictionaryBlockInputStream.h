@@ -25,7 +25,7 @@ public:
 
     RangeDictionaryBlockInputStream(
         DictionaryPtr dictionary,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const Names & column_names,
         PaddedPODArray<Key> && ids_to_fill,
         PaddedPODArray<RangeType> && start_dates,
