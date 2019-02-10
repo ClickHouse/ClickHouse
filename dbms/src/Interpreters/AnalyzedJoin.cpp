@@ -9,6 +9,7 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Storages/IStorage.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB
 {
@@ -51,24 +52,13 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     return analyzer.getActions(false);
 }
 
-NameSet AnalyzedJoin::getRequiredColumnsFromJoinedTable(const JoinedColumnsList & columns_added_by_join,
-                                                        const ExpressionActionsPtr & joined_block_actions) const
+Names AnalyzedJoin::getOriginalColumnNames(const NameSet & required_columns_from_joined_table) const
 {
-    NameSet required_columns_from_joined_table;
-
-    auto required_action_columns = joined_block_actions->getRequiredColumns();
-    required_columns_from_joined_table.insert(required_action_columns.begin(), required_action_columns.end());
-    auto sample = joined_block_actions->getSampleBlock();
-
-    for (auto & column : key_names_right)
-        if (!sample.has(column))
-            required_columns_from_joined_table.insert(column);
-
-    for (auto & column : columns_added_by_join)
-        if (!sample.has(column.name_and_type.name))
-            required_columns_from_joined_table.insert(column.name_and_type.name);
-
-    return required_columns_from_joined_table;
+    Names original_columns;
+    for (const auto & column : columns_from_joined_table)
+        if (required_columns_from_joined_table.count(column.name_and_type.name))
+            original_columns.emplace_back(column.original_name);
+    return original_columns;
 }
 
 const JoinedColumnsList & AnalyzedJoin::getColumnsFromJoinedTable(
@@ -102,6 +92,30 @@ const JoinedColumnsList & AnalyzedJoin::getColumnsFromJoinedTable(
     }
 
     return columns_from_joined_table;
+}
+
+void AnalyzedJoin::calculateAvailableJoinedColumns(
+        const NameSet & source_columns, const Context & context, const ASTSelectQuery * select_query_with_join, bool make_nullable)
+{
+    const auto & columns = getColumnsFromJoinedTable(source_columns, context, select_query_with_join);
+
+    NameSet joined_columns;
+
+    for (auto & column : columns)
+    {
+        auto & column_name = column.name_and_type.name;
+        auto & column_type = column.name_and_type.type;
+        auto & original_name = column.original_name;
+        {
+            if (joined_columns.count(column_name)) /// Duplicate columns in the subquery for JOIN do not make sense.
+                continue;
+
+            joined_columns.insert(column_name);
+
+            auto type = make_nullable ? makeNullable(column_type) : column_type;
+            available_joined_columns.emplace_back(NameAndTypePair(column_name, std::move(type)), original_name);
+        }
+    }
 }
 
 

@@ -20,7 +20,7 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 
-    std::string getName() const override
+    std::string doGetName() const override
     {
         return "Array(" + nested->getName() + ")";
     }
