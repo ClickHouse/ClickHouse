@@ -36,3 +36,4 @@ private:
     bool eof;
 };
 }
+

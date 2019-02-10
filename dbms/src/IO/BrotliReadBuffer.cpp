@@ -66,3 +66,4 @@ bool BrotliReadBuffer::nextImpl()
     return true;
 }
 }
+
