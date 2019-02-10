@@ -128,14 +128,16 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
     if (ML_function_Linear)
     {
         size_t row_num = 0;
-        for (auto val : data) {
+        for (auto val : data)
+        {
             ML_function_Linear->predictResultInto(val, *res, block, row_num, arguments);
             ++row_num;
         }
     } else if (ML_function_Logistic)
     {
         size_t row_num = 0;
-        for (auto val : data) {
+        for (auto val : data)
+        {
             ML_function_Logistic->predictResultInto(val, *res, block, row_num, arguments);
             ++row_num;
         }
