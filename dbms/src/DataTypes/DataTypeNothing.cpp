@@ -14,7 +14,7 @@ MutableColumnPtr DataTypeNothing::createColumn() const
     return ColumnNothing::create(0);
 }
 
-void DataTypeNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit) const
+void DataTypeNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     size_t size = column.size();
 

@@ -94,7 +94,7 @@ void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num,
 }
 
 template <typename T>
-void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit) const
+void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     const typename ColumnType::Container & x = typeid_cast<const ColumnType &>(column).getData();
 

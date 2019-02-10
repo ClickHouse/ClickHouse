@@ -179,7 +179,7 @@ void DataTypeNumberBase<T>::deserializeBinary(IColumn & column, ReadBuffer & ist
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit) const
+void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
 

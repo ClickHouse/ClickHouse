@@ -78,7 +78,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr) cons
 }
 
 
-void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit) const
+void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
     const ColumnString::Chars & data = column_string.getChars();

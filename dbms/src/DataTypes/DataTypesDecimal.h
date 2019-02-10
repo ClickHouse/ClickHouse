@@ -94,7 +94,7 @@ public:
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, UInt64 limit) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const override;
 
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;

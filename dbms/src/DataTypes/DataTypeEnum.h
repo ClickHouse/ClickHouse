@@ -102,7 +102,7 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const size_t offset, UInt64 limit) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const UInt64 offset, UInt64 limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, const UInt64 limit, const double avg_value_size_hint) const override;
 
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
