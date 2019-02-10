@@ -37,14 +37,12 @@ struct AggregateFunctionTopKData
     Set value;
 };
 
-
 template <typename T>
 class AggregateFunctionTopK
     : public IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T>>
 {
-private:
+protected:
     using State = AggregateFunctionTopKData<T>;
-
     UInt64 threshold;
     UInt64 reserved;
 
@@ -105,6 +103,25 @@ public:
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+};
+
+
+template <typename T>
+class AggregateFunctionTopKWeighed : public AggregateFunctionTopK<T>
+{
+public:
+    AggregateFunctionTopKWeighed(UInt64 threshold)
+            : AggregateFunctionTopK<T>(threshold) {}
+
+    String getName() const override { return "topKWeighed"; }
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        auto & set = this->data(place).value;
+        if (set.capacity() != AggregateFunctionTopK<T>::reserved)
+            set.resize(AggregateFunctionTopK<T>::reserved);
+        set.insert(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num],
+                static_cast<const ColumnVector<T> &>(*columns[1]).getData()[row_num]);
+    }
 };
 
 
@@ -225,7 +242,6 @@ public:
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };
-
 
 #undef TOP_K_LOAD_FACTOR
 
