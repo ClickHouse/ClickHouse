@@ -45,12 +45,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 
-#include <Parsers/formatAST.h>
-
 #include <ext/range.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>

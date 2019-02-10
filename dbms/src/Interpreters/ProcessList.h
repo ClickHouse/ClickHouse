@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <shared_mutex>
 #include <Poco/Condition.h>
-#include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
 #include <Common/Stopwatch.h>

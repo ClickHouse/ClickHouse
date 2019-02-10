@@ -4,8 +4,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <optional>
-
 
 
 namespace DB

@@ -5,7 +5,6 @@
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
-#include <common/logger_useful.h>
 #include <pcg_random.hpp>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>

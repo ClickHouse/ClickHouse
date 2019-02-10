@@ -1,6 +1,3 @@
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -10,6 +7,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 
+#include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
