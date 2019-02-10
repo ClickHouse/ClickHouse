@@ -80,8 +80,6 @@ protected:
     void threadFunction();
 };
 
-using BackgroundProcessingPoolPtr = std::shared_ptr<BackgroundProcessingPool>;
-
 
 class BackgroundProcessingPoolTaskInfo
 {

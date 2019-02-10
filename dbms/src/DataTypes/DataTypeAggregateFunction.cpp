@@ -32,7 +32,7 @@ namespace ErrorCodes
 }
 
 
-std::string DataTypeAggregateFunction::getName() const
+std::string DataTypeAggregateFunction::doGetName() const
 {
     std::stringstream stream;
     stream << "AggregateFunction(" << function->getName();
