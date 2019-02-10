@@ -71,16 +71,18 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_top.ignore(pos, expected))
         {
+            ParserNumber num;
+
             if (open_bracket.ignore(pos, expected))
             {
-                if (!exp_elem.parse(pos, select_query->limit_length, expected))
+                if (!num.parse(pos, select_query->limit_length, expected))
                     return false;
                 if (!close_bracket.ignore(pos, expected))
                     return false;
             }
             else
             {
-                if (!exp_elem.parse(pos, select_query->limit_length, expected))
+                if (!num.parse(pos, select_query->limit_length, expected))
                     return false;
             }
         }
