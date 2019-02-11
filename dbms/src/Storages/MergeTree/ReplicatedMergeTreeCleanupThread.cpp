@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/setThreadName.h>
 #include <Poco/Timestamp.h>
 
 #include <random>
