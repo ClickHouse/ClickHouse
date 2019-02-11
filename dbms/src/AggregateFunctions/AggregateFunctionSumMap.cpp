@@ -80,7 +80,7 @@ AggregateFunctionPtr createAggregateFunctionSumMap(const std::string & name, con
 
     auto [keys_type, values_types] = parseArguments(name, arguments);
 
-    AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types));
+    AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types, arguments));
     if (!res)
         res.reset(createWithDecimalType<Function>(*keys_type, keys_type, values_types));
     if (!res)
@@ -103,7 +103,7 @@ AggregateFunctionPtr createAggregateFunctionSumMapFiltered(const std::string & n
 
     auto [keys_type, values_types] = parseArguments(name, arguments);
 
-    AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types, keys_to_keep));
+    AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
     if (!res)
         res.reset(createWithDecimalType<Function>(*keys_type, keys_type, values_types, keys_to_keep));
     if (!res)

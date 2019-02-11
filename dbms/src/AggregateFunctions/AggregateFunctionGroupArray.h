@@ -48,12 +48,13 @@ class GroupArrayNumericImpl final
     : public IAggregateFunctionDataHelper<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>
 {
     static constexpr bool limit_num_elems = Tlimit_num_elems::value;
-    DataTypePtr data_type;
+    DataTypePtr & data_type;
     UInt64 max_elems;
 
 public:
     explicit GroupArrayNumericImpl(const DataTypePtr & data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : data_type(data_type_), max_elems(max_elems_) {}
+        : IAggregateFunctionDataHelper<GroupArrayNumericData<T>, GroupArrayNumericImpl<T, Tlimit_num_elems>>({data_type}, {})
+        , data_type(argument_types[0]), max_elems(max_elems_) {}
 
     String getName() const override { return "groupArray"; }
 
