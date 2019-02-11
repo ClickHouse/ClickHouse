@@ -78,7 +78,8 @@ namespace DB
                 case Field::Types::AggregateFunctionState:
                 {
                     AggregateFunctionStateData value;
-                    DB::readStringBinary(value, buf);
+                    DB::readStringBinary(value.name, buf);
+                    DB::readStringBinary(value.data, buf);
                     x.push_back(value);
                     break;
                 }
@@ -137,7 +138,8 @@ namespace DB
                 }
                 case Field::Types::AggregateFunctionState:
                 {
-                    DB::writeStringBinary(get<AggregateFunctionStateData>(*it), buf);
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().name, buf);
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().data, buf);
                     break;
                 }
             }
@@ -224,7 +226,8 @@ namespace DB
                 case Field::Types::AggregateFunctionState:
                 {
                     AggregateFunctionStateData value;
-                    DB::readStringBinary(value, buf);
+                    DB::readStringBinary(value.name, buf);
+                    DB::readStringBinary(value.data, buf);
                     x.push_back(value);
                     break;
                 }
@@ -283,7 +286,8 @@ namespace DB
                 }
                 case Field::Types::AggregateFunctionState:
                 {
-                    DB::writeStringBinary(get<AggregateFunctionStateData>(*it), buf);
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().name, buf);
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().data, buf);
                     break;
                 }
             }

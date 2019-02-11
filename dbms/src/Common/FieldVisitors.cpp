@@ -92,7 +92,8 @@ String FieldVisitorDump::operator() (const Tuple & x_def) const
 String FieldVisitorDump::operator() (const AggregateFunctionStateData & x) const
 {
     WriteBufferFromOwnString wb;
-    writeQuoted(x, wb);
+    writeQuoted(x.name, wb);
+    writeQuoted(x.data, wb);
     return wb.str();
 }
 
@@ -127,7 +128,10 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal32> & x) cons
 String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
-String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
+{
+    return "(" + formatQuoted(x.name) + ")" + formatQuoted(x.data);
+}
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
@@ -242,8 +246,10 @@ void FieldVisitorHash::operator() (const AggregateFunctionStateData & x) const
 {
     UInt8 type = Field::Types::AggregateFunctionState;
     hash.update(type);
-    hash.update(x.toUnderType().size());
-    hash.update(x.toUnderType().data(), x.toUnderType().size());
+    hash.update(x.name.size());
+    hash.update(x.name.data(), x.name.size());
+    hash.update(x.data.size());
+    hash.update(x.data.data(), x.data.size());
 }
 
 

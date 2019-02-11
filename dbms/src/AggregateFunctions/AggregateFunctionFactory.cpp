@@ -86,12 +86,17 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             [](const auto & type) { return type->onlyNull(); }))
             nested_function = getImpl(name, nested_types, parameters, recursion_level);
 
-        return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
+        auto res = combinator->transformAggregateFunction(nested_function, type_without_low_cardinality, parameters);
+        res->setArguments(type_without_low_cardinality, parameters);
+        return res;
     }
 
     auto res = getImpl(name, type_without_low_cardinality, parameters, recursion_level);
     if (!res)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
+
+    res->setArguments(type_without_low_cardinality, parameters);
+
     return res;
 }
 
