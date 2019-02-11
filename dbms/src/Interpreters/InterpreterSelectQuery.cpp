@@ -80,8 +80,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Names & required_result_column_names,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
-    bool only_analyze_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, required_result_column_names, to_stage_, subquery_depth_, only_analyze_)
+    bool only_analyze_,
+    bool modify_inplace)
+    : InterpreterSelectQuery(
+          query_ptr_, context_, nullptr, nullptr, required_result_column_names, to_stage_, subquery_depth_, only_analyze_, modify_inplace)
 {
 }
 
@@ -90,8 +92,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Context & context_,
     const BlockInputStreamPtr & input_,
     QueryProcessingStage::Enum to_stage_,
-    bool only_analyze_)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, Names{}, to_stage_, 0, only_analyze_)
+    bool only_analyze_,
+    bool modify_inplace)
+    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, Names{}, to_stage_, 0, only_analyze_, modify_inplace)
 {
 }
 
@@ -100,8 +103,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Context & context_,
     const StoragePtr & storage_,
     QueryProcessingStage::Enum to_stage_,
-    bool only_analyze_)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, Names{}, to_stage_, 0, only_analyze_)
+    bool only_analyze_,
+    bool modify_inplace)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, Names{}, to_stage_, 0, only_analyze_, modify_inplace)
 {
 }
 
@@ -131,8 +135,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Names & required_result_column_names,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
-    bool only_analyze_)
-    : query_ptr(query_ptr_->clone())    /// Note: the query is cloned because it will be modified during analysis.
+    bool only_analyze_,
+    bool modify_inplace)
+    /// NOTE: the query almost always should be cloned because it will be modified during analysis.
+    : query_ptr(modify_inplace ? query_ptr_ : query_ptr_->clone())
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(to_stage_)
@@ -170,7 +176,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Read from subquery.
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+            table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze, modify_inplace);
 
         source_header = interpreter_subquery->getSampleBlock();
     }

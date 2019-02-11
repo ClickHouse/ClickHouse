@@ -59,6 +59,7 @@ bool PredicateExpressionsOptimizer::optimize()
         is_rewrite_subqueries |= optimizeImpl(ast_select->where_expression, all_subquery_projection_columns, OptimizeKind::PUSH_TO_WHERE);
         is_rewrite_subqueries |= optimizeImpl(ast_select->prewhere_expression, all_subquery_projection_columns, OptimizeKind::PUSH_TO_PREWHERE);
     }
+
     return is_rewrite_subqueries;
 }
 
