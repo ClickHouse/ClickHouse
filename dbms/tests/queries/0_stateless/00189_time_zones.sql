@@ -142,6 +142,50 @@ SELECT toString(toStartOfHour(toDateTime(1549483055), 'Europe/London'), 'Europe/
 SELECT toString(toStartOfHour(toDateTime(1549483055), 'Asia/Tokyo'), 'Asia/Tokyo');
 SELECT toString(toStartOfHour(toDateTime(1549483055), 'Pacific/Pitcairn'), 'Pacific/Pitcairn');
 
+/* toStartOfInterval */
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 1 year, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 2 year, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 5 year, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 1 quarter, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 2 quarter, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 3 quarter, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 1 month, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 2 month, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 5 month, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 1 week, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 2 week, 'Europe/Moscow');
+SELECT toStartOfInterval(toDateTime(1549483055), INTERVAL 6 week, 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 1 day, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 2 day, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 5 day, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 1 hour, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 2 hour, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 6 hour, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 24 hour, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 1 minute, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 2 minute, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 5 minute, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 20 minute, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 90 minute, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 1 second, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 2 second, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDateTime(1549483055), INTERVAL 5 second, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toStartOfInterval(toDate(17933), INTERVAL 1 year);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 2 year);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 5 year);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 1 quarter);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 2 quarter);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 3 quarter);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 1 month);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 2 month);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 5 month);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 1 week);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 2 week);
+SELECT toStartOfInterval(toDate(17933), INTERVAL 6 week);
+SELECT toString(toStartOfInterval(toDate(17933), INTERVAL 1 day, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDate(17933), INTERVAL 2 day, 'Europe/Moscow'), 'Europe/Moscow');
+SELECT toString(toStartOfInterval(toDate(17933), INTERVAL 5 day, 'Europe/Moscow'), 'Europe/Moscow');
+
 /* toRelativeYearNum */
 
 SELECT toRelativeYearNum(toDateTime(1412106600), 'Europe/Moscow') - toRelativeYearNum(toDateTime(0), 'Europe/Moscow');
