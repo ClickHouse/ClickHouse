@@ -1,9 +1,5 @@
 #pragma once
 
-#include <Common/config.h>
-
-#if USE_RDKAFKA
-
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -107,5 +103,3 @@ protected:
 };
 
 }
-
-#endif

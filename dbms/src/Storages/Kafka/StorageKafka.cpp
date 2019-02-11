@@ -1,7 +1,5 @@
 #include <Storages/Kafka/StorageKafka.h>
 
-#if USE_RDKAFKA
-
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
@@ -773,5 +771,3 @@ void registerStorageKafka(StorageFactory & factory)
 
 
 }
-
-#endif
