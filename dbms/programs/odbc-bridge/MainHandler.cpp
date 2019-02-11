@@ -4,7 +4,7 @@
 #include <memory>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Dictionaries/ODBCBlockInputStream.h>
+#include "ODBCBlockInputStream.h"
 #include <Formats/BinaryRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
