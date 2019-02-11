@@ -1,6 +1,4 @@
 #pragma once
-#include <Common/config.h>
-#if USE_RDKAFKA
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
@@ -42,4 +40,3 @@ public:
 };
 
 }
-#endif
