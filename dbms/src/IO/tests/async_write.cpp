@@ -3,8 +3,8 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/AsynchronousWriteBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
 #include <IO/copyData.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 
 int main(int, char **)

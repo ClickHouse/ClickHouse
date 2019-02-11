@@ -25,7 +25,7 @@ class CollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
 public:
     CollapsingSortedBlockInputStream(
             BlockInputStreams inputs_, const SortDescription & description_,
-            const String & sign_column, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
+            const String & sign_column, UInt64 max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
         : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
     {
         sign_column_number = header.getPositionByName(sign_column);

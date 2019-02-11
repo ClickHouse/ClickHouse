@@ -100,7 +100,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 
 namespace
 {
-    void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit)
+    void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
     {
         const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
         const ColumnArray::Offsets & offset_values = column_array.getOffsets();
@@ -122,7 +122,7 @@ namespace
         }
     }
 
-    void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & istr, size_t limit)
+    void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & istr, UInt64 limit)
     {
         ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
         ColumnArray::Offsets & offset_values = column_array.getOffsets();
@@ -188,7 +188,7 @@ void DataTypeArray::deserializeBinaryBulkStatePrefix(
 void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
-    size_t limit,
+    UInt64 limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -234,7 +234,7 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
 
 void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t limit,
+    UInt64 limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {

@@ -4,10 +4,10 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
-#include <Common/Stopwatch.h>
 
 
 namespace ProfileEvents

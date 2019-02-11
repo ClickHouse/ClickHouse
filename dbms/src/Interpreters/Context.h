@@ -75,8 +75,6 @@ class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
-struct SystemLogs;
-using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
@@ -264,7 +262,7 @@ public:
     void tryCreateExternalModels() const;
 
     /// I/O formats.
-    BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const;
+    BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();

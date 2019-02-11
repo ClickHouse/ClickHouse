@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -10,7 +11,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 
 

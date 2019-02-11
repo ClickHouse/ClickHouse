@@ -21,7 +21,16 @@ public:
     struct Data
     {
         const NameSet & source_columns;
-        const std::vector<DatabaseAndTableWithAlias> & tables;
+        const std::vector<TableWithColumnNames> & tables;
+
+        static void setTablesOnly(const std::vector<DatabaseAndTableWithAlias> & tables,
+                                  std::vector<TableWithColumnNames> & tables_with_columns)
+        {
+            tables_with_columns.clear();
+            tables_with_columns.reserve(tables.size());
+            for (const auto & table : tables)
+                tables_with_columns.emplace_back(TableWithColumnNames{table, {}});
+        }
     };
 
     static constexpr const char * label = "TranslateQualifiedNames";

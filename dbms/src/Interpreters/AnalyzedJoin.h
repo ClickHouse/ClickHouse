@@ -61,18 +61,29 @@ struct AnalyzedJoin
     /// It's columns_from_joined_table without duplicate columns and possibly modified types.
     JoinedColumnsList available_joined_columns;
 
+    void addSimpleKey(const ASTPtr & ast)
+    {
+        key_names_left.push_back(ast->getColumnName());
+        key_names_right.push_back(ast->getAliasOrColumnName());
+
+        key_asts_left.push_back(ast);
+        key_asts_right.push_back(ast);
+    }
+
     ExpressionActionsPtr createJoinedBlockActions(
         const JoinedColumnsList & columns_added_by_join, /// Subset of available_joined_columns.
         const ASTSelectQuery * select_query_with_join,
         const Context & context) const;
 
-    /// Columns which will be used in query from joined table.
-    NameSet getRequiredColumnsFromJoinedTable(const JoinedColumnsList & columns_added_by_join,
-                                              const ExpressionActionsPtr & joined_block_actions) const;
+    Names getOriginalColumnNames(const NameSet & required_columns) const;
 
     const JoinedColumnsList & getColumnsFromJoinedTable(const NameSet & source_columns,
                                                         const Context & context,
                                                         const ASTSelectQuery * select_query_with_join);
+    void calculateAvailableJoinedColumns(const NameSet & source_columns,
+                                         const Context & context,
+                                         const ASTSelectQuery * select_query_with_join,
+                                         bool make_nullable);
 };
 
 struct ASTTableExpression;
