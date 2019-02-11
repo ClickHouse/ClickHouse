@@ -30,6 +30,9 @@ using Array = std::vector<Field>;
 using TupleBackend = std::vector<Field>;
 STRONG_TYPEDEF(TupleBackend, Tuple) /// Array and Tuple are different types with equal representation inside Field.
 
+using AggregateFunctionStateDataBackend = String;
+STRONG_TYPEDEF(AggregateFunctionStateDataBackend, AggregateFunctionStateData)
+
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -131,6 +134,7 @@ public:
             Decimal32  = 19,
             Decimal64  = 20,
             Decimal128 = 21,
+            AggregateFunctionState = 22,
         };
 
         static const int MIN_NON_POD = 16;
@@ -151,6 +155,7 @@ public:
                 case Decimal32:  return "Decimal32";
                 case Decimal64:  return "Decimal64";
                 case Decimal128: return "Decimal128";
+                case AggregateFunctionState: return "AggregateFunctionState";
             }
 
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -325,6 +330,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  < rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
+            case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() < rhs.get<AggregateFunctionStateData>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -356,6 +362,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  <= rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
+            case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() <= rhs.get<AggregateFunctionStateData>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -385,6 +392,7 @@ public:
             case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
             case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
             case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
+            case Types::AggregateFunctionState:  return get<AggregateFunctionStateData>() == rhs.get<AggregateFunctionStateData>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -398,7 +406,7 @@ public:
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, Int64, Int128, Float64, String, Array, Tuple,
-        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>
+        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, AggregateFunctionStateData
         > storage;
 
     Types::Which which;
@@ -449,6 +457,7 @@ private:
             case Types::Decimal32:  f(field.template get<DecimalField<Decimal32>>()); return;
             case Types::Decimal64:  f(field.template get<DecimalField<Decimal64>>()); return;
             case Types::Decimal128: f(field.template get<DecimalField<Decimal128>>()); return;
+            case Types::AggregateFunctionState: f(field.template get<AggregateFunctionStateData>()); return;
         }
     }
 
@@ -501,6 +510,9 @@ private:
             case Types::Tuple:
                 destroy<Tuple>();
                 break;
+            case Types::AggregateFunctionState:
+                destroy<AggregateFunctionStateData>();
+                break;
             default:
                  break;
         }
@@ -531,6 +543,7 @@ template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value 
 template <> struct Field::TypeToEnum<DecimalField<Decimal32>>{ static const Types::Which value = Types::Decimal32; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal64>>{ static const Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static const Types::Which value = Types::Decimal128; };
+template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static const Types::Which value = Types::AggregateFunctionState; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
@@ -544,6 +557,7 @@ template <> struct Field::EnumToType<Field::Types::Tuple>   { using Type = Tuple
 template <> struct Field::EnumToType<Field::Types::Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = DecimalField<Decimal64>; };
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
+template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
 
 
 template <typename T>
@@ -615,6 +629,8 @@ template <> struct NearestFieldTypeImpl<Array> { using Type = Array; };
 template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
 template <> struct NearestFieldTypeImpl<bool> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
+
+template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 
 template <typename T>
 using NearestFieldType = typename NearestFieldTypeImpl<T>::Type;

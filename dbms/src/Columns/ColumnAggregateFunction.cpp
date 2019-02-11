@@ -260,9 +260,9 @@ MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
-    Field field = String();
+    Field field = AggregateFunctionStateData();
     {
-        WriteBufferFromString buffer(field.get<String &>());
+        WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().toUnderType());
         func->serialize(data[n], buffer);
     }
     return field;
@@ -272,7 +272,7 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
     res = String();
     {
-        WriteBufferFromString buffer(res.get<String &>());
+        WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().toUnderType());
         func->serialize(data[n], buffer);
     }
 }
@@ -343,7 +343,7 @@ void ColumnAggregateFunction::insert(const Field & x)
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.get<const String &>());
+    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().toUnderType());
     func->deserialize(data.back(), read_buffer, &arena);
 }
 
@@ -465,12 +465,12 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
     AlignedBuffer place_buffer(func->sizeOfData(), func->alignOfData());
     AggregateDataPtr place = place_buffer.data();
 
-    String serialized;
+    AggregateFunctionStateData serialized;
 
     func->create(place);
     try
     {
-        WriteBufferFromString buffer(serialized);
+        WriteBufferFromString buffer(serialized.toUnderType());
         func->serialize(place, buffer);
     }
     catch (...)
