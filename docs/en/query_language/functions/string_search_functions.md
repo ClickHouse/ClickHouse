@@ -1,7 +1,6 @@
 # Functions for Searching Strings
 
 The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
-The search substring or regular expression must be a constant in all these functions.
 
 ## position(haystack, needle), locate(haystack, needle)
 
