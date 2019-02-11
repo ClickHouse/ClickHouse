@@ -26,7 +26,7 @@ namespace ErrorCodes
 BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
     const RowInputStreamPtr & row_input_,
     const Block & sample_,
-    size_t max_block_size_,
+    UInt64 max_block_size_,
     const FormatSettings & settings)
     : row_input(row_input_), sample(sample_), max_block_size(max_block_size_),
     allow_errors_num(settings.input_allow_errors_num), allow_errors_ratio(settings.input_allow_errors_ratio)

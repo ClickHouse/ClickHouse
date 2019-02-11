@@ -90,19 +90,19 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override
+    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
     }
 
-    ColumnPtr index(const IColumn & indexes_, size_t limit) const override
+    ColumnPtr index(const IColumn & indexes_, UInt64 limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
@@ -180,7 +180,7 @@ public:
         ColumnPtr indexes;
     };
 
-    DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const;
+    DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const;
 
     ColumnPtr countKeys() const;
 
@@ -196,7 +196,7 @@ public:
         ColumnPtr & getPositionsPtr() { return positions; }
         size_t getPositionAt(size_t row) const;
         void insertPosition(UInt64 position);
-        void insertPositionsRange(const IColumn & column, size_t offset, size_t limit);
+        void insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit);
 
         void popBack(size_t n) { positions->assumeMutableRef().popBack(n); }
         void reserve(size_t n) { positions->assumeMutableRef().reserve(n); }

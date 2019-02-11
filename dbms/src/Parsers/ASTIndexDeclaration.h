@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Core/Types.h>
 #include <Common/FieldVisitors.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
@@ -21,7 +22,7 @@ public:
     String name;
     IAST * expr;
     ASTFunction * type;
-    Field granularity;
+    UInt64 granularity;
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Index"; }
@@ -52,7 +53,7 @@ public:
         s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
         type->formatImpl(s, state, frame);
         s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
-        s.ostr << applyVisitor(FieldVisitorToString(), granularity);
+        s.ostr << toString(granularity);
     }
 };
 
