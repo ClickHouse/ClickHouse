@@ -258,7 +258,7 @@ protected:
     Block extremes;
 
 
-    void addChild(BlockInputStreamPtr & child)
+    void addChild(const BlockInputStreamPtr & child)
     {
         std::unique_lock lock(children_mutex);
         children.push_back(child);
