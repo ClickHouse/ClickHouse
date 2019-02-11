@@ -58,16 +58,25 @@ def kafka_produce(topic, messages):
                           '--broker-list',
                           'localhost:9092',
                           '--topic',
-                          topic),
+                          topic,
+                          '--sync',
+                          '--message-send-max-retries',
+                          '100'),
                          stdin=subprocess.PIPE)
     p.communicate(messages)
     p.stdin.close()
+    print("Produced {} messages".format(len(messages.splitlines())))
 
 
-def  kafka_check_result(result):
+# Since everything is async and shaky when receiving messages from Kafka,
+# we may want to try and check results multiple times in a loop.
+def  kafka_check_result(result, check=False):
     fpath = p.join(p.dirname(__file__), 'test_kafka_json.reference')
     with open(fpath) as reference:
-        assert TSV(result) == TSV(reference)
+        if check:
+            assert TSV(result) == TSV(reference)
+        else:
+            return TSV(result) == TSV(reference)
 
 
 # Fixtures
@@ -78,6 +87,7 @@ def kafka_cluster():
         global kafka_id
         cluster.start()
         kafka_id = instance.cluster.kafka_docker_id
+        print("kafka_id is {}".format(kafka_id))
         instance.query('CREATE DATABASE test')
 
         yield cluster
@@ -90,6 +100,7 @@ def kafka_cluster():
 def kafka_setup_teardown():
     instance.query('DROP TABLE IF EXISTS test.kafka')
     wait_kafka_is_available()
+    print("kafka is available - running test")
     yield  # run test
     instance.query('DROP TABLE test.kafka')
 
@@ -109,8 +120,12 @@ def test_kafka_settings_old_syntax(kafka_cluster):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
     kafka_produce('old', messages)
 
-    result = instance.query('SELECT * FROM test.kafka')
-    kafka_check_result(result)
+    result = ''
+    for i in range(50):
+        result += instance.query('SELECT * FROM test.kafka')
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True)
 
 
 def test_kafka_settings_new_syntax(kafka_cluster):
@@ -140,12 +155,12 @@ def test_kafka_settings_new_syntax(kafka_cluster):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
     kafka_produce('new', messages)
 
-    # Since the broken message breaks the `select`,
-    # we'll try to select multiple times.
-    result = instance.query('SELECT * FROM test.kafka')
-    result += instance.query('SELECT * FROM test.kafka')
-    result += instance.query('SELECT * FROM test.kafka')
-    kafka_check_result(result)
+    result = ''
+    for i in range(50):
+        result += instance.query('SELECT * FROM test.kafka')
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True)
 
 
 def test_kafka_csv_with_delimiter(kafka_cluster):
@@ -165,8 +180,12 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
         messages += '{i}, {i}\n'.format(i=i)
     kafka_produce('csv', messages)
 
-    result = instance.query('SELECT * FROM test.kafka')
-    kafka_check_result(result)
+    result = ''
+    for i in range(50):
+        result += instance.query('SELECT * FROM test.kafka')
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True)
 
 
 def test_kafka_tsv_with_delimiter(kafka_cluster):
@@ -186,8 +205,12 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
         messages += '{i}\t{i}\n'.format(i=i)
     kafka_produce('tsv', messages)
 
-    result = instance.query('SELECT * FROM test.kafka')
-    kafka_check_result(result)
+    result = ''
+    for i in range(50):
+        result += instance.query('SELECT * FROM test.kafka')
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True)
 
 
 def test_kafka_materialized_view(kafka_cluster):
@@ -214,13 +237,12 @@ def test_kafka_materialized_view(kafka_cluster):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
     kafka_produce('json', messages)
 
-    # Try select multiple times, until we get results
-    for i in range(3):
+    for i in range(20):
         time.sleep(1)
         result = instance.query('SELECT * FROM test.view')
-        if result:
+        if kafka_check_result(result):
             break
-    kafka_check_result(result)
+    kafka_check_result(result, True)
 
     instance.query('''
         DROP TABLE test.consumer;
