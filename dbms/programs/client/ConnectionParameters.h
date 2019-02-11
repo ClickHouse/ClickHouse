@@ -48,14 +48,25 @@ struct ConnectionParameters
                 is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 
         default_database = config.getString("database", "");
-        user = config.getString("user", "");
-
+        /// changed the default value to "default" to fix the issue when the user in the prompt is blank
+        user = config.getString("user", "default");
+        bool password_prompt = false;
         if (config.getBool("ask-password", false))
         {
             if (config.has("password"))
                 throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
-
-            std::cout << "Password for user " << user << ": ";
+            password_prompt = true;
+        }
+        else
+        {
+            password = config.getString("password", "");
+            /// if the value of --password is omitted, the password will be set implicitly to "\n"
+            if (password == "\n")
+                password_prompt = true;
+        }
+        if (password_prompt)
+        {
+            std::cout << "Password for user (" << user << "): ";
             setTerminalEcho(false);
 
             SCOPE_EXIT({
@@ -64,19 +75,14 @@ struct ConnectionParameters
             std::getline(std::cin, password);
             std::cout << std::endl;
         }
-        else
-        {
-            password = config.getString("password", "");
-        }
-
         compression = config.getBool("compression", true)
             ? Protocol::Compression::Enable
             : Protocol::Compression::Disable;
 
         timeouts = ConnectionTimeouts(
             Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-            Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
             Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0),
+            Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
             Poco::Timespan(config.getInt("tcp_keep_alive_timeout", 0), 0));
     }
 };

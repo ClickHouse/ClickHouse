@@ -334,7 +334,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 如果在WHERE/PREWHERE子句中使用了ARRAY JOIN子句的结果，它将优先于WHERE/PREWHERE子句执行，否则它将在WHERE/PRWHERE子句之后执行，以便减少计算。
 
 
-### JOIN 子句
+### JOIN 子句 {#select-join}
 
 JOIN子句用于连接数据，作用与[SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL))的定义相同。
 
@@ -469,7 +469,7 @@ PREWHERE 仅支持`*MergeTree`系列引擎。
 
 如果将'optimize_move_to_prewhere'设置为1，并且在查询中不包含PREWHERE，则系统将自动的把适合PREWHERE表达式的部分从WHERE中抽离到PREWHERE中。
 
-### GROUP BY 子句
+### GROUP BY 子句 {#select-group-by-clause}
 
 这是列式数据库管理系统中最重要的一部分。
 
@@ -566,7 +566,7 @@ GROUP BY子句会为遇到的每一个不同的key计算一组聚合函数的值
 
 你可以在子查询，包含子查询的JOIN子句中使用WITH TOTALS（在这种情况下，它们各自的总值会被组合在一起）。
 
-#### GROUP BY 使用外部存储设备
+#### GROUP BY 使用外部存储设备 {#select-group-by-in-external-memory}
 
 你可以在GROUP BY中允许将临时数据转存到磁盘上，以限制对内存的使用。
 `max_bytes_before_external_group_by`这个配置确定了在GROUP BY中启动将临时数据转存到磁盘上的内存阈值。如果你将它设置为0（这是默认值），这项功能将被禁用。
@@ -682,7 +682,7 @@ WHERE于HAVING不同之处在于WHERE在聚合前(GROUP BY)执行，HAVING在聚
 聚合函数与聚合函数之前的表达式都将在聚合期间完成计算（GROUP BY）。
 就像他们本身就已经存在结果上一样。
 
-### DISTINCT 子句
+### DISTINCT 子句 {#select-distinct}
 
 如果存在DISTINCT子句，则会对结果中的完全相同的行进行去重。
 在GROUP BY不包含聚合函数，并对全部SELECT部分都包含在GROUP BY中时的作用一样。但该子句还是与GROUP BY子句存在以下几点不同：

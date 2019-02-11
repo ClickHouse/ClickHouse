@@ -123,7 +123,7 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension &)
     for (size_t i = 0; i < size; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        data_types[i]->deserializeTextCSV(*columns[i], istr, format_settings);
+        data_types[i]->deserializeAsTextCSV(*columns[i], istr, format_settings);
         skipWhitespacesAndTabs(istr);
 
         skipDelimiter(istr, format_settings.csv.delimiter, i + 1 == size);
@@ -215,7 +215,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         {
             skipWhitespacesAndTabs(istr);
             prev_position = istr.position();
-            data_types[i]->deserializeTextCSV(*columns[i], istr, format_settings);
+            data_types[i]->deserializeAsTextCSV(*columns[i], istr, format_settings);
             curr_position = istr.position();
             skipWhitespacesAndTabs(istr);
         }
@@ -353,7 +353,7 @@ void registerInputFormatCSV(FormatFactory & factory)
             ReadBuffer & buf,
             const Block & sample,
             const Context &,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
