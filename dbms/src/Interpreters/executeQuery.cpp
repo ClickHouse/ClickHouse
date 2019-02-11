@@ -141,7 +141,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * end,
     Context & context,
     bool internal,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    bool has_query_tail)
 {
     time_t current_time = time(nullptr);
 
@@ -164,9 +165,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+        auto * insert_query = dynamic_cast<ASTInsertQuery *>(ast.get());
         if (insert_query && insert_query->data)
+        {
             query_end = insert_query->data;
+            insert_query->has_tail = has_query_tail;
+        }
         else
             query_end = end;
     }
@@ -434,7 +438,7 @@ BlockIO executeQuery(
     QueryProcessingStage::Enum stage)
 {
     BlockIO streams;
-    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage);
+    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, false);
     return streams;
 }
 
@@ -479,13 +483,13 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete);
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, !istr.eof());
 
     try
     {
         if (streams.out)
         {
-            InputStreamFromASTInsertQuery in(ast, istr, streams, context);
+            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context);
             copyData(in, *streams.out);
         }
 

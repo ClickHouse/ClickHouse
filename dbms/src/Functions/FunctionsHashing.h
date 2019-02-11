@@ -8,6 +8,10 @@
 #include <murmurhash2.h>
 #include <murmurhash3.h>
 
+#include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
+#include <Common/HashTable/Hash.h>
+
 #include <Common/config.h>
 #if USE_XXHASH
     #include <xxhash.h>
@@ -15,8 +19,6 @@
 
 #include <Poco/ByteOrder.h>
 
-#include <Common/SipHash.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
@@ -31,7 +33,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/HashTable/Hash.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 

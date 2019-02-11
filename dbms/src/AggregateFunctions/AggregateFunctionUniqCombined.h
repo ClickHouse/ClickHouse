@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Common/CombinedCardinalityEstimator.h>
+#include <Common/FieldVisitors.h>
+#include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -14,10 +17,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldVisitors.h>
-#include <Common/SipHash.h>
 
-#include <Common/typeid_cast.h>
 
 namespace DB
 {

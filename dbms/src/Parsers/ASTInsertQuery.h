@@ -26,6 +26,9 @@ public:
     const char * data = nullptr;
     const char * end = nullptr;
 
+    /// Query has additional data, which will be sent later
+    bool has_tail = false;
+
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "InsertQuery" + (delim + database) + delim + table; }
 

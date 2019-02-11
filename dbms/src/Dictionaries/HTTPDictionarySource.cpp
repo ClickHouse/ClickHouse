@@ -15,7 +15,7 @@
 
 namespace DB
 {
-static const size_t max_block_size = 8192;
+static const UInt64 max_block_size = 8192;
 
 
 HTTPDictionarySource::HTTPDictionarySource(

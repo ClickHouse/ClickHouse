@@ -34,7 +34,7 @@ private:
         ReadBuffer & buf,
         const Block & sample,
         const Context & context,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const FormatSettings & settings)>;
 
     using OutputCreator = std::function<BlockOutputStreamPtr(
@@ -49,7 +49,7 @@ private:
 
 public:
     BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
-        const Block & sample, const Context & context, size_t max_block_size) const;
+        const Block & sample, const Context & context, UInt64 max_block_size) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;
