@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int BAD_GET;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 class Field;
@@ -30,8 +31,40 @@ using Array = std::vector<Field>;
 using TupleBackend = std::vector<Field>;
 STRONG_TYPEDEF(TupleBackend, Tuple) /// Array and Tuple are different types with equal representation inside Field.
 
-using AggregateFunctionStateDataBackend = String;
-STRONG_TYPEDEF(AggregateFunctionStateDataBackend, AggregateFunctionStateData)
+struct AggregateFunctionStateData
+{
+    String name; /// Name with arguments.
+    String data;
+
+    bool operator < (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Operator < is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool operator <= (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Operator <= is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool operator > (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Operator > is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool operator >= (const AggregateFunctionStateData &) const
+    {
+        throw Exception("Operator >= is not implemented for AggregateFunctionStateData.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+    bool operator == (const AggregateFunctionStateData & rhs) const
+    {
+        if (name != rhs.name)
+            throw Exception("Comparing aggregate functions with different types: " + name + " and " + rhs.name,
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return data == rhs.data;
+    }
+};
 
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -587,6 +620,7 @@ T safeGet(Field & field)
 
 template <> struct TypeName<Array> { static std::string get() { return "Array"; } };
 template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; } };
+template <> struct TypeName<AggregateFunctionStateData> { static std::string get() { return "AggregateFunctionState"; } };
 
 
 template <typename T> struct NearestFieldTypeImpl;

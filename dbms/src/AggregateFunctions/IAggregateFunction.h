@@ -108,6 +108,21 @@ public:
       * const char * getHeaderFilePath() const override { return __FILE__; }
       */
     virtual const char * getHeaderFilePath() const = 0;
+
+    const DataTypes & getArgumentTypes() const { return argument_types; }
+    const Array & getParameters() const { return parameters; }
+
+private:
+    DataTypes argument_types;
+    Array parameters;
+
+    friend class AggregateFunctionFactory;
+
+    void setArguments(DataTypes argument_types_, Array parameters_)
+    {
+        argument_types = std::move(argument_types_);
+        parameters = std::move(parameters_);
+    }
 };
 
 

@@ -49,6 +49,7 @@ typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F &&
         case Field::Types::Decimal32: return visitor(field.template get<DecimalField<Decimal32>>());
         case Field::Types::Decimal64: return visitor(field.template get<DecimalField<Decimal64>>());
         case Field::Types::Decimal128: return visitor(field.template get<DecimalField<Decimal128>>());
+        case Field::Types::AggregateFunctionState: return visitor(field.template get<AggregateFunctionStateData>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -72,6 +73,7 @@ static typename std::decay_t<Visitor>::ResultType applyBinaryVisitorImpl(Visitor
         case Field::Types::Decimal32:  return visitor(field1, field2.template get<DecimalField<Decimal32>>());
         case Field::Types::Decimal64:  return visitor(field1, field2.template get<DecimalField<Decimal64>>());
         case Field::Types::Decimal128: return visitor(field1, field2.template get<DecimalField<Decimal128>>());
+        case Field::Types::AggregateFunctionState: return visitor(field1, field2.template get<AggregateFunctionStateData>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -116,6 +118,9 @@ typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F1 &
         case Field::Types::Decimal128:
             return applyBinaryVisitorImpl(
                 std::forward<Visitor>(visitor), field1.template get<DecimalField<Decimal128>>(), std::forward<F2>(field2));
+        case Field::Types::AggregateFunctionState:
+            return applyBinaryVisitorImpl(
+                    std::forward<Visitor>(visitor), field1.template get<AggregateFunctionStateData>(), std::forward<F2>(field2));
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -206,7 +211,7 @@ public:
 
     T operator() (const AggregateFunctionStateData &) const
     {
-        throw Exception("Cannot convert String to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+        throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 };
 
@@ -254,6 +259,7 @@ public:
     bool operator() (const UInt64 & l, const String & r)    const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Array & r)     const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Tuple & r)     const { return cantCompare(l, r); }
+    bool operator() (const UInt64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     bool operator() (const Int64 & l, const Null & r)       const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::equalsOp(l, r); }
@@ -263,6 +269,7 @@ public:
     bool operator() (const Int64 & l, const String & r)     const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Array & r)      const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Tuple & r)      const { return cantCompare(l, r); }
+    bool operator() (const Int64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     bool operator() (const Float64 & l, const Null & r)     const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::equalsOp(l, r); }
@@ -272,6 +279,7 @@ public:
     bool operator() (const Float64 & l, const String & r)   const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Array & r)    const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Tuple & r)    const { return cantCompare(l, r); }
+    bool operator() (const Float64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     template <typename T>
     bool operator() (const Null &, const T &) const
@@ -334,8 +342,6 @@ public:
     {
         if constexpr (std::is_same_v<T, AggregateFunctionStateData>)
             return l == r;
-        if constexpr (std::is_same_v<T, UInt128>)
-            return stringToUUID(l.toUnderType()) == r;
         return cantCompare(l, r);
     }
 
@@ -362,6 +368,7 @@ public:
     bool operator() (const UInt64 & l, const String & r)    const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Array & r)     const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Tuple & r)     const { return cantCompare(l, r); }
+    bool operator() (const UInt64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     bool operator() (const Int64 & l, const Null & r)       const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::lessOp(l, r); }
@@ -371,6 +378,7 @@ public:
     bool operator() (const Int64 & l, const String & r)     const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Array & r)      const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Tuple & r)      const { return cantCompare(l, r); }
+    bool operator() (const Int64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     bool operator() (const Float64 & l, const Null & r)     const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::lessOp(l, r); }
@@ -380,6 +388,7 @@ public:
     bool operator() (const Float64 & l, const String & r)   const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Array & r)    const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Tuple & r)    const { return cantCompare(l, r); }
+    bool operator() (const Float64 & l, const AggregateFunctionStateData & r) const { return cantCompare(l, r); }
 
     template <typename T>
     bool operator() (const Null &, const T &) const
@@ -440,10 +449,6 @@ public:
     template <typename T>
     bool operator() (const AggregateFunctionStateData & l, const T & r) const
     {
-        if constexpr (std::is_same_v<T, AggregateFunctionStateData>)
-            return l < r;
-        if constexpr (std::is_same_v<T, UInt128>)
-            return stringToUUID(l.toUnderType()) < r;
         return cantCompare(l, r);
     }
 
