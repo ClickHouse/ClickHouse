@@ -724,7 +724,11 @@ private:
 
                 try
                 {
-                    if (!processSingleQuery(str, ast) && !ignore_error)
+                    auto ast_to_process = ast;
+                    if (insert && insert->data)
+                        ast_to_process = nullptr;
+
+                    if (!processSingleQuery(str, ast_to_process) && !ignore_error)
                         return false;
                 }
                 catch (...)
