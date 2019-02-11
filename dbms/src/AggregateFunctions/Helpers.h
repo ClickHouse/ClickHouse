@@ -20,7 +20,7 @@ namespace DB
 
 /** Create an aggregate function with a numeric type in the template parameter, depending on the type of the argument.
   */
-template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
+template <template <typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
@@ -33,7 +33,20 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
+template <template <typename, bool> class AggregateFunctionTemplate, bool bool_param, typename... TArgs>
+static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
+{
+    WhichDataType which(argument_type);
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, bool_param>(std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
+#undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Int8, bool_param>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<Int16, bool_param>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
+template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename... TArgs>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
@@ -46,7 +59,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename ... TArgs>
+template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
@@ -59,7 +72,7 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename ... TArgs>
+template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename... TArgs>
 static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
@@ -70,7 +83,7 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
     return nullptr;
 }
 
-template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
+template <template <typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithNumericBasedType(const IDataType & argument_type, TArgs && ... args)
 {
     IAggregateFunction * f = createWithNumericType<AggregateFunctionTemplate>(argument_type, std::forward<TArgs>(args)...);
@@ -85,7 +98,7 @@ static IAggregateFunction * createWithNumericBasedType(const IDataType & argumen
     return nullptr;
 }
 
-template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
+template <template <typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithDecimalType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
@@ -98,7 +111,7 @@ static IAggregateFunction * createWithDecimalType(const IDataType & argument_typ
 
 /** For template with two arguments.
   */
-template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename ... TArgs>
+template <typename FirstType, template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & second_type, TArgs && ... args)
 {
     WhichDataType which(second_type);
@@ -111,7 +124,7 @@ static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & se
     return nullptr;
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, typename ... TArgs>
+template <template <typename, typename> class AggregateFunctionTemplate, typename... TArgs>
 static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
 {
     WhichDataType which(first_type);

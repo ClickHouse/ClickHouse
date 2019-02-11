@@ -1,9 +1,5 @@
 #pragma once
 
-#include <Common/config.h>
-
-#if USE_RDKAFKA
-
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -41,7 +37,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
     void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override
@@ -68,7 +64,7 @@ private:
     /// Total number of consumers
     size_t num_consumers;
     /// Maximum block size for insertion into this table
-    size_t max_block_size;
+    UInt64 max_block_size;
     /// Number of actually created consumers.
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
@@ -103,9 +99,7 @@ protected:
         const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
         const String & format_name_, char row_delimiter_, const String & schema_name_,
-        size_t num_consumers_, size_t max_block_size_, size_t skip_broken);
+        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
 };
 
 }
-
-#endif

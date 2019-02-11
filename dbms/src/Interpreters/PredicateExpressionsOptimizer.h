@@ -65,8 +65,6 @@ private:
         PUSH_TO_HAVING,
     };
 
-    bool isAggregateFunction(const ASTPtr & node);
-
     bool isArrayJoinFunction(const ASTPtr & node);
 
     std::vector<ASTPtr> splitConjunctionPredicate(ASTPtr & predicate_expression);
@@ -77,6 +75,8 @@ private:
     bool optimizeExpression(const ASTPtr & outer_expression, ASTPtr & subquery_expression, ASTSelectQuery * subquery);
 
     bool optimizeImpl(ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
+
+    bool allowPushDown(const ASTSelectQuery * subquery);
 
     bool canPushDownOuterPredicate(const std::vector<ProjectionWithAlias> & subquery_projection_columns,
                                    const std::vector<IdentifierWithQualifier> & outer_predicate_dependencies,

@@ -31,7 +31,7 @@ def test_single_page(input_path, lang):
                     logging.info('Link to nowhere: %s' % href)
 
         if duplicate_anchor_points:
-            logging.error('Found %d duplicate anchor points' % duplicate_anchor_points)
+            logging.warning('Found %d duplicate anchor points' % duplicate_anchor_points)
         if links_to_nowhere:
             logging.error('Found %d links to nowhere' % links_to_nowhere)
             sys.exit(10)

@@ -18,6 +18,32 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+void waitQuery(Connection & connection)
+{
+    bool finished = false;
+    while (true)
+    {
+        if (!connection.poll(1000000))
+            continue;
+
+        Connection::Packet packet = connection.receivePacket();
+        switch (packet.type)
+        {
+            case Protocol::Server::EndOfStream:
+                finished = true;
+                break;
+            case Protocol::Server::Exception:
+                throw *packet.exception;
+        }
+
+        if (finished)
+            break;
+    }
+}
+}
+
 namespace fs = boost::filesystem;
 
 PerformanceTest::PerformanceTest(
@@ -25,12 +51,14 @@ PerformanceTest::PerformanceTest(
     Connection & connection_,
     InterruptListener & interrupt_listener_,
     const PerformanceTestInfo & test_info_,
-    Context & context_)
+    Context & context_,
+    const std::vector<size_t> & queries_to_run_)
     : config(config_)
     , connection(connection_)
     , interrupt_listener(interrupt_listener_)
     , test_info(test_info_)
     , context(context_)
+    , queries_to_run(queries_to_run_)
     , log(&Poco::Logger::get("PerformanceTest"))
 {
 }
@@ -133,14 +161,18 @@ void PerformanceTest::prepare() const
 {
     for (const auto & query : test_info.create_queries)
     {
-        LOG_INFO(log, "Executing create query '" << query << "'");
-        connection.sendQuery(query);
+        LOG_INFO(log, "Executing create query \"" << query << '\"');
+        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        waitQuery(connection);
+        LOG_INFO(log, "Query finished");
     }
 
     for (const auto & query : test_info.fill_queries)
     {
-        LOG_INFO(log, "Executing fill query '" << query << "'");
-        connection.sendQuery(query);
+        LOG_INFO(log, "Executing fill query \"" << query << '\"');
+        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        waitQuery(connection);
+        LOG_INFO(log, "Query finished");
     }
 
 }
@@ -149,17 +181,24 @@ void PerformanceTest::finish() const
 {
     for (const auto & query : test_info.drop_queries)
     {
-        LOG_INFO(log, "Executing drop query '" << query << "'");
-        connection.sendQuery(query);
+        LOG_INFO(log, "Executing drop query \"" << query << '\"');
+        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        waitQuery(connection);
+        LOG_INFO(log, "Query finished");
     }
 }
 
 std::vector<TestStats> PerformanceTest::execute()
 {
     std::vector<TestStats> statistics_by_run;
+    size_t query_count;
+    if (queries_to_run.empty())
+        query_count = test_info.queries.size();
+    else
+        query_count = queries_to_run.size();
     size_t total_runs = test_info.times_to_run * test_info.queries.size();
     statistics_by_run.resize(total_runs);
-    LOG_INFO(log, "Totally will run cases " << total_runs << " times");
+    LOG_INFO(log, "Totally will run cases " << test_info.times_to_run * query_count << " times");
     UInt64 max_exec_time = calculateMaxExecTime();
     if (max_exec_time != 0)
         LOG_INFO(log, "Test will be executed for a maximum of " << max_exec_time / 1000. << " seconds");
@@ -172,9 +211,13 @@ std::vector<TestStats> PerformanceTest::execute()
 
         for (size_t query_index = 0; query_index < test_info.queries.size(); ++query_index)
         {
-            size_t statistic_index = number_of_launch * test_info.queries.size() + query_index;
-
-            queries_with_indexes.push_back({test_info.queries[query_index], statistic_index});
+            if (queries_to_run.empty() || std::find(queries_to_run.begin(), queries_to_run.end(), query_index) != queries_to_run.end())
+            {
+                size_t statistic_index = number_of_launch * test_info.queries.size() + query_index;
+                queries_with_indexes.push_back({test_info.queries[query_index], statistic_index});
+            }
+            else
+                LOG_INFO(log, "Will skip query " << test_info.queries[query_index] << " by index");
         }
 
         if (got_SIGINT)

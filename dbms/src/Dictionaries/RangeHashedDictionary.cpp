@@ -634,7 +634,7 @@ void RangeHashedDictionary::getIdsAndDates(
 
 
 template <typename RangeType>
-BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, UInt64 max_block_size) const
 {
     PaddedPODArray<Key> ids;
     PaddedPODArray<RangeType> start_dates;
@@ -652,7 +652,7 @@ struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
     BlockInputStreamPtr stream;
     const RangeHashedDictionary * dict;
     const Names * column_names;
-    size_t max_block_size;
+    UInt64 max_block_size;
 
     template <typename RangeType, size_t>
     void operator()()
@@ -663,7 +663,7 @@ struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
     }
 };
 
-BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
 {
     using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
 
