@@ -89,9 +89,6 @@ set(dbms_sources)
 
 include(../cmake/dbms_glob_sources.cmake)
 
-# temp ugly hack
-include_directories(${BROTLI_INCLUDE_DIR})
-
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
