@@ -29,6 +29,8 @@ bool BinaryRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 
 void BinaryRowInputStream::readPrefix()
 {
+    /// NOTE The header is completely ignored. This can be easily improved.
+
     UInt64 columns = 0;
     String tmp;
 
