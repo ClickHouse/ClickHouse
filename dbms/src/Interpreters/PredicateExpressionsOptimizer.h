@@ -2,6 +2,8 @@
 
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 
+#include <map>
+
 namespace DB
 {
 

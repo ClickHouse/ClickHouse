@@ -23,12 +23,13 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/IStorage.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/IStorage.h>
+#include <Common/typeid_cast.h>
 
 #include <functional>
+
 
 namespace DB
 {
@@ -106,7 +107,6 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 }
-
 
 bool hasArrayJoin(const ASTPtr & ast)
 {
