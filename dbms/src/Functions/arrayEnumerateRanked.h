@@ -302,7 +302,7 @@ DUMP(depth, depths, max_array_depth);
         return array;
     };
 
-    size_t array_size = 0;
+    size_t array_size = 1;
     if (max_array_depth == 2) {
      for (size_t i = 0; i < num_arguments; ++i)
      {
@@ -320,8 +320,8 @@ DUMP(depth, depths, max_array_depth);
     auto res_nested = ColumnUInt32::create();
     ColumnUInt32::Container & res_values = res_nested->getData();
 
-    size_t sub_array_num = 0; // TODO for(...
-    //for (size_t sub_array_num = 0; sub_array_num < array_size; ++sub_array_num) {
+    //size_t sub_array_num = 0; // TODO for(...
+    for (size_t sub_array_num = 0; sub_array_num < array_size; ++sub_array_num) {
 DUMP(sub_array_num, array_size);
 
     for (size_t i = 0; i < num_arguments; ++i)
@@ -449,8 +449,9 @@ DUMP(data_columns);
 
     }
 
-    //}
+    }
 
+DUMP(res_nested, offsets_column);
 DUMP("=========================================");
     block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
 }
@@ -483,8 +484,8 @@ DUMP(columns.size());
         for (size_t off : offsets)
         {
 DUMP(off);
-            if (depth == 2)
-                indices.clear();
+            //?if (depth == 2)
+            //?    indices.clear();
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
@@ -516,8 +517,8 @@ DUMP(off, j, prev_off, res_values[j], idx);
         for (size_t off : offsets)
         {
 DUMP(off);
-            if (depth == 2)
-                indices.clear();
+            //?if (depth == 2)
+            //?    indices.clear();
             UInt32 rank = 0;
             [[maybe_unused]] UInt32 null_index = 0;
             for (size_t j = prev_off; j < off; ++j)
