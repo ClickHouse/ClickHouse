@@ -17,7 +17,7 @@ class DistinctBlockInputStream : public IBlockInputStream
 {
 public:
     /// Empty columns_ means all collumns.
-    DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, size_t limit_hint_, const Names & columns);
+    DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, UInt64 limit_hint_, const Names & columns);
 
     String getName() const override { return "Distinct"; }
 
@@ -41,7 +41,7 @@ private:
     Names columns_names;
     SetVariants data;
     Sizes key_sizes;
-    size_t limit_hint;
+    UInt64 limit_hint;
 
     bool no_more_rows = false;
 

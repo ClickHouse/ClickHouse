@@ -22,7 +22,7 @@ class AggregatingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
     AggregatingSortedBlockInputStream(
-        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_);
+        const BlockInputStreams & inputs_, const SortDescription & description_, UInt64 max_block_size_);
 
     String getName() const override { return "AggregatingSorted"; }
 

@@ -20,7 +20,6 @@
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 

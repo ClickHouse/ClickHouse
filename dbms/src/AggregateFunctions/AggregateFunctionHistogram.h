@@ -13,6 +13,8 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -268,15 +270,13 @@ public:
         lower_bound = std::min(lower_bound, other.lower_bound);
         upper_bound = std::max(lower_bound, other.upper_bound);
         for (size_t i = 0; i < other.size; i++)
-        {
             add(other.points[i].mean, other.points[i].weight, max_bins);
-        }
     }
 
     void write(WriteBuffer & buf) const
     {
-        buf.write(reinterpret_cast<const char *>(&lower_bound), sizeof(lower_bound));
-        buf.write(reinterpret_cast<const char *>(&upper_bound), sizeof(upper_bound));
+        writeBinary(lower_bound, buf);
+        writeBinary(upper_bound, buf);
 
         writeVarUInt(size, buf);
         buf.write(reinterpret_cast<const char *>(points), size * sizeof(WeightedValue));
@@ -284,11 +284,10 @@ public:
 
     void read(ReadBuffer & buf, UInt32 max_bins)
     {
-        buf.read(reinterpret_cast<char *>(&lower_bound), sizeof(lower_bound));
-        buf.read(reinterpret_cast<char *>(&upper_bound), sizeof(upper_bound));
+        readBinary(lower_bound, buf);
+        readBinary(upper_bound, buf);
 
         readVarUInt(size, buf);
-
         if (size > max_bins * 2)
             throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 

@@ -39,7 +39,7 @@ namespace
             std::function<void(std::ostream &)> callback,
             const Block & sample_block,
             const Context & context,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
             const String name)
             : name(name)
@@ -62,7 +62,7 @@ namespace
     };
 }
 
-static const size_t max_block_size = 8192;
+static const UInt64 max_block_size = 8192;
 
 
 XDBCDictionarySource::XDBCDictionarySource(
