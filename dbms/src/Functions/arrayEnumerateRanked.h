@@ -281,15 +281,48 @@ DUMP(depth, depths, max_array_depth);
         return getReturnTypeImpl(data_types);*/
 
 
-    size_t num_arguments = arguments.size();
+    const size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns; //(num_arguments);
 
     Columns array_holders;
     ColumnPtr offsets_column;
     size_t array_num = 0;
 
-    size_t sub_array_num = 0; // TODO for(...
 
+    auto get_array_column = [&] (const auto & column) -> const DB::ColumnArray * {
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(column.get());
+        if (!array)
+        {
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(column.get());
+            if (!const_array)
+                return nullptr;
+            array_holders.emplace_back(const_array->convertToFullColumn());
+            array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
+        }
+        return array;
+    };
+
+    size_t array_size = 1;
+    if (max_array_depth == 2) {
+     for (size_t i = 0; i < num_arguments; ++i)
+     {
+        auto array = get_array_column(block.getByPosition(arguments[i]).column);
+        DUMP(i, block.getByPosition(arguments[i]).column);
+        DUMP(array);
+        if (!array)
+            continue;
+        //DUMP("siz=", array->size());
+        array_size = array->sizeAt(0);
+        //DUMP("arrsize=", array_size);
+     }
+    }
+
+    auto res_nested = ColumnUInt32::create();
+    ColumnUInt32::Container & res_values = res_nested->getData();
+
+    //size_t sub_array_num = 0; // TODO for(...
+    for (size_t sub_array_num = 0; sub_array_num < array_size; ++sub_array_num) {
+DUMP(sub_array_num, array_size);
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
@@ -298,12 +331,11 @@ DUMP("column", i, array_ptr);
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
-            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                block.getByPosition(arguments[i]).column.get());
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
             if (!const_array){ 
 DUMP("skip not array", i, array_ptr);
                 continue;
-}
+            }
 /*
                 throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
@@ -319,7 +351,7 @@ DUMP("skip not array", i, array_ptr);
 
 DUMP("offsets before depth was", array->getOffsets());
              DUMP("wantdepth=", depths[array_num], "of", array);
-             if (depths[array_num] == 2) {
+             if (depths[array_num] == 2) { // TODO We need to go deeper here
                  DUMP("get subarray here", array[sub_array_num]);
                  array = checkAndGetColumn<ColumnArray>(&array[sub_array_num]);
 DUMP("result subarray=", array);
@@ -366,9 +398,6 @@ DUMP("offsets first=", offsets);
         }
     }
 
-    auto res_nested = ColumnUInt32::create();
-
-    ColumnUInt32::Container & res_values = res_nested->getData();
     if (!offsets->empty())
         res_values.resize(offsets->back());
 
@@ -420,8 +449,10 @@ DUMP(data_columns);
 
     }
 
-DUMP("=========================================");
+    }
 
+DUMP(res_nested, offsets_column);
+DUMP("=========================================");
     block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
 }
 
@@ -453,7 +484,8 @@ DUMP(columns.size());
         for (size_t off : offsets)
         {
 DUMP(off);
-            indices.clear();
+            //?if (depth == 2)
+            //?    indices.clear();
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
@@ -485,7 +517,8 @@ DUMP(off, j, prev_off, res_values[j], idx);
         for (size_t off : offsets)
         {
 DUMP(off);
-            indices.clear();
+            //?if (depth == 2)
+            //?    indices.clear();
             UInt32 rank = 0;
             [[maybe_unused]] UInt32 null_index = 0;
             for (size_t j = prev_off; j < off; ++j)
