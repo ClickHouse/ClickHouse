@@ -1,5 +1,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/AnalyzedJoin.h> /// for getNamesAndTypeListFromTableExpression
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 
@@ -11,6 +12,9 @@
 
 namespace DB
 {
+
+NameSet removeDuplicateColumns(NamesAndTypesList & columns);
+
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
 {
@@ -142,6 +146,28 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
     }
 
     return nullptr;
+}
+
+std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const ASTSelectQuery & select_query, const Context & context)
+{
+    std::vector<TableWithColumnNames> tables_with_columns;
+
+    if (select_query.tables && !select_query.tables->children.empty())
+    {
+        String current_database = context.getCurrentDatabase();
+
+        for (const ASTTableExpression * table_expression : getSelectTablesExpression(select_query))
+        {
+            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
+
+            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, context);
+            removeDuplicateColumns(names_and_types);
+
+            tables_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
+        }
+    }
+
+    return tables_with_columns;
 }
 
 }

@@ -67,7 +67,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
-#include <daemon/OwnPatternFormatter.h>
 
 
 namespace DB
@@ -817,7 +816,7 @@ public:
 
             try
             {
-                type->deserializeTextQuoted(*column_dummy, rb, FormatSettings());
+                type->deserializeAsTextQuoted(*column_dummy, rb, FormatSettings());
             }
             catch (Exception & e)
             {
@@ -1882,7 +1881,7 @@ protected:
             for (size_t i = 0; i < column.column->size(); ++i)
             {
                 WriteBufferFromOwnString wb;
-                column.type->serializeTextQuoted(*column.column, i, wb, FormatSettings());
+                column.type->serializeAsTextQuoted(*column.column, i, wb, FormatSettings());
                 res.emplace(wb.str());
             }
         }

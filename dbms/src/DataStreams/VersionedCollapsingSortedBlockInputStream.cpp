@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 VersionedCollapsingSortedBlockInputStream::VersionedCollapsingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
-    const String & sign_column_, size_t max_block_size_,
+    const String & sign_column_, UInt64 max_block_size_,
     WriteBuffer * out_row_sources_buf_)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
     , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size_), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 2)

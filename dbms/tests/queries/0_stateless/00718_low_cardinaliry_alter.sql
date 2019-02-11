@@ -1,5 +1,3 @@
-set allow_experimental_low_cardinality_type = 1;
-
 create table test.tab (a String, b LowCardinality(UInt32)) engine = MergeTree order by a;
 insert into test.tab values ('a', 1);
 select *, toTypeName(b) from test.tab;

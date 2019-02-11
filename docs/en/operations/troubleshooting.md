@@ -126,7 +126,7 @@ If ClickHouse is not able to process the query, it sends an error description to
 
 ```bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
-Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there is no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
+Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
 If you start `clickhouse-client` with the `stack-trace` parameter, ClickHouse returns the server stack trace with the description of an error.

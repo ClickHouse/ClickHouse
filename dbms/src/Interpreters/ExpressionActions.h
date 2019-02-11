@@ -238,7 +238,7 @@ public:
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
-    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
 
     const Settings & getSettings() const { return settings; }
 

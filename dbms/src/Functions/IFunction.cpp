@@ -3,6 +3,9 @@
 #include <Common/LRUCache.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -10,10 +13,6 @@
 #include <DataTypes/Native.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>

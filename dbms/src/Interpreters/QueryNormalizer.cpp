@@ -25,8 +25,6 @@ namespace ErrorCodes
     extern const int CYCLIC_ALIASES;
 }
 
-NameSet removeDuplicateColumns(NamesAndTypesList & columns);
-
 
 class CheckASTDepth
 {
@@ -143,7 +141,10 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 /// Replace *, alias.*, database.table.* with a list of columns.
 void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & data)
 {
-    const auto & tables_with_columns = data.tables_with_columns;
+    if (!data.tables_with_columns)
+        return;
+
+    const auto & tables_with_columns = *data.tables_with_columns;
     const auto & source_columns_set = data.source_columns_set;
 
     ASTs old_children;
@@ -228,8 +229,6 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 /// special visitChildren() for ASTSelectQuery
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & data)
 {
-    extractTablesWithColumns(select, data);
-
     if (auto join = select.join())
         extractJoinUsingColumns(join->table_join, data);
 
@@ -253,7 +252,6 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & 
 }
 
 /// Don't go into subqueries.
-/// Don't go into components of compound identifiers.
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
@@ -342,25 +340,6 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
         {
             e.addMessage("(after expansion of aliases)");
             throw;
-        }
-    }
-}
-
-void QueryNormalizer::extractTablesWithColumns(const ASTSelectQuery & select_query, Data & data)
-{
-    if (data.context && select_query.tables && !select_query.tables->children.empty())
-    {
-        data.tables_with_columns.clear();
-        String current_database = data.context->getCurrentDatabase();
-
-        for (const ASTTableExpression * table_expression : getSelectTablesExpression(select_query))
-        {
-            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
-
-            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, *data.context);
-            removeDuplicateColumns(names_and_types);
-
-            data.tables_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
         }
     }
 }

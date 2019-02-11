@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
@@ -34,49 +35,53 @@ namespace ErrorCodes
 }
 
 
-DataTypePtr getDataType(const String & mysql_data_type, bool is_unsigned, size_t length)
+DataTypePtr getDataType(const String & mysql_data_type, bool is_nullable, bool is_unsigned, size_t length)
 {
+    DataTypePtr res;
     if (mysql_data_type == "tinyint")
     {
         if (is_unsigned)
-            return std::make_shared<DataTypeUInt8>();
+            res = std::make_shared<DataTypeUInt8>();
         else
-            return std::make_shared<DataTypeInt8>();
+            res = std::make_shared<DataTypeInt8>();
     }
-    if (mysql_data_type == "smallint")
+    else if (mysql_data_type == "smallint")
     {
         if (is_unsigned)
-            return std::make_shared<DataTypeUInt16>();
+            res = std::make_shared<DataTypeUInt16>();
         else
-            return std::make_shared<DataTypeInt16>();
+            res = std::make_shared<DataTypeInt16>();
     }
-    if (mysql_data_type == "int" || mysql_data_type == "mediumint")
+    else if (mysql_data_type == "int" || mysql_data_type == "mediumint")
     {
         if (is_unsigned)
-            return std::make_shared<DataTypeUInt32>();
+            res = std::make_shared<DataTypeUInt32>();
         else
-            return std::make_shared<DataTypeInt32>();
+            res = std::make_shared<DataTypeInt32>();
     }
-    if (mysql_data_type == "bigint")
+    else if (mysql_data_type == "bigint")
     {
         if (is_unsigned)
-            return std::make_shared<DataTypeUInt64>();
+            res = std::make_shared<DataTypeUInt64>();
         else
-            return std::make_shared<DataTypeInt64>();
+            res = std::make_shared<DataTypeInt64>();
     }
-    if (mysql_data_type == "float")
-        return std::make_shared<DataTypeFloat32>();
-    if (mysql_data_type == "double")
-        return std::make_shared<DataTypeFloat64>();
-    if (mysql_data_type == "date")
-        return std::make_shared<DataTypeDate>();
-    if (mysql_data_type == "datetime" || mysql_data_type == "timestamp")
-        return std::make_shared<DataTypeDateTime>();
-    if (mysql_data_type == "binary")
-        return std::make_shared<DataTypeFixedString>(length);
-
-    /// Also String is fallback for all unknown types.
-    return std::make_shared<DataTypeString>();
+    else if (mysql_data_type == "float")
+        res = std::make_shared<DataTypeFloat32>();
+    else if (mysql_data_type == "double")
+        res = std::make_shared<DataTypeFloat64>();
+    else if (mysql_data_type == "date")
+        res = std::make_shared<DataTypeDate>();
+    else if (mysql_data_type == "datetime" || mysql_data_type == "timestamp")
+        res = std::make_shared<DataTypeDateTime>();
+    else if (mysql_data_type == "binary")
+        res = std::make_shared<DataTypeFixedString>(length);
+    else
+        /// Also String is fallback for all unknown types.
+        res = std::make_shared<DataTypeString>();
+    if (is_nullable)
+        res = std::make_shared<DataTypeNullable>(res);
+    return res;
 }
 
 
@@ -153,10 +158,10 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
                 (*block.getByPosition(0).column)[i].safeGet<String>(),
                 getDataType(
                     (*block.getByPosition(1).column)[i].safeGet<String>(),
+                    (*block.getByPosition(2).column)[i].safeGet<UInt64>() && context.getSettings().external_table_functions_use_nulls,
                     (*block.getByPosition(3).column)[i].safeGet<UInt64>(),
                     (*block.getByPosition(4).column)[i].safeGet<UInt64>()));
 
-        /// TODO is_nullable is ignored.
     }
 
     auto res = StorageMySQL::create(

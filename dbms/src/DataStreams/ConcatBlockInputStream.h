@@ -24,6 +24,9 @@ public:
 
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
+    /// We call readSuffix prematurely by ourself. Suppress default behaviour.
+    void readSuffix() override {}
+
 protected:
     Block readImpl() override
     {
