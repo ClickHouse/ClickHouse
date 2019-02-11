@@ -1,3 +1,19 @@
+## Fixed in ClickHouse Release 18.12.13, 2018-09-10
+
+### CVE-2018-14672
+
+Functions for loading CatBoost models allowed path traversal and reading arbitrary files through error messages.
+
+Credits: Andrey Krasichkov of Yandex Information Security Team
+
+## Fixed in ClickHouse Release 18.10.3, 2018-08-13
+
+### CVE-2018-14671
+
+unixODBC allowed loading arbitrary shared objects from the file system which led to a Remote Code Execution vulnerability.
+
+Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Team
+
 ## Fixed in ClickHouse Release 1.1.54388, 2018-06-28
 
 ### CVE-2018-14668
@@ -19,21 +35,5 @@ Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Tea
 Incorrect configuration in deb package could lead to unauthorized use of the database.
 
 Credits: the UK's National Cyber Security Centre (NCSC)
-
-## Fixed in ClickHouse Release 18.6.0, 2018-08-02
-
-### CVE-2018-14671
-
-unixODBC allowed loading arbitrary shared objects from the file system which led to a Remote Code Execution vulnerability.
-
-Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Team
-
-## Fixed in ClickHouse Release 18.12.13, 2018-09-10
-
-### CVE-2018-14672
-
-Functions for loading CatBoost models allowed path traversal and reading arbitrary files through error messages.
-
-Credits: Andrey Krasichkov of Yandex Information Security Team
 
 [Original article](https://clickhouse.yandex/docs/en/security_changelog/) <!--hide-->
