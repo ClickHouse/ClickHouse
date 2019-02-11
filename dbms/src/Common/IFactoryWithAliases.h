@@ -130,9 +130,10 @@ private:
 
     /**
       * prompter for names, if a person makes a typo for some function or type, it
-      * helps to find best possible match (in particular, edit distance is one or two symbols)
+      * helps to find best possible match (in particular, edit distance is done like in clang
+      * (max edit distance is (typo.size() + 2) / 3)
       */
-    NamePrompter</*MistakeFactor=*/2, /*MaxNumHints=*/2> prompter;
+    NamePrompter</*MaxNumHints=*/2> prompter;
 };
 
 }

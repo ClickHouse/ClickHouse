@@ -2,20 +2,20 @@
 
 ## CPU
 
-In case of installation from prebuilt deb-packages use CPU with x86_64 architecture and SSE 4.2 instructions support. To run ClickHouse with processors than does not support SSE 4.2 or has AArch64 or PowerPC64LE architecture, you should build ClickHouse from sources.
+For installation from prebuilt deb packages, use a CPU with x86_64 architecture and support for SSE 4.2 instructions. To run ClickHouse with processors than do not support SSE 4.2 or have AArch64 or PowerPC64LE architecture, you should build ClickHouse from sources.
 
-ClickHouse implements parallel data processing and uses all the hardware resources available. When choosing a processor, take into account that ClickHouse works more efficient at configurations with a large number of cores but lower clock rate than at configurations with fewer cores and a higher clock rate. For example, 16 cores with 2600 MHz is preferable than 8 cores with 3600 MHz.
+ClickHouse implements parallel data processing and uses all the hardware resources available. When choosing a processor, take into account that ClickHouse works more efficiently at configurations with a large number of cores but a lower clock rate than at configurations with fewer cores and a higher clock rate. For example, 16 cores with 2600 MHz is preferable to 8 cores with 3600 MHz.
 
 Use of **Turbo Boost** and **hyper-threading** technologies is recommended. It significantly improves performance with a typical load.
 
 ## RAM
 
-We recommend to use 4GB of RAM as minimum to be able to perform non-trivial queries. The ClickHouse server can run with a much smaller amount of RAM, but it requires memory for queries processing.
+We recommend to use a minimum of 4GB of RAM in order to perform non-trivial queries. The ClickHouse server can run with a much smaller amount of RAM, but it requires memory for processing queries.
 
 The required volume of RAM depends on:
 
  - The complexity of queries.
- - Amount of the data, that processed in queries.
+ - The amount of data that is processed in queries.
 
 To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](../query_language/select.md#select-group-by-clause), [DISTINCT](../query_language/select.md#select-distinct), [JOIN](../query_language/select.md#select-join) and other operations you use.
 
@@ -31,24 +31,24 @@ You need to have 2GB of free disk space to install ClickHouse.
 
 The volume of storage required for your data should be calculated separately. Assessment should include:
 
-- Estimation of a data volume.
+- Estimation of the data volume.
 
-    You can take the sample of the data and get an average size of a row from it. Then multiply the value with a number of rows you plan to store.
+    You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
 
-- Data compression coefficient.
+- The data compression coefficient.
 
-    To estimate the data compression coefficient, load some sample of your data into ClickHouse and compare the actual size of the data with the size of the table stored. For example, clickstream data are usually compressed by 6-10 times.
+    To estimate the data compression coefficient, load a sample of your data into ClickHouse and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
 
-To calculate the final volume of data to be stored, apply the compression coefficient to the estimated data volume. If you plan to store data in several replicas, then multiply estimated volume with the number of replicas.
+To calculate the final volume of data to be stored, apply the compression coefficient to the estimated data volume. If you plan to store data in several replicas, then multiply the estimated volume by the number of replicas.
 
 ## Network
 
-If possible, use networks of 10G of higher class.
+If possible, use networks of 10G or higher class.
 
-A bandwidth of the network is critical for processing of distributed queries with a large amount of intermediate data. Also, network speed affects replication processes.
+The network bandwidth is critical for processing distributed queries with a large amount of intermediate data. In addition, network speed affects replication processes.
 
 ## Software
 
-ClickHouse is developed for Linux family of operating systems. The recommended Linux distribution is Ubuntu. The `tzdata` package should be installed in the system.
+ClickHouse is developed for the Linux family of operating systems. The recommended Linux distribution is Ubuntu. The `tzdata` package should be installed in the system.
 
-ClickHouse also can work in other families of operating systems. See details in [Getting started](../getting_started/index.md) section of the documentation.
+ClickHouse can also work in other operating system families. See details in the [Getting started](../getting_started/index.md) section of the documentation.
