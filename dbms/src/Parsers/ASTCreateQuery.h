@@ -90,6 +90,7 @@ public:
     IAST * primary_key = nullptr;
     ASTKeyValueFunction * lifetime;
     ASTKeyValueFunction * layout;
+    ASTKeyValueFunction * range;
 
     String getID(char delimiter) const override;
 

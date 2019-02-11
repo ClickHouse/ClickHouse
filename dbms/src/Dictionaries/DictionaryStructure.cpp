@@ -450,7 +450,7 @@ void addLayoutFieldsFromAST(
     Poco::AutoPtr<Poco::XML::Element> root,
     const ASTCreateQuery & create)
 {
-    const auto * layout = create.dictionary_source;
+    const auto * layout = create.dictionary_source->layout;
     if (layout == nullptr)
         throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout is empty", ErrorCodes::BAD_ARGUMENTS);
 
@@ -513,6 +513,40 @@ void addAdditionalColumnFields(
 }
 
 
+void addRangeFieldsFromAST(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const ASTKeyValueFunction * range)
+{
+    const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(range->children.at(0).get());
+    if (expr_list->children.size() != 2)
+        throw Exception("Number of arguments of RANGE() other than 2", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
+    for (size_t index = 0; index != expr_list->children.size(); ++index)
+    {
+        const auto * child = expr_list->children.at(index).get();
+        const ASTPair * pair = typeid_cast<const ASTPair *>(child);
+        Poco::AutoPtr<Poco::XML::Element> name = doc->createElement("name");
+        name->appendChild(doc->createTextNode(queryToString(pair->second)));
+
+        if (pair->first == "min")
+        {
+            Poco::AutoPtr<Poco::XML::Element> range_min_element = doc->createElement("range_min");
+            range_min_element->appendChild(name);
+            root->appendChild(range_min_element);
+        }
+        else if (pair->first == "max")
+        {
+            Poco::AutoPtr<Poco::XML::Element> range_max_element = doc->createElement("range_max");
+            range_max_element->appendChild(name);
+            root->appendChild(range_max_element);
+        }
+        else
+            throw Exception("Key of argument should be either MIN or MAX", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+    }
+}
+
+
 void addStructureFieldsFromAST(
     Poco::AutoPtr<Poco::XML::Document> doc,
     Poco::AutoPtr<Poco::XML::Element> root,
@@ -541,6 +575,9 @@ void addStructureFieldsFromAST(
 
     if (create.columns_list == nullptr)
         throw Exception("Can't construct configuration without columns declaration", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
+    if (source->range)
+        addRangeFieldsFromAST(doc, structure_element, source->range);
 
     const ASTExpressionList * columns = create.columns_list->columns;
     for (size_t index = 0; index != columns->children.size(); ++index)

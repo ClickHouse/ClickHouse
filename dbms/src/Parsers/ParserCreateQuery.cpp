@@ -543,6 +543,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword primary_key_keyword("PRIMARY KEY");
     ParserKeyword source_keyword("SOURCE");
     ParserKeyword lifetime_keyword("LIFETIME");
+    ParserKeyword range_keyword("RANGE");
     ParserKeyword layout_keyword("LAYOUT");
     ParserKeyValueFunction key_value_pairs_p;
     ParserExpressionList expression_parser(false);
@@ -551,6 +552,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr ast_source;
     ASTPtr ast_lifetime;
     ASTPtr ast_layout;
+    ASTPtr ast_range;
 
     if (primary_key_keyword.ignore(pos))
         expression_parser.parse(pos, primary_key, expected);
@@ -578,6 +580,13 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             continue;
         }
 
+        if (!ast_range && range_keyword.check_without_moving(pos, expected))
+        {
+            if (!key_value_pairs_p.parse(pos, ast_range, expected))
+                return false;
+            continue;
+        }
+
         break;
     }
 
@@ -594,6 +603,9 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (ast_layout)
         query->set(query->layout, ast_layout);
+
+    if (ast_range)
+        query->set(query->range, ast_range);
 
     return true;
 }

@@ -28,6 +28,9 @@ ASTPtr ASTDictionarySource::clone() const
     if (layout)
         res->set(res->layout, layout->clone());
 
+    if (range)
+        res->set(res->range, range->clone());
+
     return res;
 }
 
@@ -58,6 +61,12 @@ void ASTDictionarySource::formatImpl(const FormatSettings & settings,
     {
         settings.ostr << settings.nl_or_ws;
         layout->formatImpl(settings, state, frame);
+    }
+
+    if (range)
+    {
+        settings.ostr << settings.nl_or_ws;
+        range->formatImpl(settings, state, frame);
     }
 }
 
