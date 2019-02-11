@@ -25,7 +25,7 @@ public:
 private:
     StorageKafka & storage;
     Context context;
-    size_t max_block_size;
+    UInt64 max_block_size;
 
     ConsumerPtr consumer;
     std::unique_ptr<DelimitedReadBuffer> buffer;
