@@ -109,7 +109,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
@@ -121,8 +121,8 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
-
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+    CancellationCode killMutation(const String & mutation_id) override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
