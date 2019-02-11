@@ -55,7 +55,8 @@ public:
 
     /// ctor for Decimals
     AggregateFunctionAvg(const IDataType & data_type)
-        : scale(getDecimalScale(data_type))
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>({data_type}, {})
+        , scale(getDecimalScale(data_type))
     {}
 
     String getName() const override { return "avg"; }
