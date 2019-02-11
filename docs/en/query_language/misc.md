@@ -242,7 +242,7 @@ Prints a table containing the columns:
 
 **query_id** – The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
 
-This query is identical to: `SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format]`.
+This query is nearly identical to: `SELECT * FROM system.processes`. The difference is that the `SHOW PROCESSLIST` query does not show itself in a list, when the `SELECT .. FROM system.processes` query does.
 
 Tip (execute in the console):
 
