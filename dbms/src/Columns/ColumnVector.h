@@ -174,7 +174,7 @@ public:
         return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void reserve(size_t n) override
     {
@@ -221,12 +221,12 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+    ColumnPtr permute(const IColumn::Permutation & perm, UInt64 limit) const override;
 
-    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
@@ -273,7 +273,7 @@ protected:
 
 template <typename T>
 template <typename Type>
-ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
 {
     size_t size = indexes.size();
 

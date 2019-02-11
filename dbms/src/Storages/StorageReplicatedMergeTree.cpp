@@ -38,7 +38,6 @@
 #include <Common/Macros.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/formatReadable.h>
-#include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
@@ -2920,7 +2919,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams)
 {
     const Settings & settings = context.getSettingsRef();

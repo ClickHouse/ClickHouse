@@ -52,7 +52,7 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
     }
 }
 
-void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, UInt64 limit)
 {
     if (*pos >= block.rows())
         throw Exception(

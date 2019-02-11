@@ -1106,7 +1106,7 @@ class NonJoinedBlockInputStream : public IBlockInputStream
 {
 public:
     NonJoinedBlockInputStream(const Join & parent_, const Block & left_sample_block, const Names & key_names_left,
-                              const NamesAndTypesList & columns_added_by_join, size_t max_block_size_)
+                              const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size_)
         : parent(parent_), max_block_size(max_block_size_)
     {
         /** left_sample_block contains keys and "left" columns.
@@ -1183,7 +1183,7 @@ protected:
 
 private:
     const Join & parent;
-    size_t max_block_size;
+    UInt64 max_block_size;
 
     Block result_sample_block;
     /// Indices of columns in result_sample_block that come from the left-side table (except key columns).
@@ -1334,7 +1334,7 @@ private:
 
 
 BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
-                                                        const NamesAndTypesList & columns_added_by_join, size_t max_block_size) const
+                                                        const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const
 {
     return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, key_names_left, columns_added_by_join, max_block_size);
 }
