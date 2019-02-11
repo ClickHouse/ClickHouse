@@ -361,8 +361,11 @@ services:
         cap_add:
             - SYS_PTRACE
         depends_on: {depends_on}
+        user: '{user}'
         env_file:
             - {env_file}
+        security_opt:
+            - label:disable
         {networks}
             {app_net}
                 {ipv4_address}
@@ -669,6 +672,7 @@ class ClickHouseInstance:
                 db_dir=db_dir,
                 logs_dir=logs_dir,
                 depends_on=str(depends_on),
+                user=os.getuid(),
                 env_file=env_file,
                 odbc_ini_path=odbc_ini_path,
                 entrypoint_cmd=entrypoint_cmd,
