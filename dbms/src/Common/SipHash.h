@@ -200,8 +200,6 @@ std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_
     return hash.get64();
 }
 
-#include <string>
-
 inline UInt64 sipHash64(const std::string & s)
 {
     return sipHash64(s.data(), s.size());

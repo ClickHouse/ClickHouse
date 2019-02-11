@@ -10,8 +10,10 @@ namespace DB
 struct FindIdentifierBestTableData
 {
     using TypeToVisit = ASTIdentifier;
+    using IdentifierWithTable = std::pair<ASTIdentifier *, const DatabaseAndTableWithAlias *>;
+
     const std::vector<DatabaseAndTableWithAlias> & tables;
-    std::vector<std::pair<ASTIdentifier *, const DatabaseAndTableWithAlias *>> identifier_table;
+    std::vector<IdentifierWithTable> identifier_table;
 
     FindIdentifierBestTableData(const std::vector<DatabaseAndTableWithAlias> & tables_);
 

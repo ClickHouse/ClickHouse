@@ -1,6 +1,6 @@
 # UUID {#uuid-data-type}
 
-Universally unique identifier (UUID) is a 16-byte number used to identify the records. For detailed information about the UUID, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+A universally unique identifier (UUID) is a 16-byte number used to identify records. For detailed information about the UUID, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
 The example of UUID type value is represented below: 
 
@@ -55,6 +55,6 @@ In this example, the UUID column value is not specified when inserting a new rec
 
 The UUID data type only supports functions which [String](string.md) data type also supports (for example, [min](../query_language/agg_functions/reference.md#agg_function-min), [max](../query_language/agg_functions/reference.md#agg_function-max), and [count](../query_language/agg_functions/reference.md#agg_function-count)).
 
-The UUID data type is not supported by arithmetic operations (for example, [abs](../query_language/functions/arithmetic_functions.md#arithm_func-abs)) neither aggregate functions, such as [sum](../query_language/agg_functions/reference.md#agg_function-sum) and [avg](../query_language/agg_functions/reference.md#agg_function-avg).
+The UUID data type is not supported by arithmetic operations (for example, [abs](../query_language/functions/arithmetic_functions.md#arithm_func-abs)) or aggregate functions, such as [sum](../query_language/agg_functions/reference.md#agg_function-sum) and [avg](../query_language/agg_functions/reference.md#agg_function-avg).
 
 [Original article](https://clickhouse.yandex/docs/en/data_types/uuid/) <!--hide-->

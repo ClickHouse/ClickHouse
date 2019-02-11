@@ -33,6 +33,7 @@ public:
     Exception * clone() const override { return new Exception(*this); }
     void rethrow() const override { throw *this; }
     const char * name() const throw() override { return "DB::Exception"; }
+    const char * what() const throw() override { return message().data(); }
 
     /// Add something to the existing message.
     void addMessage(const std::string & arg) { extendedMessage(arg); }

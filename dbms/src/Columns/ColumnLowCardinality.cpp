@@ -250,7 +250,7 @@ int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
 }
 
-void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnLowCardinality::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const
 {
     if (limit == 0)
         limit = size();
@@ -343,7 +343,7 @@ void ColumnLowCardinality::compactIfSharedDictionary()
 
 
 ColumnLowCardinality::DictionaryEncodedColumn
-ColumnLowCardinality::getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const
+ColumnLowCardinality::getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const
 {
     MutableColumnPtr sub_indexes = (*std::move(idx.getPositions()->cut(offset, limit))).mutate();
     auto indexes_map = mapUniqueIndex(*sub_indexes);
@@ -527,7 +527,7 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
     checkSizeOfType();
 }
 
-void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, size_t offset, size_t limit)
+void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit)
 {
     auto insertForType = [&](auto type)
     {
@@ -550,10 +550,10 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, s
                 auto & positions_data = getPositionsData<CurIndexType>();
                 const auto & column_data = column_ptr->getData();
 
-                size_t size = positions_data.size();
+                UInt64 size = positions_data.size();
                 positions_data.resize(size + limit);
 
-                for (size_t i = 0; i < limit; ++i)
+                for (UInt64 i = 0; i < limit; ++i)
                     positions_data[size + i] = column_data[offset + i];
             };
 

@@ -7,9 +7,9 @@ assignees: ''
 
 ---
 
-(you don't have to follow this form)
+(you don't have to strictly follow this form)
 
-**Use case.**
+**Use case**
 A clear and concise description of what is the intended usage scenario is.
 
 **Describe the solution you'd like**

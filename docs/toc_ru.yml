@@ -40,6 +40,7 @@ nav:
   - 'Булевы значения': 'data_types/boolean.md'
   - 'String': 'data_types/string.md'
   - 'FixedString(N)': 'data_types/fixedstring.md'
+  - 'UUID': 'data_types/uuid.md'
   - 'Date': 'data_types/date.md'
   - 'DateTime': 'data_types/datetime.md'
   - 'Enum': 'data_types/enum.md'
@@ -68,8 +69,8 @@ nav:
     - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
     - 'VersionedCollapsingMergeTree': 'operations/table_engines/versionedcollapsingmergetree.md'
     - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
-  - 'Log Family':
-    - 'Introduction': 'operations/table_engines/log_family.md'
+  - 'Семейство Log':
+    - 'Введение': 'operations/table_engines/log_family.md'
     - 'StripeLog': 'operations/table_engines/stripelog.md'
     - 'Log': 'operations/table_engines/log.md'
     - 'TinyLog': 'operations/table_engines/tinylog.md'
@@ -116,6 +117,7 @@ nav:
     - 'Битовые функции': 'query_language/functions/bit_functions.md'
     - 'Функции хэширования': 'query_language/functions/hash_functions.md'
     - 'Функции генерации псевдослучайных чисел': 'query_language/functions/random_functions.md'
+    - 'Функции для работы с UUID': 'query_language/functions/uuid_functions.md'
     - 'Функции кодирования': 'query_language/functions/encoding_functions.md'
     - 'Функции для работы с URL': 'query_language/functions/url_functions.md'
     - 'Функции для работы с IP-адресами': 'query_language/functions/ip_address_functions.md'
