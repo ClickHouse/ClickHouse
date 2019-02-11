@@ -205,6 +205,8 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
     }
+
+    __builtin_unreachable();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -216,6 +218,8 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
     }
+
+    __builtin_unreachable();
 }
 
 template <typename T>

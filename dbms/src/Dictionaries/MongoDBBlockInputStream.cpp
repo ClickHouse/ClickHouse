@@ -33,7 +33,7 @@ MongoDBBlockInputStream::MongoDBBlockInputStream(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
-    const size_t max_block_size)
+    const UInt64 max_block_size)
     : connection(connection_), cursor{std::move(cursor_)}, max_block_size{max_block_size}
 {
     description.init(sample_block);

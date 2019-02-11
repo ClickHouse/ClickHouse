@@ -1,4 +1,5 @@
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnsCommon.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
@@ -6,7 +7,6 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <Columns/ColumnsCommon.h>
 
 
 namespace DB
@@ -182,7 +182,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 }
 
 
-ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, UInt64 limit) const
 {
     size_t size = data.size();
 
@@ -203,13 +203,13 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
     return res;
 }
 
-ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, UInt64 limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename Type>
-ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
 {
     auto res = createView();
 

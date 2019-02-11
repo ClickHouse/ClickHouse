@@ -2,9 +2,9 @@
 
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
+#include <Core/Types.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <Core/Types.h>
 #include <IO/VarInt.h>
 
 
