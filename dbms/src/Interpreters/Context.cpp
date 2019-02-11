@@ -5,7 +5,6 @@
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
-#include <common/logger_useful.h>
 #include <pcg_random.hpp>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
@@ -1698,7 +1697,7 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const
+BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
 {
     return FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size);
 }
@@ -1868,7 +1867,7 @@ SessionCleaner::~SessionCleaner()
 
 void SessionCleaner::run()
 {
-    setThreadName("HTTPSessionCleaner");
+    setThreadName("SessionCleaner");
 
     std::unique_lock lock{mutex};
 

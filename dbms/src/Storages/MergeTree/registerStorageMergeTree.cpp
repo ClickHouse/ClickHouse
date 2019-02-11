@@ -3,7 +3,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
-#include <Storages/MergeTree/MergeTreeUniqueIndex.h>
+#include <Storages/MergeTree/MergeTreeSetSkippingIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -579,7 +579,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
             for (const auto & index : args.query.columns_list->indices->children)
                 indices_description.indices.push_back(
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->ptr()));
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
 
         storage_settings.loadFromQuery(*args.storage_def);
     }
@@ -624,14 +624,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
-static void registerMergeTreeSkipIndices()
-{
-    auto & factory = MergeTreeIndexFactory::instance();
-    factory.registerIndex("minmax", MergeTreeMinMaxIndexCreator);
-    factory.registerIndex("unique", MergeTreeUniqueIndexCreator);
-}
-
-
 void registerStorageMergeTree(StorageFactory & factory)
 {
     factory.registerStorage("MergeTree", create);
@@ -649,8 +641,6 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create);
-
-    registerMergeTreeSkipIndices();
 }
 
 }

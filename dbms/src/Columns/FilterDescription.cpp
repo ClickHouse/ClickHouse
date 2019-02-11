@@ -1,6 +1,5 @@
-#include <Columns/FilterDescription.h>
-
 #include <Common/typeid_cast.h>
+#include <Columns/FilterDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>

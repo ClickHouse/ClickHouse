@@ -16,7 +16,7 @@ namespace ErrorCodes
 MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
     const MergeTreeData & storage_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
-    size_t max_block_size_rows_,
+    UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     Names column_names,

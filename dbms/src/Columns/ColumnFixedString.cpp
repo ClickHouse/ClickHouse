@@ -112,7 +112,7 @@ struct ColumnFixedString::less
     }
 };
 
-void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnFixedString::getPermutation(bool reverse, UInt64 limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = size();
     res.resize(s);
@@ -231,7 +231,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
-ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnFixedString::permute(const Permutation & perm, UInt64 limit) const
 {
     size_t col_size = size();
 
@@ -260,14 +260,14 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
 }
 
 
-ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnFixedString::index(const IColumn & indexes, UInt64 limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 
 template <typename Type>
-ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
 {
     if (limit == 0)
         return ColumnFixedString::create(n);

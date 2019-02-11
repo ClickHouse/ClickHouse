@@ -8,7 +8,6 @@
 #include <unordered_map>
 #include <shared_mutex>
 #include <Poco/Condition.h>
-#include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
 #include <Common/Stopwatch.h>
@@ -19,6 +18,7 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/CancellationCode.h>
 #include <DataStreams/BlockIO.h>
 
 
@@ -68,15 +68,6 @@ struct QueryStatusInfo
     std::vector<UInt32> thread_numbers;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
-};
-
-enum class CancellationCode
-{
-    NotFound = 0,                     /// already cancelled
-    QueryIsNotInitializedYet = 1,
-    CancelCannotBeSent = 2,
-    CancelSent = 3,
-    Unknown
 };
 
 /// Query and information about its execution.

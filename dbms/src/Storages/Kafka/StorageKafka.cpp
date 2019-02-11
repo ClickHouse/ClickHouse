@@ -73,7 +73,7 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, char row_delimiter_, const String & schema_name_,
-    size_t num_consumers_, size_t max_block_size_, size_t skip_broken_)
+    size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken_)
     : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), global_context(context_),
     topics(global_context.getMacros()->expand(topics_)),
@@ -552,7 +552,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         // Parse max block size (optional)
-        size_t max_block_size = 0;
+        UInt64 max_block_size = 0;
         if (args_count >= 8)
         {
             auto ast = typeid_cast<const ASTLiteral *>(engine_args[7].get());

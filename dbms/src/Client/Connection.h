@@ -1,7 +1,5 @@
 #pragma once
 
-#include <optional>
-
 #include <common/logger_useful.h>
 
 #include <Poco/Net/StreamSocket.h>
@@ -120,6 +118,12 @@ public:
     const String & getHost() const;
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
+
+    /// For proper polling.
+    inline const auto & getTimeouts() const
+    {
+        return timeouts;
+    }
 
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
