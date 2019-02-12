@@ -110,22 +110,20 @@ public:
     void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const override
     {
         size_t rows_num = block.rows();
-        std::cout << "\n\nROWS NUM: " << rows_num << "\n\n";
         std::vector<Float64> results(rows_num, bias);
-
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             ColumnPtr cur_col = block.getByPosition(arguments[i]).column;
             for (size_t row_num = 0; row_num != rows_num; ++row_num)
             {
+
                 const auto &element = (*cur_col)[row_num];
                 if (element.getType() != Field::Types::Float64)
                     throw Exception("Prediction arguments must be values of type Float",
                                     ErrorCodes::BAD_ARGUMENTS);
 
-                results[row_num] += weights[row_num] * element.get<Float64>();
-                //            predict_features[i - 1] = element.get<Float64>();
+                results[row_num] += weights[i - 1] * element.get<Float64>();
             }
         }
 
@@ -133,9 +131,6 @@ public:
         {
             container.emplace_back(results[row_num]);
         }
-//        column.getData().push_back(this->data(place).predict(predict_features));
-//        column.getData().push_back(this->data(place).predict_for_all());
-//        this->data(place).predict_for_all(column.getData(), block, arguments);
     }
 };
 
@@ -183,6 +178,7 @@ public:
     }
     void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const override
     {
+        // TODO
         std::ignore = container;
         std::ignore = block;
         std::ignore = arguments;
@@ -417,17 +413,15 @@ public:
         this->data(place).read(buf);
     }
 
-    void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, size_t row_num, const ColumnNumbers & arguments) const
+    void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments) const
     {
-        std::ignore = row_num;
-        std::cout << "\n\n IM CALLED \n\n";
-
         if (arguments.size() != param_num + 1)
             throw Exception("Predict got incorrect number of arguments. Got: " + std::to_string(arguments.size()) + ". Required: " + std::to_string(param_num + 1),
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
 
+        /// Так делали с одним предиктом, пока пусть побудет тут
 //        std::vector<Float64> predict_features(arguments.size() - 1);
 //        for (size_t i = 1; i < arguments.size(); ++i)
 //        {
