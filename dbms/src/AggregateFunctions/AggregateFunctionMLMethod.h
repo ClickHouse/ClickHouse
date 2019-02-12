@@ -60,6 +60,7 @@ public:
         return batch_gradient;
     }
     virtual Float64 predict(const std::vector<Float64> & predict_feature, const std::vector<Float64> & weights, Float64 bias) const = 0;
+    virtual void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const = 0;
 
 protected:
     std::vector<Float64> batch_gradient;  // gradient for bias lies in batch_gradient[batch_gradient.size() - 1]
@@ -106,6 +107,31 @@ public:
 
         return res;
     }
+    void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const override
+    {
+        size_t rows_num = block.rows();
+        std::vector<Float64> results(rows_num, bias);
+
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            ColumnPtr cur_col = block.getByPosition(arguments[i]).column;
+            for (size_t row_num = 0; row_num != rows_num; ++row_num)
+            {
+
+                const auto &element = (*cur_col)[row_num];
+                if (element.getType() != Field::Types::Float64)
+                    throw Exception("Prediction arguments must be values of type Float",
+                                    ErrorCodes::BAD_ARGUMENTS);
+
+                results[row_num] += weights[i - 1] * element.get<Float64>();
+            }
+        }
+
+        for (size_t row_num = 0; row_num != rows_num; ++row_num)
+        {
+            container.emplace_back(results[row_num]);
+        }
+    }
 };
 
 class LogisticRegression : public IGradientComputer
@@ -149,6 +175,15 @@ public:
         res += bias;
         res = 1 / (1 + exp(-res));
         return res;
+    }
+    void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const override
+    {
+        // TODO
+        std::ignore = container;
+        std::ignore = block;
+        std::ignore = arguments;
+        std::ignore = weights;
+        std::ignore = bias;
     }
 };
 
@@ -294,6 +329,10 @@ public:
 
         return gradient_computer->predict(predict_feature, weights, bias);
     }
+    void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments) const
+    {
+        gradient_computer->predict_for_all(container, block, arguments, weights, bias);
+    }
 
 private:
     std::vector<Float64> weights;
@@ -374,7 +413,7 @@ public:
         this->data(place).read(buf);
     }
 
-    void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, size_t row_num, const ColumnNumbers & arguments) const
+    void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments) const
     {
         if (arguments.size() != param_num + 1)
             throw Exception("Predict got incorrect number of arguments. Got: " + std::to_string(arguments.size()) + ". Required: " + std::to_string(param_num + 1),
@@ -382,17 +421,20 @@ public:
 
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
 
-        std::vector<Float64> predict_features(arguments.size() - 1);
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            const auto& element = (*block.getByPosition(arguments[i]).column)[row_num];
-            if (element.getType() != Field::Types::Float64)
-                throw Exception("Prediction arguments must be values of type Float",
-                        ErrorCodes::BAD_ARGUMENTS);
-
-            predict_features[i - 1] = element.get<Float64>();
-        }
-        column.getData().push_back(this->data(place).predict(predict_features));
+        /// Так делали с одним предиктом, пока пусть побудет тут
+//        std::vector<Float64> predict_features(arguments.size() - 1);
+//        for (size_t i = 1; i < arguments.size(); ++i)
+//        {
+//            const auto& element = (*block.getByPosition(arguments[i]).column)[row_num];
+//            if (element.getType() != Field::Types::Float64)
+//                throw Exception("Prediction arguments must be values of type Float",
+//                        ErrorCodes::BAD_ARGUMENTS);
+//
+////            predict_features[i - 1] = element.get<Float64>();
+//        }
+//        column.getData().push_back(this->data(place).predict(predict_features));
+//        column.getData().push_back(this->data(place).predict_for_all());
+        this->data(place).predict_for_all(column.getData(), block, arguments);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

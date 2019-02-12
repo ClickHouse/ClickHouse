@@ -35,9 +35,9 @@ void ColumnAggregateFunction::addArena(ArenaPtr arena_)
     arenas.push_back(arena_);
 }
 
-bool ColumnAggregateFunction::convertion(MutableColumnPtr* res_) const
+bool ColumnAggregateFunction::convertion(MutableColumnPtr *res_) const
 {
-    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+    if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
     {
         auto res = createView();
         res->set(function_state->getNestedFunction());
@@ -108,23 +108,14 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
 
 MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments) const
 {
-//    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
-//    {
-//        auto res = createView();
-//        res->set(function_state->getNestedFunction());
-//        res->data.assign(data.begin(), data.end());
-//        return res;
-//    }
-//
-//    MutableColumnPtr res = func->getReturnType()->createColumn();
-//    res->reserve(data.size());
     MutableColumnPtr res;
     if (convertion(&res))
     {
         return res;
     }
 
-//    auto ML_function = typeid_cast<AggregateFunctionMLMethod<LinearRegressionData, NameLinearRegression> *>(func.get());
+    /// На моих тестах дважды в эту функцию приходит нечтно, имеющее data.size() == 0 однако оно по сути ничего не делает в следующих строках
+
     auto ML_function_Linear = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLinearRegression> *>(func.get());
     auto ML_function_Logistic = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression> *>(func.get());
     if (ML_function_Linear)
@@ -132,15 +123,16 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
         size_t row_num = 0;
         for (auto val : data)
         {
-            ML_function_Linear->predictResultInto(val, *res, block, row_num, arguments);
+            ML_function_Linear->predictResultInto(val, *res, block, arguments);
             ++row_num;
         }
+
     } else if (ML_function_Logistic)
     {
         size_t row_num = 0;
         for (auto val : data)
         {
-            ML_function_Logistic->predictResultInto(val, *res, block, row_num, arguments);
+            ML_function_Logistic->predictResultInto(val, *res, block, arguments);
             ++row_num;
         }
     } else 
