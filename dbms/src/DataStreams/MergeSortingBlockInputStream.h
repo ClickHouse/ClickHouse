@@ -30,7 +30,7 @@ class MergeSortingBlocksBlockInputStream : public IBlockInputStream
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlocksBlockInputStream(Blocks & blocks_, SortDescription & description_,
-        size_t max_merged_block_size_, size_t limit_ = 0);
+        size_t max_merged_block_size_, UInt64 limit_ = 0);
 
     String getName() const override { return "MergeSortingBlocks"; }
 
@@ -47,7 +47,7 @@ private:
     Block header;
     SortDescription description;
     size_t max_merged_block_size;
-    size_t limit;
+    UInt64 limit;
     size_t total_merged_rows = 0;
 
     using CursorImpls = std::vector<SortCursorImpl>;
@@ -71,7 +71,7 @@ class MergeSortingBlockInputStream : public IBlockInputStream
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_,
-        size_t max_merged_block_size_, size_t limit_,
+        size_t max_merged_block_size_, UInt64 limit_,
         size_t max_bytes_before_remerge_,
         size_t max_bytes_before_external_sort_, const std::string & tmp_path_);
 
@@ -88,7 +88,7 @@ protected:
 private:
     SortDescription description;
     size_t max_merged_block_size;
-    size_t limit;
+    UInt64 limit;
 
     size_t max_bytes_before_remerge;
     size_t max_bytes_before_external_sort;

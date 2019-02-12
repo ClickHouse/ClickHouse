@@ -34,8 +34,7 @@ static inline bool typeIsSigned(const IDataType & type)
 {
     return typeIsEither<
         DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64,
-        DataTypeFloat32, DataTypeFloat64,
-        DataTypeDate, DataTypeDateTime, DataTypeInterval
+        DataTypeFloat32, DataTypeFloat64, DataTypeInterval
     >(type);
 }
 

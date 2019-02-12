@@ -109,11 +109,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     size_t columns = block.columns();
     if (columns == 1)
     {
-        if (typeid_cast<const DataTypeAggregateFunction*>(block.safeGetByPosition(0).type.get()))
-        {
-            throw Exception("Scalar subquery can't return an aggregate function state", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-        }
-
         auto lit = std::make_unique<ASTLiteral>((*block.safeGetByPosition(0).column)[0]);
         lit->alias = subquery.alias;
         lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
@@ -132,11 +127,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         exp_list->children.resize(columns);
         for (size_t i = 0; i < columns; ++i)
         {
-            if (typeid_cast<const DataTypeAggregateFunction*>(block.safeGetByPosition(i).type.get()))
-            {
-                throw Exception("Scalar subquery can't return an aggregate function state", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-            }
-
             exp_list->children[i] = addTypeConversion(
                 std::make_unique<ASTLiteral>((*block.safeGetByPosition(i).column)[0]),
                 block.safeGetByPosition(i).type->getName());

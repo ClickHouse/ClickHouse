@@ -337,14 +337,19 @@ void DatabaseOrdinary::removeTable(
 
 static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true)
 {
-    if (!Poco::File(metadata_path).exists())
-        return nullptr;
-
     String query;
 
+    try
     {
         ReadBufferFromFile in(metadata_path, 4096);
         readStringUntilEOF(query, in);
+    }
+    catch (const Exception & e)
+    {
+        if (!throw_on_error && e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            return nullptr;
+        else
+            throw;
     }
 
     ParserCreateQuery parser;

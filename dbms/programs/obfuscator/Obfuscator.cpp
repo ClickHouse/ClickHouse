@@ -1037,7 +1037,7 @@ try
 
     Obfuscator obfuscator(header, seed, markov_model_params);
 
-    size_t max_block_size = 8192;
+    UInt64 max_block_size = 8192;
 
     /// Train step
     {
