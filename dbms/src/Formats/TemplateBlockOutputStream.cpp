@@ -1,25 +1,26 @@
-#include <Formats/TemplateRowOutputStream.h>
+#include <Formats/TemplateBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
 
-namespace DB {
+namespace DB
+{
 
-
-namespace ErrorCodes {
+namespace ErrorCodes
+{
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
-TemplateRowOutputStream::TemplateRowOutputStream(WriteBuffer &ostr_, const Block &sample,
+TemplateBlockOutputStream::TemplateBlockOutputStream(WriteBuffer &ostr_, const Block &sample,
         const FormatSettings &settings_, const String& format_template)
-        : ostr(ostr_), settings(settings_)
+        : ostr(ostr_), header(sample), settings(settings_)
 {
-    parseFormatString(format_template, sample);
+    parseFormatString(format_template);
 }
 
 
-void TemplateRowOutputStream::parseFormatString(const String & s, const Block & sample)
+void TemplateBlockOutputStream::parseFormatString(const String & s)
 {
     enum ParserState
     {
@@ -60,14 +61,14 @@ void TemplateRowOutputStream::parseFormatString(const String & s, const Block & 
         case Column:
             if (*pos == ':')
             {
-                size_t column_idx = sample.getPositionByName(String(token_begin, pos - token_begin));
+                size_t column_idx = header.getPositionByName(String(token_begin, pos - token_begin));
                 format_idx_to_column_idx.push_back(column_idx);
                 token_begin = pos + 1;
                 state = Format;
             }
             else if (*pos == '}')
             {
-                size_t column_idx = sample.getPositionByName(String(token_begin, pos - token_begin));
+                size_t column_idx = header.getPositionByName(String(token_begin, pos - token_begin));
                 format_idx_to_column_idx.push_back(column_idx);
                 formats.push_back(ColumnFormat::Default);
                 delimiters.emplace_back();
@@ -94,7 +95,7 @@ void TemplateRowOutputStream::parseFormatString(const String & s, const Block & 
 }
 
 
-TemplateRowOutputStream::ColumnFormat TemplateRowOutputStream::stringToFormat(const String & format)
+TemplateBlockOutputStream::ColumnFormat TemplateBlockOutputStream::stringToFormat(const String & format)
 {
     if (format.empty())
         return ColumnFormat::Default;
@@ -113,12 +114,12 @@ TemplateRowOutputStream::ColumnFormat TemplateRowOutputStream::stringToFormat(co
 
 }
 
-void TemplateRowOutputStream::flush()
+void TemplateBlockOutputStream::flush()
 {
     ostr.next();
 }
 
-void TemplateRowOutputStream::serializeField(const ColumnWithTypeAndName & col, size_t row_num, ColumnFormat format)
+void TemplateBlockOutputStream::serializeField(const ColumnWithTypeAndName & col, size_t row_num, ColumnFormat format)
 {
     switch (format)
     {
@@ -143,27 +144,35 @@ void TemplateRowOutputStream::serializeField(const ColumnWithTypeAndName & col, 
     }
 }
 
-void TemplateRowOutputStream::write(const Block & block, size_t row_num)
-{
-    size_t columns = format_idx_to_column_idx.size();
-    for (size_t i = 0; i < columns; ++i)
-    {
-        writeString(delimiters[i], ostr);
-
-        size_t col_idx = format_idx_to_column_idx[i];
-        const ColumnWithTypeAndName & col = block.getByPosition(col_idx);
-        serializeField(col, row_num, formats[i]);
-    }
-    writeString(delimiters[columns], ostr);
-}
-
 void TemplateBlockOutputStream::write(const Block & block)
 {
     size_t rows = block.rows();
-    for (size_t i = 0; i < rows; ++i)
-        row_output->write(block, i);
+    size_t columns = format_idx_to_column_idx.size();
 
+    for (size_t i = 0; i < rows; ++i)
+    {
+        for (size_t j = 0; j < columns; ++j)
+        {
+            writeString(delimiters[j], ostr);
+
+            size_t col_idx = format_idx_to_column_idx[j];
+            const ColumnWithTypeAndName & col = block.getByPosition(col_idx);
+            serializeField(col, i, formats[j]);
+        }
+        writeString(delimiters[columns], ostr);
+    }
 }
+
+void TemplateBlockOutputStream::writePrefix()
+{
+    // TODO
+}
+
+void TemplateBlockOutputStream::writeSuffix()
+{
+    // TODO
+}
+
 
 void registerOutputFormatTemplate(FormatFactory &factory)
 {
@@ -171,10 +180,10 @@ void registerOutputFormatTemplate(FormatFactory &factory)
             WriteBuffer &buf,
             const Block &sample,
             const Context & context,
-            const FormatSettings &settings) {
+            const FormatSettings &settings)
+    {
         auto format_template = context.getSettingsRef().format_schema.toString();
-        return std::make_shared<TemplateBlockOutputStream>(
-                std::make_shared<TemplateRowOutputStream>(buf, sample, settings, format_template), sample);
+        return std::make_shared<TemplateBlockOutputStream>(buf, sample, settings, format_template);
     });
 }
 }
