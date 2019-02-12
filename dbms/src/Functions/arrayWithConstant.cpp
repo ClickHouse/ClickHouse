@@ -12,7 +12,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
+
+/// Reasonable threshold.
+static constexpr size_t max_arrays_size_in_block = 1000000000;
+
 
 /* arrayWithConstant(num, const) - make array of constants with length num.
  * arrayWithConstant(3, 'hello') = ['hello', 'hello', 'hello']
@@ -54,7 +59,16 @@ public:
         ColumnArray::Offset offset = 0;
         for (size_t i = 0; i < num_rows; ++i)
         {
-            offset += col_num->getUInt(i);
+            auto array_size = col_num->getInt(i);
+
+            if (unlikely(array_size) < 0)
+                throw Exception("Array size cannot be negative: while executing function " + getName(), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
+            offset += array_size;
+
+            if (unlikely(offset > max_arrays_size_in_block))
+                throw Exception("Too large array size while executing function " + getName(), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
             offsets.push_back(offset);
         }
 
