@@ -211,7 +211,7 @@ void StorageMergeTree::alter(
 
     auto table_soft_lock = lockDataForAlter();
 
-    data.checkAlter(params);
+    data.checkAlter(params, context);
 
     auto new_columns = data.getColumns();
     auto new_indices = data.getIndicesDescription();
