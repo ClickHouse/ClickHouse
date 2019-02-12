@@ -1,3 +1,5 @@
+SET enable_optimize_predicate_expression = 1;
+
 DROP TABLE IF EXISTS test.test1;
 DROP TABLE IF EXISTS test.test2;
 DROP TABLE IF EXISTS test.view;
