@@ -250,7 +250,6 @@ void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
                     name = ast->getAliasOrColumnName();
                 }
 
-                IdentifierSemantic::setNeedLongName(*identifier, false);
                 identifier->setShortName(name);
             }
         }
