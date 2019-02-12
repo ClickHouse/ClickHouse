@@ -2,6 +2,7 @@
 #include <Common/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -9,7 +10,6 @@
 #include <IO/Operators.h>
 #include <common/find_symbols.h>
 #include <stdlib.h>
-#include <Common/memcpySmall.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>

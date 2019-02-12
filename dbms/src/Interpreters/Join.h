@@ -8,6 +8,7 @@
 #include <Interpreters/SettingsCommon.h>
 
 #include <Common/Arena.h>
+#include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 
 #include <Columns/ColumnString.h>
@@ -21,148 +22,6 @@
 
 namespace DB
 {
-
-/// Helpers to obtain keys (to use in a hash table or similar data structure) for various equi-JOINs.
-
-/// UInt8/16/32/64 or another types with same number of bits.
-template <typename FieldType>
-struct JoinKeyGetterOneNumber
-{
-    using Key = FieldType;
-
-    const char * vec;
-
-    /** Created before processing of each block.
-      * Initialize some members, used in another methods, called in inner loops.
-      */
-    JoinKeyGetterOneNumber(const ColumnRawPtrs & key_columns)
-    {
-        vec = key_columns[0]->getRawData().data;
-    }
-
-    Key getKey(
-        const ColumnRawPtrs & /*key_columns*/,
-        size_t /*keys_size*/,                 /// number of key columns.
-        size_t i,                             /// row number to get key from.
-        const Sizes & /*key_sizes*/) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
-    {
-        return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
-    }
-
-    /// Place additional data into memory pool, if needed, when new key was inserted into hash table.
-    static void onNewKey(Key & /*key*/, Arena & /*pool*/) {}
-};
-
-/// For single String key.
-struct JoinKeyGetterString
-{
-    using Key = StringRef;
-
-    const IColumn::Offset * offsets;
-    const UInt8 * chars;
-
-    JoinKeyGetterString(const ColumnRawPtrs & key_columns)
-    {
-        const IColumn & column = *key_columns[0];
-        const ColumnString & column_string = static_cast<const ColumnString &>(column);
-        offsets = column_string.getOffsets().data();
-        chars = column_string.getChars().data();
-    }
-
-    Key getKey(
-        const ColumnRawPtrs &,
-        size_t,
-        ssize_t i,
-        const Sizes &) const
-    {
-        return StringRef(
-            chars + offsets[i - 1],
-            offsets[i] - offsets[i - 1] - 1);
-    }
-
-    static void onNewKey(Key & key, Arena & pool)
-    {
-        if (key.size)
-            key.data = pool.insert(key.data, key.size);
-    }
-};
-
-/// For single FixedString key.
-struct JoinKeyGetterFixedString
-{
-    using Key = StringRef;
-
-    size_t n;
-    const ColumnFixedString::Chars * chars;
-
-    JoinKeyGetterFixedString(const ColumnRawPtrs & key_columns)
-    {
-        const IColumn & column = *key_columns[0];
-        const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
-        n = column_string.getN();
-        chars = &column_string.getChars();
-    }
-
-    Key getKey(
-        const ColumnRawPtrs &,
-        size_t,
-        size_t i,
-        const Sizes &) const
-    {
-        return StringRef(&(*chars)[i * n], n);
-    }
-
-    static void onNewKey(Key & key, Arena & pool)
-    {
-        key.data = pool.insert(key.data, key.size);
-    }
-};
-
-/// For keys of fixed size, that could be packed in sizeof TKey width.
-template <typename TKey>
-struct JoinKeyGetterFixed
-{
-    using Key = TKey;
-
-    JoinKeyGetterFixed(const ColumnRawPtrs &)
-    {
-    }
-
-    Key getKey(
-        const ColumnRawPtrs & key_columns,
-        size_t keys_size,
-        size_t i,
-        const Sizes & key_sizes) const
-    {
-        return packFixed<Key>(i, keys_size, key_columns, key_sizes);
-    }
-
-    static void onNewKey(Key &, Arena &) {}
-};
-
-/// Generic method, use crypto hash function.
-struct JoinKeyGetterHashed
-{
-    using Key = UInt128;
-
-    JoinKeyGetterHashed(const ColumnRawPtrs &)
-    {
-    }
-
-    Key getKey(
-        const ColumnRawPtrs & key_columns,
-        size_t keys_size,
-        size_t i,
-        const Sizes &) const
-    {
-        return hash128(i, keys_size, key_columns);
-    }
-
-    static void onNewKey(Key &, Arena &) {}
-};
-
-
-
 /** Data structure for implementation of JOIN.
   * It is just a hash table: keys -> rows of joined ("right") table.
   * Additionally, CROSS JOIN is supported: instead of hash table, it use just set of blocks without keys.
@@ -240,7 +99,7 @@ public:
     /** Join data from the map (that was previously built by calls to insertFromBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, const Names & key_names_left, const NameSet & needed_key_names_right) const;
+    void joinBlock(Block & block, const Names & key_names_left, const NamesAndTypesList & columns_added_by_join) const;
 
     /// Infer the return type for joinGet function
     DataTypePtr joinGetReturnType(const String & column_name) const;
@@ -260,7 +119,8 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left, size_t max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
+                                                      const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const;
@@ -510,7 +370,7 @@ private:
     void joinBlockImpl(
         Block & block,
         const Names & key_names_left,
-        const NameSet & needed_key_names_right,
+        const NamesAndTypesList & columns_added_by_join,
         const Block & block_with_columns_to_add,
         const Maps & maps) const;
 

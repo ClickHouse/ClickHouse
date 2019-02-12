@@ -284,7 +284,7 @@ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/tri
 tar xvf trips_mergetree.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 # убедитесь, что установлены корректные права доступа на файлы
 sudo service clickhouse-server restart
-clickhouse-client --query "select count(*) from datasets.trips_mergetree"
+clickhouse-client --query "SELECT COUNT(*) FROM datasets.trips_mergetree"
 ```
 
 !!!info

@@ -10,6 +10,8 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/zstd_compression_by_default.xml'])
 node2 = cluster.add_instance('node2', main_configs=['configs/lz4hc_compression_by_default.xml'])
 node3 = cluster.add_instance('node3', main_configs=['configs/custom_compression_by_default.xml'])
+node4 = cluster.add_instance('node4', user_configs=['configs/enable_uncompressed_cache.xml'])
+node5 = cluster.add_instance('node5', main_configs=['configs/zstd_compression_by_default.xml'], user_configs=['configs/enable_uncompressed_cache.xml'])
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -68,3 +70,34 @@ def test_preconfigured_custom_codec(start_cluster):
     node3.query("OPTIMIZE TABLE compression_codec_multiple_with_key FINAL")
 
     assert node3.query("SELECT COUNT(*) from compression_codec_multiple_with_key WHERE length(data) = 10000") == "11\n"
+
+def test_uncompressed_cache_custom_codec(start_cluster):
+    node4.query("""
+    CREATE TABLE compression_codec_multiple_with_key (
+        somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
+        id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
+        data String,
+        somecolumn Float64 CODEC(ZSTD(2), LZ4HC, NONE, NONE, NONE, LZ4HC(5))
+    ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
+    """)
+
+    node4.query("INSERT INTO compression_codec_multiple_with_key VALUES(toDate('2018-10-12'), 100000, '{}', 88.88)".format(''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(10000))))
+
+    # two equal requests one by one, to get into UncompressedCache for the first block
+    assert node4.query("SELECT max(length(data)) from compression_codec_multiple_with_key GROUP BY data ORDER BY max(length(data)) DESC LIMIT 1") == "10000\n"
+
+    assert node4.query("SELECT max(length(data)) from compression_codec_multiple_with_key GROUP BY data ORDER BY max(length(data)) DESC LIMIT 1") == "10000\n"
+
+def test_uncompressed_cache_plus_zstd_codec(start_cluster):
+    node5.query("""
+    CREATE TABLE compression_codec_multiple_with_key (
+        somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
+        id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
+        data String,
+        somecolumn Float64 CODEC(ZSTD(2), LZ4HC, NONE, NONE, NONE, LZ4HC(5))
+    ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
+    """)
+
+    node5.query("INSERT INTO compression_codec_multiple_with_key VALUES(toDate('2018-10-12'), 100000, '{}', 88.88)".format('a' * 10000))
+
+    assert node5.query("SELECT max(length(data)) from compression_codec_multiple_with_key GROUP BY data ORDER BY max(length(data)) DESC LIMIT 1") == "10000\n"

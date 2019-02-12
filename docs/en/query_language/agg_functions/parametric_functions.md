@@ -123,7 +123,7 @@ SELECT
 FROM
 (
     SELECT
-        uid, 
+        uid,
         retention(date = '2018-08-10', date = '2018-08-11', date = '2018-08-12') AS r
     FROM events
     WHERE date IN ('2018-08-10', '2018-08-11', '2018-08-12')
@@ -159,4 +159,4 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 ## sumMapFiltered(keys_to_keep)(keys, values)
 
-Same behavior as [sumMap](reference.md#sumMap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
+Same behavior as [sumMap](reference.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.

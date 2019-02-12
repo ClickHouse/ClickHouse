@@ -5,8 +5,6 @@
 
 #include <ext/bit_cast.h>
 
-#include <AggregateFunctions/UniquesHashSet.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -14,13 +12,14 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/AggregationCommon.h>
+
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/MemoryTracker.h>
-
 #include <Common/typeid_cast.h>
 
+#include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 

@@ -10,6 +10,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/hex.h>
+#include <Core/Block.h>
 
 #include <Poco/File.h>
 
@@ -21,11 +22,16 @@ static ReadBufferFromFile openForReading(const String & path)
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 }
 
-/// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
-/// So if you want to change this method, be sure to guarantee compatibility with existing table data.
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    if (value.size() != storage.partition_key_sample.columns())
+    return getID(storage.partition_key_sample);
+}
+
+/// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
+/// So if you want to change this method, be sure to guarantee compatibility with existing table data.
+String MergeTreePartition::getID(const Block & partition_key_sample) const
+{
+    if (value.size() != partition_key_sample.columns())
         throw Exception("Invalid partition key size: " + toString(value.size()), ErrorCodes::LOGICAL_ERROR);
 
     if (value.empty())
@@ -53,7 +59,7 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
             if (i > 0)
                 result += '-';
 
-            if (typeid_cast<const DataTypeDate *>(storage.partition_key_sample.getByPosition(i).type.get()))
+            if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
             else
                 result += applyVisitor(to_string_visitor, value[i]);
@@ -92,7 +98,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
         const DataTypePtr & type = storage.partition_key_sample.getByPosition(0).type;
         auto column = type->createColumn();
         column->insert(value[0]);
-        type->serializeText(*column, 0, out, format_settings);
+        type->serializeAsText(*column, 0, out, format_settings);
     }
     else
     {
@@ -126,13 +132,18 @@ void MergeTreePartition::load(const MergeTreeData & storage, const String & part
 
 void MergeTreePartition::store(const MergeTreeData & storage, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
-    if (!storage.partition_key_expr)
+    store(storage.partition_key_sample, part_path, checksums);
+}
+
+void MergeTreePartition::store(const Block & partition_key_sample, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+{
+    if (!partition_key_sample)
         return;
 
     WriteBufferFromFile out(part_path + "partition.dat");
     HashingWriteBuffer out_hashing(out);
     for (size_t i = 0; i < value.size(); ++i)
-        storage.partition_key_sample.getByPosition(i).type->serializeBinary(value[i], out_hashing);
+        partition_key_sample.getByPosition(i).type->serializeBinary(value[i], out_hashing);
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();

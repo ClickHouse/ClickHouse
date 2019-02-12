@@ -72,7 +72,7 @@ void ExternalLoader::init(bool throw_on_error)
         reloadAndUpdate(throw_on_error);
     }
 
-    reloading_thread = std::thread{&ExternalLoader::reloadPeriodically, this};
+    reloading_thread = ThreadFromGlobalPool{&ExternalLoader::reloadPeriodically, this};
 }
 
 
@@ -222,9 +222,9 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
                 }
                 else
                 {
-                    tryLogCurrentException(log, "Cannot update " + object_name + " '" + name + "', leaving old version");
+                    tryLogException(exception, log, "Cannot update " + object_name + " '" + name + "', leaving old version");
                     if (throw_on_error)
-                        throw;
+                        std::rethrow_exception(exception);
                 }
             }
         }

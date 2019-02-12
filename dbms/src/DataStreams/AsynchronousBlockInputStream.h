@@ -3,9 +3,8 @@
 #include <Poco/Event.h>
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Common/MemoryTracker.h>
 #include <Poco/Ext/ThreadNumber.h>
 

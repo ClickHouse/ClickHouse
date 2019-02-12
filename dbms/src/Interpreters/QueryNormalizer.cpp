@@ -1,6 +1,7 @@
 #include <Poco/String.h>
 #include <Core/Names.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Parsers/ASTAsterisk.h>
@@ -23,8 +24,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int CYCLIC_ALIASES;
 }
-
-NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
 
 class CheckASTDepth
@@ -107,7 +106,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
-    if (!getColumnIdentifierName(node))
+    if (!IdentifierSemantic::getColumnName(node))
         return;
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
@@ -124,7 +123,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         if (!my_alias.empty() && my_alias != alias_node->getAliasOrColumnName())
         {
             /// Avoid infinite recursion here
-            auto opt_name = getColumnIdentifierName(alias_node);
+            auto opt_name = IdentifierSemantic::getColumnName(alias_node);
             bool is_cycle = opt_name && *opt_name == node.name;
 
             if (!is_cycle)
@@ -142,7 +141,10 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 /// Replace *, alias.*, database.table.* with a list of columns.
 void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & data)
 {
-    const auto & tables_with_columns = data.tables_with_columns;
+    if (!data.tables_with_columns)
+        return;
+
+    const auto & tables_with_columns = *data.tables_with_columns;
     const auto & source_columns_set = data.source_columns_set;
 
     ASTs old_children;
@@ -227,8 +229,6 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 /// special visitChildren() for ASTSelectQuery
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & data)
 {
-    extractTablesWithColumns(select, data);
-
     if (auto join = select.join())
         extractJoinUsingColumns(join->table_join, data);
 
@@ -252,7 +252,6 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & 
 }
 
 /// Don't go into subqueries.
-/// Don't go into components of compound identifiers.
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
@@ -273,8 +272,7 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
             visit(child, data);
         }
     }
-    else if (!typeid_cast<ASTIdentifier *>(node.get()) &&
-             !typeid_cast<ASTSelectQuery *>(node.get()))
+    else if (!typeid_cast<ASTSelectQuery *>(node.get()))
     {
         for (auto & child : node->children)
         {
@@ -342,25 +340,6 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
         {
             e.addMessage("(after expansion of aliases)");
             throw;
-        }
-    }
-}
-
-void QueryNormalizer::extractTablesWithColumns(const ASTSelectQuery & select_query, Data & data)
-{
-    if (data.context && select_query.tables && !select_query.tables->children.empty())
-    {
-        data.tables_with_columns.clear();
-        String current_database = data.context->getCurrentDatabase();
-
-        for (const ASTTableExpression * table_expression : getSelectTablesExpression(select_query))
-        {
-            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
-
-            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, *data.context);
-            removeDuplicateColumns(names_and_types);
-
-            data.tables_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
         }
     }
 }

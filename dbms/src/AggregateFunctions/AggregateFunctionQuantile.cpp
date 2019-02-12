@@ -41,7 +41,7 @@ template <typename T> using FuncQuantilesTDigestWeighted = AggregateFunctionQuan
 
 
 template <template <typename> class Function>
-static constexpr bool SupportDecimal()
+static constexpr bool supportDecimal()
 {
     return std::is_same_v<Function<Float32>, FuncQuantileExact<Float32>> ||
         std::is_same_v<Function<Float32>, FuncQuantilesExact<Float32>>;
@@ -61,11 +61,10 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
     if (which.idx == TypeIndex::TYPE) return std::make_shared<Function<TYPE>>(argument_type, params);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-#undef FOR_NUMERIC_TYPES
     if (which.idx == TypeIndex::Date) return std::make_shared<Function<DataTypeDate::FieldType>>(argument_type, params);
     if (which.idx == TypeIndex::DateTime) return std::make_shared<Function<DataTypeDateTime::FieldType>>(argument_type, params);
 
-    if constexpr (SupportDecimal<Function>())
+    if constexpr (supportDecimal<Function>())
     {
         if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32>>(argument_type, params);
         if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64>>(argument_type, params);
