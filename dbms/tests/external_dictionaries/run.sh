@@ -9,6 +9,7 @@ fi
 
 NO_MYSQL=0
 NO_MONGO=0
+NO_REDIS=0
 
 for arg in "$@"; do
     if [ "$arg" = "--no_mysql" ]; then
@@ -16,6 +17,9 @@ for arg in "$@"; do
     fi
     if [ "$arg" == "--no_mongo" ]; then
         NO_MONGO=1
+    fi
+    if [ "$arg" == "--no_redis" ]; then
+        NO_REDIS=1
     fi
 done
 
@@ -98,6 +102,31 @@ else
         sudo service mongod start
     else
         echo 'MongoDB already started'
+    fi
+fi
+
+# Redis
+if [ $NO_REDIS -eq 1 ]; then
+    echo "Not using Redis"
+else
+    if [ -z $(which redis-cli) ]; then
+        echo 'Installing Redis'
+
+        sudo apt-get update &>/dev/null
+        sudo apt-get install redis-server
+
+        which redis-server >/dev/null
+        if [ $? -ne 0 ]; then
+            echo 'Failed installing redis-server'
+            exit -1
+        fi
+    fi
+
+    echo | redis-cli &>/dev/null
+    if [ $? -ne 0 ]; then
+        sudo systemctl start redis.service
+    else
+        echo 'Redis already started'
     fi
 fi
 

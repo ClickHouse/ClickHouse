@@ -119,6 +119,17 @@ def generate_structure(args):
             [ 'mongodb_user_flat', 0, True ],
         ])
 
+    if not args.no_redis:
+        dictionaries.extend([
+            [ 'redis_flat', 0, True ],
+            [ 'redis_hashed', 0, True ],
+            [ 'redis_cache', 0, True ],
+            [ 'redis_complex_integers_key_hashed', 1, False ],
+            [ 'redis_complex_integers_key_cache', 1, False ],
+            [ 'redis_complex_mixed_key_hashed', 2, False ],
+            [ 'redis_complex_mixed_key_cache', 2, False ],
+        ])
+
     if args.use_lib:
         dictionaries.extend([
             # [ 'library_flat', 0, True ],
@@ -382,6 +393,51 @@ def generate_data(args):
             print 'Could not create MongoDB collection'
             exit(-1)
 
+    # create Redis storage from complete_query via JSON file
+    if not args.no_redis:
+        print 'Creating Redis storage'
+        table_rows = json.loads(subprocess.check_output([
+            args.client,
+            '--port',
+            args.port,
+            '--output_format_json_quote_64bit_integers',
+            '0',
+            '--query',
+            "select * from test.dictionary_source where not ignore(" \
+            "concat('new Date(\\'', toString(Date_), '\\')') as Date_, " \
+            "concat('new ISODate(\\'', replaceOne(toString(DateTime_, 'UTC'), ' ', 'T'), 'Z\\')') as DateTime_" \
+            ") format JSON"
+        ]))['data']
+
+        # print json.dumps(table_rows)
+
+        # For Integers the first byte of the reply is ":"
+        # For Bulk Strings the first byte of the reply is "$"
+
+        proto_for_redis = ""
+        for counter, collection in enumerate(table_rows):
+            proto_for_redis += "SELECT " + str(counter) + "\r\n"
+            proto_for_redis += "FLUSHDB\r\n"
+            for key, value in collection.iteritems():
+                value_type = "$"
+                if isinstance(value, int):
+                    value_type = ":"
+                else:
+                    value = str(value)
+                    if "Date" in value:
+                        value = value[value.find("'") + 1:-2]
+
+                proto_for_redis += "SET " + "$" + key + " " + value_type + str(value) + "\r\n"
+
+        # with open("clickhouse_redis.log", "w") as f:
+        #     f.write(json.dumps(table_rows) + "\n" + proto_for_redis + "\n")
+
+        open('generated/full.json', 'w').write(proto_for_redis)
+        result = system('cat {0}/full.json | redis-cli > \\dev\\null'.format(args.generated))
+        if result != 0:
+            print 'Could not create Redis storage'
+            exit(-1)
+
 
 def generate_dictionaries(args):
     dictionary_skeleton = '''
@@ -481,6 +537,13 @@ def generate_dictionaries(args):
         <collection>dictionary_source</collection>
     </mongodb>
     '''.format(mongo_host=args.mongo_host)
+
+    source_redis = '''
+    <redis>
+        <host>{redis_host}</host>
+        <port>6379</port>
+    </redis>
+    '''.format(redis_host=args.redis_host)
 
     source_executable = '''
     <executable>
@@ -666,6 +729,17 @@ def generate_dictionaries(args):
     if args.use_mongo_user:
         sources_and_layouts.extend( [
         [ source_mongodb_user, layout_flat ],
+    ])
+
+    if not args.no_redis:
+        sources_and_layouts.extend([
+        [ source_redis, layout_flat ],
+        [ source_redis, layout_hashed ],
+        [ source_redis, layout_cache ],
+        [ source_redis, layout_complex_key_cache ],
+        [ source_redis, layout_complex_key_hashed ],
+        [ source_redis, layout_complex_key_hashed ],
+        [ source_redis, layout_complex_key_cache ],
     ])
 
     if args.use_lib:
@@ -947,6 +1021,8 @@ if __name__ == '__main__':
     parser.add_argument('--no_mongo', action='store_true', help = 'Dont use mongodb dictionaries')
     parser.add_argument('--mongo_host', default = 'localhost', help = 'mongo server host')
     parser.add_argument('--use_mongo_user', action='store_true', help = 'Test mongodb with user-pass')
+    parser.add_argument('--no_redis', action='store_true', help = 'Dont use redis dictionaries')
+    parser.add_argument('--redis_host', default = 'localhost', help = 'redis server host')
 
     parser.add_argument('--no_http', action='store_true', help = 'Dont use http dictionaries')
     parser.add_argument('--http_port', default = 58000, help = 'http server port')
