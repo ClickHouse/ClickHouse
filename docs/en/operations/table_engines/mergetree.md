@@ -230,6 +230,8 @@ The key for partitioning by month allows reading only those data blocks which co
 
 ### Data Skipping Indices (Experimental)
 
+You need to set `allow_experimental_data_skipping_indices` to 1 to use indices.  (run `SET allow_experimental_data_skipping_indices = 1`).
+
 Index declaration in the columns section of the `CREATE` query.
 ```sql
 INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
