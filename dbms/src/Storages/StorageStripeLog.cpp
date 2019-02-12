@@ -11,12 +11,12 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedReadBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -48,7 +48,7 @@ namespace ErrorCodes
 }
 
 
-class StripeLogBlockInputStream final : public IProfilingBlockInputStream
+class StripeLogBlockInputStream final : public IBlockInputStream
 {
 public:
     StripeLogBlockInputStream(StorageStripeLog & storage_, size_t max_read_buffer_size_,
@@ -288,7 +288,7 @@ bool StorageStripeLog::checkData() const
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr &)
+void StorageStripeLog::truncate(const ASTPtr &, const Context &)
 {
     if (name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);

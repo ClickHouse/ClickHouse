@@ -30,7 +30,7 @@ namespace ErrorCodes
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
     auto db_and_table = getDatabaseAndTable(query, 0);
-    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    ASTPtr subquery = extractTableExpression(query, 0);
 
     if (!db_and_table && !subquery)
         return;
@@ -69,7 +69,7 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
     if (query.prewhere_expression || query.final() || query.sample_size())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    ASTPtr subquery = extractTableExpression(query, 0);
     if (!subquery)
         return;
 
@@ -139,7 +139,11 @@ StorageMaterializedView::StorageMaterializedView(
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = target_database_name;
         manual_create_query->table = target_table_name;
-        manual_create_query->set(manual_create_query->columns, query.columns->ptr());
+
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+
+        manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 
         /// Execute the query.
@@ -182,7 +186,7 @@ BlockInputStreams StorageMaterializedView::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams)
 {
     auto storage = getTargetTable();
@@ -229,7 +233,7 @@ void StorageMaterializedView::drop()
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &)
+void StorageMaterializedView::truncate(const ASTPtr &, const Context &)
 {
     if (has_inner_table)
         executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_database_name, target_table_name);

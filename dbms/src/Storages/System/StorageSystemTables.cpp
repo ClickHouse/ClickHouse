@@ -60,13 +60,13 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
 }
 
 
-class TablesBlockInputStream : public IProfilingBlockInputStream
+class TablesBlockInputStream : public IBlockInputStream
 {
 public:
     TablesBlockInputStream(
         std::vector<UInt8> columns_mask,
         Block header,
-        size_t max_block_size,
+        UInt64 max_block_size,
         ColumnPtr databases,
         const Context & context)
         : columns_mask(std::move(columns_mask)), header(std::move(header)), max_block_size(max_block_size), databases(std::move(databases)), context(context) {}
@@ -173,8 +173,12 @@ protected:
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
-                ++rows_count;
                 auto table_name = tables_it->name();
+                const auto table = context.tryGetTable(database_name, table_name);
+                if (!table)
+                    continue;
+
+                ++rows_count;
 
                 size_t src_index = 0;
                 size_t res_index = 0;
@@ -253,11 +257,10 @@ protected:
                 else
                     src_index += 2;
 
-                const auto table_it = context.getTable(database_name, table_name);
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getPartitionKeyAST()))
+                    if ((expression_ptr = table->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -265,7 +268,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getSortingKeyAST()))
+                    if ((expression_ptr = table->getSortingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -273,7 +276,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getPrimaryKeyAST()))
+                    if ((expression_ptr = table->getPrimaryKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -281,7 +284,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getSamplingKeyAST()))
+                    if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -295,7 +298,7 @@ protected:
 private:
     std::vector<UInt8> columns_mask;
     Block header;
-    size_t max_block_size;
+    UInt64 max_block_size;
     ColumnPtr databases;
     size_t database_idx = 0;
     DatabaseIteratorPtr tables_it;
@@ -311,7 +314,7 @@ BlockInputStreams StorageSystemTables::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned /*num_streams*/)
 {
     check(column_names);

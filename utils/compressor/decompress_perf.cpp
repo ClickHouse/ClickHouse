@@ -12,7 +12,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
-#include <IO/LZ4_decompress_faster.h>
+#include <Compression/LZ4_decompress_faster.h>
 #include <IO/copyData.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>

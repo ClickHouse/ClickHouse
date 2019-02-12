@@ -25,9 +25,6 @@ namespace
         /// And this is from `head -c8 /dev/urandom | xxd -p`
         UInt64 current = 0x09826f4a081cee35ULL;
 
-        LinearCongruentialGenerator() {}
-        LinearCongruentialGenerator(UInt64 value) : current(value) {}
-
         void seed(UInt64 value)
         {
             current = value;

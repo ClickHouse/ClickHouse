@@ -33,7 +33,7 @@ ConfigReloader::ConfigReloader(
 
 void ConfigReloader::start()
 {
-    thread = std::thread(&ConfigReloader::run, this);
+    thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
 }
 
 
@@ -78,7 +78,7 @@ void ConfigReloader::run()
 
 void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
 {
-    std::lock_guard<std::mutex> lock(reload_mutex);
+    std::lock_guard lock(reload_mutex);
 
     FilesChangesTracker new_files = getNewFileList();
     if (force || need_reload_from_zk || new_files.isDifferOrNewerThan(files))

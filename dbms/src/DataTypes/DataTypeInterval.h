@@ -49,13 +49,14 @@ public:
             case Month: return "Month";
             case Quarter: return "Quarter";
             case Year: return "Year";
-            default: __builtin_unreachable();
         }
+
+        __builtin_unreachable();
     }
 
     DataTypeInterval(Kind kind) : kind(kind) {}
 
-    std::string getName() const override { return std::string("Interval") + kindToString(); }
+    std::string doGetName() const override { return std::string("Interval") + kindToString(); }
     const char * getFamilyName() const override { return "Interval"; }
     TypeIndex getTypeId() const override { return TypeIndex::Interval; }
 

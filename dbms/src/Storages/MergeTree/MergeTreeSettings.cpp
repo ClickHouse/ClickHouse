@@ -68,7 +68,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
             == changes.end())                                                                                 \
         changes.push_back(ASTSetQuery::Change{#NAME, NAME.value});
 
-    APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT);
+    APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
 #undef ADD_IF_ABSENT
 }
 

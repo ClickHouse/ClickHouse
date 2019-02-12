@@ -148,15 +148,15 @@ public:
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
             executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
                              length_value, block, result, StringSource(*col), input_rows_count);
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
             executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                             length_value, block, result, FixedStringSource(*col), input_rows_count);
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnString>(column_string.get()))
+                             length_value, block, result, FixedStringSource(*col_fixed), input_rows_count);
+        else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
             executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                             length_value, block, result, ConstSource<StringSource>(*col), input_rows_count);
-        else if (const ColumnConst * col = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
+                             length_value, block, result, ConstSource<StringSource>(*col_const), input_rows_count);
+        else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
             executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                             length_value, block, result, ConstSource<FixedStringSource>(*col), input_rows_count);
+                             length_value, block, result, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
         else
             throw Exception(
                 "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),

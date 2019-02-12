@@ -20,7 +20,7 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 
-    std::string getName() const override
+    std::string doGetName() const override
     {
         return "Array(" + nested->getName() + ")";
     }
@@ -74,15 +74,19 @@ public:
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
             size_t offset,
-            size_t limit,
+            UInt64 limit,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
             IColumn & column,
-            size_t limit,
+            UInt64 limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
+
+    void serializeProtobuf(const IColumn & column,
+                           size_t row_num,
+                           ProtobufWriter & protobuf) const override;
 
     MutableColumnPtr createColumn() const override;
 

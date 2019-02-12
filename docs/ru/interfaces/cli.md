@@ -95,6 +95,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 - `--time, -t` - если указано, в неинтерактивном режиме вывести время выполнения запроса в stderr.
 - `--stacktrace` - если указано, в случае исключения, выводить также его стек трейс.
 - `--config-file` - имя конфигурационного файла.
+- `--secure` - если указано, будет использован безопасный канал.
 
 ### Конфигурационные файлы
 
@@ -111,6 +112,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 <config>
     <user>username</user>
     <password>password</password>
+    <secure>False</secure>
 </config>
 ```
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/cli/) <!--hide-->

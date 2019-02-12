@@ -27,14 +27,16 @@ mkdir -p \
     "$USER_PATH" \
     "$FORMAT_SCHEMA_PATH"
 
-# ensure proper directories permissions
-chown -R $USER:$GROUP \
-    "$DATA_DIR" \
-    "$ERROR_LOG_DIR" \
-    "$LOG_DIR" \
-    "$TMP_DIR" \
-    "$USER_PATH" \
-    "$FORMAT_SCHEMA_PATH"
+if [ "$CLICKHOUSE_DO_NOT_CHOWN" != "1" ]; then
+    # ensure proper directories permissions
+    chown -R $USER:$GROUP \
+        "$DATA_DIR" \
+        "$ERROR_LOG_DIR" \
+        "$LOG_DIR" \
+        "$TMP_DIR" \
+        "$USER_PATH" \
+        "$FORMAT_SCHEMA_PATH"
+fi
 
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
     gosu clickhouse /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &

@@ -20,7 +20,7 @@ bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, Str
         result = typeid_cast<const ASTLiteral &>(*res).value.safeGet<String>();
     }
     else
-        result = typeid_cast<const ASTIdentifier &>(*res).name;
+        result = *getIdentifierName(res);
 
     return true;
 }

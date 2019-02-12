@@ -161,9 +161,9 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size)
 
     threads.resize(size);
     for (auto & thread : threads)
-        thread = std::thread([this] { threadFunction(); });
+        thread = ThreadFromGlobalPool([this] { threadFunction(); });
 
-    delayed_thread = std::thread([this] { delayExecutionThreadFunction(); });
+    delayed_thread = ThreadFromGlobalPool([this] { delayExecutionThreadFunction(); });
 }
 
 
@@ -181,7 +181,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         delayed_thread.join();
 
         LOG_TRACE(&Logger::get("BackgroundSchedulePool"), "Waiting for threads to finish.");
-        for (std::thread & thread : threads)
+        for (auto & thread : threads)
             thread.join();
     }
     catch (...)

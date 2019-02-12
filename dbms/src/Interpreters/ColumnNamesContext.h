@@ -16,18 +16,21 @@ struct ColumnNamesContext
 {
     struct JoinedTable
     {
-        const ASTTableExpression * expr;
-        const ASTTableJoin * join;
+        const ASTTableExpression * expr = nullptr;
+        const ASTTableJoin * join = nullptr;
 
         std::optional<String> alias() const
         {
             String alias;
-            if (expr->database_and_table_name)
-                alias = expr->database_and_table_name->tryGetAlias();
-            else if (expr->table_function)
-                alias = expr->table_function->tryGetAlias();
-            else if (expr->subquery)
-                alias = expr->subquery->tryGetAlias();
+            if (expr)
+            {
+                if (expr->database_and_table_name)
+                    alias = expr->database_and_table_name->tryGetAlias();
+                else if (expr->table_function)
+                    alias = expr->table_function->tryGetAlias();
+                else if (expr->subquery)
+                    alias = expr->subquery->tryGetAlias();
+            }
             if (!alias.empty())
                 return alias;
             return {};
@@ -35,9 +38,8 @@ struct ColumnNamesContext
 
         std::optional<String> name() const
         {
-            if (auto * node = expr->database_and_table_name.get())
-                if (auto * identifier = typeid_cast<const ASTIdentifier *>(node))
-                    return identifier->name;
+            if (expr)
+                return getIdentifierName(expr->database_and_table_name);
             return {};
         }
 

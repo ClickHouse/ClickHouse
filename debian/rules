@@ -8,7 +8,7 @@ export DH_VERBOSE=1
 export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
 
 # because copy_headers.sh have hardcoded path to build/include_directories.txt
-BUILDDIR = build
+BUILDDIR = obj-$(DEB_HOST_GNU_TYPE)
 CURDIR = $(shell pwd)
 DESTDIR = $(CURDIR)/debian/tmp
 
@@ -80,23 +80,23 @@ ifneq ($(THREADS_COUNT),)
 endif
 
 %:
-	dh $@ $(DH_FLAGS) --buildsystem=cmake --builddirectory=$(BUILDDIR)
+	dh $@ $(DH_FLAGS) --buildsystem=cmake
 
 override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
 
 override_dh_auto_build:
 	# Fix for ninja. Do not add -O.
-	cd $(BUILDDIR) && $(MAKE) $(THREADS_COUNT) $(MAKE_TARGET)
-	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
+	$(MAKE) $(THREADS_COUNT) -C $(BUILDDIR) $(MAKE_TARGET)
+#	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
 
 override_dh_auto_test:
-	#TODO, use ENABLE_TESTS=1
-	#./debian/tests_wrapper.sh
+#	#TODO, use ENABLE_TESTS=1
+#	#./debian/tests_wrapper.sh
+#	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -R GLIBC_required_version
+	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -E with_server
 
 override_dh_clean:
-	rm -rf $(BUILDDIR)
-	rm -rf $(DESTDIR)
 	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
 	dh_clean
 
@@ -130,7 +130,7 @@ override_dh_install:
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 
 override_dh_auto_install:
-	env DESTDIR=$(DESTDIR) $(MAKE) -C $(BUILDDIR) install
+	env DESTDIR=$(DESTDIR) $(MAKE) $(THREADS_COUNT) -C $(BUILDDIR) install
 
 override_dh_shlibdeps:
 	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.

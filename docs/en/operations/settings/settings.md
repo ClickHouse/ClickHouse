@@ -22,7 +22,7 @@ The possible values are:
 - `allow`  — Allows the use of these types of subqueries.
 
 
-## fallback_to_stale_replicas_for_distributed_queries
+## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
 Forces a query to an out-of-date replica if updated data is not available. See "[Replication](../../operations/table_engines/replication.md)".
 
@@ -81,6 +81,9 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
+## insert_sample_with_metadata
+
+For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
 
 ## join_default_strictness
 
@@ -107,7 +110,38 @@ Blocks the size of `max_block_size` are not always loaded from the table. If it 
 
 Used for the same purpose as `max_block_size`, but it sets the recommended block size in bytes by adapting it to the number of rows in the block.
 However, the block size cannot be more than `max_block_size` rows.
-Disabled by default (set to 0). It only works when reading from MergeTree engines.
+By default: 1,000,000. It only works when reading from MergeTree engines.
+
+## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
+
+When reading from [MergeTree*](../table_engines/mergetree.md) tables, ClickHouse uses several threads. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
+
+**Possible values**
+
+- 0 — Uniform read distribution turned off.
+- 1 — Uniform read distribution turned on.
+
+**Default value** — 1.
+
+## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
+
+If a number of rows to be read from a file of [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file by several threads.
+
+**Possible values**
+
+Any positive integer.
+
+**Default value** — 163840.
+
+## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
+
+If the distance between two data blocks to be read in one file less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, it reads the data sequentially.
+
+**Possible values**
+
+Any positive integer.
+
+**Default value** — 0.
 
 ## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
 
@@ -188,7 +222,7 @@ Disables lagging replicas for distributed queries. See "[Replication](../../oper
 
 Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
-Default value: 0 (off).
+Default value: 300.
 
 Used when performing `SELECT` from a distributed table that points to replicated tables.
 
@@ -199,7 +233,7 @@ The maximum number of query processing threads, excluding threads for retrieving
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
 For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with WHERE and pre-aggregate for GROUP BY in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
 
-Default value: 8.
+Default value: 2.
 
 If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
 
@@ -240,11 +274,7 @@ The interval in microseconds for checking whether request execution has been can
 
 Default value: 100,000 (checks for canceling and sends the progress ten times per second).
 
-## connect_timeout
-
-## receive_timeout
-
-## send_timeout
+## connect_timeout, receive_timeout, send_timeout
 
 Timeouts in seconds on the socket used for communicating with the client.
 
@@ -260,7 +290,7 @@ Default value: 10.
 
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
-Default value: 100.
+Default value: 1024.
 
 The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
 
@@ -268,7 +298,7 @@ The following parameters are only used when creating Distributed tables (and whe
 
 The maximum number of simultaneous connections with remote servers for distributed processing of all queries to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
-Default value: 128.
+Default value: 1024.
 
 ## connect_timeout_with_failover_ms
 
@@ -288,6 +318,7 @@ Default value: 3.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 
+## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
@@ -352,15 +383,8 @@ See the section "WITH TOTALS modifier".
 
 ## totals_auto_threshold
 
-The threshold for ` totals_mode = 'auto'`.
+The threshold for `totals_mode = 'auto'`.
 See the section "WITH TOTALS modifier".
-
-## default_sample
-
-Floating-point number from 0 to 1. By default, 1.
-Allows you to set the default sampling ratio for all SELECT queries.
-(For tables that do not support sampling, it throws an exception.)
-If set to 1, sampling is not performed by default.
 
 ## max_parallel_replicas
 
@@ -397,13 +421,11 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
-
 ## join_use_nulls
 
 Affects the behavior of [JOIN](../../query_language/select.md).
 
 With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
-
 
 ## insert_quorum
 

@@ -92,6 +92,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--time, -t` – If specified, print the query execution time to 'stderr' in non-interactive mode.
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `--config-file` – The name of the configuration file.
+- `--secure` – If specified, will connect to server over secure connection.
 
 ### Configuration Files
 
@@ -108,6 +109,7 @@ Example of a config file:
 <config>
     <user>username</user>
     <password>password</password>
+    <secure>False</secure>
 </config>
 ```
 

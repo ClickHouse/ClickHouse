@@ -58,10 +58,10 @@ SELECT t.name --, db.name
     FROM (SELECT name, database FROM system.tables WHERE name = 'one') AS t
     JOIN (SELECT name FROM system.databases WHERE name = 'system') AS db ON t.database = db.name;
 
---SELECT db.name, t.name
---    FROM system.tables AS t
---    JOIN (SELECT * FROM system.databases WHERE name = 'system') AS db ON t.database = db.name
---    WHERE t.name = 'one';
+SELECT db.name, t.name
+    FROM system.tables AS t
+    JOIN (SELECT * FROM system.databases WHERE name = 'system') AS db ON t.database = db.name
+    WHERE t.name = 'one';
 
 SELECT database, t.name
     FROM system.tables AS t
@@ -72,10 +72,10 @@ SELECT count(t.database)
     FROM (SELECT * FROM system.tables WHERE name = 'one') AS t
     JOIN system.databases AS db ON t.database = db.name;
 
---SELECT count(db.name)
---    FROM system.tables AS t
---    JOIN system.databases AS db ON t.database = db.name
---    WHERE t.name = 'one';
+SELECT count(db.name)
+    FROM system.tables AS t
+    JOIN system.databases AS db ON t.database = db.name
+    WHERE t.name = 'one';
 
 SELECT count()
     FROM system.tables AS t

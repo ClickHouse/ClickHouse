@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
 #include <common/Types.h>
 
 #include <Core/Defines.h>
@@ -52,11 +53,16 @@ struct Progress
     void writeJSON(WriteBuffer & out) const;
 
     /// Each value separately is changed atomically (but not whole object).
-    void incrementPiecewiseAtomically(const Progress & rhs)
+    bool incrementPiecewiseAtomically(const Progress & rhs)
     {
+        if (!rhs.rows)
+            return false;
+
         rows += rhs.rows;
         bytes += rhs.bytes;
         total_rows += rhs.total_rows;
+
+        return true;
     }
 
     void reset()

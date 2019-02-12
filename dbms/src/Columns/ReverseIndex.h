@@ -393,10 +393,10 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(const StringRef & data)
 
     if constexpr (use_saved_hash)
     {
-        auto & data = saved_hash->getData();
-        if (data.size() <= num_rows)
-            data.resize(num_rows + 1);
-        data[num_rows] = hash;
+        auto & column_data = saved_hash->getData();
+        if (column_data.size() <= num_rows)
+            column_data.resize(num_rows + 1);
+        column_data[num_rows] = hash;
     }
     else
         column->insertData(data.data, data.size);

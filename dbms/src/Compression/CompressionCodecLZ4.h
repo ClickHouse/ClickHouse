@@ -4,7 +4,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Parsers/StringRange.h>
-#include <IO/LZ4_decompress_faster.h>
+#include <Compression/LZ4_decompress_faster.h>
 
 namespace DB
 {
@@ -24,7 +24,7 @@ protected:
 private:
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
-    UInt32 getCompressedDataSize(UInt32 uncompressed_size) const override;
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
     mutable LZ4::PerformanceStatistics lz4_stat;
 };
@@ -41,7 +41,7 @@ protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
 private:
-    int level;
+    const int level;
 };
 
 }

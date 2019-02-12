@@ -80,7 +80,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = database_and_table.second->lockForAlter();
             /// Drop table data, don't touch metadata
-            database_and_table.second->truncate(query_ptr);
+            database_and_table.second->truncate(query_ptr, context);
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
@@ -128,7 +128,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockForAlter();
                 /// Drop table data, don't touch metadata
-                table->truncate(query_ptr);
+                table->truncate(query_ptr, context);
             }
             else if (kind == ASTDropQuery::Kind::Drop)
             {

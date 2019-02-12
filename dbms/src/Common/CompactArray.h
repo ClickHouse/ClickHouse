@@ -22,7 +22,7 @@ namespace ErrorCodes
   * simulates an array of `content_width`-bit values.
   */
 template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
-class __attribute__ ((packed)) CompactArray final
+class CompactArray final
 {
 public:
     class Reader;

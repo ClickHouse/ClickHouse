@@ -27,8 +27,6 @@ public:
         bool require_nonempty,
         BlockPtr saved_block = nullptr);
 
-    HashedDictionary(const HashedDictionary & other);
-
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
     std::string getName() const override { return name; }
@@ -47,7 +45,10 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<HashedDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override
+    {
+        return std::make_unique<HashedDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -143,7 +144,7 @@ public:
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, UInt64 max_block_size) const override;
 
 private:
     template <typename Value>

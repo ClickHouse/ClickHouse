@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 
+#include <pdqsort.h>
 
 namespace DB
 {
@@ -94,8 +95,7 @@ struct PartialSortingLessWithCollation
     }
 };
 
-
-void sortBlock(Block & block, const SortDescription & description, size_t limit)
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
     if (!block)
         return;
@@ -151,7 +151,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
             if (limit)
                 std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less_with_collation);
             else
-                std::sort(perm.begin(), perm.end(), less_with_collation);
+                pdqsort(perm.begin(), perm.end(), less_with_collation);
         }
         else
         {
@@ -160,7 +160,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
             if (limit)
                 std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less);
             else
-                std::sort(perm.begin(), perm.end(), less);
+                pdqsort(perm.begin(), perm.end(), less);
         }
 
         size_t columns = block.columns();

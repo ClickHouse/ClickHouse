@@ -23,7 +23,7 @@ using namespace Poco::XML;
 namespace DB
 {
 
-/// For cutting prerpocessed path to this base
+/// For cutting preprocessed path to this base
 static std::string main_config_path;
 
 /// Extracts from a string the first encountered number consisting of at least two digits.
@@ -600,9 +600,9 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         }
 
         preprocessed_path = preprocessed_dir + new_path;
-        auto path = Poco::Path(preprocessed_path).makeParent();
-        if (!path.toString().empty())
-            Poco::File(path).createDirectories();
+        auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
+        if (!preprocessed_path_parent.toString().empty())
+            Poco::File(preprocessed_path_parent).createDirectories();
     }
     try
     {

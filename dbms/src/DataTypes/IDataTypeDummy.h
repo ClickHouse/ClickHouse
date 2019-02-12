@@ -28,6 +28,7 @@ public:
     void deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const override      { throwNoSerialization(); }
     void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwNoSerialization(); }
     void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &) const override              { throwNoSerialization(); }
+    void serializeProtobuf(const IColumn &, size_t, ProtobufWriter &) const override { throwNoSerialization(); }
 
     MutableColumnPtr createColumn() const override
     {

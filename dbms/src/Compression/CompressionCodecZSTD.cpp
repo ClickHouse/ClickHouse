@@ -28,10 +28,10 @@ UInt8 CompressionCodecZSTD::getMethodByte() const
 
 String CompressionCodecZSTD::getCodecDesc() const
 {
-    return "ZSTD";
+    return "ZSTD(" + toString(level) + ")";
 }
 
-UInt32 CompressionCodecZSTD::getCompressedDataSize(UInt32 uncompressed_size) const
+UInt32 CompressionCodecZSTD::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     return ZSTD_compressBound(uncompressed_size);
 }
@@ -63,7 +63,7 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_)
 
 void registerCodecZSTD(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<char>(CompressionMethodByte::ZSTD);
+    UInt8 method_code = UInt8(CompressionMethodByte::ZSTD);
     factory.registerCompressionCodec("ZSTD", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr
     {
         int level = CompressionCodecZSTD::ZSTD_DEFAULT_LEVEL;

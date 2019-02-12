@@ -2,7 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <ext/range.h>
@@ -25,7 +25,7 @@ public:
 
     RangeDictionaryBlockInputStream(
         DictionaryPtr dictionary,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const Names & column_names,
         PaddedPODArray<Key> && ids_to_fill,
         PaddedPODArray<RangeType> && start_dates,

@@ -75,7 +75,7 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
-            };
+            }
         }
     }
 
@@ -128,7 +128,7 @@ namespace DB
                     DB::writeBinary(get<Tuple>(*it), buf);
                     break;
                 }
-            };
+            }
         }
     }
 
@@ -209,7 +209,7 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
-            };
+            }
         }
     }
 
@@ -262,7 +262,7 @@ namespace DB
                     DB::writeBinary(get<Tuple>(*it), buf);
                     break;
                 }
-            };
+            }
         }
     }
 

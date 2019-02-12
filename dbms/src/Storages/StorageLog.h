@@ -31,7 +31,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
@@ -40,7 +40,7 @@ public:
 
     bool checkData() const override;
 
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
     std::string full_path() const { return path + escapeForFileName(name) + '/';}
 
@@ -88,7 +88,7 @@ private:
 
     Files_t files; /// name -> data
 
-    Names column_names; /// column_index -> name
+    Names column_names_by_idx; /// column_index -> name
 
     Poco::File marks_file;
 

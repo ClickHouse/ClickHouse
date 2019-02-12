@@ -1,4 +1,4 @@
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
@@ -78,7 +78,7 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
     if (num_events == 0)
         return;
 
-    const std::lock_guard<std::mutex> lock{mutex};
+    const std::lock_guard lock{mutex};
 
     /// look at returned events and find corresponding promise, set result and erase promise from map
     for (const auto & event : boost::make_iterator_range(events, events + num_events))
@@ -94,7 +94,11 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
             continue;
         }
 
+#if defined(__FreeBSD__)
+        it->second.set_value(aio_return(reinterpret_cast<struct aiocb *>(event.udata)));
+#else
         it->second.set_value(event.res);
+#endif
         promises.erase(it);
     }
 }
@@ -114,7 +118,7 @@ void AIOContextPool::notifyProducers(const int num_producers) const
 
 void AIOContextPool::reportExceptionToAnyProducer()
 {
-    const std::lock_guard<std::mutex> lock{mutex};
+    const std::lock_guard lock{mutex};
 
     const auto any_promise_it = std::begin(promises);
     any_promise_it->second.set_exception(std::current_exception());
@@ -123,7 +127,7 @@ void AIOContextPool::reportExceptionToAnyProducer()
 
 std::future<AIOContextPool::BytesRead> AIOContextPool::post(struct iocb & iocb)
 {
-    std::unique_lock<std::mutex> lock{mutex};
+    std::unique_lock lock{mutex};
 
     /// get current id and increment it by one
     const auto request_id = next_id;

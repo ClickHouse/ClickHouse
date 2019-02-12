@@ -80,11 +80,6 @@ struct NetlinkMessage
         ::nlmsgerr error;
     };
 
-    size_t payload_size() const
-    {
-        return header.nlmsg_len - sizeof(header) - sizeof(generic_header);
-    }
-
     const Attribute * end() const
     {
         return reinterpret_cast<const Attribute *>(reinterpret_cast<const char *>(this) + header.nlmsg_len);

@@ -240,6 +240,12 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
     return codec->second;
 }
 
+
+CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
+{
+    return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
+}
+
 ColumnsDescription ColumnsDescription::parse(const String & str)
 {
     ReadBufferFromString buf{str};

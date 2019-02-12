@@ -6,7 +6,7 @@
 
 #include <Core/Types.h>
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 #include <nmmintrin.h>
 #endif
 
@@ -75,7 +75,7 @@ struct UInt128Hash
     }
 };
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 
 struct UInt128HashCRC32
 {
@@ -153,7 +153,7 @@ struct UInt256Hash
     }
 };
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 
 struct UInt256HashCRC32
 {

@@ -2,8 +2,8 @@
 
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
@@ -732,10 +732,10 @@ std::unique_ptr<Exception> Connection::receiveException()
 std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
-    std::vector<String> out(num);
+    std::vector<String> strings(num);
     for (size_t i = 0; i < num; ++i)
-        readStringBinary(out[i], *in);
-    return out;
+        readStringBinary(strings[i], *in);
+    return strings;
 }
 
 

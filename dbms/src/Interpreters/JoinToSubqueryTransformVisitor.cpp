@@ -1,5 +1,5 @@
+#include <Common/typeid_cast.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
-#include <Interpreters/SemanticSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
 }
 
+#if 0
 /// Attach additional semantic info to generated select.
 struct AppendSemanticVisitorData
 {
@@ -34,6 +35,7 @@ struct AppendSemanticVisitorData
         done = true;
     }
 };
+#endif
 
 /// Replaces one table element with pair.
 struct RewriteTablesVisitorData
@@ -57,7 +59,10 @@ struct RewriteTablesVisitorData
 
 static bool needRewrite(ASTSelectQuery & select)
 {
-    auto tables = static_cast<const ASTTablesInSelectQuery *>(select.tables.get());
+    if (!select.tables)
+        return false;
+
+    auto tables = typeid_cast<const ASTTablesInSelectQuery *>(select.tables.get());
     if (!tables)
         return false;
 
@@ -70,11 +75,11 @@ static bool needRewrite(ASTSelectQuery & select)
 
 static void appendTableNameAndAlias(std::vector<String> & hidden, const ASTPtr & table_element)
 {
-    auto element = static_cast<const ASTTablesInSelectQueryElement *>(table_element.get());
+    auto element = typeid_cast<const ASTTablesInSelectQueryElement *>(table_element.get());
     if (!element || element->children.empty())
         throw Exception("Expected TablesInSelectQueryElement with at least one child", ErrorCodes::LOGICAL_ERROR);
 
-    auto table_expression = static_cast<const ASTTableExpression *>(element->children[0].get());
+    auto table_expression = typeid_cast<const ASTTableExpression *>(element->children[0].get());
     if (!table_expression || table_expression->children.empty())
         throw Exception("Expected TableExpression with at least one child", ErrorCodes::LOGICAL_ERROR);
 
@@ -82,10 +87,10 @@ static void appendTableNameAndAlias(std::vector<String> & hidden, const ASTPtr &
     if (!alias.empty())
         hidden.push_back(alias);
 
-    auto identifier = static_cast<const ASTIdentifier *>(table_expression->children[0].get());
-    if (!identifier && alias.empty())
+    if (auto opt_name = getIdentifierName(table_expression->children[0]))
+        hidden.push_back(*opt_name);
+    else if (alias.empty())
         throw Exception("Expected Identifier or subquery with alias", ErrorCodes::LOGICAL_ERROR);
-    hidden.push_back(identifier->name);
 }
 
 
@@ -103,7 +108,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     if (!needRewrite(select))
         return;
 
-    auto tables = static_cast<const ASTTablesInSelectQuery *>(select.tables.get());
+    auto tables = typeid_cast<const ASTTablesInSelectQuery *>(select.tables.get());
     if (!tables)
         throw Exception("TablesInSelectQuery expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -123,7 +128,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         if (!left)
             return;
 
-        SemanticSelectQuery::hideNames(select, hidden_names, subquery_name);
+        //SemanticSelectQuery::hideNames(select, hidden_names, subquery_name);
     }
 
     select.tables = std::make_shared<ASTTablesInSelectQuery>();
@@ -134,22 +139,26 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     data.done = true;
 }
 
-ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTSelectQuery & select, ASTPtr ast_left, ASTPtr ast_right, const String & subquery_alias)
+ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTSelectQuery &, ASTPtr ast_left, ASTPtr ast_right, const String & subquery_alias)
 {
+#if 0
     using RewriteMatcher = LinkedMatcher<
         OneTypeMatcher<RewriteTablesVisitorData>,
         OneTypeMatcher<AppendSemanticVisitorData>>;
+#else
+    using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
+#endif
     using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
 
-    auto left = static_cast<const ASTTablesInSelectQueryElement *>(ast_left.get());
-    auto right = static_cast<const ASTTablesInSelectQueryElement *>(ast_right.get());
+    auto left = typeid_cast<const ASTTablesInSelectQueryElement *>(ast_left.get());
+    auto right = typeid_cast<const ASTTablesInSelectQueryElement *>(ast_right.get());
     if (!left || !right)
         throw Exception("Two TablesInSelectQueryElements expected", ErrorCodes::LOGICAL_ERROR);
 
     if (!right->table_join || right->array_join)
         return {};
 
-    auto table_join = static_cast<const ASTTableJoin *>(right->table_join.get());
+    auto table_join = typeid_cast<const ASTTableJoin *>(right->table_join.get());
     if (table_join->kind != ASTTableJoin::Kind::Inner)
         return {};
 
@@ -159,8 +168,12 @@ ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTSelectQuery & select, ASTP
     if (!res)
         throw Exception("Cannot parse rewrite query", ErrorCodes::LOGICAL_ERROR);
 
+#if 0
     RewriteVisitor::Data visitor_data =
         std::make_pair<RewriteTablesVisitorData, AppendSemanticVisitorData>({ast_left, ast_right}, {select.semantic});
+#else
+    RewriteVisitor::Data visitor_data{ast_left, ast_right};
+#endif
     RewriteVisitor(visitor_data).visit(res);
     return res;
 }

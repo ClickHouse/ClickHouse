@@ -41,6 +41,8 @@ private:
     /// Hash table matching `field name -> position in the block`. NOTE You can use perfect hash map.
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap name_map;
+
+    std::vector<UInt8> read_columns;
 };
 
 }

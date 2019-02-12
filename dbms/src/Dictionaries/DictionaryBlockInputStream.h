@@ -6,7 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
 #include <Core/Names.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
@@ -32,11 +32,11 @@ public:
     using DictionaryPtr = std::shared_ptr<DictionaryType const>;
 
     DictionaryBlockInputStream(
-        std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size, PaddedPODArray<Key> && ids, const Names & column_names);
+        std::shared_ptr<const IDictionaryBase> dictionary, UInt64 max_block_size, PaddedPODArray<Key> && ids, const Names & column_names);
 
     DictionaryBlockInputStream(
         std::shared_ptr<const IDictionaryBase> dictionary,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const std::vector<StringRef> & keys,
         const Names & column_names);
 
@@ -48,7 +48,7 @@ public:
     // Now used in trie dictionary, where columns are stored as ip and mask, and are showed as string
     DictionaryBlockInputStream(
         std::shared_ptr<const IDictionaryBase> dictionary,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const Columns & data_columns,
         const Names & column_names,
         GetColumnsFunction && get_key_columns_function,
@@ -202,7 +202,7 @@ private:
 
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
-    std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size, PaddedPODArray<Key> && ids, const Names & column_names)
+    std::shared_ptr<const IDictionaryBase> dictionary, UInt64 max_block_size, PaddedPODArray<Key> && ids, const Names & column_names)
     : DictionaryBlockInputStreamBase(ids.size(), max_block_size)
     , dictionary(std::static_pointer_cast<const DictionaryType>(dictionary))
     , column_names(column_names)
@@ -217,7 +217,7 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary,
-    size_t max_block_size,
+    UInt64 max_block_size,
     const std::vector<StringRef> & keys,
     const Names & column_names)
     : DictionaryBlockInputStreamBase(keys.size(), max_block_size)
@@ -234,7 +234,7 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary,
-    size_t max_block_size,
+    UInt64 max_block_size,
     const Columns & data_columns,
     const Names & column_names,
     GetColumnsFunction && get_key_columns_function,

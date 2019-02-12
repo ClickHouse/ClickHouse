@@ -45,7 +45,7 @@ try
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
-    executeQuery(in, out, /* allow_into_outfile = */ false, context, {});
+    executeQuery(in, out, /* allow_into_outfile = */ false, context, {}, {});
 
     return 0;
 }

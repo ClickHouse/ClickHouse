@@ -8,6 +8,9 @@ CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR=/var/log/clickhouse-server}
 CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR=/usr/bin}
 CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM=clickhouse}
+EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
+CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
+
 
 OS=${OS=`lsb_release -is 2>/dev/null || uname -s ||:`}
 
@@ -68,18 +71,23 @@ Please fix this and reinstall this package." >&2
         exit 1
     fi
 
+    if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ] && [ -f "$CLICKHOUSE_CONFIG" ]; then
+        CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path") ||:
+        echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
+    fi
+    CLICKHOUSE_DATADIR_FROM_CONFIG=${CLICKHOUSE_DATADIR_FROM_CONFIG=$CLICKHOUSE_DATADIR}
 
-    if [ ! -d ${CLICKHOUSE_DATADIR} ]; then
-        mkdir -p ${CLICKHOUSE_DATADIR}
-        chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
-        chmod 700 ${CLICKHOUSE_DATADIR}
+    if [ ! -d ${CLICKHOUSE_DATADIR_FROM_CONFIG} ]; then
+        mkdir -p ${CLICKHOUSE_DATADIR_FROM_CONFIG}
+        chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR_FROM_CONFIG}
+        chmod 700 ${CLICKHOUSE_DATADIR_FROM_CONFIG}
     fi
 
     if [ -d ${CLICKHOUSE_CONFDIR} ]; then
         rm -fv ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
     fi
 
-    [ -e ${CLICKHOUSE_CONFDIR}/preprocessed ] || ln -s ${CLICKHOUSE_DATADIR}/preprocessed_configs ${CLICKHOUSE_CONFDIR}/preprocessed ||:
+    [ -e ${CLICKHOUSE_CONFDIR}/preprocessed ] || ln -s ${CLICKHOUSE_DATADIR_FROM_CONFIG}/preprocessed_configs ${CLICKHOUSE_CONFDIR}/preprocessed ||:
 
     if [ ! -d ${CLICKHOUSE_LOGDIR} ]; then
         mkdir -p ${CLICKHOUSE_LOGDIR}
@@ -88,14 +96,27 @@ Please fix this and reinstall this package." >&2
         chmod 775 ${CLICKHOUSE_LOGDIR}
     fi
 
-    # Set net_admin capabilities to support introspection of "taskstats" performance metrics from the kernel.
+    # Set net_admin capabilities to support introspection of "taskstats" performance metrics from the kernel
+    #  and ipc_lock capabilities to allow mlock of clickhouse binary.
+
+    # 1. Check that "setcap" tool exists.
+    # 2. Check that an arbitrary program with installed capabilities can run.
+    # 3. Set the capabilities.
+
+    # The second is important for Docker and systemd-nspawn.
+    # When the container has no capabilities,
+    #  but the executable file inside the container has capabilities,
+    #  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
+
+    TMPFILE=/tmp/test_setcap.sh
 
     command -v setcap >/dev/null \
-        && setcap "cap_net_admin=+ep cap_ipc_lock=+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
+        && echo > $TMPFILE && chmod a+x $TMPFILE && $TMPFILE && setcap "cap_net_admin,cap_ipc_lock+ep" $TMPFILE && $TMPFILE && rm $TMPFILE \
+        && setcap "cap_net_admin,cap_ipc_lock+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
         || echo "Cannot set 'net_admin' or 'ipc_lock' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
 
     # Clean old dynamic compilation results
-    if [ -d "${CLICKHOUSE_DATADIR}/build" ]; then
-        rm -f ${CLICKHOUSE_DATADIR}/build/*.cpp ${CLICKHOUSE_DATADIR}/build/*.so ||:
+    if [ -d "${CLICKHOUSE_DATADIR_FROM_CONFIG}/build" ]; then
+        rm -f ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.cpp ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.so ||:
     fi
 fi

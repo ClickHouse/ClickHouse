@@ -43,12 +43,6 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
     creation_time = std::chrono::system_clock::now();
 }
 
-ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(const ComplexKeyHashedDictionary & other)
-    : ComplexKeyHashedDictionary{
-          other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty, other.saved_block}
-{
-}
-
 #define DECLARE(TYPE) \
     void ComplexKeyHashedDictionary::get##TYPE( \
         const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
@@ -790,7 +784,7 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute & att
     return keys;
 }
 
-BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyHashedDictionary, UInt64>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeys(), column_names);

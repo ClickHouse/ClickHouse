@@ -18,8 +18,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -135,7 +135,7 @@ protected:
 
     /** In this thread, data is pulled from 'queue' and stored in 'data', and then written into table.
       */
-    std::thread saving_thread;
+    ThreadFromGlobalPool saving_thread;
 
     void threadFunction();
 
@@ -161,7 +161,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
 
     data.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
-    saving_thread = std::thread([this] { threadFunction(); });
+    saving_thread = ThreadFromGlobalPool([this] { threadFunction(); });
 }
 
 
@@ -357,7 +357,10 @@ void SystemLog<LogElement>::prepareTable()
         create->table = table_name;
 
         Block sample = LogElement::createBlock();
-        create->set(create->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
+
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
+        create->set(create->columns_list, new_columns_list);
 
         ParserStorage storage_parser;
         ASTPtr storage_ast = parseQuery(

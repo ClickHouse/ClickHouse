@@ -92,6 +92,11 @@
         <div class="clear"></div>
     </div>
 </div>
+<div id="announcement" class="colored-block">
+    <div class="page">
+        Upcoming ClickHouse Community Meetups: <a class="announcement-link" href="https://www.eventbrite.com/e/meetup-clickhouse-in-the-wild-deployment-success-stories-registration-55305051899" rel="external nofollow" target="_blank">San Francisco</a> on February 19 and <a class="announcement-link" href="https://www.eventbrite.com/e/clickhouse-meetup-in-madrid-registration-55376746339" rel="external nofollow" target="_blank">Madrid</a> on April 2
+    </div>
+</div>
 <div class="page">
     <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
 
@@ -192,6 +197,8 @@
                rel="external nofollow" target="_blank">Column Store Database Benchmarks</a> by Percona</li>
         <li><a href="http://tech.marksblogg.com/billion-nyc-taxi-clickhouse.html"
                rel="external nofollow" target="_blank">1.1 Billion Taxi Rides on ClickHouse & an Intel Core i5</a> by Mark Litwintschik</li>
+        <li><a href="https://tech.marksblogg.com/billion-nyc-taxi-rides-clickhouse-cluster.html"
+               rel="external nofollow" target="_blank">1.1 Billion Taxi Rides: 108-core ClickHouse Cluster</a> by Mark Litwintschik</li>
         <li><a href="https://www.altinity.com/blog/2017/6/20/clickhouse-vs-redshift"
                rel="external nofollow" target="_blank">ClickHouse vs Amazon RedShift Benchmark</a> by Altinity</li>
         <li><a href="https://carto.com/blog/inside/geospatial-processing-with-clickhouse"
@@ -394,6 +401,7 @@
 
     <code id="packages-install">
 <pre>
+sudo apt-get install dirmngr    # optional
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 
 echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
@@ -459,7 +467,7 @@ clickhouse-client
         ClickHouse source code is published under Apache 2.0 License.</a> Software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
         KIND, either express or implied.</p>
 
-    <p id="footer">&copy; 2016–2018 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
+    <p id="footer">&copy; 2016–2019 <a href="https://yandex.com/company/" rel="external nofollow">YANDEX</a> LLC</p>
 
 </div>
 

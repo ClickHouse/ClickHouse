@@ -81,11 +81,6 @@ CacheDictionary::CacheDictionary(
     createAttributes();
 }
 
-CacheDictionary::CacheDictionary(const CacheDictionary & other)
-    : CacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
-{
-}
-
 
 void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
@@ -580,7 +575,7 @@ PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
     return array;
 }
 
-BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);
