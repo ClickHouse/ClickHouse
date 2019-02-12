@@ -240,7 +240,7 @@ void PerformanceTest::runQueries(
         statistics.startWatches();
         try
         {
-            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context);
+            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
 
             if (test_info.exec_type == ExecutionType::Loop)
             {
@@ -254,7 +254,7 @@ void PerformanceTest::runQueries(
                         break;
                     }
 
-                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context);
+                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
                 }
             }
         }
