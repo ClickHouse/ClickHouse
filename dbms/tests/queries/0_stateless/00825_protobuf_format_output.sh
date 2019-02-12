@@ -11,7 +11,6 @@ set -e -o pipefail
 
 # Run the client.
 $CLICKHOUSE_CLIENT --multiquery <<EOF
-SET allow_experimental_low_cardinality_type = 1;
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.table;
 

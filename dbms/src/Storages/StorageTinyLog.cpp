@@ -100,7 +100,7 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
-    void readData(const String & name, const IDataType & type, IColumn & column, size_t limit);
+    void readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit);
 };
 
 
@@ -214,7 +214,7 @@ Block TinyLogBlockInputStream::readImpl()
 }
 
 
-void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit)
+void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     settings.getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
@@ -388,7 +388,7 @@ BlockInputStreams StorageTinyLog::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned /*num_streams*/)
 {
     check(column_names);

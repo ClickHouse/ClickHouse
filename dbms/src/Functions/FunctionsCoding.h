@@ -21,8 +21,8 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <arpa/inet.h>
-
 #include <ext/range.h>
+#include <type_traits>
 #include <array>
 
 
@@ -1260,6 +1260,8 @@ public:
     template <typename T>
     bool tryExecute(const IColumn * column, ColumnPtr & out_column)
     {
+        using UnsignedT = std::make_unsigned_t<T>;
+
         if (const ColumnVector<T> * col_from = checkAndGetColumn<ColumnVector<T>>(column))
         {
             auto col_values = ColumnVector<T>::create();
@@ -1275,11 +1277,11 @@ public:
 
             for (size_t row = 0; row < size; ++row)
             {
-                T x = vec_from[row];
+                UnsignedT x = vec_from[row];
                 while (x)
                 {
-                    T y = (x & (x - 1));
-                    T bit = x ^ y;
+                    UnsignedT y = x & (x - 1);
+                    UnsignedT bit = x ^ y;
                     x = y;
                     res_values.push_back(bit);
                 }

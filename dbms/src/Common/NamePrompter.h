@@ -4,12 +4,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <queue>
 #include <utility>
 
 namespace DB
 {
-template <size_t MistakeFactor, size_t MaxNumHints>
+template <size_t MaxNumHints>
 class NamePrompter
 {
 public:
@@ -53,10 +54,18 @@ private:
 
     static void appendToQueue(size_t ind, const String & name, DistanceIndexQueue & queue, const std::vector<String> & prompting_strings)
     {
-        if (prompting_strings[ind].size() <= name.size() + MistakeFactor && prompting_strings[ind].size() + MistakeFactor >= name.size())
+        const String & prompt = prompting_strings[ind];
+
+        /// Clang SimpleTypoCorrector logic
+        const size_t min_possible_edit_distance = std::abs(static_cast<int64_t>(name.size()) - static_cast<int64_t>(prompt.size()));
+        const size_t mistake_factor = (name.size() + 2) / 3;
+        if (min_possible_edit_distance > 0 && name.size() / min_possible_edit_distance < 3)
+            return;
+
+        if (prompt.size() <= name.size() + mistake_factor && prompt.size() + mistake_factor >= name.size())
         {
-            size_t distance = levenshteinDistance(prompting_strings[ind], name);
-            if (distance <= MistakeFactor)
+            size_t distance = levenshteinDistance(prompt, name);
+            if (distance <= mistake_factor)
             {
                 queue.emplace(distance, ind);
                 if (queue.size() > MaxNumHints)

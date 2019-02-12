@@ -17,7 +17,7 @@ class ReplacingSortedBlockInputStream : public MergingSortedBlockInputStream
 public:
     ReplacingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_,
-        const String & version_column, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
+        const String & version_column, UInt64 max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
         : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
     {
         if (!version_column.empty())

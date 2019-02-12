@@ -102,12 +102,14 @@ public:
 
     String getName() const override { return "sum"; }
 
-    AggregateFunctionSum()
-        : scale(0)
+    AggregateFunctionSum(const DataTypes & argument_types)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data>>(argument_types, {})
+        , scale(0)
     {}
 
-    AggregateFunctionSum(const IDataType & data_type)
-        : scale(getDecimalScale(data_type))
+    AggregateFunctionSum(const IDataType & data_type, const DataTypes & argument_types)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data>>(argument_types, {})
+        , scale(getDecimalScale(data_type))
     {}
 
     DataTypePtr getReturnType() const override
