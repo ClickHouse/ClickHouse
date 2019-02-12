@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
-set -x
+#set -x
 #echo "Args: $*"; env | sort
 
 # Этот скрипт собирает все заголовочные файлы, нужные для компиляции некоторого translation unit-а
