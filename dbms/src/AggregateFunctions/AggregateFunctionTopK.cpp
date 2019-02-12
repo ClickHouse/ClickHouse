@@ -39,19 +39,19 @@ class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateT
 
 
 template <bool is_weighted>
-static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, UInt64 threshold)
+static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, UInt64 threshold, const Array & params)
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date)
-        return new AggregateFunctionTopKDate<is_weighted>(threshold);
+        return new AggregateFunctionTopKDate<is_weighted>(threshold, {argument_type}, params);
     if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionTopKDateTime<is_weighted>(threshold);
+        return new AggregateFunctionTopKDateTime<is_weighted>(threshold, {argument_type}, params);
 
     /// Check that we can use plain version of AggregateFunctionTopKGeneric
     if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-        return new AggregateFunctionTopKGeneric<true, is_weighted>(threshold, argument_type);
+        return new AggregateFunctionTopKGeneric<true, is_weighted>(threshold, argument_type, params);
     else
-        return new AggregateFunctionTopKGeneric<false, is_weighted>(threshold, argument_type);
+        return new AggregateFunctionTopKGeneric<false, is_weighted>(threshold, argument_type, params);
 }
 
 
@@ -90,10 +90,10 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
         threshold = k;
     }
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(*argument_types[0], threshold));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(*argument_types[0], threshold, argument_types, params));
 
     if (!res)
-        res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types[0], threshold));
+        res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types[0], threshold, params));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() +

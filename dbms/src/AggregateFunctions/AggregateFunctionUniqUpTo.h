@@ -136,8 +136,9 @@ private:
     UInt8 threshold;
 
 public:
-    AggregateFunctionUniqUpTo(UInt8 threshold)
-        : threshold(threshold)
+    AggregateFunctionUniqUpTo(UInt8 threshold, const DataTypes & argument_types, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>(argument_types, params)
+        , threshold(threshold)
     {
     }
 
@@ -195,8 +196,9 @@ private:
     UInt8 threshold;
 
 public:
-    AggregateFunctionUniqUpToVariadic(const DataTypes & arguments, UInt8 threshold)
-        : threshold(threshold)
+    AggregateFunctionUniqUpToVariadic(const DataTypes & arguments, const Array & params, UInt8 threshold)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<is_exact, argument_is_tuple>>(arguments, params)
+        , threshold(threshold)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
