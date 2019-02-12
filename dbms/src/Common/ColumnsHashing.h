@@ -364,7 +364,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
 
         if constexpr (has_mapped)
+        {
+            mapped_cache[row] = it->second;
             return EmplaceResult(it->second, mapped_cache[row], inserted);
+        }
         else
             return EmplaceResult(inserted);
     }
