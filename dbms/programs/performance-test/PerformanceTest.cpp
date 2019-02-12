@@ -18,6 +18,32 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+void waitQuery(Connection & connection)
+{
+    bool finished = false;
+    while (true)
+    {
+        if (!connection.poll(1000000))
+            continue;
+
+        Connection::Packet packet = connection.receivePacket();
+        switch (packet.type)
+        {
+            case Protocol::Server::EndOfStream:
+                finished = true;
+                break;
+            case Protocol::Server::Exception:
+                throw *packet.exception;
+        }
+
+        if (finished)
+            break;
+    }
+}
+}
+
 namespace fs = boost::filesystem;
 
 PerformanceTest::PerformanceTest(
@@ -135,14 +161,18 @@ void PerformanceTest::prepare() const
 {
     for (const auto & query : test_info.create_queries)
     {
-        LOG_INFO(log, "Executing create query '" << query << "'");
-        connection.sendQuery(query);
+        LOG_INFO(log, "Executing create query \"" << query << '\"');
+        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        waitQuery(connection);
+        LOG_INFO(log, "Query finished");
     }
 
     for (const auto & query : test_info.fill_queries)
     {
-        LOG_INFO(log, "Executing fill query '" << query << "'");
-        connection.sendQuery(query);
+        LOG_INFO(log, "Executing fill query \"" << query << '\"');
+        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        waitQuery(connection);
+        LOG_INFO(log, "Query finished");
     }
 
 }
@@ -151,8 +181,10 @@ void PerformanceTest::finish() const
 {
     for (const auto & query : test_info.drop_queries)
     {
-        LOG_INFO(log, "Executing drop query '" << query << "'");
-        connection.sendQuery(query);
+        LOG_INFO(log, "Executing drop query \"" << query << '\"');
+        connection.sendQuery(query, "", QueryProcessingStage::Complete, &test_info.settings, nullptr, false);
+        waitQuery(connection);
+        LOG_INFO(log, "Query finished");
     }
 }
 
@@ -208,7 +240,7 @@ void PerformanceTest::runQueries(
         statistics.startWatches();
         try
         {
-            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context);
+            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
 
             if (test_info.exec_type == ExecutionType::Loop)
             {
@@ -222,7 +254,7 @@ void PerformanceTest::runQueries(
                         break;
                     }
 
-                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context);
+                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context, test_info.settings);
                 }
             }
         }

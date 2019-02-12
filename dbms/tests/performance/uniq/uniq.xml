@@ -9,11 +9,11 @@
 
     <stop_conditions>
         <all_of>
-            <total_time_ms>10000</total_time_ms>
+            <total_time_ms>8000</total_time_ms>
         </all_of>
         <any_of>
             <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
-            <total_time_ms>20000</total_time_ms>
+            <total_time_ms>15000</total_time_ms>
         </any_of>
     </stop_conditions>
 
@@ -22,7 +22,7 @@
     </main_metric>
 
     <settings>
-        <max_memory_usage>20000000000</max_memory_usage>
+        <max_memory_usage>30000000000</max_memory_usage>
     </settings>
 
     <substitutions>

@@ -812,7 +812,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
     /// because inlining may change dependency sets.
     if (settings.compile_expressions)
-        compileFunctions(actions, output_columns, sample_block, compilation_cache, settings.min_count_to_compile);
+        compileFunctions(actions, output_columns, sample_block, compilation_cache, settings.min_count_to_compile_expression);
 #endif
 
     /// Which columns are needed to perform actions from the current to the last.
