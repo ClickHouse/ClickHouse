@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/IDataTypeDomain.h>
 #include <DataTypes/NestedUtils.h>
 
 
@@ -19,8 +20,34 @@ namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int LOGICAL_ERROR;
+    extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
 }
 
+IDataType::IDataType()
+    : domain(nullptr)
+{
+}
+
+IDataType::~IDataType()
+{
+}
+
+String IDataType::getName() const
+{
+    if (domain)
+    {
+        return domain->getName();
+    }
+    else
+    {
+        return doGetName();
+    }
+}
+
+String IDataType::doGetName() const
+{
+    return getFamilyName();
+}
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {
@@ -51,6 +78,10 @@ ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
     return createColumnConst(size, getDefault());
 }
 
+DataTypePtr IDataType::promoteNumericType() const
+{
+    throw Exception("Data type " + getName() + " can't be promoted.", ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED);
+}
 
 void IDataType::serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const
 {
@@ -107,6 +138,135 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
 void IDataType::insertDefaultInto(IColumn & column) const
 {
     column.insertDefault();
+}
+
+void IDataType::serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->serializeTextEscaped(column, row_num, ostr, settings);
+    }
+    else
+    {
+        serializeTextEscaped(column, row_num, ostr, settings);
+    }
+}
+
+void IDataType::deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->deserializeTextEscaped(column, istr, settings);
+    }
+    else
+    {
+        deserializeTextEscaped(column, istr, settings);
+    }
+}
+
+void IDataType::serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->serializeTextQuoted(column, row_num, ostr, settings);
+    }
+    else
+    {
+        serializeTextQuoted(column, row_num, ostr, settings);
+    }
+}
+
+void IDataType::deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->deserializeTextQuoted(column, istr, settings);
+    }
+    else
+    {
+        deserializeTextQuoted(column, istr, settings);
+    }
+}
+
+void IDataType::serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->serializeTextCSV(column, row_num, ostr, settings);
+    }
+    else
+    {
+        serializeTextCSV(column, row_num, ostr, settings);
+    }
+}
+
+void IDataType::deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->deserializeTextCSV(column, istr, settings);
+    }
+    else
+    {
+        deserializeTextCSV(column, istr, settings);
+    }
+}
+
+void IDataType::serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->serializeText(column, row_num, ostr, settings);
+    }
+    else
+    {
+        serializeText(column, row_num, ostr, settings);
+    }
+}
+
+void IDataType::serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->serializeTextJSON(column, row_num, ostr, settings);
+    }
+    else
+    {
+        serializeTextJSON(column, row_num, ostr, settings);
+    }
+}
+
+void IDataType::deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->deserializeTextJSON(column, istr, settings);
+    }
+    else
+    {
+        deserializeTextJSON(column, istr, settings);
+    }
+}
+
+void IDataType::serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    if (domain)
+    {
+        domain->serializeTextXML(column, row_num, ostr, settings);
+    }
+    else
+    {
+        serializeTextXML(column, row_num, ostr, settings);
+    }
+}
+
+void IDataType::setDomain(const IDataTypeDomain* const new_domain) const
+{
+    if (domain != nullptr)
+    {
+        throw Exception("Type " + getName() + " already has a domain.", ErrorCodes::LOGICAL_ERROR);
+    }
+    domain = new_domain;
 }
 
 }

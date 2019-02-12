@@ -82,12 +82,11 @@ public:
         /// We do not sleep if the block is empty.
         if (size > 0)
         {
-            unsigned useconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
-
             /// When sleeping, the query cannot be cancelled. For abitily to cancel query, we limit sleep time.
-            if (useconds > 3000000)   /// The choice is arbitrary
-                throw Exception("The maximum sleep time is 3000000 microseconds. Requested: " + toString(useconds), ErrorCodes::TOO_SLOW);
+            if (seconds > 3.0)   /// The choice is arbitrary
+                throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
+            UInt64 useconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
             ::usleep(useconds);
         }
 

@@ -64,7 +64,7 @@ bool ValuesRowInputStream::read(MutableColumns & columns, RowReadExtension &)
         bool rollback_on_exception = false;
         try
         {
-            header.getByPosition(i).type->deserializeTextQuoted(*columns[i], istr, format_settings);
+            header.getByPosition(i).type->deserializeAsTextQuoted(*columns[i], istr, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(istr);
 
@@ -154,7 +154,7 @@ void registerInputFormatValues(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const Context & context,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(

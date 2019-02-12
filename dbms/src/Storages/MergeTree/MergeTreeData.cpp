@@ -47,6 +47,7 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <set>
 #include <thread>
 #include <typeinfo>
 #include <typeindex>
@@ -88,6 +89,7 @@ namespace ErrorCodes
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
     const String & full_path_, const ColumnsDescription & columns_,
+    const IndicesDescription & indices_,
     Context & context_,
     const String & date_column_name,
     const ASTPtr & partition_by_ast_,
@@ -113,7 +115,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    setPrimaryKeyAndColumns(order_by_ast_, primary_key_ast_, columns_);
+    setPrimaryKeyIndicesAndColumns(order_by_ast_, primary_key_ast_, columns_, indices_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -219,8 +221,9 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::setPrimaryKeyAndColumns(
-    const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check)
+void MergeTreeData::setPrimaryKeyIndicesAndColumns(
+        const ASTPtr &new_order_by_ast, ASTPtr new_primary_key_ast,
+        const ColumnsDescription &new_columns, const IndicesDescription &indices_description, bool only_check)
 {
     if (!new_order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -327,6 +330,50 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         new_primary_key_data_types.push_back(elem.type);
     }
 
+    ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
+    ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
+
+    MergeTreeIndices new_indices;
+
+    if (!indices_description.indices.empty())
+    {
+        std::set<String> indices_names;
+
+        for (const auto & index_ast : indices_description.indices)
+        {
+            const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
+
+            new_indices.push_back(
+                    MergeTreeIndexFactory::instance().get(
+                            all_columns,
+                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
+                            global_context));
+
+            if (indices_names.find(new_indices.back()->name) != indices_names.end())
+                throw Exception(
+                        "Index with name `" + new_indices.back()->name + "` already exsists",
+                        ErrorCodes::LOGICAL_ERROR);
+
+            ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(index_decl->expr->clone());
+            for (const auto & expr : expr_list->children)
+            {
+                skip_indices_with_primary_key_expr_list->children.push_back(expr->clone());
+                skip_indices_with_sorting_key_expr_list->children.push_back(expr->clone());
+            }
+
+            indices_names.insert(new_indices.back()->name);
+        }
+    }
+    auto syntax_primary = SyntaxAnalyzer(global_context, {}).analyze(
+            skip_indices_with_primary_key_expr_list, all_columns);
+    auto new_indices_with_primary_key_expr = ExpressionAnalyzer(
+            skip_indices_with_primary_key_expr_list, syntax_primary, global_context).getActions(false);
+
+    auto syntax_sorting = SyntaxAnalyzer(global_context, {}).analyze(
+            skip_indices_with_sorting_key_expr_list, all_columns);
+    auto new_indices_with_sorting_key_expr = ExpressionAnalyzer(
+            skip_indices_with_sorting_key_expr_list, syntax_sorting, global_context).getActions(false);
+
     if (!only_check)
     {
         setColumns(new_columns);
@@ -342,6 +389,12 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         primary_key_expr = std::move(new_primary_key_expr);
         primary_key_sample = std::move(new_primary_key_sample);
         primary_key_data_types = std::move(new_primary_key_data_types);
+
+        setIndicesDescription(indices_description);
+        skip_indices = std::move(new_indices);
+
+        primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
+        sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
     }
 }
 
@@ -888,6 +941,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
         for (auto & part : parts)
         {
+            part_log_elem.partition_id = part->info.partition_id;
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
             part_log_elem.rows = part->rows_count;
@@ -1001,9 +1055,10 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
-    commands.apply(new_columns, new_order_by_ast, new_primary_key_ast);
+    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
@@ -1018,6 +1073,12 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         /// TODO: in some cases (e.g. adding an Enum value) a partition key column can still be ALTERed.
         /// We should allow it.
         for (const String & col : partition_key_expr->getRequiredColumns())
+            columns_alter_forbidden.insert(col);
+    }
+
+    for (const auto & index : skip_indices)
+    {
+        for (const String & col : index->expr->getRequiredColumns())
             columns_alter_forbidden.insert(col);
     }
 
@@ -1075,18 +1136,21 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         }
     }
 
-    setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
+    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast,
+            new_columns, new_indices, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
     NameToNameMap unused_map;
     bool unused_bool;
 
-    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(), unused_expression, unused_map, unused_bool);
+    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
+            getIndicesDescription().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-    ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
+    const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
+    NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
     out_expression = nullptr;
     out_rename_map = {};
@@ -1099,6 +1163,21 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
     /// For every column that need to be converted: source column name, column name of calculated expression for conversion.
     std::vector<std::pair<String, String>> conversions;
+
+
+    /// Remove old indices
+    std::set<String> new_indices_set;
+    for (const auto & index_decl : new_indices)
+        new_indices_set.emplace(dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get()).name);
+    for (const auto & index_decl : old_indices)
+    {
+        const auto & index = dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get());
+        if (!new_indices_set.count(index.name))
+        {
+            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
+            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
+        }
+    }
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
@@ -1230,12 +1309,15 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const DataPartPtr & part,
     const NamesAndTypesList & new_columns,
+    const IndicesASTs & new_indices,
     bool skip_sanity_checks)
 {
     ExpressionActionsPtr expression;
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
     bool force_update_metadata;
-    createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
+    createConvertExpression(part, part->columns, new_columns,
+            getIndicesDescription().indices, new_indices,
+            expression, transaction->rename_map, force_update_metadata);
 
     size_t num_files_to_modify = transaction->rename_map.size();
     size_t num_files_to_remove = 0;
@@ -2062,7 +2144,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
     /// Check the data while we are at it.
     if (part->checksums.empty())
     {
-        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types);
+        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types, skip_indices);
 
         {
             WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);

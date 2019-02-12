@@ -5,4 +5,5 @@ if (CLICKHOUSE_SPLIT_BINARY)
     # Also in utils
     add_executable (clickhouse-compressor clickhouse-compressor.cpp)
     target_link_libraries (clickhouse-compressor PRIVATE clickhouse-compressor-lib)
+    install (TARGETS clickhouse-compressor ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()

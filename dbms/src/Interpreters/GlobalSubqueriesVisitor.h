@@ -16,6 +16,7 @@
 #include <Storages/StorageMemory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 namespace DB
 {

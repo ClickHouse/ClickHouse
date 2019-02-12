@@ -11,7 +11,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -337,14 +337,19 @@ void DatabaseOrdinary::removeTable(
 
 static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true)
 {
-    if (!Poco::File(metadata_path).exists())
-        return nullptr;
-
     String query;
 
+    try
     {
         ReadBufferFromFile in(metadata_path, 4096);
         readStringUntilEOF(query, in);
+    }
+    catch (const Exception & e)
+    {
+        if (!throw_on_error && e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            return nullptr;
+        else
+            throw;
     }
 
     ParserCreateQuery parser;
@@ -510,6 +515,7 @@ void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & table_name,
     const ColumnsDescription & columns,
+    const IndicesDescription & indices,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
@@ -531,7 +537,14 @@ void DatabaseOrdinary::alterTable(
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
-    ast_create_query.replace(ast_create_query.columns, new_columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
+
+    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+
+    if (ast_create_query.columns_list->indices)
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
+    else
+        ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);
