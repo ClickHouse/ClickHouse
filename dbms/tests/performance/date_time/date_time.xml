@@ -76,7 +76,6 @@
                <value>toISOWeek</value>
                <value>toISOYear</value>
 
-               <value>toStartOfDay</value>
                <value>toDate</value>
                <value>toMonday</value>
                <value>toStartOfMonth</value>

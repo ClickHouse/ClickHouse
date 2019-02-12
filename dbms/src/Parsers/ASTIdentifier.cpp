@@ -22,6 +22,15 @@ ASTIdentifier::ASTIdentifier(const String & name_, std::vector<String> && name_p
 {
 }
 
+void ASTIdentifier::setShortName(const String & new_name)
+{
+    name = new_name;
+    name_parts.clear();
+
+    semantic->need_long_name = false;
+    semantic->can_be_alias = true;
+}
+
 void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     auto format_element = [&](const String & elem_name)

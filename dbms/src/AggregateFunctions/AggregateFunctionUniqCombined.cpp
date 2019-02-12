@@ -28,7 +28,7 @@ namespace
     };
 
     template <UInt8 K>
-    AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_types)
+    AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_types, const Array & params)
     {
         /// We use exact hash function if the arguments are not contiguous in memory, because only exact hash function has support for this case.
         bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
@@ -37,33 +37,33 @@ namespace
         {
             const IDataType & argument_type = *argument_types[0];
 
-            AggregateFunctionPtr res(createWithNumericType<WithK<K>::template AggregateFunction>(*argument_types[0]));
+            AggregateFunctionPtr res(createWithNumericType<WithK<K>::template AggregateFunction>(*argument_types[0], argument_types, params));
 
             WhichDataType which(argument_type);
             if (res)
                 return res;
             else if (which.isDate())
-                return std::make_shared<typename WithK<K>::template AggregateFunction<DataTypeDate::FieldType>>();
+                return std::make_shared<typename WithK<K>::template AggregateFunction<DataTypeDate::FieldType>>(argument_types, params);
             else if (which.isDateTime())
-                return std::make_shared<typename WithK<K>::template AggregateFunction<DataTypeDateTime::FieldType>>();
+                return std::make_shared<typename WithK<K>::template AggregateFunction<DataTypeDateTime::FieldType>>(argument_types, params);
             else if (which.isStringOrFixedString())
-                return std::make_shared<typename WithK<K>::template AggregateFunction<String>>();
+                return std::make_shared<typename WithK<K>::template AggregateFunction<String>>(argument_types, params);
             else if (which.isUUID())
-                return std::make_shared<typename WithK<K>::template AggregateFunction<DataTypeUUID::FieldType>>();
+                return std::make_shared<typename WithK<K>::template AggregateFunction<DataTypeUUID::FieldType>>(argument_types, params);
             else if (which.isTuple())
             {
                 if (use_exact_hash_function)
-                    return std::make_shared<typename WithK<K>::template AggregateFunctionVariadic<true, true>>(argument_types);
+                    return std::make_shared<typename WithK<K>::template AggregateFunctionVariadic<true, true>>(argument_types, params);
                 else
-                    return std::make_shared<typename WithK<K>::template AggregateFunctionVariadic<false, true>>(argument_types);
+                    return std::make_shared<typename WithK<K>::template AggregateFunctionVariadic<false, true>>(argument_types, params);
             }
         }
 
         /// "Variadic" method also works as a fallback generic case for a single argument.
         if (use_exact_hash_function)
-            return std::make_shared<typename WithK<K>::template AggregateFunctionVariadic<true, false>>(argument_types);
+            return std::make_shared<typename WithK<K>::template AggregateFunctionVariadic<true, false>>(argument_types, params);
         else
-            return std::make_shared<typename WithK<K>::template AggregateFunctionVariadic<false, false>>(argument_types);
+            return std::make_shared<typename WithK<K>::template AggregateFunctionVariadic<false, false>>(argument_types, params);
     }
 
     AggregateFunctionPtr createAggregateFunctionUniqCombined(
@@ -95,23 +95,23 @@ namespace
         switch (precision)
         {
             case 12:
-                return createAggregateFunctionWithK<12>(argument_types);
+                return createAggregateFunctionWithK<12>(argument_types, params);
             case 13:
-                return createAggregateFunctionWithK<13>(argument_types);
+                return createAggregateFunctionWithK<13>(argument_types, params);
             case 14:
-                return createAggregateFunctionWithK<14>(argument_types);
+                return createAggregateFunctionWithK<14>(argument_types, params);
             case 15:
-                return createAggregateFunctionWithK<15>(argument_types);
+                return createAggregateFunctionWithK<15>(argument_types, params);
             case 16:
-                return createAggregateFunctionWithK<16>(argument_types);
+                return createAggregateFunctionWithK<16>(argument_types, params);
             case 17:
-                return createAggregateFunctionWithK<17>(argument_types);
+                return createAggregateFunctionWithK<17>(argument_types, params);
             case 18:
-                return createAggregateFunctionWithK<18>(argument_types);
+                return createAggregateFunctionWithK<18>(argument_types, params);
             case 19:
-                return createAggregateFunctionWithK<19>(argument_types);
+                return createAggregateFunctionWithK<19>(argument_types, params);
             case 20:
-                return createAggregateFunctionWithK<20>(argument_types);
+                return createAggregateFunctionWithK<20>(argument_types, params);
         }
 
         __builtin_unreachable();
