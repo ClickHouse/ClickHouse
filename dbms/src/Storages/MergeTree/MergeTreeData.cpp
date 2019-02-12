@@ -72,6 +72,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int SYNTAX_ERROR;
     extern const int INVALID_PARTITION_VALUE;
@@ -1051,7 +1052,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 }
 
-void MergeTreeData::checkAlter(const AlterCommands & commands)
+void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & context)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
@@ -1059,6 +1060,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
+
+    if (getIndicesDescription().empty() && !new_indices.empty() &&
+            !context.getSettingsRef().allow_experimental_data_skipping_indices)
+        throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
+                        "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
