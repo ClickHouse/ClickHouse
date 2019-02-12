@@ -3,7 +3,6 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 
 
 int main(int, char **)
@@ -18,7 +17,7 @@ try
         " GROUP BY UniqID"
         " HAVING SUM(Refresh) > 100"
         " ORDER BY Visits, PageViews"
-        " LIMIT 1000, 10"
+        " LIMIT LENGTH('STRING OF 20 SYMBOLS') - 20 + 1000, 10.05 / 5.025 * 5"
         " INTO OUTFILE 'test.out'"
         " FORMAT TabSeparated";
 

@@ -6,7 +6,7 @@
 #include <Poco/Data/RecordSet.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
-#include "ExternalResultDescription.h"
+#include <Dictionaries/ExternalResultDescription.h>
 
 
 namespace DB
@@ -16,7 +16,7 @@ class ODBCBlockInputStream final : public IBlockInputStream
 {
 public:
     ODBCBlockInputStream(
-        Poco::Data::Session && session, const std::string & query_str, const Block & sample_block, const size_t max_block_size);
+        Poco::Data::Session && session, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size);
 
     String getName() const override { return "ODBC"; }
 
@@ -30,7 +30,7 @@ private:
     Poco::Data::RecordSet result;
     Poco::Data::RecordSet::Iterator iterator;
 
-    const size_t max_block_size;
+    const UInt64 max_block_size;
     ExternalResultDescription description;
 
     Poco::Logger * log;

@@ -69,8 +69,8 @@ nav:
     - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
     - 'VersionedCollapsingMergeTree': 'operations/table_engines/versionedcollapsingmergetree.md'
     - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
-  - 'Log Family':
-    - 'Introduction': 'operations/table_engines/log_family.md'
+  - 'Семейство Log':
+    - 'Введение': 'operations/table_engines/log_family.md'
     - 'StripeLog': 'operations/table_engines/stripelog.md'
     - 'Log': 'operations/table_engines/log.md'
     - 'TinyLog': 'operations/table_engines/tinylog.md'
@@ -160,7 +160,7 @@ nav:
   - 'Введение': 'operations/index.md'
   - 'Требования': 'operations/requirements.md'
   - 'Мониторинг': 'operations/monitoring.md'
-  - 'Решение проблем': 'operations/troubleshooting.md'
+  - 'Устранение неисправностей': 'operations/troubleshooting.md'
   - 'Советы по эксплуатации': 'operations/tips.md'
   - 'Обновление ClickHouse': 'operations/update.md'
   - 'Права доступа': 'operations/access_rights.md'

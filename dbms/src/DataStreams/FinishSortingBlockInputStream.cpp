@@ -26,7 +26,7 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 FinishSortingBlockInputStream::FinishSortingBlockInputStream(
     const BlockInputStreamPtr & input, const SortDescription & description_sorted_,
     const SortDescription & description_to_sort_,
-    size_t max_merged_block_size_, size_t limit_)
+    size_t max_merged_block_size_, UInt64 limit_)
     : description_sorted(description_sorted_), description_to_sort(description_to_sort_),
     max_merged_block_size(max_merged_block_size_), limit(limit_)
 {

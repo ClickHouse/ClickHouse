@@ -3,7 +3,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
-#include <Storages/MergeTree/MergeTreeUniqueIndex.h>
+#include <Storages/MergeTree/MergeTreeSetSkippingIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -579,7 +579,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
             for (const auto & index : args.query.columns_list->indices->children)
                 indices_description.indices.push_back(
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->ptr()));
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
 
         storage_settings.loadFromQuery(*args.storage_def);
     }
@@ -610,6 +610,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
+    if (!args.attach && !indices_description.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
+        throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
+                        "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
+
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
@@ -621,14 +625,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.data_path, args.database_name, args.table_name, args.columns, indices_description,
             args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
             primary_key_ast, sample_by_ast, merging_params, storage_settings, args.has_force_restore_data_flag);
-}
-
-
-static void registerMergeTreeSkipIndices()
-{
-    auto & factory = MergeTreeIndexFactory::instance();
-    factory.registerIndex("minmax", MergeTreeMinMaxIndexCreator);
-    factory.registerIndex("unique", MergeTreeUniqueIndexCreator);
 }
 
 
@@ -649,8 +645,6 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create);
-
-    registerMergeTreeSkipIndices();
 }
 
 }

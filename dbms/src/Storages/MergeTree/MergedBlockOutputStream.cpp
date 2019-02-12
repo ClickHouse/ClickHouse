@@ -110,7 +110,7 @@ void IMergedBlockOutputStream::writeData(
     size_t prev_mark = 0;
     while (prev_mark < size)
     {
-        size_t limit = 0;
+        UInt64 limit = 0;
 
         /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
         if (prev_mark == 0 && index_offset != 0)
@@ -551,7 +551,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
             while (prev_pos < rows)
             {
-                size_t limit = 0;
+                UInt64 limit = 0;
                 if (prev_pos == 0 && index_offset != 0)
                 {
                     limit = index_offset;
