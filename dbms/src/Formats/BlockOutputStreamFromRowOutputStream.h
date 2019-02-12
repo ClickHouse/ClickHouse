@@ -29,7 +29,7 @@ public:
 
     String getContentType() const override { return row_output->getContentType(); }
 
-protected:
+private:
     RowOutputStreamPtr row_output;
     Block header;
     bool first_row = true;
