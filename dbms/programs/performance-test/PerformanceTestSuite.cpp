@@ -170,11 +170,13 @@ private:
             for (auto & test_config : tests_configurations)
             {
                 auto [output, signal] = runTest(test_config);
-                if (lite_output)
-                    std::cout << output;
-                else
-                    outputs.push_back(output);
-
+                if (!output.empty())
+                {
+                    if (lite_output)
+                        std::cout << output;
+                    else
+                        outputs.push_back(output);
+                }
                 if (signal)
                     break;
             }
@@ -203,26 +205,32 @@ private:
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
         PerformanceTest current(test_config, connection, interrupt_listener, info, global_context, query_indexes[info.path]);
 
-        current.checkPreconditions();
-        LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
-        LOG_INFO(log, "Preparing for run, have " << info.create_queries.size()
-            << " create queries and " << info.fill_queries.size() << " fill queries");
-        current.prepare();
-        LOG_INFO(log, "Prepared");
-        LOG_INFO(log, "Running test '" << info.test_name << "'");
-        auto result = current.execute();
-        LOG_INFO(log, "Test '" << info.test_name << "' finished");
+        if (current.checkPreconditions())
+        {
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
+            LOG_INFO(
+                log,
+                "Preparing for run, have " << info.create_queries.size() << " create queries and " << info.fill_queries.size()
+                                           << " fill queries");
+            current.prepare();
+            LOG_INFO(log, "Prepared");
+            LOG_INFO(log, "Running test '" << info.test_name << "'");
+            auto result = current.execute();
+            LOG_INFO(log, "Test '" << info.test_name << "' finished");
 
-        LOG_INFO(log, "Running post run queries");
-        current.finish();
-        LOG_INFO(log, "Postqueries finished");
-
-        if (lite_output)
-            return {report_builder->buildCompactReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+            LOG_INFO(log, "Running post run queries");
+            current.finish();
+            LOG_INFO(log, "Postqueries finished");
+            if (lite_output)
+                return {report_builder->buildCompactReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+            else
+                return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+        }
         else
-            return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
-    }
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");
 
+        return {"", current.checkSIGINT()};
+    }
 };
 
 }
