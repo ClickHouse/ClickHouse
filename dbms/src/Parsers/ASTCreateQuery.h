@@ -88,6 +88,7 @@ class ASTDictionarySource : public IAST
 public:
     ASTKeyValueFunction * source = nullptr;
     IAST * primary_key = nullptr;
+    IAST * composite_key = nullptr;
     ASTKeyValueFunction * lifetime;
     ASTKeyValueFunction * layout;
     ASTKeyValueFunction * range;

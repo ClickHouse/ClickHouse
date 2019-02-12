@@ -696,8 +696,8 @@ void DatabaseOrdinary::createDictionary(Context & context, const String & dictio
         if (!dictionaries.emplace(dictionary_name, dict_ptr).second)
             throw Exception("Dictionary " + name + '.' + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-        Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path.toString());
         context.getExternalDictionaries().addObjectFromDatabase(name, dictionary_name, dict_ptr);
+        Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path.toString());
     }
     catch (...)
     {
