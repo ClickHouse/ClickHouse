@@ -145,7 +145,7 @@ public:
     AggregateFunctionTopKGeneric(
         UInt64 threshold, const DataTypePtr & input_data_type, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>({input_data_type}, params)
-        , threshold(threshold), reserved(TOP_K_LOAD_FACTOR * threshold), input_data_type(argument_types[0]) {}
+        , threshold(threshold), reserved(TOP_K_LOAD_FACTOR * threshold), input_data_type(this->argument_types[0]) {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 

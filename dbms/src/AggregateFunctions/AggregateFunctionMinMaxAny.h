@@ -681,7 +681,7 @@ private:
 public:
     AggregateFunctionsSingleValue(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
-        , type(argument_types[0])
+        , type(this->argument_types[0])
     {
         if (StringRef(Data::name()) == StringRef("min")
             || StringRef(Data::name()) == StringRef("max"))

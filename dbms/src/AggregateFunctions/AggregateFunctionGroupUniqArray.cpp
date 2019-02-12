@@ -48,7 +48,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & n
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0], argument_types[0]));
 
     if (!res)
         res = AggregateFunctionPtr(createWithExtraTypes(argument_types[0]));
