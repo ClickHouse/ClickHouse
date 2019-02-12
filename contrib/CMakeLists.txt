@@ -153,7 +153,7 @@ endif ()
 
 if (USE_INTERNAL_PARQUET_LIBRARY)
 if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
-    # if use arrow's cmakefiles they wants too lot depends, downloads some libs
+    # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
     # But this mode can be used for updating auto-generated parquet files:
     # cmake -DUSE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE=1 -DUSE_STATIC_LIBRARIES=0
     # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> /contrib/arrow-cmake/cpp/src/parquet/
