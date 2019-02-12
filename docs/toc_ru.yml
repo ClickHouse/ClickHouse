@@ -160,7 +160,7 @@ nav:
   - 'Введение': 'operations/index.md'
   - 'Требования': 'operations/requirements.md'
   - 'Мониторинг': 'operations/monitoring.md'
-  - 'Решение проблем': 'operations/troubleshooting.md'
+  - 'Устранение неисправностей': 'operations/troubleshooting.md'
   - 'Советы по эксплуатации': 'operations/tips.md'
   - 'Обновление ClickHouse': 'operations/update.md'
   - 'Права доступа': 'operations/access_rights.md'
