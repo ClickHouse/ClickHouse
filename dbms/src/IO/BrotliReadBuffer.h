@@ -11,9 +11,9 @@ class BrotliReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
     BrotliReadBuffer(
-            ReadBuffer &in_,
+            ReadBuffer & in_,
             size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-            char *existing_memory = nullptr,
+            char * existing_memory = nullptr,
             size_t alignment = 0);
 
     ~BrotliReadBuffer() override;
@@ -21,7 +21,7 @@ public:
 private:
     bool nextImpl() override;
 
-    ReadBuffer &in;
+    ReadBuffer & in;
 
     class BrotliStateWrapper;
     std::unique_ptr<BrotliStateWrapper> brotli;
