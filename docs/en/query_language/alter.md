@@ -39,6 +39,9 @@ CLEAR COLUMN name IN PARTITION partition_name
 
 Clears all data in a column in a specified partition.
 
+!!! info
+    Use the `CLEAR COLUMN .. IN PARTITION` query just with the inactive partitions. Otherwise, it can cause the replication query to freeze processing.
+
 ``` sql
 MODIFY COLUMN name [type] [default_expr]
 ```
