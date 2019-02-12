@@ -114,37 +114,6 @@ By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
 
-When reading from [MergeTree*](../table_engines/mergetree.md) tables, ClickHouse uses several threads. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
-
-**Possible values**
-
-- 0 — Uniform read distribution turned off.
-- 1 — Uniform read distribution turned on.
-
-**Default value** — 1.
-
-## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
-
-If a number of rows to be read from a file of [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file by several threads.
-
-**Possible values**
-
-Any positive integer.
-
-**Default value** — 163840.
-
-## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
-
-If the distance between two data blocks to be read in one file less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, it reads the data sequentially.
-
-**Possible values**
-
-Any positive integer.
-
-**Default value** — 0.
-
-## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
-
 ClickHouse uses multiple threads when reading from [MergeTree*](../table_engines/mergetree.md) tables. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
 
 **Possible values**
@@ -320,8 +289,6 @@ For more information, see the section "Extreme values".
 
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
-## use_uncompressed_cache {#setting-use_uncompressed_cache}
-
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
 Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
@@ -427,7 +394,7 @@ Affects the behavior of [JOIN](../../query_language/select.md).
 
 With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
-## insert_quorum
+## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
 
@@ -442,7 +409,7 @@ Default value: 0.
 
 All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
 
-When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#select-sequential-consistency) option.
+When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#settings-select_sequential_consistency) option.
 
 **ClickHouse generates an exception**
 
@@ -451,11 +418,11 @@ When reading the data written from the `insert_quorum`, you can use the [select_
 
 **See also the following parameters:**
 
-- [insert_quorum_timeout](#insert-quorum-timeout)
-- [select_sequential_consistency](#select-sequential-consistency)
+- [insert_quorum_timeout](#settings-insert_quorum_timeout)
+- [select_sequential_consistency](#settings-select_sequential_consistency)
 
 
-## insert_quorum_timeout
+## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
 Quorum write timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
@@ -463,11 +430,11 @@ Default value: 60 seconds.
 
 **See also the following parameters:**
 
-- [insert_quorum](#insert-quorum)
-- [select_sequential_consistency](#select-sequential-consistency)
+- [insert_quorum](#settings-insert_quorum)
+- [select_sequential_consistency](#settings-select_sequential_consistency)
 
 
-## select_sequential_consistency
+## select_sequential_consistency {#settings-select_sequential_consistency}
 
 Enables/disables sequential consistency for `SELECT` queries:
 
@@ -479,8 +446,8 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 See also the following parameters:
 
-- [insert_quorum](#insert-quorum)
-- [insert_quorum_timeout](#insert-quorum-timeout)
+- [insert_quorum](#settings-insert_quorum)
+- [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->
