@@ -22,7 +22,6 @@ namespace Poco
 
 namespace DB
 {
-/// Allows loading dictionaries from a Redis collection
     class RedisDictionarySource final : public IDictionarySource
     {
         RedisDictionarySource(
@@ -77,9 +76,3 @@ namespace DB
 
 }
 #endif
-
-/*namespace DB
-{
-class DictionarySourceFactory;
-void registerDictionarySourceRedis(DictionarySourceFactory & factory);
-}*/

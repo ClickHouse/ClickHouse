@@ -409,8 +409,6 @@ def generate_data(args):
             ") format JSON"
         ]))['data']
 
-        # print json.dumps(table_rows)
-
         # For Integers the first byte of the reply is ":"
         # For Bulk Strings the first byte of the reply is "$"
 
@@ -428,9 +426,6 @@ def generate_data(args):
                         value = value[value.find("'") + 1:-2]
 
                 proto_for_redis += "SET " + "$" + key + " " + value_type + str(value) + "\r\n"
-
-        # with open("clickhouse_redis.log", "w") as f:
-        #     f.write(json.dumps(table_rows) + "\n" + proto_for_redis + "\n")
 
         open('generated/full.json', 'w').write(proto_for_redis)
         result = system('cat {0}/full.json | redis-cli > \\dev\\null'.format(args.generated))
