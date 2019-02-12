@@ -541,14 +541,16 @@ const char * ParserDictionarySource::getName() const
 bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword primary_key_keyword("PRIMARY KEY");
+    ParserKeyword composite_key_keyword("COMPOSITE KEY");
     ParserKeyword source_keyword("SOURCE");
     ParserKeyword lifetime_keyword("LIFETIME");
     ParserKeyword range_keyword("RANGE");
     ParserKeyword layout_keyword("LAYOUT");
     ParserKeyValueFunction key_value_pairs_p;
-    ParserExpressionList expression_parser(false);
+    ParserKeyValuePairsList expression_parser;
 
     ASTPtr primary_key;
+    ASTPtr composite_key;
     ASTPtr ast_source;
     ASTPtr ast_lifetime;
     ASTPtr ast_layout;
@@ -556,6 +558,13 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (primary_key_keyword.ignore(pos))
         expression_parser.parse(pos, primary_key, expected);
+
+    if (composite_key_keyword.ignore(pos))
+        expression_parser.parse(pos, composite_key, expected);
+
+    /// Exactly one of two keys should be defined
+    if (!(bool(primary_key) ^ bool(composite_key)))
+        return false;
 
     while (true)
     {
@@ -594,6 +603,9 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = query;
     if (primary_key)
         query->set(query->primary_key, primary_key);
+
+    if (composite_key)
+        query->set(query->composite_key, composite_key);
 
     if (ast_source)
         query->set(query->source, ast_source);

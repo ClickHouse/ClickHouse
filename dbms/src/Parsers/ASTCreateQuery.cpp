@@ -22,6 +22,9 @@ ASTPtr ASTDictionarySource::clone() const
     if (primary_key)
         res->set(res->primary_key, primary_key->clone());
 
+    if (composite_key)
+        res->set(res->composite_key, composite_key->clone());
+
     if (lifetime)
         res->set(res->lifetime, lifetime->clone());
 
@@ -43,6 +46,13 @@ void ASTDictionarySource::formatImpl(const FormatSettings & settings,
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws
                       << "PRIMARY KEY " << (settings.hilite ? hilite_none : "");
         primary_key->formatImpl(settings, state, frame);
+    }
+
+    if (composite_key)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws
+                      << "COMPOSITE KEY " << (settings.hilite ? hilite_none : "");
+        composite_key->formatImpl(settings, state, frame);
     }
 
     if (source)

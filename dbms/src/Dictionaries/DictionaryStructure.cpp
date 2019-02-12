@@ -547,31 +547,69 @@ void addRangeFieldsFromAST(
 }
 
 
+void addPrimaryKeyFieldsFromAST(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const IAST * primary_key)
+{
+    const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(primary_key);
+    if (expr_list->children.size() != 1)
+        throw Exception("Primary key may be only one column", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
+    auto column_name = expr_list->children[0]->getColumnName();
+    Poco::AutoPtr<Poco::XML::Element> id_element = doc->createElement("id");
+    root->appendChild(id_element);
+    Poco::AutoPtr<Poco::XML::Element> name_element = doc->createElement("name");
+    id_element->appendChild(name_element);
+    name_element->appendChild(doc->createTextNode(column_name));
+}
+
+
+void addCompositeKeyFieldsFromAST(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const IAST * composite_key)
+{
+    const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(composite_key);
+    if (expr_list->children.size() == 0)
+        throw Exception("Composite key should contain at least one element", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
+    Poco::AutoPtr<Poco::XML::Element> key_element = doc->createElement("key");
+    root->appendChild(key_element);
+    for (size_t index = 0; index != expr_list->children.size(); ++index)
+    {
+        const auto * child = expr_list->children.at(index).get();
+        const ASTPair * pair = typeid_cast<const ASTPair *>(child);
+        Poco::AutoPtr<Poco::XML::Element> attribute_element = doc->createElement("attribute");
+        Poco::AutoPtr<Poco::XML::Element> name_element = doc->createElement("name");
+        name_element->appendChild(doc->createTextNode(pair->first));
+        attribute_element->appendChild(name_element);
+
+        Poco::AutoPtr<Poco::XML::Element> type_element = doc->createElement("type");
+        type_element->appendChild(doc->createTextNode(queryToString(pair->second)));
+        attribute_element->appendChild(type_element);
+
+        key_element->appendChild(attribute_element);
+    }
+}
+
 void addStructureFieldsFromAST(
     Poco::AutoPtr<Poco::XML::Document> doc,
     Poco::AutoPtr<Poco::XML::Element> root,
     const ASTCreateQuery & create)
 {
     if (create.dictionary_source == nullptr)
-        throw Exception("Can't construct configuration without dictionary structure", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+        throw Exception("Dictionary structure is empty", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
     const auto * source = create.dictionary_source;
     Poco::AutoPtr<Poco::XML::Element> structure_element = doc->createElement("structure");
     root->appendChild(structure_element);
     if (source->primary_key)
-    {
-        const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(source->primary_key);
-        if (expr_list->children.size() != 1)
-            throw Exception("Primary key may be only one column", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST); // TODO: this is wrong because of complex key
-
-        // TODO: support complex key here later
-        auto column_name = expr_list->children[0]->getColumnName();
-        Poco::AutoPtr<Poco::XML::Element> id_element = doc->createElement("id");
-        structure_element->appendChild(id_element);
-        Poco::AutoPtr<Poco::XML::Element> name_element = doc->createElement("name");
-        id_element->appendChild(name_element);
-        name_element->appendChild(doc->createTextNode(column_name));
-    }
+        addPrimaryKeyFieldsFromAST(doc, structure_element, source->primary_key);
+    else if (source->composite_key)
+        addCompositeKeyFieldsFromAST(doc, structure_element, source->composite_key);
+    else
+        throw Exception("Either primary or composite key should be defined", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
     if (create.columns_list == nullptr)
         throw Exception("Can't construct configuration without columns declaration", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
