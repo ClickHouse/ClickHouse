@@ -17,7 +17,6 @@ namespace Poco
 
 namespace DB
 {
-/// Converts Redis Cursor to a stream of Blocks
     class RedisBlockInputStream final : public IBlockInputStream
     {
     public:
