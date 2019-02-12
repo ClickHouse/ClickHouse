@@ -812,7 +812,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
     /// because inlining may change dependency sets.
     if (settings.compile_expressions)
-        compileFunctions(actions, output_columns, sample_block, compilation_cache, settings.min_count_to_compile);
+        compileFunctions(actions, output_columns, sample_block, compilation_cache, settings.min_count_to_compile_expression);
 #endif
 
     /// Which columns are needed to perform actions from the current to the last.
@@ -1109,7 +1109,7 @@ void ExpressionActions::optimizeArrayJoin()
 }
 
 
-BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const
+BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
 {
     for (const auto & action : actions)
         if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))

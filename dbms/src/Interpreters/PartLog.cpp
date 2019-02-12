@@ -122,8 +122,8 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
 
             elem.database_name = part->storage.getDatabaseName();
             elem.table_name = part->storage.getTableName();
-            elem.part_name = part->name;
             elem.partition_id = part->info.partition_id;
+            elem.part_name = part->name;
 
             elem.bytes_compressed_on_disk = part->bytes_on_disk;
             elem.rows = part->rows_count;

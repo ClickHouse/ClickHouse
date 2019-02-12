@@ -18,7 +18,7 @@ public:
         const mysqlxx::PoolWithFailover::Entry & entry,
         const std::string & query_str,
         const Block & sample_block,
-        const size_t max_block_size);
+        const UInt64 max_block_size);
 
     String getName() const override { return "MySQL"; }
 
@@ -30,7 +30,7 @@ private:
     mysqlxx::PoolWithFailover::Entry entry;
     mysqlxx::Query query;
     mysqlxx::UseQueryResult result;
-    const size_t max_block_size;
+    const UInt64 max_block_size;
     ExternalResultDescription description;
 };
 

@@ -78,49 +78,36 @@ void collectSourceColumns(ASTSelectQuery * select_query, StoragePtr storage, Nam
     }
 }
 
-/// Translate qualified names such as db.table.column, table.column, table_alias.column to unqualified names.
-void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query, const NameSet & source_columns,
-                             const std::vector<TableWithColumnNames> & tables_with_columns)
+/// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
+/// Expand asterisks and qualified asterisks with column names.
+/// There would be columns in normal form & column aliases after translation. Column & column alias would be normalized in QueryNormalizer.
+void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query, const Context & context, SyntaxAnalyzerResult & result,
+                             const Names & source_columns_list, const NameSet & source_columns_set)
 {
-    if (!select_query->tables || select_query->tables->children.empty())
-        return;
+    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(*select_query, context);
+
+    if (tables_with_columns.empty())
+    {
+        Names all_columns_name = source_columns_list;
+
+        /// TODO: asterisk_left_columns_only probably does not work in some cases
+        if (!context.getSettingsRef().asterisk_left_columns_only)
+        {
+            auto columns_from_joined_table = result.analyzed_join.getColumnsFromJoinedTable(source_columns_set, context, select_query);
+            for (auto & column : columns_from_joined_table)
+                all_columns_name.emplace_back(column.name_and_type.name);
+        }
+
+        tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
+    }
 
     LogAST log;
-    TranslateQualifiedNamesVisitor::Data visitor_data{source_columns, tables_with_columns};
+    TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 }
 
-/// For star nodes(`*`), expand them to a list of all columns. For literal nodes, substitute aliases.
-void normalizeTree(
-    ASTPtr & query,
-    SyntaxAnalyzerResult & result,
-    const Names & source_columns,
-    const NameSet & source_columns_set,
-    const Context & context,
-    const ASTSelectQuery * select_query,
-    std::vector<TableWithColumnNames> & tables_with_columns)
-{
-    const auto & settings = context.getSettingsRef();
 
-    Names all_columns_name = source_columns;
-
-    if (!settings.asterisk_left_columns_only)
-    {
-        auto columns_from_joined_table = result.analyzed_join.getColumnsFromJoinedTable(source_columns_set, context, select_query);
-        for (auto & column : columns_from_joined_table)
-            all_columns_name.emplace_back(column.name_and_type.name);
-    }
-
-    if (all_columns_name.empty())
-        throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
-
-    if (tables_with_columns.empty())
-        tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
-
-    QueryNormalizer::Data normalizer_data(result.aliases, settings, context, source_columns_set, tables_with_columns);
-    QueryNormalizer(normalizer_data).visit(query);
-}
 bool hasArrayJoin(const ASTPtr & ast)
 {
     if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
@@ -646,12 +633,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     if (source_columns_set.size() != source_columns_list.size())
         throw Exception("Unexpected duplicates in source columns list.", ErrorCodes::LOGICAL_ERROR);
 
-    std::vector<TableWithColumnNames> tables_with_columns;
-
     if (select_query)
     {
-        tables_with_columns = getDatabaseAndTablesWithColumnNames(*select_query, context);
-        translateQualifiedNames(query, select_query, source_columns_set, tables_with_columns);
+        translateQualifiedNames(query, select_query, context, result,
+                                (storage ? storage->getColumns().ordinary.getNames() : source_columns_list), source_columns_set);
 
         /// Depending on the user's profile, check for the execution rights
         /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
@@ -669,8 +654,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    normalizeTree(query, result, (storage ? storage->getColumns().ordinary.getNames() : source_columns_list), source_columns_set,
-                  context, select_query, tables_with_columns);
+    {
+        QueryNormalizer::Data normalizer_data(result.aliases, context.getSettingsRef());
+        QueryNormalizer(normalizer_data).visit(query);
+    }
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.

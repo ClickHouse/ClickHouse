@@ -63,7 +63,7 @@ namespace ErrorCodes
 }
 
 
-static const size_t max_block_size = 8192;
+static const UInt64 max_block_size = 8192;
 
 
 #    if POCO_VERSION < 0x01070800

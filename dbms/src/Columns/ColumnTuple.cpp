@@ -170,7 +170,7 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnTuple::permute(const Permutation & perm, UInt64 limit) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -181,7 +181,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
     return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnTuple::index(const IColumn & indexes, UInt64 limit) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -261,7 +261,7 @@ struct ColumnTuple::Less
     }
 };
 
-void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnTuple::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const
 {
     size_t rows = size();
     res.resize(rows);

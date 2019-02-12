@@ -38,7 +38,6 @@
 #include <Common/Macros.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/formatReadable.h>
-#include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
@@ -113,7 +112,6 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace ActionLocks
@@ -994,6 +992,7 @@ void StorageReplicatedMergeTree::writePartLog(
 
         part_log_elem.database_name = database_name;
         part_log_elem.table_name = table_name;
+        part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, data.format_version).partition_id;
         part_log_elem.part_name = new_part_name;
 
         if (result_part)
@@ -1008,7 +1007,7 @@ void StorageReplicatedMergeTree::writePartLog(
 
         if (merge_entry)
         {
-            part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
+            part_log_elem.rows_read = (*merge_entry)->rows_read;
             part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
 
             part_log_elem.rows = (*merge_entry)->rows_written;
@@ -1092,14 +1091,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     auto table_lock = lockStructure(false);
 
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
-
-    MergeTreeDataMergerMutator::FuturePart future_merged_part(parts);
+    FutureMergedMutatedPart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
     {
         throw Exception("Future merged part name `" + future_merged_part.name + "` differs from part name in log entry: `"
                         + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
     }
+
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_merged_part);
 
     MergeTreeData::Transaction transaction(data);
     MergeTreeData::MutableDataPartPtr part;
@@ -1225,10 +1224,13 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MergeTreeData::MutableDataPartPtr new_part;
     MergeTreeData::Transaction transaction(data);
 
-    MergeTreeDataMergerMutator::FuturePart future_mutated_part;
+    FutureMergedMutatedPart future_mutated_part;
     future_mutated_part.parts.push_back(source_part);
     future_mutated_part.part_info = new_part_info;
     future_mutated_part.name = entry.new_part_name;
+
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
+        database_name, table_name, future_mutated_part);
 
     Stopwatch stopwatch;
 
@@ -1236,12 +1238,12 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     {
         writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, new_part, future_mutated_part.parts, nullptr);
+            entry.new_part_name, new_part, future_mutated_part.parts, merge_entry.get());
     };
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context);
         data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -2211,7 +2213,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
             if (max_source_parts_size > 0)
             {
-                MergeTreeDataMergerMutator::FuturePart future_merged_part;
+                FutureMergedMutatedPart future_merged_part;
                 if (merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size, merge_pred))
                 {
                     success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
@@ -2917,7 +2919,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams)
 {
     const Settings & settings = context.getSettingsRef();
@@ -3036,7 +3038,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             for (const String & partition_id : partition_ids)
             {
-                MergeTreeDataMergerMutator::FuturePart future_merged_part;
+                FutureMergedMutatedPart future_merged_part;
                 bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
                 if (selected &&
@@ -3046,7 +3048,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
         else
         {
-            MergeTreeDataMergerMutator::FuturePart future_merged_part;
+            FutureMergedMutatedPart future_merged_part;
             String disable_reason;
             bool selected = false;
             if (!partition)
@@ -3123,7 +3125,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        data.checkAlter(params);
+        data.checkAlter(params, query_context);
 
         ColumnsDescription new_columns = data.getColumns();
         IndicesDescription new_indices = data.getIndicesDescription();
@@ -4409,6 +4411,31 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
 std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
 {
     return queue.getMutationsStatus();
+}
+
+CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutation_id)
+{
+    assertNotReadonly();
+
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+
+    LOG_TRACE(log, "Killing mutation " << mutation_id);
+
+    auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
+    if (!mutation_entry)
+        return CancellationCode::NotFound;
+
+    /// After this point no new part mutations will start and part mutations that still exist
+    /// in the queue will be skipped.
+
+    /// Cancel already running part mutations.
+    for (const auto & pair : mutation_entry->block_numbers)
+    {
+        const String & partition_id = pair.first;
+        Int64 block_number = pair.second;
+        global_context.getMergeList().cancelPartMutations(partition_id, block_number);
+    }
+    return CancellationCode::CancelSent;
 }
 
 

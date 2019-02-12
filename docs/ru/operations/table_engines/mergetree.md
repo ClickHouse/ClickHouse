@@ -226,7 +226,9 @@ SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 
 Ключ партиционирования по месяцам обеспечивает чтение только тех блоков данных, которые содержат даты из нужного диапазона. При этом блок данных может содержать данные за многие даты (до целого месяца). В пределах одного блока данные упорядочены по первичному ключу, который может не содержать дату в качестве первого столбца. В связи с этим, при использовании запроса с указанием условия только на дату, но не на префикс первичного ключа, будет читаться данных больше, чем за одну дату.
 
-### Дополнительные индексы
+### Дополнительные индексы (Экспериментальный функционал)
+
+Для использования требуется установить настройку `allow_experimental_data_skipping_indices` в 1.  (запустить `SET allow_experimental_data_skipping_indices = 1`).
 
 Для таблиц семейства `*MergeTree` можно задать дополнительные индексы в секции столбцов.
 
@@ -241,7 +243,7 @@ CREATE TABLE table_name
     s String,
     ...
     INDEX a (u64 * i32, s) TYPE minmax GRANULARITY 3,
-    INDEX b (u64 * length(s), i32) TYPE unique GRANULARITY 4
+    INDEX b (u64 * length(s), i32) TYPE set GRANULARITY 4
 ) ENGINE = MergeTree()
 ...
 ```
@@ -257,7 +259,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 * `minmax`
 Хранит минимум и максимум выражения (если выражение - `tuple`, то для каждого элемента `tuple`), используя их для пропуска блоков аналогично первичному ключу.
 
-* `unique(max_rows)`
+* `set(max_rows)`
 Хранит уникальные значения выражения на блоке в количестве не более `max_rows`, используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
 Если `max_rows=0`, то хранит значения выражения без ограничений. Если параметров не передано, то полагается `max_rows=0`.
 
@@ -265,8 +267,8 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 Примеры
 ```sql
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE minmax GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE unique GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE unique(100) GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 ```
 
 

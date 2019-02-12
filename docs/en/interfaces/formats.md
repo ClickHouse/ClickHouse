@@ -448,6 +448,13 @@ Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.
 
 For [NULL](../query_language/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../data_types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
+## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
+
+Similar to [RowBinary](#rowbinary), but with added header:
+* [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+* N `String`s specifying column names
+* N `String`s specifying column types
+
 ## Values
 
 Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md) is represented as `NULL`.
