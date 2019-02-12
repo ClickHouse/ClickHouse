@@ -61,8 +61,11 @@ private:
     DataTypes values_types;
 
 public:
-    AggregateFunctionSumMapBase(const DataTypePtr & keys_type, const DataTypes & values_types)
-        : keys_type(keys_type), values_types(values_types) {}
+    AggregateFunctionSumMapBase(
+        const DataTypePtr & keys_type, const DataTypes & values_types,
+        const DataTypes & argument_types, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>(argument_types, params)
+        , keys_type(keys_type), values_types(values_types) {}
 
     String getName() const override { return "sumMap"; }
 
@@ -271,8 +274,8 @@ private:
     using Base = AggregateFunctionSumMapBase<T, Self, OverflowPolicy>;
 
 public:
-    AggregateFunctionSumMap(const DataTypePtr & keys_type, DataTypes & values_types)
-        : Base{keys_type, values_types}
+    AggregateFunctionSumMap(const DataTypePtr & keys_type, DataTypes & values_types, const DataTypes & argument_types)
+        : Base{keys_type, values_types, argument_types, {}}
     {}
 
     String getName() const override { return "sumMap"; }
@@ -291,8 +294,10 @@ private:
     std::unordered_set<T> keys_to_keep;
 
 public:
-    AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep_)
-        : Base{keys_type, values_types}
+    AggregateFunctionSumMapFiltered(
+        const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep_,
+        const DataTypes & argument_types, const Array & params)
+        : Base{keys_type, values_types, argument_types, params}
     {
         keys_to_keep.reserve(keys_to_keep_.size());
         for (const Field & f : keys_to_keep_)

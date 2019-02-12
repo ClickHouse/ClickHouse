@@ -1019,9 +1019,10 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     for (NamesAndTypesList::iterator it = source_columns.begin(); it != source_columns.end();)
     {
-        unknown_required_source_columns.erase(it->name);
+        const String & column_name = it->name;
+        unknown_required_source_columns.erase(column_name);
 
-        if (!required.count(it->name))
+        if (!required.count(column_name))
             source_columns.erase(it++);
         else
             ++it;

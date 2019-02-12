@@ -28,7 +28,8 @@ private:
 
 public:
     AggregateFunctionArray(AggregateFunctionPtr nested_, const DataTypes & arguments)
-        : nested_func(nested_), num_arguments(arguments.size())
+        : IAggregateFunctionHelper<AggregateFunctionArray>(arguments, {})
+        , nested_func(nested_), num_arguments(arguments.size())
     {
         for (const auto & type : arguments)
             if (!isArray(type))
