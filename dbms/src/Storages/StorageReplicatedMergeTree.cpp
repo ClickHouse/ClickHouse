@@ -3125,7 +3125,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        data.checkAlter(params);
+        data.checkAlter(params, query_context);
 
         ColumnsDescription new_columns = data.getColumns();
         IndicesDescription new_indices = data.getIndicesDescription();

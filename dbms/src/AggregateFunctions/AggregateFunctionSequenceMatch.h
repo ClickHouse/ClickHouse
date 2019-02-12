@@ -139,8 +139,9 @@ template <typename Derived>
 class AggregateFunctionSequenceBase : public IAggregateFunctionDataHelper<AggregateFunctionSequenceMatchData, Derived>
 {
 public:
-    AggregateFunctionSequenceBase(const DataTypes & arguments, const String & pattern)
-        : pattern(pattern)
+    AggregateFunctionSequenceBase(const DataTypes & arguments, const Array & params, const String & pattern)
+        : IAggregateFunctionDataHelper<AggregateFunctionSequenceMatchData, Derived>(arguments, params)
+        , pattern(pattern)
     {
         arg_count = arguments.size();
 
@@ -578,6 +579,9 @@ private:
 class AggregateFunctionSequenceMatch final : public AggregateFunctionSequenceBase<AggregateFunctionSequenceMatch>
 {
 public:
+    AggregateFunctionSequenceMatch(const DataTypes & arguments, const Array & params, const String & pattern)
+        : AggregateFunctionSequenceBase<AggregateFunctionSequenceMatch>(arguments, params, pattern) {}
+
     using AggregateFunctionSequenceBase<AggregateFunctionSequenceMatch>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceMatch"; }
@@ -603,6 +607,9 @@ public:
 class AggregateFunctionSequenceCount final : public AggregateFunctionSequenceBase<AggregateFunctionSequenceCount>
 {
 public:
+    AggregateFunctionSequenceCount(const DataTypes & arguments, const Array & params, const String & pattern)
+        : AggregateFunctionSequenceBase<AggregateFunctionSequenceCount>(arguments, params, pattern) {}
+
     using AggregateFunctionSequenceBase<AggregateFunctionSequenceCount>::AggregateFunctionSequenceBase;
 
     String getName() const override { return "sequenceCount"; }
