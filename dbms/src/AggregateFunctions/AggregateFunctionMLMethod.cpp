@@ -73,7 +73,7 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     if (argument_types.size() < 2)
         throw Exception("Aggregate function " + name + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    return std::make_shared<Method>(argument_types.size() - 1, gc, wu, learning_rate, batch_size);
+    return std::make_shared<Method>(argument_types.size() - 1, gc, wu, learning_rate, batch_size, argument_types, parameters);
 }
 
 }

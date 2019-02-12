@@ -332,8 +332,11 @@ public:
                                         std::shared_ptr<IGradientComputer> gradient_computer,
                                         std::shared_ptr<IWeightsUpdater> weights_updater,
                                         Float64 learning_rate,
-                                        UInt32 batch_size)
-            : param_num(param_num),
+                                        UInt32 batch_size,
+                                        const DataTypes & argument_types,
+                                        const Array & params)
+            : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(argument_types, params),
+            param_num(param_num),
             learning_rate(learning_rate),
             batch_size(batch_size),
             gc(std::move(gradient_computer)),
