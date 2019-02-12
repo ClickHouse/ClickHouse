@@ -59,9 +59,16 @@ public:
         ColumnArray::Offset offset = 0;
         for (size_t i = 0; i < num_rows; ++i)
         {
+            auto array_size = col_num->getInt(i);
+
+            if (unlikely(array_size) < 0)
+                throw Exception("Array size cannot be negative: while executing function " + getName(), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
             offset += col_num->getUInt(i);
+
             if (unlikely(offset > max_arrays_size_in_block))
                 throw Exception("Too large array size while executing function " + getName(), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
+
             offsets.push_back(offset);
         }
 
