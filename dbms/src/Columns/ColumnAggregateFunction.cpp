@@ -349,7 +349,12 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
 void ColumnAggregateFunction::insert(const Field & x)
 {
     String type_string = getTypeString();
-    auto & field_name =  x.get<const AggregateFunctionStateData &>().name;
+
+    if (x.getType() != Field::Types::AggregateFunctionState)
+        throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
+                        "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
+
+    auto & field_name = x.get<const AggregateFunctionStateData &>().name;
     if (type_string != field_name)
         throw Exception("Cannot insert filed with type " + field_name + " into column with type " + type_string,
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
