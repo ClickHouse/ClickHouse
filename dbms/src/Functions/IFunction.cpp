@@ -356,8 +356,7 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
         if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
         {
             column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
-            if (auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get()))
-                column.type = removeLowCardinality() ///low_cardinality_type->getDictionaryType();
+            column.type = removeLowCardinality(column.type);
         }
         else if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
