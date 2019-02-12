@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
+    extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
 }
 
 
@@ -546,6 +547,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
     }
+
+    /// Temporary tables are created out of databases.
+    if (create.temporary && !create.database.empty())
+        throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
+            ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();

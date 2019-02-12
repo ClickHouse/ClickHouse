@@ -1,8 +1,8 @@
 # StripeLog
 
-Engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](log_family.md) article.
+This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](log_family.md) article.
 
-Use this engine in scenarios, when you need to write many tables with the small amount of data (less than 1 million rows).
+Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows).
 
 ## Creating a Table {#table_engines-stripelog-creating-a-table}
 
@@ -15,13 +15,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-See the detailed description of [CREATE TABLE](../../query_language/create.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
 
 ## Writing the Data {#table_engines-stripelog-writing-the-data}
 
-The `StripeLog` engine stores all the columns in one file. The `Log` and `TinyLog` engines store columns in separate files. For each `INSERT` query, ClickHouse appends data block to the end of a table file, writing columns one by one.
+The `StripeLog` engine stores all the columns in one file. For each `INSERT` query, ClickHouse appends the data block to the end of a table file, writing columns one by one.
 
-For each table ClickHouse writes two files:
+For each table ClickHouse writes the files:
 
 - `data.bin` — Data file.
 - `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
@@ -30,7 +30,7 @@ The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` op
 
 ## Reading the Data {#table_engines-stripelog-reading-the-data}
 
-File with marks allows ClickHouse parallelize the reading of data. This means that `SELECT` query returns rows in an unpredictable order. Use the `ORDER BY` clause to sort rows.
+The file with marks allows ClickHouse to parallelize the reading of data. This means that a `SELECT` query returns rows in an unpredictable order. Use the `ORDER BY` clause to sort rows.
 
 ## Example of Use {#table_engines-stripelog-example-of-use}
 
@@ -53,9 +53,9 @@ INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message'
 INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
 ```
 
-We used two `INSERT` queries to create two data block inside the `data.bin` file.
+We used two `INSERT` queries to create two data blocks inside the `data.bin` file.
 
-When selecting data, ClickHouse uses multiple threads. Each thread reads the separate data block and returns resulting rows independently as it finished. It causes that the order of blocks of rows in the output does not match the order of the same blocks in the input in the most cases. For example:
+ClickHouse uses multiple threads when selecting data. Each thread reads a separate data block and returns resulting rows independently as it finishes. As a result, the order of blocks of rows in the output does not match the order of the same blocks in the input in most cases. For example:
 
 ```sql
 SELECT * FROM stripe_log_table

@@ -1,5 +1,5 @@
 SET compile_expressions = 1;
-SET min_count_to_compile = 1;
+SET min_count_to_compile_expression = 1;
 
 DROP TABLE IF EXISTS test.time_table;
 

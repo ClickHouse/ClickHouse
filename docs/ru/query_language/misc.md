@@ -221,7 +221,7 @@ SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Выводит список запросов, выполняющихся в данный момент времени, кроме запросов `SHOW PROCESSLIST`.
+Выводит список запросов, выполняющихся в данный момент времени, кроме самих запросов `SHOW PROCESSLIST`.
 
 Выдаёт таблицу, содержащую столбцы:
 
@@ -239,7 +239,7 @@ SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 
 **query_id** - идентификатор запроса. Непустой, только если был явно задан пользователем. При распределённой обработке запроса идентификатор запроса не передаётся на удалённые серверы.
 
-Запрос полностью аналогичен запросу: `SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format]`.
+Этот запрос аналогичен запросу `SELECT * FROM system.processes` за тем исключением, что последний отображает список запросов, включая самого себя.
 
 Полезный совет (выполните в консоли):
 
