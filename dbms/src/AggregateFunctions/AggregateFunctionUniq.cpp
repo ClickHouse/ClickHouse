@@ -99,7 +99,7 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
         else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(argument_types);
         else if (which.isStringOrFixedString())
-            return std::make_shared<AggregateFunctionUniq<String, Data<String>>>();
+            return std::make_shared<AggregateFunctionUniq<String, Data<String>>>(argument_types);
         else if (which.isUUID())
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType>>>(argument_types);
         else if (which.isTuple())

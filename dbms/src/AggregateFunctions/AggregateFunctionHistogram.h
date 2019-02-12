@@ -304,7 +304,7 @@ private:
     const UInt32 max_bins;
 
 public:
-    AggregateFunctionHistogram(const DataTypes & arguments, const Array & params, UInt32 max_bins)
+    AggregateFunctionHistogram(UInt32 max_bins, const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>(arguments, params)
         , max_bins(max_bins)
     {

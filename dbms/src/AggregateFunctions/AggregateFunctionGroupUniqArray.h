@@ -129,7 +129,7 @@ class AggreagteFunctionGroupUniqArrayGeneric
 public:
     AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type)
         : IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>({input_data_type}, {})
-        , input_data_type(argument_types[0]) {}
+        , input_data_type(this->argument_types[0]) {}
 
     String getName() const override { return "groupUniqArray"; }
 

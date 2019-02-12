@@ -37,7 +37,7 @@ private:
 public:
     AggregateFunctionArgMinMax(const DataTypePtr & type_res, const DataTypePtr & type_val)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data>>({type_res, type_val}, {}),
-        type_res(argument_types[0]), type_val(argument_types[1])
+        type_res(this->argument_types[0]), type_val(this->argument_types[1])
     {
         if (!type_val->isComparable())
             throw Exception("Illegal type " + type_val->getName() + " of second argument of aggregate function " + getName()
