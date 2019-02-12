@@ -44,14 +44,14 @@ void executeQuery(
     TestStats & statistics,
     TestStopConditions & stop_conditions,
     InterruptListener & interrupt_listener,
-    Context & context)
+    Context & context,
+    const Settings & settings)
 {
     statistics.watch_per_query.restart();
     statistics.last_query_was_cancelled = false;
     statistics.last_query_rows_read = 0;
     statistics.last_query_bytes_read = 0;
 
-    Settings settings;
     RemoteBlockInputStream stream(connection, query, {}, context, &settings);
 
     stream.setProgressCallback(
