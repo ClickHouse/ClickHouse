@@ -142,41 +142,54 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto check_date_time_argument = [&] {
+        bool first_argument_is_date = false;
+        auto check_first_argument = [&]
+        {
             if (!isDateOrDateTime(arguments[0].type))
                 throw Exception(
                     "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            first_argument_is_date = isDate(arguments[0].type);
         };
 
         const DataTypeInterval * interval_type = nullptr;
-        auto check_interval_argument = [&] {
+        bool result_type_is_date = false;
+        auto check_interval_argument = [&]
+        {
             interval_type = checkAndGetDataType<DataTypeInterval>(arguments[1].type.get());
             if (!interval_type)
                 throw Exception(
                     "Illegal type " + arguments[1].type->getName() + " of argument of function " + getName()
                         + ". Should be an interval of time",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            result_type_is_date = (interval_type->getKind() == DataTypeInterval::Year)
+                || (interval_type->getKind() == DataTypeInterval::Quarter) || (interval_type->getKind() == DataTypeInterval::Month)
+                || (interval_type->getKind() == DataTypeInterval::Week);
         };
 
-        auto check_timezone_argument = [&] {
+        auto check_timezone_argument = [&]
+        {
             if (!WhichDataType(arguments[2].type).isString())
                 throw Exception(
                     "Illegal type " + arguments[2].type->getName() + " of argument of function " + getName()
-                        + ". This argument is optional and must be a constant string with timezone name"
-                          ". This argument is allowed only when the 1st argument has the type DateTime",
+                        + ". This argument is optional and must be a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (first_argument_is_date && result_type_is_date)
+                throw Exception(
+                    "The timezone argument of function " + getName() + " with interval type " + interval_type->kindToString()
+                        + " is allowed only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         };
 
         if (arguments.size() == 2)
         {
-            check_date_time_argument();
+            check_first_argument();
             check_interval_argument();
         }
         else if (arguments.size() == 3)
         {
-            check_date_time_argument();
+            check_first_argument();
             check_interval_argument();
             check_timezone_argument();
         }
@@ -188,11 +201,10 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
-        if ((interval_type->getKind() == DataTypeInterval::Second) || (interval_type->getKind() == DataTypeInterval::Minute)
-            || (interval_type->getKind() == DataTypeInterval::Hour) || (interval_type->getKind() == DataTypeInterval::Day))
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
-        else
+        if (result_type_is_date)
             return std::make_shared<DataTypeDate>();
+        else
+            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
