@@ -762,11 +762,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
-            while ((block = column_gathered_stream.read()))
+            while (!actions_blocker.isCancelled() && (block = column_gathered_stream.read()))
             {
                 column_elems_written += block.rows();
                 column_to.write(block);
             }
+
+            if (actions_blocker.isCancelled())
+                throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
+
             column_gathered_stream.readSuffix();
             checksums_gathered_columns.add(column_to.writeSuffixAndGetChecksums());
 
@@ -781,9 +785,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             merge_entry->columns_written += 1;
             merge_entry->bytes_written_uncompressed += column_gathered_stream.getProfileInfo().bytes;
             merge_entry->progress.store(progress_before + column_sizes.columnWeight(column_name), std::memory_order_relaxed);
-
-            if (actions_blocker.isCancelled())
-                throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
         }
 
         Poco::File(rows_sources_file_path).remove();
