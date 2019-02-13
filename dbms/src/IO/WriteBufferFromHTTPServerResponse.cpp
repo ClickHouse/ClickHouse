@@ -76,7 +76,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
         {
             if (compress)
             {
-                if (compression_method == ZlibCompressionMethod::Gzip)
+                if (compression_method == CompressionMethod::Gzip)
                 {
 #if defined(POCO_CLICKHOUSE_PATCH)
                     *response_header_ostr << "Content-Encoding: gzip\r\n";
@@ -84,7 +84,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     response.set("Content-Encoding", "gzip");
 #endif
                 }
-                else if (compression_method == ZlibCompressionMethod::Zlib)
+                else if (compression_method == CompressionMethod::Zlib)
                 {
 #if defined(POCO_CLICKHOUSE_PATCH)
                     *response_header_ostr << "Content-Encoding: deflate\r\n";
@@ -133,7 +133,7 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     Poco::Net::HTTPServerResponse & response_,
     unsigned keep_alive_timeout_,
     bool compress_,
-    ZlibCompressionMethod compression_method_,
+    CompressionMethod compression_method_,
     size_t size)
     : BufferWithOwnMemory<WriteBuffer>(size)
     , request(request_)
