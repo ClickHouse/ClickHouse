@@ -228,7 +228,9 @@ To check whether ClickHouse can use the index when running a query, use the sett
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
 
-### Data Skipping Indices
+### Data Skipping Indices (Experimental)
+
+You need to set `allow_experimental_data_skipping_indices` to 1 to use indices.  (run `SET allow_experimental_data_skipping_indices = 1`).
 
 Index declaration in the columns section of the `CREATE` query.
 ```sql

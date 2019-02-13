@@ -73,11 +73,12 @@ private:
     /// Used when there are single level to get.
     Float64 level = 0.5;
 
-    DataTypePtr argument_type;
+    DataTypePtr & argument_type;
 
 public:
     AggregateFunctionQuantile(const DataTypePtr & argument_type, const Array & params)
-        : levels(params, returns_many), level(levels.levels[0]), argument_type(argument_type)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type}, params)
+        , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
             throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
