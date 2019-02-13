@@ -107,7 +107,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
 #endif
                     out_raw.emplace(*response_body_ostr);
                     brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
-                    out = &*deflating_buf;
+                    out = &*brotli_buf;
                 }
 
                 else
