@@ -9,21 +9,21 @@ namespace DB
 
 bool SizeLimits::check(UInt64 rows, UInt64 bytes, const char * what, int exception_code) const
 {
-    if (max_rows && rows > max_rows)
+    if (max_rows)
     {
-        if (overflow_mode == OverflowMode::THROW)
+        if (rows > max_rows && overflow_mode == OverflowMode::THROW)
             throw Exception("Limit for " + std::string(what) + " exceeded, max rows: " + formatReadableQuantity(max_rows)
                 + ", current rows: " + formatReadableQuantity(rows), exception_code);
-        else
+        else if (rows >= max_rows && overflow_mode == OverflowMode::BREAK)
             return false;
     }
 
-    if (max_bytes && bytes > max_bytes)
+    if (max_bytes)
     {
-        if (overflow_mode == OverflowMode::THROW)
+        if (bytes > max_bytes && overflow_mode == OverflowMode::THROW)
             throw Exception("Limit for " + std::string(what) + " exceeded, max bytes: " + formatReadableSizeWithBinarySuffix(max_bytes)
                 + ", current bytes: " + formatReadableSizeWithBinarySuffix(bytes), exception_code);
-        else
+        else if (bytes >= max_bytes && overflow_mode == OverflowMode::BREAK)
             return false;
     }
 
