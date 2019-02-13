@@ -31,12 +31,12 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
         throw Exception(
-                "Attempt to write empty unique index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
+                "Attempt to write empty set index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
 
     const auto & columns = set->getSetElements();
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
 
-    if (index.max_rows && size() > index.max_rows)
+    if (size() > index.max_rows)
     {
         size_type->serializeBinary(0, ostr);
         return;
@@ -87,7 +87,7 @@ void MergeTreeSetIndexGranule::update(const Block & new_block, size_t * pos, UIn
 
     size_t rows_read = std::min(limit, new_block.rows() - *pos);
 
-    if (index.max_rows && size() > index.max_rows)
+    if (size() > index.max_rows)
     {
         *pos += rows_read;
         return;
@@ -112,7 +112,7 @@ void MergeTreeSetIndexGranule::update(const Block & new_block, size_t * pos, UIn
 
 Block MergeTreeSetIndexGranule::getElementsBlock() const
 {
-    if (index.max_rows && size() > index.max_rows)
+    if (size() > index.max_rows)
         return index.header;
     return index.header.cloneWithColumns(set->getSetElements());
 }
@@ -169,12 +169,12 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
     auto granule = std::dynamic_pointer_cast<MergeTreeSetIndexGranule>(idx_granule);
     if (!granule)
         throw Exception(
-                "Unique index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+                "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
     if (useless)
         return true;
 
-    if (index.max_rows && granule->size() > index.max_rows)
+    if (granule->size() > index.max_rows)
         return true;
 
     Block result = granule->getElementsBlock();
@@ -363,14 +363,11 @@ std::unique_ptr<IMergeTreeIndex> setIndexCreator(
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
 
     size_t max_rows = 0;
-    if (node->type->arguments)
-    {
-        if (node->type->arguments->children.size() > 1)
-            throw Exception("Unique index cannot have only 0 or 1 argument", ErrorCodes::INCORRECT_QUERY);
-        else if (node->type->arguments->children.size() == 1)
-            max_rows = typeid_cast<const ASTLiteral &>(
-                    *node->type->arguments->children[0]).value.get<size_t>();
-    }
+    if (!node->type->arguments || node->type->arguments->children.size() != 1)
+        throw Exception("Set index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
+    else if (node->type->arguments->children.size() == 1)
+        max_rows = typeid_cast<const ASTLiteral &>(
+                *node->type->arguments->children[0]).value.get<size_t>();
 
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
