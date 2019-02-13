@@ -3904,6 +3904,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     auto zookeeper = tryGetZooKeeper();
 
     res.is_leader = is_leader;
+    res.can_become_leader = data.settings.replicated_can_become_leader;
     res.is_readonly = is_readonly;
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
