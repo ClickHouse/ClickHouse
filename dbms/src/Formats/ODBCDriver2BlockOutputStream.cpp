@@ -86,7 +86,7 @@ void ODBCDriver2BlockOutputStream::writePrefix()
     {
         auto type = header.getByPosition(i).type;
         if (type->lowCardinality())
-            type = removeLowCardinality(type);
+            type = recursiveRemoveLowCardinality(type);
         writeODBCString(out, type->getName());
     }
 }
