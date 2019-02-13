@@ -13,7 +13,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
