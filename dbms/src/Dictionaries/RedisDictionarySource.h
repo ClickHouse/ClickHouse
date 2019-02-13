@@ -55,7 +55,7 @@ namespace DB
         BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
         {
             throw Exception{"Method loadKeys is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
-        };
+        }
 
         bool isModified() const override { return true; }
 

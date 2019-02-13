@@ -108,7 +108,7 @@ namespace DB
     {
         Poco::Redis::Array commandForKeys;
         commandForKeys << "KEYS" << "*";
-        
+
         Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(commandForKeys);
 
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);

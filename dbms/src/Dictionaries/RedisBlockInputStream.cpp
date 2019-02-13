@@ -210,7 +210,8 @@ namespace DB
 
         while (num_rows < max_block_size)
         {
-            if (cursor == keys.size()) {
+            if (cursor == keys.size())
+            {
                 all_read = true;
                 break;
             }
@@ -227,7 +228,8 @@ namespace DB
             return {};
 
         Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
-        for (size_t i = 0; i < num_rows; ++i) {
+        for (size_t i = 0; i < num_rows; ++i)
+        {
             const Poco::Redis::RedisType::Ptr & value = *(values.begin() + i);
             if (value.isNull())
                 insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
