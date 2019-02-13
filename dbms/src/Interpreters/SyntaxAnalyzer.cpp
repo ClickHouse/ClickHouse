@@ -433,25 +433,10 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
 }
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.
-void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTSelectQuery * select_query,
-                                        const Context & context)
+void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTTableJoin & table_join)
 {
-    const auto & tables = static_cast<const ASTTablesInSelectQuery &>(*select_query->tables);
-    const auto * left_tables_element = static_cast<const ASTTablesInSelectQueryElement *>(tables.children.at(0).get());
-    const auto * right_tables_element = select_query->join();
-
-    if (!left_tables_element || !right_tables_element)
-        return;
-
-    const auto & table_join = static_cast<const ASTTableJoin &>(*right_tables_element->table_join);
     if (!table_join.on_expression)
         return;
-
-    const auto & left_table_expression = static_cast<const ASTTableExpression &>(*left_tables_element->table_expression);
-    const auto & right_table_expression = static_cast<const ASTTableExpression &>(*right_tables_element->table_expression);
-
-    DatabaseAndTableWithAlias left_source_names(left_table_expression, context.getCurrentDatabase());
-    DatabaseAndTableWithAlias right_source_names(right_table_expression, context.getCurrentDatabase());
 
     /// Stores examples of columns which are only from one table.
     struct TableBelonging
@@ -469,13 +454,15 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
         {
             auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
 
-            size_t left_match_degree = IdentifierSemantic::canReferColumnToTable(*identifier, left_source_names);
-            size_t right_match_degree = IdentifierSemantic::canReferColumnToTable(*identifier, right_source_names);
-
-            if (left_match_degree > right_match_degree)
-                return {identifier, nullptr};
-            if (left_match_degree < right_match_degree)
-                return {nullptr, identifier};
+            /// It's set in TranslateQualifiedNamesVisitor
+            size_t membership = IdentifierSemantic::getMembership(*identifier);
+            switch (membership)
+            {
+                case 1: return {identifier, nullptr};
+                case 2: return {nullptr, identifier};
+                default:
+                    break;
+            }
 
             return {};
         }
@@ -524,19 +511,11 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
         bool can_be_right_part_from_left_table = right_table_belonging.example_only_from_right == nullptr;
         bool can_be_right_part_from_right_table = right_table_belonging.example_only_from_left == nullptr;
 
-        auto add_join_keys = [&](ASTPtr & ast_to_left_table, ASTPtr & ast_to_right_table)
-        {
-            analyzed_join.key_asts_left.push_back(ast_to_left_table);
-            analyzed_join.key_names_left.push_back(ast_to_left_table->getColumnName());
-            analyzed_join.key_asts_right.push_back(ast_to_right_table);
-            analyzed_join.key_names_right.push_back(ast_to_right_table->getAliasOrColumnName());
-        };
-
         /// Default variant when all identifiers may be from any table.
         if (can_be_left_part_from_left_table && can_be_right_part_from_right_table)
-            add_join_keys(left_ast, right_ast);
+            analyzed_join.addOnKeys(left_ast, right_ast);
         else if (can_be_left_part_from_right_table && can_be_right_part_from_left_table)
-            add_join_keys(right_ast, left_ast);
+            analyzed_join.addOnKeys(right_ast, left_ast);
         else
         {
             auto * left_example = left_table_belonging.example_only_from_left ?
@@ -583,15 +562,14 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery * s
     {
         auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
         for (const auto & key : keys.children)
-            analyzed_join.addSimpleKey(key);
+            analyzed_join.addUsingKey(key);
 
-        /// @warning wrong qualification if the right key is an alias
         for (auto & name : analyzed_join.key_names_right)
             if (source_columns.count(name))
                 name = joined_table_name.getQualifiedNamePrefix() + name;
     }
     else if (table_join.on_expression)
-        collectJoinedColumnsFromJoinOnExpr(analyzed_join, select_query, context);
+        collectJoinedColumnsFromJoinOnExpr(analyzed_join, table_join);
 
     auto & settings = context.getSettingsRef();
     bool make_nullable = settings.join_use_nulls && (table_join.kind == ASTTableJoin::Kind::Left ||

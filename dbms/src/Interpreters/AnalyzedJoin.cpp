@@ -14,6 +14,24 @@
 namespace DB
 {
 
+void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
+{
+    key_names_left.push_back(ast->getColumnName());
+    key_names_right.push_back(ast->getAliasOrColumnName());
+
+    key_asts_left.push_back(ast);
+    key_asts_right.push_back(ast);
+}
+
+void AnalyzedJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
+{
+    key_names_left.push_back(left_table_ast->getColumnName());
+    key_names_right.push_back(right_table_ast->getAliasOrColumnName());
+
+    key_asts_left.push_back(left_table_ast);
+    key_asts_right.push_back(right_table_ast);
+}
+
 ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     const JoinedColumnsList & columns_added_by_join,
     const ASTSelectQuery * select_query_with_join,
