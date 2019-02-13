@@ -136,8 +136,8 @@ private:
     UInt8 threshold;
 
 public:
-    AggregateFunctionUniqUpTo(UInt8 threshold, const DataTypes & argument_types, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>(argument_types, params)
+    AggregateFunctionUniqUpTo(UInt8 threshold, const DataTypes & argument_types_, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<T>, AggregateFunctionUniqUpTo<T>>(argument_types_, params_)
         , threshold(threshold)
     {
     }

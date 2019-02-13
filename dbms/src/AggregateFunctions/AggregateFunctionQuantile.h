@@ -175,16 +175,16 @@ public:
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 
-    static void assertSecondArg(const DataTypes & argument_types)
+    static void assertSecondArg(const DataTypes & types)
     {
         if constexpr (has_second_arg)
         {
-            assertBinary(Name::name, argument_types);
-            if (!isUnsignedInteger(argument_types[1]))
-                throw Exception("Second argument (weight) for function " + std::string(Name::name) + " must be unsigned integer, but it has type " + argument_types[1]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            assertBinary(Name::name, types);
+            if (!isUnsignedInteger(types[1]))
+                throw Exception("Second argument (weight) for function " + std::string(Name::name) + " must be unsigned integer, but it has type " + types[1]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else
-            assertUnary(Name::name, argument_types);
+            assertUnary(Name::name, types);
     }
 };
 
