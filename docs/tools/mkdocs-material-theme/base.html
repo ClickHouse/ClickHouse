@@ -247,6 +247,12 @@
               });
           }
           window.onbeforeprint = beforePrint;
+
+          var name = window.location.hostname.split('.')[0];
+          var feedback_address = name + '-feedback' + '@yandex-team.ru';
+          var feedback_email = document.getElementsByClassName('feedback-email');
+          feedback_email.setAttribute('href', 'mailto:' + feedback_address);
+          feedback_email.innerHTML = feedback_address;
       });
     </script>
     <!-- Yandex.Metrika counter -->
