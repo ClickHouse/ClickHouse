@@ -6,6 +6,7 @@
 
 
 #include <Core/iostream_debug_helpers.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -86,8 +87,10 @@ void ODBCDriver2BlockOutputStream::writePrefix()
     writeODBCString(out, "type");
     for (size_t i = 0; i < columns; ++i)
     {
-        const ColumnWithTypeAndName & col = header.getByPosition(i);
-        writeODBCString(out, col.type->getName());
+        auto type = header.getByPosition(i).type;
+        if (type->lowCardinality())
+            type = removeLowCardinality(type);
+        writeODBCString(out, type->getName());
     }
 }
 
