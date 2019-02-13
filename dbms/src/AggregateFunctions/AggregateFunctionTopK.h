@@ -48,8 +48,8 @@ protected:
     UInt64 reserved;
 
 public:
-    AggregateFunctionTopK(UInt64 threshold, const DataTypes & argument_types, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types, params)
+    AggregateFunctionTopK(UInt64 threshold, const DataTypes & argument_types_, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params)
         , threshold(threshold), reserved(TOP_K_LOAD_FACTOR * threshold) {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
