@@ -20,6 +20,15 @@ public:
 private:
     void nextImpl() override;
 
+    class BrotliStateWrapper;
+    std::unique_ptr<BrotliStateWrapper> brotli;
+
+    size_t in_available;
+    const uint8_t * in_data;
+
+    size_t out_capacity;
+    uint8_t  * out_data;
+
     WriteBuffer & out;
     bool finished = false;
 };
