@@ -114,8 +114,8 @@ class AggregateFunctionUniqCombined final
     : public IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K>, AggregateFunctionUniqCombined<T, K>>
 {
 public:
-    AggregateFunctionUniqCombined(const DataTypes & argument_types, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K>, AggregateFunctionUniqCombined<T, K>>(argument_types, params) {}
+    AggregateFunctionUniqCombined(const DataTypes & argument_types_, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K>, AggregateFunctionUniqCombined<T, K>>(argument_types_, params_) {}
 
     String getName() const override
     {
