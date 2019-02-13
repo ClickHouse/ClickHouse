@@ -217,17 +217,14 @@ public:
     };
 
     /** Set limitations that checked on each block. */
-    void setLimits(const LocalLimits & limits_)
-    {
-        limits = limits_;
-    }
+    void setLimits(const LocalLimits & new_limits);
 
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
-    void setQuota(QuotaForIntervals & quota_)
+    void setQuota(QuotaForIntervals & new_quota)
     {
-        quota = &quota_;
+        quota = &new_quota;
     }
 
     /// Enable calculation of minimums and maximums by the result columns.

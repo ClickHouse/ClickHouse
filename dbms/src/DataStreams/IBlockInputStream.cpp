@@ -132,6 +132,25 @@ void IBlockInputStream::readSuffix()
 }
 
 
+void IBlockInputStream::setLimits(const LocalLimits & new_limits)
+{
+    /// Limits on total amount of read data are pushed to leaf streams.
+
+    if (new_limits.mode == LIMITS_CURRENT || children.empty())
+    {
+        limits = new_limits;
+    }
+    else if (new_limits.mode == LIMITS_TOTAL)
+    {
+        forEachChild([&] (IBlockInputStream & child)
+        {
+            child.setLimits(new_limits);
+            return false;
+        });
+    }
+}
+
+
 void IBlockInputStream::updateExtremes(Block & block)
 {
     size_t num_columns = block.columns();
