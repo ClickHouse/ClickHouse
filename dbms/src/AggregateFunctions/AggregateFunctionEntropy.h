@@ -97,9 +97,9 @@ private:
     size_t num_args;
 
 public:
-    AggregateFunctionEntropy(const DataTypes & argument_types)
-        : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types, {})
-        , num_args(argument_types.size())
+    AggregateFunctionEntropy(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types_, {})
+        , num_args(argument_types_.size())
     {
     }
 

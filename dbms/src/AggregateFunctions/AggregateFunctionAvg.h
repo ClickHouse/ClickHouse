@@ -49,14 +49,14 @@ public:
     using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<Decimal128>, ColumnVector<Float64>>;
 
     /// ctor for native types
-    AggregateFunctionAvg(const DataTypes & argument_types)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>(argument_types, {})
+    AggregateFunctionAvg(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>(argument_types_, {})
         , scale(0)
     {}
 
     /// ctor for Decimals
-    AggregateFunctionAvg(const IDataType & data_type, const DataTypes & argument_types)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>(argument_types, {})
+    AggregateFunctionAvg(const IDataType & data_type, const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>(argument_types_, {})
         , scale(getDecimalScale(data_type))
     {}
 
