@@ -263,7 +263,6 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 Хранит уникальные значения выражения на блоке в количестве не более `max_rows`, используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
 
 
-
 Примеры
 ```sql
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE minmax GRANULARITY 4
