@@ -15,6 +15,8 @@ class FunctionArrayEnumerateUniqRanked : public FunctionArrayEnumerateRankedExte
 public:
     static constexpr auto name = "arrayEnumerateUniqRanked";
     using Base::create;
+
+    FunctionArrayEnumerateUniqRanked(const Context & context) : FunctionArrayEnumerateRankedExtended<FunctionArrayEnumerateUniqRanked>(context) {}
 };
 
 void registerFunctionArrayEnumerateUniqRanked(FunctionFactory & factory)

@@ -148,6 +148,7 @@ struct ArrayElementNumImpl
         const ColumnArray::Offset index,
         PaddedPODArray<T> & result, ArrayImpl::NullMapBuilder & builder)
     {
+DUMP(index);
         size_t size = offsets.size();
         result.resize(size);
 
@@ -192,6 +193,7 @@ struct ArrayElementNumImpl
             size_t array_size = offsets[i] - current_offset;
 
             TIndex index = indices[i];
+DUMP(index);
             if (index > 0 && static_cast<size_t>(index) <= array_size)
             {
                 size_t j = current_offset + index - 1;
@@ -230,6 +232,7 @@ struct ArrayElementStringImpl
         ColumnString::Chars & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
+DUMP(index);
         size_t size = offsets.size();
         result_offsets.resize(size);
         result_data.reserve(data.size());
@@ -285,6 +288,7 @@ struct ArrayElementStringImpl
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
+DUMP(size);
         result_offsets.resize(size);
         result_data.reserve(data.size());
 
@@ -296,6 +300,7 @@ struct ArrayElementStringImpl
             size_t adjusted_index;    /// index in array from zero
 
             TIndex index = indices[i];
+DUMP(index);
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
             else if (index < 0 && static_cast<size_t>(-index) <= array_size)
@@ -347,6 +352,7 @@ struct ArrayElementGenericImpl
         IColumn & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
+DUMP(index, size);
         result.reserve(size);
 
         ColumnArray::Offset current_offset = 0;
@@ -381,6 +387,7 @@ struct ArrayElementGenericImpl
         IColumn & result, ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
+DUMP(size);
         result.reserve(size);
 
         ColumnArray::Offset current_offset = 0;
@@ -389,6 +396,7 @@ struct ArrayElementGenericImpl
             size_t array_size = offsets[i] - current_offset;
 
             TIndex index = indices[i];
+DUMP(index);
             if (index > 0 && static_cast<size_t>(index) <= array_size)
             {
                 size_t j = current_offset + index - 1;
@@ -852,7 +860,7 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
     else
     {
         Field index = (*block.getByPosition(arguments[1]).column)[0];
-
+DUMP(index);
         if (builder)
             builder.initSink(input_rows_count);
 
