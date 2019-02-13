@@ -1,5 +1,3 @@
-SET allow_experimental_low_cardinality_type = 1;
-
 DROP TABLE if exists test.lc;
 CREATE TABLE test.lc (a LowCardinality(Nullable(String)), b LowCardinality(Nullable(String))) ENGINE = MergeTree order by tuple();
 INSERT INTO test.lc VALUES ('a', 'b');
