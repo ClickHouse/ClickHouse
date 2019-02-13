@@ -79,47 +79,32 @@ Names AnalyzedJoin::getOriginalColumnNames(const NameSet & required_columns_from
     return original_columns;
 }
 
-const JoinedColumnsList & AnalyzedJoin::getColumnsFromJoinedTable(
-        const NameSet & source_columns, const Context & context, const ASTSelectQuery * select_query_with_join)
+void AnalyzedJoin::calculateColumnsFromJoinedTable(
+        const NameSet & source_columns, const DatabaseAndTableWithAlias & table_name_with_alias, const NamesAndTypesList & columns)
 {
-    if (select_query_with_join && columns_from_joined_table.empty())
-    {
-        if (const ASTTablesInSelectQueryElement * node = select_query_with_join->join())
-        {
-            const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
-            DatabaseAndTableWithAlias table_name_with_alias(table_expression, context.getCurrentDatabase());
-
-            auto columns = getNamesAndTypeListFromTableExpression(table_expression, context);
-
-            for (auto & column : columns)
-            {
-                JoinedColumn joined_column(column, column.name);
-
-                if (source_columns.count(column.name))
-                {
-                    auto qualified_name = table_name_with_alias.getQualifiedNamePrefix() + column.name;
-                    joined_column.name_and_type.name = qualified_name;
-                }
-
-                /// We don't want to select duplicate columns from the joined subquery if they appear
-                if (std::find(columns_from_joined_table.begin(), columns_from_joined_table.end(), joined_column) == columns_from_joined_table.end())
-                    columns_from_joined_table.push_back(joined_column);
-
-            }
-        }
-    }
-
-    return columns_from_joined_table;
-}
-
-void AnalyzedJoin::calculateAvailableJoinedColumns(
-        const NameSet & source_columns, const Context & context, const ASTSelectQuery * select_query_with_join, bool make_nullable)
-{
-    const auto & columns = getColumnsFromJoinedTable(source_columns, context, select_query_with_join);
-
-    NameSet joined_columns;
+    columns_from_joined_table.clear();
 
     for (auto & column : columns)
+    {
+        JoinedColumn joined_column(column, column.name);
+
+        if (source_columns.count(column.name))
+        {
+            auto qualified_name = table_name_with_alias.getQualifiedNamePrefix() + column.name;
+            joined_column.name_and_type.name = qualified_name;
+        }
+
+        /// We don't want to select duplicate columns from the joined subquery if they appear
+        if (std::find(columns_from_joined_table.begin(), columns_from_joined_table.end(), joined_column) == columns_from_joined_table.end())
+            columns_from_joined_table.push_back(joined_column);
+    }
+}
+
+void AnalyzedJoin::calculateAvailableJoinedColumns(bool make_nullable)
+{
+    NameSet joined_columns;
+
+    for (auto & column : columns_from_joined_table)
     {
         auto & column_name = column.name_and_type.name;
         auto & column_type = column.name_and_type.type;
