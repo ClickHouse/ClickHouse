@@ -1,13 +1,6 @@
-add_library (clickhouse-odbc-bridge-lib ${LINK_MODE}
-    PingHandler.cpp
-    MainHandler.cpp
-    ColumnInfoHandler.cpp
-    IdentifierQuoteHandler.cpp
-    HandlerFactory.cpp
-    ODBCBridge.cpp
-    getIdentifierQuote.cpp
-    validateODBCConnectionString.cpp
-)
+add_headers_and_sources(clickhouse_odbc_bridge .)
+
+add_library (clickhouse-odbc-bridge-lib ${LINK_MODE} ${clickhouse_odbc_bridge_sources})
 
 target_link_libraries (clickhouse-odbc-bridge-lib PRIVATE daemon dbms clickhouse_common_io)
 target_include_directories (clickhouse-odbc-bridge-lib PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)

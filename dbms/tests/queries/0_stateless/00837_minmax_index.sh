@@ -3,9 +3,12 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.minmax_idx"
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.minmax_idx;"
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE test.minmax_idx
+
+$CLICKHOUSE_CLIENT -n --query="
+SET allow_experimental_data_skipping_indices = 1;
+CREATE TABLE test.minmax_idx
 (
     u64 UInt64,
     i32 Int32,
@@ -19,7 +22,7 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE test.minmax_idx
     INDEX idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE minmax GRANULARITY 3
 ) ENGINE = MergeTree()
 ORDER BY u64
-SETTINGS index_granularity = 2"
+SETTINGS index_granularity = 2;"
 
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO test.minmax_idx VALUES

@@ -332,9 +332,9 @@ static const ColumnLowCardinality * findLowCardinalityArgument(const Block & blo
 }
 
 static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-    Block & block, const ColumnNumbers & args, bool can_be_executed_on_default_arguments)
+    Block & block, const ColumnNumbers & args, bool can_be_executed_on_default_arguments, size_t input_rows_count)
 {
-    size_t num_rows = 0;
+    size_t num_rows = input_rows_count;
     ColumnPtr indexes;
 
     for (auto arg : args)
@@ -354,7 +354,10 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
         if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+        {
             column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
+            column.type = removeLowCardinality(column.type);
+        }
         else if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
             auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
@@ -423,7 +426,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
             block_without_low_cardinality.safeGetByPosition(result).type = res_low_cardinality_type->getDictionaryType();
             ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                    block_without_low_cardinality, args, can_be_executed_on_default_arguments);
+                    block_without_low_cardinality, args, can_be_executed_on_default_arguments, input_rows_count);
 
             executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, block_without_low_cardinality.rows(), dry_run);
 

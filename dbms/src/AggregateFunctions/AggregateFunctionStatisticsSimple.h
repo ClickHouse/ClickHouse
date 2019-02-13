@@ -288,12 +288,14 @@ public:
     using ResultType = typename StatFunc::ResultType;
     using ColVecResult = ColumnVector<ResultType>;
 
-    AggregateFunctionVarianceSimple()
-        : src_scale(0)
+    AggregateFunctionVarianceSimple(const DataTypes & argument_types)
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types, {})
+        , src_scale(0)
     {}
 
-    AggregateFunctionVarianceSimple(const IDataType & data_type)
-        : src_scale(getDecimalScale(data_type))
+    AggregateFunctionVarianceSimple(const IDataType & data_type, const DataTypes & argument_types)
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types, {})
+        , src_scale(getDecimalScale(data_type))
     {}
 
     String getName() const override
