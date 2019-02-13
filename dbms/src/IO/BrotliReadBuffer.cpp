@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#if USE_BROTLI
+
 #include "BrotliReadBuffer.h"
 #include <brotli/decode.h>
 
@@ -86,3 +89,4 @@ bool BrotliReadBuffer::nextImpl()
 }
 }
 
+#endif
