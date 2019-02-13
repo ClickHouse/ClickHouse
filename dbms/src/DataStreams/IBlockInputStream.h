@@ -222,11 +222,6 @@ public:
         limits = limits_;
     }
 
-    const LocalLimits & getLimits() const
-    {
-        return limits;
-    }
-
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
