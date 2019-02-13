@@ -1,3 +1,31 @@
+## ClickHouse release 19.1.7, 2019-02-13
+
+### Bug fixes:
+
+* When doing `INSERT ... SELECT ... FROM file(...)` query and file has `CSVWithNames` or `TSVWIthNames` format, the first data row was missing. [#4297](https://github.com/yandex/ClickHouse/pull/4297) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix ALL JOIN with duplicates in right table. [#4184](https://github.com/yandex/ClickHouse/pull/4184) ([Artem Zuikov](https://github.com/4ertus2))
+* Correctly return the right type and properly handle locks in joinGet function ... [#4153](https://github.com/yandex/ClickHouse/pull/4153) ([Amos Bird](https://github.com/amosbird))
+* Fixed error when system logs are tried to create again at server shutdown. The error first appeared in version 18.6.1. [#4254](https://github.com/yandex/ClickHouse/pull/4254) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed error: if there is a database with `Dictionary` engine, all dictionaries forced to load at server startup, and if there is a dictionary with ClickHouse source from localhost, the dictionary cannot load. [#4255](https://github.com/yandex/ClickHouse/pull/4255) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix a bug when the execution of mutations containing `IN` operators was producing incorrect results. [#4058](https://github.com/yandex/ClickHouse/issues/4058) [#4099](https://github.com/yandex/ClickHouse/pull/4099) ([Alex Zatelepin](https://github.com/ztlpn))
+* clickhouse-client can segfault on exit while loading data for command line suggestions if it was run in interactive mode. [#4317](https://github.com/yandex/ClickHouse/pull/4317) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed race condition when selecting from `system.tables` may give `table doesn't exist` error. The bug appeared in version 18.16.0. [#4313](https://github.com/yandex/ClickHouse/pull/4313) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed deadlock when `SELECT` from a table with `File` engine was retried after `No such file or directory` error. This fixes #2150 [#4161](https://github.com/yandex/ClickHouse/pull/4161) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed an issue: local ClickHouse dictionaries are loaded via TCP, but should load within process. Fixes #1529. [#4166](https://github.com/yandex/ClickHouse/pull/4166) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed "No message received" error when interacting with PostgreSQL ODBC Driver through TLS connection. This fixes #3360. Fixed segfault when using MySQL ODBC Driver. [#4170](https://github.com/yandex/ClickHouse/pull/4170) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed infinite loop when selecting from table function `numbers(0)`. [#4280](https://github.com/yandex/ClickHouse/pull/4280) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix compile_expressions bug with comparison of big (more than int16) dates. [#4341](https://github.com/yandex/ClickHouse/pull/4341) ([alesapin](https://github.com/alesapin))
+* Fix segfault with uncompressed_cache=1 and exception with wrong uncompressed size. [#4186](https://github.com/yandex/ClickHouse/pull/4186) ([alesapin](https://github.com/alesapin))
+* Fixed aggregate functions execution with `Array(LowCardinality)` arguments. #4038 [#4055](https://github.com/yandex/ClickHouse/pull/4055) ([KochetovNicolai](https://github.com/KochetovNicolai))
+* Debian package: correct /etc/clickhouse-server/preprocessed link according to config [#4205](https://github.com/yandex/ClickHouse/pull/4205) ([proller](https://github.com/proller))
+* Fix fuzz test under undefined behavior sanitizer: added parameter type check for `quantile*Weighted` family of functions. [#4145](https://github.com/yandex/ClickHouse/pull/4145) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Make START REPLICATED SENDS command start replicated sends. [#4229](https://github.com/yandex/ClickHouse/pull/4229) ([nvartolomei](https://github.com/nvartolomei))
+* Fix resolving duplicate columns in the JOIN ON section. [#4279](https://github.com/yandex/ClickHouse/pull/4279) ([Artem Zuikov](https://github.com/4ertus2))
+* `/etc/ssl` is used as a default directory with SSL certificates. This fixes #3983. [#4167](https://github.com/yandex/ClickHouse/pull/4167) ([alexey-milovidov](https://github.com/alexey-milovidov))
+*  Fix crash on dictionary reload if the dictionary not available. [#4188](https://github.com/yandex/ClickHouse/pull/4188), [#4196](https://github.com/yandex/ClickHouse/pull/4196) ([proller](https://github.com/proller))
+* Fix comparison of Date and DateTime values ([#2011](https://github.com/yandex/ClickHouse/issues/2011). [#4237](https://github.com/yandex/ClickHouse/pull/4237) ([valexey](https://github.com/valexey))
+* Fix crash on executing queries without a table when `allow_experimental_multiple_joins_emulation` is enabled. [52de2cd927f7b5257dd67e175f0a5560a48840d0](https://github.com/yandex/ClickHouse/commit/52de2cd927f7b5257dd67e175f0a5560a48840d0) [Artem Zuikov](https://github.com/4ertus2)
+
 ## ClickHouse release 18.16.1, 2018-12-21
 
 ### Bug fixes:
