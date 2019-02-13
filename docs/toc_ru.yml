@@ -193,6 +193,7 @@ nav:
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
+  - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
   - 'Changelog': 'changelog.md'
