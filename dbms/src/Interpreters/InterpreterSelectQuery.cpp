@@ -1275,7 +1275,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 
         /// Limits on sorting
         IBlockInputStream::LocalLimits limits;
-        limits.mode = IBlockInputStream::LIMITS_TOTAL;
+        limits.mode = IBlockInputStream::LIMITS_CURRENT;
         limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
         sorting_stream->setLimits(limits);
 
