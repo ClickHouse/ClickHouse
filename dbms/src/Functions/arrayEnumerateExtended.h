@@ -202,6 +202,8 @@ DUMP(data_columns);
             executeHashed(*offsets, data_columns, res_values);
     }
 
+DUMP(res_nested);
+DUMP(offsets_column);
     block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
 }
 
@@ -285,6 +287,7 @@ DUMP(j, prev_off, off);
                     emplace_result.setMapped(idx);
                 }
 
+DUMP(j, idx);
                 res_values[j] = idx;
             }
             prev_off = off;

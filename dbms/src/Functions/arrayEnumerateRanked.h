@@ -14,6 +14,7 @@
 #include "GatherUtils/GatherUtils.h" //?
 
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/getLeastSupertype.h> 
 
 #include <Core/iostream_debug_helpers.h>
 
@@ -262,7 +263,7 @@ private:
 
 
 
-//lumnPtr arrayElement(const ColumnWithTypeAndName & arg, const ColumnWithTypeAndName & n, const DataTypePtr & type, const Context & context)
+//ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const ColumnWithTypeAndName & n, const DataTypePtr & type, const Context & context)
 ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const int64_t n, const Context & context)
 {
     //const ColumnArray * array = checkAndGetColumn<ColumnArray>(arg.column.get());
@@ -286,14 +287,54 @@ ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const int64_t n, const
         }
     };
 
-    FunctionBuilderPtr func_builder_cast = FunctionFactory::instance().get("arrayElement", context);
+    FunctionBuilderPtr func_builder = FunctionFactory::instance().get("arrayElement", context);
 
     ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
-    auto func_cast = func_builder_cast->build(arguments);
+    auto func = func_builder->build(arguments);
 
     const size_t result_colum_num = 2;
-    func_cast->execute(temporary_block, {0, 1}, result_colum_num, arg.column->size());
+    func->execute(temporary_block, {0, 1}, result_colum_num, arg.column->size());
     return temporary_block.getByPosition(result_colum_num).column;
+}
+
+ColumnPtr array(Block & block, const Context & context)
+{
+    //const ColumnArray * array = checkAndGetColumn<ColumnArray>(arg.column.get());
+    //const DataTypePtr & type = array->getNestedType();
+    //auto array_type = typeid_cast<const DataTypeArray *>(arg.type.get()); 
+    //const auto & type = array_type->getNestedType();
+    //DataTypeUInt32().createColumnConst(arg.size(), n);
+
+    //ColumnWithTypeAndName n_col { DataTypeUInt32().createColumnConst(arg.column->size(), n), std::make_shared<DataTypeUInt32>(), "" };
+
+
+    //auto type = func_builder->getReturnType(block);
+    DataTypes types;
+    for (size_t i = 0; i < block.columns(); ++i)
+        types.emplace_back(block.getByPosition(i).type);
+
+    auto type = std::make_shared<DataTypeArray>(getLeastSupertype(types));
+
+    block.insert( 
+        {
+            nullptr,
+            type,
+            ""
+        }
+    );
+
+
+    ColumnsWithTypeAndName arguments; //{ block.getByPosition(0), block.getByPosition(1) };
+    for (size_t i = 0; i < block.columns() - 1; ++i)
+        arguments.emplace_back(block.getByPosition(i));
+
+    FunctionBuilderPtr func_builder = FunctionFactory::instance().get("array", context);
+    auto func = func_builder->build(arguments);
+
+    const size_t result_colum_num = block.columns() - 1;
+DUMP(block.rows());
+    func->execute(block, {0, 1}, result_colum_num, block.rows());
+    return block.getByPosition(result_colum_num).column;
 }
 
 
@@ -362,7 +403,8 @@ DUMP(depth, depths, max_array_depth);
     }
 
 
-    std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
+    //std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
+    Block results;
 
     //size_t sub_array_num = 0; // TODO for(...
     for (size_t sub_array_num = 0; sub_array_num < array_size; ++sub_array_num) {
@@ -371,18 +413,32 @@ DUMP(depth, depths, max_array_depth);
 
 DUMP("====", sub_array_num, array_size);
 
+
     auto res_nested = ColumnUInt32::create();
     ColumnUInt32::Container & res_values = res_nested->getData();
 
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
+        ColumnPtr array_ptr = block.getByPosition(arguments[i]).column;
 DUMP("column", i, num_arguments,  array_ptr, array_num);
+
+/*
+             if (depths[array_num] == 2) { // TODO We need to go deeper here
+
+                //auto sub_array = arrayElement(block.getByPosition(arguments[i]), sub_array_num+1, context);
+                //DUMP(sub_array);
+                array_ptr = arrayElement(block.getByPosition(arguments[i]), sub_array_num+1, context);
+DUMP(array_ptr);
+
+             }*/
+
+
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
-            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
+            //const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(array_ptr.get());
             if (!const_array){ 
 //DUMP("skip not array", i, array_ptr);
                 continue;
@@ -419,8 +475,11 @@ columnarray( //row
 
              if (depths[array_num] == 2) { // TODO We need to go deeper here
 
-                auto sub_array = arrayElement(block.getByPosition(arguments[i]), sub_array_num+1, context);
-                DUMP(sub_array);
+                //auto sub_array = arrayElement(block.getByPosition(arguments[i]), sub_array_num+1, context);
+                //DUMP(sub_array);
+                ColumnWithTypeAndName ctwn {static_cast<IColumn*>(array), block.getByPosition(arguments[i]).type, ""};
+                array = checkAndGetColumn<ColumnArray>(arrayElement(ctwn, sub_array_num+1, context).get());
+DUMP(array);
 
              }
 
@@ -533,12 +592,26 @@ DUMP(res_nested, offsets_column);
     }
     else if (max_array_depth == 2)
     {
-// for...
-         if (depth == 2)
-             indices.clear();
+         //if (depth == 2)
+         //    indices.clear();
          executeMethodImpl<MethodHashed, false>(*offsets, data_columns, {}, nullptr, res_values, indices, depth);
 DUMP(res_values);
 DUMP(res_nested);
+
+        DataTypePtr type = std::make_shared<DataTypeUInt32>();
+        //for (DepthType i = 0; i < max_array_depth; ++i) {
+            type = std::make_shared<DataTypeArray>(type);
+        //}
+
+        auto column_array = ColumnArray::create(std::move(res_nested), offsets_column);
+
+        //ColumnWithTypeAndName res_column_type_name {std::move(res_nested), type, ""};
+        ColumnWithTypeAndName res_column_type_name {std::move(column_array), type, ""};
+
+        //results.insert(*res_nested);
+        results.insert(res_column_type_name);
+
+/*
 DUMP(offsets_column);
         //auto rows = res_values.size();
         size_t rows = input_rows_count;
@@ -548,7 +621,7 @@ DUMP(offsets_column);
 DUMP(rows, column_array);
 
 
-        auto fill_offsets = ColumnArray::ColumnOffsets::create(rows/*, 0*/);
+        auto fill_offsets = ColumnArray::ColumnOffsets::create(rows/ *, 0* /);
         IColumn::Offsets & out_offsets = fill_offsets->getData();
         //auto arr_arr = ColumnArray::create(std::move(column_array), std::move(empty_offsets));
         
@@ -568,6 +641,7 @@ DUMP(fill_offsets);
         auto arr_arr = ColumnArray::create(std::move(column_array), std::move(fill_offsets));
 
 DUMP(arr_arr);
+*/
 
 /*
         auto out = ColumnArray::create(elem_type->createColumn());
@@ -589,16 +663,19 @@ DUMP(arr_arr);
 */
 
         //sources.emplace_back(GatherUtils::createArraySource(*column_array, false, rows));
-        sources.emplace_back(GatherUtils::createArraySource(*arr_arr, false, rows));
+        //sources.emplace_back(GatherUtils::createArraySource(*arr_arr, false, rows));
 
     }
 
     }
 
+auto joined = array(results, context);
+DUMP(joined);
 
         auto result_column = block.getByPosition(result).type->createColumn();
 
         size_t rows = input_rows_count;
+(void)rows;
 
 
 /*
@@ -625,12 +702,14 @@ DUMP(arr_arr);
 
         //auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*column_array), rows);
         ///auto sink = GatherUtils::createArraySink(*column_array, rows);
+/*
 DUMP(rows, result_column);
         auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
 DUMP("concat:", sources.size());
         GatherUtils::concat(sources, *sink);
 
 DUMP(result_column);
+*/
 
         block.getByPosition(result).column = std::move(result_column);
 
@@ -667,8 +746,8 @@ DUMP(columns.size());
         for (size_t off : offsets)
         {
 DUMP(off);
-            //?if (depth == 2)
-            //?    indices.clear();
+            if (depth == 2)
+                indices.clear();
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
