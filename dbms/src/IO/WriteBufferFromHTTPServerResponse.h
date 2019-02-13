@@ -9,6 +9,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
+#include <IO/BrotliWriteBuffer.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <Common/NetException.h>
@@ -60,6 +61,7 @@ private:
 
     std::optional<WriteBufferFromOStream> out_raw;
     std::optional<ZlibDeflatingWriteBuffer> deflating_buf;
+    std::optional<BrotliWriteBuffer> brotli_buf;
 
     WriteBuffer * out = nullptr;     /// Uncompressed HTTP body is written to this buffer. Points to out_raw or possibly to deflating_buf.
 
