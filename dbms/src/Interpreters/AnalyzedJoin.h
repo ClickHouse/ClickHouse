@@ -12,6 +12,7 @@ namespace DB
 
 class Context;
 class ASTSelectQuery;
+struct DatabaseAndTableWithAlias;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -71,13 +72,9 @@ struct AnalyzedJoin
 
     Names getOriginalColumnNames(const NameSet & required_columns) const;
 
-    const JoinedColumnsList & getColumnsFromJoinedTable(const NameSet & source_columns,
-                                                        const Context & context,
-                                                        const ASTSelectQuery * select_query_with_join);
-    void calculateAvailableJoinedColumns(const NameSet & source_columns,
-                                         const Context & context,
-                                         const ASTSelectQuery * select_query_with_join,
-                                         bool make_nullable);
+    void calculateColumnsFromJoinedTable(const NameSet & source_columns, const DatabaseAndTableWithAlias & table,
+                                         const NamesAndTypesList & joined_columns);
+    void calculateAvailableJoinedColumns(bool make_nullable);
 };
 
 struct ASTTableExpression;
