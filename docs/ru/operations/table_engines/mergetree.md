@@ -266,7 +266,6 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 Примеры
 ```sql
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE minmax GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set GRANULARITY 4
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 ```
 
