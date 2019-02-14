@@ -53,7 +53,7 @@
 
 ## Операторы для работы с множествами
 
-*Смотрите раздел [Операторы IN](select.md#operatori-in).*
+*Смотрите раздел [Операторы IN](select.md#select-in-operators).*
 
 `a IN ...` - функция `in(a, b)`
 
@@ -83,9 +83,7 @@
 
 Условный оператор сначала вычисляет значения b и c, затем проверяет выполнение условия a, и только после этого возвращает соответствующее значение. Если в качестве b или с выступает функция [arrayJoin()](functions/array_join.md#functions_arrayjoin), то размножение каждой строки произойдет вне зависимости от условия а.
 
-<a name="operator_case"><a>
-
-## Условное выражение
+## Условное выражение {#operator_case}
 
 ``` sql
 CASE [x]
@@ -128,9 +126,7 @@ P.S. Функция `transform` не умеет работать с `NULL`.
 
 ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL`.
 
-<a name="operator-is-null"></a>
-
-### IS NULL
+### IS NULL {#operator-is-null}
 
 - Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NULL` возвращает:
     - `1`, если значение — `NULL`.

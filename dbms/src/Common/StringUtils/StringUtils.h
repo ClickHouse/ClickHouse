@@ -56,7 +56,7 @@ std::string getOrdinalSuffix(T n)
         case 2: return "nd";
         case 3: return "rd";
         default: return "th";
-    };
+    }
 }
 
 /// More efficient than libc, because doesn't respect locale. But for some functions table implementation could be better.

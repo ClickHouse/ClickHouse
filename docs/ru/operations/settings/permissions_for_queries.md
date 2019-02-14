@@ -1,6 +1,4 @@
-<a name="permissions_for_queries"></a>
-
-# Разрешения для запросов
+# Разрешения для запросов {#permissions_for_queries}
 
 Запросы в ClickHouse можно разделить на несколько типов:
 
@@ -17,9 +15,7 @@
 
 `KILL QUERY` выполняется с любыми настройками.
 
-<a name="settings_readonly"></a>
-
-## readonly
+## readonly {#settings_readonly}
 
 Ограничивает разрешения для запросов на чтение данных, запись данных и изменение параметров.
 
@@ -33,15 +29,13 @@
 
 После установки `readonly = 1`пользователь не может изменить настройки `readonly` и `allow_ddl` в текущей сессии.
 
-При использовании метода `GET`  в [HTTP интерфейсе](../../interfaces/http.md#http_interface), `readonly = 1` устанавливается автоматически. Для изменения данных используйте метод `POST`.
+При использовании метода `GET` в [HTTP интерфейсе](../../interfaces/http.md#http_interface), `readonly = 1` устанавливается автоматически. Для изменения данных используйте метод `POST`.
 
 **Значение по умолчанию**
 
 0
 
-<a name="settings_allow_ddl"></a>
-
-## allow_ddl
+## allow_ddl {#settings_allow_ddl}
 
 Разрешает/запрещает [DDL](https://ru.wikipedia.org/wiki/Data_Definition_Language) запросы.
 
@@ -52,7 +46,7 @@
 - 0 — DDL запросы не разрешены.
 - 1 — DDL запросы разрешены.
 
-Если `allow_ddl = 0`, то невозможно выполнить `SET allow_ddl = 1`  для текущей сессии.
+Если `allow_ddl = 0`, то невозможно выполнить `SET allow_ddl = 1` для текущей сессии.
 
 **Значение по умолчанию**
 

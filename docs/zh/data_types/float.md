@@ -5,7 +5,7 @@
 类型与以下 C 语言中类型是相同的：
 
 - `Float32` - `float`
-- `Float64`  - `double`
+- `Float64` - `double`
 
 我们建议您尽可能以整数形式存储数据。例如，将固定精度的数字转换为整数值，例如货币数量或页面加载时间用毫秒为单位表示
 
@@ -69,4 +69,4 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-可以在[ORDER BY 子句](../query_language/select.md) 查看更多关于 ` NaN` 排序的规则。
+可以在 [ORDER BY 子句](../query_language/select.md) 查看更多关于 ` NaN` 排序的规则。

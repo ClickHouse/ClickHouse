@@ -1,6 +1,4 @@
-<a name="table_engine-collapsingmergetree"></a>
-
-# CollapsingMergeTree
+# CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 

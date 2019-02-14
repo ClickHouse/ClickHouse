@@ -14,6 +14,11 @@
 #define DATE_LUT_MAX_YEAR 2105 /// Last supported year
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
+#if defined(__PPC__)
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+#endif
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -71,26 +76,22 @@ private:
 
 
     /// We can correctly process only timestamps that less DATE_LUT_MAX (i.e. up to 2105 year inclusively)
-    inline size_t findIndex(time_t t) const
+    /// We don't care about overflow.
+    inline DayNum findIndex(time_t t) const
     {
         /// First guess.
-        size_t guess = t / 86400;
-        if (guess >= DATE_LUT_MAX_DAY_NUM)
-            return 0;
-        if (t >= lut[guess].date && t < lut[guess + 1].date)
+        DayNum guess(t / 86400);
+
+        /// UTC offset is from -12 to +14 in all known time zones. This requires checking only three indices.
+
+        if ((guess == 0 || t >= lut[guess].date) && t < lut[DayNum(guess + 1)].date)
             return guess;
 
-        for (size_t i = 1;; ++i)
-        {
-            if (guess + i >= DATE_LUT_MAX_DAY_NUM)
-                return 0;
-            if (t >= lut[guess + i].date && t < lut[guess + i + 1].date)
-                return guess + i;
-            if (guess < i)
-                return 0;
-            if (t >= lut[guess - i].date && t < lut[guess - i + 1].date)
-                return guess - i;
-        }
+        /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
+        if (offset_at_start_of_epoch >= 0)
+            return DayNum(guess + 1);
+
+        return DayNum(guess - 1);
     }
 
     inline const Values & find(time_t t) const
@@ -113,8 +114,8 @@ public:
     /// Round down to start of monday.
     inline time_t toFirstDayOfWeek(time_t t) const
     {
-        size_t index = findIndex(t);
-        return lut[index - (lut[index].day_of_week - 1)].date;
+        DayNum index = findIndex(t);
+        return lut[DayNum(index - (lut[index].day_of_week - 1))].date;
     }
 
     inline DayNum toFirstDayNumOfWeek(DayNum d) const
@@ -130,7 +131,7 @@ public:
     /// Round down to start of month.
     inline time_t toFirstDayOfMonth(time_t t) const
     {
-        size_t index = findIndex(t);
+        DayNum index = findIndex(t);
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
@@ -147,13 +148,13 @@ public:
     /// Round down to start of quarter.
     inline DayNum toFirstDayNumOfQuarter(DayNum d) const
     {
-        size_t index = d;
+        DayNum index = d;
         size_t month_inside_quarter = (lut[index].month - 1) % 3;
 
-        index = index - lut[index].day_of_month;
+        index -= lut[index].day_of_month;
         while (month_inside_quarter)
         {
-            index = index - lut[index].day_of_month;
+            index -= lut[index].day_of_month;
             --month_inside_quarter;
         }
 
@@ -188,14 +189,14 @@ public:
 
     inline time_t toFirstDayOfNextMonth(time_t t) const
     {
-        size_t index = findIndex(t);
+        DayNum index = findIndex(t);
         index += 32 - lut[index].day_of_month;
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
 
     inline time_t toFirstDayOfPrevMonth(time_t t) const
     {
-        size_t index = findIndex(t);
+        DayNum index = findIndex(t);
         index -= lut[index].day_of_month;
         return lut[index - (lut[index].day_of_month - 1)].date;
     }
@@ -213,7 +214,7 @@ public:
     inline UInt8 daysInMonth(UInt16 year, UInt8 month) const
     {
         /// 32 makes arithmetic more simple.
-        auto any_day_of_month = years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1);
+        DayNum any_day_of_month = DayNum(years_lut[year - DATE_LUT_MIN_YEAR] + 32 * (month - 1));
         return lut[any_day_of_month].days_in_month;
     }
 
@@ -221,12 +222,12 @@ public:
       */
     inline time_t toDateAndShift(time_t t, Int32 days) const
     {
-        return lut[findIndex(t) + days].date;
+        return lut[DayNum(findIndex(t) + days)].date;
     }
 
     inline time_t toTime(time_t t) const
     {
-        size_t index = findIndex(t);
+        DayNum index = findIndex(t);
 
         if (unlikely(index == 0))
             return t + offset_at_start_of_epoch;
@@ -241,7 +242,7 @@ public:
 
     inline unsigned toHour(time_t t) const
     {
-        size_t index = findIndex(t);
+        DayNum index = findIndex(t);
 
         /// If it is not 1970 year (findIndex found nothing appropriate),
         ///  than limit number of hours to avoid insane results like 1970-01-01 89:28:15
@@ -282,6 +283,7 @@ public:
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
     inline time_t toStartOfFiveMinute(time_t t) const { return t / 300 * 300; }
     inline time_t toStartOfFifteenMinutes(time_t t) const { return t / 900 * 900; }
+    inline time_t toStartOfTenMinutes(time_t t) const { return t / 600 * 600; }
 
     inline time_t toStartOfHour(time_t t) const
     {
@@ -301,7 +303,7 @@ public:
       *  because the same calendar day starts/ends at different timestamps in different time zones)
       */
 
-    inline DayNum toDayNum(time_t t) const { return static_cast<DayNum>(findIndex(t)); }
+    inline DayNum toDayNum(time_t t) const { return findIndex(t); }
     inline time_t fromDayNum(DayNum d) const { return lut[d].date; }
 
     inline time_t toDate(DayNum d) const { return lut[d].date; }
@@ -424,6 +426,71 @@ public:
         return toRelativeMinuteNum(lut[d].date);
     }
 
+    inline DayNum toStartOfYearInterval(DayNum d, UInt64 years) const
+    {
+        if (years == 1)
+            return toFirstDayNumOfYear(d);
+        return years_lut[(lut[d].year - DATE_LUT_MIN_YEAR) / years * years];
+    }
+
+    inline DayNum toStartOfQuarterInterval(DayNum d, UInt64 quarters) const
+    {
+        if (quarters == 1)
+            return toFirstDayNumOfQuarter(d);
+        return toStartOfMonthInterval(d, quarters * 3);
+    }
+
+    inline DayNum toStartOfMonthInterval(DayNum d, UInt64 months) const
+    {
+        if (months == 1)
+            return toFirstDayNumOfMonth(d);
+        const auto & date = lut[d];
+        UInt32 month_total_index = (date.year - DATE_LUT_MIN_YEAR) * 12 + date.month - 1;
+        return years_months_lut[month_total_index / months * months];
+    }
+
+    inline DayNum toStartOfWeekInterval(DayNum d, UInt64 weeks) const
+    {
+        if (weeks == 1)
+            return toFirstDayNumOfWeek(d);
+        UInt64 days = weeks * 7;
+        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
+        return DayNum(4 + (d - 4) / days * days);
+    }
+
+    inline time_t toStartOfDayInterval(DayNum d, UInt64 days) const
+    {
+        if (days == 1)
+            return toDate(d);
+        return lut[d / days * days].date;
+    }
+
+    inline time_t toStartOfHourInterval(time_t t, UInt64 hours) const
+    {
+        if (hours == 1)
+            return toStartOfHour(t);
+        UInt64 seconds = hours * 3600;
+        t = t / seconds * seconds;
+        if (offset_is_whole_number_of_hours_everytime)
+            return t;
+        return toStartOfHour(t);
+    }
+
+    inline time_t toStartOfMinuteInterval(time_t t, UInt64 minutes) const
+    {
+        if (minutes == 1)
+            return toStartOfMinute(t);
+        UInt64 seconds = 60 * minutes;
+        return t / seconds * seconds;
+    }
+
+    inline time_t toStartOfSecondInterval(time_t t, UInt64 seconds) const
+    {
+        if (seconds == 1)
+            return t;
+        return t / seconds * seconds;
+    }
+
     /// Create DayNum from year, month, day of month.
     inline DayNum makeDayNum(UInt16 year, UInt8 month, UInt8 day_of_month) const
     {
@@ -517,7 +584,7 @@ public:
 
     inline time_t addDays(time_t t, Int64 delta) const
     {
-        size_t index = findIndex(t);
+        DayNum index = findIndex(t);
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
 
         index += delta;
@@ -582,6 +649,16 @@ public:
 
             return makeDayNum(year, month, day_of_month);
         }
+    }
+
+    inline time_t addQuarters(time_t t, Int64 delta) const
+    {
+        return addMonths(t, delta * 3);
+    }
+
+    inline DayNum addQuarters(DayNum d, Int64 delta) const
+    {
+        return addMonths(d, delta * 3);
     }
 
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
@@ -677,6 +754,10 @@ public:
 
         return s;
     }
-
-    inline bool isOffsetWholeNumberOfHoursEveryTime() const { return offset_is_whole_number_of_hours_everytime; }
 };
+
+#if defined(__PPC__)
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+#endif

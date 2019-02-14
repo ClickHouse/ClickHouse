@@ -1,9 +1,8 @@
-# Functions for searching strings
+# Functions for Searching Strings
 
-The search is case-sensitive in all these functions.
-The search substring or regular expression must be a constant in all these functions.
+The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle)
+## position(haystack, needle), locate(haystack, needle)
 
 Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
@@ -16,9 +15,27 @@ The same as `position`, but the position is returned in Unicode code points. Wor
 
 For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
+## multiPosition(haystack, [needle_1, needle_2, ..., needle_n])
+
+The same as `position`, but returns `Array` of the `position`s for all `needle_i`.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiPositionCaseInsensitive, multiPositionUTF8, multiPositionCaseInsensitiveUTF8`.
+
+## firstMatch(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns the index `i` (starting from 1) of the first found `needle_i` in the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `firstMatchCaseInsensitive, firstMatchUTF8, firstMatchCaseInsensitiveUTF8`.
+
+## multiSearch(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns 1, if at least one string `needle_i` matches the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchCaseInsensitive, multiSearchUTF8, multiSearchCaseInsensitiveUTF8`.
+
 ## match(haystack, pattern)
 
-Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax)  of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
+Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
 
 Returns 0 if it doesn't match, or 1 if it matches.
 

@@ -18,17 +18,28 @@ RUN apt-get update -y \
             sudo \
             openssl \
             netcat-openbsd \
-            telnet
+            telnet \
+            moreutils \
+            brotli
+
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 COPY zookeeper.xml /etc/clickhouse-server/config.d/zookeeper.xml
 COPY listen.xml /etc/clickhouse-server/config.d/listen.xml
+COPY part_log.xml /etc/clickhouse-server/config.d/part_log.xml
+COPY log_queries.xml /etc/clickhouse-server/users.d/log_queries.xml
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
+    dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb; \
+    echo "TSAN_OPTIONS='halt_on_error=1'" >> /etc/environment; \
+    echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
+    echo "ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
+    echo "UBSAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
+    echo "LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
     service zookeeper start; sleep 5; \
-    service clickhouse-server start && sleep 5 && clickhouse-test --shard --zookeeper $SKIP_TESTS_OPTION 2>&1 | tee test_output/test_result.txt
+    service clickhouse-server start && sleep 5 && clickhouse-test --shard --zookeeper $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt

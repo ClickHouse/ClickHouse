@@ -87,7 +87,7 @@ public:
 
 private:
     std::vector<size_t> fillPerPartInfo(
-        RangesInDataParts & parts, const PrewhereInfoPtr & prewhere_info, const bool check_columns);
+        RangesInDataParts & parts, const bool check_columns);
 
     void fillPerThreadInfo(
         const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
@@ -96,7 +96,6 @@ private:
     std::vector<std::shared_lock<std::shared_mutex>> per_part_columns_lock;
     const MergeTreeData & data;
     Names column_names;
-    Names ordered_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
     std::vector<NameSet> per_part_column_name_set;
@@ -112,7 +111,7 @@ private:
         size_t part_index_in_query;
     };
 
-    std::vector<Part> parts;
+    std::vector<Part> parts_with_idx;
 
     struct ThreadTask
     {

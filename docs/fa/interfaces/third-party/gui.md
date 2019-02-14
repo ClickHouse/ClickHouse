@@ -49,6 +49,16 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - پیش نمایش جدول با فیلتر کردن و مرتب سازی.
 - اعداد نمایش داده شده فقط خواندنی
 
+### clickhouse-cli
+
+[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) یک مشتری خط فرمان برای ClickHouse است که در پایتون 3 نوشته شده است.
+
+امکانات:
+- تکمیل خودکار
+- نحو برجسته برای نمایش داده ها و خروجی داده ها.
+- پشتیبانی از Pager برای خروجی داده.
+- دستورات پست سفارشی مانند PostgreSQL.
+
 ## تجاری
 
 ### DBeaver

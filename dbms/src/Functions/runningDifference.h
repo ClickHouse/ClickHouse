@@ -53,13 +53,16 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        Src prev;
+        Src prev{};
         bool has_prev_value = false;
 
         for (size_t i = 0; i < size; ++i)
         {
             if (null_map && (*null_map)[i])
+            {
+                dst[i] = Dst{};
                 continue;
+            }
 
             if (!has_prev_value)
             {
@@ -125,6 +128,11 @@ public:
     String getName() const override
     {
         return name;
+    }
+
+    bool isStateful() const override
+    {
+        return true;
     }
 
     size_t getNumberOfArguments() const override

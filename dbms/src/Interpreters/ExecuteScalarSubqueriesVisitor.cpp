@@ -1,6 +1,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 
@@ -8,6 +9,8 @@
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
+
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 namespace DB
 {
@@ -35,7 +38,7 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
     return res;
 }
 
-bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
+bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Processed
     if (typeid_cast<ASTSubquery *>(node.get()) ||
@@ -45,6 +48,14 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
     /// Don't descend into subqueries in FROM section
     if (typeid_cast<ASTTableExpression *>(node.get()))
         return false;
+
+    if (typeid_cast<ASTSelectQuery *>(node.get()))
+    {
+        /// Do not go to FROM, JOIN, UNION.
+        if (typeid_cast<ASTTableExpression *>(child.get()) ||
+            typeid_cast<ASTSelectQuery *>(child.get()))
+            return false;
+    }
 
     return true;
 }

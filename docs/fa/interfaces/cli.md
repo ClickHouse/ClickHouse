@@ -45,7 +45,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 در حالت intercative، شما یک command line برای درج query های خود دریافت می کنید.
 
-اگر  'multiline' مشخص نشده باشد (به صورت پیش فرض): برای اجرای یک query، دکمه Enter را بزنید. سیمی کالن  در انتهای query اجباری نیست. برای درج یک query چند خطی (multiline)، دکمه ی بک اسلش `\` را قبل از line feed فشار دهید. بعد از فشردن Enter، از شما برای درج خط بعدی query درخواست خواهد شد.
+اگر 'multiline' مشخص نشده باشد (به صورت پیش فرض): برای اجرای یک query، دکمه Enter را بزنید. سیمی کالن در انتهای query اجباری نیست. برای درج یک query چند خطی (multiline)، دکمه ی بک اسلش `\` را قبل از line feed فشار دهید. بعد از فشردن Enter، از شما برای درج خط بعدی query درخواست خواهد شد.
 
 اگر چند خطی (multiline) مشخص شده باشد: برای اجرای query، در انتها سیمی کالن را وارد کنید و سپس Enter بزنید. اگر سیمی کالن از انتهای خط حذف می شد، از شما برای درج خط جدید query درخواست می شد.
 
@@ -55,7 +55,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 command line برا پایه 'readline' (و 'history' یا 'libedit'، یه بدون کتابخانه بسته به build) می باشد. به عبارت دیگر، این محیط از shortcut های آشنا استفاده می کند و history دستورات را نگه می دار. history ها در فایل ~/.clickhouse-client-history نوشته می شوند.
 
-به صورت پیش فرض فرمت خروجی PrettyCompact می باشد. شما میتوانید از طریق دستور FORMAT در یک query، یا با مشخص کردن `\G` در انتهای query، استفاده از آرگومان های `--format` یا `--vertical`  یا از کانفیگ فایل کلاینت، فرمت خروجی را مشخص کنید.
+به صورت پیش فرض فرمت خروجی PrettyCompact می باشد. شما میتوانید از طریق دستور FORMAT در یک query، یا با مشخص کردن `\G` در انتهای query، استفاده از آرگومان های `--format` یا `--vertical` یا از کانفیگ فایل کلاینت، فرمت خروجی را مشخص کنید.
 
 برای خروج از کلاینت، Ctrl-D (یا Ctrl+C) را فشار دهید؛ و یا یکی از دستورات زیر را به جای اجرای query اجرا کنید: "exit", "quit", "logout", "exit;", "quit;", "logout;", "q", "Q", ":q"
 
@@ -68,11 +68,9 @@ command line برا پایه 'readline' (و 'history' یا 'libedit'، یه بد
 
 شما میتوانید query های طولانی را با فشردن Ctrl-C کنسل کنید. هر چند، بعد از این کار همچنان نیاز به انتظار چند ثانیه ای برای قطع کردن درخواست توسط سرور می باشید. امکان کنسل کردن یک query در مراحل خاص وجود ندارد. اگر شما صبر نکنید و برای بار دوم Ctrl+C را وارد کنید از client خارج می شوید.
 
-کلاینت commant-line اجازه ی پاس دادن داده های external  (جداول موقت external) را برای query ها می دهد. برای اطلاعات بیشتر به بخش "داده های External برای پردازش query" مراجعه کنید.
+کلاینت commant-line اجازه ی پاس دادن داده های external (جداول موقت external) را برای query ها می دهد. برای اطلاعات بیشتر به بخش "داده های External برای پردازش query" مراجعه کنید.
 
-<a name="interfaces_cli_configuration"></a>
-
-## پیکربندی
+## پیکربندی {#interfaces_cli_configuration}
 
 شما میتوانید، پارامتر ها را به `clickhouse-client` (تمام پارامترها دارای مقدار پیش فرض هستند) از دو روش زیر پاس بدید:
 

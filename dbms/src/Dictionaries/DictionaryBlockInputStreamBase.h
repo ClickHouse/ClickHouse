@@ -1,13 +1,13 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 namespace DB
 {
-class DictionaryBlockInputStreamBase : public IProfilingBlockInputStream
+class DictionaryBlockInputStreamBase : public IBlockInputStream
 {
 protected:
-    DictionaryBlockInputStreamBase(size_t rows_count, size_t max_block_size);
+    DictionaryBlockInputStreamBase(size_t rows_count, UInt64 max_block_size);
 
     virtual Block getBlock(size_t start, size_t length) const = 0;
 
@@ -15,7 +15,7 @@ protected:
 
 private:
     const size_t rows_count;
-    const size_t max_block_size;
+    const UInt64 max_block_size;
     size_t next_row = 0;
 
     Block readImpl() override;

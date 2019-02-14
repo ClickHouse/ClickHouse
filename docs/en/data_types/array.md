@@ -1,10 +1,8 @@
-<a name="data_type-array"></a>
-
-# Array(T)
+# Array(T) {#data_type-array}
 
 Array of `T`-type items.
 
-`T` can be anything, including an array. Use multi-dimensional arrays with caution. ClickHouse has limited support for multi-dimensional arrays. For example, they can't be stored in `MergeTree` tables.
+`T` can be anything, including an array.
 
 ## Creating an array
 
@@ -50,7 +48,7 @@ SELECT
 
 ## Working with data types
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or  [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md).
+When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md).
 
 If ClickHouse couldn't determine the data type, it will generate an exception. For instance, this will happen when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 

@@ -15,13 +15,16 @@ class ReadBuffer;
 class BinaryRowInputStream : public IRowInputStream
 {
 public:
-    BinaryRowInputStream(ReadBuffer & istr_, const Block & header_);
+    BinaryRowInputStream(ReadBuffer & istr_, const Block & sample_, bool with_names_, bool with_types_);
 
     bool read(MutableColumns & columns, RowReadExtension &) override;
+    void readPrefix() override;
 
 private:
     ReadBuffer & istr;
     Block header;
+    bool with_names;
+    bool with_types;
 };
 
 }

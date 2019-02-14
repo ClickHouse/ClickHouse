@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/MarkInCompressedFile.h>
 #include <Common/PODArray.h>
 
@@ -57,7 +57,7 @@ struct IndexForNativeFormat
   * Can also be used to store data on disk.
   * In this case, can use the index.
   */
-class NativeBlockInputStream : public IProfilingBlockInputStream
+class NativeBlockInputStream : public IBlockInputStream
 {
 public:
     /// If a non-zero server_revision is specified, additional block information may be expected and read.
@@ -65,7 +65,7 @@ public:
 
     /// For cases when data structure (header) is known in advance.
     /// NOTE We may use header for data validation and/or type conversions. It is not implemented.
-    NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_);
+    NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool convert_types_to_low_cardinality_ = false);
 
     /// For cases when we have an index. It allows to skip columns. Only columns specified in the index will be read.
     NativeBlockInputStream(ReadBuffer & istr_, UInt64 server_revision_,
@@ -90,6 +90,8 @@ private:
     IndexForNativeFormat::Blocks::const_iterator index_block_it;
     IndexForNativeFormat::Blocks::const_iterator index_block_end;
     IndexOfBlockForNativeFormat::Columns::const_iterator index_column_it;
+
+    bool convert_types_to_low_cardinality = false;
 
     /// If an index is specified, then `istr` must be CompressedReadBufferFromFile. Unused otherwise.
     CompressedReadBufferFromFile * istr_concrete = nullptr;

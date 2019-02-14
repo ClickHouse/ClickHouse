@@ -11,10 +11,11 @@
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
+#include <common/StringRef.h>
 
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <common/StringRef.h>
+
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
@@ -254,7 +255,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     bool negative = false;
-    x = 0;
+    std::make_unsigned_t<T> res = 0;
     if (buf.eof())
     {
         if constexpr (throw_exception)
@@ -290,22 +291,17 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
-                x *= 10;
-                x += *buf.position() - '0';
+                res *= 10;
+                res += *buf.position() - '0';
                 break;
             default:
-                if (negative)
-                    x = -x;
+                x = negative ? -res : res;
                 return ReturnType(true);
         }
         ++buf.position();
     }
 
-    /// NOTE Signed integer overflow is undefined behaviour. Consider we have '128' that is parsed as Int8 and overflowed.
-    /// We are happy if it is overflowed to -128 and then 'x = -x' does nothing. But UBSan will warn.
-    if (negative)
-        x = -x;
-
+    x = negative ? -res : res;
     return ReturnType(true);
 }
 
@@ -331,7 +327,7 @@ template <typename T, bool throw_on_error = true>
 void readIntTextUnsafe(T & x, ReadBuffer & buf)
 {
     bool negative = false;
-    x = 0;
+    std::make_unsigned_t<T> res = 0;
 
     auto on_error = []
     {
@@ -353,6 +349,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     if (*buf.position() == '0') /// There are many zeros in real datasets.
     {
         ++buf.position();
+        x = 0;
         return;
     }
 
@@ -365,8 +362,8 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
 
         if ((*buf.position() & 0xF0) == 0x30) /// It makes sense to have this condition inside loop.
         {
-            x *= 10;
-            x += *buf.position() & 0x0F;
+            res *= 10;
+            res += *buf.position() & 0x0F;
             ++buf.position();
         }
         else
@@ -374,8 +371,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     }
 
     /// See note about undefined behaviour above.
-    if (std::is_signed_v<T> && negative)
-        x = -x;
+    x = std::is_signed_v<T> && negative ? -res : res;
 }
 
 template <typename T>
@@ -586,7 +582,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 {
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
-      * Then look at 5th charater. If it is a number - treat whole as unix timestamp.
+      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
       * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
       */
 

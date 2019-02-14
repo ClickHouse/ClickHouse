@@ -44,6 +44,8 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <Compression/CompressionFactory.h>
+
 
 namespace DB
 {
@@ -61,6 +63,7 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
+    extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
 }
 
 
@@ -103,7 +106,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         const ASTStorage & storage = *create.storage;
         const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
-        if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key || storage.order_by || storage.sample_by || storage.settings)
+        if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key
+            || storage.order_by || storage.sample_by || storage.settings ||
+            (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
         {
             std::stringstream ostr;
             formatAST(storage, ostr, false, false);
@@ -170,14 +175,15 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 
 using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
-using ParsedColumns = std::tuple<NamesAndTypesList, ColumnDefaults, ColumnComments>;
+using ColumnsDeclarationAndModifiers = std::tuple<NamesAndTypesList, ColumnDefaults, ColumnCodecs, ColumnComments>;
 
 /// AST to the list of columns with types. Columns of Nested type are expanded into a list of real columns.
-static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
+static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
 {
     /// list of table columns in correct order
     NamesAndTypesList columns{};
     ColumnDefaults defaults{};
+    ColumnCodecs codecs{};
     ColumnComments comments{};
 
     /// Columns requiring type-deduction or default_expression type-check
@@ -192,9 +198,11 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
     {
         auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
 
+        DataTypePtr column_type = nullptr;
         if (col_decl.type)
         {
-            columns.emplace_back(col_decl.name, DataTypeFactory::instance().get(col_decl.type));
+            column_type = DataTypeFactory::instance().get(col_decl.type);
+            columns.emplace_back(col_decl.name, column_type);
         }
         else
             /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
@@ -223,6 +231,12 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
         }
 
+        if (col_decl.codec)
+        {
+            auto codec = CompressionCodecFactory::instance().get(col_decl.codec, column_type);
+            codecs.emplace(col_decl.name, codec);
+        }
+
         if (col_decl.comment)
         {
             if (auto comment_str = typeid_cast<ASTLiteral &>(*col_decl.comment).value.get<String>(); !comment_str.empty())
@@ -233,7 +247,7 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
     /// set missing types and wrap default_expression's in a conversion-function if necessary
     if (!defaulted_columns.empty())
     {
-        auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, columns);
+        auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         const auto block = actions->getSampleBlock();
 
@@ -278,14 +292,28 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
         }
     }
 
-    return {Nested::flatten(columns), defaults, comments};
+    std::unordered_map<std::string, std::vector<std::string>> mapping;
+    auto new_columns = Nested::flattenWithMapping(columns, mapping);
+    for (const auto & [old_name, new_names] : mapping)
+    {
+        auto codec_it = codecs.find(old_name);
+        if ((new_names.size() == 1 && old_name == new_names.back()) || codec_it == codecs.end())
+            continue;
+
+        auto codec = codec_it->second;
+        codecs.erase(codec_it);
+        for (const auto & new_name : new_names)
+            codecs.emplace(new_name, codec);
+    }
+
+    return {new_columns, defaults, codecs, comments};
 }
 
 
-static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultKind kind)
+static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_declare, const ColumnDefaultKind kind)
 {
-    auto & columns = columns_and_defaults.first;
-    auto & defaults = columns_and_defaults.second;
+    auto & columns = std::get<0>(columns_declare);
+    auto & defaults = std::get<1>(columns_declare);
 
     NamesAndTypesList removed{};
 
@@ -314,13 +342,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = column.name;
 
-        StringPtr type_name = std::make_shared<String>(column.type->getName());
-        auto pos = type_name->data();
-        const auto end = pos + type_name->size();
-
         ParserIdentifierWithOptionalParameters storage_p;
+        String type_name = column.type->getName();
+        auto pos = type_name.data();
+        const auto end = pos + type_name.size();
         column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
-        column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -338,13 +364,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         column_declaration->name = column.name;
 
-        StringPtr type_name = std::make_shared<String>(column.type->getName());
-        auto pos = type_name->data();
-        const auto end = pos + type_name->size();
-
         ParserIdentifierWithOptionalParameters storage_p;
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
-        column_declaration->type->owned_string = type_name;
+        String type_name = column.type->getName();
+        auto type_name_pos = type_name.data();
+        const auto type_name_end = type_name_pos + type_name.size();
+        column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0);
 
         const auto defaults_it = columns.defaults.find(column.name);
         if (defaults_it != std::end(columns.defaults))
@@ -359,10 +383,31 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->comment = std::make_shared<ASTLiteral>(Field(comments_it->second));
         }
 
+        const auto ct = columns.codecs.find(column.name);
+        if (ct != std::end(columns.codecs))
+        {
+            String codec_desc = ct->second->getCodecDesc();
+            codec_desc = "CODEC(" + codec_desc + ")";
+            auto codec_desc_pos = codec_desc.data();
+            const auto codec_desc_end = codec_desc_pos + codec_desc.size();
+            ParserIdentifierWithParameters codec_p;
+            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0);
+        }
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 
     return columns_list;
+}
+
+ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
+{
+    auto res = std::make_shared<ASTExpressionList>();
+
+    for (const auto & index : indices.indices)
+        res->children.push_back(index->clone());
+
+    return res;
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns, const Context & context)
@@ -371,11 +416,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 
     auto && parsed_columns = parseColumns(columns, context);
     auto columns_and_defaults = std::make_pair(std::move(std::get<0>(parsed_columns)), std::move(std::get<1>(parsed_columns)));
-    res.materialized = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Materialized);
     res.aliases = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Alias);
+    res.materialized = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Materialized);
     res.ordinary = std::move(columns_and_defaults.first);
     res.defaults = std::move(columns_and_defaults.second);
-    res.comments = std::move(std::get<2>(parsed_columns));
+    res.codecs = std::move(std::get<2>(parsed_columns));
+    res.comments = std::move(std::get<3>(parsed_columns));
 
     if (res.ordinary.size() + res.materialized.size() == 0)
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
@@ -384,45 +430,25 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 }
 
 
-void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & columns, const Context & context)
-{
-    const auto & settings = context.getSettingsRef();
-    bool allow_low_cardinality = settings.allow_experimental_low_cardinality_type != 0;
-
-    if (allow_low_cardinality)
-        return;
-
-    auto check_types = [&](const NamesAndTypesList & list)
-    {
-        for (const auto & column : list)
-        {
-            if (!allow_low_cardinality && column.type && column.type->lowCardinality())
-            {
-                String message = "Cannot create table with column '" + column.name + "' which type is '"
-                                 + column.type->getName() + "' because LowCardinality type is not allowed. "
-                                 + "Set setting allow_experimental_low_cardinality_type = 1 in order to allow it.";
-                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
-            }
-        }
-    };
-
-    check_types(columns.ordinary);
-    check_types(columns.materialized);
-}
-
-
 ColumnsDescription InterpreterCreateQuery::setColumns(
     ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const
 {
     ColumnsDescription res;
+    IndicesDescription indices;
 
-    if (create.columns)
+    if (create.columns_list)
     {
-        res = getColumnsDescription(*create.columns, context);
+        if (create.columns_list->columns)
+            res = getColumnsDescription(*create.columns_list->columns, context);
+        if (create.columns_list->indices)
+            for (const auto & index : create.columns_list->indices->children)
+                indices.indices.push_back(
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
     }
     else if (!create.as_table.empty())
     {
         res = as_storage->getColumns();
+        indices = as_storage->getIndicesDescription();
     }
     else if (create.select)
     {
@@ -434,10 +460,23 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(res);
-    if (create.columns)
-        create.replace(create.columns, new_columns);
+    ASTPtr new_indices = formatIndices(indices);
+
+    if (!create.columns_list)
+    {
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        create.set(create.columns_list, new_columns_list);
+    }
+
+    if (create.columns_list->columns)
+        create.columns_list->replace(create.columns_list->columns, new_columns);
     else
-        create.set(create.columns, new_columns);
+        create.columns_list->set(create.columns_list->columns, new_columns);
+
+    if (new_indices && create.columns_list->indices)
+        create.columns_list->replace(create.columns_list->indices, new_indices);
+    else if (new_indices)
+        create.columns_list->set(create.columns_list->indices, new_indices);
 
     /// Check for duplicates
     std::set<String> all_columns;
@@ -509,6 +548,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
     }
 
+    /// Temporary tables are created out of databases.
+    if (create.temporary && !create.database.empty())
+        throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
+            ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
+
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
 
@@ -517,7 +561,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String table_name_escaped = escapeForFileName(table_name);
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && !create.storage && !create.columns)
+    if (create.attach && !create.storage && !create.columns_list)
     {
         // Table SQL definition is available even if the table is detached
         auto query = context.getCreateTableQuery(database_name, table_name);
@@ -536,7 +580,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     Block as_select_sample;
-    if (create.select && (!create.attach || !create.columns))
+    if (create.select && (!create.attach || !create.columns_list))
         as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context);
 
     String as_database_name = create.as_database.empty() ? current_database : create.as_database;
@@ -552,10 +596,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns.
     ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
-
-    /// Some column types may be not allowed according to settings.
-    if (!create.attach)
-        checkSupportedTypes(columns, context);
 
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);

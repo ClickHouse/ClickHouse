@@ -1,6 +1,6 @@
 # 来自第三方开发人员的代理服务器 
 
-[chproxy](https://github.com/Vertamedia/chproxy)是ClickHouse数据库的http代理和负载均衡器。
+[chproxy](https://github.com/Vertamedia/chproxy) 是ClickHouse数据库的http代理和负载均衡器。
 
 特征
 
@@ -12,7 +12,7 @@
 
 ## KittenHouse
 
-[KittenHouse](https://github.com/VKCOM/kittenhouse)设计为ClickHouse和应用程序服务器之间的本地代理，以防在应用程序端缓冲INSERT数据是不可能或不方便的。
+[KittenHouse](https://github.com/VKCOM/kittenhouse) 设计为ClickHouse和应用程序服务器之间的本地代理，以防在应用程序端缓冲INSERT数据是不可能或不方便的。
 
 特征：
 
@@ -24,7 +24,7 @@
 
 ## ClickHouse-Bulk
 
-[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk)是一个简单的ClickHouse插入收集器。
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) 是一个简单的ClickHouse插入收集器。
 
 特征：
 

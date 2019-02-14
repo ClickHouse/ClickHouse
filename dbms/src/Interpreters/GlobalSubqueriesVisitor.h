@@ -16,6 +16,7 @@
 #include <Storages/StorageMemory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 namespace DB
 {
@@ -55,7 +56,7 @@ public:
             ASTPtr table_name;
             ASTPtr subquery_or_table_name;
 
-            if (typeid_cast<const ASTIdentifier *>(subquery_or_table_name_or_table_expression.get()))
+            if (isIdentifier(subquery_or_table_name_or_table_expression))
             {
                 table_name = subquery_or_table_name_or_table_expression;
                 subquery_or_table_name = table_name;
@@ -86,7 +87,7 @@ public:
             if (table_name)
             {
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
-                if (external_tables.end() != external_tables.find(static_cast<const ASTIdentifier &>(*table_name).name))
+                if (external_tables.end() != external_tables.find(*getIdentifierName(table_name)))
                     return;
             }
 
@@ -112,7 +113,7 @@ public:
                 *  instead of doing a subquery, you just need to read it.
                 */
 
-            auto database_and_table_name = createDatabaseAndTableNode("", external_table_name);
+            auto database_and_table_name = createTableIdentifier("", external_table_name);
 
             if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
             {

@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <common/DateLUT.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace DB
@@ -248,7 +249,30 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return res;
         }
     }
+    else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
+    {
+        if (src.getType() != Field::Types::AggregateFunctionState)
+            throw Exception(String("Cannot convert ") + src.getTypeName() + " to " + agg_func_type->getName(),
+                    ErrorCodes::TYPE_MISMATCH);
 
+        auto & name = src.get<AggregateFunctionStateData>().name;
+        if (agg_func_type->getName() != name)
+            throw Exception("Cannot convert " + name + " to " + agg_func_type->getName(), ErrorCodes::TYPE_MISMATCH);
+
+        return src;
+    }
+
+    if (src.getType() == Field::Types::String)
+    {
+        const auto col = type.createColumn();
+        ReadBufferFromString buffer(src.get<String>());
+        type.deserializeAsTextEscaped(*col, buffer, FormatSettings{});
+
+        return (*col)[0];
+    }
+
+
+    // TODO (nemkov): should we attempt to parse value using or `type.deserializeAsTextEscaped()` type.deserializeAsTextEscaped() ?
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 }

@@ -1,28 +1,28 @@
 #include <Functions/FunctionsStringSearch.h>
 
-#include <memory>
-#include <mutex>
-#include <Poco/UTF8String.h>
 #include <Columns/ColumnFixedString.h>
-#include <Common/Volnitsky.h>
+#include <Common/config.h>
+
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/Regexps.h>
 #include <IO/WriteHelpers.h>
-#include <Common/config.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
+#include <Poco/UTF8String.h>
+#include <Common/Volnitsky.h>
+
+#include <algorithm>
+#include <memory>
 
 #if USE_RE2_ST
-    #include <re2_st/re2.h> // Y_IGNORE
+#    include <re2_st/re2.h> // Y_IGNORE
 #else
-    #define re2_st re2
+#    define re2_st re2
 #endif
-
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -35,7 +35,10 @@ namespace ErrorCodes
 struct PositionCaseSensitiveASCII
 {
     /// For searching single substring inside big-enough contiguous chunk of data. Coluld have slightly expensive initialization.
-    using SearcherInBigHaystack = VolnitskyImpl<true, true>;
+    using SearcherInBigHaystack = Volnitsky;
+
+    /// For search many substrings in one string
+    using MultiSearcherInBigHaystack = MultiVolnitsky;
 
     /// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
     using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
@@ -50,23 +53,24 @@ struct PositionCaseSensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    /// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
-    static size_t countChars(const char * begin, const char * end)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
-        return end - begin;
+        return MultiSearcherInBigHaystack(needles);
     }
+
+    /// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
+    static size_t countChars(const char * begin, const char * end) { return end - begin; }
 
     /// Convert string to lowercase. Only for case-insensitive search.
     /// Implementation is permitted to be inefficient because it is called for single string.
-    static void toLowerIfNeed(std::string &)
-    {
-    }
+    static void toLowerIfNeed(std::string &) {}
 };
 
 struct PositionCaseInsensitiveASCII
 {
     /// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
+    using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitive;
     using SearcherInSmallHaystack = LibCASCIICaseInsensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
@@ -79,20 +83,20 @@ struct PositionCaseInsensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static size_t countChars(const char * begin, const char * end)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
-        return end - begin;
+        return MultiSearcherInBigHaystack(needles);
     }
 
-    static void toLowerIfNeed(std::string & s)
-    {
-        std::transform(std::begin(s), std::end(s), std::begin(s), tolower);
-    }
+    static size_t countChars(const char * begin, const char * end) { return end - begin; }
+
+    static void toLowerIfNeed(std::string & s) { std::transform(std::begin(s), std::end(s), std::begin(s), tolower); }
 };
 
 struct PositionCaseSensitiveUTF8
 {
-    using SearcherInBigHaystack = VolnitskyImpl<true, false>;
+    using SearcherInBigHaystack = VolnitskyUTF8;
+    using MultiSearcherInBigHaystack = MultiVolnitskyUTF8;
     using SearcherInSmallHaystack = LibCASCIICaseSensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
@@ -105,6 +109,11 @@ struct PositionCaseSensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
+    {
+        return MultiSearcherInBigHaystack(needles);
+    }
+
     static size_t countChars(const char * begin, const char * end)
     {
         size_t res = 0;
@@ -114,14 +123,13 @@ struct PositionCaseSensitiveUTF8
         return res;
     }
 
-    static void toLowerIfNeed(std::string &)
-    {
-    }
+    static void toLowerIfNeed(std::string &) {}
 };
 
 struct PositionCaseInsensitiveUTF8
 {
-    using SearcherInBigHaystack = VolnitskyImpl<false, false>;
+    using SearcherInBigHaystack = VolnitskyCaseInsensitiveUTF8;
+    using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitiveUTF8;
     using SearcherInSmallHaystack = UTF8CaseInsensitiveStringSearcher; /// TODO Very suboptimal.
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
@@ -134,6 +142,11 @@ struct PositionCaseInsensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
+    {
+        return MultiSearcherInBigHaystack(needles);
+    }
+
     static size_t countChars(const char * begin, const char * end)
     {
         size_t res = 0;
@@ -143,10 +156,7 @@ struct PositionCaseInsensitiveUTF8
         return res;
     }
 
-    static void toLowerIfNeed(std::string & s)
-    {
-        Poco::UTF8::toLowerInPlace(s);
-    }
+    static void toLowerIfNeed(std::string & s) { Poco::UTF8::toLowerInPlace(s); }
 };
 
 template <typename Impl>
@@ -155,10 +165,8 @@ struct PositionImpl
     using ResultType = UInt64;
 
     /// Find one substring in many strings.
-    static void vector_constant(const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
-        const std::string & needle,
-        PaddedPODArray<UInt64> & res)
+    static void vector_constant(
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & needle, PaddedPODArray<UInt64> & res)
     {
         const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
@@ -210,7 +218,8 @@ struct PositionImpl
     }
 
     /// Search each time for a different single substring inside each time different string.
-    static void vector_vector(const ColumnString::Chars & haystack_data,
+    static void vector_vector(
+        const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
@@ -234,9 +243,9 @@ struct PositionImpl
             else
             {
                 /// It is assumed that the StringSearcher is not very difficult to initialize.
-                typename Impl::SearcherInSmallHaystack searcher
-                    = Impl::createSearcherInSmallHaystack(reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
-                        needle_offsets[i] - prev_needle_offset - 1); /// zero byte at the end
+                typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
+                    reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
+                    needle_offsets[i] - prev_needle_offset - 1); /// zero byte at the end
 
                 /// searcher returns a pointer to the found substring or to the end of `haystack`.
                 size_t pos = searcher.search(&haystack_data[prev_haystack_offset], &haystack_data[haystack_offsets[i] - 1])
@@ -244,8 +253,10 @@ struct PositionImpl
 
                 if (pos != haystack_size)
                 {
-                    res[i] = 1 + Impl::countChars(reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
-                                     reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset + pos]));
+                    res[i] = 1
+                        + Impl::countChars(
+                                 reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
+                                 reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset + pos]));
                 }
                 else
                     res[i] = 0;
@@ -256,8 +267,9 @@ struct PositionImpl
         }
     }
 
-    /// Find many substrings in one line.
-    static void constant_vector(const String & haystack,
+    /// Find many substrings in single string.
+    static void constant_vector(
+        const String & haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         PaddedPODArray<UInt64> & res)
@@ -281,7 +293,8 @@ struct PositionImpl
                 typename Impl::SearcherInSmallHaystack searcher = Impl::createSearcherInSmallHaystack(
                     reinterpret_cast<const char *>(&needle_data[prev_needle_offset]), needle_offsets[i] - prev_needle_offset - 1);
 
-                size_t pos = searcher.search(reinterpret_cast<const UInt8 *>(haystack.data()),
+                size_t pos = searcher.search(
+                                 reinterpret_cast<const UInt8 *>(haystack.data()),
                                  reinterpret_cast<const UInt8 *>(haystack.data()) + haystack.size())
                     - reinterpret_cast<const UInt8 *>(haystack.data());
 
@@ -295,6 +308,56 @@ struct PositionImpl
 
             prev_needle_offset = needle_offsets[i];
         }
+    }
+};
+
+template <typename Impl>
+struct MultiPositionImpl
+{
+    using ResultType = UInt64;
+
+    static void vector_constant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const std::vector<StringRef> & needles,
+        PaddedPODArray<UInt64> & res)
+    {
+        auto resCallback = [](const UInt8 * start, const UInt8 * end) -> UInt64
+        {
+            return 1 + Impl::countChars(reinterpret_cast<const char *>(start), reinterpret_cast<const char *>(end));
+        };
+
+        Impl::createMultiSearcherInBigHaystack(needles).searchAll(haystack_data, haystack_offsets, resCallback, res);
+    }
+};
+
+template <typename Impl>
+struct MultiSearchImpl
+{
+    using ResultType = UInt64;
+
+    static void vector_constant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const std::vector<StringRef> & needles,
+        PaddedPODArray<UInt64> & res)
+    {
+        Impl::createMultiSearcherInBigHaystack(needles).search(haystack_data, haystack_offsets, res);
+    }
+};
+
+template <typename Impl>
+struct FirstMatchImpl
+{
+    using ResultType = UInt64;
+
+    static void vector_constant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const std::vector<StringRef> & needles,
+        PaddedPODArray<UInt64> & res)
+    {
+        Impl::createMultiSearcherInBigHaystack(needles).searchIndex(haystack_data, haystack_offsets, res);
     }
 };
 
@@ -348,10 +411,8 @@ struct MatchImpl
 {
     using ResultType = UInt8;
 
-    static void vector_constant(const ColumnString::Chars & data,
-        const ColumnString::Offsets & offsets,
-        const std::string & pattern,
-        PaddedPODArray<UInt8> & res)
+    static void vector_constant(
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
         if (offsets.empty())
             return;
@@ -467,13 +528,14 @@ struct MatchImpl
                             size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
 
                             /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
-                              *  so that it can match when `required_substring` occurs into the line several times,
+                              *  so that it can match when `required_substring` occurs into the string several times,
                               *  and at the first occurrence, the regexp is not a match.
                               */
 
                             if (required_substring_is_prefix)
                                 res[i] = revert
-                                    ^ regexp->getRE2()->Match(re2_st::StringPiece(str_data, str_size),
+                                    ^ regexp->getRE2()->Match(
+                                          re2_st::StringPiece(str_data, str_size),
                                           reinterpret_cast<const char *>(pos) - str_data,
                                           str_size,
                                           re2_st::RE2::UNANCHORED,
@@ -504,13 +566,15 @@ struct MatchImpl
         res = revert ^ regexp->match(data);
     }
 
-    template <typename... Args> static void vector_vector(Args &&...)
+    template <typename... Args>
+    static void vector_vector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
-    template <typename... Args> static void constant_vector(Args &&...)
+    template <typename... Args>
+    static void constant_vector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -519,7 +583,8 @@ struct MatchImpl
 
 struct ExtractImpl
 {
-    static void vector(const ColumnString::Chars & data,
+    static void vector(
+        const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
         ColumnString::Chars & res_data,
@@ -613,16 +678,17 @@ struct ReplaceRegexpImpl
 
         for (const auto & it : instructions)
             if (it.first >= num_captures)
-                throw Exception("Invalid replace instruction in replacement string. Id: " + toString(it.first) + ", but regexp has only "
-                        + toString(num_captures - 1)
-                        + " subpatterns",
+                throw Exception(
+                    "Invalid replace instruction in replacement string. Id: " + toString(it.first) + ", but regexp has only "
+                        + toString(num_captures - 1) + " subpatterns",
                     ErrorCodes::BAD_ARGUMENTS);
 
         return instructions;
     }
 
 
-    static void processString(const re2_st::StringPiece & input,
+    static void processString(
+        const re2_st::StringPiece & input,
         ColumnString::Chars & res_data,
         ColumnString::Offset & res_offset,
         re2_st::RE2 & searcher,
@@ -687,7 +753,8 @@ struct ReplaceRegexpImpl
     }
 
 
-    static void vector(const ColumnString::Chars & data,
+    static void vector(
+        const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & needle,
         const std::string & replacement,
@@ -715,7 +782,8 @@ struct ReplaceRegexpImpl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars & data,
+    static void vector_fixed(
+        const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
         const std::string & replacement,
@@ -749,7 +817,8 @@ struct ReplaceRegexpImpl
 template <bool replace_one = false>
 struct ReplaceStringImpl
 {
-    static void vector(const ColumnString::Chars & data,
+    static void vector(
+        const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & needle,
         const std::string & replacement,
@@ -791,7 +860,7 @@ struct ReplaceStringImpl
             if (i == offsets.size())
                 break;
 
-            /// Is it true that this line no longer needs to perform transformations.
+            /// Is it true that this string no longer needs to perform transformations.
             bool can_finish_current_string = false;
 
             /// We check that the entry does not go through the boundaries of strings.
@@ -824,7 +893,8 @@ struct ReplaceStringImpl
 
     /// Note: this function converts fixed-length strings to variable-length strings
     ///       and each variable-length string should ends with zero byte.
-    static void vector_fixed(const ColumnString::Chars & data,
+    static void vector_fixed(
+        const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
         const std::string & replacement,
@@ -851,7 +921,8 @@ struct ReplaceStringImpl
             const UInt8 * match = searcher.search(pos, end - pos);
 
 #define COPY_REST_OF_CURRENT_STRING() \
-    do { \
+    do \
+    { \
         const size_t len = begin + n * (i + 1) - pos; \
         res_data.resize(res_data.size() + len + 1); \
         memcpy(&res_data[res_offset], pos, len); \
@@ -878,7 +949,7 @@ struct ReplaceStringImpl
             memcpy(&res_data[res_offset], pos, match - pos);
             res_offset += (match - pos);
 
-            /// Is it true that this line no longer needs to perform conversions.
+            /// Is it true that this string no longer needs to perform conversions.
             bool can_finish_current_string = false;
 
             /// We check that the entry does not pass through the boundaries of strings.
@@ -935,20 +1006,11 @@ class FunctionStringReplace : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionStringReplace>();
-    }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringReplace>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 3;
-    }
+    size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
@@ -956,15 +1018,18 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!isStringOrFixedString(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
+            throw Exception(
+                "Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!isStringOrFixedString(arguments[2]))
-            throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
+            throw Exception(
+                "Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -995,10 +1060,10 @@ public:
             Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column_src.get()))
+        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector_fixed(col->getChars(), col->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+            Impl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
         else
@@ -1024,6 +1089,54 @@ struct NamePositionCaseInsensitive
 struct NamePositionCaseInsensitiveUTF8
 {
     static constexpr auto name = "positionCaseInsensitiveUTF8";
+};
+struct NameMultiPosition
+{
+    static constexpr auto name = "multiPosition";
+};
+struct NameMultiPositionUTF8
+{
+    static constexpr auto name = "multiPositionUTF8";
+};
+struct NameMultiPositionCaseInsensitive
+{
+    static constexpr auto name = "multiPositionCaseInsensitive";
+};
+struct NameMultiPositionCaseInsensitiveUTF8
+{
+    static constexpr auto name = "multiPositionCaseInsensitiveUTF8";
+};
+struct NameMultiSearch
+{
+    static constexpr auto name = "multiSearch";
+};
+struct NameMultiSearchUTF8
+{
+    static constexpr auto name = "multiSearchUTF8";
+};
+struct NameMultiSearchCaseInsensitive
+{
+    static constexpr auto name = "multiSearchCaseInsensitive";
+};
+struct NameMultiSearchCaseInsensitiveUTF8
+{
+    static constexpr auto name = "multiSearchCaseInsensitiveUTF8";
+};
+struct NameFirstMatch
+{
+    static constexpr auto name = "firstMatch";
+};
+struct NameFirstMatchUTF8
+{
+    static constexpr auto name = "firstMatchUTF8";
+};
+struct NameFirstMatchCaseInsensitive
+{
+    static constexpr auto name = "firstMatchCaseInsensitive";
+};
+struct NameFirstMatchCaseInsensitiveUTF8
+{
+    static constexpr auto name = "firstMatchCaseInsensitiveUTF8";
 };
 struct NameMatch
 {
@@ -1064,6 +1177,27 @@ using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<Posit
 using FunctionPositionCaseInsensitiveUTF8
     = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
 
+using FunctionMultiPosition = FunctionsMultiStringPosition<MultiPositionImpl<PositionCaseSensitiveASCII>, NameMultiPosition>;
+using FunctionMultiPositionUTF8 = FunctionsMultiStringPosition<MultiPositionImpl<PositionCaseSensitiveUTF8>, NameMultiPositionUTF8>;
+using FunctionMultiPositionCaseInsensitive
+    = FunctionsMultiStringPosition<MultiPositionImpl<PositionCaseInsensitiveASCII>, NameMultiPositionCaseInsensitive>;
+using FunctionMultiPositionCaseInsensitiveUTF8
+    = FunctionsMultiStringPosition<MultiPositionImpl<PositionCaseInsensitiveUTF8>, NameMultiPositionCaseInsensitiveUTF8>;
+
+using FunctionMultiSearch = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseSensitiveASCII>, NameMultiSearch>;
+using FunctionMultiSearchUTF8 = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseSensitiveUTF8>, NameMultiSearchUTF8>;
+using FunctionMultiSearchCaseInsensitive
+    = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseInsensitiveASCII>, NameMultiSearchCaseInsensitive>;
+using FunctionMultiSearchCaseInsensitiveUTF8
+    = FunctionsMultiStringSearch<MultiSearchImpl<PositionCaseInsensitiveUTF8>, NameMultiSearchCaseInsensitiveUTF8>;
+
+using FunctionFirstMatch = FunctionsMultiStringSearch<FirstMatchImpl<PositionCaseSensitiveASCII>, NameFirstMatch>;
+using FunctionFirstMatchUTF8 = FunctionsMultiStringSearch<FirstMatchImpl<PositionCaseSensitiveUTF8>, NameFirstMatchUTF8>;
+using FunctionFirstMatchCaseInsensitive
+    = FunctionsMultiStringSearch<FirstMatchImpl<PositionCaseInsensitiveASCII>, NameFirstMatchCaseInsensitive>;
+using FunctionFirstMatchCaseInsensitiveUTF8
+    = FunctionsMultiStringSearch<FirstMatchImpl<PositionCaseInsensitiveUTF8>, NameFirstMatchCaseInsensitiveUTF8>;
+
 using FunctionMatch = FunctionsStringSearch<MatchImpl<false>, NameMatch>;
 using FunctionLike = FunctionsStringSearch<MatchImpl<true>, NameLike>;
 using FunctionNotLike = FunctionsStringSearch<MatchImpl<true, true>, NameNotLike>;
@@ -1080,14 +1214,32 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionReplaceAll>();
     factory.registerFunction<FunctionReplaceRegexpOne>();
     factory.registerFunction<FunctionReplaceRegexpAll>();
-    factory.registerFunction<FunctionPosition>();
+
+    factory.registerFunction<FunctionPosition>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionPositionUTF8>();
     factory.registerFunction<FunctionPositionCaseInsensitive>();
     factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();
+
+    factory.registerFunction<FunctionMultiPosition>();
+    factory.registerFunction<FunctionMultiPositionUTF8>();
+    factory.registerFunction<FunctionMultiPositionCaseInsensitive>();
+    factory.registerFunction<FunctionMultiPositionCaseInsensitiveUTF8>();
+
+    factory.registerFunction<FunctionMultiSearch>();
+    factory.registerFunction<FunctionMultiSearchUTF8>();
+    factory.registerFunction<FunctionMultiSearchCaseInsensitive>();
+    factory.registerFunction<FunctionMultiSearchCaseInsensitiveUTF8>();
+
+    factory.registerFunction<FunctionFirstMatch>();
+    factory.registerFunction<FunctionFirstMatchUTF8>();
+    factory.registerFunction<FunctionFirstMatchCaseInsensitive>();
+    factory.registerFunction<FunctionFirstMatchCaseInsensitiveUTF8>();
+
     factory.registerFunction<FunctionMatch>();
     factory.registerFunction<FunctionLike>();
     factory.registerFunction<FunctionNotLike>();
     factory.registerFunction<FunctionExtract>();
+
     factory.registerAlias("locate", NamePosition::name, FunctionFactory::CaseInsensitive);
     factory.registerAlias("replace", NameReplaceAll::name, FunctionFactory::CaseInsensitive);
 }

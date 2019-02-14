@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <cstddef>
 #include <memory>
 
@@ -16,10 +16,10 @@ class Context;
   * Head of inserting data could be stored in INSERT ast directly
   * Remaining (tail) data could be stored in input_buffer_tail_part
   */
-class InputStreamFromASTInsertQuery : public IProfilingBlockInputStream
+class InputStreamFromASTInsertQuery : public IBlockInputStream
 {
 public:
-    InputStreamFromASTInsertQuery(const ASTPtr & ast, ReadBuffer & input_buffer_tail_part, const BlockIO & streams, Context & context);
+    InputStreamFromASTInsertQuery(const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, const Context & context);
 
     Block readImpl() override { return res_stream->read(); }
     void readPrefixImpl() override { return res_stream->readPrefix(); }

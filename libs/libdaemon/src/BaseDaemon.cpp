@@ -7,8 +7,8 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/fcntl.h>
 #include <sys/time.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
@@ -67,7 +67,6 @@
 #include <daemon/OwnPatternFormatter.h>
 #include <Common/CurrentThread.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
-
 
 /** For transferring information from signal handler to a separate thread.
   * If you need to do something serious in case of a signal (example: write a message to the log),
@@ -184,7 +183,21 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
 
 #if USE_UNWIND
-size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
+/** We suppress the following ASan report. Also shown by Valgrind.
+==124==ERROR: AddressSanitizer: stack-use-after-scope on address 0x7f054be57000 at pc 0x0000068b0649 bp 0x7f060eeac590 sp 0x7f060eeabd40
+READ of size 1 at 0x7f054be57000 thread T3
+    #0 0x68b0648 in write (/usr/bin/clickhouse+0x68b0648)
+    #1 0x717da02 in write_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:110:13
+    #2 0x717da02 in mincore_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:146
+    #3 0x717dec1 in validate_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:206:7
+    #4 0x717dec1 in access_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:240
+    #5 0x71881a9 in dwarf_get /build/obj-x86_64-linux-gnu/../contrib/libunwind/include/tdep-x86_64/libunwind_i.h:168:12
+    #6 0x71881a9 in apply_reg_state /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:872
+    #7 0x718705c in _ULx86_64_dwarf_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:953:10
+    #8 0x718f155 in _ULx86_64_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Gstep.c:71:9
+    #9 0x7162671 in backtraceLibUnwind(void**, unsigned long, ucontext_t&) /build/obj-x86_64-linux-gnu/../libs/libdaemon/src/BaseDaemon.cpp:202:14
+  */
+size_t NO_SANITIZE_ADDRESS backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
 {
     unw_cursor_t cursor;
 
@@ -597,8 +610,10 @@ void BaseDaemon::reloadConfiguration()
 }
 
 
-/// For creating and destroying unique_ptr of incomplete type.
-BaseDaemon::BaseDaemon() = default;
+BaseDaemon::BaseDaemon()
+{
+    checkRequiredInstructions();
+}
 
 
 BaseDaemon::~BaseDaemon()
@@ -606,6 +621,127 @@ BaseDaemon::~BaseDaemon()
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     signal_pipe.close();
+}
+
+
+enum class InstructionFail
+{
+    NONE = 0,
+    SSE3 = 1,
+    SSSE3 = 2,
+    SSE4_1 = 3,
+    SSE4_2 = 4,
+    AVX = 5,
+    AVX2 = 6,
+    AVX512 = 7
+};
+
+static std::string instructionFailToString(InstructionFail fail)
+{
+    switch(fail)
+    {
+        case InstructionFail::NONE:
+            return "NONE";
+        case InstructionFail::SSE3:
+            return "SSE3";
+        case InstructionFail::SSSE3:
+            return "SSSE3";
+        case InstructionFail::SSE4_1:
+            return "SSE4.1";
+        case InstructionFail::SSE4_2:
+            return "SSE4.2";
+        case InstructionFail::AVX:
+            return "AVX";
+        case InstructionFail::AVX2:
+            return "AVX2";
+        case InstructionFail::AVX512:
+            return "AVX512";
+    }
+    __builtin_unreachable();
+}
+
+
+static sigjmp_buf jmpbuf;
+
+static void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
+{
+    siglongjmp(jmpbuf, 1);
+}
+
+/// Check if necessary sse extensions are available by trying to execute some sse instructions.
+/// If instruction is unavailable, SIGILL will be sent by kernel.
+static void checkRequiredInstructions(volatile InstructionFail & fail)
+{
+#if __SSE3__
+    fail = InstructionFail::SSE3;
+    __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __SSSE3__
+    fail = InstructionFail::SSSE3;
+    __asm__ volatile ("pabsw %%xmm0, %%xmm0" : : : "xmm0");
+
+#endif
+
+#if __SSE4_1__
+    fail = InstructionFail::SSE4_1;
+    __asm__ volatile ("pmaxud %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __SSE4_2__
+    fail = InstructionFail::SSE4_2;
+    __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __AVX__
+    fail = InstructionFail::AVX;
+    __asm__ volatile ("vaddpd %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+#if __AVX2__
+    fail = InstructionFail::AVX2;
+    __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+#if __AVX512__
+    fail = InstructionFail::AVX512;
+    __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
+#endif
+
+    fail = InstructionFail::NONE;
+}
+
+
+void BaseDaemon::checkRequiredInstructions()
+{
+    struct sigaction sa{};
+    struct sigaction sa_old{};
+    sa.sa_sigaction = sigIllCheckHandler;
+    sa.sa_flags = SA_SIGINFO;
+    auto signal = SIGILL;
+    if (sigemptyset(&sa.sa_mask) != 0
+        || sigaddset(&sa.sa_mask, signal) != 0
+        || sigaction(signal, &sa, &sa_old) != 0)
+    {
+        std::cerr << "Can not set signal handler\n";
+        exit(1);
+    }
+
+    volatile InstructionFail fail = InstructionFail::NONE;
+
+    if (sigsetjmp(jmpbuf, 1))
+    {
+        std::cerr << "Instruction check fail. There is no " << instructionFailToString(fail) << " instruction set\n";
+        exit(1);
+    }
+
+    ::checkRequiredInstructions(fail);
+
+    if (sigaction(signal, &sa_old, nullptr))
+    {
+        std::cerr << "Can not set signal handler\n";
+        exit(1);
+    }
 }
 
 
@@ -788,23 +924,25 @@ void BaseDaemon::closeFDs()
 #endif
     if (proc_path.isDirectory()) /// Hooray, proc exists
     {
-        Poco::DirectoryIterator itr(proc_path), end;
-        for (; itr != end; ++itr)
+        std::vector<std::string> fds;
+        /// in /proc/self/fd directory filenames are numeric file descriptors
+        proc_path.list(fds);
+        for (const auto & fd_str : fds)
         {
-            long fd = DB::parse<long>(itr.name());
+            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
         }
     }
     else
     {
-        long max_fd = -1;
+        int max_fd = -1;
 #ifdef _SC_OPEN_MAX
         max_fd = sysconf(_SC_OPEN_MAX);
         if (max_fd == -1)
 #endif
             max_fd = 256; /// bad fallback
-        for (long fd = 3; fd < max_fd; ++fd)
+        for (int fd = 3; fd < max_fd; ++fd)
             if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
     }
@@ -887,16 +1025,15 @@ void BaseDaemon::initialize(Application & self)
     reloadConfiguration();
 
     /// This must be done before creation of any files (including logs).
+    mode_t umask_num = 0027;
     if (config().has("umask"))
     {
         std::string umask_str = config().getString("umask");
-        mode_t umask_num = 0;
         std::stringstream stream;
         stream << umask_str;
         stream >> std::oct >> umask_num;
-
-        umask(umask_num);
     }
+    umask(umask_num);
 
     DB::ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 
@@ -998,8 +1135,6 @@ void BaseDaemon::initialize(Application & self)
     }
 
     initializeTerminationAndSignalProcessing();
-
-    DB::CurrentThread::get();   /// TODO Why do we need this?
     logRevision();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))

@@ -1,6 +1,4 @@
-<a name="data_type-array"></a>
-
-# Array(T)
+# Array(T) {#data_type-array}
 
 Массив из элементов типа `T`.
 

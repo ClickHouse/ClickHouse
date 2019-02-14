@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -16,7 +16,7 @@ class ExpressionActions;
   * Calculates total values according to totals_mode.
   * If necessary, evaluates the expression from HAVING and filters rows. Returns the finalized and filtered blocks.
   */
-class TotalsHavingBlockInputStream : public IProfilingBlockInputStream
+class TotalsHavingBlockInputStream : public IBlockInputStream
 {
 private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -52,7 +52,7 @@ private:
       */
     Block overflow_aggregates;
 
-    /// Here, total values are accumulated. After the work is finished, they will be placed in IProfilingBlockInputStream::totals.
+    /// Here, total values are accumulated. After the work is finished, they will be placed in IBlockInputStream::totals.
     MutableColumns current_totals;
     /// Arena for aggregate function states in totals.
     ArenaPtr arena;

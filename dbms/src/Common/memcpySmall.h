@@ -3,7 +3,7 @@
 #include <string.h>
 #include <Core/Defines.h>
 
-#if __SSE2__
+#ifdef __SSE2__
 #include <emmintrin.h>
 
 

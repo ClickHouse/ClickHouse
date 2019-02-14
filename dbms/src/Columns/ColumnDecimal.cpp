@@ -2,11 +2,14 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 
+#include <common/unaligned.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <DataStreams/ColumnGathererStream.h>
+
 
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
@@ -41,7 +44,7 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(*reinterpret_cast<const T *>(pos));
+    data.push_back(unalignedLoad<T>(pos));
     return pos + sizeof(T);
 }
 
@@ -60,7 +63,7 @@ void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <typename T>
-void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
+void ColumnDecimal<T>::getPermutation(bool reverse, UInt64 limit, int , IColumn::Permutation & res) const
 {
 #if 1 /// TODO: perf test
     if (data.size() <= std::numeric_limits<UInt32>::max())
@@ -79,7 +82,7 @@ void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn:
 }
 
 template <typename T>
-ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
+ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, UInt64 limit) const
 {
     size_t size = limit ? std::min(data.size(), limit) : data.size();
     if (perm.size() < size)
@@ -170,7 +173,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <typename T>
-ColumnPtr ColumnDecimal<T>::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnDecimal<T>::index(const IColumn & indexes, UInt64 limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }

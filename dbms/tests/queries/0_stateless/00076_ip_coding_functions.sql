@@ -6,6 +6,8 @@ select IPv4StringToNum('127.0.0.1' as p) == (0x7f000001 as n), IPv4NumToString(n
 select IPv4StringToNum(materialize('127.0.0.1') as p) == (materialize(0x7f000001) as n), IPv4NumToString(n) == p;
 select IPv4NumToString(toUInt32(0)) == '0.0.0.0';
 select IPv4NumToString(materialize(toUInt32(0))) == materialize('0.0.0.0');
+select IPv4NumToString(toUInt32(0x7f000001)) == '127.0.0.1';
+select IPv4NumToString(materialize(toUInt32(0x7f000001))) == materialize('127.0.0.1');
 
 select IPv6NumToString(toFixedString('', 16)) == '::';
 select IPv6NumToString(toFixedString(materialize(''), 16)) == materialize('::');

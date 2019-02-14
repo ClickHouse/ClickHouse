@@ -6,19 +6,16 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
 #include <IO/Progress.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressionSettings.h>
 #include <IO/copyData.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -32,6 +29,7 @@
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Compression/CompressionFactory.h>
 
 #include "TCPHandler.h"
 
@@ -55,6 +53,7 @@ namespace ErrorCodes
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+    ThreadStatus thread_status;
 
     connection_context = server.context();
     connection_context.setSessionContext(connection_context);
@@ -186,8 +185,9 @@ void TCPHandler::runImpl()
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
             });
 
+            bool may_have_embedded_data = client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
-            state.io = executeQuery(state.query, query_context, false, state.stage);
+            state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
 
             if (state.io.out)
                 state.need_receive_data_for_insert = true;
@@ -301,10 +301,10 @@ void TCPHandler::runImpl()
 
 void TCPHandler::readData(const Settings & global_settings)
 {
-    auto receive_timeout = query_context.getSettingsRef().receive_timeout.value;
+    const auto receive_timeout = query_context.getSettingsRef().receive_timeout.value;
 
     /// Poll interval should not be greater than receive_timeout
-    size_t default_poll_interval = global_settings.poll_interval.value * 1000000;
+    const size_t default_poll_interval = global_settings.poll_interval.value * 1000000;
     size_t current_poll_interval = static_cast<size_t>(receive_timeout.totalMicroseconds());
     constexpr size_t min_poll_interval = 5000; // 5 ms
     size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));
@@ -370,19 +370,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     }
 
     /// Send block to the client - table structure.
-    Block block = state.io.out->getHeader();
-
-    /// Support insert from old clients without low cardinality type.
-    if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
-    {
-        for (auto & col : block)
-        {
-            col.type = recursiveRemoveLowCardinality(col.type);
-            col.column = recursiveRemoveLowCardinality(col.column);
-        }
-    }
-
-    sendData(block);
+    sendData(state.io.out->getHeader());
 
     readData(global_settings);
     state.io.out->writeSuffix();
@@ -398,16 +386,6 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
-
-            /// Send data to old clients without low cardinality type.
-            if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
-            {
-                for (auto & column : header)
-                {
-                    column.column = recursiveRemoveLowCardinality(column.column);
-                    column.type = recursiveRemoveLowCardinality(column.type);
-                }
-            }
 
             if (header)
                 sendData(header);
@@ -430,7 +408,7 @@ void TCPHandler::processOrdinaryQuery()
                 }
                 else
                 {
-                    if (state.progress.rows && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+                    if (after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
                     {
                         /// Some time passed and there is a progress.
                         after_send_progress.restart();
@@ -507,53 +485,44 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::sendProfileInfo()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(state.io.in.get()))
-    {
-        writeVarUInt(Protocol::Server::ProfileInfo, *out);
-        input->getProfileInfo().write(*out);
-        out->next();
-    }
+    writeVarUInt(Protocol::Server::ProfileInfo, *out);
+    state.io.in->getProfileInfo().write(*out);
+    out->next();
 }
 
 
 void TCPHandler::sendTotals()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
+    const Block & totals = state.io.in->getTotals();
+
+    if (totals)
     {
-        const Block & totals = input->getTotals();
+        initBlockOutput(totals);
 
-        if (totals)
-        {
-            initBlockOutput(totals);
+        writeVarUInt(Protocol::Server::Totals, *out);
+        writeStringBinary("", *out);
 
-            writeVarUInt(Protocol::Server::Totals, *out);
-            writeStringBinary("", *out);
-
-            state.block_out->write(totals);
-            state.maybe_compressed_out->next();
-            out->next();
-        }
+        state.block_out->write(totals);
+        state.maybe_compressed_out->next();
+        out->next();
     }
 }
 
 
 void TCPHandler::sendExtremes()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
+    Block extremes = state.io.in->getExtremes();
+
+    if (extremes)
     {
-        Block extremes = input->getExtremes();
+        initBlockOutput(extremes);
 
-        if (extremes)
-        {
-            initBlockOutput(extremes);
+        writeVarUInt(Protocol::Server::Extremes, *out);
+        writeStringBinary("", *out);
 
-            writeVarUInt(Protocol::Server::Extremes, *out);
-            writeStringBinary("", *out);
-
-            state.block_out->write(extremes);
-            state.maybe_compressed_out->next();
-            out->next();
-        }
+        state.block_out->write(extremes);
+        state.maybe_compressed_out->next();
+        out->next();
     }
 }
 
@@ -750,7 +719,7 @@ bool TCPHandler::receiveData()
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
                 storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}});
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}, ColumnCodecs{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }
@@ -782,7 +751,8 @@ void TCPHandler::initBlockInput()
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
-            client_revision);
+            client_revision,
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -793,9 +763,14 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
+            std::string method = query_context.getSettingsRef().network_compression_method;
+            std::optional<int> level;
+            if (method == "ZSTD")
+                level = query_context.getSettingsRef().network_zstd_compression_level;
+
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionSettings(query_context.getSettingsRef()));
+                    *out, CompressionCodecFactory::instance().get(method, level));
             else
                 state.maybe_compressed_out = out;
         }
@@ -803,7 +778,8 @@ void TCPHandler::initBlockOutput(const Block & block)
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -815,7 +791,8 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
             *out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 

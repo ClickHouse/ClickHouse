@@ -92,10 +92,10 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
     node1.query("INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(100) ".format(table_name))
 
-    # actually, I don't know, what wrong with that connection string, but libmyodbc always falls into segfault
-    node1.query("SELECT * FROM odbc('DSN={}', '{}')".format(mysql_setup["DSN"], table_name), ignore_error=True)
+    assert node1.query("SELECT count(*) FROM odbc('DSN={}', '{}')".format(mysql_setup["DSN"], table_name)) == '100\n'
 
-    # server still works after segfault
+    # previously this test fails with segfault
+    # just to be sure :)
     assert node1.query("select 1") == "1\n"
 
     conn.close()
@@ -176,6 +176,18 @@ def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
     time.sleep(5)
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))") == "hello\n"
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))") == "world\n"
+
+def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+    cursor.execute("insert into clickhouse.test_table values(3, 'xxx')")
+    for i in xrange(100):
+        try:
+            node1.query("system reload dictionary postgres_odbc_hashed", timeout=5)
+        except Exception as ex:
+            assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
+
+    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))") == "xxx\n"
 
 def test_bridge_dies_with_parent(started_cluster):
     node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))")

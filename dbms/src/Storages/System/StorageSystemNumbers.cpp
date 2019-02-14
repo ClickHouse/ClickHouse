@@ -1,17 +1,17 @@
 #include <Common/Exception.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
 namespace DB
 {
 
-class NumbersBlockInputStream : public IProfilingBlockInputStream
+class NumbersBlockInputStream : public IBlockInputStream
 {
 public:
-    NumbersBlockInputStream(size_t block_size_, size_t offset_, size_t step_)
+    NumbersBlockInputStream(UInt64 block_size_, UInt64 offset_, UInt64 step_)
         : block_size(block_size_), next(offset_), step(step_) {}
 
     String getName() const override { return "Numbers"; }
@@ -37,13 +37,13 @@ protected:
         return { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeUInt64>(), "number") };
     }
 private:
-    size_t block_size;
+    UInt64 block_size;
     UInt64 next;
     UInt64 step;
 };
 
 
-StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_, size_t offset_)
+StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_)
     : name(name_), multithreaded(multithreaded_), limit(limit_), offset(offset_)
 {
     setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
@@ -55,14 +55,14 @@ BlockInputStreams StorageSystemNumbers::read(
     const SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned num_streams)
 {
     check(column_names);
 
-    if (limit && limit < max_block_size)
+    if (limit && *limit < max_block_size)
     {
-        max_block_size = std::min(max_block_size, limit);
+        max_block_size = std::min(max_block_size, *limit);
         multithreaded = false;
     }
 
@@ -75,7 +75,7 @@ BlockInputStreams StorageSystemNumbers::read(
         res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
 
         if (limit)  /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
-            res[i] = std::make_shared<LimitBlockInputStream>(res[i], limit * (i + 1) / num_streams - limit * i / num_streams, 0);
+            res[i] = std::make_shared<LimitBlockInputStream>(res[i], *limit * (i + 1) / num_streams - *limit * i / num_streams, 0);
     }
 
     return res;

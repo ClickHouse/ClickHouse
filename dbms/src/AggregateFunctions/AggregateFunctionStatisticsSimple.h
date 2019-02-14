@@ -68,12 +68,12 @@ struct VarMoments
         readPODBinary(*this, buf);
     }
 
-    T getPopulation() const
+    T NO_SANITIZE_UNDEFINED getPopulation() const
     {
         return (m2 - m1 * m1 / m0) / m0;
     }
 
-    T getSample() const
+    T NO_SANITIZE_UNDEFINED getSample() const
     {
         if (m0 == 0)
             return std::numeric_limits<T>::quiet_NaN();
@@ -177,12 +177,12 @@ struct CovarMoments
         readPODBinary(*this, buf);
     }
 
-    T getPopulation() const
+    T NO_SANITIZE_UNDEFINED getPopulation() const
     {
         return (xy - x1 * y1 / m0) / m0;
     }
 
-    T getSample() const
+    T NO_SANITIZE_UNDEFINED getSample() const
     {
         if (m0 == 0)
             return std::numeric_limits<T>::quiet_NaN();
@@ -232,7 +232,7 @@ struct CorrMoments
         readPODBinary(*this, buf);
     }
 
-    T get() const
+    T NO_SANITIZE_UNDEFINED get() const
     {
         return (m0 * xy - x1 * y1) / sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
     }
@@ -288,12 +288,14 @@ public:
     using ResultType = typename StatFunc::ResultType;
     using ColVecResult = ColumnVector<ResultType>;
 
-    AggregateFunctionVarianceSimple()
-        : src_scale(0)
+    AggregateFunctionVarianceSimple(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {})
+        , src_scale(0)
     {}
 
-    AggregateFunctionVarianceSimple(const IDataType & data_type)
-        : src_scale(getDecimalScale(data_type))
+    AggregateFunctionVarianceSimple(const IDataType & data_type, const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<typename StatFunc::Data, AggregateFunctionVarianceSimple<StatFunc>>(argument_types_, {})
+        , src_scale(getDecimalScale(data_type))
     {}
 
     String getName() const override

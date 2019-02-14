@@ -43,6 +43,17 @@ def subprocess_call(args):
     # print('run:', ' ' . join(args))
     subprocess.call(args)
 
+def get_odbc_bridge_path():
+    path = os.environ.get('CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH')
+    if path is None:
+        server_path = os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH')
+        if server_path is not None:
+            return os.path.join(os.path.dirname(server_path), 'clickhouse-odbc-bridge')
+        else:
+            return '/usr/bin/clickhouse-odbc-bridge'
+    return path
+
+
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -53,12 +64,13 @@ class ClickHouseCluster:
     """
 
     def __init__(self, base_path, name=None, base_configs_dir=None, server_bin_path=None, client_bin_path=None,
-                 zookeeper_config_path=None, custom_dockerd_host=None):
+                 odbc_bridge_bin_path=None, zookeeper_config_path=None, custom_dockerd_host=None):
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
         self.base_configs_dir = base_configs_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR', '/etc/clickhouse-server/')
         self.server_bin_path = p.realpath(server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
+        self.odbc_bridge_bin_path = p.realpath(odbc_bridge_bin_path or get_odbc_bridge_path())
         self.client_bin_path = p.realpath(client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client'))
         self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(HELPERS_DIR, 'zookeeper_config.xml')
 
@@ -97,7 +109,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -116,7 +128,8 @@ class ClickHouseCluster:
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=hostname, env_variables=env_variables, image=image, stay_alive=stay_alive)
+            self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
+            env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address)
 
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
@@ -332,29 +345,52 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
 CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "{} --daemon; tail -f /dev/null"'.format(CLICKHOUSE_START_COMMAND)
 
 DOCKER_COMPOSE_TEMPLATE = '''
-version: '2'
+version: '2.2'
 services:
     {name}:
         image: {image}
         hostname: {hostname}
         volumes:
             - {binary_path}:/usr/bin/clickhouse:ro
+            - {odbc_bridge_bin_path}:/usr/bin/clickhouse-odbc-bridge:ro
             - {configs_dir}:/etc/clickhouse-server/
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             {odbc_ini_path}
         entrypoint: {entrypoint_cmd}
+        cap_add:
+            - SYS_PTRACE
         depends_on: {depends_on}
+        user: '{user}'
         env_file:
             - {env_file}
+        security_opt:
+            - label:disable
+        {networks}
+            {app_net}
+                {ipv4_address}
+                {ipv6_address}
+
+networks:
+  app_net:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      driver: default
+      config:
+      - subnet: 10.5.0.0/12
+        gateway: 10.5.1.1
+      - subnet: 2001:3984:3989::/64
+        gateway: 2001:3984:3989::1
 '''
 
 class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False):
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
+            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
+            stay_alive=False, ipv4_address=None, ipv6_address=None):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -372,6 +408,7 @@ class ClickHouseInstance:
 
         self.base_configs_dir = base_configs_dir
         self.server_bin_path = server_bin_path
+        self.odbc_bridge_bin_path = odbc_bridge_bin_path
 
         self.with_mysql = with_mysql
         self.with_kafka = with_kafka
@@ -391,6 +428,8 @@ class ClickHouseInstance:
         self.default_timeout = 20.0 # 20 sec
         self.image = image
         self.stay_alive = stay_alive
+        self.ipv4_address = ipv4_address
+        self.ipv6_address = ipv6_address
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
@@ -609,20 +648,38 @@ class ClickHouseInstance:
         if self.stay_alive:
             entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND
 
+        ipv4_address = ipv6_address = ""
+        if self.ipv4_address is None and self.ipv6_address is None:
+            networks = ""
+            app_net = ""
+        else:
+            networks = "networks:"
+            app_net = "app_net:"
+            if self.ipv4_address is not None:
+                ipv4_address = "ipv4_address: " + self.ipv4_address
+            if self.ipv6_address is not None:
+                ipv6_address = "ipv6_address: " + self.ipv6_address
+
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 image=self.image,
                 name=self.name,
                 hostname=self.hostname,
                 binary_path=self.server_bin_path,
+                odbc_bridge_bin_path=self.odbc_bridge_bin_path,
                 configs_dir=configs_dir,
                 config_d_dir=config_d_dir,
                 db_dir=db_dir,
                 logs_dir=logs_dir,
                 depends_on=str(depends_on),
+                user=os.getuid(),
                 env_file=env_file,
                 odbc_ini_path=odbc_ini_path,
                 entrypoint_cmd=entrypoint_cmd,
+                networks=networks,
+                app_net=app_net,
+                ipv4_address=ipv4_address,
+                ipv6_address=ipv6_address,
             ))
 
 

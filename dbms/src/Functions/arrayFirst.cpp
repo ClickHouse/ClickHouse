@@ -34,6 +34,7 @@ struct ArrayFirstImpl
                 const auto & offsets = array.getOffsets();
                 const auto & data = array.getData();
                 auto out = data.cloneEmpty();
+                out->reserve(data.size());
 
                 size_t pos{};
                 for (size_t i = 0; i < offsets.size(); ++i)
@@ -60,6 +61,7 @@ struct ArrayFirstImpl
         const auto & offsets = array.getOffsets();
         const auto & data = array.getData();
         auto out = data.cloneEmpty();
+        out->reserve(data.size());
 
         size_t pos{};
         for (size_t i = 0; i < offsets.size(); ++i)

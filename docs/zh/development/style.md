@@ -261,7 +261,7 @@ void executeQuery(
 
 **7.** 不要在每个文件的开头写入垃圾注释（作者，创建日期...）。
 
-**8.** 单行注释用三个斜杆： `///`  ，多行注释以 `/**`开始。 这些注释会当做文档。
+**8.** 单行注释用三个斜杆： `///` ，多行注释以 `/**`开始。 这些注释会当做文档。
 
 注意：您可以使用 Doxygen 从这些注释中生成文档。 但是通常不使用 Doxygen，因为在 IDE 中导航代码更方便。
 
@@ -349,7 +349,7 @@ class IBlockInputStream
 bool info_successfully_loaded = false;
 ```
 
-**9.**  `define` 和全局常量的名称使用带下划线的 `ALL_CAPS`。
+**9.** `define` 和全局常量的名称使用带下划线的 `ALL_CAPS`。
 
 ```cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -564,7 +564,7 @@ Fork不用于并行化。
 
 **12.** 数值类型。
 
-使用 `UInt8`， `UInt16`， `UInt32`， `UInt64`， `Int8`， `Int16`， `Int32`， 以及 `Int64`，  `size_t`， `ssize_t` 还有 `ptrdiff_t`。
+使用 `UInt8`， `UInt16`， `UInt32`， `UInt64`， `Int8`， `Int16`， `Int32`， 以及 `Int64`， `size_t`， `ssize_t` 还有 `ptrdiff_t`。
 
 不要使用这些类型：`signed / unsigned long`，`long long`，`short`，`signed / unsigned char`，`char`。
 

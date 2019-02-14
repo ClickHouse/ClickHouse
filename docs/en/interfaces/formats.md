@@ -1,6 +1,4 @@
-<a name="formats"></a>
-
-# Formats for input and output data
+# Formats for input and output data {#formats}
 
 ClickHouse can accept (`INSERT`) and return (`SELECT`) data in various formats.
 
@@ -16,7 +14,6 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
 | [Values](#values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
-| [VerticalRaw](#verticalraw) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
 | [JSONCompact](#jsoncompact) | ✗ | ✔ |
 | [JSONEachRow](#jsoneachrow) | ✔ | ✔ |
@@ -32,9 +29,7 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✔ |
 
-<a name="tabseparated"></a>
-
-## TabSeparated
+## TabSeparated {#tabseparated}
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
@@ -78,7 +73,7 @@ During a read operation, incorrect dates and dates with times can be parsed with
 
 As an exception, parsing dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
 
-Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH`  (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n`  or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of a space can be parsed in any of the following variations:
+Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH` (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n` or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of a space can be parsed in any of the following variations:
 
 ```
 Hello\nworld
@@ -97,34 +92,29 @@ Arrays are written as a list of comma-separated values in square brackets. Numbe
 
 [NULL](../query_language/syntax.md) is formatted as `\N`.
 
-<a name="tabseparatedraw"></a>
-
-## TabSeparatedRaw
+## TabSeparatedRaw {#tabseparatedraw}
 
 Differs from `TabSeparated` format in that the rows are written without escaping.
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
 This format is also available under the name `TSVRaw`.
-<a name="tabseparatedwithnames"></a>
 
-## TabSeparatedWithNames
+## TabSeparatedWithNames {#tabseparatedwithnames}
 
 Differs from the `TabSeparated` format in that the column names are written in the first row.
 During parsing, the first row is completely ignored. You can't use column names to determine their position or to check their correctness.
 (Support for parsing the header row may be added in the future.)
 
 This format is also available under the name `TSVWithNames`.
-<a name="tabseparatedwithnamesandtypes"></a>
 
-## TabSeparatedWithNamesAndTypes
+## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
 During parsing, the first and second rows are completely ignored.
 
 This format is also available under the name `TSVWithNamesAndTypes`.
-<a name="tskv"></a>
 
-## TSKV
+## TSKV {#tskv}
 
 Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
 
@@ -157,19 +147,17 @@ Both data output and parsing are supported in this format. For parsing, any orde
 
 Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
 
-<a name="csv"></a>
-
-## CSV
+## CSV {#csv}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
-When formatting, rows are enclosed in double quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
+When formatting, rows are enclosed in double quotes. A double quote inside a string is output as two double quotes in a row. There are no other rules for escaping characters. Date and date-time are enclosed in double quotes. Numbers are output without quotes. Values are separated by a delimiter character, which is `,` by default. The delimiter character is defined in the setting [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter). Rows are separated using the Unix line feed (LF). Arrays are serialized in CSV as follows: first the array is serialized to a string as in TabSeparated format, and then the resulting string is output to CSV in double quotes. Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
 
 ```
 clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-&ast;By default, the delimiter is `,`. See the [format_csv_delimiter](/operations/settings/settings/#format_csv_delimiter) setting for more information.
+&ast;By default, the delimiter is `,`. See the [format_csv_delimiter](../operations/settings/settings.md#settings-format_csv_delimiter) setting for more information.
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
@@ -180,9 +168,8 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 ## CSVWithNames
 
 Also prints the header row, similar to `TabSeparatedWithNames`.
-<a name="json"></a>
 
-## JSON
+## JSON {#json}
 
 Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information: the total number of output rows, and the number of rows that could have been output if there weren't a LIMIT. Example:
 
@@ -254,7 +241,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/`  is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t`  , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes  by default. To remove the quotes, you can set the configuration parameter output_format_json_quote_64bit_integers to 0.
+The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. To remove the quotes, you can set the configuration parameter output_format_json_quote_64bit_integers to 0.
 
 `rows` – The total number of output rows.
 
@@ -267,13 +254,11 @@ If the query contains GROUP BY, rows_before_limit_at_least is the exact number o
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-ClickHouse supports [NULL](../query_language/syntax.md), which is displayed as `null`  in the JSON output.
+ClickHouse supports [NULL](../query_language/syntax.md), which is displayed as `null` in the JSON output.
 
 See also the JSONEachRow format.
 
-<a name="jsoncompact"></a>
-
-## JSONCompact
+## JSONCompact {#jsoncompact}
 
 Differs from JSON only in that data rows are output in arrays, not in objects.
 
@@ -318,9 +303,8 @@ Example:
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 See also the `JSONEachRow` format.
-<a name="jsoneachrow"></a>
 
-## JSONEachRow
+## JSONEachRow {#jsoneachrow}
 
 Outputs data as separate JSON objects for each row (newline delimited JSON).
 
@@ -339,29 +323,28 @@ Outputs data as separate JSON objects for each row (newline delimited JSON).
 
 Unlike the JSON format, there is no substitution of invalid UTF-8 sequences. Any set of bytes can be output in the rows. This is necessary so that data can be formatted without losing any information. Values are escaped in the same way as for JSON.
 
-For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults. Whitespace between elements is ignored. If a comma is placed after the objects, it is ignored. Objects don't necessarily have to be separated by new lines.
-<a name="native"></a>
+For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults, but it can be turned on by option `insert_sample_with_metadata=1`. Whitespace between elements is ignored. If a comma is placed after the objects, it is ignored. Objects don't necessarily have to be separated by new lines.
 
-## Native
+## Native {#native}
 
 The most efficient format. Data is written and read by blocks in binary format. For each block, the number of rows, number of columns, column names and types, and parts of columns in this block are recorded one after another. In other words, this format is "columnar" – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
 
 You can use this format to quickly generate dumps that can only be read by the ClickHouse DBMS. It doesn't make sense to work with this format yourself.
-<a name="null"></a>
 
-## Null
+## Null {#null}
 
 Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including productivity testing.
 Obviously, this format is only appropriate for output, not for parsing.
-<a name="pretty"></a>
 
-## Pretty
+## Pretty {#pretty}
 
 Outputs data as Unicode-art tables, also using ANSI-escape sequences for setting colors in the terminal.
 A full grid of the table is drawn, and each row occupies two lines in the terminal.
 Each result block is output as a separate table. This is necessary so that blocks can be output without buffering results (buffering would be necessary in order to pre-calculate the visible width of all the values).
 
 [NULL](../query_language/syntax.md) is output as `ᴺᵁᴸᴸ`.
+
+Example (shown for the [PrettyCompact](#prettycompact) format):
 
 ``` sql
 SELECT * FROM t_null
@@ -373,10 +356,22 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
+Rows are not escaped in Pretty* formats. Example is shown for the [PrettyCompact](#prettycompact) format:
+
+``` sql
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+```
+
+``` 
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and 	 character │
+└──────────────────────────────────────┘
+```
+
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message "Showed first 10 000" is printed.
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the PrettyCompact format):
+The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the [PrettyCompact](#prettycompact) format):
 
 ``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
@@ -405,20 +400,16 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-<a name="prettycompact"></a>
+## PrettyCompact {#prettycompact}
 
-## PrettyCompact
-
-Differs from `Pretty` in that the grid is drawn between rows and the result is more compact.
+Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
 This format is used by default in the command-line client in interactive mode.
-<a name="prettycompactmonoblock"></a>
 
-## PrettyCompactMonoBlock
+## PrettyCompactMonoBlock {#prettycompactmonoblock}
 
 Differs from [PrettyCompact](#prettycompact) in that up to 10,000 rows are buffered, then output as a single table, not by blocks.
-<a name="prettynoescapes"></a>
 
-## PrettyNoEscapes
+## PrettyNoEscapes {#prettynoescapes}
 
 Differs from Pretty in that ANSI-escape sequences aren't used. This is necessary for displaying this format in a browser, as well as for using the 'watch' command-line utility.
 
@@ -437,14 +428,12 @@ The same as the previous setting.
 ### PrettySpaceNoEscapes
 
 The same as the previous setting.
-<a name="prettyspace"></a>
 
-## PrettySpace
+## PrettySpace {#prettyspace}
 
 Differs from [PrettyCompact](#prettycompact) in that whitespace (space characters) is used instead of the grid.
-<a name="rowbinary"></a>
 
-## RowBinary
+## RowBinary {#rowbinary}
 
 Formats and parses data by row in binary format. Rows and values are listed consecutively, without separators.
 This format is less efficient than the Native format, since it is row-based.
@@ -459,6 +448,13 @@ Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.
 
 For [NULL](../query_language/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../data_types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
+## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
+
+Similar to [RowBinary](#rowbinary), but with added header:
+* [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+* N `String`s specifying column names
+* N `String`s specifying column types
+
 ## Values
 
 Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md) is represented as `NULL`.
@@ -467,9 +463,7 @@ The minimum set of characters that you need to escape when passing data in Value
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 
-<a name="vertical"></a>
-
-## Vertical
+## Vertical {#vertical}
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows, if each row consists of a large number of columns.
 
@@ -487,43 +481,22 @@ Row 1:
 x: 1
 y: ᴺᵁᴸᴸ
 ```
+Rows are not escaped in Vertical format: 
 
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-<a name="verticalraw"></a>
-
-## VerticalRaw
-
-Differs from `Vertical` format in that the rows are not escaped.
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-Examples:
+``` sql
+SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+```
 
 ```
-:) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
 Row 1:
 ──────
-statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
-
-:) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
-Row 1:
-──────
-test: string with 'quotes' and   with some special
+test: string with 'quotes' and 	 with some special
  characters
 ```
 
-Compare with the Vertical format:
+This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-```
-:) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
-Row 1:
-──────
-test: string with \'quotes\' and \t with some special \n characters
-```
-
-<a name="xml"></a>
-
-## XML
+## XML {#xml}
 
 XML format is suitable only for output, not for parsing. Example:
 
@@ -596,9 +569,7 @@ In string values, the characters `<` and `&` are escaped as `<` and `&`.
 
 Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
 
-<a name="format_capnproto"></a>
-
-## CapnProto
+## CapnProto {#capnproto}
 
 Cap'n Proto is a binary message format similar to Protocol Buffers and Thrift, but not like JSON or MessagePack.
 

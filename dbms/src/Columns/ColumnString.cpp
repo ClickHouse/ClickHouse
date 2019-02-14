@@ -5,6 +5,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
+#include <common/unaligned.h>
+
 
 namespace DB
 {
@@ -109,7 +111,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
 }
 
 
-ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnString::permute(const Permutation & perm, UInt64 limit) const
 {
     size_t size = offsets.size();
 
@@ -146,7 +148,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = perm[i];
-        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_offset = offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -176,7 +178,7 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 {
-    const size_t string_size = *reinterpret_cast<const size_t *>(pos);
+    const size_t string_size = unalignedLoad<size_t>(pos);
     pos += sizeof(string_size);
 
     const size_t old_size = chars.size();
@@ -189,13 +191,13 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 }
 
 
-ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnString::index(const IColumn & indexes, UInt64 limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename Type>
-ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
 {
     if (limit == 0)
         return ColumnString::create();
@@ -217,7 +219,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];
-        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_offset = offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -249,7 +251,7 @@ struct ColumnString::less
     }
 };
 
-void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnString::getPermutation(bool reverse, UInt64 limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);
@@ -387,7 +389,7 @@ struct ColumnString::lessWithCollation
     }
 };
 
-void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const
+void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, UInt64 limit, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);

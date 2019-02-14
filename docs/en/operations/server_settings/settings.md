@@ -42,7 +42,7 @@ Block field `<case>`:
 - ``min_part_size_ratio`` – The ratio of the minimum size of a table part to the full size of the table.
 - ``method`` – Compression method. Acceptable values ​: ``lz4`` or ``zstd``(experimental).
 
-ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
+ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
 
 **Example**
 
@@ -61,7 +61,7 @@ ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the 
 
 The default database.
 
-To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases) query.
+To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#show-databases) query.
 
 **Example**
 
@@ -74,7 +74,7 @@ To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.m
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config](#user-config).
+Settings profiles are located in the file specified in the parameter `user_config`.
 
 **Example**
 
@@ -120,7 +120,7 @@ The default is `true`.
 
 ## format_schema_path
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#format_capnproto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
 **Example**
 
@@ -130,7 +130,7 @@ The path to the directory with the schemes for the input data, such as schemas f
 ```
 
 
-## graphite
+## graphite {#server_settings-graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -163,7 +163,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 ```
 
 
-## graphite_rollup
+## graphite_rollup {#server_settings-graphite_rollup}
 
 Settings for thinning data for Graphite.
 
@@ -196,7 +196,7 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL]() must be configured.
+If `https_port` is specified, [openSSL](#openssl) must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
@@ -221,9 +221,7 @@ Opens `https://tabix.io/` when accessing ` http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-<a name="server_settings-include_from"></a>
-
-## include_from
+## include_from {#server_settings-include_from}
 
 The path to the file with substitutions.
 
@@ -264,16 +262,16 @@ Useful for breaking away from a specific network interface.
 
 ## keep_alive_timeout
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
 
 **Example**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 
-## listen_host
+## listen_host {#server_settings-listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -285,7 +283,7 @@ Examples:
 ```
 
 
-## logger
+## logger {#server_settings-logger}
 
 Logging settings.
 
@@ -328,8 +326,7 @@ Keys:
 - user_syslog — Required setting if you want to write to the syslog.
 - address — The host[:порт] of syslogd. If omitted, the local daemon is used.
 - hostname — Optional. The name of the host that logs are sent from.
-- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility)
-in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
+- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
 Default value: ``LOG_USER`` if ``address`` is specified, ``LOG_DAEMON otherwise.``
 - format – Message format. Possible values: ``bsd`` and ``syslog.``
 
@@ -418,7 +415,7 @@ The value 0 means that you can delete all tables without any restrictions.
 ```
 
 
-## merge_tree
+## merge_tree {#server_settings-merge_tree}
 
 Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md).
 
@@ -458,7 +455,7 @@ Keys for server/client settings:
 - requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name>  </invalidCertificateHandler>`` .
+- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`` .
 - disableProtocols – Protocols that are not allowed to use.
 - preferServerCiphers – Preferred server ciphers on the client.
 
@@ -602,7 +599,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 ```
 
 
-## tcp_port
+## tcp_port {#server_settings-tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 
@@ -627,11 +624,11 @@ Path to temporary data for processing large queries.
 ```
 
 
-## uncompressed_cache_size
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md).
 
-There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md) is enabled.
+There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#setting-use_uncompressed_cache) is enabled.
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 
@@ -641,9 +638,9 @@ The uncompressed cache is advantageous for very short queries in individual case
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user_files_path
+## user_files_path {#server_settings-user_files_path}
 
-The directory with user files. Used in the  table function [file()](../../query_language/table_functions/file.md).
+The directory with user files. Used in the table function [file()](../../query_language/table_functions/file.md).
 
 **Example**
 
@@ -681,8 +678,20 @@ For more information, see the section "[Replication](../../operations/table_engi
 **Example**
 
 ```xml
-<zookeeper incl="zookeeper-servers" optional="true" />
+<zookeeper>
+    <node index="1">
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node index="2">
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <node index="3">
+        <host>example3</host>
+        <port>2181</port>
+    </node>
+</zookeeper>
 ```
-
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

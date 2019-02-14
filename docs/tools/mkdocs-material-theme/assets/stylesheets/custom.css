@@ -160,12 +160,20 @@ h1, h2, h3, .md-logo {
 .md-current-lang>svg {
     filter: brightness(96%) grayscale(0%) !important;
 }
+
+
+.headerlink:hover {
+    text-decoration: none;
+}
+
 @media only screen and (min-width: 60em) {
     #md-sidebar-flags {
         display: none;
     }
 }
 
-.headerlink:hover {
-    text-decoration: none;
+@media print {
+    .md-typeset a:after {
+        content: "" !important;
+    }
 }

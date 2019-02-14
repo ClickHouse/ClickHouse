@@ -47,6 +47,7 @@
 #define DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME 54372
 #define DBMS_MIN_REVISION_WITH_VERSION_PATCH 54401
 #define DBMS_MIN_REVISION_WITH_SERVER_LOGS 54406
+#define DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA 54415
 /// Minimum revision with exactly the same set of aggregation methods and rules to select them.
 /// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
 /// (keys will be placed in different buckets and result will not be fully aggregated).
@@ -60,8 +61,6 @@
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
-
-#define DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS 7500
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
@@ -84,9 +83,9 @@
 #endif
 
 
-#define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64 (work in progress)"
+#define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress)"
 
-#if !defined(__x86_64__) && !defined(__aarch64__)
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__)
 //    #error PLATFORM_NOT_SUPPORTED
 #endif
 
@@ -105,4 +104,16 @@
     #endif
 #elif defined(__SANITIZE_THREAD__)
     #define THREAD_SANITIZER 1
+#endif
+
+/// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
+/// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.
+/// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.
+#if defined(__clang__)
+    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
+    #define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
+#else
+    /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
+    #define NO_SANITIZE_UNDEFINED
+    #define NO_SANITIZE_ADDRESS
 #endif

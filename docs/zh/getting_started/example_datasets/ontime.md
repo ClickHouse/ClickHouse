@@ -166,7 +166,7 @@ SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND 
 Q4. 查询2007年各航空公司延误超过10分钟以上的次数
 
 ```sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
 Q5. 查询2007年各航空公司延误超过10分钟以上的百分比

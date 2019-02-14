@@ -43,7 +43,7 @@ struct ExpressionAnalyzerData
     NamesAndTypesList source_columns;
 
     /// If non-empty, ignore all expressions in  not from this list.
-    Names required_result_columns;
+    NameSet required_result_columns;
 
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
@@ -58,10 +58,6 @@ struct ExpressionAnalyzerData
 
     bool has_global_subqueries = false;
 
-    /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
-    /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
-    NameToNameMap array_join_result_to_source;
-
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
 
@@ -71,19 +67,9 @@ struct ExpressionAnalyzerData
     /// Columns will be added to block by join.
     JoinedColumnsList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
 
-    /// Actions which need to be calculated on joined block.
-    ExpressionActionsPtr joined_block_actions;
-
-    /// Columns which will be used in query from joined table. Duplicate names are qualified.
-    NameSet required_columns_from_joined_table;
-
-    /// Such columns will be copied from left join keys during join.
-    /// Example: select right from tab1 join tab2 on left + 1 = right
-    NameSet columns_added_by_join_from_right_keys;
-
 protected:
     ExpressionAnalyzerData(const NamesAndTypesList & source_columns_,
-                           const Names & required_result_columns_,
+                           const NameSet & required_result_columns_,
                            const SubqueriesForSets & subqueries_for_sets_)
     :   source_columns(source_columns_),
         required_result_columns(required_result_columns_),
@@ -140,7 +126,7 @@ public:
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         const NamesAndTypesList & additional_source_columns = {},
-        const Names & required_result_columns_ = {},
+        const NameSet & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
         bool do_global_ = false,
         const SubqueriesForSets & subqueries_for_set_ = {});
@@ -154,7 +140,7 @@ public:
     /** Get a set of columns that are enough to read from the table to evaluate the expression.
       * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredSourceColumns() const;
+    Names getRequiredSourceColumns() const { return source_columns.getNames(); }
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -236,19 +222,16 @@ private:
     const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
-      * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
-      * as well as the columns added by JOIN (`columns_added_by_join`).
+      * At the same time, form a set of columns added by JOIN (`columns_added_by_join`).
       */
     void collectUsedColumns();
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
 
-    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
+    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
-
-    bool isThereArrayJoin(const ASTPtr & ast);
 
     /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
     void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions);
@@ -273,12 +256,12 @@ private:
     void assertAggregation() const;
 
     /**
-      * Create Set from a subuqery or a table expression in the query. The created set is suitable for using the index.
+      * Create Set from a subuquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
-    void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
+    void makeSetsForIndexImpl(const ASTPtr & node);
 
     bool isRemoteStorage() const;
 };

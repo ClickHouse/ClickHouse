@@ -3,7 +3,7 @@
 
 A tuple of elements, each having an individual [type](index.md#data_types).
 
-You can't store tuples in tables (other than Memory tables). They are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../query_language/select.md) and [Higher order functions](../query_language/functions/higher_order_functions.md#higher_order_functions).
+You can't store tuples in tables (other than Memory tables). They are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../query_language/select.md) and [Higher order functions](../query_language/functions/higher_order_functions.md).
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in brackets. In JSON formats, tuples are output as arrays (in square brackets).
 

@@ -11,18 +11,18 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     const size_t thread,
     const MergeTreeReadPoolPtr & pool,
     const size_t min_marks_to_read_,
-    const size_t max_block_size_rows,
-    size_t preferred_block_size_bytes,
-    size_t preferred_max_column_in_block_size_bytes,
-    const MergeTreeData & storage,
-    const bool use_uncompressed_cache,
-    const PrewhereInfoPtr & prewhere_info,
+    const UInt64 max_block_size_rows_,
+    size_t preferred_block_size_bytes_,
+    size_t preferred_max_column_in_block_size_bytes_,
+    const MergeTreeData & storage_,
+    const bool use_uncompressed_cache_,
+    const PrewhereInfoPtr & prewhere_info_,
     const Settings & settings,
-    const Names & virt_column_names)
+    const Names & virt_column_names_)
     :
-    MergeTreeBaseSelectBlockInputStream{storage, prewhere_info, max_block_size_rows,
-        preferred_block_size_bytes, preferred_max_column_in_block_size_bytes, settings.min_bytes_to_use_direct_io,
-        settings.max_read_buffer_size, use_uncompressed_cache, true, virt_column_names},
+    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info_, max_block_size_rows_,
+        preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, settings.min_bytes_to_use_direct_io,
+        settings.max_read_buffer_size, use_uncompressed_cache_, true, virt_column_names_},
     thread{thread},
     pool{pool}
 {
@@ -74,8 +74,8 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
         auto rest_mark_ranges = pool->getRestMarks(path, task->mark_ranges[0]);
 
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.context.getUncompressedCache();
-        owned_mark_cache = storage.context.getMarkCache();
+            owned_uncompressed_cache = storage.global_context.getUncompressedCache();
+        owned_mark_cache = storage.global_context.getMarkCache();
 
         reader = std::make_unique<MergeTreeReader>(
             path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,

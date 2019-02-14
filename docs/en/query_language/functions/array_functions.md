@@ -243,7 +243,7 @@ This function can also be used in higher-order functions. For example, you can u
 ## arrayEnumerateUniq(arr, ...)
 
 Returns an array the same size as the source array, indicating for each element what its position is among elements with the same value.
-For example: arrayEnumerateUniq(\[10, 20, 10, 30\]) = \[1,  1,  2,  1\].
+For example: arrayEnumerateUniq(\[10, 20, 10, 30\]) = \[1, 1, 2, 1\].
 
 This function is useful when using ARRAY JOIN and aggregation of array elements.
 Example:
@@ -378,7 +378,7 @@ arrayPushFront(array, single_value)
 **Parameters**
 
 - `array` – Array.
-- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about the types of data in ClickHouse, see "[Data types](../../data_types/index.md#data_types)".  Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../../data_types/index.md#data_types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -468,5 +468,65 @@ If you want to get a list of unique items in an array, you can use arrayReduce('
 ## arrayJoin(arr)
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
+
+## arrayDifference(arr)
+
+Takes an array, returns an array with the difference between all pairs of neighboring elements. For example:
+
+```sql
+SELECT arrayDifference([1, 2, 3, 4])
+```
+
+```
+┌─arrayDifference([1, 2, 3, 4])─┐
+│ [0,1,1,1]                     │
+└───────────────────────────────┘
+```
+
+## arrayDistinct(arr)
+
+Takes an array, returns an array containing the different elements in all the arrays. For example:
+
+```sql
+SELECT arrayDistinct([1, 2, 2, 3, 1])
+```
+
+```
+┌─arrayDistinct([1, 2, 2, 3, 1])─┐
+│ [1,2,3]                        │
+└────────────────────────────────┘
+```
+
+## arrayEnumerateDense(arr)
+
+Returns an array of the same size as the source array, indicating where each element first appears in the source array. For example: arrayEnumerateDense([10,20,10,30]) = [1,2,1,4].
+
+## arrayIntersect(arr)
+
+Takes an array, returns the intersection of all array elements. For example:
+
+```sql
+SELECT
+    arrayIntersect([1, 2], [1, 3], [2, 3]) AS no_intersect,
+    arrayIntersect([1, 2], [1, 3], [1, 4]) AS intersect
+```
+
+```
+┌─no_intersect─┬─intersect─┐
+│ []           │ [1]       │
+└──────────────┴───────────┘
+```
+
+## arrayReduce(agg_func, arr1, ...)
+
+Applies an aggregate function to array and returns its result.If aggregate function has multiple arguments, then this function can be applied to multiple arrays of the same size.
+
+arrayReduce('agg_func', arr1, ...) - apply the aggregate function `agg_func` to arrays `arr1...`. If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function. For example: SELECT arrayReduce('max', [1,2,3]) = 3
+
+## arrayReverse(arr)
+
+Returns an array of the same size as the source array, containing the result of inverting all elements of the source array.
+
+
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->

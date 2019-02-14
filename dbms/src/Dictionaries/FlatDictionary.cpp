@@ -50,12 +50,6 @@ FlatDictionary::FlatDictionary(
     creation_time = std::chrono::system_clock::now();
 }
 
-FlatDictionary::FlatDictionary(const FlatDictionary & other)
-    : FlatDictionary{
-          other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty, other.saved_block}
-{
-}
-
 
 void FlatDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
@@ -755,7 +749,7 @@ PaddedPODArray<FlatDictionary::Key> FlatDictionary::getIds() const
     return ids;
 }
 
-BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<FlatDictionary, Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);

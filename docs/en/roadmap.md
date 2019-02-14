@@ -1,13 +1,10 @@
 # Roadmap
 
-## Q4 2018
+## Q1 2019
 
 - JOIN syntax compatible with SQL standard:
     - Mutliple `JOIN`s in single `SELECT`
 - Protobuf and Parquet input and output formats
-
-## Q1 2019
-
 - Import/export from HDFS and S3
 - Lower metadata size in ZooKeeper
 - Adaptive index granularity for MergeTree engine family

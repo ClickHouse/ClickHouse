@@ -1,6 +1,13 @@
 
 # OnTime
 
+This dataset can be obtained in two ways:
+
+- import from raw data
+- download of prepared partitions
+
+## Import From Raw Data
+
 Downloading data:
 
 ```bash
@@ -137,7 +144,21 @@ Loading data:
 for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-Queries:
+## Dowload of Prepared Partitions
+
+```bash
+curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+# check permissions of unpacked data, fix if required
+sudo service clickhouse-server restart
+clickhouse-client --query "select count(*) from datasets.ontime"
+```
+
+!!!info
+    If you will run queries described below, you have to use full table name,
+    `datasets.ontime`.
+
+## Queries
 
 Q0.
 
@@ -166,7 +187,7 @@ SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND 
 Q4. The number of delays by carrier for 2007
 
 ``` sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
 Q5. The percentage of delays by carrier for 2007

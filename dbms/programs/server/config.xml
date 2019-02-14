@@ -1,4 +1,7 @@
 <?xml version="1.0"?>
+<!--
+  NOTE: User and query level settings are set up in "users.xml" file.
+-->
 <yandex>
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
@@ -187,6 +190,20 @@
                 </replica>
             </shard>
         </test_shard_localhost_secure>
+        <test_unavailable_shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>1</port>
+                </replica>
+            </shard>
+        </test_unavailable_shard>
     </remote_servers>
 
 

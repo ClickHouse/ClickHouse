@@ -20,7 +20,7 @@
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
 using namespace DB;

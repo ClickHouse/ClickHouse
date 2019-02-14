@@ -9,7 +9,7 @@
 
 #include <Common/typeid_cast.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -75,30 +75,22 @@ void NO_INLINE Set::insertFromBlockImplCase(
     const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
-    ConstNullMapPtr null_map,
-    ColumnUInt8::Container * out_filter)
+    [[maybe_unused]] ConstNullMapPtr null_map,
+    [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
-    typename Method::State state;
-    state.init(key_columns);
+    typename Method::State state(key_columns, key_sizes, nullptr);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
     {
-        if (has_null_map && (*null_map)[i])
-            continue;
+        if constexpr (has_null_map)
+            if ((*null_map)[i])
+                continue;
 
-        /// Obtain a key to insert to the set
-        typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
-        typename Method::Data::iterator it;
-        bool inserted;
-        method.data.emplace(key, it, inserted);
-
-        if (inserted)
-            method.onNewKey(*it, keys_size, variants.string_pool);
-
-        if (build_filter)
-            (*out_filter)[i] = inserted;
+        if constexpr (build_filter)
+            (*out_filter)[i] = emplace_result.isInserted();
     }
 }
 
@@ -121,14 +113,9 @@ void Set::setHeader(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns.emplace_back(block.safeGetByPosition(i).column.get());
+        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        key_columns.emplace_back(materialized_columns.back().get());
         data_types.emplace_back(block.safeGetByPosition(i).type);
-
-        if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns.back() = materialized_columns.back().get();
-        }
 
         /// Convert low cardinality column to full.
         if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -153,7 +140,6 @@ void Set::setHeader(const Block & block)
             set_elements.emplace_back(removeNullable(type)->createColumn());
     }
 
-
     /// Choose data structure to use for the set.
     data.init(data.chooseMethod(key_columns, key_sizes));
 }
@@ -175,20 +161,8 @@ bool Set::insertFromBlock(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns.emplace_back(block.safeGetByPosition(i).column.get());
-
-        if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns.back() = materialized_columns.back().get();
-        }
-
-        /// Convert low cardinality column to full.
-        if (key_columns.back()->lowCardinality())
-        {
-            materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
-            key_columns.back() = materialized_columns.back().get();
-        }
+        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        key_columns.emplace_back(materialized_columns.back().get());
     }
 
     size_t rows = block.rows();
@@ -365,18 +339,13 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        key_columns.push_back(block.safeGetByPosition(i).column.get());
-
         if (!removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
             throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
                 + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
                 " on the left.", ErrorCodes::TYPE_MISMATCH);
 
-        if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns.back() = materialized_columns.back().get();
-        }
+        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        key_columns.emplace_back() = materialized_columns.back().get();
     }
 
     /// We will check existence in Set only for keys, where all components are not NULL.
@@ -415,10 +384,10 @@ void NO_INLINE Set::executeImplCase(
     size_t rows,
     ConstNullMapPtr null_map) const
 {
-    typename Method::State state;
-    state.init(key_columns);
+    Arena pool;
+    typename Method::State state(key_columns, key_sizes, nullptr);
 
-    /// NOTE Optimization is not used for consecutive identical values.
+    /// NOTE Optimization is not used for consecutive identical strings.
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -427,9 +396,8 @@ void NO_INLINE Set::executeImplCase(
             vec_res[i] = negative;
         else
         {
-            /// Build the key
-            typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
-            vec_res[i] = negative ^ method.data.has(key);
+            auto find_result = state.findKey(method.data, i, pool);
+            vec_res[i] = negative ^ find_result.isFound();
         }
     }
 }

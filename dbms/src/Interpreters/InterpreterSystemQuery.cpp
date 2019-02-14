@@ -4,7 +4,7 @@
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -21,6 +21,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
+#include <algorithm>
 
 
 namespace DB
@@ -52,7 +53,7 @@ ExecutionStatus getOverallExecutionStatusOfCommands()
     return ExecutionStatus(0);
 }
 
-/// Consequently tries to execute all commands and genreates final exception message for failed commands
+/// Consequently tries to execute all commands and generates final exception message for failed commands
 template <typename Callable, typename ... Callables>
 ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callables && ... commands)
 {
@@ -184,8 +185,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_REPLICATED_SENDS:
             startStopAction(context, query, ActionLocks::PartsSend, false);
             break;
-        case Type::START_REPLICATEDS_SENDS:
-            startStopAction(context, query, ActionLocks::PartsSend, false);
+        case Type::START_REPLICATED_SENDS:
+            startStopAction(context, query, ActionLocks::PartsSend, true);
             break;
         case Type::STOP_REPLICATION_QUEUES:
             startStopAction(context, query, ActionLocks::ReplicationQueue, false);
@@ -206,9 +207,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::FLUSH_LOGS:
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
-                    [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog(false)) query_thread_log->flush(); }
+                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
+                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
+                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -251,7 +252,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         create.attach = true;
 
         std::string data_path = database->getDataPath();
-        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns, system_context);
+        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
@@ -289,7 +290,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     if (replica_names.empty())
         return;
 
-    ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), replica_names.size()));
+    ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
     for (auto & table : replica_names)
         pool.schedule([&] () { tryRestartReplica(table.first, table.second, system_context); });
     pool.wait();
