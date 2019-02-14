@@ -14,6 +14,9 @@ template <typename T, typename Data>
 class AggregateFunctionBitmap final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>
 {
 public:
+    AggregateFunctionBitmap(const DataTypePtr & type)
+            : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmap<T, Data>>({type}, {}) {}
+
     String getName() const override { return Data::name(); }
 
     DataTypePtr getReturnType() const override
