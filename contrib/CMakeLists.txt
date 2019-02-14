@@ -217,6 +217,10 @@ if (USE_INTERNAL_LIBXML2_LIBRARY)
     add_subdirectory(libxml2-cmake)
 endif ()
 
+if (USE_INTERNAL_BROTLI_LIBRARY)
+    add_subdirectory(brotli-cmake)
+endif ()
+
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
     set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)

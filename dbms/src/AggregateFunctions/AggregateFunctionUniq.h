@@ -209,6 +209,9 @@ template <typename T, typename Data>
 class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
 {
 public:
+    AggregateFunctionUniq(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types_, {}) {}
+
     String getName() const override { return Data::getName(); }
 
     DataTypePtr getReturnType() const override
@@ -257,6 +260,7 @@ private:
 
 public:
     AggregateFunctionUniqVariadic(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>(arguments, {})
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();
