@@ -18,7 +18,10 @@ namespace protobuf
 }
 }
 
-#if !USE_PROTOBUF
+#if USE_PROTOBUF
+#   define EMPTY_DEF
+#   define EMPTY_DEF_RET
+#else
 #   define EMPTY_DEF {}
 #   define EMPTY_DEF_RET(a) {return a;}
 #   pragma GCC diagnostic push
