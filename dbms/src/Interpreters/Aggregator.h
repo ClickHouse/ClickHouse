@@ -98,6 +98,18 @@ struct AggregationDataWithNullKey : public Base
     AggregateDataPtr & getNullKeyData() { return null_key_data; }
     bool hasNullKeyData() const { return has_null_key_data; }
     const AggregateDataPtr & getNullKeyData() const { return null_key_data; }
+    size_t size() const { return Base::size() + (has_null_key_data ? 1 : 0); }
+    bool empty() const { return Base::empty() && !has_null_key_data; }
+    void clear()
+    {
+        Base::clear();
+        has_null_key_data = false;
+    }
+    void clearAndShrink()
+    {
+        Base::clearAndShrink();
+        has_null_key_data = false;
+    }
 
 private:
     bool has_null_key_data = false;
