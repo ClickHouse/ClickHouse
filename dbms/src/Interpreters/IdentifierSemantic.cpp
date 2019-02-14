@@ -37,11 +37,16 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
     return {};
 }
 
-
 void IdentifierSemantic::setNeedLongName(ASTIdentifier & identifier, bool value)
 {
     identifier.semantic->need_long_name = value;
 }
+
+bool IdentifierSemantic::canBeAlias(const ASTIdentifier & identifier)
+{
+    return identifier.semantic->can_be_alias;
+}
+
 
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
@@ -108,6 +113,8 @@ void IdentifierSemantic::setColumnNormalName(ASTIdentifier & identifier, const D
     size_t match = IdentifierSemantic::canReferColumnToTable(identifier, db_and_table);
 
     setColumnShortName(identifier, match);
+    if (match)
+        identifier.semantic->can_be_alias = false;
 
     if (identifier.semantic->need_long_name)
     {

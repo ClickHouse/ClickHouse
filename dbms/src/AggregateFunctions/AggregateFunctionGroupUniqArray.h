@@ -44,6 +44,9 @@ private:
     using State = AggregateFunctionGroupUniqArrayData<T>;
 
 public:
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>({argument_type}, {}) {}
+
     String getName() const override { return "groupUniqArray"; }
 
     DataTypePtr getReturnType() const override
@@ -115,7 +118,7 @@ template <bool is_plain_column = false>
 class AggreagteFunctionGroupUniqArrayGeneric
     : public IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>
 {
-    DataTypePtr input_data_type;
+    DataTypePtr & input_data_type;
 
     using State = AggreagteFunctionGroupUniqArrayGenericData;
 
@@ -125,7 +128,8 @@ class AggreagteFunctionGroupUniqArrayGeneric
 
 public:
     AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type)
-        : input_data_type(input_data_type) {}
+        : IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>({input_data_type}, {})
+        , input_data_type(this->argument_types[0]) {}
 
     String getName() const override { return "groupUniqArray"; }
 

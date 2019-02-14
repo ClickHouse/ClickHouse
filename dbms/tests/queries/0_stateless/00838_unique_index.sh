@@ -5,7 +5,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.set_idx;"
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE test.set_idx
+$CLICKHOUSE_CLIENT -n --query="
+SET allow_experimental_data_skipping_indices = 1;
+CREATE TABLE test.set_idx
 (
     u64 UInt64,
     i32 Int32,
@@ -14,9 +16,9 @@ $CLICKHOUSE_CLIENT --query="CREATE TABLE test.set_idx
     s String,
     e Enum8('a' = 1, 'b' = 2, 'c' = 3),
     dt Date,
-    INDEX idx_all (i32, i32 + f64, d, s, e, dt) TYPE set GRANULARITY 1,
-    INDEX idx_all2 (i32, i32 + f64, d, s, e, dt) TYPE set GRANULARITY 2,
-    INDEX idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE set GRANULARITY 3
+    INDEX idx_all (i32, i32 + f64, d, s, e, dt) TYPE set(2) GRANULARITY 1,
+    INDEX idx_all2 (i32, i32 + f64, d, s, e, dt) TYPE set(4) GRANULARITY 2,
+    INDEX idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE set(6) GRANULARITY 3
 ) ENGINE = MergeTree()
 ORDER BY u64
 SETTINGS index_granularity = 2;"

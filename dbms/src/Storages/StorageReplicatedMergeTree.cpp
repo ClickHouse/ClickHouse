@@ -3125,7 +3125,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        data.checkAlter(params);
+        data.checkAlter(params, query_context);
 
         ColumnsDescription new_columns = data.getColumns();
         IndicesDescription new_indices = data.getIndicesDescription();
@@ -3904,6 +3904,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     auto zookeeper = tryGetZooKeeper();
 
     res.is_leader = is_leader;
+    res.can_become_leader = data.settings.replicated_can_become_leader;
     res.is_readonly = is_readonly;
     res.is_session_expired = !zookeeper || zookeeper->expired();
 

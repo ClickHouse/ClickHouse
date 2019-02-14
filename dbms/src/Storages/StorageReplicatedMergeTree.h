@@ -153,6 +153,7 @@ public:
     struct Status
     {
         bool is_leader;
+        bool can_become_leader;
         bool is_readonly;
         bool is_session_expired;
         ReplicatedMergeTreeQueue::Status queue;

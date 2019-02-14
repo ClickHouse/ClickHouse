@@ -228,7 +228,9 @@ To check whether ClickHouse can use the index when running a query, use the sett
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
 
-### Data Skipping Indices
+### Data Skipping Indices (Experimental)
+
+You need to set `allow_experimental_data_skipping_indices` to 1 to use indices.  (run `SET allow_experimental_data_skipping_indices = 1`).
 
 Index declaration in the columns section of the `CREATE` query.
 ```sql
@@ -250,7 +252,7 @@ CREATE TABLE table_name
     s String,
     ...
     INDEX a (u64 * i32, s) TYPE minmax GRANULARITY 3,
-    INDEX b (u64 * length(s)) TYPE set GRANULARITY 4
+    INDEX b (u64 * length(s)) TYPE set(1000) GRANULARITY 4
 ) ENGINE = MergeTree()
 ...
 ```
@@ -267,12 +269,10 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of the data like the primary key.
 
 * `set(max_rows)`
-Stores unique values of the specified expression (no more than `max_rows` rows), use them to check if the `WHERE` expression is not satisfiable on a block of the data.
-If `max_rows=0`, then there are no limits for storing values. `set` without parameters is equal to `set(0)`.  
+Stores unique values of the specified expression (no more than `max_rows` rows), use them to check if the `WHERE` expression is not satisfiable on a block of the data.  
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set GRANULARITY 4
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 ```
 
