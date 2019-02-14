@@ -1207,7 +1207,8 @@ private:
         for (size_t i = 0; i < right_sample_block.columns(); ++i)
         {
             const ColumnWithTypeAndName & src_column = right_sample_block.getByPosition(i);
-            result_sample_block.insert(src_column.cloneEmpty());
+            if (!result_sample_block.has(src_column.name))
+                result_sample_block.insert(src_column.cloneEmpty());
         }
 
         const auto & key_names_right = parent.key_names_right;

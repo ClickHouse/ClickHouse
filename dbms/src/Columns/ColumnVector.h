@@ -275,7 +275,7 @@ template <typename T>
 template <typename Type>
 ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
 {
-    size_t size = indexes.size();
+    UInt64 size = indexes.size();
 
     if (limit == 0)
         limit = size;

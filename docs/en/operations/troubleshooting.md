@@ -2,15 +2,15 @@
 
 - [Installation](#troubleshooting-installation-errors)
 - [Connecting to the server](#troubleshooting-accepts-no-connections)
-- [Queries processing](#troubleshooting-does-not-process-queries)
-- [Efficiency of queries processing](#troubleshooting-too-slow)
+- [Query processing](#troubleshooting-does-not-process-queries)
+- [Efficiency of query processing](#troubleshooting-too-slow)
 
 ## Installation {#troubleshooting-installation-errors}
 
-### You Can Not Get Deb-packages from ClickHouse Repository With apt-get
+### You Cannot Get Deb Packages from ClickHouse Repository With apt-get
 
 - Check firewall settings.
-- If you can not access the repository by any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually with `sudo dpkg -i <packages>` command. Also, you need `tzdata` package.
+- If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
 
 ## Connecting to the Server {#troubleshooting-accepts-no-connections}
@@ -40,24 +40,24 @@ sudo service clickhouse-server start
 
 The main log of `clickhouse-server` is in `/var/log/clickhouse-server/clickhouse-server.log` by default.
 
-In case of successful start you should see the strings:
+If the server started successfully, you should see the strings:
 
-- `<Information> Application: starting up.` — Server started to run.
-- `<Information> Application: Ready for connections.` — Server runs and ready for connections.
+- `<Information> Application: starting up.` — Server started.
+- `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
-If `clickhouse-server` start failed by the configuration error you should see the `<Error>` string with an error description. For example:
+If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
 
 ```
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
-If you don't see an error at the end of file look through all the file from the string:
+If you don't see an error at the end of the file, look through the entire file starting from the string:
 
 ```
 <Information> Application: starting up.
 ```
 
-If you try to start the second instance of `clickhouse-server` at the server you see the following log:
+If you try to start a second instance of `clickhouse-server` on the server, you see the following log:
 
 ```
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
@@ -75,7 +75,7 @@ Revision: 54413
 
 **See system.d logs**
 
-If there is no any useful information in `clickhouse-server` logs or there is no any logs, you can see `system.d` logs by the command:
+If you don't find any useful information in `clickhouse-server` logs or there aren't any logs, you can view `system.d` logs using the command:
 
 ```
 sudo journalctl -u clickhouse-server
@@ -87,7 +87,7 @@ sudo journalctl -u clickhouse-server
 sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
-This command starts the server as an interactive app with standard parameters of autostart script. In this mode `clickhouse-server` prints all the event messages into the console.
+This command starts the server as an interactive app with standard parameters of the autostart script. In this mode `clickhouse-server` prints all the event messages in the console.
 
 ### Configuration Parameters
 
@@ -95,7 +95,7 @@ Check:
 
 - Docker settings.
 
-    If you run ClickHouse in Docker in IPv6 network, make sure that `network=host` is set.
+    If you run ClickHouse in Docker in an IPv6 network, make sure that `network=host` is set.
 
 - Endpoint settings.
 
@@ -105,7 +105,7 @@ Check:
 
 - HTTP protocol settings.
 
-    Check protocol settings for HTTP API.
+    Check protocol settings for the HTTP API.
 
 - Secure connection settings.
 
@@ -114,27 +114,27 @@ Check:
     - The `tcp_port_secure` setting.
     - Settings for SSL sertificates.
 
-     Use proper parameters while connecting. For example, use parameter `port_secure` with `clickhouse_client`.
+     Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 
 - User settings.
 
-    You may use the wrong user name or password for it.
+    You might be using the wrong user name or password.
 
-## Queries Processing {#troubleshooting-does-not-process-queries}
+## Query Processing {#troubleshooting-does-not-process-queries}
 
-If ClickHouse can not process the query, it sends the description of an error to the client. In the `clickhouse-client` you get a description of an error in console. If you use HTTP interface, ClickHouse sends error description in response body. For example,
+If ClickHouse is not able to process the query, it sends an error description to the client. In the `clickhouse-client` you get a description of the error in the console. If you are using the HTTP interface, ClickHouse sends the error description in the response body. For example:
 
 ```bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-If you start `clickhouse-client` with `stack-trace` parameter, ClickHouse returns server stack trace with the description of an error.
+If you start `clickhouse-client` with the `stack-trace` parameter, ClickHouse returns the server stack trace with the description of an error.
 
-It is possible that you see the message of connection broken. In this case, you can repeat query. If connection brakes any time you perform the query you should check the server logs for errors.
+You might see a message about a broken connection. In this case, you can repeat the query. If the connection breaks every time you perform the query, check the server logs for errors.
 
-## Efficiency of Queries Processing {#troubleshooting-too-slow}
+## Efficiency of Query Processing {#troubleshooting-too-slow}
 
-If you see that ClickHouse works too slow, you need to profile the load of the server resources and network for your queries.
+If you see that ClickHouse is working too slowly, you need to profile the load on the server resources and network for your queries.
 
-You can use clickhouse-benchmark utility to profile queries. It shows the number of queries processed in a second, the number of rows processed in a second and percentiles of query processing times.
+You can use the clickhouse-benchmark utility to profile queries. It shows the number of queries processed per second, the number of rows processed per second, and percentiles of query processing times.

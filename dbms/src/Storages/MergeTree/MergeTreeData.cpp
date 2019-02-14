@@ -832,7 +832,7 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
     Poco::DirectoryIterator end;
     for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
     {
-        if (startsWith(it.name(), "tmp"))
+        if (startsWith(it.name(), "tmp_"))
         {
             Poco::File tmp_dir(full_path + it.name());
 
