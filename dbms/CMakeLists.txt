@@ -225,7 +225,6 @@ target_link_libraries (dbms
         PUBLIC
     clickhouse_common_io
         PRIVATE
-    clickhouse_dictionaries
     clickhouse_dictionaries_embedded
         PUBLIC
     pocoext
