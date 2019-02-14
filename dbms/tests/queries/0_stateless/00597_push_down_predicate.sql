@@ -31,7 +31,7 @@ SELECT * FROM (SELECT 1 AS id, (SELECT 1) as subquery) WHERE subquery = 1;
 SELECT * FROM (SELECT toUInt64(b) AS a, sum(id) AS b FROM test.test) WHERE a = 3;
 SELECT * FROM (SELECT toUInt64(b), sum(id) AS b FROM test.test) WHERE `toUInt64(sum(id))` = 3;
 SELECT date, id, name, value FROM (SELECT date, name, value, min(id) AS id FROM test.test GROUP BY date, name, value) WHERE id = 1;
-SELECT * FROM (SELECT toUInt64(table_alias.b) AS a, sum(id) AS b FROM test.test AS table_alias) AS outer_table_alias WHERE outer_table_alias.b = 3;
+SELECT * FROM (SELECT toUInt64(b) AS a, sum(id) AS b FROM test.test AS table_alias) AS outer_table_alias WHERE outer_table_alias.b = 3;
 
 SELECT '-------Force push down-------';
 SET force_primary_key = 1;
@@ -72,7 +72,7 @@ SELECT '-------Push to having expression, need check.-------';
 SELECT id FROM (SELECT min(id) AS id FROM test.test) WHERE id = 1; -- { serverError 277 }
 SELECT * FROM (SELECT toUInt64(b) AS a, sum(id) AS b FROM test.test) WHERE a = 3; -- { serverError 277 }
 SELECT * FROM (SELECT toUInt64(b), sum(id) AS b FROM test.test) WHERE `toUInt64(sum(id))` = 3; -- { serverError 277 }
-SELECT * FROM (SELECT toUInt64(table_alias.b) AS a, sum(id) AS b FROM test.test AS table_alias) AS outer_table_alias WHERE outer_table_alias.b = 3; -- { serverError 277 }
+SELECT * FROM (SELECT toUInt64(b) AS a, sum(id) AS b FROM test.test AS table_alias) AS outer_table_alias WHERE outer_table_alias.b = 3; -- { serverError 277 }
 
 SELECT '-------Compatibility test-------';
 SELECT * FROM (SELECT toInt8(1) AS id, toDate('2000-01-01') AS date FROM system.numbers LIMIT 1) ANY LEFT JOIN (SELECT * FROM test.test) AS b USING date, id WHERE b.date = toDate('2000-01-01');

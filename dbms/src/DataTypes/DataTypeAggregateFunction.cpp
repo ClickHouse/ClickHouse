@@ -264,7 +264,8 @@ MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 /// Create empty state
 Field DataTypeAggregateFunction::getDefault() const
 {
-    Field field = String();
+    Field field = AggregateFunctionStateData();
+    field.get<AggregateFunctionStateData &>().name = getName();
 
     AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
@@ -273,7 +274,7 @@ Field DataTypeAggregateFunction::getDefault() const
 
     try
     {
-        WriteBufferFromString buffer_from_field(field.get<String &>());
+        WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
         function->serialize(place, buffer_from_field);
     }
     catch (...)

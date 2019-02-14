@@ -87,13 +87,15 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    background_task_handle = background_pool.addTask([this] { return backgroundTask(); });
-
     data.clearOldPartsFromFilesystem();
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     data.clearOldTemporaryDirectories(0);
+
+    /// NOTE background task will also do the above cleanups periodically.
+    time_after_previous_cleanup.restart();
+    background_task_handle = background_pool.addTask([this] { return backgroundTask(); });
 }
 
 
@@ -211,7 +213,7 @@ void StorageMergeTree::alter(
 
     auto table_soft_lock = lockDataForAlter();
 
-    data.checkAlter(params);
+    data.checkAlter(params, context);
 
     auto new_columns = data.getColumns();
     auto new_indices = data.getIndicesDescription();
