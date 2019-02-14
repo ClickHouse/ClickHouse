@@ -18,22 +18,14 @@
 #include <ext/map.h>
 #include <memory>
 #include <unordered_map>
-#include <map>
-#include <limits>
+#include <tuple>
 #include <cstddef>
 
 
 namespace DB
 {
 
-static constexpr auto threshold = 10;
-/// We decided to remove the restriction due to the absence of a penalty for the transfer in PREWHERE
-static constexpr auto max_columns_relative_size = 1.0f;
-static constexpr auto and_function_name = "and";
-static constexpr auto equals_function_name = "equals";
-static constexpr auto array_join_function_name = "arrayJoin";
-static constexpr auto global_in_function_name = "globalIn";
-static constexpr auto global_not_in_function_name = "globalNotIn";
+static constexpr auto threshold = 2;
 
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
@@ -63,7 +55,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         return;
 
     const auto function = typeid_cast<ASTFunction *>(select.where_expression.get());
-    if (function && function->name == and_function_name)
+    if (function && function->name == "and")
         optimizeConjunction(select, function);
     else
         optimizeArbitrary(select);
@@ -73,23 +65,36 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 void MergeTreeWhereOptimizer::calculateColumnSizes(const MergeTreeData & data, const Names & column_names)
 {
     for (const auto & column_name : column_names)
-    {
-        const auto column_size = data.getColumnCompressedSize(column_name);
+        column_sizes[column_name] = data.getColumnCompressedSize(column_name);
+}
 
-        column_sizes[column_name] = column_size;
-        total_column_size += column_size;
+
+namespace
+{
+struct ConditionCandidate
+{
+    size_t columns_size;
+    int64_t position;
+    IdentifierNameSet identifiers;
+    bool is_good;
+
+    auto tuple() const
+    {
+        /// We'll move conditions from back to keep "position".
+        return std::forward_as_tuple(!is_good, columns_size, -position);
     }
+
+    bool operator< (const ConditionCandidate & rhs) const
+    {
+        return tuple() < rhs.tuple();
+    }
+};
 }
 
 
 void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFunction * const fun) const
 {
-    /// used as max possible size and indicator that appropriate condition has not been found
-    const auto no_such_condition = std::numeric_limits<size_t>::max();
-
-    /// { first: condition index, second: summary column size }
-    std::pair<size_t, size_t> lightest_good_condition{no_such_condition, no_such_condition};
-    std::pair<size_t, size_t> lightest_viable_condition{no_such_condition, no_such_condition};
+    std::vector<ConditionCandidate> condition_candidates;
 
     auto & conditions = fun->arguments->children;
 
@@ -109,7 +114,7 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
         /// linearize sub-conjunctions
         if (const auto function = typeid_cast<ASTFunction *>(condition))
         {
-            if (function->name == and_function_name)
+            if (function->name == "and")
             {
                 for (auto & child : function->arguments->children)
                     conditions.emplace_back(std::move(child));
@@ -133,27 +138,47 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
         /// do not take into consideration the conditions consisting only of the first primary key column
         if (!hasPrimaryKeyAtoms(condition) && isSubsetOfTableColumns(identifiers))
         {
-            /// calculate size of columns involved in condition
-            const auto cond_columns_size = getIdentifiersColumnSize(identifiers);
-
-            /// place condition either in good or viable conditions set
-            auto & good_or_viable_condition = isConditionGood(condition) ? lightest_good_condition : lightest_viable_condition;
-            if (good_or_viable_condition.second > cond_columns_size)
-            {
-                good_or_viable_condition.first = idx;
-                good_or_viable_condition.second = cond_columns_size;
-            }
+            ConditionCandidate candidate;
+            candidate.position = idx;
+            candidate.columns_size = getIdentifiersColumnSize(identifiers);
+            candidate.is_good = isConditionGood(condition);
+            candidate.identifiers = identifiers;
+            condition_candidates.emplace_back(std::move(candidate));
         }
     }
 
+    if (condition_candidates.empty())
+        return;
+
     const auto move_condition_to_prewhere = [&] (const size_t idx)
     {
-        select.prewhere_expression = conditions[idx];
-        select.children.push_back(select.prewhere_expression);
-        LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition `" << select.prewhere_expression << "` moved to PREWHERE");
+        if (!select.prewhere_expression)
+        {
+            select.prewhere_expression = conditions[idx];
+            select.children.push_back(select.prewhere_expression);
+        }
+        else if (auto func_and = typeid_cast<ASTFunction *>(select.prewhere_expression.get()); func_and && func_and->name == "and")
+        {
+            /// Add argument to AND chain
+
+            func_and->arguments->children.emplace_back(conditions[idx]);
+        }
+        else
+        {
+            /// Make old_cond AND new_cond
+
+            auto func = std::make_shared<ASTFunction>();
+            func->name = "and";
+            func->arguments->children = {select.prewhere_expression, conditions[idx]};
+
+            select.children.clear();
+            select.prewhere_expression = std::move(func);
+            select.children.push_back(select.prewhere_expression);
+        }
 
         /** Replace conjunction with the only remaining argument if only two conditions were present,
-            *  remove selected condition from conjunction otherwise. */
+          *  remove selected condition from conjunction otherwise.
+          */
         if (conditions.size() == 2)
         {
             /// find old where_expression in children of select
@@ -167,27 +192,25 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
             remove_condition_at_index(idx);
     };
 
-    /// if there is a "good" condition - move it to PREWHERE
-    if (lightest_good_condition.first != no_such_condition)
-    {
-        move_condition_to_prewhere(lightest_good_condition.first);
-    }
-    else if (lightest_viable_condition.first != no_such_condition)
-    {
-        /// check that the relative column size is less than max
-        if (total_column_size != 0)
-        {
-            /// calculate relative size of condition's columns
-            const auto cond_columns_size = lightest_viable_condition.second;
-            const auto columns_relative_size = static_cast<float>(cond_columns_size) / total_column_size;
+    /// Lightest conditions first. NOTE The algorithm is suboptimal, replace with priority_queue if you want.
+    std::sort(condition_candidates.begin(), condition_candidates.end());
 
-            /// do nothing if it exceeds max relative size
-            if (columns_relative_size > max_columns_relative_size)
-                return;
-        }
+    /// Pick the best condition and also all other conditions with the same set of columns.
+    /// For example, if we take "EventTime >= '2014-03-20 00:00:00'", we will also take "EventTime < '2014-03-21 00:00:00'".
 
-        move_condition_to_prewhere(lightest_viable_condition.first);
+    IdentifierNameSet identifiers_of_moved_condition = condition_candidates[0].identifiers;
+    move_condition_to_prewhere(condition_candidates[0].position);
+
+    for (size_t i = 1, size = condition_candidates.size(); i < size; ++i)
+    {
+        if (identifiers_of_moved_condition == condition_candidates[i].identifiers)
+            move_condition_to_prewhere(condition_candidates[i].position);
+        else
+            break;
     }
+
+    if (select.prewhere_expression)
+        LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"" << select.prewhere_expression << "\" moved to PREWHERE");
 }
 
 
@@ -204,16 +227,6 @@ void MergeTreeWhereOptimizer::optimizeArbitrary(ASTSelectQuery & select) const
 
     if (hasPrimaryKeyAtoms(condition.get()) || !isSubsetOfTableColumns(identifiers))
         return;
-
-    /// if condition is not "good" - check that it can be moved
-    if (!isConditionGood(condition.get()) && total_column_size != 0)
-    {
-        const auto cond_columns_size = getIdentifiersColumnSize(identifiers);
-        const auto columns_relative_size = static_cast<float>(cond_columns_size) / total_column_size;
-
-        if (columns_relative_size > max_columns_relative_size)
-            return;
-    }
 
     /// add the condition to PREWHERE, remove it from WHERE
     std::swap(select.prewhere_expression, condition);
@@ -246,7 +259,7 @@ bool MergeTreeWhereOptimizer::isConditionGood(const IAST * condition) const
 
     /** we are only considering conditions of form `equals(one, another)` or `one = another`,
         * especially if either `one` or `another` is ASTIdentifier */
-    if (function->name != equals_function_name)
+    if (function->name != "equals")
         return false;
 
     auto left_arg = function->arguments->children.front().get();
@@ -371,12 +384,12 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
     if (const auto function_ptr = typeid_cast<const ASTFunction *>(ptr.get()))
     {
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
-        if (array_join_function_name == function_ptr->name)
+        if ("arrayJoin" == function_ptr->name)
             return true;
 
         /// disallow GLOBAL IN, GLOBAL NOT IN
-        if (global_in_function_name == function_ptr->name
-            || global_not_in_function_name == function_ptr->name)
+        if ("globalIn" == function_ptr->name
+            || "globalNotIn" == function_ptr->name)
             return true;
 
         /// indexHint is a special function that it does not make sense to transfer to PREWHERE
