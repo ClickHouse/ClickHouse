@@ -5,15 +5,17 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+
 #include <Interpreters/Context.h>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/String.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -128,7 +130,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
 
-    throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+    auto hints = this->getHints(name);
+    if (!hints.empty())
+        throw Exception("Unknown aggregate function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+    else
+        throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
 
 

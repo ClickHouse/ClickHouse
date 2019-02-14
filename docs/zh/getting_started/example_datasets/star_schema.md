@@ -21,8 +21,6 @@ Generating data:
 Creating tables in ClickHouse:
 
 ```
-SET allow_experimental_low_cardinality_type = 1;
-
 CREATE TABLE customer
 (
         C_CUSTKEY       UInt32,
@@ -97,7 +95,7 @@ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
 Converting "star schema" to denormalized "flat schema":
 
 ```
-SET max_memory_usage = 20000000000, allow_experimental_low_cardinality_type = 1, allow_experimental_multiple_joins_emulation = 1;
+SET max_memory_usage = 20000000000, allow_experimental_multiple_joins_emulation = 1;
 
 CREATE TABLE lineorder_flat
 ENGINE = MergeTree

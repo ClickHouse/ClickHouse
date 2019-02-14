@@ -2,9 +2,9 @@
 
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
+#include <Core/Types.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <Core/Types.h>
 #include <IO/VarInt.h>
 
 
@@ -19,7 +19,7 @@ namespace ErrorCodes
 /** Calculates quantile by collecting all values into array
   *  and applying n-th element (introselect) algorithm for the resulting array.
   *
-  * It use O(N) memory and it is very inefficient in case of high amount of identical values.
+  * It uses O(N) memory and it is very inefficient in case of high amount of identical values.
   * But it is very CPU efficient for not large datasets.
   */
 template <typename Value>

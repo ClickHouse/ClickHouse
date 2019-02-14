@@ -1,12 +1,14 @@
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnsCommon.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <Columns/ColumnsCommon.h>
 
 
 namespace DB
@@ -182,7 +184,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 }
 
 
-ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, UInt64 limit) const
 {
     size_t size = data.size();
 
@@ -203,13 +205,13 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
     return res;
 }
 
-ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, UInt64 limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename Type>
-ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
 {
     auto res = createView();
 
@@ -258,11 +260,17 @@ MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
     return create(func, Arenas(1, std::make_shared<Arena>()));
 }
 
+String ColumnAggregateFunction::getTypeString() const
+{
+    return DataTypeAggregateFunction(func, func->getArgumentTypes(), func->getParameters()).getName();
+}
+
 Field ColumnAggregateFunction::operator[](size_t n) const
 {
-    Field field = String();
+    Field field = AggregateFunctionStateData();
+    field.get<AggregateFunctionStateData &>().name = getTypeString();
     {
-        WriteBufferFromString buffer(field.get<String &>());
+        WriteBufferFromString buffer(field.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer);
     }
     return field;
@@ -270,9 +278,10 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
-    res = String();
+    res = AggregateFunctionStateData();
+    res.get<AggregateFunctionStateData &>().name = getTypeString();
     {
-        WriteBufferFromString buffer(res.get<String &>());
+        WriteBufferFromString buffer(res.get<AggregateFunctionStateData &>().data);
         func->serialize(data[n], buffer);
     }
 }
@@ -337,13 +346,23 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
     }
 }
 
-
 void ColumnAggregateFunction::insert(const Field & x)
 {
+    String type_string = getTypeString();
+
+    if (x.getType() != Field::Types::AggregateFunctionState)
+        throw Exception(String("Inserting field of type ") + x.getTypeName() + " into ColumnAggregateFunction. "
+                        "Expected " + Field::Types::toString(Field::Types::AggregateFunctionState), ErrorCodes::LOGICAL_ERROR);
+
+    auto & field_name = x.get<const AggregateFunctionStateData &>().name;
+    if (type_string != field_name)
+        throw Exception("Cannot insert filed with type " + field_name + " into column with type " + type_string,
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
     ensureOwnership();
     Arena & arena = createOrGetArena();
     pushBackAndCreateState(data, arena, func.get());
-    ReadBufferFromString read_buffer(x.get<const String &>());
+    ReadBufferFromString read_buffer(x.get<const AggregateFunctionStateData &>().data);
     func->deserialize(data.back(), read_buffer, &arena);
 }
 
@@ -465,12 +484,13 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
     AlignedBuffer place_buffer(func->sizeOfData(), func->alignOfData());
     AggregateDataPtr place = place_buffer.data();
 
-    String serialized;
+    AggregateFunctionStateData serialized;
+    serialized.name = getTypeString();
 
     func->create(place);
     try
     {
-        WriteBufferFromString buffer(serialized);
+        WriteBufferFromString buffer(serialized.data);
         func->serialize(place, buffer);
     }
     catch (...)

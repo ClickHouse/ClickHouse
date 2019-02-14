@@ -49,6 +49,7 @@ const char * auto_config_build[]
     "USE_POCO_NETSSL", "@USE_POCO_NETSSL@",
     "USE_BASE64", "@USE_BASE64@",
     "USE_PROTOBUF", "@USE_PROTOBUF@",
+    "USE_BROTLI", "@USE_BROTLI@",
 
     nullptr, nullptr
 };

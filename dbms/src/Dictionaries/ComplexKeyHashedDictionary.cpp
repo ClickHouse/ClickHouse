@@ -784,7 +784,7 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute & att
     return keys;
 }
 
-BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyHashedDictionary, UInt64>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeys(), column_names);

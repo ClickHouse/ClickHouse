@@ -488,13 +488,13 @@ SELECT arrayDifference([1, 2, 3, 4])
 Takes an array, returns an array containing the different elements in all the arrays. For example:
 
 ```sql
-SELECT arrayDifference([1, 2, 3, 4])
+SELECT arrayDistinct([1, 2, 2, 3, 1])
 ```
 
 ```
-┌─arrayDifference([1, 2, 3, 4])─┐
-│ [0,1,1,1]                     │
-└───────────────────────────────┘
+┌─arrayDistinct([1, 2, 2, 3, 1])─┐
+│ [1,2,3]                        │
+└────────────────────────────────┘
 ```
 
 ## arrayEnumerateDense(arr)

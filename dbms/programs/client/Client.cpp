@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
+#include <ext/scope_guard.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
@@ -400,6 +401,7 @@ private:
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
 #if USE_READLINE
+            SCOPE_EXIT({ Suggest::instance().finalize(); });
             if (server_revision >= Suggest::MIN_SERVER_REVISION
                 && !config().getBool("disable_suggestion", false))
             {
@@ -722,7 +724,11 @@ private:
 
                 try
                 {
-                    if (!processSingleQuery(str, ast) && !ignore_error)
+                    auto ast_to_process = ast;
+                    if (insert && insert->data)
+                        ast_to_process = nullptr;
+
+                    if (!processSingleQuery(str, ast_to_process) && !ignore_error)
                         return false;
                 }
                 catch (...)
@@ -1029,25 +1035,56 @@ private:
         InterruptListener interrupt_listener;
         bool cancelled = false;
 
+        // TODO: get the poll_interval from commandline.
+        const auto receive_timeout = connection->getTimeouts().receive_timeout;
+        constexpr size_t default_poll_interval = 1000000; /// in microseconds
+        constexpr size_t min_poll_interval = 5000; /// in microseconds
+        const size_t poll_interval
+            = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
+
         while (true)
         {
-            /// Has the Ctrl+C been pressed and thus the query should be cancelled?
-            /// If this is the case, inform the server about it and receive the remaining packets
-            /// to avoid losing sync.
-            if (!cancelled)
-            {
-                if (interrupt_listener.check())
-                {
-                    connection->sendCancel();
-                    cancelled = true;
-                    if (is_interactive)
-                        std::cout << "Cancelling query." << std::endl;
+            Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
 
-                    /// Pressing Ctrl+C twice results in shut down.
-                    interrupt_listener.unblock();
+            while (true)
+            {
+                /// Has the Ctrl+C been pressed and thus the query should be cancelled?
+                /// If this is the case, inform the server about it and receive the remaining packets
+                /// to avoid losing sync.
+                if (!cancelled)
+                {
+                    auto cancelQuery = [&] {
+                        connection->sendCancel();
+                        cancelled = true;
+                        if (is_interactive)
+                            std::cout << "Cancelling query." << std::endl;
+
+                        /// Pressing Ctrl+C twice results in shut down.
+                        interrupt_listener.unblock();
+                    };
+
+                    if (interrupt_listener.check())
+                    {
+                        cancelQuery();
+                    }
+                    else
+                    {
+                        double elapsed = receive_watch.elapsedSeconds();
+                        if (elapsed > receive_timeout.totalSeconds())
+                        {
+                            std::cout << "Timeout exceeded while receiving data from server."
+                                      << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
+                                      << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
+
+                            cancelQuery();
+                        }
+                    }
                 }
-                else if (!connection->poll(1000000))
-                    continue;    /// If there is no new data, continue checking whether the query was cancelled after a timeout.
+
+                /// Poll for changes after a cancellation check, otherwise it never reached
+                /// because of progress updates from server.
+                if (connection->poll(poll_interval))
+                  break;
             }
 
             if (!receiveAndProcessPacket())
@@ -1303,7 +1340,11 @@ private:
 
     void onProgress(const Progress & value)
     {
-        progress.incrementPiecewiseAtomically(value);
+        if (!progress.incrementPiecewiseAtomically(value))
+        {
+            // Just a keep-alive update.
+            return;
+        }
         if (block_out_stream)
             block_out_stream->onProgress(value);
         writeProgress();
@@ -1542,12 +1583,19 @@ public:
         po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
             ("help", "produce help message")
-            ("config-file,c", po::value<std::string>(), "config-file path")
+            ("config-file,C", po::value<std::string>(), "config-file path")
+            ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
             ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
             ("port", po::value<int>()->default_value(9000), "server port")
             ("secure,s", "Use TLS connection")
             ("user,u", po::value<std::string>()->default_value("default"), "user")
-            ("password", po::value<std::string>(), "password")
+            /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
+              * implicit_value is used to avoid this exception (to allow user to type just "--password")
+              * Since currently boost provides no way to check if a value has been set implicitly for an option,
+              * the "\n" is used to distinguish this case because there is hardly a chance an user would use "\n"
+              * as the password.
+              */
+            ("password", po::value<std::string>()->implicit_value("\n"), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
@@ -1585,13 +1633,11 @@ public:
             ("structure", po::value<std::string>(), "structure")
             ("types", po::value<std::string>(), "types")
         ;
-
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
-
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
@@ -1643,15 +1689,23 @@ public:
         }
 
         /// Extract settings from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (options.count(#NAME)) \
-            context.setSetting(#NAME, options[#NAME].as<std::string>());
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)                \
+        if (options.count(#NAME))                                        \
+        {                                                                \
+            context.setSetting(#NAME, options[#NAME].as<std::string>()); \
+            config().setString(#NAME, options[#NAME].as<std::string>()); \
+        }
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
+
+        if (options.count("config-file") && options.count("config"))
+            throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
 
         /// Save received data into the internal config.
         if (options.count("config-file"))
             config().setString("config-file", options["config-file"].as<std::string>());
+        if (options.count("config"))
+            config().setString("config-file", options["config"].as<std::string>());
         if (options.count("host") && !options["host"].defaulted())
             config().setString("host", options["host"].as<std::string>());
         if (options.count("query_id"))
@@ -1710,11 +1764,11 @@ public:
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
-    DB::Client client;
-
     try
     {
+        DB::Client client;
         client.init(argc, argv);
+        return client.run();
     }
     catch (const boost::program_options::error & e)
     {
@@ -1726,6 +1780,4 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
-
-    return client.run();
 }
