@@ -16,6 +16,8 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
 
+#include <Poco/Logger.h>
+
 
 namespace DB
 {
@@ -990,11 +992,15 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
                     data_types[element.key_column]
                 );
 
+                auto * log = &Poco::Logger::get("minmax_index kk:");
+
                 if (!new_range)
                 {
+                    LOG_DEBUG(log, "empty");
                     rpn_stack.emplace_back(true, true);
                     continue;
                 }
+                LOG_DEBUG(log, new_range->toString());
                 transformed_range = *new_range;
                 key_range = &transformed_range;
             }
