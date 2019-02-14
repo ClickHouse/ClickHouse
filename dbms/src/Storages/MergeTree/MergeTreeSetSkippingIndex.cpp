@@ -171,10 +171,7 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
         throw Exception(
                 "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
-    if (useless)
-        return true;
-
-    if (granule->size() > index.max_rows)
+    if (useless || !granule->size() || granule->size() > index.max_rows)
         return true;
 
     Block result = granule->getElementsBlock();
