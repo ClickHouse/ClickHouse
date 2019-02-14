@@ -20,7 +20,7 @@ namespace protobuf
 
 #if USE_PROTOBUF
 #   define EMPTY_DEF
-#   define EMPTY_DEF_RET
+#   define EMPTY_DEF_RET(a)
 #else
 #   define EMPTY_DEF {}
 #   define EMPTY_DEF_RET(a) {return a;}
