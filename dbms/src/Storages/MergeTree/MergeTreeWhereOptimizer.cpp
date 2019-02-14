@@ -106,7 +106,7 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
         conditions.pop_back();
     };
 
-    /// linearize conjunction and divide conditions into "good" and not-"good" ones
+    /// linearize conjunction and extract possible conditions to move
     for (size_t idx = 0; idx < conditions.size();)
     {
         const auto condition = conditions[idx].get();
@@ -132,7 +132,7 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
         if (cannotBeMoved(conditions[idx]))
             continue;
 
-        IdentifierNameSet identifiers{};
+        IdentifierNameSet identifiers;
         collectIdentifiersNoSubqueries(condition, identifiers);
 
         /// do not take into consideration the conditions consisting only of the first primary key column
@@ -176,20 +176,7 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
             select.children.push_back(select.prewhere_expression);
         }
 
-        /** Replace conjunction with the only remaining argument if only two conditions were present,
-          *  remove selected condition from conjunction otherwise.
-          */
-        if (conditions.size() == 2)
-        {
-            /// find old where_expression in children of select
-            const auto it = std::find(std::begin(select.children), std::end(select.children), select.where_expression);
-            /// replace where_expression with the remaining argument
-            select.where_expression = std::move(conditions[idx == 0 ? 1 : 0]);
-            /// overwrite child entry with the new where_expression
-            *it = select.where_expression;
-        }
-        else
-            remove_condition_at_index(idx);
+        remove_condition_at_index(idx);
     };
 
     /// Lightest conditions first. NOTE The algorithm is suboptimal, replace with priority_queue if you want.
@@ -207,6 +194,24 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
             move_condition_to_prewhere(condition_candidates[i].position);
         else
             break;
+    }
+
+    /** Replace conjunction with the only remaining argument if only two conditions were present,
+      *  remove selected condition from conjunction otherwise.
+      */
+    if (conditions.size() == 1)
+    {
+        /// find old where_expression in children of select
+        const auto it = std::find(std::begin(select.children), std::end(select.children), select.where_expression);
+        /// replace where_expression with the remaining argument
+        select.where_expression = std::move(conditions.front());
+        /// overwrite child entry with the new where_expression
+        *it = select.where_expression;
+    }
+    else if (conditions.empty())
+    {
+        select.children.erase(std::find(std::begin(select.children), std::end(select.children), select.where_expression));
+        select.where_expression.reset();
     }
 
     if (select.prewhere_expression)
