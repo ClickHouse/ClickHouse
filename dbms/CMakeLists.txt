@@ -191,7 +191,7 @@ target_link_libraries (clickhouse_common_io
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${CITYHASH_LIBRARIES}
-	roaring
+    roaring
         PRIVATE
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
