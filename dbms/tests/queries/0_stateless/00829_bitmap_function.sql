@@ -10,7 +10,6 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]));
 SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]));
 
 DROP TABLE IF EXISTS test.bitmap_test;
-
 CREATE TABLE test.bitmap_test(pickup_date Date, city_id UInt32, uid UInt32)ENGINE = Memory;
 INSERT INTO test.bitmap_test SELECT '2019-01-01', 1, number FROM numbers(1,50);
 INSERT INTO test.bitmap_test SELECT '2019-01-02', 1, number FROM numbers(11,60);
