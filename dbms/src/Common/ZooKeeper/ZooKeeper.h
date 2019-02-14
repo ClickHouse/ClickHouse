@@ -177,6 +177,9 @@ public:
     /// result would be the same as for the single call.
     void tryRemoveRecursive(const std::string & path);
 
+    /// Remove all children nodes (non recursive).
+    void removeChildren(const std::string & path);
+
     /// Wait for the node to disappear or return immediately if it doesn't exist.
     void waitForDisappear(const std::string & path);
 
