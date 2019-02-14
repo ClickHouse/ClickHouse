@@ -392,8 +392,8 @@ DUMP(depth, depths, max_array_depth);
      for (size_t i = 0; i < num_arguments; ++i)
      {
         auto array = get_array_column(block.getByPosition(arguments[i]).column);
-        DUMP(i, block.getByPosition(arguments[i]).column);
-        DUMP(array);
+        //DUMP(i, block.getByPosition(arguments[i]).column);
+        //DUMP(array);
         if (!array)
             continue;
         //DUMP("siz=", array->size());
@@ -409,6 +409,9 @@ DUMP(depth, depths, max_array_depth);
     //size_t sub_array_num = 0; // TODO for(...
     for (size_t sub_array_num = 0; sub_array_num < array_size; ++sub_array_num) {
 
+    //if (depth==2)
+    //    offsets = nullptr;
+
     size_t array_num = 0;
 
 DUMP("====", sub_array_num, array_size);
@@ -420,6 +423,14 @@ DUMP("====", sub_array_num, array_size);
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
+
+    if (depths[array_num]==2 && i == 0)
+    { 
+        DUMP("clear offsets", i, array_num, "was", offsets);
+        offsets = nullptr;
+    }   
+
+#if 0
         ColumnPtr array_ptr = block.getByPosition(arguments[i]).column;
 DUMP("column", i, num_arguments,  array_ptr, array_num);
 
@@ -455,6 +466,12 @@ DUMP(array_ptr);
             array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
 //            }
         }
+#endif
+
+        auto array = get_array_column(block.getByPosition(arguments[i]).column);
+        DUMP(array);
+        if (!array)
+            continue;
 
 /*
 
@@ -477,8 +494,25 @@ columnarray( //row
 
                 //auto sub_array = arrayElement(block.getByPosition(arguments[i]), sub_array_num+1, context);
                 //DUMP(sub_array);
-                ColumnWithTypeAndName ctwn {static_cast<IColumn*>(array), block.getByPosition(arguments[i]).type, ""};
-                array = checkAndGetColumn<ColumnArray>(arrayElement(ctwn, sub_array_num+1, context).get());
+                //ColumnWithTypeAndName ctwn {static_cast<IColumn*>(array), block.getByPosition(arguments[i]).type, ""};
+                //ColumnWithTypeAndName ctwn {std::move(array), block.getByPosition(arguments[i]).type, ""};
+                //ColumnWithTypeAndName ctwn {std::make_shared<ColumnPtr>(array), block.getByPosition(arguments[i]).type, ""};
+                //ColumnWithTypeAndName ctwn {ColumnPtr(array), block.getByPosition(arguments[i]).type, ""};
+                //ColumnWithTypeAndName ctwn {std::move(ColumnPtr(array)), block.getByPosition(arguments[i]).type, ""};
+
+                //ColumnPtr new_column_array(array->mutate());
+                //ColumnWithTypeAndName ctwn {new_column_array, block.getByPosition(arguments[i]).type, ""};
+                //ColumnWithTypeAndName ctwn;
+                //ctwn.column = array->getPtr();
+                //ctwn.column = ColumnPtr(array);
+                //ctwn.column = ColumnPtr(array->mutate());
+                //ctwn.type = block.getByPosition(arguments[i]).type;
+                ColumnWithTypeAndName ctwn {array->getPtr(), block.getByPosition(arguments[i]).type, ""};
+DUMP(ctwn, sub_array_num+1);
+                auto ae = arrayElement(ctwn, sub_array_num+1, context);
+                array = checkAndGetColumn<ColumnArray>(ae.get());
+                array_holders.emplace_back(ae);
+DUMP(!!array);
 DUMP(array);
 
              }
@@ -509,7 +543,8 @@ DUMP("no nested array");
 
         const ColumnArray::Offsets & offsets_i = array->getOffsets();
         //if (i == 0)
-        if (!data_columns.size())
+        //if (!data_columns.size())
+        if (!offsets)
         {
             offsets = &offsets_i;
             offsets_column = array->getOffsetsPtr();
@@ -746,7 +781,7 @@ DUMP(columns.size());
         for (size_t off : offsets)
         {
 DUMP(off);
-            if (depth == 2)
+            //if (depth == 2)
                 indices.clear();
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
@@ -780,7 +815,7 @@ DUMP(off, j, prev_off, res_values[j], idx);
         {
 DUMP(off);
             //?if (depth == 2)
-            //?    indices.clear();
+            indices.clear();
             UInt32 rank = 0;
             [[maybe_unused]] UInt32 null_index = 0;
             for (size_t j = prev_off; j < off; ++j)

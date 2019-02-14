@@ -74,7 +74,11 @@ std::ostream & operator<<(std::ostream & stream, const Block & what)
 std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & what)
 {
     stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << what.type << ", column = ";
+//    if (what.column)
     return dumpValue(stream, what.column) << ")";
+/*    else
+        stream << "nullptr" << ")";
+    return stream;*/
 }
 
 std::ostream & operator<<(std::ostream & stream, const IColumn & what)
