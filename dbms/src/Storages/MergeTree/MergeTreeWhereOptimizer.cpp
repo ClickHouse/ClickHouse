@@ -42,12 +42,14 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const MergeTreeData & data,
     const Names & column_names,
     Logger * log)
-        : primary_key_columns{ext::collection_cast<std::unordered_set>(data.primary_key_columns)},
-        table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
+        : table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
         log{log}
 {
+    if (!data.primary_key_columns.empty())
+        first_primary_key_column = data.primary_key_columns[0];
+
     calculateColumnSizes(data, column_names);
     auto & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
     determineArrayJoinedNames(select);
@@ -128,7 +130,7 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
         IdentifierNameSet identifiers{};
         collectIdentifiersNoSubqueries(condition, identifiers);
 
-        /// do not take into consideration the conditions consisting only of primary key columns
+        /// do not take into consideration the conditions consisting only of the first primary key column
         if (!hasPrimaryKeyAtoms(condition) && isSubsetOfTableColumns(identifiers))
         {
             /// calculate size of columns involved in condition
@@ -332,9 +334,9 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const IAST * const ast) const
         const auto & first_arg_name = args.front()->getColumnName();
         const auto & second_arg_name = args.back()->getColumnName();
 
-        if ((primary_key_columns.count(first_arg_name) && isConstant(args[1])) ||
-            (primary_key_columns.count(second_arg_name) && isConstant(args[0])) ||
-            (primary_key_columns.count(first_arg_name) && functionIsInOrGlobalInOperator(func->name)))
+        if ((first_primary_key_column == first_arg_name && isConstant(args[1]))
+            || (first_primary_key_column == second_arg_name && isConstant(args[0]))
+            || (first_primary_key_column == first_arg_name && functionIsInOrGlobalInOperator(func->name)))
             return true;
     }
 

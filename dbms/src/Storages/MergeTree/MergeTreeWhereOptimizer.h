@@ -72,10 +72,10 @@ private:
 
     void determineArrayJoinedNames(ASTSelectQuery & select);
 
-    using string_set_t = std::unordered_set<std::string>;
+    using StringSet = std::unordered_set<std::string>;
 
-    const string_set_t primary_key_columns;
-    const string_set_t table_columns;
+    String first_primary_key_column;
+    const StringSet table_columns;
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, size_t> column_sizes{};
