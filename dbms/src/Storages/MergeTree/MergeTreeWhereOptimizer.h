@@ -24,10 +24,8 @@ using IdentifierNameSet = std::set<std::string>;
  *  sizes of columns used in particular expression and identifying "good" conditions of
  *  form "column_name = constant", where "constant" is outside some `threshold` specified in advance.
  *
- *  If there are "good" conditions present in WHERE, the one with minimal summary column size is
- *  transferred to PREWHERE.
- *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE, if only
- *  its relative size (summary column size divided by query column size) is less than `max_columns_relative_size`.
+ *  If there are "good" conditions present in WHERE, the one with minimal summary column size is transferred to PREWHERE.
+ *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE.
  */
 class MergeTreeWhereOptimizer : private boost::noncopyable
 {
@@ -79,7 +77,6 @@ private:
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, size_t> column_sizes{};
-    size_t total_column_size{};
     NameSet array_joined_names;
 };
 
