@@ -117,6 +117,6 @@ private:
 
 #if !USE_PROTOBUF
 #   undef EMPTY_DEF
-#   undef EMPTY_DEF_RET(a)
+#   undef EMPTY_DEF_RET
 #   pragma GCC diagnostic pop
 #endif

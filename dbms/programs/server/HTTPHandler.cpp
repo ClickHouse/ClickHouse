@@ -405,10 +405,12 @@ void HTTPHandler::processQuery(
         {
             in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, ZlibCompressionMethod::Zlib);
         }
+#if USE_BROTLI
         else if (http_request_compression_method_str == "br")
         {
             in_post = std::make_unique<BrotliReadBuffer>(*in_post_raw);
         }
+#endif
         else
         {
             throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
