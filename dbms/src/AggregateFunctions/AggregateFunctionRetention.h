@@ -76,6 +76,7 @@ public:
     }
 
     AggregateFunctionRetention(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<AggregateFunctionRetentionData, AggregateFunctionRetention>(arguments, {})
     {
         for (const auto i : ext::range(0, arguments.size()))
         {

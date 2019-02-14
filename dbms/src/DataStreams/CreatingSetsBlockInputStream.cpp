@@ -120,17 +120,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_join)
         {
-            for (const auto & name_with_alias : subquery.joined_block_aliases)
-            {
-                if (block.has(name_with_alias.first))
-                {
-                    auto pos = block.getPositionByName(name_with_alias.first);
-                    auto column = block.getByPosition(pos);
-                    block.erase(pos);
-                    column.name = name_with_alias.second;
-                    block.insert(std::move(column));
-                }
-            }
+            subquery.renameColumns(block);
 
             if (subquery.joined_block_actions)
                 subquery.joined_block_actions->execute(block);

@@ -86,7 +86,7 @@ bool TabSeparatedRowInputStream::read(MutableColumns & columns, RowReadExtension
 
     for (size_t i = 0; i < size; ++i)
     {
-        data_types[i]->deserializeTextEscaped(*columns[i], istr, format_settings);
+        data_types[i]->deserializeAsTextEscaped(*columns[i], istr, format_settings);
 
         /// skip separators
         if (i + 1 == size)
@@ -183,7 +183,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns &
 
         try
         {
-            data_types[i]->deserializeTextEscaped(*columns[i], istr, format_settings);
+            data_types[i]->deserializeAsTextEscaped(*columns[i], istr, format_settings);
         }
         catch (...)
         {
@@ -331,7 +331,7 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             ReadBuffer & buf,
             const Block & sample,
             const Context &,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
@@ -346,7 +346,7 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             ReadBuffer & buf,
             const Block & sample,
             const Context &,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
@@ -361,7 +361,7 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             ReadBuffer & buf,
             const Block & sample,
             const Context &,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(

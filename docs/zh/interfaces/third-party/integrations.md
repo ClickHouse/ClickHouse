@@ -34,6 +34,8 @@
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
 - 记录
+    - [rsyslog](https://www.rsyslog.com/)
+        - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (对于 [Kubernetes](https://kubernetes.io))
 

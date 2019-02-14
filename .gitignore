@@ -243,3 +243,5 @@ website/package-lock.json
 
 # ccls cache
 /.ccls-cache
+
+/compile_commands.json

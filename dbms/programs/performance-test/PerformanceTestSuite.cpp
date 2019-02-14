@@ -11,12 +11,13 @@
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 
-#include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Logger.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
+#include <Poco/Logger.h>
+#include <Poco/Path.h>
 #include <Poco/PatternFormatter.h>
-
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <common/logger_useful.h>
 #include <Client/Connection.h>
@@ -25,7 +26,6 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/Settings.h>
-#include <Poco/AutoPtr.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
 
@@ -70,6 +70,7 @@ public:
         Strings && skip_names_,
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
+        const std::unordered_map<std::string, std::vector<size_t>> query_indexes_,
         const ConnectionTimeouts & timeouts)
         : connection(host_, port_, default_database_, user_,
             password_, timeouts, "performance-test", Protocol::Compression::Enable,
@@ -80,6 +81,7 @@ public:
         , skip_tags(std::move(skip_tags_))
         , skip_names(std::move(skip_names_))
         , skip_names_regexp(std::move(skip_names_regexp_))
+        , query_indexes(query_indexes_)
         , lite_output(lite_output_)
         , profiles_file(profiles_file_)
         , input_files(input_files_)
@@ -128,6 +130,7 @@ private:
     const Strings & skip_tags;
     const Strings & skip_names;
     const Strings & skip_names_regexp;
+    std::unordered_map<std::string, std::vector<size_t>> query_indexes;
 
     Context global_context = Context::createGlobal();
     std::shared_ptr<ReportBuilder> report_builder;
@@ -167,11 +170,13 @@ private:
             for (auto & test_config : tests_configurations)
             {
                 auto [output, signal] = runTest(test_config);
-                if (lite_output)
-                    std::cout << output;
-                else
-                    outputs.push_back(output);
-
+                if (!output.empty())
+                {
+                    if (lite_output)
+                        std::cout << output;
+                    else
+                        outputs.push_back(output);
+                }
                 if (signal)
                     break;
             }
@@ -198,21 +203,34 @@ private:
     {
         PerformanceTestInfo info(test_config, profiles_file);
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
-        PerformanceTest current(test_config, connection, interrupt_listener, info, global_context);
+        PerformanceTest current(test_config, connection, interrupt_listener, info, global_context, query_indexes[info.path]);
 
-        current.checkPreconditions();
-        LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
+        if (current.checkPreconditions())
+        {
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
+            LOG_INFO(
+                log,
+                "Preparing for run, have " << info.create_queries.size() << " create queries and " << info.fill_queries.size()
+                                           << " fill queries");
+            current.prepare();
+            LOG_INFO(log, "Prepared");
+            LOG_INFO(log, "Running test '" << info.test_name << "'");
+            auto result = current.execute();
+            LOG_INFO(log, "Test '" << info.test_name << "' finished");
 
-        LOG_INFO(log, "Running test '" << info.test_name << "'");
-        auto result = current.execute();
-        LOG_INFO(log, "Test '" << info.test_name << "' finished");
-
-        if (lite_output)
-            return {report_builder->buildCompactReport(info, result), current.checkSIGINT()};
+            LOG_INFO(log, "Running post run queries");
+            current.finish();
+            LOG_INFO(log, "Postqueries finished");
+            if (lite_output)
+                return {report_builder->buildCompactReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+            else
+                return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+        }
         else
-            return {report_builder->buildFullReport(info, result), current.checkSIGINT()};
-    }
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");
 
+        return {"", current.checkSIGINT()};
+    }
 };
 
 }
@@ -282,6 +300,29 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
     return input_files;
 }
 
+std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(const po::basic_parsed_options<char> & parsed_opts)
+{
+    std::unordered_map<std::string, std::vector<std::size_t>> result;
+    const auto & options = parsed_opts.options;
+    for (size_t i = 0; i < options.size() - 1; ++i)
+    {
+        const auto & opt = options[i];
+        if (opt.string_key == "input-files")
+        {
+            if (options[i + 1].string_key == "query-indexes")
+            {
+                const std::string & test_path = Poco::Path(opt.value[0]).absolute().toString();
+                for (const auto & query_num_str : options[i + 1].value)
+                {
+                    size_t query_num = std::stoul(query_num_str);
+                    result[test_path].push_back(query_num);
+                }
+            }
+        }
+    }
+    return result;
+}
+
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try
 {
@@ -307,24 +348,18 @@ try
         ("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")
         ("names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")
         ("skip-names-regexp", value<Strings>()->multitoken(), "Do not run tests with names matching regexp")
+        ("input-files", value<Strings>()->multitoken(), "Input .xml files")
+        ("query-indexes", value<std::vector<size_t>>()->multitoken(), "Input query indexes")
         ("recursive,r", "Recurse in directories to find all xml's");
 
-    /// These options will not be displayed in --help
-    po::options_description hidden("Hidden options");
-    hidden.add_options()
-        ("input-files", value<std::vector<std::string>>(), "");
-
-    /// But they will be legit, though. And they must be given without name
-    po::positional_options_description positional;
-    positional.add("input-files", -1);
-
     po::options_description cmdline_options;
-    cmdline_options.add(desc).add(hidden);
+    cmdline_options.add(desc);
 
     po::variables_map options;
-    po::store(
-        po::command_line_parser(argc, argv).
-        options(cmdline_options).positional(positional).run(), options);
+    po::basic_parsed_options<char> parsed = po::command_line_parser(argc, argv).options(cmdline_options).run();
+    auto queries_with_indexes = getTestQueryIndexes(parsed);
+    po::store(parsed, options);
+
     po::notify(options);
 
     Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter("%Y.%m.%d %H:%M:%S.%F <%p> %s: %t"));
@@ -371,6 +406,7 @@ try
         std::move(skip_names),
         std::move(tests_names_regexp),
         std::move(skip_names_regexp),
+        queries_with_indexes,
         timeouts);
     return performance_test_suite.run();
 }

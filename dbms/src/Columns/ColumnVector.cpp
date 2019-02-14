@@ -12,11 +12,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
+#include <pdqsort.h>
 
 #ifdef __SSE2__
     #include <emmintrin.h>
-#include <Columns/ColumnsCommon.h>
-
 #endif
 
 
@@ -70,7 +69,7 @@ struct ColumnVector<T>::greater
 };
 
 template <typename T>
-void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+void ColumnVector<T>::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t s = data.size();
     res.resize(s);
@@ -90,9 +89,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     else
     {
         if (reverse)
-            std::sort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+            pdqsort(res.begin(), res.end(), greater(*this, nan_direction_hint));
         else
-            std::sort(res.begin(), res.end(), less(*this, nan_direction_hint));
+            pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
     }
 }
 
@@ -210,7 +209,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
+ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, UInt64 limit) const
 {
     size_t size = data.size();
 
@@ -231,7 +230,7 @@ ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t lim
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnVector<T>::index(const IColumn & indexes, UInt64 limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }

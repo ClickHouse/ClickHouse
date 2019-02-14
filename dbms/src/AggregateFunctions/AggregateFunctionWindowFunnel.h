@@ -189,6 +189,7 @@ public:
     }
 
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionWindowFunnelData, AggregateFunctionWindowFunnel>(arguments, params)
     {
         const auto time_arg = arguments.front().get();
         if (!WhichDataType(time_arg).isDateTime() && !WhichDataType(time_arg).isUInt32())
