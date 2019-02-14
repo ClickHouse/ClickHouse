@@ -2036,6 +2036,9 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     if (source_replica.empty())
         throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
 
+    /// Clear obsolete queue that we no longer need.
+    zookeeper->removeChildren(replica_path + "/queue");
+
     /// Will do repair from the selected replica.
     cloneReplica(source_replica, source_is_lost_stat, zookeeper);
     /// If repair fails to whatever reason, the exception is thrown, is_lost will remain "1" and the replica will be repaired later.
