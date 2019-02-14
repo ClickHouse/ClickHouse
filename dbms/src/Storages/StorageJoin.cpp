@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Poco/String.h>    /// toLower
@@ -32,7 +32,8 @@ StorageJoin::StorageJoin(
     SizeLimits limits_,
     ASTTableJoin::Kind kind_,
     ASTTableJoin::Strictness strictness_,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    bool overwrite)
     : StorageSetOrJoinBase{path_, name_, columns_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
@@ -44,7 +45,7 @@ StorageJoin::StorageJoin(
         if (!getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness);
+    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness, overwrite);
     join->setSampleBlock(getSampleBlock().sortColumns());
     restore();
 }
@@ -133,6 +134,7 @@ void registerStorageJoin(StorageFactory & factory)
         auto max_rows_in_join = settings.max_rows_in_join;
         auto max_bytes_in_join = settings.max_bytes_in_join;
         auto join_overflow_mode = settings.join_overflow_mode;
+        auto join_any_take_last_row = settings.join_any_take_last_row;
 
         if (args.storage_def && args.storage_def->settings)
         {
@@ -146,6 +148,8 @@ void registerStorageJoin(StorageFactory & factory)
                     max_bytes_in_join.set(setting.value);
                 else if (setting.name == "join_overflow_mode")
                     join_overflow_mode.set(setting.value);
+                else if (setting.name == "join_any_take_last_row")
+                    join_any_take_last_row.set(setting.value);
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,
@@ -161,7 +165,8 @@ void registerStorageJoin(StorageFactory & factory)
             SizeLimits{max_rows_in_join.value, max_bytes_in_join.value, join_overflow_mode.value},
             kind,
             strictness,
-            args.columns);
+            args.columns,
+            join_any_take_last_row);
     });
 }
 
@@ -186,10 +191,10 @@ size_t rawSize(const StringRef & t)
     return t.size;
 }
 
-class JoinBlockInputStream : public IProfilingBlockInputStream
+class JoinBlockInputStream : public IBlockInputStream
 {
 public:
-    JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block && sample_block_)
+    JoinBlockInputStream(const Join & parent_, UInt64 max_block_size_, Block && sample_block_)
         : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block_))
     {
         columns.resize(sample_block.columns());
@@ -223,18 +228,18 @@ protected:
         if (parent.blocks.empty())
             return Block();
 
-        if (parent.strictness == ASTTableJoin::Strictness::Any)
-            return createBlock<ASTTableJoin::Strictness::Any>(parent.maps_any);
-        else if (parent.strictness == ASTTableJoin::Strictness::All)
-            return createBlock<ASTTableJoin::Strictness::All>(parent.maps_all);
+        Block block;
+        if (parent.dispatch([&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
+            ;
         else
             throw Exception("Logical error: unknown JOIN strictness (must be ANY or ALL)", ErrorCodes::LOGICAL_ERROR);
+        return block;
     }
 
 private:
     const Join & parent;
     std::shared_lock<std::shared_mutex> lock;
-    size_t max_block_size;
+    UInt64 max_block_size;
     Block sample_block;
 
     ColumnNumbers column_indices;
@@ -357,7 +362,7 @@ BlockInputStreams StorageJoin::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned /*num_streams*/)
 {
     check(column_names);

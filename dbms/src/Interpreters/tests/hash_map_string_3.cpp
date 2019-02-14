@@ -325,7 +325,7 @@ struct FarmHash64
 
 
 template <void metrohash64(const uint8_t * key, uint64_t len, uint32_t seed, uint8_t * out)>
-struct MetroHash64
+struct SMetroHash64
 {
     size_t operator() (StringRef x) const
     {
@@ -507,8 +507,8 @@ int main(int argc, char ** argv)
 
     if (!m || m == 8) bench<StringRef, VerySimpleHash> (data, "StringRef_VerySimpleHash");
     if (!m || m == 9) bench<StringRef, FarmHash64>     (data, "StringRef_FarmHash64");
-    if (!m || m == 10) bench<StringRef, MetroHash64<metrohash64_1>>(data, "StringRef_MetroHash64_1");
-    if (!m || m == 11) bench<StringRef, MetroHash64<metrohash64_2>>(data, "StringRef_MetroHash64_2");
+    if (!m || m == 10) bench<StringRef, SMetroHash64<metrohash64_1>>(data, "StringRef_MetroHash64_1");
+    if (!m || m == 11) bench<StringRef, SMetroHash64<metrohash64_2>>(data, "StringRef_MetroHash64_2");
 
     return 0;
 }

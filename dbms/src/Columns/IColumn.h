@@ -43,7 +43,7 @@ public:
     virtual const char * getFamilyName() const = 0;
 
     /** If column isn't constant, returns nullptr (or itself).
-      * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
+      * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
       */
     virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
 
@@ -149,7 +149,7 @@ public:
     virtual void insertDefault() = 0;
 
     /** Removes last n elements.
-      * Is used to support exeption-safety of several operations.
+      * Is used to support exception-safety of several operations.
       *  For example, sometimes insertion should be reverted if we catch an exception during operation processing.
       * If column has less than n elements or n == 0 - undefined behavior.
       */
@@ -184,11 +184,11 @@ public:
     /// Permutes elements using specified permutation. Is used in sortings.
     /// limit - if it isn't 0, puts only first limit elements in the result.
     using Permutation = PaddedPODArray<size_t>;
-    virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
+    virtual Ptr permute(const Permutation & perm, UInt64 limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
     /// Indexes must be one of the ColumnUInt. For default implementation, see selectIndexImpl from ColumnsCommon.h
-    virtual Ptr index(const IColumn & indexes, size_t limit) const = 0;
+    virtual Ptr index(const IColumn & indexes, UInt64 limit) const = 0;
 
     /** Compares (*this)[n] and rhs[m]. Column rhs should have the same type.
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
@@ -209,7 +209,7 @@ public:
       * limit - if isn't 0, then only first limit elements of the result column could be sorted.
       * nan_direction_hint - see above.
       */
-    virtual void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const = 0;
+    virtual void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const = 0;
 
     /** Copies each element according offsets parameter.
       * (i-th element should be copied offsets[i] - offsets[i - 1] times.)
@@ -234,8 +234,8 @@ public:
     virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
 
     /** Computes minimum and maximum element of the column.
-      * In addition to numeric types, the funtion is completely implemented for Date and DateTime.
-      * For strings and arrays function should retrurn default value.
+      * In addition to numeric types, the function is completely implemented for Date and DateTime.
+      * For strings and arrays function should return default value.
       *  (except for constant columns; they should return value of the constant).
       * If column is empty function should return default value.
       */

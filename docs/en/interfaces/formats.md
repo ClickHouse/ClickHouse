@@ -14,7 +14,6 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
 | [Values](#values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
-| [VerticalRaw](#verticalraw) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
 | [JSONCompact](#jsoncompact) | ✗ | ✔ |
 | [JSONEachRow](#jsoneachrow) | ✔ | ✔ |
@@ -324,7 +323,7 @@ Outputs data as separate JSON objects for each row (newline delimited JSON).
 
 Unlike the JSON format, there is no substitution of invalid UTF-8 sequences. Any set of bytes can be output in the rows. This is necessary so that data can be formatted without losing any information. Values are escaped in the same way as for JSON.
 
-For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults. Whitespace between elements is ignored. If a comma is placed after the objects, it is ignored. Objects don't necessarily have to be separated by new lines.
+For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults, but it can be turned on by option `insert_sample_with_metadata=1`. Whitespace between elements is ignored. If a comma is placed after the objects, it is ignored. Objects don't necessarily have to be separated by new lines.
 
 ## Native {#native}
 
@@ -345,6 +344,8 @@ Each result block is output as a separate table. This is necessary so that block
 
 [NULL](../query_language/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
+Example (shown for the [PrettyCompact](#prettycompact) format):
+
 ``` sql
 SELECT * FROM t_null
 ```
@@ -355,10 +356,22 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
+Rows are not escaped in Pretty* formats. Example is shown for the [PrettyCompact](#prettycompact) format:
+
+``` sql
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+```
+
+``` 
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and 	 character │
+└──────────────────────────────────────┘
+```
+
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message "Showed first 10 000" is printed.
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the PrettyCompact format):
+The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the [PrettyCompact](#prettycompact) format):
 
 ``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
@@ -389,7 +402,7 @@ Extremes:
 
 ## PrettyCompact {#prettycompact}
 
-Differs from `Pretty` in that the grid is drawn between rows and the result is more compact.
+Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
 This format is used by default in the command-line client in interactive mode.
 
 ## PrettyCompactMonoBlock {#prettycompactmonoblock}
@@ -435,6 +448,13 @@ Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.
 
 For [NULL](../query_language/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../data_types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
+## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
+
+Similar to [RowBinary](#rowbinary), but with added header:
+* [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+* N `String`s specifying column names
+* N `String`s specifying column types
+
 ## Values
 
 Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md) is represented as `NULL`.
@@ -461,37 +481,20 @@ Row 1:
 x: 1
 y: ᴺᵁᴸᴸ
 ```
+Rows are not escaped in Vertical format: 
 
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-## VerticalRaw {#verticalraw}
-
-Differs from `Vertical` format in that the rows are not escaped.
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-Examples:
+``` sql
+SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+```
 
 ```
-:) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
 Row 1:
 ──────
-statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
-
-:) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
-Row 1:
-──────
-test: string with 'quotes' and   with some special
+test: string with 'quotes' and 	 with some special
  characters
 ```
 
-Compare with the Vertical format:
-
-```
-:) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
-Row 1:
-──────
-test: string with \'quotes\' and \t with some special \n characters
-```
+This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
 ## XML {#xml}
 

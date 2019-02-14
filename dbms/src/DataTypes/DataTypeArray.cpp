@@ -100,7 +100,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 
 namespace
 {
-    void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit)
+    void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
     {
         const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
         const ColumnArray::Offsets & offset_values = column_array.getOffsets();
@@ -122,7 +122,7 @@ namespace
         }
     }
 
-    void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & istr, size_t limit)
+    void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & istr, UInt64 limit)
     {
         ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
         ColumnArray::Offsets & offset_values = column_array.getOffsets();
@@ -188,7 +188,7 @@ void DataTypeArray::deserializeBinaryBulkStatePrefix(
 void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
-    size_t limit,
+    UInt64 limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -234,7 +234,7 @@ void DataTypeArray::serializeBinaryBulkWithMultipleStreams(
 
 void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t limit,
+    UInt64 limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -350,7 +350,7 @@ void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteB
     serializeTextImpl(column, row_num, ostr,
         [&](const IColumn & nested_column, size_t i)
         {
-            nested->serializeTextQuoted(nested_column, i, ostr, settings);
+            nested->serializeAsTextQuoted(nested_column, i, ostr, settings);
         });
 }
 
@@ -360,7 +360,7 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr, const F
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            nested->deserializeTextQuoted(nested_column, istr, settings);
+            nested->deserializeAsTextQuoted(nested_column, istr, settings);
         });
 }
 
@@ -379,7 +379,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     {
         if (i != offset)
             writeChar(',', ostr);
-        nested->serializeTextJSON(nested_column, i, ostr, settings);
+        nested->serializeAsTextJSON(nested_column, i, ostr, settings);
     }
     writeChar(']', ostr);
 }
@@ -387,7 +387,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 
 void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr, settings); });
+    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeAsTextJSON(nested_column, istr, settings); });
 }
 
 
@@ -405,7 +405,7 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
     for (size_t i = offset; i < next_offset; ++i)
     {
         writeCString("<elem>", ostr);
-        nested->serializeTextXML(nested_column, i, ostr, settings);
+        nested->serializeAsTextXML(nested_column, i, ostr, settings);
         writeCString("</elem>", ostr);
     }
     writeCString("</array>", ostr);
@@ -427,6 +427,18 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     readCSV(s, istr, settings.csv);
     ReadBufferFromString rb(s);
     deserializeText(column, rb, settings);
+}
+
+
+void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+    size_t offset = offsets[row_num - 1];
+    size_t next_offset = offsets[row_num];
+    const IColumn & nested_column = column_array.getData();
+    for (size_t i = offset; i < next_offset; ++i)
+        nested->serializeProtobuf(nested_column, i, protobuf);
 }
 
 

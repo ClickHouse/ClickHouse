@@ -7,6 +7,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 
 
 namespace DB
@@ -178,7 +179,7 @@ void DataTypeNumberBase<T>::deserializeBinary(IColumn & column, ReadBuffer & ist
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
 
@@ -192,7 +193,7 @@ void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuf
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double /*avg_value_size_hint*/) const
 {
     typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
     size_t initial_size = x.size();
@@ -200,6 +201,14 @@ void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer &
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::value_type) * limit);
     x.resize(initial_size + size / sizeof(typename ColumnVector<T>::value_type));
 }
+
+
+template <typename T>
+void DataTypeNumberBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeNumber(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+}
+
 
 template <typename T>
 MutableColumnPtr DataTypeNumberBase<T>::createColumn() const

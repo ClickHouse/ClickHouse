@@ -1,7 +1,7 @@
 
 # GraphiteMergeTree
 
-This engine is designed for rollup (thinning and aggregating/averaging) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
+This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
 You can use any ClickHouse table engine to store the Graphite data if you don't need rollup, but if you need a rollup use `GraphiteMergeTree`. The engine reduces the volume of storage and increases the efficiency of queries from Graphite.
 
@@ -29,9 +29,9 @@ For a description of request parameters, see [request description](../../query_l
 A table for the Graphite date should have the following columns:
 
 - Column with the metric name (Graphite sensor). Data type: `String`.
-- Column with the time for measuring the metric. Data type: `DateTime`.
+- Column with the time of measuring the metric. Data type: `DateTime`.
 - Column with the value of the metric. Data type: any numeric.
-- Column with the version of the metric with the same name and time of measurement. Data type: any numeric.
+- Column with the version of the metric. Data type: any numeric.
 
     ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts.
 
@@ -43,7 +43,7 @@ The names of these columns should be set in the rollup configuration.
 
 **Query clauses**
 
-When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
@@ -69,7 +69,7 @@ All of the parameters excepting `config_section` have the same meaning as in `Me
 
 ## Rollup configuration
 
-The settings for rollup are defined by the [graphite_rollup](../server_settings/settings.md) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
+The settings for rollup are defined by the [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
 
 Rollup configuration structure:
 
@@ -102,10 +102,9 @@ Fields for `pattern` and `default` sections:
 The `required-columns`:
 
 - `path_column_name` — Column with the metric name (Graphite sensor).
-- `time_column_name` — Column with the time for measuring the metric.
+- `time_column_name` — Column with the time of measuring the metric.
 - `value_column_name` — Column with the value of the metric at the time set in `time_column_name`.
-- `version_column_name` — Column with the version timestamp of the metric with the same name and time remains in the database.
-
+- `version_column_name` — Column with the version of the metric.
 
 Example of settings:
 

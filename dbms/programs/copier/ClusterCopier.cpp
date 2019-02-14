@@ -18,7 +18,7 @@
 #include <pcg_random.hpp>
 
 #include <common/logger_useful.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <daemon/OwnPatternFormatter.h>
 
 #include <Common/Exception.h>
@@ -67,7 +67,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
-#include <daemon/OwnPatternFormatter.h>
 
 
 namespace DB
@@ -817,7 +816,7 @@ public:
 
             try
             {
-                type->deserializeTextQuoted(*column_dummy, rb, FormatSettings());
+                type->deserializeAsTextQuoted(*column_dummy, rb, FormatSettings());
             }
             catch (Exception & e)
             {
@@ -1179,7 +1178,7 @@ protected:
     /// Removes MATERIALIZED and ALIAS columns from create table query
     static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
     {
-        const ASTs & column_asts = typeid_cast<ASTCreateQuery &>(*query_ast).columns->children;
+        const ASTs & column_asts = typeid_cast<ASTCreateQuery &>(*query_ast).columns_list->columns->children;
         auto new_columns = std::make_shared<ASTExpressionList>();
 
         for (const ASTPtr & column_ast : column_asts)
@@ -1198,8 +1197,13 @@ protected:
 
         ASTPtr new_query_ast = query_ast->clone();
         ASTCreateQuery & new_query = typeid_cast<ASTCreateQuery &>(*new_query_ast);
-        new_query.columns = new_columns.get();
-        new_query.children.at(0) = std::move(new_columns);
+
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        new_columns_list->set(new_columns_list->columns, new_columns);
+        new_columns_list->set(
+                new_columns_list->indices, typeid_cast<ASTCreateQuery &>(*query_ast).columns_list->indices->clone());
+
+        new_query.replace(new_query.columns_list, new_columns_list);
 
         return new_query_ast;
     }
@@ -1217,7 +1221,7 @@ protected:
         res->table = new_table.second;
 
         res->children.clear();
-        res->set(res->columns, create.columns->clone());
+        res->set(res->columns_list, create.columns_list->clone());
         res->set(res->storage, new_storage_ast->clone());
 
         return res;
@@ -1877,7 +1881,7 @@ protected:
             for (size_t i = 0; i < column.column->size(); ++i)
             {
                 WriteBufferFromOwnString wb;
-                column.type->serializeTextQuoted(*column.column, i, wb, FormatSettings());
+                column.type->serializeAsTextQuoted(*column.column, i, wb, FormatSettings());
                 res.emplace(wb.str());
             }
         }

@@ -24,8 +24,6 @@ public:
         const DictionaryLifetime dict_lifetime,
         bool require_nonempty);
 
-    RangeHashedDictionary(const RangeHashedDictionary & other);
-
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
     std::string getName() const override { return dictionary_name; }
@@ -44,7 +42,10 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<RangeHashedDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override
+    {
+        return std::make_unique<RangeHashedDictionary>(dictionary_name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -92,7 +93,7 @@ public:
         const PaddedPODArray<RangeStorageType> & dates,
         ColumnString * out) const;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, UInt64 max_block_size) const override;
 
     struct Range
     {
@@ -209,7 +210,7 @@ private:
         PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename RangeType>
-    BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
+    BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, UInt64 max_block_size) const;
 
     friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
 

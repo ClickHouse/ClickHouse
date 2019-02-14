@@ -9,6 +9,7 @@
 #include <Common/AlignedBuffer.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -31,7 +32,7 @@ namespace ErrorCodes
 }
 
 
-std::string DataTypeAggregateFunction::getName() const
+std::string DataTypeAggregateFunction::doGetName() const
 {
     std::stringstream stream;
     stream << "AggregateFunction(" << function->getName();
@@ -99,7 +100,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
     column_concrete.getData().push_back(place);
 }
 
-void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
     const ColumnAggregateFunction::Container & vec = real_column.getData();
@@ -114,7 +115,7 @@ void DataTypeAggregateFunction::serializeBinaryBulk(const IColumn & column, Writ
         function->serialize(*it, ostr);
 }
 
-void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
+void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double /*avg_value_size_hint*/) const
 {
     ColumnAggregateFunction & real_column = typeid_cast<ColumnAggregateFunction &>(column);
     ColumnAggregateFunction::Container & vec = real_column.getData();
@@ -248,6 +249,12 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 }
 
 
+void DataTypeAggregateFunction::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeAggregateFunction(function, static_cast<const ColumnAggregateFunction &>(column).getData()[row_num]);
+}
+
+
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
     return ColumnAggregateFunction::create(function);
@@ -257,7 +264,8 @@ MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 /// Create empty state
 Field DataTypeAggregateFunction::getDefault() const
 {
-    Field field = String();
+    Field field = AggregateFunctionStateData();
+    field.get<AggregateFunctionStateData &>().name = getName();
 
     AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
@@ -266,7 +274,7 @@ Field DataTypeAggregateFunction::getDefault() const
 
     try
     {
-        WriteBufferFromString buffer_from_field(field.get<String &>());
+        WriteBufferFromString buffer_from_field(field.get<AggregateFunctionStateData &>().data);
         function->serialize(place, buffer_from_field);
     }
     catch (...)

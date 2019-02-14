@@ -36,10 +36,10 @@ SELECT sleep(2) FORMAT Null;
 
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';
-SELECT name FROM system.parts WHERE database = 'test' AND table = 'part_header_r1';
+SELECT name FROM system.parts WHERE active AND database = 'test' AND table = 'part_header_r1';
 SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/test/part_header/replicas/1/parts';
 SELECT '*** replica 2 ***';
-SELECT name FROM system.parts WHERE database = 'test' AND table = 'part_header_r2';
+SELECT name FROM system.parts WHERE active AND database = 'test' AND table = 'part_header_r2';
 SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/test/part_header/replicas/1/parts';
 
 SELECT '*** Test ALTER ***';

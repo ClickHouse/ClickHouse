@@ -11,6 +11,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/DumpASTNode.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 namespace DB
 {
@@ -99,8 +100,7 @@ private:
     /// @note It expects that only table (not column) identifiers are visited.
     void visit(const ASTIdentifier & identifier, ASTPtr & ast) const
     {
-        DatabaseAndTableWithAlias db_and_name(identifier);
-        if (db_and_name.database.empty())
+        if (!identifier.compound())
             ast = createTableIdentifier(database_name, identifier.name);
     }
 

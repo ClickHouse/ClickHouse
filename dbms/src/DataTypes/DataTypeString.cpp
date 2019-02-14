@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -21,7 +22,6 @@
 
 namespace DB
 {
-
 
 void DataTypeString::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
@@ -78,7 +78,7 @@ void DataTypeString::deserializeBinary(IColumn & column, ReadBuffer & istr) cons
 }
 
 
-void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
 {
     const ColumnString & column_string = typeid_cast<const ColumnString &>(column);
     const ColumnString::Chars & data = column_string.getChars();
@@ -111,7 +111,7 @@ void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & o
 
 
 template <int UNROLL_TIMES>
-static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, size_t limit)
+static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnString::Offsets & offsets, ReadBuffer & istr, UInt64 limit)
 {
     size_t offset = data.size();
     for (size_t i = 0; i < limit; ++i)
@@ -129,7 +129,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         if (size)
         {
-#ifdef __SSE2__
+#ifdef __x86_64__
             /// An optimistic branch in which more efficient copying is possible.
             if (offset + 16 * UNROLL_TIMES <= data.allocated_bytes() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
             {
@@ -171,7 +171,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 }
 
 
-void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const
+void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double avg_value_size_hint) const
 {
     ColumnString & column_string = typeid_cast<ColumnString &>(column);
     ColumnString::Chars & data = column_string.getChars();
@@ -304,6 +304,12 @@ void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, con
 }
 
 
+void DataTypeString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeString(static_cast<const ColumnString &>(column).getDataAt(row_num));
+}
+
+
 MutableColumnPtr DataTypeString::createColumn() const
 {
     return ColumnString::create();
@@ -322,7 +328,7 @@ void registerDataTypeString(DataTypeFactory & factory)
 
     factory.registerSimpleDataType("String", creator);
 
-    /// These synonims are added for compatibility.
+    /// These synonyms are added for compatibility.
 
     factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("VARCHAR", "String", DataTypeFactory::CaseInsensitive);

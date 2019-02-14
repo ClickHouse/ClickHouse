@@ -1,9 +1,8 @@
-# Functions for searching strings
+# Functions for Searching Strings
 
-The search is case-sensitive in all these functions.
-The search substring or regular expression must be a constant in all these functions.
+The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle)
+## position(haystack, needle), locate(haystack, needle)
 
 Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
@@ -15,6 +14,24 @@ For a case-insensitive search, use the function `positionCaseInsensitive`.
 The same as `position`, but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 
 For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
+
+## multiPosition(haystack, [needle_1, needle_2, ..., needle_n])
+
+The same as `position`, but returns `Array` of the `position`s for all `needle_i`.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiPositionCaseInsensitive, multiPositionUTF8, multiPositionCaseInsensitiveUTF8`.
+
+## firstMatch(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns the index `i` (starting from 1) of the first found `needle_i` in the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `firstMatchCaseInsensitive, firstMatchUTF8, firstMatchCaseInsensitiveUTF8`.
+
+## multiSearch(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns 1, if at least one string `needle_i` matches the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchCaseInsensitive, multiSearchUTF8, multiSearchCaseInsensitiveUTF8`.
 
 ## match(haystack, pattern)
 

@@ -9,11 +9,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <boost/algorithm/string.hpp>
-#include <Common/Exception.h>
-#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -66,4 +66,5 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
 
     return storage;
 }
+
 }

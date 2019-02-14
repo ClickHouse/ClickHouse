@@ -20,7 +20,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
@@ -53,7 +53,7 @@ namespace ErrorCodes
 }
 
 
-class TinyLogBlockInputStream final : public IProfilingBlockInputStream
+class TinyLogBlockInputStream final : public IBlockInputStream
 {
 public:
     TinyLogBlockInputStream(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
@@ -100,7 +100,7 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
-    void readData(const String & name, const IDataType & type, IColumn & column, size_t limit);
+    void readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit);
 };
 
 
@@ -135,9 +135,9 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t max_compress_block_size) :
+        Stream(const std::string & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
             plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size)
+            compressed(plain, std::move(codec), max_compress_block_size)
         {
         }
 
@@ -214,7 +214,7 @@ Block TinyLogBlockInputStream::readImpl()
 }
 
 
-void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t limit)
+void TinyLogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, UInt64 limit)
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
     settings.getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
@@ -244,8 +244,10 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const
         if (!written_streams.insert(stream_name).second)
             return nullptr;
 
+        const auto & columns = storage.getColumns();
         if (!streams.count(stream_name))
             streams[stream_name] = std::make_unique<Stream>(storage.files[stream_name].data_file.path(),
+                                                            columns.getCodecOrDefault(name),
                                                             storage.max_compress_block_size);
 
         return &streams[stream_name]->compressed;
@@ -386,7 +388,7 @@ BlockInputStreams StorageTinyLog::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned /*num_streams*/)
 {
     check(column_names);

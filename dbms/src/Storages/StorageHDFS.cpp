@@ -8,13 +8,12 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadBufferFromHDFS.h>
+#include <IO/WriteBufferFromHDFS.h>
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <Poco/Path.h>
-#include <Common/parseRemoteDescription.h>
 
 
 namespace DB
@@ -30,94 +29,101 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const std::string & table_name_,
     const String & format_name_,
     const ColumnsDescription & columns_,
-    Context &)
-    : IStorage(columns_), uri(uri_), format_name(format_name_), table_name(table_name_)
+    Context & context_)
+    : IStorage(columns_)
+    , uri(uri_)
+    , format_name(format_name_)
+    , table_name(table_name_)
+    , context(context_)
 {
 }
 
 namespace
 {
-    class HDFSBlockInputStream : public IProfilingBlockInputStream
+
+class HDFSBlockInputStream : public IBlockInputStream
+{
+public:
+    HDFSBlockInputStream(const String & uri,
+        const String & format,
+        const Block & sample_block,
+        const Context & context,
+        UInt64 max_block_size)
     {
-    public:
-        HDFSBlockInputStream(const String & uri,
-            const String & format,
-            const Block & sample_block,
-            const Context & context,
-            size_t max_block_size)
-        {
-            // Assume no query and fragment in uri, todo, add sanity check
-            String glob_file_names;
-            String url_prefix = uri.substr(0, uri.find_last_of('/'));
-            if (url_prefix.length() == uri.length())
-            {
-                glob_file_names = uri;
-                url_prefix.clear();
-            }
-            else
-            {
-                url_prefix += "/";
-                glob_file_names = uri.substr(url_prefix.length());
-            }
+        std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uri);
+        auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+        reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+    }
 
-            std::vector<String> glob_names_list = parseRemoteDescription(glob_file_names, 0, glob_file_names.length(), ',' , 100/* hard coded max files */);
+    String getName() const override
+    {
+        return "HDFS";
+    }
 
-            BlockInputStreams inputs;
+    Block readImpl() override
+    {
+        return reader->read();
+    }
 
-            for (const auto & name : glob_names_list)
-            {
-                std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(url_prefix + name);
+    Block getHeader() const override
+    {
+        return reader->getHeader();
+    }
 
-                inputs.emplace_back(
-                    std::make_shared<OwningBlockInputStream<ReadBuffer>>(
-                        FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size),
-                        std::move(read_buf)));
-            }
+    void readPrefixImpl() override
+    {
+        reader->readPrefix();
+    }
 
-            if (inputs.size() == 0)
-                throw Exception("StorageHDFS inputs interpreter error", ErrorCodes::BAD_ARGUMENTS);
+    void readSuffixImpl() override
+    {
+        reader->readSuffix();
+    }
 
-            if (inputs.size() == 1)
-            {
-                reader = inputs[0];
-            }
-            else
-            {
-                reader = std::make_shared<UnionBlockInputStream>(inputs, nullptr, context.getSettingsRef().max_distributed_connections);
-            }
-        }
+private:
+    BlockInputStreamPtr reader;
+};
 
-        String getName() const override
-        {
-            return "HDFS";
-        }
+class HDFSBlockOutputStream : public IBlockOutputStream
+{
+public:
+    HDFSBlockOutputStream(const String & uri,
+        const String & format,
+        const Block & sample_block_,
+        const Context & context)
+        : sample_block(sample_block_)
+    {
+        write_buf = std::make_unique<WriteBufferFromHDFS>(uri);
+        writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
+    }
 
-        Block readImpl() override
-        {
-            return reader->read();
-        }
+    Block getHeader() const override
+    {
+        return sample_block;
+    }
 
-        Block getHeader() const override
-        {
-            return reader->getHeader();
-        }
+    void write(const Block & block) override
+    {
+        writer->write(block);
+    }
 
-        void readPrefixImpl() override
-        {
-            reader->readPrefix();
-        }
+    void writePrefix() override
+    {
+        writer->writePrefix();
+    }
 
-        void readSuffixImpl() override
-        {
-            if (auto concrete_reader = dynamic_cast<UnionBlockInputStream *>(reader.get()))
-                concrete_reader->cancel(false); // skip Union read suffix assertion
+    void writeSuffix() override
+    {
+        writer->writeSuffix();
+        writer->flush();
+        write_buf->sync();
+    }
 
-            reader->readSuffix();
-        }
-
-    private:
-        BlockInputStreamPtr reader;
-    };
+private:
+    Block sample_block;
+    std::unique_ptr<WriteBufferFromHDFS> write_buf;
+    BlockOutputStreamPtr writer;
+};
 
 }
 
@@ -125,16 +131,16 @@ namespace
 BlockInputStreams StorageHDFS::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    const Context & context_,
     QueryProcessingStage::Enum  /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned /*num_streams*/)
 {
     return {std::make_shared<HDFSBlockInputStream>(
         uri,
         format_name,
         getSampleBlock(),
-        context,
+        context_,
         max_block_size)};
 }
 
@@ -142,7 +148,7 @@ void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & /*new
 
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
-    throw Exception("StorageHDFS write is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
+    return std::make_shared<HDFSBlockOutputStream>(uri, format_name, getSampleBlock(), context);
 }
 
 void registerStorageHDFS(StorageFactory & factory)

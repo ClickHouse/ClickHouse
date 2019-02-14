@@ -44,7 +44,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
     const SortDescription & description_,
     /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
     const Names & column_names_to_sum,
-    size_t max_block_size_)
+    UInt64 max_block_size_)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
 {
     current_row.resize(num_columns);
@@ -181,7 +181,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
         if (map_desc.key_col_nums.size() == 1)
         {
             // Create summation for all value columns in the map
-            desc.init("sumMap", argument_types);
+            desc.init("sumMapWithOverflow", argument_types);
             columns_to_aggregate.emplace_back(std::move(desc));
         }
         else
@@ -220,7 +220,7 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
                     }
                     else
                     {
-                        /// It is sumMap aggregate function.
+                        /// It is sumMapWithOverflow aggregate function.
                         /// Assume that the row isn't empty in this case (just because it is compatible with previous version)
                         current_row_is_zero = false;
                     }

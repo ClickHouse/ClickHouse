@@ -1,5 +1,3 @@
-set allow_experimental_low_cardinality_type = 1;
-
 select 'NativeBlockInputStream';
 select toTypeName(dict), dict, lowCardinalityIndices(dict), lowCardinalityKeys(dict) from (select '123_' || toLowCardinality(v) as dict from (select arrayJoin(['a', 'bb', '', 'a', 'ccc', 'a', 'bb', '', 'dddd']) as v));
 select '-';

@@ -17,6 +17,10 @@
 #cmakedefine01 USE_HDFS
 #cmakedefine01 USE_XXHASH
 #cmakedefine01 USE_INTERNAL_LLVM_LIBRARY
+#cmakedefine01 USE_PROTOBUF
+#cmakedefine01 USE_CPUID
+#cmakedefine01 USE_CPUINFO
+#cmakedefine01 USE_BROTLI
 
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
 #cmakedefine01 LLVM_HAS_RTTI

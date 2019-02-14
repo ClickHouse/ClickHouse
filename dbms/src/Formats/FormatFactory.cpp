@@ -27,7 +27,7 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
 }
 
 
-BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, size_t max_block_size) const
+BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size) const
 {
     const auto & input_getter = getCreators(name).first;
     if (!input_getter)
@@ -111,6 +111,7 @@ void registerInputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory);
 void registerInputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatJSONEachRow(FormatFactory & factory);
+void registerOutputFormatProtobuf(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -146,6 +147,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatTSKV(*this);
     registerInputFormatJSONEachRow(*this);
     registerOutputFormatJSONEachRow(*this);
+    registerOutputFormatProtobuf(*this);
     registerInputFormatCapnProto(*this);
 
     registerOutputFormatPretty(*this);

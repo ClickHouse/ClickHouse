@@ -1,3 +1,114 @@
+## ClickHouse release 19.1.6, 2019-01-24
+
+### New Features
+
+* Custom per column compression codecs for tables. [#3899](https://github.com/yandex/ClickHouse/pull/3899) [#4111](https://github.com/yandex/ClickHouse/pull/4111) ([alesapin](https://github.com/alesapin), [Winter Zhang](https://github.com/zhang2014), [Anatoly](https://github.com/Sindbag))
+* Added compression codec `Delta`. [#4052](https://github.com/yandex/ClickHouse/pull/4052) ([alesapin](https://github.com/alesapin))
+* Allow to `ALTER` compression codecs. [#4054](https://github.com/yandex/ClickHouse/pull/4054) ([alesapin](https://github.com/alesapin))
+* Added functions `left`, `right`, `trim`, `ltrim`, `rtrim`, `timestampadd`, `timestampsub` for SQL standard compatibility. [#3826](https://github.com/yandex/ClickHouse/pull/3826) ([Ivan Blinkov](https://github.com/blinkov))
+* Support for write in `HDFS` tables and `hdfs` table function. [#4084](https://github.com/yandex/ClickHouse/pull/4084) ([alesapin](https://github.com/alesapin))
+* Added functions to search for multiple constant strings from big haystack: `multiPosition`, `multiSearch` ,`firstMatch` also with `-UTF8`, `-CaseInsensitive`, and `-CaseInsensitiveUTF8` variants. [#4053](https://github.com/yandex/ClickHouse/pull/4053) ([Danila Kutenin](https://github.com/danlark1))
+* Pruning of unused shards if `SELECT` query filters by sharding key (setting `optimize_skip_unused_shards`). [#3851](https://github.com/yandex/ClickHouse/pull/3851) ([Gleb Kanterov](https://github.com/kanterov), [Ivan](https://github.com/abyss7))
+* Allow `Kafka` engine to ignore some number of parsing errors per block. [#4094](https://github.com/yandex/ClickHouse/pull/4094) ([Ivan](https://github.com/abyss7))
+* Added support for `CatBoost` multiclass models evaluation. Function `modelEvaluate` returns tuple with per-class raw predictions for multiclass models. `libcatboostmodel.so` should be built with [#607](https://github.com/catboost/catboost/pull/607). [#3959](https://github.com/yandex/ClickHouse/pull/3959) ([KochetovNicolai](https://github.com/KochetovNicolai))
+* Added functions `filesystemAvailable`, `filesystemFree`, `filesystemCapacity`. [#4097](https://github.com/yandex/ClickHouse/pull/4097) ([Boris Granveaud](https://github.com/bgranvea))
+* Added hashing functions `xxHash64` and `xxHash32`. [#3905](https://github.com/yandex/ClickHouse/pull/3905) ([filimonov](https://github.com/filimonov))
+* Added `gccMurmurHash` hashing function (GCC flavoured Murmur hash) which uses the same hash seed as [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191) [#4000](https://github.com/yandex/ClickHouse/pull/4000) ([sundyli](https://github.com/sundy-li))
+* Added hashing functions `javaHash`, `hiveHash`. [#3811](https://github.com/yandex/ClickHouse/pull/3811) ([shangshujie365](https://github.com/shangshujie365))
+* Added table function `remoteSecure`. Function works as `remote`, but uses secure connection. [#4088](https://github.com/yandex/ClickHouse/pull/4088) ([proller](https://github.com/proller))
+
+
+### Experimental features
+
+* Added multiple JOINs emulation (`allow_experimental_multiple_joins_emulation` setting). [#3946](https://github.com/yandex/ClickHouse/pull/3946) ([Artem Zuikov](https://github.com/4ertus2))
+
+
+### Bug Fixes
+
+* Make `compiled_expression_cache_size` setting limited by default to lower memory consumption. [#4041](https://github.com/yandex/ClickHouse/pull/4041) ([alesapin](https://github.com/alesapin))
+* Fix a bug that led to hangups in threads that perform ALTERs of Replicated tables and in the thread that updates configuration from ZooKeeper. [#2947](https://github.com/yandex/ClickHouse/issues/2947) [#3891](https://github.com/yandex/ClickHouse/issues/3891) [#3934](https://github.com/yandex/ClickHouse/pull/3934) ([Alex Zatelepin](https://github.com/ztlpn))
+* Fixed a race condition when executing a distributed ALTER task. The race condition led to more than one replica trying to execute the task and all replicas except one failing with a ZooKeeper error. [#3904](https://github.com/yandex/ClickHouse/pull/3904) ([Alex Zatelepin](https://github.com/ztlpn))
+* Fix a bug when `from_zk` config elements weren't refreshed after a request to ZooKeeper timed out. [#2947](https://github.com/yandex/ClickHouse/issues/2947) [#3947](https://github.com/yandex/ClickHouse/pull/3947) ([Alex Zatelepin](https://github.com/ztlpn))
+* Fix bug with wrong prefix for IPv4 subnet masks. [#3945](https://github.com/yandex/ClickHouse/pull/3945) ([alesapin](https://github.com/alesapin))
+* Fixed crash (`std::terminate`) in rare cases when a new thread cannot be created due to exhausted resources. [#3956](https://github.com/yandex/ClickHouse/pull/3956) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix bug when in `remote` table function execution when wrong restrictions were used for in `getStructureOfRemoteTable`. [#4009](https://github.com/yandex/ClickHouse/pull/4009) ([alesapin](https://github.com/alesapin))
+* Fix a leak of netlink sockets. They were placed in a pool where they were never deleted and new sockets were created at the start of a new thread when all current sockets were in use. [#4017](https://github.com/yandex/ClickHouse/pull/4017) ([Alex Zatelepin](https://github.com/ztlpn))
+* Fix bug with closing `/proc/self/fd` directory earlier than all fds were read from `/proc` after forking `odbc-bridge` subprocess. [#4120](https://github.com/yandex/ClickHouse/pull/4120) ([alesapin](https://github.com/alesapin))
+* Fixed String to UInt monotonic conversion in case of usage String in primary key. [#3870](https://github.com/yandex/ClickHouse/pull/3870) ([Winter Zhang](https://github.com/zhang2014))
+* Fixed error in calculation of integer conversion function monotonicity. [#3921](https://github.com/yandex/ClickHouse/pull/3921) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed segfault in `arrayEnumerateUniq`, `arrayEnumerateDense` functions in case of some invalid arguments. [#3909](https://github.com/yandex/ClickHouse/pull/3909) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fix UB in StorageMerge. [#3910](https://github.com/yandex/ClickHouse/pull/3910) ([Amos Bird](https://github.com/amosbird))
+* Fixed segfault in functions `addDays`, `subtractDays`. [#3913](https://github.com/yandex/ClickHouse/pull/3913) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed error: functions `round`, `floor`, `trunc`, `ceil` may return bogus result when executed on integer argument and large negative scale. [#3914](https://github.com/yandex/ClickHouse/pull/3914) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed a bug induced by 'kill query sync' which leads to a core dump. [#3916](https://github.com/yandex/ClickHouse/pull/3916) ([muVulDeePecker](https://github.com/fancyqlx))
+* Fix bug with long delay after empty replication queue. [#3928](https://github.com/yandex/ClickHouse/pull/3928) [#3932](https://github.com/yandex/ClickHouse/pull/3932) ([alesapin](https://github.com/alesapin))
+* Fixed excessive memory usage in case of inserting into table with `LowCardinality` primary key. [#3955](https://github.com/yandex/ClickHouse/pull/3955) ([KochetovNicolai](https://github.com/KochetovNicolai))
+* Fixed `LowCardinality` serialization for `Native` format in case of empty arrays. [#3907](https://github.com/yandex/ClickHouse/issues/3907) [#4011](https://github.com/yandex/ClickHouse/pull/4011) ([KochetovNicolai](https://github.com/KochetovNicolai))
+* Fixed incorrect result while using distinct by single LowCardinality numeric column. [#3895](https://github.com/yandex/ClickHouse/issues/3895) [#4012](https://github.com/yandex/ClickHouse/pull/4012) ([KochetovNicolai](https://github.com/KochetovNicolai))
+* Fixed specialized aggregation with LowCardinality key (in case when `compile` setting is enabled). [#3886](https://github.com/yandex/ClickHouse/pull/3886) ([KochetovNicolai](https://github.com/KochetovNicolai))
+* Fix user and password forwarding for replicated tables queries. [#3957](https://github.com/yandex/ClickHouse/pull/3957) ([alesapin](https://github.com/alesapin)) ([小路](https://github.com/nicelulu))
+* Fixed very rare race condition that can happen when listing tables in Dictionary database while reloading dictionaries. [#3970](https://github.com/yandex/ClickHouse/pull/3970) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed incorrect result when HAVING was used with ROLLUP or CUBE. [#3756](https://github.com/yandex/ClickHouse/issues/3756) [#3837](https://github.com/yandex/ClickHouse/pull/3837) ([Sam Chou](https://github.com/reflection))
+* Fixed column aliases for query with `JOIN ON` syntax and distributed tables. [#3980](https://github.com/yandex/ClickHouse/pull/3980) ([Winter Zhang](https://github.com/zhang2014))
+* Fixed error in internal implementation of `quantileTDigest` (found by Artem Vakhrushev). This error never happens in ClickHouse and was relevant only for those who use ClickHouse codebase as a library directly. [#3935](https://github.com/yandex/ClickHouse/pull/3935) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Improvements
+
+* Support for `IF NOT EXISTS` in `ALTER TABLE ADD COLUMN` statements along with `IF EXISTS` in `DROP/MODIFY/CLEAR/COMMENT COLUMN`. [#3900](https://github.com/yandex/ClickHouse/pull/3900) ([Boris Granveaud](https://github.com/bgranvea))
+* Function `parseDateTimeBestEffort`: support for formats `DD.MM.YYYY`, `DD.MM.YY`, `DD-MM-YYYY`, `DD-Mon-YYYY`, `DD/Month/YYYY` and similar. [#3922](https://github.com/yandex/ClickHouse/pull/3922) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* `CapnProtoInputStream` now support jagged structures. [#4063](https://github.com/yandex/ClickHouse/pull/4063) ([Odin Hultgren Van Der Horst](https://github.com/Miniwoffer))
+* Usability improvement: added a check that server process is started from the data directory's owner. Do not allow to start server from root if the data belongs to non-root user. [#3785](https://github.com/yandex/ClickHouse/pull/3785) ([sergey-v-galtsev](https://github.com/sergey-v-galtsev))
+* Better logic of checking required columns during analysis of queries with JOINs. [#3930](https://github.com/yandex/ClickHouse/pull/3930) ([Artem Zuikov](https://github.com/4ertus2))
+* Decreased the number of connections in case of large number of Distributed tables in a single server. [#3726](https://github.com/yandex/ClickHouse/pull/3726) ([Winter Zhang](https://github.com/zhang2014))
+* Supported totals row for `WITH TOTALS` query for ODBC driver. [#3836](https://github.com/yandex/ClickHouse/pull/3836) ([Maksim Koritckiy](https://github.com/nightweb))
+* Allowed to use `Enum`s as integers inside if function. [#3875](https://github.com/yandex/ClickHouse/pull/3875) ([Ivan](https://github.com/abyss7))
+* Added `low_cardinality_allow_in_native_format` setting. If disabled, do not use `LowCadrinality` type in `Native` format. [#3879](https://github.com/yandex/ClickHouse/pull/3879) ([KochetovNicolai](https://github.com/KochetovNicolai))
+* Removed some redundant objects from compiled expressions cache to lower memory usage. [#4042](https://github.com/yandex/ClickHouse/pull/4042) ([alesapin](https://github.com/alesapin))
+* Add check that `SET send_logs_level = 'value'` query accept appropriate value. [#3873](https://github.com/yandex/ClickHouse/pull/3873) ([Sabyanin Maxim](https://github.com/s-mx))
+* Fixed data type check in type conversion functions. [#3896](https://github.com/yandex/ClickHouse/pull/3896) ([Winter Zhang](https://github.com/zhang2014))
+
+### Performance Improvements
+
+* Add a MergeTree setting `use_minimalistic_part_header_in_zookeeper`. If enabled, Replicated tables will store compact part metadata in a single part znode. This can dramatically reduce ZooKeeper snapshot size (especially if the tables have a lot of columns). Note that after enabling this setting you will not be able to downgrade to a version that doesn't support it. [#3960](https://github.com/yandex/ClickHouse/pull/3960) ([Alex Zatelepin](https://github.com/ztlpn))
+* Add an DFA-based implementation for functions `sequenceMatch` and `sequenceCount` in case pattern doesn't contain time. [#4004](https://github.com/yandex/ClickHouse/pull/4004) ([Léo Ercolanelli](https://github.com/ercolanelli-leo))
+* Performance improvement for integer numbers serialization. [#3968](https://github.com/yandex/ClickHouse/pull/3968) ([Amos Bird](https://github.com/amosbird))
+* Zero left padding PODArray so that -1 element is always valid and zeroed. It's used for branchless calculation of offsets. [#3920](https://github.com/yandex/ClickHouse/pull/3920) ([Amos Bird](https://github.com/amosbird))
+* Reverted `jemalloc` version which lead to performance degradation. [#4018](https://github.com/yandex/ClickHouse/pull/4018) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Backward Incompatible Changes
+
+* Removed undocumented feature `ALTER MODIFY PRIMARY KEY` because it was superseded by the `ALTER MODIFY ORDER BY` command. [#3887](https://github.com/yandex/ClickHouse/pull/3887) ([Alex Zatelepin](https://github.com/ztlpn))
+* Removed function `shardByHash`. [#3833](https://github.com/yandex/ClickHouse/pull/3833) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Forbid using scalar subqueries with result of type `AggregateFunction`. [#3865](https://github.com/yandex/ClickHouse/pull/3865) ([Ivan](https://github.com/abyss7))
+
+### Build/Testing/Packaging Improvements
+
+* Added support for PowerPC (`ppc64le`) build. [#4132](https://github.com/yandex/ClickHouse/pull/4132) ([Danila Kutenin](https://github.com/danlark1))
+* Stateful functional tests are run on public available dataset. [#3969](https://github.com/yandex/ClickHouse/pull/3969) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed error when the server cannot start with the `bash: /usr/bin/clickhouse-extract-from-config: Operation not permitted` message within Docker or systemd-nspawn. [#4136](https://github.com/yandex/ClickHouse/pull/4136) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Updated `rdkafka` library to v1.0.0-RC5. Used cppkafka instead of raw C interface. [#4025](https://github.com/yandex/ClickHouse/pull/4025) ([Ivan](https://github.com/abyss7))
+* Updated `mariadb-client` library. Fixed one of issues found by UBSan. [#3924](https://github.com/yandex/ClickHouse/pull/3924) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Some fixes for UBSan builds. [#3926](https://github.com/yandex/ClickHouse/pull/3926) [#3021](https://github.com/yandex/ClickHouse/pull/3021) [#3948](https://github.com/yandex/ClickHouse/pull/3948) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Added per-commit runs of tests with UBSan build.
+* Added per-commit runs of PVS-Studio static analyzer.
+* Fixed bugs found by PVS-Studio. [#4013](https://github.com/yandex/ClickHouse/pull/4013) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed glibc compatibility issues. [#4100](https://github.com/yandex/ClickHouse/pull/4100) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Move Docker images to 18.10 and add compatibility file for glibc >= 2.28 [#3965](https://github.com/yandex/ClickHouse/pull/3965) ([alesapin](https://github.com/alesapin))
+* Add env variable if user don't want to chown directories in server Docker image. [#3967](https://github.com/yandex/ClickHouse/pull/3967) ([alesapin](https://github.com/alesapin))
+* Enabled most of the warnings from `-Weverything` in clang. Enabled `-Wpedantic`. [#3986](https://github.com/yandex/ClickHouse/pull/3986) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Added a few more warnings that are available only in clang 8. [#3993](https://github.com/yandex/ClickHouse/pull/3993) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Link to `libLLVM` rather than to individual LLVM libs when using shared linking. [#3989](https://github.com/yandex/ClickHouse/pull/3989) ([Orivej Desh](https://github.com/orivej))
+* Added sanitizer variables for test images. [#4072](https://github.com/yandex/ClickHouse/pull/4072) ([alesapin](https://github.com/alesapin))
+* `clickhouse-server` debian package will recommend `libcap2-bin` package to use `setcap` tool for setting capabilities. This is optional. [#4093](https://github.com/yandex/ClickHouse/pull/4093) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Improved compilation time, fixed includes. [#3898](https://github.com/yandex/ClickHouse/pull/3898) ([proller](https://github.com/proller))
+* Added performance tests for hash functions. [#3918](https://github.com/yandex/ClickHouse/pull/3918) ([filimonov](https://github.com/filimonov))
+* Fixed cyclic library dependences. [#3958](https://github.com/yandex/ClickHouse/pull/3958) ([proller](https://github.com/proller))
+* Improved compilation with low available memory. [#4030](https://github.com/yandex/ClickHouse/pull/4030) ([proller](https://github.com/proller))
+* Added test script to reproduce performance degradation in `jemalloc`. [#4036](https://github.com/yandex/ClickHouse/pull/4036) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed misspells in comments and string literals under `dbms`. [#4122](https://github.com/yandex/ClickHouse/pull/4122) ([maiha](https://github.com/maiha))
+* Fixed typos in comments. [#4089](https://github.com/yandex/ClickHouse/pull/4089) ([Evgenii Pravda](https://github.com/kvinty))
+
+
 ## ClickHouse release 18.16.1, 2018-12-21
 
 ### Bug fixes:

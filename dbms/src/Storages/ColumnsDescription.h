@@ -69,6 +69,8 @@ struct ColumnsDescription
 
     CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
+    CompressionCodecPtr getCodecOrDefault(const String & column_name) const;
+
     static ColumnsDescription parse(const String & str);
 
     static const ColumnsDescription * loadFromContext(const Context & context, const String & db, const String & table);

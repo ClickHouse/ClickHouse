@@ -13,7 +13,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
@@ -45,7 +45,7 @@ namespace ErrorCodes
 }
 
 
-class LogBlockInputStream final : public IProfilingBlockInputStream
+class LogBlockInputStream final : public IBlockInputStream
 {
 public:
     LogBlockInputStream(
@@ -144,9 +144,9 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t max_compress_block_size) :
+        Stream(const std::string & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
             plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size)
+            compressed(plain, std::move(codec), max_compress_block_size)
         {
             plain_offset = Poco::File(data_path).getSize();
         }
@@ -355,7 +355,12 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         if (written_streams.count(stream_name))
             return;
 
-        streams.try_emplace(stream_name, storage.files[stream_name].data_file.path(), storage.max_compress_block_size);
+        const auto & columns = storage.getColumns();
+        streams.try_emplace(
+            stream_name,
+            storage.files[stream_name].data_file.path(),
+            columns.getCodecOrDefault(name),
+            storage.max_compress_block_size);
     }, settings.path);
 
     settings.getter = createStreamGetter(name, written_streams);
@@ -573,7 +578,7 @@ BlockInputStreams StorageLog::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned num_streams)
 {
     check(column_names);

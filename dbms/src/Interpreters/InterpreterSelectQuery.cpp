@@ -21,6 +21,7 @@
 #include <DataStreams/RollupBlockInputStream.h>
 #include <DataStreams/CubeBlockInputStream.h>
 #include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -33,10 +34,12 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -45,12 +48,12 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Field.h>
+#include <Core/Types.h>
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
 #include <ext/map.h>
 #include <memory>
-#include <DataStreams/ConvertingBlockInputStream.h>
 
 
 namespace DB
@@ -68,6 +71,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int INVALID_LIMIT_EXPRESSION;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -195,7 +199,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
+        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(),
+        NameSet(required_result_column_names.begin(), required_result_column_names.end()), subquery_depth, !only_analyze);
 
     if (!only_analyze)
     {
@@ -379,8 +384,9 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
         if (query_analyzer->appendJoin(chain, dry_run || !res.first_stage))
         {
-            res.has_join = true;
             res.before_join = chain.getLastActions();
+            if (!res.hasJoin())
+                throw Exception("No expected JOIN", ErrorCodes::LOGICAL_ERROR);
             chain.addStep();
         }
 
@@ -547,7 +553,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
         if (expressions.first_stage)
         {
-            if (expressions.has_join)
+            if (expressions.hasJoin())
             {
                 const ASTTableJoin & join = static_cast<const ASTTableJoin &>(*query.join()->table_join);
                 if (join.kind == ASTTableJoin::Kind::Full || join.kind == ASTTableJoin::Kind::Right)
@@ -586,7 +592,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executePreLimit(pipeline);
             }
 
-            // If there is no global subqueries, we can run subqueries only when recieve them on server.
+            // If there is no global subqueries, we can run subqueries only when receive them on server.
             if (!query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
                 executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
         }
@@ -716,16 +722,44 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 }
 
 
-static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, size_t & offset)
+static UInt64 getLimitUIntValue(const ASTPtr & node, const Context & context)
 {
-    length = 0;
-    offset = 0;
+    const auto & [field, type] = evaluateConstantExpression(node, context);
+
+    if (!isNumber(type))
+        throw Exception("Illegal type " + type->getName() + " of LIMIT expression, must be numeric type", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+
+    Field converted = convertFieldToType(field, DataTypeUInt64());
+    if (converted.isNull())
+        throw Exception("The value " + applyVisitor(FieldVisitorToString(), field) + " of LIMIT expression is not representable as UInt64", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+
+    return converted.safeGet<UInt64>();
+}
+
+static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const Context & context)
+{
+    UInt64 length = 0;
+    UInt64 offset = 0;
+
     if (query.limit_length)
     {
-        length = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
+        length = getLimitUIntValue(query.limit_length, context);
         if (query.limit_offset)
-            offset = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_offset).value);
+            offset = getLimitUIntValue(query.limit_offset, context);
     }
+
+    return {length, offset};
+}
+
+static UInt64 getLimitForSorting(ASTSelectQuery & query, const Context & context)
+{
+    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
+    if (!query.distinct && !query.limit_by_expression_list)
+    {
+        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        return limit_length + limit_offset;
+    }
+    return 0;
 }
 
 
@@ -876,10 +910,6 @@ void InterpreterSelectQuery::executeFetchColumns(
             + ", maximum: " + settings.max_columns_to_read.toString(),
             ErrorCodes::TOO_MANY_COLUMNS);
 
-    size_t limit_length = 0;
-    size_t limit_offset = 0;
-    getLimitLengthAndOffset(query, limit_length, limit_offset);
-
     /** With distributed query processing, almost no computations are done in the threads,
      *  but wait and receive data from remote servers.
      *  If we have 20 remote servers, and max_threads = 8, then it would not be very good
@@ -894,10 +924,9 @@ void InterpreterSelectQuery::executeFetchColumns(
         max_streams = settings.max_distributed_connections;
     }
 
-    size_t max_block_size = settings.max_block_size;
+    UInt64 max_block_size = settings.max_block_size;
 
-    if (!max_block_size)
-        throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+    auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
 
     /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
@@ -914,9 +943,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         && !query_analyzer->hasAggregation()
         && limit_length + limit_offset < max_block_size)
     {
-        max_block_size = limit_length + limit_offset;
+        max_block_size = std::max(UInt64(1), limit_length + limit_offset);
         max_streams = 1;
     }
+
+    if (!max_block_size)
+        throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (!pipeline.streams.empty())
@@ -978,8 +1010,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         /// Set the limits and quota for reading data, the speed and time of the query.
         {
-            IProfilingBlockInputStream::LocalLimits limits;
-            limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
+            IBlockInputStream::LocalLimits limits;
+            limits.mode = IBlockInputStream::LIMITS_TOTAL;
             limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
             limits.max_execution_time = settings.max_execution_time;
             limits.timeout_overflow_mode = settings.timeout_overflow_mode;
@@ -1001,13 +1033,10 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             pipeline.transform([&](auto & stream)
             {
-                if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
-                {
-                    p_stream->setLimits(limits);
+                stream->setLimits(limits);
 
-                    if (to_stage == QueryProcessingStage::Complete)
-                        p_stream->setQuota(quota);
-                }
+                if (to_stage == QueryProcessingStage::Complete)
+                    stream->setQuota(quota);
             });
         }
     }
@@ -1232,26 +1261,11 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
     return order_descr;
 }
 
-static size_t getLimitForSorting(ASTSelectQuery & query)
-{
-    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
-    size_t limit = 0;
-    if (!query.distinct && !query.limit_by_expression_list)
-    {
-        size_t limit_length = 0;
-        size_t limit_offset = 0;
-        getLimitLengthAndOffset(query, limit_length, limit_offset);
-        limit = limit_length + limit_offset;
-    }
-
-    return limit;
-}
-
 
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
     SortDescription order_descr = getSortDescription(query);
-    size_t limit = getLimitForSorting(query);
+    UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -1260,8 +1274,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
         auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
 
         /// Limits on sorting
-        IProfilingBlockInputStream::LocalLimits limits;
-        limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_TOTAL;
         limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
         sorting_stream->setLimits(limits);
 
@@ -1282,7 +1296,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {
     SortDescription order_descr = getSortDescription(query);
-    size_t limit = getLimitForSorting(query);
+    UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -1321,11 +1335,8 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
     {
         const Settings & settings = context.getSettingsRef();
 
-        size_t limit_length = 0;
-        size_t limit_offset = 0;
-        getLimitLengthAndOffset(query, limit_length, limit_offset);
-
-        size_t limit_for_distinct = 0;
+        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        UInt64 limit_for_distinct = 0;
 
         /// If after this stage of DISTINCT ORDER BY is not executed, then you can get no more than limit_length + limit_offset of different rows.
         if (!query.order_expression_list || !before_order)
@@ -1362,16 +1373,13 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
 void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 {
-    size_t limit_length = 0;
-    size_t limit_offset = 0;
-    getLimitLengthAndOffset(query, limit_length, limit_offset);
-
     /// If there is LIMIT
     if (query.limit_length)
     {
-        pipeline.transform([&](auto & stream)
+        auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length + limit_offset, 0, false);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false);
         });
     }
 }
@@ -1386,7 +1394,7 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
     for (const auto & elem : query.limit_by_expression_list->children)
         columns.emplace_back(elem->getColumnName());
 
-    size_t value = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_by_value).value);
+    UInt64 value = getLimitUIntValue(query.limit_by_value, context);
 
     pipeline.transform([&](auto & stream)
     {
@@ -1420,10 +1428,6 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 {
-    size_t limit_length = 0;
-    size_t limit_offset = 0;
-    getLimitLengthAndOffset(query, limit_length, limit_offset);
-
     /// If there is LIMIT
     if (query.limit_length)
     {
@@ -1444,6 +1448,10 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
             always_read_till_end = true;
 
+        UInt64 limit_length;
+        UInt64 limit_offset;
+        std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
+
         pipeline.transform([&](auto & stream)
         {
             stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end);
@@ -1459,8 +1467,7 @@ void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
 
     pipeline.transform([&](auto & stream)
     {
-        if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
-            p_stream->enableExtremes();
+        stream->enableExtremes();
     });
 }
 
@@ -1506,4 +1513,3 @@ void InterpreterSelectQuery::initSettings()
 }
 
 }
-

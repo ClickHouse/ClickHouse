@@ -67,14 +67,19 @@ void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Stri
 
 void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & data, const String & part_path, Checksums & out_checksums) const
 {
+    store(data.minmax_idx_columns, data.minmax_idx_column_types, part_path, out_checksums);
+}
+
+void MergeTreeDataPart::MinMaxIndex::store(const Names & column_names, const DataTypes & data_types, const String & part_path, Checksums & out_checksums) const
+{
     if (!initialized)
         throw Exception("Attempt to store uninitialized MinMax index for part " + part_path + ". This is a bug.",
             ErrorCodes::LOGICAL_ERROR);
 
-    for (size_t i = 0; i < data.minmax_idx_columns.size(); ++i)
+    for (size_t i = 0; i < column_names.size(); ++i)
     {
-        String file_name = "minmax_" + escapeForFileName(data.minmax_idx_columns[i]) + ".idx";
-        const DataTypePtr & type = data.minmax_idx_column_types[i];
+        String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
+        const DataTypePtr & type = data_types.at(i);
 
         WriteBufferFromFile out(part_path + file_name);
         HashingWriteBuffer out_hashing(out);
@@ -329,8 +334,20 @@ void MergeTreeDataPart::remove() const
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
 
+    /** Atomic directory removal:
+      * - rename directory to temporary name;
+      * - remove it recursive.
+      *
+      * For temporary name we use "delete_tmp_" prefix.
+      *
+      * NOTE: We cannot use "tmp_delete_" prefix, because there is a second thread,
+      *  that calls "clearOldTemporaryDirectories" and removes all directories, that begin with "tmp_" and are old enough.
+      * But when we removing data part, it can be old enough. And rename doesn't change mtime.
+      * And a race condition can happen that will lead to "File not found" error here.
+      */
+
     String from = storage.full_path + relative_path;
-    String to = storage.full_path + "tmp_delete_" + name;
+    String to = storage.full_path + "delete_tmp_" + name;
 
     Poco::File from_dir{from};
     Poco::File to_dir{to};
@@ -517,7 +534,7 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
             minmax_idx.load(storage, full_path);
     }
 
-    String calculated_partition_id = partition.getID(storage);
+    String calculated_partition_id = partition.getID(storage.partition_key_sample);
     if (calculated_partition_id != info.partition_id)
         throw Exception(
             "While loading part " + getFullPath() + ": calculated partition ID: " + calculated_partition_id

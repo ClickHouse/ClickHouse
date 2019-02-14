@@ -12,7 +12,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
@@ -113,15 +113,15 @@ StorageFile::StorageFile(
 }
 
 
-class StorageFileBlockInputStream : public IProfilingBlockInputStream
+class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size)
         : storage(storage_)
     {
         if (storage.use_table_fd)
         {
-            storage.rwlock.lock();
+            unique_lock = std::unique_lock(storage.rwlock);
 
             /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
             ///  and add ability to seek unseekable files, but cache sync isn't supported.
@@ -131,7 +131,7 @@ public:
                 if (storage.table_fd_init_offset < 0)
                     throw Exception("File descriptor isn't seekable, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-                /// ReadBuffer's seek() doesn't make sence, since cache is empty
+                /// ReadBuffer's seek() doesn't make sense, since cache is empty
                 if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
                     throwFromErrno("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
             }
@@ -141,20 +141,12 @@ public:
         }
         else
         {
-            storage.rwlock.lock_shared();
+            shared_lock = std::shared_lock(storage.rwlock);
 
             read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
-    }
-
-    ~StorageFileBlockInputStream() override
-    {
-        if (storage.use_table_fd)
-            storage.rwlock.unlock();
-        else
-            storage.rwlock.unlock_shared();
     }
 
     String getName() const override
@@ -184,6 +176,9 @@ private:
     Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
+
+    std::shared_lock<std::shared_mutex> shared_lock;
+    std::unique_lock<std::shared_mutex> unique_lock;
 };
 
 
@@ -192,7 +187,7 @@ BlockInputStreams StorageFile::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned /*num_streams*/)
 {
     BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);

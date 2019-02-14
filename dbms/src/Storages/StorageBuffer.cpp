@@ -6,7 +6,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <DataStreams/AddingMissedBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
@@ -80,7 +80,7 @@ StorageBuffer::~StorageBuffer()
 
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferBlockInputStream : public IProfilingBlockInputStream
+class BufferBlockInputStream : public IBlockInputStream
 {
 public:
     BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage_)
@@ -138,7 +138,7 @@ BlockInputStreams StorageBuffer::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned num_streams)
 {
     BlockInputStreams streams_from_dst;
@@ -420,7 +420,7 @@ void StorageBuffer::startup()
             << " Set apropriate system_profile to fix this.");
     }
 
-    flush_thread = std::thread(&StorageBuffer::flushThread, this);
+    flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);
 }
 
 
@@ -684,9 +684,10 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    ColumnsDescription new_columns = getColumns();
+    auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 

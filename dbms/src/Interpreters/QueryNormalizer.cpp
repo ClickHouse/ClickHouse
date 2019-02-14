@@ -1,5 +1,9 @@
+#include <Poco/String.h>
 #include <Core/Names.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/AnalyzedJoin.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -7,8 +11,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Poco/String.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -16,9 +18,11 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_AST;
     extern const int CYCLIC_ALIASES;
 }
+
 
 class CheckASTDepth
 {
@@ -85,13 +89,6 @@ void QueryNormalizer::visit(ASTFunction & node, const ASTPtr &, Data & data)
         ///  and on all remote servers, function implementation will be same.
         if (endsWith(func_name, "Distinct") && func_name_lowercase == "countdistinct")
             func_name = data.settings.count_distinct_implementation;
-
-        /// As special case, treat count(*) as count(), not as count(list of all columns).
-        if (func_name_lowercase == "count" && func_arguments->children.size() == 1
-            && typeid_cast<const ASTAsterisk *>(func_arguments->children[0].get()))
-        {
-            func_arguments->children.clear();
-        }
     }
 }
 
@@ -100,12 +97,12 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
-    if (!getColumnIdentifierName(node))
+    if (!IdentifierSemantic::getColumnName(node))
         return;
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name);
-    if (it_alias != data.aliases.end() && current_alias != node.name)
+    if (IdentifierSemantic::canBeAlias(node) && it_alias != data.aliases.end() && current_alias != node.name)
     {
         auto & alias_node = it_alias->second;
 
@@ -117,7 +114,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         if (!my_alias.empty() && my_alias != alias_node->getAliasOrColumnName())
         {
             /// Avoid infinite recursion here
-            auto opt_name = getColumnIdentifierName(alias_node);
+            auto opt_name = IdentifierSemantic::getColumnName(alias_node);
             bool is_cycle = opt_name && *opt_name == node.name;
 
             if (!is_cycle)
@@ -129,66 +126,6 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         }
         else
             ast = alias_node;
-    }
-}
-
-/// Replace *, alias.*, database.table.* with a list of columns.
-void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & data)
-{
-    auto & tables_with_columns = data.tables_with_columns;
-
-    ASTs old_children;
-    if (data.processAsterisks())
-    {
-        bool has_asterisk = false;
-        for (const auto & child : node.children)
-        {
-            if (typeid_cast<const ASTAsterisk *>(child.get()) ||
-                typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
-            {
-                has_asterisk = true;
-                break;
-            }
-        }
-
-        if (has_asterisk)
-        {
-            old_children.swap(node.children);
-            node.children.reserve(old_children.size());
-        }
-    }
-
-    for (const auto & child : old_children)
-    {
-        if (typeid_cast<const ASTAsterisk *>(child.get()))
-        {
-            for (const auto & pr : tables_with_columns)
-                for (const auto & column_name : pr.second)
-                    node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-        }
-        else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
-        {
-            const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(qualified_asterisk->children[0].get());
-            size_t num_components = identifier->children.size();
-
-            for (const auto & [table_name, table_columns] : tables_with_columns)
-            {
-                if ((num_components == 2                    /// database.table.*
-                        && !table_name.database.empty()     /// This is normal (not a temporary) table.
-                        && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
-                        && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
-                    || (num_components == 0                                                         /// t.*
-                        && ((!table_name.table.empty() && identifier->name == table_name.table)         /// table.*
-                            || (!table_name.alias.empty() && identifier->name == table_name.alias))))   /// alias.*
-                {
-                    for (const auto & column_name : table_columns)
-                        node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-                    break;
-                }
-            }
-        }
-        else
-            node.children.emplace_back(child);
     }
 }
 
@@ -225,7 +162,6 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & 
 }
 
 /// Don't go into subqueries.
-/// Don't go into components of compound identifiers.
 /// Don't go into select query. It processes children itself.
 /// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
@@ -246,8 +182,7 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
             visit(child, data);
         }
     }
-    else if (!typeid_cast<ASTIdentifier *>(node.get()) &&
-             !typeid_cast<ASTSelectQuery *>(node.get()))
+    else if (!typeid_cast<ASTSelectQuery *>(node.get()))
     {
         for (auto & child : node->children)
         {
@@ -286,8 +221,6 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     if (auto * node = typeid_cast<ASTFunction *>(ast.get()))
         visit(*node, ast, data);
     if (auto * node = typeid_cast<ASTIdentifier *>(ast.get()))
-        visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTExpressionList *>(ast.get()))
         visit(*node, ast, data);
     if (auto * node = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
         visit(*node, ast, data);

@@ -8,6 +8,8 @@ services:
         ZOO_MY_ID: 1
         ZOO_PORT: 2181
         ZOO_SERVERS: server.1=kafka_zookeeper:2888:3888
+    security_opt:
+        - label:disable
 
   kafka1:
     image: confluentinc/cp-kafka:4.1.0
@@ -22,3 +24,5 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     depends_on:
       - kafka_zookeeper
+    security_opt:
+      - label:disable

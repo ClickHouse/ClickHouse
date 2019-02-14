@@ -51,7 +51,7 @@ It is designed to retain the following properties of data:
 - probability distributions of length of strings;
 - probability of zero values of numbers; empty strings and arrays, NULLs;
 - data compression ratio when compressed with LZ77 and entropy family of codecs;
-- continuouty (magnitude of difference) of time values across table; continuouty of floating point values.
+- continuity (magnitude of difference) of time values across table; continuity of floating point values.
 - date component of DateTime values;
 - UTF-8 validity of string values;
 - string values continue to look somewhat natural.
@@ -246,7 +246,7 @@ Float transformFloatMantissa(Float x, UInt64 seed)
 
 
 /// Transform difference from previous number by applying pseudorandom permutation to mantissa part of it.
-/// It allows to retain some continuouty property of source data.
+/// It allows to retain some continuity property of source data.
 template <typename Float>
 class FloatModel : public IModel
 {
@@ -1037,7 +1037,7 @@ try
 
     Obfuscator obfuscator(header, seed, markov_model_params);
 
-    size_t max_block_size = 8192;
+    UInt64 max_block_size = 8192;
 
     /// Train step
     {

@@ -136,20 +136,17 @@ void MergingAggregatedMemoryEfficientBlockInputStream::cancel(bool kill)
 
     for (auto & input : inputs)
     {
-        if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(input.stream.get()))
+        try
         {
-            try
-            {
-                child->cancel(kill);
-            }
-            catch (...)
-            {
-                /** If failed to ask to stop processing one or more sources.
-                  * (example: connection reset during distributed query execution)
-                  * - then don't care.
-                  */
-                LOG_ERROR(log, "Exception while cancelling " << child->getName());
-            }
+            input.stream->cancel(kill);
+        }
+        catch (...)
+        {
+            /** If failed to ask to stop processing one or more sources.
+              * (example: connection reset during distributed query execution)
+              * - then don't care.
+              */
+            LOG_ERROR(log, "Exception while cancelling " << input.stream->getName());
         }
     }
 }
@@ -198,7 +195,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
           */
 
         for (size_t i = 0; i < merging_threads; ++i)
-            pool.schedule([this, thread_group=CurrentThread::getGroup()] () { mergeThread(thread_group); });
+            pool.schedule([this, thread_group = CurrentThread::getGroup()] () { mergeThread(thread_group); });
     }
 }
 

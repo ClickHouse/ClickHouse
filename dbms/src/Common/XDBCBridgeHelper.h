@@ -33,7 +33,7 @@ class IXDBCBridgeHelper
 public:
     static constexpr inline auto DEFAULT_FORMAT = "RowBinary";
 
-    virtual std::vector<std::pair<std::string, std::string>> getURLParams(const std::string & cols, size_t max_block_size) const = 0;
+    virtual std::vector<std::pair<std::string, std::string>> getURLParams(const std::string & cols, UInt64 max_block_size) const = 0;
     virtual void startBridgeSync() const = 0;
     virtual Poco::URI getMainURI() const = 0;
     virtual Poco::URI getColumnsInfoURI() const = 0;
@@ -127,7 +127,7 @@ public:
     /**
      * @todo leaky abstraction - used by external API's
      */
-    std::vector<std::pair<std::string, std::string>> getURLParams(const std::string & cols, size_t max_block_size) const override
+    std::vector<std::pair<std::string, std::string>> getURLParams(const std::string & cols, UInt64 max_block_size) const override
     {
         std::vector<std::pair<std::string, std::string>> result;
 
@@ -262,13 +262,7 @@ struct ODBCBridgeMixin
 
 
         std::vector<std::string> cmd_args;
-        path.setFileName(
-#if CLICKHOUSE_SPLIT_BINARY
-            "clickhouse-odbc-bridge"
-#else
-            "clickhouse"
-#endif
-        );
+        path.setFileName("clickhouse-odbc-bridge");
 
         std::stringstream command;
 

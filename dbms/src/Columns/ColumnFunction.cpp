@@ -70,7 +70,7 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
     return ColumnFunction::create(filtered_size, function, capture);
 }
 
-ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnFunction::permute(const Permutation & perm, UInt64 limit) const
 {
     if (limit == 0)
         limit = size_;
@@ -88,7 +88,7 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
     return ColumnFunction::create(limit, function, capture);
 }
 
-ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
+ColumnPtr ColumnFunction::index(const IColumn & indexes, UInt64 limit) const
 {
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)

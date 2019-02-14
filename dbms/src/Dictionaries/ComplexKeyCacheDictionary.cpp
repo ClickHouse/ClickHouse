@@ -70,10 +70,6 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
     createAttributes();
 }
 
-ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other)
-    : ComplexKeyCacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
-{
-}
 
 void ComplexKeyCacheDictionary::getString(
     const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
@@ -387,7 +383,7 @@ bool ComplexKeyCacheDictionary::isEmptyCell(const UInt64 idx) const
         && (idx != zero_cell_idx || cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t())));
 }
 
-BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
 {
     std::vector<StringRef> keys;
     {

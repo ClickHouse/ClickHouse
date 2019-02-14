@@ -11,10 +11,11 @@
 #include <common/DateLUT.h>
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
+#include <common/StringRef.h>
 
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <common/StringRef.h>
+
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
@@ -581,7 +582,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 {
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
-      * Then look at 5th charater. If it is a number - treat whole as unix timestamp.
+      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
       * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss format.
       */
 

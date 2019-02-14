@@ -1,6 +1,5 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
-#include <Interpreters/SemanticSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -19,6 +18,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
 }
 
+#if 0
 /// Attach additional semantic info to generated select.
 struct AppendSemanticVisitorData
 {
@@ -35,6 +35,7 @@ struct AppendSemanticVisitorData
         done = true;
     }
 };
+#endif
 
 /// Replaces one table element with pair.
 struct RewriteTablesVisitorData
@@ -58,6 +59,9 @@ struct RewriteTablesVisitorData
 
 static bool needRewrite(ASTSelectQuery & select)
 {
+    if (!select.tables)
+        return false;
+
     auto tables = typeid_cast<const ASTTablesInSelectQuery *>(select.tables.get());
     if (!tables)
         return false;
@@ -124,7 +128,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         if (!left)
             return;
 
-        SemanticSelectQuery::hideNames(select, hidden_names, subquery_name);
+        //SemanticSelectQuery::hideNames(select, hidden_names, subquery_name);
     }
 
     select.tables = std::make_shared<ASTTablesInSelectQuery>();
@@ -135,11 +139,15 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     data.done = true;
 }
 
-ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTSelectQuery & select, ASTPtr ast_left, ASTPtr ast_right, const String & subquery_alias)
+ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTSelectQuery &, ASTPtr ast_left, ASTPtr ast_right, const String & subquery_alias)
 {
+#if 0
     using RewriteMatcher = LinkedMatcher<
         OneTypeMatcher<RewriteTablesVisitorData>,
         OneTypeMatcher<AppendSemanticVisitorData>>;
+#else
+    using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
+#endif
     using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
 
     auto left = typeid_cast<const ASTTablesInSelectQueryElement *>(ast_left.get());
@@ -160,8 +168,12 @@ ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTSelectQuery & select, ASTP
     if (!res)
         throw Exception("Cannot parse rewrite query", ErrorCodes::LOGICAL_ERROR);
 
+#if 0
     RewriteVisitor::Data visitor_data =
         std::make_pair<RewriteTablesVisitorData, AppendSemanticVisitorData>({ast_left, ast_right}, {select.semantic});
+#else
+    RewriteVisitor::Data visitor_data{ast_left, ast_right};
+#endif
     RewriteVisitor(visitor_data).visit(res);
     return res;
 }

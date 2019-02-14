@@ -63,11 +63,6 @@ TrieDictionary::TrieDictionary(
     creation_time = std::chrono::system_clock::now();
 }
 
-TrieDictionary::TrieDictionary(const TrieDictionary & other)
-    : TrieDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
-{
-}
-
 TrieDictionary::~TrieDictionary()
 {
     btrie_destroy(trie);
@@ -763,7 +758,7 @@ Columns TrieDictionary::getKeyColumns() const
     return {std::move(ip_column), std::move(mask_column)};
 }
 
-BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 

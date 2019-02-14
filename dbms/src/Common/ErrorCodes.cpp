@@ -408,6 +408,15 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE = 431;
     extern const int UNKNOWN_CODEC = 432;
     extern const int ILLEGAL_CODEC_PARAMETER = 433;
+    extern const int CANNOT_PARSE_PROTOBUF_SCHEMA = 434;
+    extern const int NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD = 435;
+    extern const int CANNOT_CONVERT_TO_PROTOBUF_TYPE = 436;
+    extern const int PROTOBUF_FIELD_NOT_REPEATED = 437;
+    extern const int DATA_TYPE_CANNOT_BE_PROMOTED = 438;
+    extern const int CANNOT_SCHEDULE_TASK = 439;
+    extern const int INVALID_LIMIT_EXPRESSION = 440;
+    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING = 441;
+    extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE = 442;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

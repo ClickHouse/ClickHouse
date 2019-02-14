@@ -24,7 +24,7 @@ public:
     /// This parameter is needed only to check that some address is local (points to ourself).
     Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
             const String & username, const String & password,
-            UInt16 clickhouse_port, bool treat_local_as_remote);
+            UInt16 clickhouse_port, bool treat_local_as_remote, bool secure = false);
 
     Cluster(const Cluster &) = delete;
     Cluster & operator=(const Cluster &) = delete;
@@ -59,7 +59,6 @@ public:
         String password;
         /// This database is selected when no database is specified for Distributed table
         String default_database;
-        UInt32 replica_num;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
         bool is_local;
         bool user_specified = false;
@@ -69,7 +68,7 @@ public:
 
         Address() = default;
         Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-        Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port);
+        Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_ = false);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -79,16 +78,20 @@ public:
 
         static String toString(const String & host_name, UInt16 port);
 
-        static void fromString(const String & host_port_string, String & host_name, UInt16 & port);
+        static std::pair<String, UInt16> fromString(const String & host_port_string);
 
         /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
-        String toStringFull() const;
+        String toFullString() const;
+        static Address fromFullString(const String & address_full_string);
 
         /// Returns initially resolved address
         Poco::Net::SocketAddress getResolvedAddress() const
         {
             return initially_resolved_address;
         }
+
+        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database); }
+        bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
         Poco::Net::SocketAddress initially_resolved_address;

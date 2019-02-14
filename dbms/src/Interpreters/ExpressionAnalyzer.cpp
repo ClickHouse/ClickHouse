@@ -22,7 +22,6 @@
 
 #include <Columns/IColumn.h>
 
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -39,7 +38,6 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageJoin.h>
 
-#include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/copyData.h>
 
 #include <Dictionaries/IDictionary.h>
@@ -47,12 +45,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 
-#include <Parsers/formatAST.h>
-
 #include <ext/range.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -83,7 +78,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
     const Context & context_,
     const NamesAndTypesList & additional_source_columns,
-    const Names & required_result_columns_,
+    const NameSet & required_result_columns_,
     size_t subquery_depth_,
     bool do_global_,
     const SubqueriesForSets & subqueries_for_sets_)
@@ -258,20 +253,25 @@ void ExpressionAnalyzer::makeSetsForIndex()
     if (storage && select_query && storage->supportsIndexForIn())
     {
         if (select_query->where_expression)
-            makeSetsForIndexImpl(select_query->where_expression, storage->getSampleBlock());
+            makeSetsForIndexImpl(select_query->where_expression);
         if (select_query->prewhere_expression)
-            makeSetsForIndexImpl(select_query->prewhere_expression, storage->getSampleBlock());
+            makeSetsForIndexImpl(select_query->prewhere_expression);
     }
 }
 
 
 void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
-    BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
+    auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
+    if (prepared_sets.count(set_key))
+        return; /// Already prepared.
+
+    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+    BlockIO res = interpreter_subquery->execute();
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
-
     set->setHeader(res.in->getHeader());
+
     while (Block block = res.in->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
@@ -279,24 +279,24 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
             return;
     }
 
-    prepared_sets[subquery_or_table_name->range] = std::move(set);
+    prepared_sets[set_key] = std::move(set);
 }
 
 
-void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block)
+void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
 {
     for (auto & child : node->children)
     {
-        /// Don't descent into subqueries.
+        /// Don't descend into subqueries.
         if (typeid_cast<ASTSubquery *>(child.get()))
             continue;
 
-        /// Don't dive into lambda functions
+        /// Don't descend into lambda functions
         const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
         if (func && func->name == "lambda")
             continue;
 
-        makeSetsForIndexImpl(child, sample_block);
+        makeSetsForIndexImpl(child);
     }
 
     const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
@@ -307,28 +307,24 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
         if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0)))
         {
             const ASTPtr & arg = args.children.at(1);
-
-            if (!prepared_sets.count(arg->range)) /// Not already prepared.
+            if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
             {
-                if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
-                {
-                    if (settings.use_index_for_in_with_subqueries)
-                        tryMakeSetForIndexFromSubquery(arg);
-                }
-                else
-                {
-                    NamesAndTypesList temp_columns = source_columns;
-                    temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
-                    for (const auto & joined_column : columns_added_by_join)
-                        temp_columns.push_back(joined_column.name_and_type);
-                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
-                    getRootActions(func->arguments->children.at(0), true, temp_actions);
+                if (settings.use_index_for_in_with_subqueries)
+                    tryMakeSetForIndexFromSubquery(arg);
+            }
+            else
+            {
+                NamesAndTypesList temp_columns = source_columns;
+                temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
+                for (const auto & joined_column : columns_added_by_join)
+                    temp_columns.push_back(joined_column.name_and_type);
+                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
+                getRootActions(func->arguments->children.at(0), true, temp_actions);
 
-                    Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
-                    if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
-                        makeExplicitSet(func, sample_block_with_calculated_columns, true, context,
-                                        settings.size_limits_for_set, prepared_sets);
-                }
+                Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
+                if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
+                    makeExplicitSet(func, sample_block_with_calculated_columns, true, context,
+                        settings.size_limits_for_set, prepared_sets);
             }
         }
     }
@@ -503,13 +499,23 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
         columns_added_by_join_list.push_back(joined_column.name_and_type);
 
     if (only_types)
-        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left,
-                columns_added_by_join_list, columns_added_by_join_from_right_keys));
+        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left, columns_added_by_join_list));
     else
         for (auto & subquery_for_set : subqueries_for_sets)
             if (subquery_for_set.second.join)
                 actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, analyzedJoin().key_names_left,
-                        columns_added_by_join_list, columns_added_by_join_from_right_keys));
+                                                            columns_added_by_join_list));
+}
+
+static void appendRequiredColumns(NameSet & required_columns, const Block & sample, const AnalyzedJoin & analyzed_join)
+{
+    for (auto & column : analyzed_join.key_names_right)
+        if (!sample.has(column))
+            required_columns.insert(column);
+
+    for (auto & column : analyzed_join.columns_from_joined_table)
+        if (!sample.has(column.name_and_type.name))
+            required_columns.insert(column.name_and_type.name);
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -568,8 +574,10 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
     if (!subquery_for_set.join)
     {
-        JoinPtr join = std::make_shared<Join>(analyzedJoin().key_names_right, settings.join_use_nulls,
-            settings.size_limits_for_join, join_params.kind, join_params.strictness);
+        auto & analyzed_join = analyzedJoin();
+        /// Actions which need to be calculated on joined block.
+        ExpressionActionsPtr joined_block_actions =
+            analyzed_join.createJoinedBlockActions(columns_added_by_join, select_query, context);
 
         /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
           * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
@@ -587,39 +595,23 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             else if (table_to_join.database_and_table_name)
                 table = table_to_join.database_and_table_name;
 
-            Names original_columns;
-            for (const auto & column : analyzedJoin().columns_from_joined_table)
-                if (required_columns_from_joined_table.count(column.name_and_type.name))
-                    original_columns.emplace_back(column.original_name);
+            Names action_columns = joined_block_actions->getRequiredColumns();
+            NameSet required_columns(action_columns.begin(), action_columns.end());
+
+            appendRequiredColumns(required_columns, joined_block_actions->getSampleBlock(), analyzed_join);
+
+            Names original_columns = analyzed_join.getOriginalColumnNames(required_columns);
 
             auto interpreter = interpretSubquery(table, context, subquery_depth, original_columns);
-            subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(),
-                [interpreter]() mutable { return interpreter->execute().in; });
+            subquery_for_set.makeSource(interpreter, analyzed_join.columns_from_joined_table, required_columns);
         }
 
-        /// Alias duplicating columns as qualified.
-        for (const auto & column : analyzedJoin().columns_from_joined_table)
-            if (required_columns_from_joined_table.count(column.name_and_type.name))
-                subquery_for_set.joined_block_aliases.emplace_back(column.original_name, column.name_and_type.name);
-
-        auto sample_block = subquery_for_set.source->getHeader();
-        for (const auto & name_with_alias : subquery_for_set.joined_block_aliases)
-        {
-            if (sample_block.has(name_with_alias.first))
-            {
-                auto pos = sample_block.getPositionByName(name_with_alias.first);
-                auto column = sample_block.getByPosition(pos);
-                sample_block.erase(pos);
-                column.name = name_with_alias.second;
-                sample_block.insert(std::move(column));
-            }
-        }
-
+        Block sample_block = subquery_for_set.renamedSampleBlock();
         joined_block_actions->execute(sample_block);
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-        subquery_for_set.join = join;
+        subquery_for_set.join = std::make_shared<Join>(analyzedJoin().key_names_right, settings.join_use_nulls,
+            settings.size_limits_for_join, join_params.kind, join_params.strictness);
         subquery_for_set.join->setSampleBlock(sample_block);
         subquery_for_set.joined_block_actions = joined_block_actions;
     }
@@ -850,8 +842,7 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
     for (size_t i = 0; i < asts.size(); ++i)
     {
         String result_name = asts[i]->getAliasOrColumnName();
-        if (required_result_columns.empty()
-            || std::find(required_result_columns.begin(), required_result_columns.end(), result_name) != required_result_columns.end())
+        if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
             result_columns.emplace_back(asts[i]->getColumnName(), result_name);
             step.required_output.push_back(result_columns.back().second);
@@ -947,15 +938,6 @@ void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptio
     aggregates = aggregate_descriptions;
 }
 
-/// db.table.column -> table.column / table.column -> column
-static String cropDatabaseOrTableName(const String & name)
-{
-    size_t pos = name.find('.', 0);
-    if (pos != std::string::npos)
-        return name.substr(pos + 1, name.size() - pos - 1);
-    return name;
-}
-
 void ExpressionAnalyzer::collectUsedColumns()
 {
     /** Calculate which columns are required to execute the expression.
@@ -1002,10 +984,6 @@ void ExpressionAnalyzer::collectUsedColumns()
         for (const auto & name : source_columns)
             avaliable_columns.insert(name.name);
 
-        NameSet right_keys;
-        for (const auto & right_key_name : analyzed_join.key_names_right)
-            right_keys.insert(right_key_name);
-
         /** You also need to ignore the identifiers of the columns that are obtained by JOIN.
         * (Do not assume that they are required for reading from the "left" table).
         */
@@ -1017,63 +995,8 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 columns_added_by_join.push_back(joined_column);
                 required.erase(name);
-
-                /// Some columns from right join key may be used in query. This columns will be appended to block during join.
-                if (right_keys.count(name))
-                    columns_added_by_join_from_right_keys.insert(name);
             }
         }
-
-        /// @fix filter required columns according to misqualified names in JOIN ON
-        if (columns_context.has_table_join &&
-            columns_context.tables.size() >= 2 &&
-            columns_context.tables[1].join &&
-            columns_context.tables[1].join->on_expression)
-        {
-            NameSet fixed_required;
-
-            for (const auto & req_name : required)
-            {
-                bool collated = false;
-                String cropped_name = req_name;
-                static const constexpr size_t max_column_prefix = 2;
-
-                for (size_t i = 0; i < max_column_prefix && !collated; ++i)
-                {
-                    cropped_name = cropDatabaseOrTableName(cropped_name);
-
-                    if (avaliable_columns.count(cropped_name))
-                    {
-                        fixed_required.insert(cropped_name);
-                        collated = true;
-                        break;
-                    }
-
-                    for (const auto & joined_column : analyzed_join.available_joined_columns)
-                    {
-                        auto & name = joined_column.name_and_type.name;
-
-                        if (cropped_name == name)
-                        {
-                            columns_added_by_join.push_back(joined_column);
-                            if (right_keys.count(name))
-                                columns_added_by_join_from_right_keys.insert(name);
-                            collated = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!collated)
-                    fixed_required.insert(req_name);
-            }
-
-            required.swap(fixed_required);
-        }
-
-        /// @note required_columns_from_joined_table is output
-        joined_block_actions = analyzed_join.createJoinedBlockActions(
-            columns_added_by_join, select_query, context, required_columns_from_joined_table);
     }
 
     if (columns_context.has_array_join)
@@ -1096,9 +1019,10 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     for (NamesAndTypesList::iterator it = source_columns.begin(); it != source_columns.end();)
     {
-        unknown_required_source_columns.erase(it->name);
+        const String & column_name = it->name;
+        unknown_required_source_columns.erase(column_name);
 
-        if (!required.count(it->name))
+        if (!required.count(column_name))
             source_columns.erase(it++);
         else
             ++it;
@@ -1123,13 +1047,14 @@ void ExpressionAnalyzer::collectUsedColumns()
     if (!unknown_required_source_columns.empty())
     {
         std::stringstream ss;
+        ss << "query: '" << query << "' ";
         ss << columns_context;
         ss << "source_columns: ";
         for (const auto & name : source_columns)
             ss << "'" << name.name << "' ";
 
         throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin()
-            + (select_query && !select_query->tables ? ". Note that there is no tables (FROM clause) in your query" : "")
+            + (select_query && !select_query->tables ? ". Note that there are no tables (FROM clause) in your query" : "")
             + ", context: " + ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 }

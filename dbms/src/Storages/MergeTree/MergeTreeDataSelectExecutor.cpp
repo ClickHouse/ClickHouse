@@ -1,11 +1,15 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <optional>
 
+#include <Poco/File.h>
+
 #include <Common/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -136,7 +140,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
@@ -150,7 +154,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
@@ -516,6 +520,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     RangesInDataParts parts_with_ranges;
 
+    std::vector<std::pair<MergeTreeIndexPtr, IndexConditionPtr>> useful_indices;
+    for (const auto & index : data.skip_indices)
+    {
+        auto condition = index->createIndexCondition(query_info, context);
+        if (!condition->alwaysUnknownOrTrue())
+            useful_indices.emplace_back(index, condition);
+    }
+
     /// Let's find what range to read from each part.
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
@@ -527,6 +539,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
         else
             ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
+
+        for (const auto & index_and_condition : useful_indices)
+            ranges.ranges = filterMarksUsingIndex(
+                    index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings);
 
         if (!ranges.ranges.empty())
         {
@@ -608,7 +624,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
-    size_t max_block_size,
+    UInt64 max_block_size,
     bool use_uncompressed_cache,
     const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,
@@ -662,7 +678,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             if (i == 0)
             {
                 /// Set the approximate number of rows for the first source only
-                static_cast<IProfilingBlockInputStream &>(*res.front()).addTotalRowsApprox(total_rows);
+                res.front()->addTotalRowsApprox(total_rows);
             }
         }
     }
@@ -750,7 +766,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts,
     const Names & column_names,
-    size_t max_block_size,
+    UInt64 max_block_size,
     bool use_uncompressed_cache,
     const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,
@@ -938,6 +954,72 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             }
         }
     }
+
+    return res;
+}
+
+MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+    MergeTreeIndexPtr index,
+    IndexConditionPtr condition,
+    MergeTreeData::DataPartPtr part,
+    const MarkRanges & ranges,
+    const Settings & settings) const
+{
+    if (!Poco::File(part->getFullPath() + index->getFileName() + ".idx").exists())
+    {
+        LOG_DEBUG(log, "File for index `" << index->name << "` does not exist. Skipping it.");
+        return ranges;
+    }
+
+    const size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+
+    size_t granules_dropped = 0;
+
+    MergeTreeIndexReader reader(
+            index, part,
+            ((part->marks_count + index->granularity - 1) / index->granularity),
+            ranges);
+
+    MarkRanges res;
+
+    /// Some granules can cover two or more ranges,
+    /// this variable is stored to avoid reading the same granule twice.
+    MergeTreeIndexGranulePtr granule = nullptr;
+    size_t last_index_mark = 0;
+    for (const auto & range : ranges)
+    {
+        MarkRange index_range(
+                range.begin / index->granularity,
+                (range.end + index->granularity - 1) / index->granularity);
+
+        if (last_index_mark != index_range.begin || !granule)
+            reader.seek(index_range.begin);
+
+        for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+        {
+            if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
+                granule = reader.read();
+
+            MarkRange data_range(
+                    std::max(range.begin, index_mark * index->granularity),
+                    std::min(range.end, (index_mark + 1) * index->granularity));
+
+            if (!condition->mayBeTrueOnGranule(granule))
+            {
+                ++granules_dropped;
+                continue;
+            }
+
+            if (res.empty() || res.back().end - data_range.begin >= min_marks_for_seek)
+                res.push_back(data_range);
+            else
+                res.back().end = data_range.end;
+        }
+
+        last_index_mark = index_range.end - 1;
+    }
+
+    LOG_DEBUG(log, "Index `" << index->name << "` has dropped " << granules_dropped << " granules.");
 
     return res;
 }
