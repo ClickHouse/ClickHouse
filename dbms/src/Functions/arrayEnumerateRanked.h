@@ -323,17 +323,21 @@ ColumnPtr array(Block & block, const Context & context)
         }
     );
 
-
     ColumnsWithTypeAndName arguments; //{ block.getByPosition(0), block.getByPosition(1) };
-    for (size_t i = 0; i < block.columns() - 1; ++i)
+
+    ColumnNumbers arguments_nums(block.columns() - 1);
+
+    for (size_t i = 0; i < block.columns() - 1; ++i) {
         arguments.emplace_back(block.getByPosition(i));
+        arguments_nums[i] = i;
+    }
 
     FunctionBuilderPtr func_builder = FunctionFactory::instance().get("array", context);
     auto func = func_builder->build(arguments);
 
     const size_t result_colum_num = block.columns() - 1;
-DUMP(block.rows());
-    func->execute(block, {0, 1}, result_colum_num, block.rows());
+
+    func->execute(block, arguments_nums, result_colum_num, block.rows());
     return block.getByPosition(result_colum_num).column;
 }
 
@@ -341,6 +345,8 @@ DUMP(block.rows());
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
+(void)input_rows_count;
+
     const ColumnArray::Offsets * offsets = nullptr;
 
     DepthType depth; //1;
@@ -704,13 +710,13 @@ DUMP(arr_arr);
 
     }
 
-auto joined = array(results, context);
-DUMP(joined);
+//DUMP("prejoin", results);
+auto result_column = array(results, context);
+DUMP(result_column);
 
-        auto result_column = block.getByPosition(result).type->createColumn();
+        //auto result_column = block.getByPosition(result).type->createColumn();
 
-        size_t rows = input_rows_count;
-(void)rows;
+//        size_t rows = input_rows_count;(void)rows;
 
 
 /*
