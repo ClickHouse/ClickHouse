@@ -185,8 +185,9 @@ void TCPHandler::runImpl()
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
             });
 
+            bool may_have_embedded_data = client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
-            state.io = executeQuery(state.query, query_context, false, state.stage);
+            state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
 
             if (state.io.out)
                 state.need_receive_data_for_insert = true;

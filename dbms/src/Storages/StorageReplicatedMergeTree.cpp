@@ -2036,6 +2036,9 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     if (source_replica.empty())
         throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
 
+    /// Clear obsolete queue that we no longer need.
+    zookeeper->removeChildren(replica_path + "/queue");
+
     /// Will do repair from the selected replica.
     cloneReplica(source_replica, source_is_lost_stat, zookeeper);
     /// If repair fails to whatever reason, the exception is thrown, is_lost will remain "1" and the replica will be repaired later.
@@ -3125,7 +3128,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        data.checkAlter(params);
+        data.checkAlter(params, query_context);
 
         ColumnsDescription new_columns = data.getColumns();
         IndicesDescription new_indices = data.getIndicesDescription();
@@ -3904,6 +3907,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     auto zookeeper = tryGetZooKeeper();
 
     res.is_leader = is_leader;
+    res.can_become_leader = data.settings.replicated_can_become_leader;
     res.is_readonly = is_readonly;
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
