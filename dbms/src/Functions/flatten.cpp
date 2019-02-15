@@ -43,13 +43,14 @@ public:
         IColumn & result_data = result_col->getData();
         IColumn::Offsets & result_offsets = result_col->getOffsets();
 
-        result_data.reserve(input_rows_count * 10);
-        result_offsets.resize(input_rows_count);
+        // todo
+        // result_data.reserve();
+        // result_offsets.resize();
 
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto flatten_data = flatten(arg_data, current_offset, arg_offsets[i]);
+            const auto & flatten_data = flatten(arg_data, current_offset, arg_offsets[i]);
             result_data.insertRangeFrom(flatten_data, 0, flatten_data.size());
             current_offset += flatten_data.size();
             result_offsets[i] = current_offset;
@@ -66,7 +67,7 @@ private:
 
     bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
 
-    const ColumnArray flatten(const IColumn & /*data*/, size_t /*from*/, size_t /*to*/) const
+    const ColumnArray & flatten(const IColumn & /*data*/, size_t /*from*/, size_t /*to*/) const
     {
         // todo
     }
