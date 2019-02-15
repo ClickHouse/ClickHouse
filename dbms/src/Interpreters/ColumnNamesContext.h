@@ -67,8 +67,7 @@ struct ColumnNamesContext
     bool addArrayJoinAliasIfAny(const IAST & ast);
     void addArrayJoinIdentifier(const ASTIdentifier & node);
 
-    /// returns set of columns and map of ther aliases (alias -> column)
-    NameSet requiredColumns(std::unordered_map<String, String> & alias_map) const;
+    NameSet requiredColumns() const;
 };
 
 std::ostream & operator << (std::ostream & os, const ColumnNamesContext & cols);

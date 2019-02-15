@@ -57,7 +57,7 @@ void ColumnNamesContext::addArrayJoinIdentifier(const ASTIdentifier & node)
     array_join_columns.insert(node.name);
 }
 
-NameSet ColumnNamesContext::requiredColumns(std::unordered_map<String, String> & alias_map) const
+NameSet ColumnNamesContext::requiredColumns() const
 {
     NameSet required;
     for (const auto & pr : required_names)
@@ -71,10 +71,6 @@ NameSet ColumnNamesContext::requiredColumns(std::unordered_map<String, String> &
 
         if (!complex_aliases.count(name) || masked_columns.count(name))
             required.insert(name);
-
-        /// It's possible that column is masked but alias is available
-        for (const String & alias : pr.second)
-            alias_map[alias] = name;
     }
     return required;
 }
