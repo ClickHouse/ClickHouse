@@ -150,12 +150,12 @@ public:
             derivative += weights[i] * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];;
         }
         derivative *= target;
-        derivative = learning_rate * exp(derivative);
+        derivative =  exp(derivative);
 
-        batch_gradient[weights.size()] += target / (derivative + 1);;
+        batch_gradient[weights.size()] += learning_rate * target / (derivative + 1);;
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            batch_gradient[i] += target / (derivative + 1) * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+            batch_gradient[i] += learning_rate * target / (derivative + 1) * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
         }
     }
     Float64 predict(const std::vector<Float64> & predict_feature, const std::vector<Float64> & weights, Float64 bias) const override
