@@ -989,6 +989,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
                     element.monotonic_functions_chain,
                     data_types[element.key_column]
                 );
+
                 if (!new_range)
                 {
                     rpn_stack.emplace_back(true, true);
