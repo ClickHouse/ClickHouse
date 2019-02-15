@@ -255,7 +255,7 @@ include (cmake/find_libxml2.cmake)
 include (cmake/find_brotli.cmake)
 include (cmake/find_protobuf.cmake)
 include (cmake/find_pdqsort.cmake)
-include (cmake/find_hdfs3.cmake)
+include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 if (ENABLE_TESTS)

@@ -5,7 +5,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <mysqlxx/Query.h>
-#include "ExternalResultDescription.h"
+#include <Core/ExternalResultDescription.h>
 
 
 namespace DB
