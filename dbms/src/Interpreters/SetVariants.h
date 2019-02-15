@@ -3,6 +3,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
+#include <Common/ColumnsHashing.h>
 
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
@@ -27,33 +28,7 @@ struct SetMethodOneNumber
 
     Data data;
 
-    /// To use one `Method` in different threads, use different `State`.
-    struct State
-    {
-        const char * vec;
-
-        /** Called at the start of each block processing.
-          * Sets the variables required for the other methods called in inner loops.
-          */
-        void init(const ColumnRawPtrs & key_columns)
-        {
-           vec = key_columns[0]->getRawData().data;
-        }
-
-        /// Get key from key columns for insertion into hash table.
-        Key getKey(
-            const ColumnRawPtrs & /*key_columns*/,
-            size_t /*keys_size*/,                 /// Number of key columns.
-            size_t i,                             /// From what row of the block I get the key.
-            const Sizes & /*key_sizes*/) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
-        {
-            return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
-        }
-    };
-
-    /** Place additional data, if necessary, in case a new key was inserted into the hash table.
-      */
-    static void onNewKey(typename Data::value_type & /*value*/, size_t /*keys_size*/, Arena & /*pool*/) {}
+    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type, void, FieldType>;
 };
 
 /// For the case where there is one string key.
@@ -65,36 +40,7 @@ struct SetMethodString
 
     Data data;
 
-    struct State
-    {
-        const IColumn::Offset * offsets;
-        const UInt8 * chars;
-
-        void init(const ColumnRawPtrs & key_columns)
-        {
-            const IColumn & column = *key_columns[0];
-            const ColumnString & column_string = static_cast<const ColumnString &>(column);
-            offsets = column_string.getOffsets().data();
-            chars = column_string.getChars().data();
-        }
-
-        Key getKey(
-            const ColumnRawPtrs &,
-            size_t,
-            ssize_t i,
-            const Sizes &) const
-        {
-            return StringRef(
-                chars + offsets[i - 1],
-                offsets[i] - offsets[i - 1] - 1);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type & value, size_t, Arena & pool)
-    {
-        if (value.size)
-            value.data = pool.insert(value.data, value.size);
-    }
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, void, true, false>;
 };
 
 /// For the case when there is one fixed-length string key.
@@ -106,33 +52,7 @@ struct SetMethodFixedString
 
     Data data;
 
-    struct State
-    {
-        size_t n;
-        const ColumnFixedString::Chars * chars;
-
-        void init(const ColumnRawPtrs & key_columns)
-        {
-            const IColumn & column = *key_columns[0];
-            const ColumnFixedString & column_string = static_cast<const ColumnFixedString &>(column);
-            n = column_string.getN();
-            chars = &column_string.getChars();
-        }
-
-        Key getKey(
-            const ColumnRawPtrs &,
-            size_t,
-            size_t i,
-            const Sizes &) const
-        {
-            return StringRef(&(*chars)[i * n], n);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type & value, size_t, Arena & pool)
-    {
-        value.data = pool.insert(value.data, value.size);
-    }
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, void, true, false>;
 };
 
 namespace set_impl
@@ -242,34 +162,7 @@ struct SetMethodKeysFixed
 
     Data data;
 
-    class State : private set_impl::BaseStateKeysFixed<Key, has_nullable_keys>
-    {
-    public:
-        using Base = set_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
-
-        void init(const ColumnRawPtrs & key_columns)
-        {
-            if (has_nullable_keys)
-                Base::init(key_columns);
-        }
-
-        Key getKey(
-            const ColumnRawPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes & key_sizes) const
-        {
-            if (has_nullable_keys)
-            {
-                auto bitmap = Base::createBitmap(i);
-                return packFixed<Key>(i, keys_size, Base::getActualColumns(), key_sizes, bitmap);
-            }
-            else
-                return packFixed<Key>(i, keys_size, key_columns, key_sizes);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type &, size_t, Arena &) {}
+    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, void, has_nullable_keys, false>;
 };
 
 /// For other cases. 128 bit hash from the key.
@@ -281,23 +174,7 @@ struct SetMethodHashed
 
     Data data;
 
-    struct State
-    {
-        void init(const ColumnRawPtrs &)
-        {
-        }
-
-        Key getKey(
-            const ColumnRawPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes &) const
-        {
-            return hash128(i, keys_size, key_columns);
-        }
-    };
-
-    static void onNewKey(typename Data::value_type &, size_t, Arena &) {}
+    using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, void>;
 };
 
 

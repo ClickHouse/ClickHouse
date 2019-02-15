@@ -81,26 +81,28 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
+## insert_sample_with_metadata
+
+For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
 
 ## join_default_strictness
 
-Sets default strictness for [JOIN clause](../../query_language/select.md).
+Sets default strictness for [JOIN clauses](../../query_language/select.md).
 
 **Possible values**
 
-- `ALL` — If the right table has several matching rows, the data will be multiplied by the number of these rows. It is a normal `JOIN` behavior from standard SQL.
+- `ALL` — If the right table has several matching rows, the data is multiplied by the number of these rows. This is the normal `JOIN` behavior from standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
-- `Empty string` — If `ALL` or `ANY` not specified in query, ClickHouse throws exception.
+- `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
-**Default value**
+**Default value**: `ALL`
 
-`ALL`
 
 ## max_block_size
 
-In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. `max_block_size` is a recommendation for what size of block (in number of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large, so that the query with LIMIT that is completed after the first block is processed quickly, so that too much memory isn't consumed when extracting a large number of columns in multiple threads, and so that at least some cache locality is preserved.
+In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of block (in number of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large, so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads, and to preserve at least some cache locality.
 
-By default, 65,536.
+Default value: 65,536.
 
 Blocks the size of `max_block_size` are not always loaded from the table. If it is obvious that less data needs to be retrieved, a smaller block is processed.
 
@@ -108,48 +110,48 @@ Blocks the size of `max_block_size` are not always loaded from the table. If it 
 
 Used for the same purpose as `max_block_size`, but it sets the recommended block size in bytes by adapting it to the number of rows in the block.
 However, the block size cannot be more than `max_block_size` rows.
-Disabled by default (set to 0). It only works when reading from MergeTree engines.
+By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
 
-When reading from [MergeTree*](../table_engines/mergetree.md) tables, ClickHouse uses several threads. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
+ClickHouse uses multiple threads when reading from [MergeTree*](../table_engines/mergetree.md) tables. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
 
 **Possible values**
 
-- 0 — Uniform read distribution turned off.
-- 1 — Uniform read distribution turned on.
+- 0 — Do not use uniform read distribution.
+- 1 — Use uniform read distribution.
 
-**Default value** — 1.
+**Default value**: 1.
 
 ## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
 
-If a number of rows to be read from a file of [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file by several threads.
+If the number of rows to be read from a file of a [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
 **Possible values**
 
 Any positive integer.
 
-**Default value** — 163840.
+**Default value**: 163840.
 
 ## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
 
-If the distance between two data blocks to be read in one file less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, it reads the data sequentially.
+If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, but reads the data sequentially.
 
 **Possible values**
 
 Any positive integer.
 
-**Default value** — 0.
+**Default value**: 0.
 
 ## merge_tree_coarse_index_granularity {#setting-merge_tree_coarse_index_granularity}
 
-When searching data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range for `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
+When searching data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range into `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
 
 **Possible values**
 
 Any positive even integer.
 
-**Default value** — 8.
+**Default value**: 8.
 
 ## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
 
@@ -159,7 +161,7 @@ If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in o
 
 Any positive integer.
 
-**Default value** — 1048576.
+**Default value**: 1048576.
 
 ## log_queries
 
@@ -179,9 +181,9 @@ For example, for an INSERT via the HTTP interface, the server parses the data fo
 But when using clickhouse-client, the client parses the data itself, and the 'max_insert_block_size' setting on the server doesn't affect the size of the inserted blocks.
 The setting also doesn't have a purpose when using INSERT SELECT, since data is inserted using the same blocks that are formed after SELECT.
 
-By default, it is 1,048,576.
+Default value: 1,048,576.
 
-This is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allows sorting more data in RAM.
+The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allows sorting more data in RAM.
 
 ## max_replica_delay_for_distributed_queries {#settings-max_replica_delay_for_distributed_queries}
 
@@ -189,24 +191,22 @@ Disables lagging replicas for distributed queries. See "[Replication](../../oper
 
 Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
-Default value: 0 (off).
+Default value: 300.
 
 Used when performing `SELECT` from a distributed table that points to replicated tables.
 
 ## max_threads {#settings-max_threads}
 
-The maximum number of query processing threads
-
-- excluding threads for retrieving data from remote servers (see the 'max_distributed_connections' parameter).
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the 'max_distributed_connections' parameter).
 
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
-For example, if reading from a table, evaluating expressions with functions, filtering with WHERE and pre-aggregating for GROUP BY can all be done in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
+For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with WHERE and pre-aggregate for GROUP BY in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
 
-By default, 8.
+Default value: 2.
 
 If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
 
-For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, 8 blocks are retrieved, although it would have been enough to read just one.
+For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 
 The smaller the `max_threads` value, the less memory is consumed.
 
@@ -214,7 +214,7 @@ The smaller the `max_threads` value, the less memory is consumed.
 
 The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). If the size is reduced, the compression rate is significantly reduced, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced. There usually isn't any reason to change this setting.
 
-Don't confuse blocks for compression (a chunk of memory consisting of bytes) and blocks for query processing (a set of rows from a table).
+Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 
 ## min_compress_block_size
 
@@ -235,35 +235,31 @@ There usually isn't any reason to change this setting.
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
 The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
 
-The default is 256 KiB.
+Default value: 256 KiB.
 
 ## interactive_delay
 
 The interval in microseconds for checking whether request execution has been canceled and sending the progress.
 
-By default, 100,000 (check for canceling and send progress ten times per second).
+Default value: 100,000 (checks for canceling and sends the progress ten times per second).
 
-## connect_timeout
-
-## receive_timeout
-
-## send_timeout
+## connect_timeout, receive_timeout, send_timeout
 
 Timeouts in seconds on the socket used for communicating with the client.
 
-By default, 10, 300, 300.
+Default value: 10, 300, 300.
 
 ## poll_interval
 
 Lock in a wait loop for the specified number of seconds.
 
-By default, 10.
+Default value: 10.
 
 ## max_distributed_connections
 
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
-By default, 100.
+Default value: 1024.
 
 The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
 
@@ -271,33 +267,32 @@ The following parameters are only used when creating Distributed tables (and whe
 
 The maximum number of simultaneous connections with remote servers for distributed processing of all queries to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
 
-By default, 128.
+Default value: 1024.
 
 ## connect_timeout_with_failover_ms
 
 The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the 'shard' and 'replica' sections are used in the cluster definition.
 If unsuccessful, several attempts are made to connect to various replicas.
 
-By default, 50.
+Default value: 50.
 
 ## connections_with_failover_max_tries
 
-The maximum number of connection attempts with each replica, for the Distributed table engine.
+The maximum number of connection attempts with each replica for the Distributed table engine.
 
-By default, 3.
+Default value: 3.
 
 ## extremes
 
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 
-
 ## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
-The uncompressed cache (only for tables in the MergeTree family) allows significantly reducing latency and increasing throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed; the least-used data is automatically deleted.
+Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
-For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically in order to save space for truly small queries. So you can keep the 'use_uncompressed_cache' setting always set to 1.
+For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically in order to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 
 ## replace_running_query
 
@@ -338,7 +333,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a host name that is most similar to the server's host name in the config file (for the number of different characters in identical positions, up to the minimum length of both host names).
 
 For instance, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
-This method might seem a little stupid, but it doesn't use external data about network topology, and it doesn't compare IP addresses, which would be complicated for our IPv6 addresses.
+This method might seem primitive, but it doesn't require external data about network topology, and it doesn't compare IP addresses, which would be complicated for our IPv6 addresses.
 
 Thus, if there are equivalent replicas, the closest one by name is preferred.
 We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
@@ -355,15 +350,8 @@ See the section "WITH TOTALS modifier".
 
 ## totals_auto_threshold
 
-The threshold for ` totals_mode = 'auto'`.
+The threshold for `totals_mode = 'auto'`.
 See the section "WITH TOTALS modifier".
-
-## default_sample
-
-Floating-point number from 0 to 1. By default, 1.
-Allows you to set the default sampling ratio for all SELECT queries.
-(For tables that do not support sampling, it throws an exception.)
-If set to 1, sampling is not performed by default.
 
 ## max_parallel_replicas
 
@@ -381,8 +369,8 @@ If this portion of the pipeline was compiled, the query may run faster due to de
 ## min_count_to_compile
 
 How many times to potentially use a compiled chunk of code before running compilation. By default, 3.
-If the value is zero, then compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. This can be used for testing; otherwise, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
-If the value is 1 or more, compilation occurs asynchronously in a separate thread. The result will be used as soon as it is ready, including by queries that are currently running.
+For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
+If the value is 1 or more, compilation occurs asynchronously in a separate thread. The result will be used as soon as it is ready, including queries that are currently running.
 
 Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
 The results of compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results, since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
@@ -400,22 +388,20 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
-
 ## join_use_nulls
 
 Affects the behavior of [JOIN](../../query_language/select.md).
 
 With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
-
-## insert_quorum
+## insert_quorum {#settings-insert_quorum}
 
 Enables quorum writes.
 
   - If `insert_quorum < 2`, the quorum writes are disabled.
   - If `insert_quorum >= 2`, the quorum writes are enabled.
 
-The default value is 0.
+Default value: 0.
 
 **Quorum writes**
 
@@ -423,7 +409,7 @@ The default value is 0.
 
 All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
 
-When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#select-sequential-consistency) option.
+When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#settings-select_sequential_consistency) option.
 
 **ClickHouse generates an exception**
 
@@ -432,35 +418,36 @@ When reading the data written from the `insert_quorum`, you can use the [select_
 
 **See also the following parameters:**
 
-- [insert_quorum_timeout](#insert-quorum-timeout)
-- [select_sequential_consistency](#select-sequential-consistency)
+- [insert_quorum_timeout](#settings-insert_quorum_timeout)
+- [select_sequential_consistency](#settings-select_sequential_consistency)
 
 
-## insert_quorum_timeout
+## insert_quorum_timeout {#settings-insert_quorum_timeout}
 
 Quorum write timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
-By default, 60 seconds.
+Default value: 60 seconds.
 
 **See also the following parameters:**
 
-- [insert_quorum](#insert-quorum)
-- [select_sequential_consistency](#select-sequential-consistency)
+- [insert_quorum](#settings-insert_quorum)
+- [select_sequential_consistency](#settings-select_sequential_consistency)
 
 
-## select_sequential_consistency
+## select_sequential_consistency {#settings-select_sequential_consistency}
 
 Enables/disables sequential consistency for `SELECT` queries:
 
-- 0 — disabled. The default value is 0.
-- 1 — enabled.
+- 0 — Disabled.
+- 1 — Enabled.
+Default value: 0.
 
 When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
 
 See also the following parameters:
 
-- [insert_quorum](#insert-quorum)
-- [insert_quorum_timeout](#insert-quorum-timeout)
+- [insert_quorum](#settings-insert_quorum)
+- [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->

@@ -53,7 +53,9 @@ public:
         return size;
     }
 
+    /// The task is started immediately.
     TaskHandle addTask(const Task & task);
+
     void removeTask(const TaskHandle & task);
 
     ~BackgroundProcessingPool();
@@ -79,8 +81,6 @@ protected:
 
     void threadFunction();
 };
-
-using BackgroundProcessingPoolPtr = std::shared_ptr<BackgroundProcessingPool>;
 
 
 class BackgroundProcessingPoolTaskInfo

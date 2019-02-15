@@ -56,14 +56,16 @@ std::vector<ASTPtr *> QueryAliasesMatcher::visit(const ASTArrayJoin &, const AST
 {
     visitOther(ast, data);
 
-    /// @warning It breaks botom-to-top order (childs processed after node here), could lead to some effects.
-    /// It's possible to add ast back to result vec to save order. It will need two phase ASTArrayJoin visit (setting phase in data).
-    std::vector<ASTPtr *> out;
+    std::vector<ASTPtr> grand_children;
     for (auto & child1 : ast->children)
         for (auto & child2 : child1->children)
             for (auto & child3 : child2->children)
-                out.push_back(&child3);
-    return out;
+                grand_children.push_back(child3);
+
+    /// create own visitor to run bottom to top
+    for (auto & child : grand_children)
+        QueryAliasesVisitor(data).visit(child);
+    return {};
 }
 
 /// set unique aliases for all subqueries. this is needed, because:

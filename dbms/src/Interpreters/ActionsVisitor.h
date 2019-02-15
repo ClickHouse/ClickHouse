@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/SubqueryForSet.h>
 
 
 namespace DB
@@ -10,32 +11,6 @@ namespace DB
 
 class Context;
 class ASTFunction;
-
-class Join;
-using JoinPtr = std::shared_ptr<Join>;
-
-/// Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
-struct SubqueryForSet
-{
-    /// The source is obtained using the InterpreterSelectQuery subquery.
-    BlockInputStreamPtr source;
-
-    /// If set, build it from result.
-    SetPtr set;
-    JoinPtr join;
-    /// Apply this actions to joined block.
-    ExpressionActionsPtr joined_block_actions;
-    /// Rename column from joined block from this list.
-    NamesWithAliases joined_block_aliases;
-
-    /// If set, put the result into the table.
-    /// This is a temporary table for transferring to remote servers for distributed query processing.
-    StoragePtr table;
-};
-
-/// ID of subquery -> what to do with it.
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
-
 
  /// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(

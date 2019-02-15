@@ -26,6 +26,10 @@ public:
         children.push_back(input_);
     }
 
+    /// Suppress readPrefix and readSuffix, because they are called by copyData.
+    void readPrefix() override {}
+    void readSuffix() override {}
+
     String getName() const override { return "NullAndDoCopy"; }
 
     Block getHeader() const override { return {}; }

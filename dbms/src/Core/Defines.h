@@ -47,6 +47,7 @@
 #define DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME 54372
 #define DBMS_MIN_REVISION_WITH_VERSION_PATCH 54401
 #define DBMS_MIN_REVISION_WITH_SERVER_LOGS 54406
+#define DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA 54415
 /// Minimum revision with exactly the same set of aggregation methods and rules to select them.
 /// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
 /// (keys will be placed in different buckets and result will not be fully aggregated).
@@ -110,7 +111,9 @@
 /// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.
 #if defined(__clang__)
     #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
+    #define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
 #else
     /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
     #define NO_SANITIZE_UNDEFINED
+    #define NO_SANITIZE_ADDRESS
 #endif

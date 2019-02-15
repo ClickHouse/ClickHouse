@@ -145,14 +145,14 @@ void ReplicatedMergeTreeAlterThread::run()
                 parts = storage.data.getDataParts();
 
             const auto columns_for_parts = storage.getColumns().getAllPhysical();
+            const auto indices_for_parts = storage.getIndicesDescription();
 
             for (const MergeTreeData::DataPartPtr & part : parts)
             {
                 /// Update the part and write result to temporary files.
                 /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                 /// node /flags/force_alter.
-                auto transaction = storage.data.alterDataPart(part, columns_for_parts, false);
-
+                auto transaction = storage.data.alterDataPart(part, columns_for_parts, indices_for_parts.indices, false);
                 if (!transaction)
                     continue;
 

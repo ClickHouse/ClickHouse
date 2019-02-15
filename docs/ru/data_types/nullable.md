@@ -38,7 +38,7 @@ Ok.
 
 0 rows in set. Elapsed: 0.012 sec.
 
-:) INSERT INTO t_null VALUES (1, NULL)
+:) INSERT INTO t_null VALUES (1, NULL), (2, 3)
 
 INSERT INTO t_null VALUES
 

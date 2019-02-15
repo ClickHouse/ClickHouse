@@ -5,7 +5,6 @@
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/LZ4_decompress_faster.h>
-#include "CompressionCodecLZ4.h"
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
