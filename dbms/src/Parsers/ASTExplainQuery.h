@@ -41,6 +41,8 @@ private:
             case ParsedAST: return "ParsedAST";
             case AnalyzedSyntax: return "AnalyzedSyntax";
         }
+
+        __builtin_unreachable();
     }
 };
 
