@@ -948,8 +948,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     RequiredSourceColumnsVisitor::Data columns_context;
     RequiredSourceColumnsVisitor(columns_context).visit(query);
 
-    std::unordered_map<String, String> required_alias_map;
-    NameSet required = columns_context.requiredColumns(required_alias_map);
+    NameSet required = columns_context.requiredColumns();
 
 #if 0
     std::cerr << "Query: " << query << std::endl;
@@ -1000,11 +999,6 @@ void ExpressionAnalyzer::collectUsedColumns()
                 columns_added_by_join.push_back(joined_column);
                 required.erase(name);
             }
-            else if (required_alias_map.count(name) && required.count(required_alias_map[name]))
-            {
-                columns_added_by_join.push_back(joined_column);
-                required.erase(required_alias_map[name]);
-            }
         }
     }
 
@@ -1031,11 +1025,7 @@ void ExpressionAnalyzer::collectUsedColumns()
         const String & column_name = it->name;
         unknown_required_source_columns.erase(column_name);
 
-        bool is_required_alias = required_alias_map.count(column_name);
-        if (is_required_alias)
-            unknown_required_source_columns.erase(required_alias_map[column_name]);
-
-        if (!required.count(column_name) && !is_required_alias)
+        if (!required.count(column_name))
             source_columns.erase(it++);
         else
             ++it;
