@@ -164,7 +164,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             /// Actualize thread group info
             if (auto thread_group = CurrentThread::getGroup())
             {
-                std::unique_lock lock_thread_group(thread_group->mutex);
+                std::lock_guard lock_thread_group(thread_group->mutex);
                 thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
                 thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
                 thread_group->query = process_it->query;
@@ -325,6 +325,29 @@ bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStream
     return true;
 }
 
+CancellationCode QueryStatus::cancelQuery(bool kill)
+{
+    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
+    if (streamsAreReleased())
+        return CancellationCode::CancelSent;
+
+    BlockInputStreamPtr input_stream;
+    BlockOutputStreamPtr output_stream;
+
+    if (tryGetQueryStreams(input_stream, output_stream))
+    {
+        if (input_stream)
+        {
+            input_stream->cancel(kill);
+            return CancellationCode::CancelSent;
+        }
+        return CancellationCode::CancelCannotBeSent;
+    }
+    /// Query is not even started
+    is_killed.store(true);
+    return CancellationCode::CancelSent;
+}
+
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 {
@@ -356,7 +379,7 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 }
 
 
-ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
     std::lock_guard lock(mutex);
 
@@ -365,25 +388,7 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
     if (!elem)
         return CancellationCode::NotFound;
 
-    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
-    if (elem->streamsAreReleased())
-        return CancellationCode::CancelSent;
-
-    BlockInputStreamPtr input_stream;
-    BlockOutputStreamPtr output_stream;
-
-    if (elem->tryGetQueryStreams(input_stream, output_stream))
-    {
-        if (input_stream)
-        {
-            input_stream->cancel(kill);
-            return CancellationCode::CancelSent;
-        }
-        return CancellationCode::CancelCannotBeSent;
-    }
-    /// Query is not even started
-    elem->is_killed.store(true);
-    return CancellationCode::CancelSent;
+    return elem->cancelQuery(kill);
 }
 
 
@@ -408,11 +413,8 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
 
         if (get_thread_list)
         {
-            std::shared_lock lock(thread_group->mutex);
-            res.thread_numbers.reserve(thread_group->thread_statuses.size());
-
-            for (auto & thread_status_elem : thread_group->thread_statuses)
-                res.thread_numbers.emplace_back(thread_status_elem.second->thread_number);
+            std::lock_guard lock(thread_group->mutex);
+            res.thread_numbers = thread_group->thread_numbers;
         }
 
         if (get_profile_events)

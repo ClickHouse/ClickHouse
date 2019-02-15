@@ -1,5 +1,3 @@
-set allow_experimental_low_cardinality_type = 1;
-
 drop table if exists test.tab;
 create table test.tab (a String, b StringWithDictionary) engine = MergeTree order by a;
 insert into test.tab values ('a_1', 'b_1'), ('a_2', 'b_2');

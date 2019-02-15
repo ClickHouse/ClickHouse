@@ -12,6 +12,37 @@ namespace DB
 namespace
 {
 
+struct WithOverflowPolicy
+{
+    /// Overflow, meaning that the returned type is the same as the input type.
+    static DataTypePtr promoteType(const DataTypePtr & data_type) { return data_type; }
+};
+
+struct WithoutOverflowPolicy
+{
+    /// No overflow, meaning we promote the types if necessary.
+    static DataTypePtr promoteType(const DataTypePtr & data_type)
+    {
+        if (!data_type->canBePromoted())
+            throw new Exception{"Values to be summed are expected to be Numeric, Float or Decimal.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return data_type->promoteNumericType();
+    }
+};
+
+template <typename T>
+using SumMapWithOverflow = AggregateFunctionSumMap<T, WithOverflowPolicy>;
+
+template <typename T>
+using SumMapWithoutOverflow = AggregateFunctionSumMap<T, WithoutOverflowPolicy>;
+
+template <typename T>
+using SumMapFilteredWithOverflow = AggregateFunctionSumMapFiltered<T, WithOverflowPolicy>;
+
+template <typename T>
+using SumMapFilteredWithoutOverflow = AggregateFunctionSumMapFiltered<T, WithoutOverflowPolicy>;
+
 using SumMapArgs = std::pair<DataTypePtr, DataTypes>;
 
 SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
@@ -42,21 +73,23 @@ SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
     return  {std::move(keys_type), std::move(values_types)};
 }
 
+template <template <typename> class Function>
 AggregateFunctionPtr createAggregateFunctionSumMap(const std::string & name, const DataTypes & arguments, const Array & params)
 {
     assertNoParameters(name, params);
 
     auto [keys_type, values_types] = parseArguments(name, arguments);
 
-    AggregateFunctionPtr res(createWithNumericBasedType<AggregateFunctionSumMap>(*keys_type, keys_type, values_types));
+    AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types, arguments));
     if (!res)
-        res.reset(createWithDecimalType<AggregateFunctionSumMap>(*keys_type, keys_type, values_types));
+        res.reset(createWithDecimalType<Function>(*keys_type, keys_type, values_types, arguments));
     if (!res)
         throw Exception("Illegal type of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
 }
 
+template <template <typename> class Function>
 AggregateFunctionPtr createAggregateFunctionSumMapFiltered(const std::string & name, const DataTypes & arguments, const Array & params)
 {
     if (params.size() != 1)
@@ -70,9 +103,9 @@ AggregateFunctionPtr createAggregateFunctionSumMapFiltered(const std::string & n
 
     auto [keys_type, values_types] = parseArguments(name, arguments);
 
-    AggregateFunctionPtr res(createWithNumericBasedType<AggregateFunctionSumMapFiltered>(*keys_type, keys_type, values_types, keys_to_keep));
+    AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
     if (!res)
-        res.reset(createWithDecimalType<AggregateFunctionSumMapFiltered>(*keys_type, keys_type, values_types, keys_to_keep));
+        res.reset(createWithDecimalType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
     if (!res)
         throw Exception("Illegal type of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -82,8 +115,10 @@ AggregateFunctionPtr createAggregateFunctionSumMapFiltered(const std::string & n
 
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sumMap", createAggregateFunctionSumMap);
-    factory.registerFunction("sumMapFiltered", createAggregateFunctionSumMapFiltered);
+    factory.registerFunction("sumMap", createAggregateFunctionSumMap<SumMapWithoutOverflow>);
+    factory.registerFunction("sumMapWithOverflow", createAggregateFunctionSumMap<SumMapWithOverflow>);
+    factory.registerFunction("sumMapFiltered", createAggregateFunctionSumMapFiltered<SumMapFilteredWithoutOverflow>);
+    factory.registerFunction("sumMapFilteredWithOverflow", createAggregateFunctionSumMapFiltered<SumMapFilteredWithOverflow>);
 }
 
 }

@@ -10,7 +10,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
 
 
-## CREATE TABLE
+## CREATE TABLE {#create-table-query}
 
 The `CREATE TABLE` query can have several forms.
 
@@ -80,7 +80,7 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-# Column Compression Codecs
+## Column Compression Codecs
 
 Besides default data compression, defined in [server settings](../operations/server_settings/settings.md#compression), per-column specification is also available.
 

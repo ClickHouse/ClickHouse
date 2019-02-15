@@ -9,13 +9,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e -o pipefail
 
-# Copy schema files to the current directory because the client can open schemas from the current directory only.
-cp "$CURDIR/00825_protobuf_format.proto" 00825_protobuf_format_copy.proto
-cp "$CURDIR/00825_protobuf_format_syntax2.proto" 00825_protobuf_format_syntax2_copy.proto
-
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<'EOF'
-SET allow_experimental_low_cardinality_type = 1;
+$CLICKHOUSE_CLIENT --multiquery <<EOF
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.table;
 
@@ -47,14 +42,11 @@ INSERT INTO test.table VALUES (toUUID('a7522158-3d41-4b77-ad69-6c598ee55c49'), '
 INSERT INTO test.table VALUES (toUUID('c694ad8a-f714-4ea3-907d-fd54fb25d9b5'), 'Natalia', 'Sokolova', 'female', toDate('1992-03-08'), 'jpg', NULL, 0, NULL, 26, 'pisces', [], [100, 200, 50], 'Plymouth', [50.403724, -4.142123], 3.14159, NULL, 0.007, 5.4, -20000000000000);
 INSERT INTO test.table VALUES (toUUID('a7da1aa6-f425-4789-8947-b034786ed374'), 'Vasily', 'Sidorov', 'male', toDate('1995-07-28'), 'bmp', '+442012345678', 1, toDateTime('2018-12-30 00:00:00'), 23, 'leo', ['Sunny'], [250, 244, 10], 'Murmansk', [68.970682, 33.074981], 3.14159265358979, 100000000000, 800, -3.2, 154400000);
 
-SELECT * FROM test.table ORDER BY name FORMAT Protobuf SETTINGS format_schema = '00825_protobuf_format_copy:Person';
+SELECT * FROM test.table ORDER BY name FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format:Person';
 SELECT 'ALTERNATIVE->';
-SELECT * FROM test.table ORDER BY name FORMAT Protobuf SETTINGS format_schema = '00825_protobuf_format_copy:AltPerson';
+SELECT * FROM test.table ORDER BY name FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format:AltPerson';
 SELECT 'STRINGS->';
-SELECT * FROM test.table ORDER BY name FORMAT Protobuf SETTINGS format_schema = '00825_protobuf_format_copy:StrPerson';
+SELECT * FROM test.table ORDER BY name FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format:StrPerson';
 SELECT 'SYNTAX2->';
-SELECT * FROM test.table ORDER BY name FORMAT Protobuf SETTINGS format_schema = '00825_protobuf_format_syntax2_copy:Syntax2Person';
+SELECT * FROM test.table ORDER BY name FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format_syntax2:Syntax2Person';
 EOF
-
-# Remove copies of the schema files.
-rm "00825_protobuf_format_copy.proto" "00825_protobuf_format_syntax2_copy.proto"

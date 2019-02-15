@@ -258,7 +258,7 @@ protected:
     Block extremes;
 
 
-    void addChild(BlockInputStreamPtr & child)
+    void addChild(const BlockInputStreamPtr & child)
     {
         std::unique_lock lock(children_mutex);
         children.push_back(child);
@@ -314,6 +314,11 @@ private:
             if (f(*child))
                 return;
     }
+
+#ifndef NDEBUG
+    bool read_prefix_is_called = false;
+    bool read_suffix_is_called = false;
+#endif
 };
 
 }

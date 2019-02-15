@@ -151,7 +151,7 @@ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
 tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 # убедитесь, что установлены корректные права доступа на файлы
 sudo service clickhouse-server restart
-clickhouse-client --query "select count(*) from datasets.ontime"
+clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 ```
 
 !!!info
