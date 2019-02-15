@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
+#include <optional>
 #include <Storages/IStorage.h>
 
 
@@ -30,18 +31,17 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
 private:
     const std::string name;
     bool multithreaded;
-    size_t limit;
+    std::optional<size_t> limit;
     size_t offset;
 
 protected:
-    /// limit: 0 means unlimited.
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0, size_t offset_ = 0);
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<size_t> limit_ = std::nullopt, size_t offset_ = 0);
 };
 
 }

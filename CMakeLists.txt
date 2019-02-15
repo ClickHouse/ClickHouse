@@ -221,7 +221,7 @@ if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
-message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
+message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include(GNUInstallDirs)
 
@@ -252,9 +252,10 @@ if (NOT USE_CPUID)
 endif()
 include (cmake/find_libgsasl.cmake)
 include (cmake/find_libxml2.cmake)
+include (cmake/find_brotli.cmake)
 include (cmake/find_protobuf.cmake)
 include (cmake/find_pdqsort.cmake)
-include (cmake/find_hdfs3.cmake)
+include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 if (ENABLE_TESTS)

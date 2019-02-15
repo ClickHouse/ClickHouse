@@ -156,11 +156,12 @@ nav:
   - 'General syntax': 'query_language/syntax.md'
 
 - '运维':
-  - 'hidden': 'operations/index.md'
+  - 'Introduction': 'operations/index.md'
   - 'Requirements': 'operations/requirements.md'
   - 'Monitoring': 'operations/monitoring.md'
   - 'Troubleshooting': 'operations/troubleshooting.md'
   - 'Usage recommendations': 'operations/tips.md'
+  - 'ClickHouse Update': 'operations/update.md'
   - 'Access rights': 'operations/access_rights.md'
   - 'Data backup': 'operations/backup.md'
   - 'Configuration files': 'operations/configuration_files.md'
@@ -190,6 +191,7 @@ nav:
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
+  - '使用的第三方库': 'development/contrib.md'
 
 - '新功能特性':
   - '路线图': 'roadmap.md'

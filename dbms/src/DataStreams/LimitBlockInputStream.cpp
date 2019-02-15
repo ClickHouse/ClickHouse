@@ -6,7 +6,7 @@
 namespace DB
 {
 
-LimitBlockInputStream::LimitBlockInputStream(const BlockInputStreamPtr & input, size_t limit_, size_t offset_, bool always_read_till_end_)
+LimitBlockInputStream::LimitBlockInputStream(const BlockInputStreamPtr & input, UInt64 limit_, UInt64 offset_, bool always_read_till_end_)
     : limit(limit_), offset(offset_), always_read_till_end(always_read_till_end_)
 {
     children.push_back(input);
@@ -16,7 +16,7 @@ LimitBlockInputStream::LimitBlockInputStream(const BlockInputStreamPtr & input, 
 Block LimitBlockInputStream::readImpl()
 {
     Block res;
-    size_t rows = 0;
+    UInt64 rows = 0;
 
     /// pos - how many rows were read, including the last read block
 
@@ -45,12 +45,12 @@ Block LimitBlockInputStream::readImpl()
     if (pos >= offset + rows && pos <= offset + limit)
         return res;
 
-    /// return a piece of the block
-    size_t start = std::max(
+    /// give away a piece of the block
+    UInt64 start = std::max(
         static_cast<Int64>(0),
         static_cast<Int64>(offset) - static_cast<Int64>(pos) + static_cast<Int64>(rows));
 
-    size_t length = std::min(
+    UInt64 length = std::min(
         static_cast<Int64>(limit), std::min(
         static_cast<Int64>(pos) - static_cast<Int64>(offset),
         static_cast<Int64>(limit) + static_cast<Int64>(offset) - static_cast<Int64>(pos) + static_cast<Int64>(rows)));

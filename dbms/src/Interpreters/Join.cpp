@@ -170,18 +170,54 @@ static size_t getTotalByteCountImpl(const Maps & maps, Join::Type type)
 }
 
 
-template <Join::Type type>
-struct KeyGetterForType;
+template <Join::Type type, typename Value, typename Mapped>
+struct KeyGetterForTypeImpl;
 
-template <> struct KeyGetterForType<Join::Type::key8> { using Type = JoinKeyGetterOneNumber<UInt8>; };
-template <> struct KeyGetterForType<Join::Type::key16> { using Type = JoinKeyGetterOneNumber<UInt16>; };
-template <> struct KeyGetterForType<Join::Type::key32> { using Type = JoinKeyGetterOneNumber<UInt32>; };
-template <> struct KeyGetterForType<Join::Type::key64> { using Type = JoinKeyGetterOneNumber<UInt64>; };
-template <> struct KeyGetterForType<Join::Type::key_string> { using Type = JoinKeyGetterString; };
-template <> struct KeyGetterForType<Join::Type::key_fixed_string> { using Type = JoinKeyGetterFixedString; };
-template <> struct KeyGetterForType<Join::Type::keys128> { using Type = JoinKeyGetterFixed<UInt128>; };
-template <> struct KeyGetterForType<Join::Type::keys256> { using Type = JoinKeyGetterFixed<UInt256>; };
-template <> struct KeyGetterForType<Join::Type::hashed> { using Type = JoinKeyGetterHashed; };
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::key8, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt8, false>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::key16, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt16, false>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::key32, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt32, false>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::key64, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodOneNumber<Value, Mapped, UInt64, false>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::key_string, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::key_fixed_string, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::keys128, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt128, Mapped, false, false, false>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::keys256, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodKeysFixed<Value, UInt256, Mapped, false, false, false>;
+};
+template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::hashed, Value, Mapped>
+{
+    using Type = ColumnsHashing::HashMethodHashed<Value, Mapped, false>;
+};
+
+template <Join::Type type, typename Data>
+struct KeyGetterForType
+{
+    using Value = typename Data::value_type;
+    using Mapped_t = typename Data::mapped_type;
+    using Mapped = std::conditional_t<std::is_const_v<Data>, const Mapped_t, Mapped_t>;
+    using Type = typename KeyGetterForTypeImpl<type, Value, Mapped>::Type;
+};
 
 
 /// Do I need to use the hash table maps_*_full, in which we remember whether the row was joined.
@@ -316,42 +352,30 @@ namespace
     template <ASTTableJoin::Strictness STRICTNESS, typename Map, typename KeyGetter>
     struct Inserter
     {
-        static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool);
+        static void insert(Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool);
     };
 
     template <typename Map, typename KeyGetter>
     struct Inserter<ASTTableJoin::Strictness::Any, Map, KeyGetter>
     {
-        static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool)
+        static ALWAYS_INLINE void insert(Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
         {
-            typename Map::iterator it;
-            bool inserted;
-            map.emplace(key, it, inserted);
+            auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
-            if (inserted)
-            {
-                KeyGetter::onNewKey(it->first, pool);
-                new (&it->second) typename Map::mapped_type(stored_block, i);
-            }
-            else if (it->second.overwrite)
-                new (&it->second) typename Map::mapped_type(stored_block, i);
+            if (emplace_result.isInserted() || emplace_result.getMapped().overwrite)
+                new (&emplace_result.getMapped()) typename Map::mapped_type(stored_block, i);
         }
     };
 
     template <typename Map, typename KeyGetter>
     struct Inserter<ASTTableJoin::Strictness::All, Map, KeyGetter>
     {
-        static void insert(Map & map, const typename Map::key_type & key, Block * stored_block, size_t i, Arena & pool)
+        static ALWAYS_INLINE void insert(Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
         {
-            typename Map::iterator it;
-            bool inserted;
-            map.emplace(key, it, inserted);
+            auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
-            if (inserted)
-            {
-                KeyGetter::onNewKey(it->first, pool);
-                new (&it->second) typename Map::mapped_type(stored_block, i);
-            }
+            if (emplace_result.isInserted())
+                new (&emplace_result.getMapped()) typename Map::mapped_type(stored_block, i);
             else
             {
                 /** The first element of the list is stored in the value of the hash table, the rest in the pool.
@@ -359,9 +383,10 @@ namespace
                  * That is, the former second element, if it was, will be the third, and so on.
                  */
                 auto elem = pool.alloc<typename Map::mapped_type>();
+                auto & mapped = emplace_result.getMapped();
 
-                elem->next = it->second.next;
-                it->second.next = elem;
+                elem->next = mapped.next;
+                mapped.next = elem;
                 elem->block = stored_block;
                 elem->row_num = i;
             }
@@ -372,17 +397,16 @@ namespace
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     void NO_INLINE insertFromBlockImplTypeCase(
         Map & map, size_t rows, const ColumnRawPtrs & key_columns,
-        size_t keys_size, const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
-        KeyGetter key_getter(key_columns);
+        KeyGetter key_getter(key_columns, key_sizes, nullptr);
 
         for (size_t i = 0; i < rows; ++i)
         {
             if (has_null_map && (*null_map)[i])
                 continue;
 
-            auto key = key_getter.getKey(key_columns, keys_size, i, key_sizes);
-            Inserter<STRICTNESS, Map, KeyGetter>::insert(map, key, stored_block, i, pool);
+            Inserter<STRICTNESS, Map, KeyGetter>::insert(map, key_getter, stored_block, i, pool);
         }
     }
 
@@ -390,19 +414,19 @@ namespace
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
     void insertFromBlockImplType(
         Map & map, size_t rows, const ColumnRawPtrs & key_columns,
-        size_t keys_size, const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         if (null_map)
-            insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, true>(map, rows, key_columns, keys_size, key_sizes, stored_block, null_map, pool);
+            insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, true>(map, rows, key_columns, key_sizes, stored_block, null_map, pool);
         else
-            insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, false>(map, rows, key_columns, keys_size, key_sizes, stored_block, null_map, pool);
+            insertFromBlockImplTypeCase<STRICTNESS, KeyGetter, Map, false>(map, rows, key_columns, key_sizes, stored_block, null_map, pool);
     }
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void insertFromBlockImpl(
         Join::Type type, Maps & maps, size_t rows, const ColumnRawPtrs & key_columns,
-        size_t keys_size, const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
+        const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         switch (type)
         {
@@ -411,8 +435,8 @@ namespace
 
         #define M(TYPE) \
             case Join::Type::TYPE: \
-                insertFromBlockImplType<STRICTNESS, typename KeyGetterForType<Join::Type::TYPE>::Type>(\
-                    *maps.TYPE, rows, key_columns, keys_size, key_sizes, stored_block, null_map, pool); \
+                insertFromBlockImplType<STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>(\
+                    *maps.TYPE, rows, key_columns, key_sizes, stored_block, null_map, pool); \
                     break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -469,9 +493,15 @@ bool Join::insertFromBlock(const Block & block)
     }
     else
     {
+        NameSet erased; /// HOTFIX: there could be duplicates in JOIN ON section
+
         /// Remove the key columns from stored_block, as they are not needed.
         for (const auto & name : key_names_right)
-            stored_block->erase(stored_block->getPositionByName(name));
+        {
+            if (!erased.count(name))
+                stored_block->erase(stored_block->getPositionByName(name));
+            erased.insert(name);
+        }
     }
 
     size_t size = stored_block->columns();
@@ -493,7 +523,7 @@ bool Join::insertFromBlock(const Block & block)
     {
         dispatch([&](auto, auto strictness_, auto & map)
         {
-            insertFromBlockImpl<strictness_>(type, map, rows, key_columns, keys_size, key_sizes, stored_block, null_map, pool);
+            insertFromBlockImpl<strictness_>(type, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
         });
     }
 
@@ -509,14 +539,14 @@ namespace
     template <typename Map>
     struct Adder<true, ASTTableJoin::Strictness::Any, Map>
     {
-        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
+        static void addFound(const typename Map::mapped_type & mapped, size_t num_columns_to_add, MutableColumns & added_columns,
             size_t i, IColumn::Filter & filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
             const std::vector<size_t> & right_indexes)
         {
             filter[i] = 1;
 
             for (size_t j = 0; j < num_columns_to_add; ++j)
-                added_columns[j]->insertFrom(*it->second.block->getByPosition(right_indexes[j]).column.get(), it->second.row_num);
+                added_columns[j]->insertFrom(*mapped.block->getByPosition(right_indexes[j]).column, mapped.row_num);
         }
 
         static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
@@ -532,14 +562,14 @@ namespace
     template <typename Map>
     struct Adder<false, ASTTableJoin::Strictness::Any, Map>
     {
-        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
+        static void addFound(const typename Map::mapped_type & mapped, size_t num_columns_to_add, MutableColumns & added_columns,
             size_t i, IColumn::Filter & filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
             const std::vector<size_t> & right_indexes)
         {
             filter[i] = 1;
 
             for (size_t j = 0; j < num_columns_to_add; ++j)
-                added_columns[j]->insertFrom(*it->second.block->getByPosition(right_indexes[j]).column.get(), it->second.row_num);
+                added_columns[j]->insertFrom(*mapped.block->getByPosition(right_indexes[j]).column, mapped.row_num);
         }
 
         static void addNotFound(size_t /*num_columns_to_add*/, MutableColumns & /*added_columns*/,
@@ -552,14 +582,14 @@ namespace
     template <bool fill_left, typename Map>
     struct Adder<fill_left, ASTTableJoin::Strictness::All, Map>
     {
-        static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
+        static void addFound(const typename Map::mapped_type & mapped, size_t num_columns_to_add, MutableColumns & added_columns,
             size_t i, IColumn::Filter & filter, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
             const std::vector<size_t> & right_indexes)
         {
             filter[i] = 1;
 
             size_t rows_joined = 0;
-            for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->second); current != nullptr; current = current->next)
+            for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(mapped); current != nullptr; current = current->next)
             {
                 for (size_t j = 0; j < num_columns_to_add; ++j)
                     added_columns[j]->insertFrom(*current->block->getByPosition(right_indexes[j]).column.get(), current->row_num);
@@ -599,10 +629,10 @@ namespace
         const std::vector<size_t> & right_indexes)
     {
         IColumn::Offset current_offset = 0;
-        size_t keys_size = key_columns.size();
         size_t num_columns_to_add = right_indexes.size();
 
-        KeyGetter key_getter(key_columns);
+        Arena pool;
+        KeyGetter key_getter(key_columns, key_sizes, nullptr);
 
         for (size_t i = 0; i < rows; ++i)
         {
@@ -613,14 +643,14 @@ namespace
             }
             else
             {
-                auto key = key_getter.getKey(key_columns, keys_size, i, key_sizes);
-                typename Map::const_iterator it = map.find(key);
+                auto find_result = key_getter.findKey(map, i, pool);
 
-                if (it != map.end())
+                if (find_result.isFound())
                 {
-                    it->second.setUsed();
+                    auto & mapped = find_result.getMapped();
+                    mapped.setUsed();
                     Adder<Join::KindTrait<KIND>::fill_left, STRICTNESS, Map>::addFound(
-                        it, num_columns_to_add, added_columns, i, filter, current_offset, offsets_to_replicate.get(), right_indexes);
+                        mapped, num_columns_to_add, added_columns, i, filter, current_offset, offsets_to_replicate.get(), right_indexes);
                 }
                 else
                     Adder<Join::KindTrait<KIND>::fill_left, STRICTNESS, Map>::addNotFound(
@@ -747,7 +777,7 @@ void Join::joinBlockImpl(
     #define M(TYPE) \
         case Join::Type::TYPE: \
             std::tie(filter, offsets_to_replicate) = \
-                joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE>::Type>(\
+                joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
                 *maps_.TYPE, block.rows(), key_columns, key_sizes, added_columns, null_map, right_indexes); \
             break;
         APPLY_FOR_JOIN_VARIANTS(M)
@@ -1076,7 +1106,7 @@ class NonJoinedBlockInputStream : public IBlockInputStream
 {
 public:
     NonJoinedBlockInputStream(const Join & parent_, const Block & left_sample_block, const Names & key_names_left,
-                              const NamesAndTypesList & columns_added_by_join, size_t max_block_size_)
+                              const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size_)
         : parent(parent_), max_block_size(max_block_size_)
     {
         /** left_sample_block contains keys and "left" columns.
@@ -1153,7 +1183,7 @@ protected:
 
 private:
     const Join & parent;
-    size_t max_block_size;
+    UInt64 max_block_size;
 
     Block result_sample_block;
     /// Indices of columns in result_sample_block that come from the left-side table (except key columns).
@@ -1177,7 +1207,8 @@ private:
         for (size_t i = 0; i < right_sample_block.columns(); ++i)
         {
             const ColumnWithTypeAndName & src_column = right_sample_block.getByPosition(i);
-            result_sample_block.insert(src_column.cloneEmpty());
+            if (!result_sample_block.has(src_column.name))
+                result_sample_block.insert(src_column.cloneEmpty());
         }
 
         const auto & key_names_right = parent.key_names_right;
@@ -1304,7 +1335,7 @@ private:
 
 
 BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
-                                                        const NamesAndTypesList & columns_added_by_join, size_t max_block_size) const
+                                                        const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const
 {
     return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, key_names_left, columns_added_by_join, max_block_size);
 }

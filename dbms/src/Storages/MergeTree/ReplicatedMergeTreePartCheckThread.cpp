@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -238,6 +237,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                     storage.data.index_granularity,
                     true,
                     storage.data.primary_key_data_types,
+                    storage.data.skip_indices,
                     [this] { return need_stop.load(); });
 
                 if (need_stop)

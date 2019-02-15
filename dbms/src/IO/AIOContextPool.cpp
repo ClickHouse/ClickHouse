@@ -1,4 +1,4 @@
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
@@ -94,7 +94,11 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
             continue;
         }
 
+#if defined(__FreeBSD__)
+        it->second.set_value(aio_return(reinterpret_cast<struct aiocb *>(event.udata)));
+#else
         it->second.set_value(event.res);
+#endif
         promises.erase(it);
     }
 }

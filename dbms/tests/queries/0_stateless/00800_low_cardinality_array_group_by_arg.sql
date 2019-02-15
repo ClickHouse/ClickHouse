@@ -1,5 +1,3 @@
-SET allow_experimental_low_cardinality_type = 1;
-
 DROP TABLE IF EXISTS test.table1;
 DROP TABLE IF EXISTS test.table2;
 
@@ -24,10 +22,10 @@ insert into test.table2 (dt, id, arr) values ('2019-01-14', 1, ['aaa','bbb','ccc
 
 select dt, id, arraySort(groupArrayArray(arr))
 from (
-	select dt, id, arr from test.table1
-	where dt = '2019-01-14' and id = 1
-	UNION ALL
-	select dt, id, arr from test.table2
-	where dt = '2019-01-14' and id = 1
+    select dt, id, arr from test.table1
+    where dt = '2019-01-14' and id = 1
+    UNION ALL
+    select dt, id, arr from test.table2
+    where dt = '2019-01-14' and id = 1
 )
 group by dt, id;

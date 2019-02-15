@@ -36,7 +36,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
     void drop() override {}
@@ -75,7 +75,7 @@ protected:
                          const Context & context, QueryProcessingStage::Enum processed_stage);
 
     BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                          const size_t max_block_size, const Block & header, const StoragePtr & storage,
+                                          const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
                                           const TableStructureReadLockPtr & struct_lock, Names & real_column_names,
                                           Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                           bool concat_streams = false);

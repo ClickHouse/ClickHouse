@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
 
@@ -184,6 +183,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         if (storage.data.settings.replicated_can_become_leader)
             storage.enterLeaderElection();
+        else
+            LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
 
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.

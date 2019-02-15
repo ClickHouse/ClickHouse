@@ -157,11 +157,12 @@ nav:
   - 'General Syntax': 'query_language/syntax.md'
 
 - 'Operations':
-  - 'hidden': 'operations/index.md'
+  - 'Introduction': 'operations/index.md'
   - 'Requirements': 'operations/requirements.md'
   - 'Monitoring': 'operations/monitoring.md'
   - 'Troubleshooting': 'operations/troubleshooting.md'
   - 'Usage Recommendations': 'operations/tips.md'
+  - 'ClickHouse Update': 'operations/update.md'
   - 'Access Rights': 'operations/access_rights.md'
   - 'Data Backup': 'operations/backup.md'
   - 'Configuration Files': 'operations/configuration_files.md'
@@ -191,6 +192,7 @@ nav:
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
   - 'How to Write C++ code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
+  - 'Third-Party Libraries Used': 'development/contrib.md'
 
 - 'What''s New':
   - 'Roadmap': 'roadmap.md'

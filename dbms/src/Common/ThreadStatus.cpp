@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-thread_local ThreadStatusPtr current_thread = nullptr;
+thread_local ThreadStatus * current_thread = nullptr;
 
 
 TasksStatsCounters TasksStatsCounters::current()
@@ -124,7 +124,7 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
     if (!thread_group)
         return;
 
-    std::unique_lock lock(thread_group->mutex);
+    std::lock_guard lock(thread_group->mutex);
     thread_group->logs_queue_ptr = logs_queue;
 }
 
