@@ -53,7 +53,11 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
 void MergeTreeWhereOptimizer::calculateColumnSizes(const MergeTreeData & data, const Names & column_names)
 {
     for (const auto & column_name : column_names)
-        column_sizes[column_name] = data.getColumnCompressedSize(column_name);
+    {
+        UInt64 size = data.getColumnCompressedSize(column_name);
+        column_sizes[column_name] = size;
+        total_size_of_queried_columns += size;
+    }
 }
 
 
@@ -89,7 +93,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node)
             && !cannotBeMoved(node)
             /// Do not take into consideration the conditions consisting only of the first primary key column
             && !hasPrimaryKeyAtoms(node)
-            /// Only table columns are considered. Not array joined columns. NOTE Check that aliases was expanded.
+            /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
             && isSubsetOfTableColumns(cond.identifiers)
             /// Do not move conditions involving all queried columns.
             && cond.identifiers.size() < queried_columns.size();
@@ -142,22 +146,44 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     Conditions where_conditions = analyze(select.where_expression);
     Conditions prewhere_conditions;
 
-    auto it = std::min_element(where_conditions.begin(), where_conditions.end());
-    if (!it->viable)
-        return;
+    UInt64 total_size_of_moved_conditions = 0;
 
-    /// Move the best condition to PREWHERE if it is viable.
-
-    prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, it);
-
-    /// Move all other conditions that depend on the same set of columns.
-    for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
+    /// Move condition and all other conditions depend on the same set of columns.
+    auto move_condition = [&](Conditions::iterator cond_it)
     {
-        if (jt->columns_size == it->columns_size && jt->identifiers == it->identifiers)
-            prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, jt++);
-        else
-            ++jt;
+        prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
+        total_size_of_moved_conditions += cond_it->columns_size;
+
+        /// Move all other conditions that depend on the same set of columns.
+        for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
+        {
+            if (jt->columns_size == cond_it->columns_size && jt->identifiers == cond_it->identifiers)
+                prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, jt++);
+            else
+                ++jt;
+        }
+    };
+
+    /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
+    while (!where_conditions.empty())
+    {
+        /// Move the best condition to PREWHERE if it is viable.
+
+        auto it = std::min_element(where_conditions.begin(), where_conditions.end());
+
+        if (!it->viable)
+            break;
+
+        /// 10% ratio is just a guess.
+        if (total_size_of_moved_conditions > 0 && (total_size_of_moved_conditions + it->columns_size) * 10 > total_size_of_queried_columns)
+            break;
+
+        move_condition(it);
     }
+
+    /// Nothing was moved.
+    if (prewhere_conditions.empty())
+        return;
 
     /// Rewrite the SELECT query.
 
@@ -179,18 +205,13 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 }
 
 
-size_t MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identifiers) const
+UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identifiers) const
 {
-    /** for expressions containing no columns (or where columns could not be determined otherwise) assume maximum
-        *    possible size so they do not have priority in eligibility over other expressions. */
-    if (identifiers.empty())
-        return std::numeric_limits<size_t>::max();
-
-    size_t size{};
+    UInt64 size = 0;
 
     for (const auto & identifier : identifiers)
         if (column_sizes.count(identifier))
-            size += column_sizes.find(identifier)->second;
+            size += column_sizes.at(identifier);
 
     return size;
 }
