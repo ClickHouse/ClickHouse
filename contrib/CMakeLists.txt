@@ -8,6 +8,8 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -Wno-inconsistent-missing-override -std=c++1z")
 endif ()
 
+set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
+
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
 endif ()
@@ -213,6 +215,10 @@ endif()
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)
     add_subdirectory(libxml2-cmake)
+endif ()
+
+if (USE_INTERNAL_BROTLI_LIBRARY)
+    add_subdirectory(brotli-cmake)
 endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)

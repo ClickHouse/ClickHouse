@@ -22,6 +22,7 @@
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
+#include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -140,7 +141,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     const char * end,
     Context & context,
     bool internal,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    bool has_query_tail)
 {
     time_t current_time = time(nullptr);
 
@@ -163,9 +165,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+        auto * insert_query = dynamic_cast<ASTInsertQuery *>(ast.get());
         if (insert_query && insert_query->data)
+        {
             query_end = insert_query->data;
+            insert_query->has_tail = has_query_tail;
+        }
         else
             query_end = end;
     }
@@ -191,11 +196,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (!internal)
             logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
 
-        if (settings.allow_experimental_multiple_joins_emulation)
+        if (!internal && settings.allow_experimental_multiple_joins_emulation)
         {
             JoinToSubqueryTransformVisitor::Data join_to_subs_data;
             JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
             if (join_to_subs_data.done)
+                logQuery(queryToString(*ast), context);
+        }
+
+        if (!internal && settings.allow_experimental_cross_to_join_conversion)
+        {
+            CrossToInnerJoinVisitor::Data cross_to_inner;
+            CrossToInnerJoinVisitor(cross_to_inner).visit(ast);
+            if (cross_to_inner.done)
                 logQuery(queryToString(*ast), context);
         }
 
@@ -422,10 +435,11 @@ BlockIO executeQuery(
     const String & query,
     Context & context,
     bool internal,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    bool may_have_embedded_data)
 {
     BlockIO streams;
-    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage);
+    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, !may_have_embedded_data);
     return streams;
 }
 
@@ -435,7 +449,8 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &)> set_content_type)
+    std::function<void(const String &)> set_content_type,
+    std::function<void(const String &)> set_query_id)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -469,13 +484,13 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete);
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, !istr.eof());
 
     try
     {
         if (streams.out)
         {
-            InputStreamFromASTInsertQuery in(ast, istr, streams, context);
+            InputStreamFromASTInsertQuery in(ast, &istr, streams.out->getHeader(), context);
             copyData(in, *streams.out);
         }
 
@@ -517,6 +532,9 @@ void executeQuery(
 
             if (set_content_type)
                 set_content_type(out->getContentType());
+
+            if (set_query_id)
+                set_query_id(context.getClientInfo().current_query_id);
 
             copyData(*streams.in, *out);
         }

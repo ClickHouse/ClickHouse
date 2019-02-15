@@ -20,7 +20,10 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
-#include "TranslateQualifiedNamesVisitor.h"
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/FindIdentifierBestTableVisitor.h>
+#include <Interpreters/ExtractFunctionDataVisitor.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -33,64 +36,12 @@ namespace ErrorCodes
 
 static constexpr auto and_function_name = "and";
 
-
-struct FindIdentifierBestTableData
-{
-    using TypeToVisit = ASTIdentifier;
-
-    const std::vector<DatabaseAndTableWithAlias> & tables;
-    std::vector<std::pair<ASTIdentifier *, const DatabaseAndTableWithAlias *>> identifier_table;
-
-    FindIdentifierBestTableData(const std::vector<DatabaseAndTableWithAlias> & tables_)
-        : tables(tables_)
-    {}
-
-    void visit(ASTIdentifier & identifier, ASTPtr &)
-    {
-        const DatabaseAndTableWithAlias * best_table = nullptr;
-
-        if (!identifier.compound())
-        {
-            if (!tables.empty())
-                best_table = &tables[0];
-        }
-        else
-        {
-            size_t best_match = 0;
-            for (const DatabaseAndTableWithAlias & table : tables)
-            {
-                if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, table))
-                    if (match > best_match)
-                    {
-                        best_match = match;
-                        best_table = &table;
-                    }
-            }
-        }
-
-        identifier_table.emplace_back(&identifier, best_table);
-    }
-};
-
-using FindIdentifierBestTableMatcher = OneTypeMatcher<FindIdentifierBestTableData>;
-using FindIdentifierBestTableVisitor = InDepthNodeVisitor<FindIdentifierBestTableMatcher, true>;
-
-
-static bool allowPushDown(const ASTSelectQuery * subquery)
-{
-    return subquery &&
-        !subquery->final() &&
-        !subquery->limit_by_expression_list &&
-        !subquery->limit_length &&
-        !subquery->with_expression_list;
-}
-
-
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
     ASTSelectQuery * ast_select_, ExtractedSettings && settings_, const Context & context_)
         : ast_select(ast_select_), settings(settings_), context(context_)
 {
 }
+
 
 bool PredicateExpressionsOptimizer::optimize()
 {
@@ -156,6 +107,27 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
         }
     }
     return is_rewrite_subquery;
+}
+
+bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquery)
+{
+    if (subquery && !subquery->final() && !subquery->limit_by_expression_list && !subquery->limit_length && !subquery->with_expression_list)
+    {
+        ASTPtr expr_list = ast_select->select_expression_list;
+        ExtractFunctionVisitor::Data extract_data;
+        ExtractFunctionVisitor(extract_data).visit(expr_list);
+
+        for (const auto & subquery_function : extract_data.functions)
+        {
+            const auto & function = FunctionFactory::instance().get(subquery_function->name, context);
+            if (function->isStateful())
+                return false;
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(ASTPtr & predicate_expression)
@@ -236,7 +208,11 @@ bool PredicateExpressionsOptimizer::canPushDownOuterPredicate(
             if (alias == qualified_name)
             {
                 is_found = true;
-                if (isAggregateFunction(ast))
+                ASTPtr projection_column = ast;
+                ExtractFunctionVisitor::Data extract_data;
+                ExtractFunctionVisitor(extract_data).visit(projection_column);
+
+                if (!extract_data.aggregate_functions.empty())
                     optimize_kind = OptimizeKind::PUSH_TO_HAVING;
             }
         }
@@ -260,10 +236,21 @@ void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
         {
             if (alias == qualified_name)
             {
-                if (!isIdentifier(ast) && ast->tryGetAlias().empty())
-                    ast->setAlias(ast->getColumnName());
+                String name;
+                if (auto * id = typeid_cast<const ASTIdentifier *>(ast.get()))
+                {
+                    name = id->tryGetAlias();
+                    if (name.empty())
+                        name = id->shortName();
+                }
+                else
+                {
+                    if (ast->tryGetAlias().empty())
+                        ast->setAlias(ast->getColumnName());
+                    name = ast->getAliasOrColumnName();
+                }
 
-                identifier->resetWithAlias(ast->getAliasOrColumnName());
+                identifier->setShortName(name);
             }
         }
     }
@@ -279,21 +266,6 @@ bool PredicateExpressionsOptimizer::isArrayJoinFunction(const ASTPtr & node)
 
     for (auto & child : node->children)
         if (isArrayJoinFunction(child))
-            return true;
-
-    return false;
-}
-
-bool PredicateExpressionsOptimizer::isAggregateFunction(const ASTPtr & node)
-{
-    if (auto function = typeid_cast<const ASTFunction *>(node.get()))
-    {
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
-            return true;
-    }
-
-    for (const auto & child : node->children)
-        if (isAggregateFunction(child))
             return true;
 
     return false;
@@ -365,7 +337,9 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
     std::unordered_map<String, ASTPtr> aliases;
     std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
 
-    TranslateQualifiedNamesVisitor::Data qn_visitor_data{{}, tables};
+    /// TODO: get tables from evaluateAsterisk instead of tablesOnly() to extract asterisks in general way
+    std::vector<TableWithColumnNames> tables_with_columns = TranslateQualifiedNamesVisitor::Data::tablesOnly(tables);
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, tables_with_columns, false);
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};

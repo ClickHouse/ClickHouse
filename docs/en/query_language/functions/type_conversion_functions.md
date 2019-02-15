@@ -7,9 +7,11 @@
 
 ## toFloat32, toFloat64
 
-## toUInt8OrZero, toUInt16OrZero, toUInt32OrZero, toUInt64OrZero, toInt8OrZero, toInt16OrZero, toInt32OrZero, toInt64OrZero, toFloat32OrZero, toFloat64OrZero
-
 ## toDate, toDateTime
+
+## toUInt8OrZero, toUInt16OrZero, toUInt32OrZero, toUInt64OrZero, toInt8OrZero, toInt16OrZero, toInt32OrZero, toInt64OrZero, toFloat32OrZero, toFloat64OrZero, toDateOrZero, toDateTimeOrZero
+
+## toUInt8OrNull, toUInt16OrNull, toUInt32OrNull, toUInt64OrNull, toInt8OrNull, toInt16OrNull, toInt32OrNull, toInt64OrNull, toFloat32OrNull, toFloat64OrNull, toDateOrNull, toDateTimeOrNull
 
 ## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
 
@@ -99,6 +101,9 @@ These functions accept a string and interpret the bytes placed at the beginning 
 
 This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
+## reinterpretAsFixedString
+
+This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
 ## CAST(x, t)
 
@@ -141,5 +146,39 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
+## toIntervalYear, toIntervalQuarter, toIntervalMonth, toIntervalWeek, toIntervalDay, toIntervalHour, toIntervalMinute, toIntervalSecond
+
+Converts a Number type argument to a Interval type (duration).
+The interval type is actually very useful, you can use this type of data to perform arithmetic operations directly with Date or DateTime. At the same time, ClickHouse provides a more convenient syntax for declaring Interval type data. For example:
+
+```sql
+WITH
+    toDate('2019-01-01') AS date,
+    INTERVAL 1 WEEK AS interval_week,
+    toIntervalWeek(1) AS interval_to_week
+SELECT
+    date + interval_week,
+    date + interval_to_week
+```
+
+```
+┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
+│                2019-01-08 │                   2019-01-08 │
+└───────────────────────────┴──────────────────────────────┘
+```
+
+## parseDateTimeBestEffort {#type_conversion_functions-parsedatetimebesteffort}
+
+Parse a number type argument to a Date or DateTime type.
+different from toDate and toDateTime, parseDateTimeBestEffort can progress more complex date format.
+For more information, see the link: [Complex Date Format](https://xkcd.com/1179/)
+
+## parseDateTimeBestEffortOrNull
+
+Same as for [parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort) except that it returns null when it encounters a date format that cannot be processed.
+
+## parseDateTimeBestEffortOrZero
+
+Same as for [parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
