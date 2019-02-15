@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IBlockInputStream.h>
-#include "ExternalResultDescription.h"
+#include <Core/ExternalResultDescription.h>
 
 
 namespace Poco

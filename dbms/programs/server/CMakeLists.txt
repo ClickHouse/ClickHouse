@@ -10,7 +10,7 @@ add_library (clickhouse-server-lib ${LINK_MODE}
     TCPHandler.cpp
     )
 
-target_link_libraries (clickhouse-server-lib PRIVATE clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY})
+target_link_libraries (clickhouse-server-lib PRIVATE clickhouse_dictionaries clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY})
 if (USE_POCO_NETSSL)
     target_link_libraries (clickhouse-server-lib PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif ()
