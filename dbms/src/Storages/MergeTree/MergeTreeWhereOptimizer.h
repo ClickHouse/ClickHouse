@@ -40,7 +40,7 @@ private:
     struct Condition
     {
         ASTPtr node;
-        size_t columns_size = 0;
+        UInt64 columns_size = 0;
         NameSet identifiers;
         bool viable = false;
         bool good = false;
@@ -73,7 +73,7 @@ private:
 
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
-    size_t getIdentifiersColumnSize(const NameSet & identifiers) const;
+    UInt64 getIdentifiersColumnSize(const NameSet & identifiers) const;
 
     bool isConditionGood(const ASTPtr & condition) const;
 
@@ -102,7 +102,8 @@ private:
     const Names queried_columns;
     const Block block_with_constants;
     Poco::Logger * log;
-    std::unordered_map<std::string, size_t> column_sizes{};
+    std::unordered_map<std::string, UInt64> column_sizes;
+    UInt64 total_size_of_queried_columns = 0;
     NameSet array_joined_names;
 };
 
