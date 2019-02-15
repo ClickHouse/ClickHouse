@@ -98,10 +98,7 @@
 
 ### Code base imporvements
 * Unified code which placed data from columns into HashTable (ColumnsHashing.h). Refactored `Aggregator`, `Join`, `Set`, `arrayUniq`, `arrayEnumerateUniq` and `arrayEnumerateDense`. [#4128](https://github.com/yandex/ClickHouse/pull/4128) ([KochetovNicolai](https://github.com/KochetovNicolai))
-* A lot of Interpreters refactoring.
-  [#4193](https://github.com/yandex/ClickHouse/pull/4193)
-  [#4154](https://github.com/yandex/ClickHouse/pull/4154)
-  [#4307](https://github.com/yandex/ClickHouse/pull/4307) ([#43]) ([Artem Zuikov](https://github.com/4ertus2))
+* A lot of Interpreters refactoring. [#4193](https://github.com/yandex/ClickHouse/pull/4193) [#4154](https://github.com/yandex/ClickHouse/pull/4154) [#4307](https://github.com/yandex/ClickHouse/pull/4307) ([#43]) ([Artem Zuikov](https://github.com/4ertus2))
 
 ## ClickHouse release 19.1.7, 2019-02-15
 
