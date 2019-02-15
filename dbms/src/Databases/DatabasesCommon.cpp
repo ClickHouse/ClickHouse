@@ -68,10 +68,10 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
-    if (!ast_create_query.columns)
+    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns, context);
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
 
     return
     {

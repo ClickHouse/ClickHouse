@@ -38,10 +38,10 @@ std::string errnoToString(int code, int e)
 #endif
     {
         std::string tmp = std::to_string(code);
-        const char * code = tmp.c_str();
+        const char * code_str = tmp.c_str();
         const char * unknown_message = "Unknown error ";
         strcpy(buf, unknown_message);
-        strcpy(buf + strlen(unknown_message), code);
+        strcpy(buf + strlen(unknown_message), code_str);
     }
     return "errno: " + toString(e) + ", strerror: " + std::string(buf);
 #else
@@ -88,7 +88,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         try
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-                << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+                << ", e.displayText() = " << e.displayText();
         }
         catch (...) {}
     }
@@ -202,7 +202,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
             }
         }
 
-        stream << "Code: " << e.code() << ", e.displayText() = " << text << ", e.what() = " << e.what();
+        stream << "Code: " << e.code() << ", e.displayText() = " << text;
 
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace:\n\n" << e.getStackTrace().toString();

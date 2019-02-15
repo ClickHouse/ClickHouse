@@ -1,3 +1,4 @@
+# ARM: Cannot cpuid_get_raw_data: CPUID instruction is not supported
 if (NOT ARCH_ARM)
     option (USE_INTERNAL_CPUID_LIBRARY "Set to FALSE to use system cpuid library instead of bundled" ${NOT_UNBUNDLED})
 endif ()
@@ -21,7 +22,7 @@ if (CPUID_LIBRARY AND CPUID_INCLUDE_DIR)
         # TODO: make virtual target cpuid:cpuid with COMPILE_DEFINITIONS property
     endif ()
     set (USE_CPUID 1)
-elseif (NOT MISSING_INTERNAL_CPUID_LIBRARY)
+elseif (NOT ARCH_ARM AND NOT MISSING_INTERNAL_CPUID_LIBRARY)
     set (CPUID_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
     set (USE_INTERNAL_CPUID_LIBRARY 1)
     set (CPUID_LIBRARY cpuid)

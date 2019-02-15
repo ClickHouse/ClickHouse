@@ -17,6 +17,18 @@ namespace DB
 namespace
 {
 const std::regex QUOTE_REGEX{"\""};
+std::string getMainMetric(const PerformanceTestInfo & test_info)
+{
+    std::string main_metric;
+    if (test_info.main_metric.empty())
+        if (test_info.exec_type == ExecutionType::Loop)
+            main_metric = "min_time";
+        else
+            main_metric = "rows_per_second";
+    else
+        main_metric = test_info.main_metric;
+    return main_metric;
+}
 }
 
 ReportBuilder::ReportBuilder(const std::string & server_version_)
@@ -48,13 +60,7 @@ std::string ReportBuilder::buildFullReport(
     json_output.set("time", getCurrentTime());
     json_output.set("test_name", test_info.test_name);
     json_output.set("path", test_info.path);
-    json_output.set("main_metric", test_info.main_metric);
-
-    auto has_metric = [&test_info] (const std::string & metric_name)
-    {
-        return std::find(test_info.metrics.begin(),
-            test_info.metrics.end(), metric_name) != test_info.metrics.end();
-    };
+    json_output.set("main_metric", getMainMetric(test_info));
 
     if (test_info.substitutions.size())
     {
@@ -108,10 +114,9 @@ std::string ReportBuilder::buildFullReport(
             if (test_info.exec_type == ExecutionType::Loop)
             {
                 /// in seconds
-                if (has_metric("min_time"))
-                    runJSON.set("min_time", statistics.min_time / double(1000));
+                runJSON.set("min_time", statistics.min_time / double(1000));
 
-                if (has_metric("quantiles"))
+                if (statistics.sampler.size() != 0)
                 {
                     JSONString quantiles(4); /// here, 4 is the size of \t padding
                     for (double percent = 10; percent <= 90; percent += 10)
@@ -135,34 +140,21 @@ std::string ReportBuilder::buildFullReport(
                     runJSON.set("quantiles", quantiles.asString());
                 }
 
-                if (has_metric("total_time"))
-                    runJSON.set("total_time", statistics.total_time);
+                runJSON.set("total_time", statistics.total_time);
 
-                if (has_metric("queries_per_second"))
-                    runJSON.set("queries_per_second",
-                        double(statistics.queries) / statistics.total_time);
-
-                if (has_metric("rows_per_second"))
-                    runJSON.set("rows_per_second",
-                        double(statistics.total_rows_read) / statistics.total_time);
-
-                if (has_metric("bytes_per_second"))
-                    runJSON.set("bytes_per_second",
-                        double(statistics.total_bytes_read) / statistics.total_time);
+                if (statistics.total_time != 0)
+                {
+                    runJSON.set("queries_per_second", static_cast<double>(statistics.queries) / statistics.total_time);
+                    runJSON.set("rows_per_second", static_cast<double>(statistics.total_rows_read) / statistics.total_time);
+                    runJSON.set("bytes_per_second", static_cast<double>(statistics.total_bytes_read) / statistics.total_time);
+                }
             }
             else
             {
-                if (has_metric("max_rows_per_second"))
-                    runJSON.set("max_rows_per_second", statistics.max_rows_speed);
-
-                if (has_metric("max_bytes_per_second"))
-                    runJSON.set("max_bytes_per_second", statistics.max_bytes_speed);
-
-                if (has_metric("avg_rows_per_second"))
-                    runJSON.set("avg_rows_per_second", statistics.avg_rows_speed_value);
-
-                if (has_metric("avg_bytes_per_second"))
-                    runJSON.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
+                runJSON.set("max_rows_per_second", statistics.max_rows_speed);
+                runJSON.set("max_bytes_per_second", statistics.max_bytes_speed);
+                runJSON.set("avg_rows_per_second", statistics.avg_rows_speed_value);
+                runJSON.set("avg_bytes_per_second", statistics.avg_bytes_speed_value);
             }
 
             run_infos.push_back(runJSON);
@@ -193,9 +185,12 @@ std::string ReportBuilder::buildCompactReport(
                 output << "query \"" << test_info.queries[query_index] << "\", ";
 
             output << "run " << std::to_string(number_of_launch + 1) << ": ";
-            output << test_info.main_metric << " = ";
+
+            std::string main_metric = getMainMetric(test_info);
+
+            output << main_metric << " = ";
             size_t index = number_of_launch * test_info.queries.size() + query_index;
-            output << stats[index].getStatisticByName(test_info.main_metric);
+            output << stats[index].getStatisticByName(main_metric);
             output << "\n";
         }
     }

@@ -1,9 +1,10 @@
 #pragma once
+
 #include <Core/Types.h>
 #include <Core/Defines.h>
+#include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-#include <Core/TypeListNumber.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 

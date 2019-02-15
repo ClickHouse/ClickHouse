@@ -3,7 +3,7 @@
 #include <Common/SharedLibrary.h>
 #include <common/LocalDateTime.h>
 #include "DictionaryStructure.h"
-#include "ExternalResultDescription.h"
+#include <Core/ExternalResultDescription.h>
 #include "IDictionarySource.h"
 
 

@@ -15,9 +15,9 @@ The restriction can also be set externally at the datacenter level. You can use 
 
 ## RAM
 
-For small amounts of data (up to \~200 GB compressed), it is best to use as much memory as the volume of data.
+For small amounts of data (up to ~200 GB compressed), it is best to use as much memory as the volume of data.
 For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
-Even for data volumes of \~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
+Even for data volumes of ~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
 
 Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
 ```

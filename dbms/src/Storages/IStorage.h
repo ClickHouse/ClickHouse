@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Names.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Core/Names.h>
@@ -8,6 +7,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/ITableDeclaration.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/CancellationCode.h>
 #include <shared_mutex>
 #include <memory>
 #include <optional>
@@ -185,7 +185,7 @@ public:
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
-        size_t /*max_block_size*/,
+        UInt64 /*max_block_size*/,
         unsigned /*num_streams*/)
     {
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -253,6 +253,12 @@ public:
 
     /// Mutate the table contents
     virtual void mutate(const MutationCommands &, const Context &)
+    {
+        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Cancel a mutation.
+    virtual CancellationCode killMutation(const String & /*mutation_id*/)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

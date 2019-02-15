@@ -3,11 +3,12 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Storages/StorageDictionary.h>
 #include <common/logger_useful.h>
-#include <Parsers/IAST.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/IAST.h>
+
 
 namespace DB
 {
@@ -138,6 +139,7 @@ void DatabaseDictionary::alterTable(
     const Context &,
     const String &,
     const ColumnsDescription &,
+    const IndicesDescription &,
     const ASTModifier &)
 {
     throw Exception("DatabaseDictionary: alterTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);

@@ -29,4 +29,11 @@ SELECT n, z, changed FROM (
   )
 ) WHERE changed = 0;
 
+
+SELECT arrayJoin(arrayMap(x -> x, arraySort(groupArray((ts, n))))) AS k FROM (
+  SELECT ts, n, z FROM system.one ARRAY JOIN [1, 3, 4, 5, 6] AS ts, [1, 2, 2, 2, 1] AS n, ['a', 'a', 'b', 'a', 'b'] AS z
+  ORDER BY n ASC, ts DESC
+) WHERE z = 'a' GROUP BY z;
+
+
 DROP TABLE IF EXISTS test.test;

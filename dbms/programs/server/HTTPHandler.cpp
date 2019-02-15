@@ -1,27 +1,27 @@
+#include "HTTPHandler.h"
+
 #include <chrono>
 #include <iomanip>
-
 #include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerRequestImpl.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/NetException.h>
-
 #include <ext/scope_guard.h>
-
 #include <Core/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <IO/ReadBufferFromIStream.h>
-#include <IO/ZlibInflatingReadBuffer.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ConcatReadBuffer.h>
+#include <Common/config.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/ZlibInflatingReadBuffer.h>
+#include <IO/BrotliReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromFile.h>
@@ -31,16 +31,11 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
-
 #include <DataStreams/IBlockInputStream.h>
-
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
-
 #include <Poco/Net/HTTPStream.h>
-
-#include "HTTPHandler.h"
 
 namespace DB
 {
@@ -397,19 +392,25 @@ void HTTPHandler::processQuery(
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     if (!http_request_compression_method_str.empty())
     {
-        ZlibCompressionMethod method;
         if (http_request_compression_method_str == "gzip")
         {
-            method = ZlibCompressionMethod::Gzip;
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, ZlibCompressionMethod::Gzip);
         }
         else if (http_request_compression_method_str == "deflate")
         {
-            method = ZlibCompressionMethod::Zlib;
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, ZlibCompressionMethod::Zlib);
         }
+#if USE_BROTLI
+        else if (http_request_compression_method_str == "br")
+        {
+            in_post = std::make_unique<BrotliReadBuffer>(*in_post_raw);
+        }
+#endif
         else
+        {
             throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
-                ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, method);
+                    ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+        }
     }
     else
         in_post = std::move(in_post_raw);
