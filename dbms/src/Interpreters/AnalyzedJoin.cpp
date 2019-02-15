@@ -67,7 +67,7 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     ASTPtr query = expression_list;
     auto syntax_result = SyntaxAnalyzer(context).analyze(query, source_column_names, required_columns);
     ExpressionAnalyzer analyzer(query, syntax_result, context, {}, required_columns_set);
-    return analyzer.getActions(false);
+    return analyzer.getActions(true, false);
 }
 
 Names AnalyzedJoin::getOriginalColumnNames(const NameSet & required_columns_from_joined_table) const

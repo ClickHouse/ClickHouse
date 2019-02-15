@@ -948,7 +948,8 @@ void ExpressionAnalyzer::collectUsedColumns()
     RequiredSourceColumnsVisitor::Data columns_context;
     RequiredSourceColumnsVisitor(columns_context).visit(query);
 
-    NameSet required = columns_context.requiredColumns();
+    std::unordered_map<String, String> required_alias_map;
+    NameSet required = columns_context.requiredColumns(required_alias_map);
 
 #if 0
     std::cerr << "Query: " << query << std::endl;
@@ -957,8 +958,8 @@ void ExpressionAnalyzer::collectUsedColumns()
     for (const auto & name : source_columns)
         std::cerr << "'" << name.name << "' ";
     std::cerr << "required: ";
-    for (const auto & name : required)
-        std::cerr << "'" << name << "' ";
+    for (const auto & pr : required)
+        std::cerr << "'" << pr.first << "' ";
     std::cerr << std::endl;
 #endif
 
@@ -991,10 +992,18 @@ void ExpressionAnalyzer::collectUsedColumns()
         for (const auto & joined_column : analyzed_join.available_joined_columns)
         {
             auto & name = joined_column.name_and_type.name;
-            if (required.count(name) && !avaliable_columns.count(name))
+            if (avaliable_columns.count(name))
+                continue;
+
+            if (required.count(name))
             {
                 columns_added_by_join.push_back(joined_column);
                 required.erase(name);
+            }
+            else if (required_alias_map.count(name) && required.count(required_alias_map[name]))
+            {
+                columns_added_by_join.push_back(joined_column);
+                required.erase(required_alias_map[name]);
             }
         }
     }
@@ -1022,7 +1031,11 @@ void ExpressionAnalyzer::collectUsedColumns()
         const String & column_name = it->name;
         unknown_required_source_columns.erase(column_name);
 
-        if (!required.count(column_name))
+        bool is_required_alias = required_alias_map.count(column_name);
+        if (is_required_alias)
+            unknown_required_source_columns.erase(required_alias_map[column_name]);
+
+        if (!required.count(column_name) && !is_required_alias)
             source_columns.erase(it++);
         else
             ++it;
