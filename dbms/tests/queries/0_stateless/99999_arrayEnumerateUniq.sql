@@ -1,5 +1,6 @@
 
 -- SELECT arrayEnumerateUniq([1,1,2,2,1,1], [1,2,1,2,2,2], [1,2,1,2,2,2]);
+SELECT arrayEnumerateUniq([1,1,2,2,1,1], [1,2,1,2,2,2]);
 
 --SELECT arrayEnumerateUniqRanked(1, [[1,1,2,2,1,1]],2,                           [[1,2,1,2,2,2]],2); -- 1,2,3,4,1,1
 SELECT arrayEnumerateUniqRanked(1, [1,1,2,2,1,1],1,                           [1,2,1,2,2,2],1); -- 1,2,3,4,2,2
@@ -13,11 +14,17 @@ SELECT arrayEnumerateUniqRanked(1, [1,1,2,2,1,1],1,                           [1
 
 
 SELECT arrayEnumerateUniqRanked(1, [1,2,1], 1);                                                      -- f(1, x,1)     =[1,1,2] -- 1 2 1
+SELECT arrayEnumerateUniq([1,2,1]);
 SELECT arrayEnumerateUniqRanked(1, ['a','b','c'], 1);                                                -- f(1, x2,1)    =[1,1,1] -- a b c
+SELECT arrayEnumerateUniq(['a','b','c']);
 SELECT arrayEnumerateUniqRanked(1, [1,2,1], 1, ['a','b','c'], 1);                                    -- f(1, x,1,x2,1)=[1,1,1] -- (1,a) (2,b) (1,c)
+SELECT arrayEnumerateUniq([1,2,1], ['a','b','c']);
 SELECT arrayEnumerateUniqRanked(1, [1,2,1], 1, [[1,2,3],[2,2,1],[3]], 1);                            -- f(1, x,1,y,1) =[1,1,1] -- (1,[1,2,3]) (2,[2,2,1]) (1,[3])
+SELECT arrayEnumerateUniq([1,2,1], [[1,2,3],[2,2,1],[3]]);
 SELECT arrayEnumerateUniqRanked(1, [['a','b','a'],['a','b','a'],['c']], 1);                          -- f(1, y2,1)    =[1,2,1] -- [a,b,a] [a,b,a] [c]
+SELECT arrayEnumerateUniq([['a','b','a'],['a','b','a'],['c']]);
 SELECT arrayEnumerateUniqRanked(1, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]],1); -- f(1, z,1)     =[1,2,1] -- [[1,2,3],[1,2,3],[1,2,3]] [[1,2,3],[1,2,3],[1,2,3]] [[1,2]]
+SELECT arrayEnumerateUniq([[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]]);
 
 
 -- подсчитываем вхождения глобально по всему значению в столбце, смотрим в глубину на два уровня,
