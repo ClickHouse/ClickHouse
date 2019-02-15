@@ -79,7 +79,7 @@
 * Now server reuse threads from global thread pool. This affects performance in some corner cases. [#4150](https://github.com/yandex/ClickHouse/pull/4150) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ### Improvements
-* Implemented AIO support for FreeBSD. [#4305](https://github.com/yandex/ClickHouse/pull/4305) ([Vitaly Baranov](https://github.com/vitlibar))
+* Implemented AIO support for FreeBSD. [#4305](https://github.com/yandex/ClickHouse/pull/4305) ([urgordeadbeef](https://github.com/urgordeadbeef))
 * `SELECT * FROM a JOIN b USING a, b` now return `a` and `b` columns only from the left table. [#4141](https://github.com/yandex/ClickHouse/pull/4141) ([Artem Zuikov](https://github.com/4ertus2))
 * Improved hints selector now it is similar to clang SimpleTypoCorrector. [#4337](https://github.com/yandex/ClickHouse/pull/4337) ([Danila Kutenin](https://github.com/danlark1))
 * Added hints while user make typo in function name or type in command line client. [#4239](https://github.com/yandex/ClickHouse/pull/4239) ([Danila Kutenin](https://github.com/danlark1))
