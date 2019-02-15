@@ -5,7 +5,7 @@
 * Added the `KILL MUTATION` statement that allows removing mutations that are for some reasons stuck. Added `latest_failed_part`, `latest_fail_time`, `latest_fail_reason` fields to the `system.mutations` table for easier troubleshooting. [#4287](https://github.com/yandex/ClickHouse/pull/4287) ([Alex Zatelepin](https://github.com/ztlpn))
 * Added aggregate function `entropy` which computes Shannon entropy. [#4238](https://github.com/yandex/ClickHouse/pull/4238) ([Quid37](https://github.com/Quid37))
 * Added ability to send queries `INSERT INTO tbl VALUES (....` to server without splitting on `query` and `data` parts. [#4301](https://github.com/yandex/ClickHouse/pull/4301) ([alesapin](https://github.com/alesapin))
-* Generic implementation of `arrayWithConstant` function was added. [#4309](https://github.com/yandex/ClickHouse/pull/4309) ([Andrey Stupnikov](https://github.com/Stupnikov))
+* Generic implementation of `arrayWithConstant` function was added. [#4309](https://github.com/yandex/ClickHouse/pull/4309) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Implented `NOT BETWEEN` comparison operator. [#4228](https://github.com/yandex/ClickHouse/pull/4228) ([Dmitry Naumov](https://github.com/nezed))
 * Added conversion of `CROSS JOIN` to `INNER JOIN` if possible. [#4221](https://github.com/yandex/ClickHouse/pull/4221) [#4266](https://github.com/yandex/ClickHouse/pull/4266) ([Artem Zuikov](https://github.com/4ertus2)) ([Artem Zuikov](https://github.com/4ertus2))
 * Implement `sumMapFiltered` in order to be able to limit the number of keys for which values will be summed by `sumMap`. [#4129](https://github.com/yandex/ClickHouse/pull/4129) ([Léo Ercolanelli](https://github.com/ercolanelli-leo))
@@ -98,7 +98,10 @@
 
 ### Code base imporvements
 * Unified code which placed data from columns into HashTable (ColumnsHashing.h). Refactored `Aggregator`, `Join`, `Set`, `arrayUniq`, `arrayEnumerateUniq` and `arrayEnumerateDense`. [#4128](https://github.com/yandex/ClickHouse/pull/4128) ([KochetovNicolai](https://github.com/KochetovNicolai))
-* A lot of Interpreters refactoring. [#4193](https://github.com/yandex/ClickHouse/pull/4193) [#4154](https://github.com/yandex/ClickHouse/pull/4154) [#4307](https://github.com/yandex/ClickHouse/pull/4307) ([Artem Zuikov](https://github.com/4ertus2))
+* A lot of Interpreters refactoring.
+  [#4193](https://github.com/yandex/ClickHouse/pull/4193)
+  [#4154](https://github.com/yandex/ClickHouse/pull/4154)
+  [#4307](https://github.com/yandex/ClickHouse/pull/4307) ([#43]) ([Artem Zuikov](https://github.com/4ertus2))
 
 ## ClickHouse release 19.1.7, 2019-02-15
 
