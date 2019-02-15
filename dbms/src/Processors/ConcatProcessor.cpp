@@ -26,7 +26,7 @@ ConcatProcessor::Status ConcatProcessor::prepare()
         return Status::PortFull;
     }
 
-    if (output.hasData())
+    if (!output.canPush())
         return Status::PortFull;
 
     /// Check can input.
