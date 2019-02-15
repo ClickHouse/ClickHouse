@@ -31,7 +31,7 @@ public:
         SelectQueryInfo & query_info,
         const Context & context,
         const MergeTreeData & data,
-        const Names & column_names,
+        const Names & queried_column_names,
         Poco::Logger * log);
 
 private:
@@ -99,6 +99,7 @@ private:
 
     String first_primary_key_column;
     const StringSet table_columns;
+    const Names queried_columns;
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, size_t> column_sizes{};

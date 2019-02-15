@@ -32,17 +32,18 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
     const Context & context,
     const MergeTreeData & data,
-    const Names & column_names,
+    const Names & queried_columns,
     Logger * log)
         : table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
+        queried_columns{queried_columns},
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
         log{log}
 {
     if (!data.primary_key_columns.empty())
         first_primary_key_column = data.primary_key_columns[0];
 
-    calculateColumnSizes(data, column_names);
+    calculateColumnSizes(data, queried_columns);
     auto & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
     determineArrayJoinedNames(select);
     optimize(select);
@@ -80,9 +81,18 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node)
         Condition cond;
         cond.node = node;
 
-        /// do not take into consideration the conditions consisting only of the first primary key column
         collectIdentifiersNoSubqueries(node, cond.identifiers);
-        cond.viable = !cannotBeMoved(node) && !hasPrimaryKeyAtoms(node) && isSubsetOfTableColumns(cond.identifiers);
+
+        cond.viable =
+            /// Condition depend on some column. Constant expressions are not moved.
+            !cond.identifiers.empty()
+            && !cannotBeMoved(node)
+            /// Do not take into consideration the conditions consisting only of the first primary key column
+            && !hasPrimaryKeyAtoms(node)
+            /// Only table columns are considered. Not array joined columns. NOTE Check that aliases was expanded.
+            && isSubsetOfTableColumns(cond.identifiers)
+            /// Do not move conditions involving all queried columns.
+            && cond.identifiers.size() < queried_columns.size();
 
         if (cond.viable)
         {
