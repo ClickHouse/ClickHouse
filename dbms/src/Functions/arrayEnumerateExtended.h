@@ -182,6 +182,7 @@ DUMP(data_columns);
 
     if (num_arguments == 1)
     {
+DUMP("ONE DATA");
         if (!(executeNumber<UInt8>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<UInt16>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<UInt32>(*offsets, *data_columns[0], null_map, res_values)
@@ -198,6 +199,7 @@ DUMP(data_columns);
     }
     else
     {
+DUMP("MULTI DATA");
         if (!execute128bit(*offsets, data_columns, res_values))
             executeHashed(*offsets, data_columns, res_values);
     }
@@ -217,6 +219,8 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethodImpl(
         ColumnUInt32::Container & res_values)
 {
     typename Method::Set indices;
+DUMP(columns);
+DUMP(key_sizes);
     typename Method::Method method(columns, key_sizes, nullptr);
     Arena pool; /// Won't use it;
 
@@ -227,7 +231,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethodImpl(
         // Unique
         for (size_t off : offsets)
         {
-DUMP(off);
+DUMP("UNIQ", off);
 
             indices.clear();
             UInt32 null_count = 0;
@@ -258,7 +262,7 @@ DUMP(j, prev_off, off);
         // Dense
         for (size_t off : offsets)
         {
-DUMP(off);
+DUMP("DENSE", off);
             indices.clear();
             UInt32 rank = 0;
             [[maybe_unused]] UInt32 null_index = 0;
