@@ -21,10 +21,13 @@ namespace ErrorCodes
 }
 
 
+thread_local ThreadStatus * current_thread = nullptr;
+
+
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-    CurrentThread::get()->taskstats_getter->getStat(res.stat, CurrentThread::get()->os_thread_id);
+    CurrentThread::get().taskstats_getter->getStat(res.stat, CurrentThread::get().os_thread_id);
     return res;
 }
 
@@ -39,16 +42,18 @@ ThreadStatus::ThreadStatus()
     memory_tracker.setDescription("(for thread)");
     log = &Poco::Logger::get("ThreadStatus");
 
+    current_thread = this;
+
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
     /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
 }
 
-ThreadStatusPtr ThreadStatus::create()
+ThreadStatus::~ThreadStatus()
 {
-    return ThreadStatusPtr(new ThreadStatus);
+    if (deleter)
+        deleter();
+    current_thread = nullptr;
 }
-
-ThreadStatus::~ThreadStatus() = default;
 
 void ThreadStatus::initPerformanceCounters()
 {
@@ -119,7 +124,7 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
     if (!thread_group)
         return;
 
-    std::unique_lock lock(thread_group->mutex);
+    std::lock_guard lock(thread_group->mutex);
     thread_group->logs_queue_ptr = logs_queue;
 }
 

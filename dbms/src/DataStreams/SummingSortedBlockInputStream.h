@@ -30,7 +30,7 @@ public:
         const SortDescription & description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum_,
-        size_t max_block_size_);
+        UInt64 max_block_size_);
 
     String getName() const override { return "SummingSorted"; }
 
@@ -70,7 +70,7 @@ private:
     /// Stores aggregation function, state, and columns to be used as function arguments
     struct AggregateDescription
     {
-        /// An aggregate function 'sumWithOverflow' or 'sumMap' for summing.
+        /// An aggregate function 'sumWithOverflow' or 'sumMapWithOverflow' for summing.
         AggregateFunctionPtr function;
         IAggregateFunction::AddFunc add_function = nullptr;
         std::vector<size_t> column_numbers;

@@ -63,4 +63,7 @@
 	url = https://github.com/ClickHouse-Extras/libgsasl.git
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
-	url = https://github.com/mfontanini/cppkafka.git
+	url = https://github.com/ClickHouse-Extras/cppkafka.git
+[submodule "contrib/brotli"]
+	path = contrib/brotli
+	url = https://github.com/google/brotli.git

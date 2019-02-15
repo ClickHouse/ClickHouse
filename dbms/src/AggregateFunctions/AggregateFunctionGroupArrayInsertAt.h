@@ -54,12 +54,14 @@ class AggregateFunctionGroupArrayInsertAtGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>
 {
 private:
-    DataTypePtr type;
+    DataTypePtr & type;
     Field default_value;
     UInt64 length_to_resize = 0;    /// zero means - do not do resizing.
 
 public:
     AggregateFunctionGroupArrayInsertAtGeneric(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupArrayInsertAtDataGeneric, AggregateFunctionGroupArrayInsertAtGeneric>(arguments, params)
+        , type(argument_types[0])
     {
         if (!params.empty())
         {
@@ -76,13 +78,8 @@ public:
             }
         }
 
-        if (arguments.size() != 2)
-            throw Exception("Aggregate function " + getName() + " requires two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         if (!isUnsignedInteger(arguments[1]))
             throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        type = arguments.front();
 
         if (default_value.isNull())
             default_value = type->getDefault();

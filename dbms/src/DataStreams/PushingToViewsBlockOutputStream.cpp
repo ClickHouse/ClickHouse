@@ -5,7 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
 namespace DB
@@ -90,7 +90,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             auto thread_group = CurrentThread::getGroup();
             pool.schedule([=]
             {
-                setThreadName("PushingToViewsBlockOutputStream");
+                setThreadName("PushingToViews");
                 if (thread_group)
                     CurrentThread::attachToIfDetached(thread_group);
                 process(block, view_num);

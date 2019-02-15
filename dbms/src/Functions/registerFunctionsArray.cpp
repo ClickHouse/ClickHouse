@@ -29,6 +29,7 @@ void registerFunctionArrayEnumerateDense(FunctionFactory &);
 void registerFunctionArrayUniq(FunctionFactory &);
 void registerFunctionArrayDistinct(FunctionFactory &);
 void registerFunctionFlatten(FunctionFactory &);
+void registerFunctionArrayWithConstant(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
 {
@@ -58,6 +59,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayUniq(factory);
     registerFunctionArrayDistinct(factory);
     registerFunctionFlatten(factory);
+    registerFunctionArrayWithConstant(factory);
 }
 
 }

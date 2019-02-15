@@ -1,9 +1,8 @@
-# Functions for searching strings
+# Functions for Searching Strings
 
-The search is case-sensitive in all these functions.
-The search substring or regular expression must be a constant in all these functions.
+The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle)
+## position(haystack, needle), locate(haystack, needle)
 
 Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.

@@ -2,7 +2,7 @@
 
 #include <Storages/IStorage.h>
 #include <Core/Defines.h>
-#include <common/MultiVersion.h>
+#include <Common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -28,7 +28,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size = DEFAULT_BLOCK_SIZE,
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
     void drop() override {}
@@ -66,7 +66,8 @@ private:
 protected:
     StorageDictionary(const String & table_name_,
         const ColumnsDescription & columns_,
-        const DictionaryStructure & dictionary_structure_,
+        const Context & context,
+        bool attach,
         const String & dictionary_name_);
 };
 

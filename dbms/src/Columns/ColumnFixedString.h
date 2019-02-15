@@ -101,18 +101,18 @@ public:
         return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
 
-    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
@@ -138,7 +138,7 @@ public:
     StringRef getRawData() const override { return StringRef(chars.data(), chars.size()); }
 
     /// Specialized part of interface, not from IColumn.
-
+    void insertString(const String & string) { insertData(string.c_str(), string.size()); }
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }
 

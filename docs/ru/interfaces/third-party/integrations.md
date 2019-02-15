@@ -21,6 +21,7 @@
 - Системы управления конфигурацией
     - [puppet](https://puppet.com)
         - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
+        - [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
 - Мониторинг
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
@@ -30,9 +31,12 @@
     - [Prometheus](https://prometheus.io/)
         - [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
+        - [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (использует [Go client](https://github.com/kshvakov/clickhouse/))
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
 - Логирование
+    - [rsyslog](https://www.rsyslog.com/)
+        - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (для [Kubernetes](https://kubernetes.io))
 

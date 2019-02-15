@@ -31,6 +31,7 @@ deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 然后运行：
 
 ```bash
+sudo apt-get install dirmngr    # optional
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server

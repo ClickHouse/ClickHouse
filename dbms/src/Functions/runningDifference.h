@@ -130,6 +130,11 @@ public:
         return name;
     }
 
+    bool isStateful() const override
+    {
+        return true;
+    }
+
     size_t getNumberOfArguments() const override
     {
         return 1;
