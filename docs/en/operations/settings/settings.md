@@ -91,13 +91,13 @@ If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception
 
 ## join_default_strictness
 
-Sets default strictness for [JOIN clause](../../query_language/select.md#query-language-join).
+Sets default strictness for a [JOIN clause](../../query_language/select.md#query-language-join).
 
 **Possible values**
 
-- `ALL` — If the right table has several matching rows, the data will be multiplied by the number of these rows. It is a normal `JOIN` behavior from standard SQL.
+- `ALL` — If the right table has several matching rows, the data will be multiplied by the number of these rows. This is normal `JOIN` behavior for standard SQL.
 - `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
-- `Empty string` — If `ALL` or `ANY` not specified in query, ClickHouse throws exception.
+- `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 **Default value**
 
