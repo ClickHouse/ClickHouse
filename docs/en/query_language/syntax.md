@@ -46,19 +46,17 @@ There are numeric literals, string literals, and compound literals.
 
 A numeric literal tries to be parsed:
 
-- First as a 64-bit signed number, using the 'strtoull' function.
-- If unsuccessful, as a 64-bit unsigned number, using the 'strtoll' function.
-- If unsuccessful, as a floating-point number using the 'strtod' function.
+- First as a 64-bit signed number, using the `strtoull` function.
+- If unsuccessful, as a 64-bit unsigned number, using the `strtoll` function.
+- If unsuccessful, as a floating-point number using the `strtod` function.
 - Otherwise, an error is returned.
 
 The corresponding value will have the smallest type that the value fits in.
-For example, 1 is parsed as UInt8, but 256 is parsed as UInt16. For more information, see "Data types".
+For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../data_types/index.md#data_types).
 
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
-<a name="syntax-string_literal"></a>
-
-### String Literals
+### String Literals {#syntax-string_literal}
 
 Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where "c" is any character, are converted to "c". This means that you can use the sequences `\'`and`\\`. The value will have the String type.
 
@@ -72,9 +70,7 @@ For more information, see the section "Operators2".
 An array must consist of at least one item, and a tuple must have at least two items.
 Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of Memory-type tables).
 
-<a name="null-literal"></a>
-
-### NULL Literal
+### NULL Literal {#null-literal}
 
 Indicates that the value is missing.
 
@@ -103,35 +99,35 @@ Data types and table engines in the `CREATE` query are written the same way as i
 
 ## Expression Aliases
 
-Alias is a user defined name for an expression in a query.
+An alias is a user-defined name for an expression in a query.
 
 ```
 expr AS alias
 ```
 
-- `AS` — keyword for defining aliases. You can define alias for a table name or a column name in SELECT clause skipping `AS` keyword.
+- `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a SELECT clause without using the `AS` keyword.
 
     For example, `SELECT b.column_name from t b`.
 
     In the [CAST function](functions/type_conversion_functions.md#type_conversion_function-cast), the `AS` keyword has another meaning. See the description of the function.
 
-- `expr` — any expression supported by ClickHouse.
+- `expr` — Any expression supported by ClickHouse.
 
-    For example `SELECT column_name * 2 AS double FROM some_table`.
+    For example, `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — [string literal](#syntax-string_literal). If an alias contains spaces, enclose it in double quotes or backticks.
+- `alias` — A [string literal](#syntax-string_literal). If an alias contains spaces, enclose it in double quotes or backticks.
 
     For example, `SELECT "table t".col_name FROM t AS "table t"`.
 
-### Peculiarities of Use
+### Notes on Usage
 
-Aliases are global for a query or subquery and you can define alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
+Aliases are global for a query or subquery and you can define an alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
 
-Aliases are not visible in between subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates exception `Unknown identifier: num`.
+Aliases are not visible in between subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates the exception `Unknown identifier: num`.
 
-If alias is defined for result columns in SELECT clause in a subquery, these columns are visible in outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+If an alias is defined for the result columns in the SELECT clause of a subquery, these columns are visible in the outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
-Be careful with aliases the same as column or table names. Let's consider the following example:
+Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
 ```
 CREATE TABLE t
