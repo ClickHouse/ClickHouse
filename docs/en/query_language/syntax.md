@@ -36,9 +36,9 @@ Keywords are not reserved (they are just parsed as keywords in the corresponding
 
 Identifiers are:
 
-- Cluster, database, table, partition and column names;
-- Functions;
-- Data types;
+- Cluster, database, table, partition and column names.
+- Functions.
+- Data types.
 - [Expression aliases](#syntax-expression_aliases).
 
 Identifiers can be quoted or non-quoted. It is recommended to use non-quoted identifiers.
@@ -119,7 +119,7 @@ expr AS alias
 
     For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-    In the [CAST function](functions/type_conversion_functions.md), the `AS` keyword has another meaning. See the description of the function.
+    In the [CAST](functions/type_conversion_functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
 
 - `expr` — Any expression supported by ClickHouse.
 
