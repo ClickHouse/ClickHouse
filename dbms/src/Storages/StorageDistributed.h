@@ -68,7 +68,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
@@ -76,7 +76,7 @@ public:
     void drop() override {}
 
     /// Removes temporary data in local filesystem.
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
     void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { table_name = new_table_name; }
     /// in the sub-tables, you need to manually add and delete columns
@@ -111,7 +111,7 @@ public:
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    const Context & context;
+    Context global_context;
     Logger * log = &Logger::get("StorageDistributed");
 
     /// Used to implement TableFunctionRemote.
@@ -166,6 +166,8 @@ protected:
         const ASTPtr & sharding_key_,
         const String & data_path_,
         bool attach);
+
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);
 };
 
 }

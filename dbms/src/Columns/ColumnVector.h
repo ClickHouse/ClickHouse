@@ -1,8 +1,9 @@
 #pragma once
 
 #include <cmath>
-
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVectorHelper.h>
+#include <common/unaligned.h>
 
 
 namespace DB
@@ -86,47 +87,16 @@ template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {
 template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
 
 
-/** To implement `get64` function.
-  */
-template <typename T>
-inline UInt64 unionCastToUInt64(T x) { return x; }
-
-template <> inline UInt64 unionCastToUInt64(Float64 x)
-{
-    union
-    {
-        Float64 src;
-        UInt64 res;
-    };
-
-    src = x;
-    return res;
-}
-
-template <> inline UInt64 unionCastToUInt64(Float32 x)
-{
-    union
-    {
-        Float32 src;
-        UInt64 res;
-    };
-
-    res = 0;
-    src = x;
-    return res;
-}
-
-
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
-class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
+class ColumnVector final : public COWPtrHelper<ColumnVectorHelper, ColumnVector<T>>
 {
     static_assert(!IsDecimalNumber<T>);
 
 private:
     using Self = ColumnVector;
-    friend class COWPtrHelper<IColumn, Self>;
+    friend class COWPtrHelper<ColumnVectorHelper, Self>;
 
     struct less;
     struct greater;
@@ -164,7 +134,7 @@ public:
 
     void insertData(const char * pos, size_t /*length*/) override
     {
-        data.push_back(*reinterpret_cast<const T *>(pos));
+        data.push_back(unalignedLoad<T>(pos));
     }
 
     void insertDefault() override
@@ -204,7 +174,7 @@ public:
         return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void reserve(size_t n) override
     {
@@ -251,12 +221,12 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+    ColumnPtr permute(const IColumn::Permutation & perm, UInt64 limit) const override;
 
-    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
@@ -303,9 +273,9 @@ protected:
 
 template <typename T>
 template <typename Type>
-ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
 {
-    size_t size = indexes.size();
+    UInt64 size = indexes.size();
 
     if (limit == 0)
         limit = size;

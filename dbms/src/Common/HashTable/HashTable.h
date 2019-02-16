@@ -142,7 +142,7 @@ struct HashTableCell
 
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)        { DB::readBinary(key, rb); }
-    void readText(DB::ReadBuffer & rb)    { DB::writeDoubleQuoted(key, rb); }
+    void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
 };
 
 
@@ -658,12 +658,8 @@ protected:
         return false;
     }
 
-
-    /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
-    void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+    void ALWAYS_INLINE emplaceNonZeroImpl(size_t place_value, Key x, iterator & it, bool & inserted, size_t hash_value)
     {
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-
         it = iterator(this, &buf[place_value]);
 
         if (!buf[place_value].isZero(*this))
@@ -696,6 +692,21 @@ protected:
 
             it = find(x, hash_value);
         }
+    }
+
+    /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
+    void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+    {
+        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+        emplaceNonZeroImpl(place_value, x, it, inserted, hash_value);
+    }
+
+    /// Same but find place using object. Hack for ReverseIndex.
+    template <typename ObjectToCompareWith>
+    void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value, const ObjectToCompareWith & object)
+    {
+        size_t place_value = findCell(object, hash_value, grower.place(hash_value));
+        emplaceNonZeroImpl(place_value, x, it, inserted, hash_value);
     }
 
 
@@ -753,6 +764,13 @@ public:
             emplaceNonZero(x, it, inserted, hash_value);
     }
 
+    /// Same, but search position by object. Hack for ReverseIndex.
+    template <typename ObjectToCompareWith>
+    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value, const ObjectToCompareWith & object)
+    {
+        if (!emplaceIfZero(x, it, inserted, hash_value))
+            emplaceNonZero(x, it, inserted, hash_value, object);
+    }
 
     /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
     void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)

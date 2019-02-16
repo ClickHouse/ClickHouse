@@ -409,6 +409,7 @@ img {
     }
 
     #index_ul {
+        padding-bottom: 30px;
         padding-left: 0;
         margin: 0 0 30px -16px;
         font-size: 90%;

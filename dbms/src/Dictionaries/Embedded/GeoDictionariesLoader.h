@@ -7,9 +7,7 @@
 class GeoDictionariesLoader : public IGeoDictionariesLoader
 {
 public:
-    std::unique_ptr<RegionsHierarchies> reloadRegionsHierarchies(
-        const Poco::Util::AbstractConfiguration & config) override;
+    std::unique_ptr<RegionsHierarchies> reloadRegionsHierarchies(const Poco::Util::AbstractConfiguration & config) override;
 
-    std::unique_ptr<RegionsNames> reloadRegionsNames(
-        const Poco::Util::AbstractConfiguration & config) override;
+    std::unique_ptr<RegionsNames> reloadRegionsNames(const Poco::Util::AbstractConfiguration & config) override;
 };

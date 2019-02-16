@@ -93,12 +93,12 @@ void PartLogElement::appendToBlock(Block & block) const
 }
 
 
-bool PartLog::addNewPart(Context & context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
+bool PartLog::addNewPart(Context & current_context, const MutableDataPartPtr & part, UInt64 elapsed_ns, const ExecutionStatus & execution_status)
 {
-    return addNewParts(context, {part}, elapsed_ns, execution_status);
+    return addNewParts(current_context, {part}, elapsed_ns, execution_status);
 }
 
-bool PartLog::addNewParts(Context & context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns,
+bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataPartsVector & parts, UInt64 elapsed_ns,
                           const ExecutionStatus & execution_status)
 {
     if (parts.empty())
@@ -108,7 +108,7 @@ bool PartLog::addNewParts(Context & context, const PartLog::MutableDataPartsVect
 
     try
     {
-        part_log = context.getPartLog(parts.front()->storage.getDatabaseName()); // assume parts belong to the same table
+        part_log = current_context.getPartLog(parts.front()->storage.getDatabaseName()); // assume parts belong to the same table
         if (!part_log)
             return false;
 
@@ -122,8 +122,8 @@ bool PartLog::addNewParts(Context & context, const PartLog::MutableDataPartsVect
 
             elem.database_name = part->storage.getDatabaseName();
             elem.table_name = part->storage.getTableName();
-            elem.part_name = part->name;
             elem.partition_id = part->info.partition_id;
+            elem.part_name = part->name;
 
             elem.bytes_compressed_on_disk = part->bytes_on_disk;
             elem.rows = part->rows_count;

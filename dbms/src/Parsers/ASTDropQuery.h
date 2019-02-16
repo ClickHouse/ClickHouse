@@ -23,7 +23,7 @@ public:
     bool if_exists{false};
 
     /** Get the text that identifies this element. */
-    String getID() const override;
+    String getID(char) const override;
     ASTPtr clone() const override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override

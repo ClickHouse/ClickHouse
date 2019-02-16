@@ -17,7 +17,7 @@ namespace DB
 /** Intended for implementation of "rollup" - aggregation (rounding) of older data
   *  for a table with Graphite data (Graphite is the system for time series monitoring).
   *
-  * Table with graphite data has at least the folowing columns (accurate to the name):
+  * Table with graphite data has at least the following columns (accurate to the name):
   * Path, Time, Value, Version
   *
   * Path - name of metric (sensor);
@@ -127,7 +127,7 @@ class GraphiteRollupSortedBlockInputStream : public MergingSortedBlockInputStrea
 {
 public:
     GraphiteRollupSortedBlockInputStream(
-        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+        const BlockInputStreams & inputs_, const SortDescription & description_, UInt64 max_block_size_,
         const Graphite::Params & params, time_t time_of_merge);
 
     String getName() const override { return "GraphiteRollupSorted"; }

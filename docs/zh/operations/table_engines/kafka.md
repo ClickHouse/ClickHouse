@@ -23,7 +23,7 @@ Kafka SETTINGS
   kafka_topic_list = 'topic1,topic2',
   kafka_group_name = 'group1',
   kafka_format = 'JSONEachRow',
-  kafka_row_delimiter = '\n'
+  kafka_row_delimiter = '\n',
   kafka_schema = '',
   kafka_num_consumers = 2
 ```
@@ -105,7 +105,7 @@ Kafka SETTINGS
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-为了提高性能，接受的消息被分组为 [max_insert_block_size](../settings/settings.md#settings-settings-max_insert_block_size) 大小的块。如果未在 [stream_flush_interval_ms](../settings/settings.md#settings-settings_stream_flush_interval_ms) 毫秒内形成块，则不关心块的完整性，都会将数据刷新到表中。
+为了提高性能，接受的消息被分组为 [max_insert_block_size](../settings/settings.md#settings-max_insert_block_size) 大小的块。如果未在 [stream_flush_interval_ms](../settings/settings.md) 毫秒内形成块，则不关心块的完整性，都会将数据刷新到表中。
 
 停止接收主题数据或更改转换逻辑，请 detach 物化视图：
 
@@ -121,7 +121,7 @@ Kafka SETTINGS
 与 `GraphiteMergeTree` 类似，Kafka 引擎支持使用ClickHouse配置文件进行扩展配置。可以使用两个配置键：全局 (`kafka`) 和 主题级别 (`kafka_*`)。首先应用全局配置，然后应用主题级配置（如果存在）。
 
 ```xml
-  <!--  Global configuration options for all tables of Kafka engine type -->
+  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>

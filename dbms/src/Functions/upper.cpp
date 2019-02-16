@@ -15,7 +15,8 @@ using FunctionUpper = FunctionStringToString<LowerUpperImpl<'a', 'z'>, NameUpper
 
 void registerFunctionUpper(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionUpper>();
+    factory.registerFunction<FunctionUpper>(FunctionFactory::CaseInsensitive);
+    factory.registerAlias("ucase", FunctionUpper::name, FunctionFactory::CaseInsensitive);
 }
 
 }

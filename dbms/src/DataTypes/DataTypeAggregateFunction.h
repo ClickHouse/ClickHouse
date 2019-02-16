@@ -29,7 +29,7 @@ public:
     std::string getFunctionName() const { return function->getName(); }
     AggregateFunctionPtr getFunction() const { return function; }
 
-    std::string getName() const override;
+    std::string doGetName() const override;
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
@@ -44,8 +44,8 @@ public:
 
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double avg_value_size_hint) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -56,6 +56,7 @@ public:
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
 
     MutableColumnPtr createColumn() const override;
 

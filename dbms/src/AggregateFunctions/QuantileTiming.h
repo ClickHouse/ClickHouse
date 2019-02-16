@@ -382,13 +382,13 @@ namespace detail
                     if (index == BIG_THRESHOLD)
                         break;
 
-                    UInt64 count = 0;
-                    readBinary(count, buf);
+                    UInt64 elem_count = 0;
+                    readBinary(elem_count, buf);
 
                     if (index < SMALL_THRESHOLD)
-                        count_small[index] = count;
+                        count_small[index] = elem_count;
                     else
-                        count_big[index - SMALL_THRESHOLD] = count;
+                        count_big[index - SMALL_THRESHOLD] = elem_count;
                 }
             }
         }

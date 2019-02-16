@@ -4,12 +4,12 @@
 namespace DB
 {
 
-String ASTPartition::getID() const
+String ASTPartition::getID(char delim) const
 {
     if (value)
         return "Partition";
     else
-        return "Partition_ID_" + id;
+        return "Partition_ID" + (delim + id);
 }
 
 ASTPtr ASTPartition::clone() const

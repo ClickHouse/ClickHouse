@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -10,7 +11,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -308,8 +308,17 @@ public:
         if (!re->match(pos, end - pos, matches) || !matches[0].length)
             return false;
 
-        token_begin = pos + matches[capture].offset;
-        token_end = token_begin + matches[capture].length;
+        if (matches[capture].offset == std::string::npos)
+        {
+            /// Empty match.
+            token_begin = pos;
+            token_end = pos;
+        }
+        else
+        {
+            token_begin = pos + matches[capture].offset;
+            token_end = token_begin + matches[capture].length;
+        }
 
         pos += matches[0].offset + matches[0].length;
 

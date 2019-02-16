@@ -1,8 +1,7 @@
 # Log
 
-Log differs from TinyLog in that a small file of "marks" resides with the column files. These marks are written on every data block and contain offsets that indicate where to start reading the file in order to skip the specified number of rows. This makes it possible to read table data in multiple threads.
-For concurrent data access, the read operations can be performed simultaneously, while write operations block reads and each other.
-The Log engine does not support indexes. Similarly, if writing to a table failed, the table is broken, and reading from it returns an error. The Log engine is appropriate for temporary data, write-once tables, and for testing or demonstration purposes.
+日志与 TinyLog 的不同之处在于，"标记" 的小文件与列文件存在一起。这些标记写在每个数据块上，并且包含偏移量，这些偏移量指示从哪里开始读取文件以便跳过指定的行数。这使得可以在多个线程中读取表数据。对于并发数据访问，可以同时执行读取操作，而写入操作则阻塞读取和其它写入。Log 引擎不支持索引。同样，如果写入表失败，则该表将被破坏，并且从该表读取将返回错误。Log 引擎适用于临时数据，write-once 表以及测试或演示目的。
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/log/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/log/) <!--hide-->
+

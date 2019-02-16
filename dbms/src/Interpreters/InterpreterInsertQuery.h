@@ -24,6 +24,8 @@ public:
       */
     BlockIO execute() override;
 
+    std::pair<String, String> getDatabaseTable() const;
+
 private:
     StoragePtr getTable(const ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table);

@@ -2,7 +2,6 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -66,7 +65,7 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         PartitionCommand res;
         res.type = CLEAR_COLUMN;
         res.partition = command_ast->partition;
-        const Field & column_name = typeid_cast<const ASTIdentifier &>(*(command_ast->column)).name;
+        const Field & column_name = *getIdentifierName(command_ast->column);
         res.column_name = column_name;
         return res;
     }

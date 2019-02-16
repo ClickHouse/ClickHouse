@@ -9,7 +9,9 @@ private:
     virtual MutablePtr clone() const = 0;
 
 public:
-    virtual ~IColumn() {}
+    IColumn() = default;
+    IColumn(const IColumn &) = default;
+    virtual ~IColumn() = default;
 
     virtual int get() const = 0;
     virtual void set(int value) = 0;

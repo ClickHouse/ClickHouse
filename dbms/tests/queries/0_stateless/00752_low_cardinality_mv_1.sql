@@ -1,5 +1,3 @@
-SET allow_experimental_low_cardinality_type = 1;
-
 drop table if exists test.lc;
 drop table if exists test.lc_mv;
 

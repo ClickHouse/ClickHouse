@@ -39,7 +39,7 @@ private:
         "DATABASES", "LIKE", "PROCESSLIST", "CASE", "WHEN", "THEN", "ELSE", "END", "DESCRIBE", "DESC", "USE", "SET", "OPTIMIZE", "FINAL", "DEDUPLICATE",
         "INSERT", "VALUES", "SELECT", "DISTINCT", "SAMPLE", "ARRAY", "JOIN", "GLOBAL", "LOCAL", "ANY", "ALL", "INNER", "LEFT", "RIGHT", "FULL", "OUTER",
         "CROSS", "USING", "PREWHERE", "WHERE", "GROUP", "BY", "WITH", "TOTALS", "HAVING", "ORDER", "COLLATE", "LIMIT", "UNION", "AND", "OR", "ASC", "IN",
-        "KILL", "QUERY", "SYNC", "ASYNC", "TEST"
+        "KILL", "QUERY", "SYNC", "ASYNC", "TEST", "BETWEEN"
     };
 
     /// Words are fetched asynchonously.
@@ -56,7 +56,7 @@ private:
     {
         std::string prefix_str(prefix);
         std::tie(pos, end) = std::equal_range(words.begin(), words.end(), prefix_str,
-            [prefix_length](const std::string & s, const std::string & prefix) { return strncmp(s.c_str(), prefix.c_str(), prefix_length) < 0; });
+            [prefix_length](const std::string & s, const std::string & prefix_searched) { return strncmp(s.c_str(), prefix_searched.c_str(), prefix_length) < 0; });
     }
 
     /// Iterates through matched range.
@@ -194,6 +194,12 @@ public:
         });
     }
 
+    void finalize()
+    {
+        if (loading_thread.joinable())
+            loading_thread.join();
+    }
+
     /// A function for readline.
     static char * generator(const char * text, int state)
     {
@@ -211,8 +217,7 @@ public:
 
     ~Suggest()
     {
-        if (loading_thread.joinable())
-            loading_thread.join();
+        finalize();
     }
 };
 

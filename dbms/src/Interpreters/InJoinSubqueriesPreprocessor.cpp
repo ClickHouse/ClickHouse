@@ -1,11 +1,12 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Storages/StorageDistributed.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
 
@@ -82,12 +83,7 @@ void forEachTable(IAST * node, F && f)
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(database_and_table.get());
-    if (!id)
-        throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
-
-    DatabaseAndTableWithAlias db_and_table(*id);
-
+    DatabaseAndTableWithAlias db_and_table(database_and_table);
     return context.tryGetTable(db_and_table.database, db_and_table.table);
 }
 
@@ -173,8 +169,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
                 std::string table;
                 std::tie(database, table) = getRemoteDatabaseAndTableName(*storage);
 
-                /// TODO: find a way to avoid AST node replacing
-                database_and_table = createDatabaseAndTableNode(database, table);
+                database_and_table = createTableIdentifier(database, table);
             }
             else
                 throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting", ErrorCodes::LOGICAL_ERROR);

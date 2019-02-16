@@ -27,10 +27,7 @@ public:
     {
     }
 
-    String getID() const override
-    {
-        return "OrderByElement";
-    }
+    String getID(char) const override { return "OrderByElement"; }
 
     ASTPtr clone() const override
     {

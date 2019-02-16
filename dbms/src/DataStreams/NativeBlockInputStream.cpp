@@ -2,13 +2,14 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -28,8 +29,8 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
 {
 }
 
-NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_)
-    : istr(istr_), header(header_), server_revision(server_revision_)
+NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, const Block & header_, UInt64 server_revision_, bool convert_types_to_low_cardinality_)
+    : istr(istr_), header(header_), server_revision(server_revision_), convert_types_to_low_cardinality(convert_types_to_low_cardinality_)
 {
 }
 
@@ -151,6 +152,14 @@ Block NativeBlockInputStream::readImpl()
             readData(*column.type, *read_column, istr, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
+
+        /// Support insert from old clients without low cardinality type.
+        bool revision_without_low_cardinality = server_revision && server_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE;
+        if (header && (convert_types_to_low_cardinality || revision_without_low_cardinality))
+        {
+            column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+            column.type = header.getByPosition(i).type;
+        }
 
         res.insert(std::move(column));
 

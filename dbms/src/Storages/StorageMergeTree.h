@@ -43,6 +43,9 @@ public:
     const ColumnsDescription & getColumns() const override { return data.getColumns(); }
     void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
 
+    virtual const IndicesDescription & getIndicesDescription() const override { return data.getIndicesDescription(); }
+    virtual void setIndicesDescription(IndicesDescription indices_) override { data.setIndicesDescription(std::move(indices_)); }
+
     NameAndTypePair getColumn(const String & column_name) const override { return data.getColumn(column_name); }
     bool hasColumn(const String & column_name) const override { return data.hasColumn(column_name); }
 
@@ -51,7 +54,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
@@ -63,11 +66,11 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
-
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+    CancellationCode killMutation(const String & mutation_id) override;
 
     void drop() override;
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -101,7 +104,7 @@ private:
     String table_name;
     String full_path;
 
-    Context & context;
+    Context global_context;
     BackgroundProcessingPool & background_pool;
 
     MergeTreeData data;
@@ -117,7 +120,8 @@ private:
 
     mutable std::mutex currently_merging_mutex;
     MergeTreeData::DataParts currently_merging;
-    std::multimap<Int64, MergeTreeMutationEntry> current_mutations_by_version;
+    std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
+    std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     Logger * log;
 
@@ -137,7 +141,7 @@ private:
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
 
-    bool backgroundTask();
+    BackgroundProcessingPoolTaskResult backgroundTask();
 
     Int64 getCurrentMutationVersion(
         const MergeTreeData::DataPartPtr & part,
@@ -167,6 +171,7 @@ protected:
         const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,
+        const IndicesDescription & indices_,
         bool attach,
         Context & context_,
         const String & date_column_name,

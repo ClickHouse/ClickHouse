@@ -33,5 +33,4 @@ bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs);
 
 using ColumnDefaults = std::unordered_map<std::string, ColumnDefault>;
 
-
 }

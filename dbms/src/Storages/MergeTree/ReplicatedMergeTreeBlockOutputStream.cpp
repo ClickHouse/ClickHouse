@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LESS_LIVE_REPLICAS;
+    extern const int TOO_FEW_LIVE_REPLICAS;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
@@ -76,7 +76,7 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
     if (leader_election_stat.numChildren < static_cast<int32_t>(quorum))
         throw Exception("Number of alive replicas ("
             + toString(leader_election_stat.numChildren) + ") is less than requested quorum (" + toString(quorum) + ").",
-            ErrorCodes::TOO_LESS_LIVE_REPLICAS);
+            ErrorCodes::TOO_FEW_LIVE_REPLICAS);
 
     /** Is there a quorum for the last part for which a quorum is needed?
         * Write of all the parts with the included quorum is linearly ordered.
@@ -162,11 +162,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus(error));
+            PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus(error));
         }
         catch (...)
         {
-            PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }
     }
@@ -190,11 +190,11 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
     try
     {
         commitPart(zookeeper, part, "");
-        PartLog::addNewPart(storage.context, part, watch.elapsed());
+        PartLog::addNewPart(storage.global_context, part, watch.elapsed());
     }
     catch (...)
     {
-        PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+        PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
         throw;
     }
 }

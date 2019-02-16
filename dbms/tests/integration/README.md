@@ -33,7 +33,12 @@ set the following environment variables:
   
 ### Running with runner script
 
-The only requirement is fresh docker.
+The only requirement is fresh docker configured docker.
+
+Notes:
+* If you want to run integration tests without `sudo` you have to add your user to docker group `sudo usermod -aG docker $USER`. [More information](https://docs.docker.com/install/linux/linux-postinstall/) about docker configuration.
+* If you already had run these tests without `./runner` script you may have problems with pytest cache. It can be removed with `rm -r __pycache__ .pytest_cache/`.
+* Some tests maybe require a lot of resources (CPU, RAM, etc.). Better not try large tests like `test_cluster_copier` or `test_distributed_ddl*` on your notebook.
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```

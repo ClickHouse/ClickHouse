@@ -32,7 +32,7 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd $CURDIR
 
-source "./release_lib.sh"
+source "./utils/release/release_lib.sh"
 
 PBUILDER_AUTOUPDATE=${PBUILDER_AUTOUPDATE=4320}
 
@@ -119,7 +119,7 @@ else
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
 
     if [[ -z `which pbuilder` ]] ; then
-        sudo apt install -y pbuilder fakeroot debhelper debian-archive-keyring debian-keyring lsb-release
+        sudo apt install -y pbuilder devscripts ccache fakeroot debhelper debian-archive-keyring debian-keyring lsb-release
     fi
 
     . $CURDIR/debian/.pbuilderrc

@@ -3,7 +3,6 @@
 #include <string>
 #include <memory>
 
-
 namespace DB
 {
 

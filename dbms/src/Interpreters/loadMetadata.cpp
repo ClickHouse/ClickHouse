@@ -2,7 +2,7 @@
 #include <thread>
 #include <future>
 
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
@@ -22,6 +22,7 @@
 #include <Common/escapeForFileName.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -118,7 +119,16 @@ void loadMetadata(Context & context)
     thread_pool.wait();
 
     if (has_force_restore_data_flag)
-        force_restore_data_flag_file.remove();
+    {
+        try
+        {
+            force_restore_data_flag_file.remove();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data santity checks");
+        }
+    }
 }
 
 

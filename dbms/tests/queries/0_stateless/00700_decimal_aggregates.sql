@@ -1,5 +1,3 @@
-SET send_logs_level = 'none';
-
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.decimal;
 

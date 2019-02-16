@@ -1,7 +1,13 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Storages/IStorage.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/PartitionCommands.h>
 #include <Common/typeid_cast.h>
 
 #include <algorithm>
@@ -32,6 +38,12 @@ BlockIO InterpreterAlterQuery::execute()
     const String & table_name = alter.table;
     String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
     StoragePtr table = context.getTable(database_name, table_name);
+
+    /// Add default database to table identifiers that we can encounter in e.g. default expressions,
+    /// mutation expression, etc.
+    AddDefaultDatabaseVisitor visitor(database_name);
+    ASTPtr command_list_ptr = alter.command_list->ptr();
+    visitor.visit(command_list_ptr);
 
     AlterCommands alter_commands;
     PartitionCommands partition_commands;

@@ -31,7 +31,7 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
 
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
@@ -54,7 +54,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
     String getDataPath() const override;

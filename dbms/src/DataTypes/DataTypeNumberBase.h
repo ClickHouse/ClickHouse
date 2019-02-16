@@ -29,13 +29,14 @@ public:
     Field getDefault() const override;
 
     /** Format is platform-dependent. */
-
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double avg_value_size_hint) const override;
+
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
 
     MutableColumnPtr createColumn() const override;
 

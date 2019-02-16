@@ -4,7 +4,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
 #include <Common/Throttler.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <atomic>
 #include <memory>
 #include <chrono>
@@ -80,6 +80,7 @@ private:
 private:
     StorageDistributed & storage;
     ASTPtr query_ast;
+    String query_string;
     ClusterPtr cluster;
     const Settings & settings;
     size_t inserted_blocks = 0;
@@ -93,7 +94,6 @@ private:
     Stopwatch watch_current_block;
     std::optional<ThreadPool> pool;
     ThrottlerPtr throttler;
-    String query_string;
 
     struct JobReplica
     {

@@ -8,7 +8,7 @@ namespace DB
 struct ASTCheckQuery : public ASTQueryWithTableAndOutput
 {
     /** Get the text that identifies this element. */
-    String getID() const override { return ("CheckQuery_" + database + "_" + table); }
+    String getID(char delim) const override { return "CheckQuery" + (delim + database) + delim + table; }
 
     ASTPtr clone() const override
     {

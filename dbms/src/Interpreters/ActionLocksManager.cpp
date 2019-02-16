@@ -33,7 +33,7 @@ void ActionLocksManager::add(StorageActionBlockType action_type)
 
         if (!action_lock.expired())
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             storage_locks[table.get()][action_type] = std::move(action_lock);
         }
     });
@@ -47,7 +47,7 @@ void ActionLocksManager::add(const String & database_name, const String & table_
 
         if (!action_lock.expired())
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             storage_locks[table.get()][action_type] = std::move(action_lock);
         }
     }
@@ -55,7 +55,7 @@ void ActionLocksManager::add(const String & database_name, const String & table_
 
 void ActionLocksManager::remove(StorageActionBlockType action_type)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     for (auto & storage_elem : storage_locks)
         storage_elem.second.erase(action_type);
@@ -65,7 +65,7 @@ void ActionLocksManager::remove(const String & database_name, const String & tab
 {
     if (auto table = global_context.tryGetTable(database_name, table_name))
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         if (storage_locks.count(table.get()))
             storage_locks[table.get()].erase(action_type);
@@ -74,7 +74,7 @@ void ActionLocksManager::remove(const String & database_name, const String & tab
 
 void ActionLocksManager::cleanExpired()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     for (auto it_storage = storage_locks.begin(); it_storage != storage_locks.end();)
     {

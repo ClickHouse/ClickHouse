@@ -21,6 +21,8 @@ void registerFunctionSubstringUTF8(FunctionFactory &);
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
+void registerFunctionTrim(FunctionFactory &);
+void registerFunctionRegexpQuoteMeta(FunctionFactory &);
 
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
@@ -46,6 +48,8 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionAppendTrailingCharIfAbsent(factory);
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);
+    registerFunctionTrim(factory);
+    registerFunctionRegexpQuoteMeta(factory);
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);

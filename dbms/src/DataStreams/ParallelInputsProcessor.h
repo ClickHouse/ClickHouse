@@ -8,11 +8,12 @@
 
 #include <common/logger_useful.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
@@ -125,20 +126,17 @@ public:
 
         for (auto & input : inputs)
         {
-            if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*input))
+            try
             {
-                try
-                {
-                    child->cancel(kill);
-                }
-                catch (...)
-                {
-                    /** If you can not ask one or more sources to stop.
-                      * (for example, the connection is broken for distributed query processing)
-                      * - then do not care.
-                      */
-                    LOG_ERROR(log, "Exception while cancelling " << child->getName());
-                }
+                input->cancel(kill);
+            }
+            catch (...)
+            {
+                /** If you can not ask one or more sources to stop.
+                  * (for example, the connection is broken for distributed query processing)
+                  * - then do not care.
+                  */
+                LOG_ERROR(log, "Exception while cancelling " << input->getName());
             }
         }
     }
@@ -185,13 +183,14 @@ private:
         try
         {
             setThreadName("ParalInputsProc");
-            CurrentThread::attachTo(thread_group);
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
 
             while (!finish)
             {
                 InputData unprepared_input;
                 {
-                    std::lock_guard<std::mutex> lock(unprepared_inputs_mutex);
+                    std::lock_guard lock(unprepared_inputs_mutex);
 
                     if (unprepared_inputs.empty())
                         break;
@@ -203,7 +202,7 @@ private:
                 unprepared_input.in->readPrefix();
 
                 {
-                    std::lock_guard<std::mutex> lock(available_inputs_mutex);
+                    std::lock_guard lock(available_inputs_mutex);
                     available_inputs.push(unprepared_input);
                 }
             }
@@ -257,7 +256,7 @@ private:
 
             /// Select the next source.
             {
-                std::lock_guard<std::mutex> lock(available_inputs_mutex);
+                std::lock_guard lock(available_inputs_mutex);
 
                 /// If there are no free sources, then this thread is no longer needed. (But other threads can work with their sources.)
                 if (available_inputs.empty())
@@ -278,7 +277,7 @@ private:
 
                 /// If this source is not run out yet, then put the resulting block in the ready queue.
                 {
-                    std::lock_guard<std::mutex> lock(available_inputs_mutex);
+                    std::lock_guard lock(available_inputs_mutex);
 
                     if (block)
                     {
@@ -306,8 +305,8 @@ private:
 
     Handler & handler;
 
-    /// Streams.
-    using ThreadsData = std::vector<std::thread>;
+    /// Threads.
+    using ThreadsData = std::vector<ThreadFromGlobalPool>;
     ThreadsData threads;
 
     /** A set of available sources that are not currently processed by any thread.
