@@ -20,7 +20,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     , part_columns_lock(data_part->columns_lock)
     , columns_to_read(columns_to_read_)
     , read_with_direct_io(read_with_direct_io_)
-    , mark_cache(storage.context.getMarkCache())
+    , mark_cache(storage.global_context.getMarkCache())
 {
     if (!quiet)
         LOG_TRACE(log, "Reading " << data_part->marks_count << " marks from part " << data_part->name

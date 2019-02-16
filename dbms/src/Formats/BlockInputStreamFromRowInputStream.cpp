@@ -26,7 +26,7 @@ namespace ErrorCodes
 BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
     const RowInputStreamPtr & row_input_,
     const Block & sample_,
-    size_t max_block_size_,
+    UInt64 max_block_size_,
     const FormatSettings & settings)
     : row_input(row_input_), sample(sample_), max_block_size(max_block_size_),
     allow_errors_num(settings.input_allow_errors_num), allow_errors_ratio(settings.input_allow_errors_ratio)
@@ -88,7 +88,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
                     throw;
 
                 ++num_errors;
-                Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
+                Float32 current_error_ratio = static_cast<Float32>(num_errors) / total_rows;
 
                 if (num_errors > allow_errors_num
                     && current_error_ratio > allow_errors_ratio)

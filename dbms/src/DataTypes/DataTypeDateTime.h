@@ -34,7 +34,7 @@ public:
     DataTypeDateTime(const std::string & time_zone_name = "");
 
     const char * getFamilyName() const override { return "DateTime"; }
-    std::string getName() const override;
+    std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -46,6 +46,7 @@ public:
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
 
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

@@ -65,14 +65,11 @@ public:
         Columns tuple_columns(tuple_size);
         for (size_t i = 0; i < tuple_size; ++i)
         {
-            tuple_columns[i] = block.getByPosition(arguments[i]).column;
-
             /** If tuple is mixed of constant and not constant columns,
-            *  convert all to non-constant columns,
-            *  because many places in code expect all non-constant columns in non-constant tuple.
-            */
-            if (ColumnPtr converted = tuple_columns[i]->convertToFullColumnIfConst())
-                tuple_columns[i] = converted;
+              *  convert all to non-constant columns,
+              *  because many places in code expect all non-constant columns in non-constant tuple.
+              */
+            tuple_columns[i] = block.getByPosition(arguments[i]).column->convertToFullColumnIfConst();
         }
         block.getByPosition(result).column = ColumnTuple::create(tuple_columns);
     }

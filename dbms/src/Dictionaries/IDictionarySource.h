@@ -3,6 +3,7 @@
 #include <vector>
 #include <DataStreams/IBlockInputStream.h>
 
+
 namespace DB
 {
 class IDictionarySource;

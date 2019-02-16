@@ -70,18 +70,20 @@ public:
         else
         {
             String addr(str, 0, pos - str.c_str());
-            mask_address = toIPv6(Poco::Net::IPAddress(addr));
+            auto real_address = Poco::Net::IPAddress(addr);
 
             String str_mask(str, addr.length() + 1, str.length() - addr.length() - 1);
             if (isDigits(str_mask))
             {
                 UInt8 prefix_bits = parse<UInt8>(pos + 1);
-                construct(prefix_bits);
+                construct(prefix_bits, real_address.family() == Poco::Net::AddressFamily::IPv4);
             }
             else
             {
                 subnet_mask = netmaskToIPv6(Poco::Net::IPAddress(str_mask));
             }
+
+            mask_address = toIPv6(real_address);
         }
     }
 
@@ -97,9 +99,9 @@ private:
         subnet_mask = Poco::Net::IPAddress(128, Poco::Net::IPAddress::IPv6);
     }
 
-    void construct(UInt8 prefix_bits)
+    void construct(UInt8 prefix_bits, bool is_ipv4)
     {
-        prefix_bits = mask_address.family() == Poco::Net::IPAddress::IPv4 ? prefix_bits + 96 : prefix_bits;
+        prefix_bits = is_ipv4 ? prefix_bits + 96 : prefix_bits;
         subnet_mask = Poco::Net::IPAddress(prefix_bits, Poco::Net::IPAddress::IPv6);
     }
 
@@ -252,7 +254,7 @@ bool AddressPatterns::contains(const Poco::Net::IPAddress & addr) const
     return false;
 }
 
-void AddressPatterns::addFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
+void AddressPatterns::addFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_elem, config_keys);
@@ -276,7 +278,7 @@ void AddressPatterns::addFromConfig(const String & config_elem, Poco::Util::Abst
 }
 
 
-User::User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config)
+User::User(const String & name_, const String & config_elem, const Poco::Util::AbstractConfiguration & config)
     : name(name_)
 {
     bool has_password = config.has(config_elem + ".password");

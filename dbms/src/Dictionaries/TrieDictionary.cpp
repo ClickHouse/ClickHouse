@@ -1,7 +1,6 @@
 #include "TrieDictionary.h"
 #include <iostream>
 #include <stack>
-#include <btrie.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -10,10 +9,18 @@
 #include <Poco/ByteOrder.h>
 #include <Poco/Net/IPAddress.h>
 #include <Common/formatIPv6.h>
+#include <common/itoa.h>
 #include <ext/map.h>
 #include <ext/range.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wold-style-cast"
+    #pragma clang diagnostic ignored "-Wnewline-eof"
+#endif
+
+#include <btrie.h>
 
 
 namespace DB
@@ -54,11 +61,6 @@ TrieDictionary::TrieDictionary(
     }
 
     creation_time = std::chrono::system_clock::now();
-}
-
-TrieDictionary::TrieDictionary(const TrieDictionary & other)
-    : TrieDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
-{
 }
 
 TrieDictionary::~TrieDictionary()
@@ -756,17 +758,17 @@ Columns TrieDictionary::getKeyColumns() const
     return {std::move(ip_column), std::move(mask_column)};
 }
 
-BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
+    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
-        const auto & attr = attributes.front();
+        const auto & attr = dict_attributes.front();
         return ColumnsWithTypeAndName(
             {ColumnWithTypeAndName(columns.front(), std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
+    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         auto column = ColumnString::create();
         const auto & ip_column = static_cast<const ColumnFixedString &>(*columns.front());
@@ -778,11 +780,11 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
             char * ptr = buffer;
             formatIPv6(reinterpret_cast<const unsigned char *>(ip_column.getDataAt(row).data), ptr);
             *(ptr - 1) = '/';
-            auto size = detail::writeUIntText(mask, ptr);
-            column->insertData(buffer, size + (ptr - buffer));
+            ptr = itoa(mask, ptr);
+            column->insertData(buffer, ptr - buffer);
         }
         return ColumnsWithTypeAndName{
-            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), attributes.front().name)};
+            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(
         shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(getKeys), std::move(getView));

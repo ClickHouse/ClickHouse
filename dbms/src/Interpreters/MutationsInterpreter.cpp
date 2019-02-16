@@ -53,7 +53,7 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
     select->select_expression_list->children.push_back(count_func);
 
     if (commands.size() == 1)
-        select->where_expression = commands[0].predicate;
+        select->where_expression = commands[0].predicate->clone();
     else
     {
         auto coalesced_predicates = std::make_shared<ASTFunction>();
@@ -62,7 +62,7 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
         coalesced_predicates->children.push_back(coalesced_predicates->arguments);
 
         for (const MutationCommand & command : commands)
-            coalesced_predicates->arguments->children.push_back(command.predicate);
+            coalesced_predicates->arguments->children.push_back(command.predicate->clone());
 
         select->where_expression = std::move(coalesced_predicates);
     }
@@ -72,8 +72,7 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    InterpreterSelectQuery interpreter_select(select, context_copy, storage, QueryProcessingStage::Complete);
-    BlockInputStreamPtr in = interpreter_select.execute().in;
+    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage, QueryProcessingStage::Complete).execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -195,7 +194,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (col_default.kind == ColumnDefaultKind::Materialized)
             {
                 auto query = col_default.expression->clone();
-                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+                auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
                 ExpressionAnalyzer analyzer(query, syntax_result, context);
                 for (const String & dependency : analyzer.getRequiredSourceColumns())
                 {
@@ -204,10 +203,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
-    }
 
-    if (!updated_columns.empty())
         validateUpdateColumns(storage, updated_columns, column_to_affected_materialized);
+    }
 
     /// First, break a sequence of commands into stages.
     stages.emplace_back(context);
@@ -302,7 +300,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(all_asts, all_columns);
+        auto syntax_result = SyntaxAnalyzer(context).analyze(all_asts, all_columns);
         stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;

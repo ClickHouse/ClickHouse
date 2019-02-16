@@ -61,7 +61,7 @@ DNSCacheUpdater::DNSCacheUpdater(Context & context_)
     task_handle = pool.addTask([this] () { return run(); });
 }
 
-bool DNSCacheUpdater::run()
+BackgroundProcessingPoolTaskResult DNSCacheUpdater::run()
 {
     /// TODO: Ensusre that we get global counter (not thread local)
     auto num_current_network_exceptions = ProfileEvents::global_counters[ProfileEvents::NetworkErrors].load(std::memory_order_relaxed);
@@ -79,20 +79,20 @@ bool DNSCacheUpdater::run()
             last_num_network_erros = num_current_network_exceptions;
             last_update_time = time(nullptr);
 
-            return true;
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
         }
         catch (...)
         {
             /// Do not increment ProfileEvents::NetworkErrors twice
             if (isNetworkError())
-                return false;
+                return BackgroundProcessingPoolTaskResult::ERROR;
 
             throw;
         }
     }
 
     /// According to BackgroundProcessingPool logic, if task has done work, it could be executed again immediately.
-    return false;
+    return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 }
 
 DNSCacheUpdater::~DNSCacheUpdater()

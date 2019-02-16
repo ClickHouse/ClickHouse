@@ -24,7 +24,8 @@ private:
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested, const DataTypes & arguments, const Array & params)
-        : nested_func(nested), arguments(arguments), params(params) {}
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments, params)
+        , nested_func(nested), arguments(arguments), params(params) {}
 
     String getName() const override
     {

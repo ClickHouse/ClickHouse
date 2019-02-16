@@ -3,9 +3,8 @@
 #include <Interpreters/Join.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Common/typeid_cast.h>
 #include <Core/ColumnNumbers.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Poco/String.h>    /// toLower
@@ -33,7 +32,8 @@ StorageJoin::StorageJoin(
     SizeLimits limits_,
     ASTTableJoin::Kind kind_,
     ASTTableJoin::Strictness strictness_,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    bool overwrite)
     : StorageSetOrJoinBase{path_, name_, columns_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
@@ -45,13 +45,13 @@ StorageJoin::StorageJoin(
         if (!getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness);
+    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness, overwrite);
     join->setSampleBlock(getSampleBlock().sortColumns());
     restore();
 }
 
 
-void StorageJoin::truncate(const ASTPtr &)
+void StorageJoin::truncate(const ASTPtr &, const Context &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
@@ -88,11 +88,11 @@ void registerStorageJoin(StorageFactory & factory)
                 "Storage Join requires at least 3 parameters: Join(ANY|ALL, LEFT|INNER, keys...).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        const ASTIdentifier * strictness_id = typeid_cast<const ASTIdentifier *>(engine_args[0].get());
-        if (!strictness_id)
+        auto opt_strictness_id = getIdentifierName(engine_args[0]);
+        if (!opt_strictness_id)
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
-        const String strictness_str = Poco::toLower(strictness_id->name);
+        const String strictness_str = Poco::toLower(*opt_strictness_id);
         ASTTableJoin::Strictness strictness;
         if (strictness_str == "any")
             strictness = ASTTableJoin::Strictness::Any;
@@ -101,11 +101,11 @@ void registerStorageJoin(StorageFactory & factory)
         else
             throw Exception("First parameter of storage Join must be ANY or ALL (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
-        const ASTIdentifier * kind_id = typeid_cast<const ASTIdentifier *>(engine_args[1].get());
-        if (!kind_id)
+        auto opt_kind_id = getIdentifierName(engine_args[1]);
+        if (!opt_kind_id)
             throw Exception("Second parameter of storage Join must be LEFT or INNER (without quotes).", ErrorCodes::BAD_ARGUMENTS);
 
-        const String kind_str = Poco::toLower(kind_id->name);
+        const String kind_str = Poco::toLower(*opt_kind_id);
         ASTTableJoin::Kind kind;
         if (kind_str == "left")
             kind = ASTTableJoin::Kind::Left;
@@ -122,11 +122,11 @@ void registerStorageJoin(StorageFactory & factory)
         key_names.reserve(engine_args.size() - 2);
         for (size_t i = 2, size = engine_args.size(); i < size; ++i)
         {
-            const ASTIdentifier * key = typeid_cast<const ASTIdentifier *>(engine_args[i].get());
-            if (!key)
+            auto opt_key = getIdentifierName(engine_args[i]);
+            if (!opt_key)
                 throw Exception("Parameter №" + toString(i + 1) + " of storage Join don't look like column name.", ErrorCodes::BAD_ARGUMENTS);
 
-            key_names.push_back(key->name);
+            key_names.push_back(*opt_key);
         }
 
         auto & settings = args.context.getSettingsRef();
@@ -134,15 +134,22 @@ void registerStorageJoin(StorageFactory & factory)
         auto max_rows_in_join = settings.max_rows_in_join;
         auto max_bytes_in_join = settings.max_bytes_in_join;
         auto join_overflow_mode = settings.join_overflow_mode;
+        auto join_any_take_last_row = settings.join_any_take_last_row;
 
         if (args.storage_def && args.storage_def->settings)
         {
             for (const ASTSetQuery::Change & setting : args.storage_def->settings->changes)
             {
-                if (setting.name == "join_use_nulls") join_use_nulls.set(setting.value);
-                else if (setting.name == "max_rows_in_join") max_rows_in_join.set(setting.value);
-                else if (setting.name == "max_bytes_in_join") max_bytes_in_join.set(setting.value);
-                else if (setting.name == "join_overflow_mode") join_overflow_mode.set(setting.value);
+                if (setting.name == "join_use_nulls")
+                    join_use_nulls.set(setting.value);
+                else if (setting.name == "max_rows_in_join")
+                    max_rows_in_join.set(setting.value);
+                else if (setting.name == "max_bytes_in_join")
+                    max_bytes_in_join.set(setting.value);
+                else if (setting.name == "join_overflow_mode")
+                    join_overflow_mode.set(setting.value);
+                else if (setting.name == "join_any_take_last_row")
+                    join_any_take_last_row.set(setting.value);
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,
@@ -158,7 +165,8 @@ void registerStorageJoin(StorageFactory & factory)
             SizeLimits{max_rows_in_join.value, max_bytes_in_join.value, join_overflow_mode.value},
             kind,
             strictness,
-            args.columns);
+            args.columns,
+            join_any_take_last_row);
     });
 }
 
@@ -183,11 +191,11 @@ size_t rawSize(const StringRef & t)
     return t.size;
 }
 
-class JoinBlockInputStream : public IProfilingBlockInputStream
+class JoinBlockInputStream : public IBlockInputStream
 {
 public:
-    JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block & sample_block_)
-        : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(sample_block_)
+    JoinBlockInputStream(const Join & parent_, UInt64 max_block_size_, Block && sample_block_)
+        : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block_))
     {
         columns.resize(sample_block.columns());
         column_indices.resize(sample_block.columns());
@@ -220,18 +228,18 @@ protected:
         if (parent.blocks.empty())
             return Block();
 
-        if (parent.strictness == ASTTableJoin::Strictness::Any)
-            return createBlock<ASTTableJoin::Strictness::Any>(parent.maps_any);
-        else if (parent.strictness == ASTTableJoin::Strictness::All)
-            return createBlock<ASTTableJoin::Strictness::All>(parent.maps_all);
+        Block block;
+        if (parent.dispatch([&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
+            ;
         else
             throw Exception("Logical error: unknown JOIN strictness (must be ANY or ALL)", ErrorCodes::LOGICAL_ERROR);
+        return block;
     }
 
 private:
     const Join & parent;
     std::shared_lock<std::shared_mutex> lock;
-    size_t max_block_size;
+    UInt64 max_block_size;
     Block sample_block;
 
     ColumnNumbers column_indices;
@@ -354,12 +362,11 @@ BlockInputStreams StorageJoin::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
-    size_t max_block_size,
+    UInt64 max_block_size,
     unsigned /*num_streams*/)
 {
     check(column_names);
-    Block sample_block = getSampleBlockForColumns(column_names);
-    return {std::make_shared<JoinBlockInputStream>(*join, max_block_size, sample_block)};
+    return {std::make_shared<JoinBlockInputStream>(*join, max_block_size, getSampleBlockForColumns(column_names))};
 }
 
 }

@@ -100,20 +100,23 @@ struct ExtractRaw
             if (*pos == current_expect_end)
             {
                 expects_end.pop_back();
-                current_expect_end = (UInt8) (expects_end.empty() ? 0 : expects_end.back());
+                current_expect_end = expects_end.empty() ? 0 : expects_end.back();
             }
             else
             {
                 switch (*pos)
                 {
                     case '[':
-                        expects_end.push_back((current_expect_end = ']'));
+                        current_expect_end = ']';
+                        expects_end.push_back(current_expect_end);
                         break;
                     case '{':
-                        expects_end.push_back((current_expect_end = '}'));
+                        current_expect_end = '}';
+                        expects_end.push_back(current_expect_end);
                         break;
                     case '"' :
-                        expects_end.push_back((current_expect_end = '"'));
+                        current_expect_end = '"';
+                        expects_end.push_back(current_expect_end);
                         break;
                     case '\\':
                         /// skip backslash

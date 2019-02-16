@@ -51,7 +51,7 @@ It is designed to retain the following properties of data:
 - probability distributions of length of strings;
 - probability of zero values of numbers; empty strings and arrays, NULLs;
 - data compression ratio when compressed with LZ77 and entropy family of codecs;
-- continuouty (magnitude of difference) of time values across table; continuouty of floating point values.
+- continuity (magnitude of difference) of time values across table; continuity of floating point values.
 - date component of DateTime values;
 - UTF-8 validity of string values;
 - string values continue to look somewhat natural.
@@ -123,7 +123,7 @@ UInt64 hash(Ts... xs)
 
 UInt64 maskBits(UInt64 x, size_t num_bits)
 {
-    return x & ((1 << num_bits) - 1);
+    return x & ((1ULL << num_bits) - 1);
 }
 
 
@@ -149,7 +149,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
         bits = feistelRound(bits, num_bits, seed, i);
-    return (x & ~((1 << num_bits) - 1)) ^ bits;
+    return (x & ~((1ULL << num_bits) - 1)) ^ bits;
 }
 
 
@@ -246,7 +246,7 @@ Float transformFloatMantissa(Float x, UInt64 seed)
 
 
 /// Transform difference from previous number by applying pseudorandom permutation to mantissa part of it.
-/// It allows to retain some continuouty property of source data.
+/// It allows to retain some continuity property of source data.
 template <typename Float>
 class FloatModel : public IModel
 {
@@ -317,8 +317,8 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 
         if (size >= 16)
         {
-            char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(dst);
+            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
+            hash.get128(hash_dst);
         }
         else
         {
@@ -1037,7 +1037,7 @@ try
 
     Obfuscator obfuscator(header, seed, markov_model_params);
 
-    size_t max_block_size = 8192;
+    UInt64 max_block_size = 8192;
 
     /// Train step
     {

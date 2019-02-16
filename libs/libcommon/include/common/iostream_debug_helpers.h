@@ -136,17 +136,20 @@ Out & dump(Out & out, const char * name, T && x)
     return dumpValue(out, x);
 }
 
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+#endif
 
 #define DUMPVAR(VAR) dump(std::cerr, #VAR, (VAR)); std::cerr << "; ";
 #define DUMPHEAD std::cerr << __FILE__ << ':' << __LINE__ << " ";
 #define DUMPTAIL std::cerr << '\n';
 
-#define DUMP1(V1) do { DUMPHEAD DUMPVAR(V1) DUMPTAIL } while(0);
-#define DUMP2(V1, V2) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPTAIL } while(0);
-#define DUMP3(V1, V2, V3) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPTAIL } while(0);
-#define DUMP4(V1, V2, V3, V4) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPTAIL } while(0);
-#define DUMP5(V1, V2, V3, V4, V5) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPVAR(V5) DUMPTAIL } while(0);
-#define DUMP6(V1, V2, V3, V4, V5, V6) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPVAR(V5) DUMPVAR(V6) DUMPTAIL } while(0);
+#define DUMP1(V1) do { DUMPHEAD DUMPVAR(V1) DUMPTAIL } while(0)
+#define DUMP2(V1, V2) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPTAIL } while(0)
+#define DUMP3(V1, V2, V3) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPTAIL } while(0)
+#define DUMP4(V1, V2, V3, V4) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPTAIL } while(0)
+#define DUMP5(V1, V2, V3, V4, V5) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPVAR(V5) DUMPTAIL } while(0)
+#define DUMP6(V1, V2, V3, V4, V5, V6) do { DUMPHEAD DUMPVAR(V1) DUMPVAR(V2) DUMPVAR(V3) DUMPVAR(V4) DUMPVAR(V5) DUMPVAR(V6) DUMPTAIL } while(0)
 
 /// https://groups.google.com/forum/#!searchin/kona-dev/variadic$20macro%7Csort:date/kona-dev/XMA-lDOqtlI/GCzdfZsD41sJ
 

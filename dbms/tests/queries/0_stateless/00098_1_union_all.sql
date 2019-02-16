@@ -29,3 +29,6 @@ UNION ALL
 SELECT value AS val, value, name FROM data2014 WHERE name = 'Alice')
 ORDER BY val ASC;
 
+DROP TABLE data2013;
+DROP TABLE data2014;
+DROP TABLE data2015;

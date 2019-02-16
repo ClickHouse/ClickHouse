@@ -17,7 +17,7 @@ struct LengthImpl
     {
         size_t size = offsets.size();
         for (size_t i = 0; i < size; ++i)
-            res[i] = i == 0 ? (offsets[i] - 1) : (offsets[i] - 1 - offsets[i - 1]);
+            res[i] = offsets[i] - 1 - offsets[i - 1];
     }
 
     static void vector_fixed_to_constant(const ColumnString::Chars & /*data*/, size_t n, UInt64 & res)
@@ -33,7 +33,7 @@ struct LengthImpl
     {
         size_t size = offsets.size();
         for (size_t i = 0; i < size; ++i)
-            res[i] = i == 0 ? (offsets[i]) : (offsets[i] - offsets[i - 1]);
+            res[i] = offsets[i] - offsets[i - 1];
     }
 };
 

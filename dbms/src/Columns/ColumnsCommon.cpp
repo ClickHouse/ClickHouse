@@ -1,10 +1,10 @@
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
 #include <Columns/IColumn.h>
-#include <Common/typeid_cast.h>
 #include <Columns/ColumnVector.h>
+#include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -24,7 +24,7 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
     const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data());
     const Int8 * end = pos + filt.size();
 
-#if __SSE2__ && __POPCNT__
+#if defined(__SSE2__) && defined(__POPCNT__)
     const __m128i zero16 = _mm_setzero_si128();
     const Int8 * end64 = pos + filt.size() / 64 * 64;
 
@@ -69,7 +69,7 @@ bool memoryIsZero(const void * data, size_t size)
     const Int8 * pos = reinterpret_cast<const Int8 *>(data);
     const Int8 * end = pos + size;
 
-#if __SSE2__
+#ifdef __SSE2__
     const __m128 zero16 = _mm_setzero_ps();
     const Int8 * end64 = pos + size / 64 * 64;
 
@@ -205,17 +205,17 @@ namespace
         /// copy array ending at *end_offset_ptr
         const auto copy_array = [&] (const IColumn::Offset * offset_ptr)
         {
-            const auto offset = offset_ptr == offsets_begin ? 0 : offset_ptr[-1];
-            const auto size = *offset_ptr - offset;
+            const auto arr_offset = offset_ptr == offsets_begin ? 0 : offset_ptr[-1];
+            const auto arr_size = *offset_ptr - arr_offset;
 
-            result_offsets_builder.insertOne(size);
+            result_offsets_builder.insertOne(arr_size);
 
             const auto elems_size_old = res_elems.size();
-            res_elems.resize(elems_size_old + size);
-            memcpy(&res_elems[elems_size_old], &src_elems[offset], size * sizeof(T));
+            res_elems.resize(elems_size_old + arr_size);
+            memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
 
-    #if __SSE2__
+    #ifdef __SSE2__
         const __m128i zero_vec = _mm_setzero_si128();
         static constexpr size_t SIMD_BYTES = 16;
         const auto filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;

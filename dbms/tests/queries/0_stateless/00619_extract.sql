@@ -13,7 +13,7 @@ SELECT EXTRACT(year FROM toDateTime('2017-12-31 18:59:58'));
 DROP TABLE IF EXISTS test.Orders;
 CREATE TABLE test.Orders (OrderId UInt64, OrderName String, OrderDate DateTime) engine = Log;
 insert into test.Orders values (1,   'Jarlsberg Cheese',    toDateTime('2008-10-11 13:23:44'));
-SELECT EXTRACT(YEAR FROM OrderDate) AS OrderYear, EXTRACT(MONTH FROM OrderDate) AS OrderMonth, EXTRACT(DAY FROM OrderDate) AS OrderDay,
+SELECT EXTRACT(YYYY FROM OrderDate) AS OrderYear, EXTRACT(MONTH FROM OrderDate) AS OrderMonth, EXTRACT(DAY FROM OrderDate) AS OrderDay,
      EXTRACT(HOUR FROM OrderDate), EXTRACT(MINUTE FROM OrderDate), EXTRACT(SECOND FROM OrderDate) FROM test.Orders WHERE OrderId=1;
 DROP TABLE test.Orders;
 

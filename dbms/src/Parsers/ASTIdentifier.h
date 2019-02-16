@@ -1,27 +1,27 @@
 #pragma once
 
+#include <optional>
+
 #include <Parsers/ASTWithAlias.h>
 
 
 namespace DB
 {
 
-/** Identifier (column or alias)
-  */
+struct IdentifierSemantic;
+struct IdentifierSemanticImpl;
+struct DatabaseAndTableWithAlias;
+
+
+/// Identifier (column, table or alias)
 class ASTIdentifier : public ASTWithAlias
 {
-    enum Kind    /// TODO This is semantic, not syntax. Remove it.
-    {
-        General,
-        Special, // Database, Table, Format
-    };
-
 public:
-    /// name. The composite identifier here will have a concatenated name (of the form a.b.c), and individual components will be available inside the children.
+    /// The composite identifier will have a concatenated name (of the form a.b.c),
+    /// and individual components will be available inside the name_parts.
     String name;
 
-    ASTIdentifier(const String & name_, const Kind kind_ = General)
-        : name(name_), kind(kind_) { range = StringRange(name.data(), name.data() + name.size()); }
+    ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {});
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name); }
@@ -33,13 +33,16 @@ public:
         set.insert(name);
     }
 
-    void setSpecial() { kind = Special; }
-    bool general() const { return kind == General; }
-    bool special() const { return kind == Special; }
+    bool compound() const { return !name_parts.empty(); }
+    bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
 
-    static std::shared_ptr<ASTIdentifier> createSpecial(const String & name_)
+    void setShortName(const String & new_name);
+
+    const String & shortName() const
     {
-        return std::make_shared<ASTIdentifier>(name_, ASTIdentifier::Special);
+        if (!name_parts.empty())
+            return name_parts.back();
+        return name;
     }
 
 protected:
@@ -47,7 +50,30 @@ protected:
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
 private:
-    Kind kind;
+    using ASTWithAlias::children; /// ASTIdentifier is child free
+
+    std::vector<String> name_parts;
+    std::shared_ptr<IdentifierSemanticImpl> semantic; /// pimpl
+
+    static std::shared_ptr<ASTIdentifier> createSpecial(const String & name, std::vector<String> && name_parts = {});
+
+    friend struct IdentifierSemantic;
+    friend ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
+    friend void setIdentifierSpecial(ASTPtr & ast);
 };
+
+
+/// ASTIdentifier Helpers: hide casts and semantic.
+
+ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
+void setIdentifierSpecial(ASTPtr & ast);
+
+bool isIdentifier(const IAST * const ast);
+inline bool isIdentifier(const ASTPtr & ast) { return isIdentifier(ast.get()); }
+
+std::optional<String> getIdentifierName(const IAST * const ast);
+inline std::optional<String> getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
+bool getIdentifierName(const ASTPtr & ast, String & name);
+
 
 }

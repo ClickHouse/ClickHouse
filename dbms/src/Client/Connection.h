@@ -1,7 +1,5 @@
 #pragma once
 
-#include <optional>
-
 #include <common/logger_useful.h>
 
 #include <Poco/Net/StreamSocket.h>
@@ -18,11 +16,12 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 
-#include <IO/CompressionSettings.h>
 #include <IO/ConnectionTimeouts.h>
 
 #include <Interpreters/Settings.h>
 #include <Interpreters/TablesStatus.h>
+
+#include <Compression/ICompressionCodec.h>
 
 #include <atomic>
 #include <optional>
@@ -120,6 +119,12 @@ public:
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
 
+    /// For proper polling.
+    inline const auto & getTimeouts() const
+    {
+        return timeouts;
+    }
+
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
         const String & query,
@@ -205,7 +210,7 @@ private:
     Protocol::Secure secure;             /// Enable data encryption for communication.
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
-    CompressionSettings compression_settings;
+    CompressionCodecPtr compression_codec;
 
     /** If not nullptr, used to limit network traffic.
       * Only traffic for transferring blocks is accounted. Other packets don't.

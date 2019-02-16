@@ -1,4 +1,4 @@
-#include <common/intExp.h>
+#include <Common/intExp.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserSampleRatio.h>

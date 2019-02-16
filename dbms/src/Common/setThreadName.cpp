@@ -1,16 +1,17 @@
+#include <pthread.h>
+
 #if defined(__APPLE__)
-#include <pthread.h>
 #elif defined(__FreeBSD__)
-#include <pthread.h>
-#include <pthread_np.h>
+    #include <pthread_np.h>
 #else
-#include <sys/prctl.h>
+    #include <sys/prctl.h>
 #endif
-#include <pthread.h>
+
 #include <cstring>
 
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
+
 
 namespace DB
 {
@@ -23,6 +24,11 @@ namespace ErrorCodes
 
 void setThreadName(const char * name)
 {
+#ifndef NDEBUG
+    if (strlen(name) > 15)
+        throw DB::Exception("Thread name cannot be longer than 15 bytes", DB::ErrorCodes::PTHREAD_ERROR);
+#endif
+
 #if defined(__FreeBSD__)
     pthread_set_name_np(pthread_self(), name);
     return;

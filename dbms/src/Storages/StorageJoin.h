@@ -25,7 +25,7 @@ class StorageJoin : public ext::shared_ptr_helper<StorageJoin>, public StorageSe
 public:
     String getName() const override { return "Join"; }
 
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
     /// Access the innards.
     JoinPtr & getJoin() { return join; }
@@ -38,7 +38,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
+        UInt64 max_block_size,
         unsigned num_streams) override;
 
 private:
@@ -62,7 +62,8 @@ protected:
         bool use_nulls_,
         SizeLimits limits_,
         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_,
-        const ColumnsDescription & columns_);
+        const ColumnsDescription & columns_,
+        bool overwrite);
 };
 
 }

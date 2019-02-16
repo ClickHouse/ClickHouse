@@ -2,7 +2,7 @@
 #include <Poco/UTF8Encoding.h>
 #include <Common/UTF8Helpers.h>
 
-#if __SSE2__
+#ifdef __SSE2__
 #include <emmintrin.h>
 #endif
 
@@ -165,7 +165,7 @@ private:
 
     static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
     {
-#if __SSE2__
+#ifdef __SSE2__
         static constexpr auto bytes_sse = sizeof(__m128i);
         auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 

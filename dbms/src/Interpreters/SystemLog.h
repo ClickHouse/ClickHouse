@@ -18,8 +18,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadPool.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 
@@ -63,11 +63,14 @@ class PartLog;
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
 {
+    SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config);
     ~SystemLogs();
 
     std::unique_ptr<QueryLog> query_log;                /// Used to log queries.
     std::unique_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
     std::unique_ptr<PartLog> part_log;                  /// Used to log operations with parts
+
+    String part_log_database;
 };
 
 
@@ -132,7 +135,7 @@ protected:
 
     /** In this thread, data is pulled from 'queue' and stored in 'data', and then written into table.
       */
-    std::thread saving_thread;
+    ThreadFromGlobalPool saving_thread;
 
     void threadFunction();
 
@@ -158,7 +161,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     log = &Logger::get("SystemLog (" + database_name + "." + table_name + ")");
 
     data.reserve(DBMS_SYSTEM_LOG_QUEUE_SIZE);
-    saving_thread = std::thread([this] { threadFunction(); });
+    saving_thread = ThreadFromGlobalPool([this] { threadFunction(); });
 }
 
 
@@ -354,7 +357,10 @@ void SystemLog<LogElement>::prepareTable()
         create->table = table_name;
 
         Block sample = LogElement::createBlock();
-        create->set(create->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
+
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
+        create->set(create->columns_list, new_columns_list);
 
         ParserStorage storage_parser;
         ASTPtr storage_ast = parseQuery(
@@ -372,23 +378,25 @@ void SystemLog<LogElement>::prepareTable()
     is_prepared = true;
 }
 
-/// Creates a system log with MergeTree engines using parameters from config
+/// Creates a system log with MergeTree engine using parameters from config
 template<typename TSystemLog>
 std::unique_ptr<TSystemLog> createDefaultSystemLog(
-        Context & context_,
-        const String & default_database_name,
-        const String & default_table_name,
-        Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix)
+    Context & context,
+    const String & default_database_name,
+    const String & default_table_name,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix)
 {
-    String database     = config.getString(config_prefix + ".database",     default_database_name);
-    String table        = config.getString(config_prefix + ".table",        default_table_name);
+    static constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
+
+    String database = config.getString(config_prefix + ".database", default_database_name);
+    String table = config.getString(config_prefix + ".table", default_table_name);
     String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
     String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
 
-    size_t flush_interval_milliseconds = config.getUInt64("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
+    size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds", DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
-    return std::make_unique<TSystemLog>(context_, database, table, engine, flush_interval_milliseconds);
+    return std::make_unique<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
 }
 
 

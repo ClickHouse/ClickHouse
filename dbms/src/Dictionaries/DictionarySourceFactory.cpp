@@ -71,7 +71,6 @@ DictionarySourceFactory::DictionarySourceFactory() : log(&Poco::Logger::get("Dic
 
 void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source)
 {
-    LOG_DEBUG(log, "Register dictionary source type `" + source_type + "`");
     if (!registered_sources.emplace(source_type, std::move(create_source)).second)
         throw Exception("DictionarySourceFactory: the source name '" + source_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }

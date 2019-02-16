@@ -1,4 +1,3 @@
-<a name="utils-clickhouse-copier"></a>
 
 # clickhouse-copier
 

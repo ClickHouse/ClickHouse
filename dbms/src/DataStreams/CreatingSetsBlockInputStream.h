@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Logger.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/ExpressionAnalyzer.h>    /// SubqueriesForSets
 
 
@@ -14,7 +14,7 @@ namespace DB
   * in the `readPrefix` function or before reading the first block
   * initializes all the passed sets.
   */
-class CreatingSetsBlockInputStream : public IProfilingBlockInputStream
+class CreatingSetsBlockInputStream : public IBlockInputStream
 {
 public:
     CreatingSetsBlockInputStream(

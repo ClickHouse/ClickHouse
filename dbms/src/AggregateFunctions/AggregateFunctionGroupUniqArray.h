@@ -44,6 +44,9 @@ private:
     using State = AggregateFunctionGroupUniqArrayData<T>;
 
 public:
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>({argument_type}, {}) {}
+
     String getName() const override { return "groupUniqArray"; }
 
     DataTypePtr getReturnType() const override
@@ -83,7 +86,7 @@ public:
         const typename State::Set & set = this->data(place).value;
         size_t size = set.size();
 
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+        offsets_to.push_back(offsets_to.back() + size);
 
         typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
@@ -109,13 +112,13 @@ struct AggreagteFunctionGroupUniqArrayGenericData
 };
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
- *  For such columns groupUniqArray() can be implemented more efficently (especially for small numeric arrays).
+ *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false>
 class AggreagteFunctionGroupUniqArrayGeneric
     : public IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>
 {
-    DataTypePtr input_data_type;
+    DataTypePtr & input_data_type;
 
     using State = AggreagteFunctionGroupUniqArrayGenericData;
 
@@ -125,7 +128,8 @@ class AggreagteFunctionGroupUniqArrayGeneric
 
 public:
     AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type)
-        : input_data_type(input_data_type) {}
+        : IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>({input_data_type}, {})
+        , input_data_type(this->argument_types[0]) {}
 
     String getName() const override { return "groupUniqArray"; }
 
@@ -195,7 +199,7 @@ public:
         for (auto & rhs_elem : rhs_set)
         {
             cur_set.emplace(rhs_elem, it, inserted);
-            if (inserted)
+            if (inserted && it->size)
                 it->data = arena->insert(it->data, it->size);
         }
     }
@@ -207,7 +211,7 @@ public:
         IColumn & data_to = arr_to.getData();
 
         auto & set = this->data(place).value;
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + set.size());
+        offsets_to.push_back(offsets_to.back() + set.size());
 
         for (auto & elem : set)
         {

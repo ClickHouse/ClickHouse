@@ -17,9 +17,7 @@
 
 `any (только для group_by_overflow_mode)` - продолжить агрегацию по ключам, которые успели войти в набор, но не добавлять новые ключи в набор.
 
-<a name="settings_max_memory_usage"></a>
-
-## max_memory_usage
+## max_memory_usage {#settings_max_memory_usage}
 
 Максимальный возможный объем оперативной памяти для выполнения запроса на одном сервере.
 

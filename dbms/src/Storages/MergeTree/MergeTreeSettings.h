@@ -148,6 +148,13 @@ struct MergeTreeSettings
       */                                                                                                      \
     M(SettingBool, use_minimalistic_checksums_in_zookeeper, true)                                             \
                                                                                                               \
+    /** Store part header (checksums and columns) in a compact format and a single part znode                 \
+      *  instead of separate znodes (<part>/columns and <part>/checksums).                                    \
+      * This can dramatically reduce snapshot size in ZooKeeper.                                              \
+      * Before enabling check that all replicas support new format.                                           \
+      */                                                                                                      \
+    M(SettingBool, use_minimalistic_part_header_in_zookeeper, false)                                          \
+                                                                                                              \
     /** How many records about mutations that are done to keep.                                               \
      *  If zero, then keep all of them */                                                                     \
     M(SettingUInt64, finished_mutations_to_keep, 100)                                                         \
@@ -167,7 +174,7 @@ struct MergeTreeSettings
 #undef DECLARE
 
 public:
-    void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+    void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def);

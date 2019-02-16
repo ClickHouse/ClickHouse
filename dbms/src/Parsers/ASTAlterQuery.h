@@ -26,8 +26,10 @@ public:
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
-        MODIFY_PRIMARY_KEY,
         MODIFY_ORDER_BY,
+
+        ADD_INDEX,
+        DROP_INDEX,
 
         DROP_PARTITION,
         ATTACH_PARTITION,
@@ -55,13 +57,18 @@ public:
      */
     ASTPtr column;
 
-    /** For MODIFY PRIMARY KEY
-     */
-    ASTPtr primary_key;
-
     /** For MODIFY ORDER BY
      */
     ASTPtr order_by;
+
+    /** The ADD INDEX query stores the IndexDeclaration there.
+     */
+    ASTPtr index_decl;
+
+    /** The ADD INDEX query stores the name of the index following AFTER.
+     *  The DROP INDEX query stores the name for deletion.
+     */
+     ASTPtr index;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
@@ -82,6 +89,10 @@ public:
     bool part = false;          /// true for ATTACH PART
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
+
+    bool if_not_exists = false;  /// option for ADD_COLUMN
+
+    bool if_exists = false;  /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */

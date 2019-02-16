@@ -9,9 +9,8 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 数据库其实只是用于存放表的一个目录。
 如果查询中存在`IF NOT EXISTS`，则当数据库已经存在时，该查询不会返回任何错误。
 
-<a name="query_language-queries-create_table"></a>
 
-## CREATE TABLE
+## CREATE TABLE {#create-table-query}
 
 对于`CREATE TABLE`，存在以下几种方式。
 
@@ -44,7 +43,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 以上所有情况，如果指定了`IF NOT EXISTS`，那么在该表已经存在的情况下，查询不会返回任何错误。在这种情况下，查询几乎不会做任何事情。
 
-在`ENGINE`子句后还可能存在一些其他的子句，更详细的信息可以参考[表引擎](../operations/table_engines/index.md#table_engines)中关于建表的描述。
+在`ENGINE`子句后还可能存在一些其他的子句，更详细的信息可以参考 [表引擎](../operations/table_engines/index.md) 中关于建表的描述。
 
 ### 默认值
 

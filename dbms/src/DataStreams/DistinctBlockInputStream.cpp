@@ -8,7 +8,7 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, size_t limit_hint_, const Names & columns)
+DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, UInt64 limit_hint_, const Names & columns)
     : columns_names(columns)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits)
@@ -85,24 +85,15 @@ void DistinctBlockInputStream::buildFilter(
     size_t rows,
     SetVariants & variants) const
 {
-    typename Method::State state;
-    state.init(columns);
+    typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
     {
-        /// Make a key.
-        typename Method::Key key = state.getKey(columns, columns.size(), i, key_sizes);
-
-        typename Method::Data::iterator it;
-        bool inserted;
-        method.data.emplace(key, it, inserted);
-
-        if (inserted)
-            method.onNewKey(*it, columns.size(), variants.string_pool);
+        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[i] = inserted;
+        filter[i] = emplace_result.isInserted();
     }
 }
 

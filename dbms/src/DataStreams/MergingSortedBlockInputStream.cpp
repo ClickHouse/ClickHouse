@@ -1,7 +1,9 @@
 #include <queue>
 #include <iomanip>
+#include <sstream>
 
 #include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -16,7 +18,7 @@ namespace ErrorCodes
 
 MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
-    size_t max_block_size_, size_t limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
+    UInt64 max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
     : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
     , source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
@@ -291,11 +293,18 @@ void MergingSortedBlockInputStream::readSuffixImpl()
 
     const BlockStreamProfileInfo & profile_info = getProfileInfo();
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
-    LOG_DEBUG(log, std::fixed << std::setprecision(2)
+
+    std::stringstream message;
+    message << std::fixed << std::setprecision(2)
         << "Merge sorted " << profile_info.blocks << " blocks, " << profile_info.rows << " rows"
-        << " in " << seconds << " sec., "
+        << " in " << seconds << " sec.";
+
+    if (seconds)
+        message << ", "
         << profile_info.rows / seconds << " rows/sec., "
-        << profile_info.bytes / 1000000.0 / seconds << " MB/sec.");
+        << profile_info.bytes / 1000000.0 / seconds << " MB/sec.";
+
+    LOG_DEBUG(log, message.str());
 }
 
 }

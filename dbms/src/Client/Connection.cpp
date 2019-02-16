@@ -2,8 +2,8 @@
 
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
@@ -21,6 +21,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
+#include <Compression/CompressionFactory.h>
 
 #include <Common/config.h>
 #if USE_POCO_NETSSL
@@ -353,7 +354,19 @@ void Connection::sendQuery(
     if (!connected)
         connect();
 
-    compression_settings = settings ? CompressionSettings(*settings) : CompressionSettings(CompressionMethod::LZ4);
+    if (settings)
+    {
+        std::optional<int> level;
+        std::string method = settings->network_compression_method;
+
+        /// Bad custom logic
+        if (method == "ZSTD")
+            level = settings->network_zstd_compression_level;
+
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
+    }
+    else
+        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
 
@@ -426,7 +439,7 @@ void Connection::sendData(const Block & block, const String & name)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_settings);
+            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_codec);
         else
             maybe_compressed_out = out;
 
@@ -719,10 +732,10 @@ std::unique_ptr<Exception> Connection::receiveException()
 std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
 {
     size_t num = Protocol::Server::stringsInMessage(msg_type);
-    std::vector<String> out(num);
+    std::vector<String> strings(num);
     for (size_t i = 0; i < num; ++i)
-        readStringBinary(out[i], *in);
-    return out;
+        readStringBinary(strings[i], *in);
+    return strings;
 }
 
 
