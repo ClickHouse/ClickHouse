@@ -135,7 +135,7 @@ Aliases are global for a query or subquery and you can define an alias in any pa
 
 Aliases are not visible in subqueries and between subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates the exception `Unknown identifier: num`.
 
-If an alias is defined for the result columns in the SELECT clause of a subquery, these columns are visible in the outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+If an alias is defined for the result columns in the `SELECT` clause of a subquery, these columns are visible in the outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
 Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
