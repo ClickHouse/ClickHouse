@@ -87,7 +87,7 @@ For INSERT queries, specifies that the server need to send metadata about column
 
 ## join_default_strictness
 
-Sets default strictness for [JOIN clauses](../../query_language/select.md#query-language-join).
+Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
 **Possible values**
 

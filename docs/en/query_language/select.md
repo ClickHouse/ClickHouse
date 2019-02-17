@@ -7,7 +7,7 @@ SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
     [ARRAY JOIN ...]
-    [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery)|table USING columns_list
+    [GLOBAL] [ANY|ALL] INNER|LEFT|RIGHT|FULL|CROSS [OUTER] JOIN (subquery)|table USING columns_list
     [PREWHERE expr]
     [WHERE expr]
     [GROUP BY expr_list] [WITH TOTALS]
@@ -391,7 +391,7 @@ If `ANY` is specified and the right table has several matching rows, only the fi
 
 To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#session-setting-join_default_strictness).
 
-**`GLOBAL` distribution**
+**`GLOBAL JOIN`**
 
 When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
 
@@ -464,9 +464,9 @@ If you need a `JOIN` for joining with dimension tables (these are relatively sma
 
 #### NULL processing
 
-The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md) setting. With `join_use_nulls=1`, `JOIN` works like in standard SQL.
+The `JOIN` behavior is affected by the [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) setting. With `join_use_nulls=1`, `JOIN` works like in standard SQL.
 
-If the JOIN keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md) are not joined.
+If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
 
 ### WHERE Clause
