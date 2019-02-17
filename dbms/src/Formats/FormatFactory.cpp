@@ -69,6 +69,9 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.template_settings.format = settings.format_schema;
+    format_settings.template_settings.row_format = settings.format_schema_rows;
+    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
 

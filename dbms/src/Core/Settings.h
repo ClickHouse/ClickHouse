@@ -206,6 +206,8 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingInt64, distributed_ddl_task_timeout, 180, "Timeout for DDL query responses from all hosts in cluster. Negative value means infinite.") \
     M(SettingMilliseconds, stream_flush_interval_ms, 7500, "Timeout for flushing data from streaming storages.") \
     M(SettingString, format_schema, "", "Schema identifier (used by schema-based formats)") \
+    M(SettingString, format_schema_rows, "", "Row format string for Template format") \
+    M(SettingString, format_schema_rows_between_delimiter, "\n", "Delimiter between rows for Template format") \
     M(SettingBool, insert_allow_materialized_columns, 0, "If setting is enabled, Allow materialized columns in INSERT.") \
     M(SettingSeconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, "HTTP connection timeout.") \
     M(SettingSeconds, http_send_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, "HTTP send timeout") \
