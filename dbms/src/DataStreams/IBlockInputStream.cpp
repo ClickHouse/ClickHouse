@@ -247,7 +247,7 @@ void IBlockInputStream::checkQuota(Block & block)
     }
 }
 
-static void checkProgressSpeed(size_t total_progress_size, size_t max_speed_in_seconds, UInt64 total_elapsed_microseconds)
+static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_in_seconds, UInt64 total_elapsed_microseconds)
 {
     /// How much time to wait for the average speed to become `max_speed_in_seconds`.
     UInt64 desired_microseconds = total_progress_size * 1000000 / max_speed_in_seconds;
@@ -260,6 +260,7 @@ static void checkProgressSpeed(size_t total_progress_size, size_t max_speed_in_s
         sleep_ts.tv_nsec = sleep_microseconds % 1000000 * 1000;
 
         /// NOTE: Returns early in case of a signal. This is considered normal.
+        /// NOTE: It's worth noting that this behavior affects kill of queries.
         ::nanosleep(&sleep_ts, nullptr);
 
         ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_microseconds);
@@ -366,10 +367,10 @@ void IBlockInputStream::progressImpl(const Progress & value)
                 }
 
                 if (limits.max_execution_speed && progress.rows / elapsed_seconds >= limits.max_execution_speed)
-                    checkProgressSpeed(progress.rows, limits.max_execution_speed, total_elapsed_microseconds);
+                    limitProgressingSpeed(progress.rows, limits.max_execution_speed, total_elapsed_microseconds);
 
                 if (limits.max_execution_bytes_speed && progress.bytes / elapsed_seconds >= limits.max_execution_bytes_speed)
-                    checkProgressSpeed(progress.bytes, limits.max_execution_bytes_speed, total_elapsed_microseconds);
+                    limitProgressingSpeed(progress.bytes, limits.max_execution_bytes_speed, total_elapsed_microseconds);
             }
         }
 
