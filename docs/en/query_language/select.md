@@ -382,9 +382,9 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 - `FULL OUTER JOIN`
 - `CROSS JOIN`
 
-You may skip the `OUTER` keyword because it is implied by default.
+You may skip the `INNER` and `OUTER` keywords because they are implied by default.
 
-**`ANY` or `ALL` strictness**
+**ANY or ALL strictness**
 
 If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. This is the normal `JOIN` behavior for standard SQL.
 If `ANY` is specified and the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
@@ -460,9 +460,9 @@ Among the various types of `JOIN`, the most efficient is `ANY LEFT JOIN`, then `
 
 If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](dicts/external_dicts.md).
 
-#### Processing of empty or NULL cells
+#### Processing of Empty or NULL Cells
 
-While merging tables with `JOIN`, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) define how ClickHouse fills these cells.
+While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) define how ClickHouse fills these cells.
 
 If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
