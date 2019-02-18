@@ -30,7 +30,7 @@ public:
     {
     }
 
-    Block generate() override;
+    Chunk generate() override;
 
 protected:
     /** Read next row and append it to the columns.

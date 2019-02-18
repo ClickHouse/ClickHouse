@@ -10,10 +10,10 @@ class ISink : public IProcessor
 {
 protected:
     InputPort & input;
-    Block current_block;
+    Chunk current_chunk;
     bool has_input;
 
-    virtual void consume(Block block) = 0;
+    virtual void consume(Chunk block) = 0;
 
 public:
     ISink(Block header);

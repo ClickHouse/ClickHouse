@@ -31,7 +31,7 @@ static bool isParseError(int code)
 }
 
 
-Block IRowInputFormat::generate()
+Chunk IRowInputFormat::generate()
 {
     if (total_rows == 0)
         readPrefix();
@@ -40,6 +40,7 @@ Block IRowInputFormat::generate()
 
     size_t num_columns = header.columns();
     MutableColumns columns = header.cloneEmptyColumns();
+    size_t prev_rows = total_rows;
 
     try
     {
@@ -121,7 +122,9 @@ Block IRowInputFormat::generate()
         return {};
     }
 
-    return header.cloneWithColumns(std::move(columns));
+    Chunk chunk;
+    chunk.setColumns(std::move(columns), total_rows - prev_rows);
+    return chunk;
 }
 
 }

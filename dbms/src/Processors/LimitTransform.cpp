@@ -31,7 +31,7 @@ LimitTransform::Status LimitTransform::prepare()
     /// Push block if can.
     if (block_processed)
     {
-        output.push(std::move(current_block));
+        output.push(std::move(current_chunk));
         has_block = false;
         block_processed = false;
     }
@@ -60,13 +60,13 @@ LimitTransform::Status LimitTransform::prepare()
     if (!input.hasData())
         return Status::NeedData;
 
-    current_block = input.pull();
+    current_chunk = input.pull();
     has_block = true;
 
     /// Skip block (for 'always_read_till_end' case).
     if (pushing_is_finished)
     {
-        current_block.clear();
+        current_chunk.clear();
         has_block = false;
 
         /// Now, we pulled from input, and it must be empty.
@@ -75,12 +75,12 @@ LimitTransform::Status LimitTransform::prepare()
 
     /// Process block.
 
-    size_t rows = current_block.rows();
+    size_t rows = current_chunk.getNumRows();
     rows_read += rows;
 
     if (rows_read <= offset)
     {
-        current_block.clear();
+        current_chunk.clear();
         has_block = false;
 
         /// Now, we pulled from input, and it must be empty.
@@ -93,7 +93,7 @@ LimitTransform::Status LimitTransform::prepare()
         if (output.hasData())
             return Status::PortFull;
 
-        output.push(std::move(current_block));
+        output.push(std::move(current_chunk));
         has_block = false;
 
         return Status::NeedData;
@@ -105,21 +105,25 @@ LimitTransform::Status LimitTransform::prepare()
 
 void LimitTransform::work()
 {
-    size_t rows = current_block.rows();
-    size_t columns = current_block.columns();
+    size_t num_rows = current_chunk.getNumRows();
+    size_t num_columns = current_chunk.getNumColumns();
 
     /// return a piece of the block
     size_t start = std::max(
         static_cast<Int64>(0),
-        static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(rows));
+        static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(num_rows));
 
     size_t length = std::min(
         static_cast<Int64>(limit), std::min(
         static_cast<Int64>(rows_read) - static_cast<Int64>(offset),
-        static_cast<Int64>(limit) + static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(rows)));
+        static_cast<Int64>(limit) + static_cast<Int64>(offset) - static_cast<Int64>(rows_read) + static_cast<Int64>(num_rows)));
 
-    for (size_t i = 0; i < columns; ++i)
-        current_block.getByPosition(i).column = current_block.getByPosition(i).column->cut(start, length);
+    auto columns = current_chunk.detachColumns();
+
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = columns[i]->cut(start, length);
+
+    current_chunk.setColumns(std::move(columns), length);
 
     block_processed = true;
 }

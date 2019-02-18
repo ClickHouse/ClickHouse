@@ -29,7 +29,7 @@ IOutputFormat::Status IOutputFormat::prepare()
         if (!input.hasData())
             return Status::NeedData;
 
-        current_block = input.pull();
+        current_chunk = input.pull();
         current_block_kind = kind;
         has_input = true;
         return Status::Ready;
@@ -43,13 +43,13 @@ void IOutputFormat::work()
     switch (current_block_kind)
     {
         case Main:
-            consume(std::move(current_block));
+            consume(std::move(current_chunk));
             break;
         case Totals:
-            consumeTotals(std::move(current_block));
+            consumeTotals(std::move(current_chunk));
             break;
         case Extremes:
-            consumeExtremes(std::move(current_block));
+            consumeExtremes(std::move(current_chunk));
             break;
     }
 

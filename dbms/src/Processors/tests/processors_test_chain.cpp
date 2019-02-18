@@ -38,14 +38,14 @@ private:
     UInt64 current_number = 0;
     unsigned sleep_useconds;
 
-    Block generate() override
+    Chunk generate() override
     {
         usleep(sleep_useconds);
 
         MutableColumns columns;
         columns.emplace_back(ColumnUInt64::create(1, current_number));
         ++current_number;
-        return getPort().getHeader().cloneWithColumns(std::move(columns));
+        return Chunk(std::move(columns), 1);
     }
 };
 
@@ -61,7 +61,7 @@ public:
     String getName() const override { return "SleepyTransform"; }
 
 protected:
-    void transform(Block &) override
+    void transform(Chunk &) override
     {
         usleep(sleep_useconds);
     }
@@ -75,19 +75,21 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    explicit PrintSink(String prefix)
-        : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-          prefix(std::move(prefix)) {}
+    PrintSink(String prefix)
+            : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
+              prefix(std::move(prefix))
+    {
+    }
 
 private:
     String prefix;
     WriteBufferFromFileDescriptor out{STDOUT_FILENO};
     FormatSettings settings;
 
-    void consume(Block block) override
+    void consume(Chunk chunk) override
     {
-        size_t rows = block.rows();
-        size_t columns = block.columns();
+        size_t rows = chunk.getNumRows();
+        size_t columns = chunk.getNumColumns();
 
         for (size_t row_num = 0; row_num < rows; ++row_num)
         {
@@ -96,7 +98,7 @@ private:
             {
                 if (column_num != 0)
                     writeChar('\t', out);
-                getPort().getHeader().getByPosition(column_num).type->serializeText(*block.getByPosition(column_num).column, row_num, out, settings);
+                getPort().getHeader().getByPosition(column_num).type->serializeAsText(*chunk.getColumns()[column_num], row_num, out, settings);
             }
             writeChar('\n', out);
         }

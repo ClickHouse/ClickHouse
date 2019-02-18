@@ -15,11 +15,11 @@ protected:
     InputPort & input;
     OutputPort & output;
 
-    Block current_block;
+    Chunk current_chunk;
     bool has_input = false;
     bool transformed = false;
 
-    virtual void transform(Block & block) = 0;
+    virtual void transform(Chunk & chunk) = 0;
 
 public:
     ISimpleTransform(Block input_header, Block output_header);

@@ -29,7 +29,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     /// Output if has data.
     if (transformed)
     {
-        output.push(std::move(current_block));
+        output.push(std::move(current_chunk));
         has_input = false;
         transformed = false;
     }
@@ -48,7 +48,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
         if (!input.hasData())
             return Status::NeedData;
 
-        current_block = input.pull();
+        current_chunk = input.pull();
         has_input = true;
     }
 
@@ -58,7 +58,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
 void ISimpleTransform::work()
 {
-    transform(current_block);
+    transform(current_chunk);
     transformed = true;
 }
 

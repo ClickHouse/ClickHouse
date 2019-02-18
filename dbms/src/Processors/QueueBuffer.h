@@ -10,7 +10,7 @@ namespace DB
 class QueueBuffer : public IAccumulatingTransform
 {
 private:
-    std::queue<Block> blocks;
+    std::queue<Chunk> chunks;
 public:
     String getName() const override { return "QueueBuffer"; }
 
@@ -19,18 +19,18 @@ public:
     {
     }
 
-    void consume(Block block) override
+    void consume(Chunk block) override
     {
-        blocks.push(std::move(block));
+        chunks.push(std::move(block));
     }
 
-    Block generate() override
+    Chunk generate() override
     {
-        if (blocks.empty())
+        if (chunks.empty())
             return {};
 
-        Block res = std::move(blocks.front());
-        blocks.pop();
+        auto res = std::move(chunks.front());
+        chunks.pop();
         return res;
     }
 };
