@@ -181,7 +181,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, UInt64 limit) const
     return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);

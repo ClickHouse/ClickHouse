@@ -173,7 +173,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <typename T>
-ColumnPtr ColumnDecimal<T>::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnDecimal<T>::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }

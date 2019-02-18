@@ -191,13 +191,13 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 }
 
 
-ColumnPtr ColumnString::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename Type>
-ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
+ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
     if (limit == 0)
         return ColumnString::create();

@@ -88,7 +88,7 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, UInt64 limit) const
     return ColumnFunction::create(limit, function, capture);
 }
 
-ColumnPtr ColumnFunction::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
 {
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)

@@ -626,13 +626,13 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, UInt64 limit) const
     return res;
 }
 
-ColumnPtr ColumnArray::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename T>
-ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, UInt64 limit) const
+ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
     if (limit == 0)
         return ColumnArray::create(data);

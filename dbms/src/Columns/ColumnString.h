@@ -196,10 +196,10 @@ public:
 
     ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
 
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     void insertDefault() override
     {

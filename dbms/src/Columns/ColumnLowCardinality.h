@@ -95,7 +95,7 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
     }
 
-    ColumnPtr index(const IColumn & indexes_, UInt64 limit) const override
+    ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
     }

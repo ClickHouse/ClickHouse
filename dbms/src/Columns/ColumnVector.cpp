@@ -230,7 +230,7 @@ ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, UInt64 lim
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }

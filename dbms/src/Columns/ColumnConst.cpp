@@ -68,7 +68,7 @@ ColumnPtr ColumnConst::permute(const Permutation & perm, UInt64 limit) const
     return ColumnConst::create(data, limit);
 }
 
-ColumnPtr ColumnConst::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
 {
     if (limit == 0)
         limit = indexes.size();
