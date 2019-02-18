@@ -7,6 +7,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
+#include <Common/RadixSort.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsCommon.h>
@@ -73,14 +74,15 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 {
     size_t s = data.size();
     res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
 
     if (limit >= s)
         limit = 0;
 
     if (limit)
     {
+        for (size_t i = 0; i < s; ++i)
+            res[i] = i;
+
         if (reverse)
             std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
         else
@@ -88,10 +90,31 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     }
     else
     {
-        if (reverse)
-            pdqsort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+        if constexpr ((std::is_signed_v<T> || std::is_unsigned_v<T>) && !std::is_same_v<T, UInt128>)
+        {
+            PaddedPODArray<std::pair<T, size_t>> pairs(s);
+            for (size_t i = 0; i < s; ++i)
+                pairs.data()[i] = {data[i], i};
+
+            radixSort(pairs.data(), s);
+
+            if (reverse)
+                for (size_t i = 0; i < s; ++i)
+                    res[s - 1 - i] = pairs[i].second;
+            else
+                for (size_t i = 0; i < s; ++i)
+                    res[i] = pairs[i].second;
+        }
         else
-            pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
+        {
+            for (size_t i = 0; i < s; ++i)
+                res[i] = i;
+
+            if (reverse)
+                pdqsort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+            else
+                pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
+        }
     }
 }
 

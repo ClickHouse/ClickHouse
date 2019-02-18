@@ -94,6 +94,22 @@ struct RadixSortFloatTraits
     }
 };
 
+template <typename Float>
+struct RadixSortFloatPTraits
+{
+    using Element = std::pair<Float, size_t>;
+    using Key = Float;
+    using CountType = uint32_t;
+    using KeyBits = std::conditional_t<sizeof(Float) == 8, uint64_t, uint32_t>;
+
+    static constexpr size_t PART_SIZE_BITS = 8;
+
+    using Transform = RadixSortFloatTransform<KeyBits>;
+    using Allocator = RadixSortMallocAllocator;
+
+    /// The function to get the key from an array element.
+    static Key & extractKey(Element & elem) { return elem.first; }
+};
 
 template <typename KeyBits>
 struct RadixSortIdentityTransform
@@ -159,6 +175,23 @@ struct RadixSortIntTraits
         else
             return *reinterpret_cast<Key *>(&elem);
     }
+};
+
+template <typename Int>
+struct RadixSortIntPTraits
+{
+    using Element = std::pair<Int, size_t>;
+    using Key = Int;
+    using CountType = uint32_t;
+    using KeyBits = std::make_unsigned_t<Int>;
+
+    static constexpr size_t PART_SIZE_BITS = 8;
+
+    using Transform = RadixSortSignedTransform<KeyBits>;
+    using Allocator = RadixSortMallocAllocator;
+
+    /// The function to get the key from an array element.
+    static Key & extractKey(Element & elem) { return elem.first; }
 };
 
 
