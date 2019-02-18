@@ -166,7 +166,7 @@ template <typename T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
 {
-    UInt64 size = indexes.size();
+    size_t size = indexes.size();
 
     if (limit == 0)
         limit = size;
