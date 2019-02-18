@@ -35,7 +35,7 @@ private:
         static constexpr size_t small_buffer_size = 64;
         size_t small_buffer[small_buffer_size];
         std::unique_ptr<size_t[]> alloc_buffer;
-        size_t* row = small_buffer;
+        size_t * row = small_buffer;
         if (n + 1 > small_buffer_size)
         {
             row = new size_t[n + 1];
