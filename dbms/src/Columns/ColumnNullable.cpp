@@ -165,7 +165,7 @@ ColumnPtr ColumnNullable::permute(const Permutation & perm, UInt64 limit) const
     return ColumnNullable::create(permuted_data, permuted_null_map);
 }
 
-ColumnPtr ColumnNullable::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnNullable::index(const IColumn & indexes, size_t limit) const
 {
     ColumnPtr indexed_data = getNestedColumn().index(indexes, limit);
     ColumnPtr indexed_null_map = getNullMapColumn().index(indexes, limit);
