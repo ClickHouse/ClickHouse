@@ -354,13 +354,13 @@ FROM <left_subquery>
 
 **Поддерживаемые типы `JOIN`**
 
-- `INNER JOIN`
-- `LEFT OUTER JOIN`
-- `RIGHT OUTER JOIN`
-- `FULL OUTER JOIN`
-- `CROSS JOIN`
+- `INNER JOIN` (or `JOIN`)
+- `LEFT JOIN` (or `LEFT OUTER JOIN`)
+- `RIGHT JOIN` (or `RIGHT OUTER JOIN`)
+- `FULL JOIN` (or `FULL OUTER JOIN`)
+- `CROSS JOIN` (or `,` )
 
-Вы можете не использовать ключевые слова `INNER` и `OUTER`, они подразумевается по умолчанию.
+Смотрите описание стандартного [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)).
 
 **Строгость ANY или ALL**
 

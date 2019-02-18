@@ -376,13 +376,13 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 
 **Supported types of `JOIN`**
 
-- `INNER JOIN`
-- `LEFT OUTER JOIN`
-- `RIGHT OUTER JOIN`
-- `FULL OUTER JOIN`
-- `CROSS JOIN`
+- `INNER JOIN` (or `JOIN`)
+- `LEFT JOIN` (or `LEFT OUTER JOIN`)
+- `RIGHT JOIN` (or `RIGHT OUTER JOIN`)
+- `FULL JOIN` (or `FULL OUTER JOIN`)
+- `CROSS JOIN` (or `,` )
 
-You may skip the `INNER` and `OUTER` keywords because they are implied by default.
+See standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
 
 **ANY or ALL strictness**
 
