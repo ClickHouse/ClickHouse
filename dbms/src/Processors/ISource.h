@@ -12,9 +12,9 @@ protected:
     OutputPort & output;
     bool has_input = false;
     bool finished = false;
-    Block current_block;
+    Chunk current_chunk;
 
-    virtual Block generate() = 0;
+    virtual Chunk generate() = 0;
 
 public:
     ISource(Block header);

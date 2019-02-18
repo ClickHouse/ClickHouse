@@ -27,7 +27,7 @@ ISource::Status ISource::prepare()
     if (!has_input)
         return Status::Ready;
 
-    output.push(std::move(current_block));
+    output.push(std::move(current_chunk));
     has_input = false;
 
     /// Now, we pushed to output, and it must be full.
@@ -36,8 +36,8 @@ ISource::Status ISource::prepare()
 
 void ISource::work()
 {
-    current_block = generate();
-    if (!current_block)
+    current_chunk = generate();
+    if (!current_chunk)
         finished = true;
     else
         has_input = true;

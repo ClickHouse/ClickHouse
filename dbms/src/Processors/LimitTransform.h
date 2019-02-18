@@ -19,7 +19,7 @@ private:
 
     bool has_block = false;
     bool block_processed = false;
-    Block current_block;
+    Chunk current_chunk;
 
 public:
     LimitTransform(Block header, size_t limit, size_t offset, bool always_read_till_end = false);

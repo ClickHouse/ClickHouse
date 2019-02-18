@@ -26,8 +26,8 @@ IAccumulatingTransform::Status IAccumulatingTransform::prepare()
     }
 
     /// Output if has data.
-    if (current_output_block)
-        output.push(std::move(current_output_block));
+    if (current_output_chunk)
+        output.push(std::move(current_output_chunk));
 
     if (finished_generate)
     {
@@ -49,7 +49,7 @@ IAccumulatingTransform::Status IAccumulatingTransform::prepare()
         if (!input.hasData())
             return Status::NeedData;
 
-        current_input_block = input.pull();
+        current_input_chunk = input.pull();
         has_input = true;
     }
 
@@ -60,13 +60,13 @@ void IAccumulatingTransform::work()
 {
     if (!finished_input)
     {
-        consume(std::move(current_input_block));
+        consume(std::move(current_input_chunk));
         has_input = false;
     }
     else
     {
-        current_output_block = generate();
-        if (!current_output_block)
+        current_output_chunk = generate();
+        if (!current_output_chunk)
             finished_generate = true;
     }
 }

@@ -16,14 +16,14 @@ protected:
     InputPort & input;
     OutputPort & output;
 
-    Block current_input_block;
-    Block current_output_block;
+    Chunk current_input_chunk;
+    Chunk current_output_chunk;
     bool has_input = false;
     bool finished_input = false;
     bool finished_generate = false;
 
-    virtual void consume(Block block) = 0;
-    virtual Block generate() = 0;
+    virtual void consume(Chunk chunk) = 0;
+    virtual Chunk generate() = 0;
 
 public:
     IAccumulatingTransform(Block input_header, Block output_header);

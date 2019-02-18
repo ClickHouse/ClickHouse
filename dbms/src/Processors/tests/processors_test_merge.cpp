@@ -28,7 +28,7 @@ class MergingSortedProcessor : public IProcessor
 public:
     MergingSortedProcessor(const Block & header, size_t num_inputs)
         : IProcessor(InputPorts(num_inputs, header), OutputPorts{header})
-        , blocks(num_inputs), positions(num_inputs, 0), finished(num_inputs, false)
+        , chunks(num_inputs), positions(num_inputs, 0), finished(num_inputs, false)
     {
     }
 
@@ -76,13 +76,13 @@ public:
                 if (!inputs[i].isFinished())
                 {
                     all_inputs_finished = false;
-                    bool needed = positions[i] >= blocks[i].rows();
+                    bool needed = positions[i] >= chunks[i].getNumRows();
                     if (needed)
                     {
                         inputs[i].setNeeded();
                         if (inputs[i].hasData())
                         {
-                            blocks[i] = inputs[i].pull();
+                            chunks[i] = inputs[i].pull();
                             positions[i] = 0;
                         }
                         else
@@ -112,15 +112,15 @@ public:
     {
         using Key = std::pair<UInt64, size_t>;
         std::priority_queue<Key, std::vector<Key>, std::greater<>> queue;
-        for (size_t i = 0; i < blocks.size(); ++i)
+        for (size_t i = 0; i < chunks.size(); ++i)
         {
             if (finished[i])
                 continue;
 
-            if (positions[i] >= blocks[i].rows())
+            if (positions[i] >= chunks[i].getNumRows())
                 return;
 
-            queue.push({blocks[i].getByPosition(0).column->getUInt(positions[i]), i});
+            queue.push({chunks[i].getColumns()[0]->getUInt(positions[i]), i});
         }
 
         auto col = ColumnUInt64::create();
@@ -130,7 +130,7 @@ public:
             size_t ps = queue.top().second;
             queue.pop();
 
-            auto & cur_col = blocks[ps].getByPosition(0).column;
+            auto & cur_col = chunks[ps].getColumns()[0];
             col->insertFrom(*cur_col, positions[ps]);
             ++positions[ps];
 
@@ -140,15 +140,15 @@ public:
             queue.push({cur_col->getUInt(positions[ps]), ps});
         }
 
-        res = getOutputPort().getHeader();
-        res.getByPosition(0).column = std::move(col);
+        UInt64 num_rows = col->size();
+        res.setColumns(Columns({std::move(col)}), num_rows);
     }
 
     OutputPort & getOutputPort() { return outputs[0]; }
 
 private:
-    Blocks blocks;
-    Block res;
+    Chunks chunks;
+    Chunk res;
     std::vector<size_t> positions;
     std::vector<bool> finished;
 };
@@ -170,16 +170,17 @@ private:
     UInt64 step;
     unsigned sleep_useconds;
 
-    Block generate() override
+    Chunk generate() override
     {
         usleep(sleep_useconds);
 
         MutableColumns columns;
         columns.emplace_back(ColumnUInt64::create(1, current_number));
         current_number += step;
-        return getPort().getHeader().cloneWithColumns(std::move(columns));
+        return Chunk(std::move(columns), 1);
     }
 };
+
 
 class SleepyTransform : public ISimpleTransform
 {
@@ -193,7 +194,7 @@ public:
     String getName() const override { return "SleepyTransform"; }
 
 protected:
-    void transform(Block &) override
+    void transform(Chunk &) override
     {
         usleep(sleep_useconds);
     }
@@ -207,19 +208,21 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    explicit PrintSink(String prefix)
+    PrintSink(String prefix)
             : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
-              prefix(std::move(prefix)) {}
+              prefix(std::move(prefix))
+    {
+    }
 
 private:
     String prefix;
     WriteBufferFromFileDescriptor out{STDOUT_FILENO};
     FormatSettings settings;
 
-    void consume(Block block) override
+    void consume(Chunk chunk) override
     {
-        size_t rows = block.rows();
-        size_t columns = block.columns();
+        size_t rows = chunk.getNumRows();
+        size_t columns = chunk.getNumColumns();
 
         for (size_t row_num = 0; row_num < rows; ++row_num)
         {
@@ -228,7 +231,7 @@ private:
             {
                 if (column_num != 0)
                     writeChar('\t', out);
-                getPort().getHeader().getByPosition(column_num).type->serializeText(*block.getByPosition(column_num).column, row_num, out, settings);
+                getPort().getHeader().getByPosition(column_num).type->serializeAsText(*chunk.getColumns()[column_num], row_num, out, settings);
             }
             writeChar('\n', out);
         }

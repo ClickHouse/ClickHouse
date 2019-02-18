@@ -21,14 +21,14 @@ ISink::Status ISink::prepare()
     if (!input.hasData())
         return Status::NeedData;
 
-    current_block = input.pull();
+    current_chunk = input.pull();
     has_input = true;
     return Status::Ready;
 }
 
 void ISink::work()
 {
-    consume(std::move(current_block));
+    consume(std::move(current_chunk));
     has_input = false;
 }
 

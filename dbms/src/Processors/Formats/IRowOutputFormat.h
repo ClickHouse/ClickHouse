@@ -16,9 +16,9 @@ class IRowOutputFormat : public IOutputFormat
 protected:
     DataTypes types;
 
-    void consume(Block block) override;
-    void consumeTotals(Block block) override;
-    void consumeExtremes(Block block) override;
+    void consume(Chunk chunk) override;
+    void consumeTotals(Chunk chunk) override;
+    void consumeExtremes(Chunk chunk) override;
 
 public:
     IRowOutputFormat(Block header, WriteBuffer & out)

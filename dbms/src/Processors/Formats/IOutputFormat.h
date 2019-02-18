@@ -26,13 +26,13 @@ public:
 protected:
     WriteBuffer & out;
 
-    Block current_block;
+    Chunk current_chunk;
     PortKind current_block_kind;
     bool has_input = false;
 
-    virtual void consume(Block) = 0;
-    virtual void consumeTotals(Block) {}
-    virtual void consumeExtremes(Block) {}
+    virtual void consume(Chunk) = 0;
+    virtual void consumeTotals(Chunk) {}
+    virtual void consumeExtremes(Chunk) {}
 
 public:
     IOutputFormat(Block header, WriteBuffer & out);
