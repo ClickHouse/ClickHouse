@@ -365,8 +365,11 @@ void IBlockInputStream::progressImpl(const Progress & value)
                             ErrorCodes::TOO_SLOW);
                 }
 
-                checkProgressSpeed(progress.rows, limits.max_execution_speed, total_elapsed_microseconds);
-                checkProgressSpeed(progress.bytes, limits.max_execution_bytes_speed, total_elapsed_microseconds);
+                if (limits.max_execution_speed && progress.rows / elapsed_seconds >= limits.max_execution_speed)
+                    checkProgressSpeed(progress.rows, limits.max_execution_speed, total_elapsed_microseconds);
+
+                if (limits.max_execution_bytes_speed && progress.bytes / elapsed_seconds >= limits.max_execution_bytes_speed)
+                    checkProgressSpeed(progress.bytes, limits.max_execution_bytes_speed, total_elapsed_microseconds);
             }
         }
 
