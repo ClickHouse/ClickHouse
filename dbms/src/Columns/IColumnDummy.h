@@ -79,7 +79,7 @@ public:
         return cloneDummy(countBytesInFilter(filt));
     }
 
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         if (s != perm.size())
             throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);

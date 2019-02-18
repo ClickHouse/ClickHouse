@@ -111,7 +111,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
 }
 
 
-ColumnPtr ColumnString::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = offsets.size();
 
@@ -251,7 +251,7 @@ struct ColumnString::less
     }
 };
 
-void ColumnString::getPermutation(bool reverse, UInt64 limit, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);
@@ -389,7 +389,7 @@ struct ColumnString::lessWithCollation
     }
 };
 
-void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, UInt64 limit, Permutation & res) const
+void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);

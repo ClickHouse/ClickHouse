@@ -112,7 +112,7 @@ struct ColumnFixedString::less
     }
 };
 
-void ColumnFixedString::getPermutation(bool reverse, UInt64 limit, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = size();
     res.resize(s);
@@ -231,7 +231,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
-ColumnPtr ColumnFixedString::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
 {
     size_t col_size = size();
 

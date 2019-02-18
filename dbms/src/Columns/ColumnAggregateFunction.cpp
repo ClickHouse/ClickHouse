@@ -184,7 +184,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 }
 
 
-ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = data.size();
 
