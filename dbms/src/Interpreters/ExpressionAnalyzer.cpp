@@ -957,8 +957,8 @@ void ExpressionAnalyzer::collectUsedColumns()
     for (const auto & name : source_columns)
         std::cerr << "'" << name.name << "' ";
     std::cerr << "required: ";
-    for (const auto & name : required)
-        std::cerr << "'" << name << "' ";
+    for (const auto & pr : required)
+        std::cerr << "'" << pr.first << "' ";
     std::cerr << std::endl;
 #endif
 
@@ -991,7 +991,10 @@ void ExpressionAnalyzer::collectUsedColumns()
         for (const auto & joined_column : analyzed_join.available_joined_columns)
         {
             auto & name = joined_column.name_and_type.name;
-            if (required.count(name) && !avaliable_columns.count(name))
+            if (avaliable_columns.count(name))
+                continue;
+
+            if (required.count(name))
             {
                 columns_added_by_join.push_back(joined_column);
                 required.erase(name);
