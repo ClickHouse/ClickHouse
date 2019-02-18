@@ -389,7 +389,7 @@ You may skip the `OUTER` keyword because it is implied by default.
 If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. This is the normal `JOIN` behavior for standard SQL.
 If `ANY` is specified and the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
 
-To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#session-setting-join_default_strictness).
+To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 
 **GLOBAL JOIN**
 
