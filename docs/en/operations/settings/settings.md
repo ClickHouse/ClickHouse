@@ -390,9 +390,14 @@ The character interpreted as a delimiter in the CSV data. By default, the delimi
 
 ## join_use_nulls
 
-Affects the behavior of [JOIN](../../query_language/select.md).
+Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables the empty cells may appear. ClickHouse fills them differently based on setting.
 
-With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+**Possible values**
+
+- 0 — The empty cells are filled with the default value of the corresponding field type.
+- 1 — `JOIN` behaves like in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+
+**Default value**: 0.
 
 ## insert_quorum {#settings-insert_quorum}
 

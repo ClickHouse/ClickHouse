@@ -7,7 +7,7 @@ SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
     [ARRAY JOIN ...]
-    [[GLOBAL] [ANY|ALL] INNER|LEFT|RIGHT|FULL|CROSS [OUTER] JOIN (subquery)|table USING columns_list
+    [[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
     [PREWHERE expr]
     [WHERE expr]
     [GROUP BY expr_list] [WITH TOTALS]
@@ -341,12 +341,12 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 Соединяет данные в привычном для [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) смысле.
 
 !!! info "Примечание"
-    Не связана по функциональности с [ARRAY JOIN](#select-array-join-clause) .
+    Не связана с функциональностью с [ARRAY JOIN](#select-array-join-clause).
 
 ```sql
 SELECT <expr_list>
 FROM <left_subquery>
-[GLOBAL] [ANY|ALL] INNER|LEFT|RIGHT|FULL|CROSS [OUTER] JOIN <right_subquery>
+[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_subquery>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -369,7 +369,7 @@ FROM <left_subquery>
 
 Чтобы задать значение строгости по умолчанию, используйте сессионный параметр [join_default_strictness](../operations/settings/settings.md#session-setting-join_default_strictness).
 
-**`GLOBAL JOIN`**
+**GLOBAL JOIN**
 
 При использовании обычного `JOIN` , запрос отправляется на удалённые серверы. На каждом из них выполняются подзапросы для формирования "правой" таблицы, и с этой таблицей выполняется соединение. То есть, "правая" таблица формируется на каждом сервере отдельно.
 
@@ -431,20 +431,18 @@ LIMIT 10
 
 "Правая" таблица (результат подзапроса) располагается в оперативке. Если оперативки не хватает, вы не сможете выполнить `JOIN` .
 
-В запросе (на одном уровне) можно указать только один `JOIN` . Для запуска нескольких запросов `JOIN`, вы можете поместить их в подзапросы.
-
-Каждый раз для выполнения запроса с одинаковым `JOIN` , подзапрос выполняется заново - результат не кэшируется. Это можно избежать, используя специальный движок таблиц Join, представляющий собой подготовленное множество для соединения, которое всегда находится в оперативке. Подробнее смотрите в разделе "Движки таблиц, Join".
+Каждый раз для выполнения запроса с одинаковым `JOIN`, подзапрос выполняется заново — результат не кэшируется. Это можно избежать, используя специальный движок таблиц [Join](../operations/table_engines/join.md), представляющий собой подготовленное множество для соединения, которое всегда находится в оперативке.
 
 В некоторых случаях более эффективно использовать `IN` вместо `JOIN`.
 Среди разных типов `JOIN`, наиболее эффективен `ANY LEFT JOIN`, следующий по эффективности `ANY INNER JOIN`. Наименее эффективны `ALL LEFT JOIN` и `ALL INNER JOIN`.
 
 Если `JOIN`  необходим для соединения с таблицами измерений (dimension tables - сравнительно небольшие таблицы, которые содержат свойства измерений - например, имена для рекламных кампаний), то использование `JOIN`  может быть не очень удобным из-за громоздкости синтаксиса, а также из-за того, что правая таблица читается заново при каждом запросе. Специально для таких случаев существует функциональность "Внешние словари", которую следует использовать вместо `JOIN`. Дополнительные сведения смотрите в разделе [Внешние словари](dicts/external_dicts.md).
 
-#### Обработка NULL
+#### Обработка пустых ячеек и NULL
 
-На поведение `JOIN` влияет настройка [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) . Если `join_use_nulls=1`, `JOIN` работает как в стандартном SQL.
+При слиянии таблиц с помощью `JOIN` могут появляться пустые ячейки. То, каким образом ClickHouse заполняет эти ячейки, определяется настройкой [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls).
 
-Если ключами `JOIN` выступают поля типа [Nullable](../data_types/nullable.md) , то строки, где хотя бы один из ключей имеет значение [NULL](syntax.md#null-literal), не соединяются.
+Если ключами `JOIN` выступают поля типа [Nullable](../data_types/nullable.md), то строки, где хотя бы один из ключей имеет значение [NULL](syntax.md#null-literal), не соединяются.
 
 ### Секция WHERE {#select-where}
 
