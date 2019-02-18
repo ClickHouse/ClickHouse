@@ -247,6 +247,25 @@ void IBlockInputStream::checkQuota(Block & block)
     }
 }
 
+static void checkProgressSpeed(size_t total_progress_size, size_t max_speed_in_seconds, UInt64 total_elapsed_microseconds)
+{
+    /// How much time to wait for the average speed to become `max_speed_in_seconds`.
+    UInt64 desired_microseconds = total_progress_size * 1000000 / max_speed_in_seconds;
+
+    if (desired_microseconds > total_elapsed_microseconds)
+    {
+        UInt64 sleep_microseconds = desired_microseconds - total_elapsed_microseconds;
+        ::timespec sleep_ts;
+        sleep_ts.tv_sec = sleep_microseconds / 1000000;
+        sleep_ts.tv_nsec = sleep_microseconds % 1000000 * 1000;
+
+        /// NOTE: Returns early in case of a signal. This is considered normal.
+        ::nanosleep(&sleep_ts, nullptr);
+
+        ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_microseconds);
+    }
+}
+
 
 void IBlockInputStream::progressImpl(const Progress & value)
 {
@@ -313,8 +332,9 @@ void IBlockInputStream::progressImpl(const Progress & value)
             last_profile_events_update_time = total_elapsed_microseconds;
         }
 
-        if ((limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
-             && (static_cast<Int64>(total_elapsed_microseconds) > limits.timeout_before_checking_execution_speed.totalMicroseconds()))
+        if ((limits.min_execution_speed || limits.max_execution_speed || limits.min_execution_bytes_speed ||
+             limits.max_execution_bytes_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0)) &&
+            (static_cast<Int64>(total_elapsed_microseconds) > limits.timeout_before_checking_execution_speed.totalMicroseconds()))
         {
             /// Do not count sleeps in throttlers
             UInt64 throttler_sleep_microseconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds];
@@ -328,6 +348,11 @@ void IBlockInputStream::progressImpl(const Progress & value)
                         + " rows/sec., minimum: " + toString(limits.min_execution_speed),
                         ErrorCodes::TOO_SLOW);
 
+                if (limits.min_execution_bytes_speed && progress.bytes / elapsed_seconds < limits.min_execution_bytes_speed)
+                    throw Exception("Query is executing too slow: " + toString(progress.bytes / elapsed_seconds)
+                        + " bytes/sec., minimum: " + toString(limits.min_execution_bytes_speed),
+                        ErrorCodes::TOO_SLOW);
+
                 /// If the predicted execution time is longer than `max_execution_time`.
                 if (limits.max_execution_time != 0 && total_rows)
                 {
@@ -339,6 +364,9 @@ void IBlockInputStream::progressImpl(const Progress & value)
                             + ". Estimated rows to process: " + toString(total_rows),
                             ErrorCodes::TOO_SLOW);
                 }
+
+                checkProgressSpeed(progress.rows, limits.max_execution_speed, total_elapsed_microseconds);
+                checkProgressSpeed(progress.bytes, limits.max_execution_bytes_speed, total_elapsed_microseconds);
             }
         }
 
