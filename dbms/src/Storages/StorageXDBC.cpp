@@ -77,7 +77,7 @@ BlockInputStreams StorageXDBC::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
-    UInt64 max_block_size,
+    size_t max_block_size,
     unsigned num_streams)
 {
     check(column_names);
