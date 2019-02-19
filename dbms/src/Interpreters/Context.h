@@ -16,6 +16,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Block.h>
+#include <Dictionaries/IDictionary.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
 
@@ -260,6 +261,11 @@ public:
     void tryCreateEmbeddedDictionaries() const;
     void tryCreateExternalDictionaries() const;
     void tryCreateExternalModels() const;
+
+    const DictionaryPtr getDictionary(const std::string & dictionary_name) const;
+    DictionaryPtr getDictionary(const std::string & dictionary_name);
+    const DictionaryPtr getDictionary(const std::string & database_name, const std::string & dictionary_name) const;
+    DictionaryPtr getDictionary(const std::string & database_name, const std::string & dictionary_name);
 
     /// I/O formats.
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const;

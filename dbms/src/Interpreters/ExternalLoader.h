@@ -72,17 +72,9 @@ public:
     using LoadablePtr = IExternalLoadable::LoadablePtr;
     using Configuration = Poco::Util::AbstractConfiguration;
 
-    // TODO: кажется, это теперь не нужно
-    enum class ConfigurationSourceType
-    {
-        DDL,
-        Filesystem,
-    };
-
     struct LoadableInfo final
     {
         LoadablePtr loadable;
-        ConfigurationSourceType source_type;
         std::string origin;
         std::exception_ptr exception;
     };
@@ -216,7 +208,7 @@ private:
 
     void reloadPeriodically();
 
-    bool checkLoadableObjectToUpdate(LoadableInfo object);
+    bool checkLoadableObjectToUpdate(LoadableInfo & object);
 
     TimePoint getNextUpdateTime(const LoadablePtr & loadable);
 

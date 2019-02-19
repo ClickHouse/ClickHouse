@@ -123,7 +123,7 @@ void ExternalLoader::addObjectFromDatabase(
     if (loadable_objects_from_databases.find(name) != std::end(loadable_objects_from_databases))
         throw Exception("Can't add loadable object. " + name + " already exists.", ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
 
-    auto info = LoadableInfo{std::move(loadable_object), ConfigurationSourceType::DDL, name, {}};
+    auto info = LoadableInfo{std::move(loadable_object), name, {}};
     loadable_objects_from_databases.emplace(name, info);
     update_times[name] = getNextUpdateTime(info.loadable);
 }
@@ -202,7 +202,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
 
 /// This function should be called under map_mutex
-bool ExternalLoader::checkLoadableObjectToUpdate(LoadableInfo object)
+bool ExternalLoader::checkLoadableObjectToUpdate(LoadableInfo & object)
 {
     /// If the loadable object failed to load or even failed to initialize.
     if (!object.loadable)
@@ -385,10 +385,8 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                 std::lock_guard lock{map_mutex};
                 object_it = loadable_objects_from_filesystem.find(name);
 
-                // TODO: bug. we don't need check DDL here
                 /// Object with the same name was declared in other config file.
-                if (object_it != std::end(loadable_objects_from_filesystem) &&
-                    object_it->second.source_type == ConfigurationSourceType::DDL)
+                if (object_it != std::end(loadable_objects_from_filesystem) && object_it->second.origin != config_path)
                 {
                     throw Exception(loader_name + ": '" + name + "' from file " + config_path + " already declared in ddl.",
                                     ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
@@ -429,7 +427,6 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
             {
                 auto info = LoadableInfo{
                     std::move(object_ptr),
-                    ConfigurationSourceType::Filesystem,
                     config_path,
                     /*exception_ptr*/ {},
                 };
@@ -460,7 +457,6 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                 {
                     auto info = LoadableInfo{
                         nullptr,
-                        ConfigurationSourceType::Filesystem,
                         config_path,
                         exception_ptr,
                     };

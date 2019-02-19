@@ -1241,6 +1241,34 @@ ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
     return *shared->external_models;
 }
 
+const DictionaryPtr Context::getDictionary(const std::string & dictionary_name) const
+{
+    return getExternalDictionaries().getDictionary(dictionary_name);
+}
+
+DictionaryPtr Context::getDictionary(const std::string & dictionary_name)
+{
+    return getExternalDictionaries().getDictionary(dictionary_name);
+}
+
+const DictionaryPtr Context::getDictionary(const std::string & database_name, const std::string & dictionary_name) const
+{
+    if (database_name.empty())
+        return getDictionary(dictionary_name);
+
+    auto db = getDatabase(database_name);
+    return db->getDictionary(*this, dictionary_name);
+}
+
+DictionaryPtr Context::getDictionary(const std::string & database_name, const std::string & dictionary_name)
+{
+    if (database_name.empty())
+        return getDictionary(dictionary_name);
+
+    auto db = getDatabase(database_name);
+    return db->getDictionary(*this, dictionary_name);
+}
+
 void Context::tryCreateEmbeddedDictionaries() const
 {
     static_cast<void>(getEmbeddedDictionariesImpl(true));

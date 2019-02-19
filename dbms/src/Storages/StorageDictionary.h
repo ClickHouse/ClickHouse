@@ -67,10 +67,10 @@ private:
 protected:
     StorageDictionary(
         const String & table_name_,
-        const String & database_name_,
         const ColumnsDescription & columns_,
         const Context & context,
         bool attach,
+        const String & database_name_,
         const String & dictionary_name_);
 };
 

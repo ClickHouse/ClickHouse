@@ -45,7 +45,7 @@ Tables DatabaseDictionary::listTables(const Context & context)
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
             const std::string & dict_name = pair.first;
-            tables[dict_name] = StorageDictionary::create(dict_name, "", ColumnsDescription{columns}, context, true, dict_name);
+            tables[dict_name] = StorageDictionary::create(dict_name, ColumnsDescription{columns}, context, true, "", dict_name);
         }
     }
 
@@ -90,7 +90,7 @@ StoragePtr DatabaseDictionary::tryGetTable(
             {
                 const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
                 auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-                return StorageDictionary::create(table_name, "", ColumnsDescription{columns}, context, true, table_name);
+                return StorageDictionary::create(table_name, ColumnsDescription{columns}, context, true, "", table_name);
             }
         }
     }

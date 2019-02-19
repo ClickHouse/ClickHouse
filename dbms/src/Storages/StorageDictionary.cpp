@@ -25,10 +25,10 @@ namespace ErrorCodes
 
 StorageDictionary::StorageDictionary(
     const String & table_name_,
-    const String & database_name_,
     const ColumnsDescription & columns_,
     const Context & context,
     bool attach,
+    const String & database_name_,
     const String & dictionary_name_)
     : IStorage{columns_}
     , table_name(table_name_)
@@ -38,7 +38,7 @@ StorageDictionary::StorageDictionary(
 {
     if (!attach)
     {
-        const auto & dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+        auto dictionary = context.getDictionary(database_name, dictionary_name);
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();
         checkNamesAndTypesCompatibleWithDictionary(dictionary_structure);
     }
@@ -52,17 +52,7 @@ BlockInputStreams StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    DictionaryPtr dictionary;
-    if (database_name.empty())
-    {
-        dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
-    }
-    else
-    {
-        auto db = context.getDatabase(database_name);
-        dictionary = db->getDictionary(context, dictionary_name);
-    }
-
+    auto dictionary = context.getDictionary(database_name, dictionary_name);
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }
 
@@ -123,7 +113,7 @@ void registerStorageDictionary(StorageFactory & factory)
         }
 
         return StorageDictionary::create(
-            args.table_name, database_name, args.columns, args.context, args.attach, dictionary_name);
+            args.table_name, args.columns, args.context, args.attach, database_name, dictionary_name);
     });
 }
 
