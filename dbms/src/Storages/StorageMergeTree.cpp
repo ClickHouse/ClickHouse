@@ -120,7 +120,7 @@ BlockInputStreams StorageMergeTree::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const UInt64 max_block_size,
+    const size_t max_block_size,
     const unsigned num_streams)
 {
     return reader.read(column_names, query_info, context, max_block_size, num_streams);

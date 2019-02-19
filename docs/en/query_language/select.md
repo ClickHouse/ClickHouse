@@ -7,7 +7,7 @@ SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
     [ARRAY JOIN ...]
-    [GLOBAL] ANY|ALL INNER|LEFT JOIN (subquery)|table USING columns_list
+    [GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN (subquery)|table USING columns_list
     [PREWHERE expr]
     [WHERE expr]
     [GROUP BY expr_list] [WITH TOTALS]
@@ -359,7 +359,7 @@ The corresponding conversion can be performed before the WHERE/PREWHERE clause (
 
 ### JOIN Clause {#select-join}
 
-Joins the data in the usual [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
+Joins the data in the normal [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
 
 !!! info "Note"
     Not related to [ARRAY JOIN](#select-array-join-clause).
@@ -368,7 +368,7 @@ Joins the data in the usual [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL))
 ``` sql
 SELECT <expr_list>
 FROM <left_subquery>
-[GLOBAL] [ANY|ALL] INNER|LEFT|RIGHT|FULL|CROSS [OUTER] JOIN <right_subquery>
+[GLOBAL] [ANY|ALL] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER] JOIN <right_subquery>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
@@ -376,22 +376,22 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 
 **Supported types of `JOIN`**
 
-- `INNER JOIN`
-- `LEFT OUTER JOIN`
-- `RIGHT OUTER JOIN`
-- `FULL OUTER JOIN`
-- `CROSS JOIN`
+- `INNER JOIN` (or `JOIN`)
+- `LEFT JOIN` (or `LEFT OUTER JOIN`)
+- `RIGHT JOIN` (or `RIGHT OUTER JOIN`)
+- `FULL JOIN` (or `FULL OUTER JOIN`)
+- `CROSS JOIN` (or `,` )
 
-You may skip the `OUTER` keyword it is implied by default.
+See standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
 
-**`ANY` or `ALL` strictness**
+**ANY or ALL strictness**
 
-If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. It is a normal `JOIN` behavior from standard SQL.
+If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. This is the normal `JOIN` behavior for standard SQL.
 If `ANY` is specified and the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
 
-You can set the default value of strictness with session configuration parameter [join_default_strictness](../operations/settings/settings.md).
+To set the default strictness value, use the session configuration parameter [join_default_strictness](../operations/settings/settings.md#settings-join_default_strictness).
 
-**`GLOBAL` distribution**
+**GLOBAL JOIN**
 
 When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
 
@@ -453,20 +453,18 @@ The `USING` clause specifies one or more columns to join, which establishes the 
 
 The right table (the subquery result) resides in RAM. If there isn't enough memory, you can't run a `JOIN`.
 
-Only one `JOIN` can be specified in a query (on a single level). To run multiple `JOIN`, you can put them in subqueries.
-
-Each time a query is run with the same `JOIN`, the subquery is run again – the result is not cached. To avoid this, use the special 'Join' table engine, which is a prepared array for joining that is always in RAM. For more information, see the section "Table engines, Join".
+Each time a query is run with the same `JOIN`, the subquery is run again because the result is not cached. To avoid this, use the special [Join](../operations/table_engines/join.md) table engine, which is a prepared array for joining that is always in RAM.
 
 In some cases, it is more efficient to use `IN` instead of `JOIN`.
 Among the various types of `JOIN`, the most efficient is `ANY LEFT JOIN`, then `ANY INNER JOIN`. The least efficient are `ALL LEFT JOIN` and `ALL INNER JOIN`.
 
 If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](dicts/external_dicts.md).
 
-#### NULL processing
+#### Processing of Empty or NULL Cells
 
-The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md) setting. With `join_use_nulls=1`, `JOIN` works like in standard SQL.
+While joining tables, the empty cells may appear. The setting [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) define how ClickHouse fills these cells.
 
-If the JOIN keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md) are not joined.
+If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
 
 ### WHERE Clause

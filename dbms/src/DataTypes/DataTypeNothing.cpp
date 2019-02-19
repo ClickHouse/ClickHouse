@@ -14,7 +14,7 @@ MutableColumnPtr DataTypeNothing::createColumn() const
     return ColumnNothing::create(0);
 }
 
-void DataTypeNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
+void DataTypeNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     size_t size = column.size();
 
@@ -25,7 +25,7 @@ void DataTypeNothing::serializeBinaryBulk(const IColumn & column, WriteBuffer & 
         ostr.write('0');
 }
 
-void DataTypeNothing::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double /*avg_value_size_hint*/) const
+void DataTypeNothing::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     typeid_cast<ColumnNothing &>(column).addSize(istr.tryIgnore(limit));
 }

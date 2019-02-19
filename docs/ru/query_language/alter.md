@@ -81,7 +81,7 @@ MODIFY ORDER BY new_expression
 
 ### Манипуляции с индексами
 
-Добавить или удалить индекс можно с помощью операций 
+Добавить или удалить индекс можно с помощью операций
 ```
 ALTER TABLE [db].name ADD INDEX name expression TYPE type GRANULARITY value [AFTER name]
 ALTER TABLE [db].name DROP INDEX name
@@ -92,9 +92,9 @@ ALTER TABLE [db].name DROP INDEX name
 
 Если индекс появился в метаданных, то он начнет считаться в последующих слияниях и записях в таблицу, а не сразу после выполнения операции `ALTER`.
 
-Запрос на изменение индексов реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах. 
+Запрос на изменение индексов реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
 
-### Манипуляции с партициями и кусками
+### Манипуляции с партициями и кусками {#alter_manipulations-with-partitions}
 
 Работает только для таблиц семейства [`MergeTree`](../operations/table_engines/mergetree.md) (в том числе [реплицированных](../operations/table_engines/replication.md)). Существуют следующие виды
 операций:

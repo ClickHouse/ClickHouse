@@ -46,7 +46,7 @@ namespace detail
 
 /// Check limit <= indexes->size() and call column.indexImpl(const PaddedPodArray<Type> & indexes, UInt64 limit).
 template <typename Column>
-ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, UInt64 limit)
+ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t limit)
 {
     if (limit == 0)
         limit = indexes.size();
@@ -68,8 +68,8 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, UInt64
 }
 
 #define INSTANTIATE_INDEX_IMPL(Column) \
-    template ColumnPtr Column::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, UInt64 limit) const; \
-    template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, UInt64 limit) const; \
-    template ColumnPtr Column::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, UInt64 limit) const; \
-    template ColumnPtr Column::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, UInt64 limit) const;
+    template ColumnPtr Column::indexImpl<UInt8>(const PaddedPODArray<UInt8> & indexes, size_t limit) const; \
+    template ColumnPtr Column::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const; \
+    template ColumnPtr Column::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const; \
+    template ColumnPtr Column::indexImpl<UInt64>(const PaddedPODArray<UInt64> & indexes, size_t limit) const;
 }

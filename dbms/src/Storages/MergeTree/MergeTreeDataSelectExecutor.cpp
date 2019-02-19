@@ -1010,7 +1010,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 continue;
             }
 
-            if (res.empty() || res.back().end - data_range.begin >= min_marks_for_seek)
+            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                 res.push_back(data_range);
             else
                 res.back().end = data_range.end;

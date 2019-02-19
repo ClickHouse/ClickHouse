@@ -67,7 +67,7 @@ public:
       * quiet - don't log profiling info
       */
     MergingSortedBlockInputStream(
-        const BlockInputStreams & inputs_, const SortDescription & description_, UInt64 max_block_size_,
+        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
         UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
@@ -132,9 +132,9 @@ protected:
     Block header;
 
     const SortDescription description;
-    const UInt64 max_block_size;
+    const size_t max_block_size;
     UInt64 limit;
-    size_t total_merged_rows = 0;
+    UInt64 total_merged_rows = 0;
 
     bool first = true;
     bool has_collation = false;

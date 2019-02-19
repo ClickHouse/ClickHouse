@@ -173,7 +173,7 @@ public:
     virtual void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
-        UInt64 limit,
+        size_t limit,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & /*state*/) const
     {
@@ -184,7 +184,7 @@ public:
     /// Read no more than limit values and append them into column.
     virtual void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
-        UInt64 limit,
+        size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & /*state*/) const
     {
@@ -194,8 +194,8 @@ public:
 
     /** Override these methods for data types that require just single stream (most of data types).
       */
-    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const;
-    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double avg_value_size_hint) const;
+    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
+    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
 
     /** Serialization/deserialization of individual values.
       *

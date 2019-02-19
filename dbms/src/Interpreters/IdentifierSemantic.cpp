@@ -47,6 +47,15 @@ bool IdentifierSemantic::canBeAlias(const ASTIdentifier & identifier)
     return identifier.semantic->can_be_alias;
 }
 
+void IdentifierSemantic::setMembership(ASTIdentifier & identifier, size_t table_no)
+{
+    identifier.semantic->membership = table_no;
+}
+
+size_t IdentifierSemantic::getMembership(const ASTIdentifier & identifier)
+{
+    return identifier.semantic->membership;
+}
 
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
