@@ -4,6 +4,7 @@
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/IRowInputFormat.h>
 
 
 namespace DB
@@ -26,15 +27,16 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
     throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
 }
 
-
-BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size) const
+const FormatFactory::ProcessorCreators & FormatFactory::getProcessorCreators(const String & name) const
 {
-    const auto & input_getter = getCreators(name).first;
-    if (!input_getter)
-        throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
+    auto it = processors_dict.find(name);
+    if (processors_dict.end() != it)
+        return it->second;
+    throw Exception("Unknown format " + name, ErrorCodes::UNKNOWN_FORMAT);
+}
 
-    const Settings & settings = context.getSettingsRef();
-
+static FormatSettings getInputFormatSetting(const Settings & settings)
+{
     FormatSettings format_settings;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
@@ -46,18 +48,11 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
 
-    return input_getter(buf, sample, context, max_block_size, format_settings);
+    return format_settings;
 }
 
-
-BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
+static FormatSettings getOutputFormatSetting(const Settings & settings)
 {
-    const auto & output_getter = getCreators(name).second;
-    if (!output_getter)
-        throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
-
-    const Settings & settings = context.getSettingsRef();
-
     FormatSettings format_settings;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
@@ -70,6 +65,32 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.write_statistics = settings.output_format_write_statistics;
 
+    return format_settings;
+}
+
+
+BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size) const
+{
+    const auto & input_getter = getCreators(name).first;
+    if (!input_getter)
+        throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
+
+    const Settings & settings = context.getSettingsRef();
+    FormatSettings format_settings = getInputFormatSetting(settings);
+
+    return input_getter(buf, sample, context, max_block_size, format_settings);
+}
+
+
+BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
+{
+    const auto & output_getter = getCreators(name).second;
+    if (!output_getter)
+        throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+
+    const Settings & settings = context.getSettingsRef();
+    FormatSettings format_settings = getOutputFormatSetting(settings);
+
     /** Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
@@ -78,12 +99,46 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
 }
 
 
+InputFormatPtr FormatFactory::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size) const
+{
+    const auto & input_getter = getProcessorCreators(name).first;
+    if (!input_getter)
+        throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
+
+    const Settings & settings = context.getSettingsRef();
+    FormatSettings format_settings = getInputFormatSetting(settings);
+
+    RowInputFormatParams params;
+    params.max_block_size = max_block_size;
+    params.allow_errors_num = format_settings.input_allow_errors_num;
+    params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
+
+    return input_getter(buf, sample, context, params, format_settings);
+}
+
+
+OutputFormatPtr FormatFactory::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const Context & context) const
+{
+    const auto & output_getter = getProcessorCreators(name).second;
+    if (!output_getter)
+        throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
+
+    const Settings & settings = context.getSettingsRef();
+    FormatSettings format_settings = getOutputFormatSetting(settings);
+
+    /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
+      *  which only work with full columns.
+      */
+    return output_getter(buf, sample, context, format_settings);
+}
+
+
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
     auto & target = dict[name].first;
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-    target = input_creator;
+    target = std::move(input_creator);
 }
 
 void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
@@ -91,7 +146,23 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     auto & target = dict[name].second;
     if (target)
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-    target = output_creator;
+    target = std::move(output_creator);
+}
+
+void FormatFactory::registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator)
+{
+    auto & target = processors_dict[name].first;
+    if (target)
+        throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(input_creator);
+}
+
+void FormatFactory::registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator)
+{
+    auto & target = processors_dict[name].second;
+    if (target)
+        throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(output_creator);
 }
 
 
@@ -113,6 +184,22 @@ void registerInputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
 
+void registerInputFormatProcessorNative(FormatFactory & factory);
+void registerOutputFormatProcessorNative(FormatFactory & factory);
+void registerInputFormatProcessorRowBinary(FormatFactory & factory);
+void registerOutputFormatProcessorRowBinary(FormatFactory & factory);
+void registerInputFormatProcessorTabSeparated(FormatFactory & factory);
+void registerOutputFormatProcessorTabSeparated(FormatFactory & factory);
+void registerInputFormatProcessorValues(FormatFactory & factory);
+void registerOutputFormatProcessorValues(FormatFactory & factory);
+void registerInputFormatProcessorCSV(FormatFactory & factory);
+void registerOutputFormatProcessorCSV(FormatFactory & factory);
+void registerInputFormatProcessorTSKV(FormatFactory & factory);
+void registerOutputFormatProcessorTSKV(FormatFactory & factory);
+void registerInputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory);
+void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+
 /// Output only (presentational) formats.
 
 void registerOutputFormatPretty(FormatFactory & factory);
@@ -126,9 +213,21 @@ void registerOutputFormatODBCDriver(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
 
+void registerOutputFormatProcessorPretty(FormatFactory & factory);
+void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory);
+void registerOutputFormatProcessorPrettySpace(FormatFactory & factory);
+void registerOutputFormatProcessorVertical(FormatFactory & factory);
+void registerOutputFormatProcessorJSON(FormatFactory & factory);
+void registerOutputFormatProcessorJSONCompact(FormatFactory & factory);
+void registerOutputFormatProcessorXML(FormatFactory & factory);
+void registerOutputFormatProcessorODBCDriver(FormatFactory & factory);
+void registerOutputFormatProcessorODBCDriver2(FormatFactory & factory);
+void registerOutputFormatProcessorNull(FormatFactory & factory);
+
 /// Input only formats.
 
 void registerInputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 
 
 FormatFactory::FormatFactory()
@@ -150,6 +249,23 @@ FormatFactory::FormatFactory()
     registerOutputFormatProtobuf(*this);
     registerInputFormatCapnProto(*this);
 
+    registerInputFormatProcessorNative(*this);
+    registerOutputFormatProcessorNative(*this);
+    registerInputFormatProcessorRowBinary(*this);
+    registerOutputFormatProcessorRowBinary(*this);
+    registerInputFormatProcessorTabSeparated(*this);
+    registerOutputFormatProcessorTabSeparated(*this);
+    registerInputFormatProcessorValues(*this);
+    registerOutputFormatProcessorValues(*this);
+    registerInputFormatProcessorCSV(*this);
+    registerOutputFormatProcessorCSV(*this);
+    registerInputFormatProcessorTSKV(*this);
+    registerOutputFormatProcessorTSKV(*this);
+    registerInputFormatProcessorJSONEachRow(*this);
+    registerOutputFormatProcessorJSONEachRow(*this);
+    registerOutputFormatProcessorProtobuf(*this);
+    registerInputFormatProcessorCapnProto(*this);
+
     registerOutputFormatPretty(*this);
     registerOutputFormatPrettyCompact(*this);
     registerOutputFormatPrettySpace(*this);
@@ -160,6 +276,17 @@ FormatFactory::FormatFactory()
     registerOutputFormatODBCDriver(*this);
     registerOutputFormatODBCDriver2(*this);
     registerOutputFormatNull(*this);
+
+    registerOutputFormatProcessorPretty(*this);
+    registerOutputFormatProcessorPrettyCompact(*this);
+    registerOutputFormatProcessorPrettySpace(*this);
+    registerOutputFormatProcessorVertical(*this);
+    registerOutputFormatProcessorJSON(*this);
+    registerOutputFormatProcessorJSONCompact(*this);
+    registerOutputFormatProcessorXML(*this);
+    registerOutputFormatProcessorODBCDriver(*this);
+    registerOutputFormatProcessorODBCDriver2(*this);
+    registerOutputFormatProcessorNull(*this);
 }
 
 }

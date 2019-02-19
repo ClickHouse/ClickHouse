@@ -23,6 +23,7 @@ public:
     void work() override;
 
     OutputPort & getPort() { return output; }
+    const OutputPort & getPort() const { return output; }
 };
 
 }
