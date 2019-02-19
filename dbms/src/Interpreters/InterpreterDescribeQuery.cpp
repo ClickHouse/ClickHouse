@@ -46,7 +46,7 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "default_expression";
     block.insert(col);
 
-    col.name = "comment_expression";
+    col.name = "comment";
     block.insert(col);
 
     col.name = "codec_expression";
