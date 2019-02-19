@@ -5,6 +5,8 @@
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -55,10 +57,19 @@ ColumnsDescription getStructureOfRemoteTable(
 
     ColumnsDescription res;
 
-
     auto new_context = ClusterProxy::removeUserRestrictionsFromSettings(context, context.getSettingsRef());
+
+    /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
+    Block sample_block
+    {
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "name" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "type" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "default_type" },
+        { ColumnString::create(), std::make_shared<DataTypeString>(), "default_expression" },
+    };
+
     /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), new_context);
+    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
         input->setMainTable(QualifiedTableName{database, table});
