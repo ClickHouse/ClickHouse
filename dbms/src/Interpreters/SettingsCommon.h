@@ -157,6 +157,7 @@ struct SettingFloat
 };
 
 
+/// TODO: X macro
 enum class LoadBalancing
 {
     /// among replicas with a minimum number of errors selected randomly
@@ -381,24 +382,38 @@ struct SettingDateTimeInputFormat
 };
 
 
+enum class LogsLevel
+{
+    none = 0,    /// Disable
+    error,
+    warning,
+    information,
+    debug,
+    trace,
+};
+
 class SettingLogsLevel
 {
 public:
+    using Value = LogsLevel;
 
-    String value;
+    Value value;
     bool changed = false;
-    static const std::vector<String> log_levels;
 
-    SettingLogsLevel(const String & level);
-    operator String() const { return value; }
-    void set(const String & level);
-    void set(const Field & level);
-    void set(ReadBuffer & buf);
+    SettingLogsLevel(Value x) : value(x) {}
+
+    operator Value() const { return value; }
+    SettingLogsLevel & operator= (Value x) { set(x); return *this; }
+
+    static Value getValue(const String & s);
 
     String toString() const;
+
+    void set(Value x);
+    void set(const Field & x);
+    void set(const String & x);
+    void set(ReadBuffer & buf);
     void write(WriteBuffer & buf) const;
 };
-
-
 
 }
