@@ -1,11 +1,10 @@
-#include <Common/config.h>
+#include "ProtobufWriter.h"
 #if USE_PROTOBUF
 
 #include <cassert>
 #include <optional>
 #include <math.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/numeric/conversion/cast.hpp>
