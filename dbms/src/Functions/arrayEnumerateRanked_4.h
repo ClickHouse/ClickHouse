@@ -70,6 +70,7 @@ private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
+/*
     template <typename T>
     struct MethodOneNumber
     {
@@ -99,6 +100,7 @@ private:
         using Method = ColumnsHashing::HashMethodKeysFixed<typename Set::value_type, UInt128, UInt32, false, false, false>;
     };
 
+*/
     struct MethodHashed
     {
         using Set =  ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
@@ -360,8 +362,13 @@ DUMP(depth, depths, max_array_depth);
 
 DUMP(array);
 
-for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth) {
+std::vector<ColumnPtr> offsets_by_depth;
+    offsets_by_depth.emplace_back(array->getOffsetsPtr());
+
+ for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth) {
 DUMP(array_num, col_depth, depths[array_num]);
+
+DUMP("offsets was:", array->getOffsets());
 
         auto sub_array = get_array_column(&array->getData());
 DUMP(sub_array);
@@ -373,9 +380,11 @@ DUMP(sub_array);
             break;
         }
 
+        offsets_by_depth.emplace_back(array->getOffsetsPtr());
 
-} 
+ } 
 
+DUMP(offsets_by_depth);
 /*
             if (0 && depths[array_num] > 1) { // TODO recurse here
                 //auto sub_array = checkAndGetColumn<ColumnArray>(&array->getData());
@@ -430,7 +439,7 @@ DUMP(array->getOffsets());
             {
 
             offsets = &offsets_i;
-            offsets_column = array->getOffsetsPtr();
+            //offsets_column = array->getOffsetsPtr();
             }
         }
         else if (offsets_i != *offsets)
@@ -496,7 +505,10 @@ DUMP("ONE DATA");
     {
 DUMP("MULTI DATA");
         //if (!execute128bit(*offsets, data_columns, res_values))
-            executeHashed(*offsets, data_columns, res_values);
+            //executeHashed(*offsets, data_columns, res_values);
+            //executeHashed(offsets_by_depth, data_columns, res_values);
+            //executeMethod<MethodHashed>(offsets_by_depth, data_columns, {}, nullptr, res_values);
+            executeMethodImpl<MethodHashed, false>(offsets_by_depth, data_columns, key_sizes, {} /*null_map*/, res_values);
     }
 
 DUMP(res_nested);
@@ -507,7 +519,8 @@ DUMP(offsets_column);
 template <typename Derived>
 template <typename Method, bool has_null_map>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
-        const ColumnArray::Offsets & offsets,
+        //const ColumnArray::Offsets & offsets,
+        const std::vector<ColumnPtr> & offsets_by_depth,
         const ColumnRawPtrs & columns,
         const Sizes & key_sizes,
         [[maybe_unused]] const NullMap * null_map,
@@ -518,6 +531,8 @@ DUMP(columns);
 DUMP(key_sizes);
     //typename Method::Method method(columns, key_sizes, nullptr);
     //Arena pool; /// Won't use it;
+
+    auto & offsets offsets_by_depth[0]; //depth!
 
     ColumnArray::Offset prev_off = 0;
 
@@ -713,6 +728,7 @@ DUMP(j, prev_off, off);
     }
 }
 
+/*
 template <typename Derived>
 template <typename Method>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethod(
@@ -798,5 +814,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeHashed(
 {
     executeMethod<MethodHashed>(offsets, columns, {}, nullptr, res_values);
 }
+*/
 
 }
