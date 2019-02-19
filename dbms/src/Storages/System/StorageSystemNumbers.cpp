@@ -62,7 +62,7 @@ BlockInputStreams StorageSystemNumbers::read(
 
     if (limit && *limit < max_block_size)
     {
-        max_block_size = std::min(max_block_size, *limit);
+        max_block_size = static_cast<size_t>(*limit);
         multithreaded = false;
     }
 
