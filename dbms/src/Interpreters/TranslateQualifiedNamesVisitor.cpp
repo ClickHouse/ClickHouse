@@ -72,6 +72,9 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTIdentifier & iden
                     best_table_pos = i;
                 }
 
+        if (best_match)
+            IdentifierSemantic::setMembership(identifier, best_table_pos + 1);
+
         /// In case if column from the joined table are in source columns, change it's name to qualified.
         if (best_table_pos && data.source_columns.count(identifier.shortName()))
             IdentifierSemantic::setNeedLongName(identifier, true);
