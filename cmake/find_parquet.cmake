@@ -1,0 +1,31 @@
+option (USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
+
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/CMakeLists.txt")
+    if (USE_INTERNAL_PARQUET_LIBRARY)
+        message (WARNING "submodule contrib/arrow (required for Parquet) is missing. to fix try run: \n git submodule update --init --recursive")
+    endif ()
+    set (USE_INTERNAL_PARQUET_LIBRARY 0)
+    set (MISSING_INTERNAL_PARQUET_LIBRARY 1)
+endif ()
+
+if (NOT USE_INTERNAL_PARQUET_LIBRARY)
+    find_package (Arrow)
+    find_package (Parquet)
+endif ()
+
+if (ARROW_INCLUDE_DIR AND PARQUET_INCLUDE_DIR)
+elseif (NOT MISSING_INTERNAL_PARQUET_LIBRARY)
+    set (USE_INTERNAL_PARQUET_LIBRARY 1)
+    # TODO: is it required?
+    # set (ARROW_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
+    # set (PARQUET_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet")
+    set (ARROW_LIBRARY arrow_static)
+    set (PARQUET_LIBRARY parquet_static)
+    set (USE_PARQUET 1)
+endif ()
+
+if (USE_PARQUET)
+    message (STATUS "Using Parquet: ${ARROW_INCLUDE_DIR} ${PARQUET_INCLUDE_DIR}")
+else ()
+    message (STATUS "Building without Parquet support")
+endif ()
