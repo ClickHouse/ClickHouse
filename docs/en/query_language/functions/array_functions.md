@@ -198,7 +198,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr)
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 Returns the array \[1, 2, 3, ..., length (arr) \]
 
@@ -465,7 +465,7 @@ If multiple arguments are passed, it counts the number of different tuples of el
 
 If you want to get a list of unique items in an array, you can use arrayReduce('groupUniqArray', arr).
 
-## arrayJoin(arr)
+## arrayJoin(arr) {#array_functions-join}
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
 
