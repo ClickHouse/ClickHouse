@@ -48,10 +48,10 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by the tables in the `MergeTree` family, and only if the sampling expression was specified during table creation (see the section [MergeTree engine](../operations/table_engines/mergetree.md)).
 
-`SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
+`SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where `n` is a sufficiently large integer.
 
-In the first case, the query will be executed on 'k' percent of data. For example, `SAMPLE 0.1` runs the query on 10% of data.
-In the second case, the query will be executed on a sample of at least 'n' rows. For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows (but not significantly more than this).
+In the first case, the query will be executed on `k` percent of data. For example, `SAMPLE 0.1` runs the query on 10% of data.
+In the second case, the query will be executed on a sample of at least `n` rows. For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows (but not significantly more than this).
 
 Example:
 
@@ -74,8 +74,30 @@ ORDER BY PageViews DESC LIMIT 1000
 
 In this example, the query is executed on a sample from 0.1 (10%) of data. Values of aggregate functions are not corrected automatically, so to get an approximate result, the value 'count()' is manually multiplied by 10.
 
-When using something like `SAMPLE 10000000`, there isn't any information about which relative percent of data was processed or what the aggregate functions should be multiplied by, so this method of writing is not always appropriate to the situation. 
+When using something like `SAMPLE 10000000`, you do not know which relative percent of data was processed and what the aggregate functions should be multiplied by. In this case, you can use the `_sample_factor` virtual column as a relative coefficient. For example:
 
+``` sql
+SELECT sum(Duration * _sample_offset)
+FROM visits
+SAMPLE 10000000
+```   
+
+If you need to get the approximate count of rows in a `SELECT .. SAMPLE n` query, get the sum() of `_sample_offset` column instead of counting `count(column * _sample_column)` value. For example:
+
+``` sql
+SELECT sum(_sample_offset)
+FROM visits
+SAMPLE 10000000
+```  
+
+Note that to get the average value in a `SELECT .. SAMPLE n` query, you do not need to use `_sample_factor` column:
+
+``` sql
+SELECT avg(Duration)
+FROM visits
+SAMPLE 10000000
+```  
+ 
 A sample with a relative coefficient is "consistent": if we look at all possible data that could be in the table, a sample (when using a single sampling expression specified during table creation) with the same coefficient always selects the same subset of possible data. In other words, a sample from different tables on different servers at different times is made the same way.
 
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
@@ -720,10 +742,10 @@ DISTINCT is not supported if SELECT has at least one array column.
 
 ### LIMIT Clause
 
-LIMIT m allows you to select the first 'm' rows from the result.
-LIMIT n, m allows you to select the first 'm' rows from the result after skipping the first 'n' rows.
+`LIMIT m` allows you to select the first `m` rows from the result.
+`LIMIT n`, m allows you to select the first `m` rows from the result after skipping the first `n` rows.
 
-'n' and 'm' must be non-negative integers.
+`n` and `m` must be non-negative integers.
 
 If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
 
