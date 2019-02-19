@@ -101,8 +101,7 @@ private:
 
     struct MethodHashed
     {
-        using Set =  ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        using Set =  ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
         using Method = ColumnsHashing::HashMethodHashed<typename Set::value_type, UInt32, false>;
     };
 
@@ -276,6 +275,21 @@ ColumnPtr array(Block & block, const Context & context)
 }
 
 
+/// Hash a set of keys into a UInt128 value.
+static inline UInt128 ALWAYS_INLINE hash128depths(
+    std::vector<size_t> indexes, /*size_t keys_size,*/ const ColumnRawPtrs & key_columns)
+{
+    UInt128 key;
+    SipHash hash;
+
+    for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
+        key_columns[j]->updateHashWithValue(indexes[j], hash);
+
+    hash.get128(key.low, key.high);
+
+    return key;
+}
+
 
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
@@ -305,12 +319,14 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(Block & block, c
 DUMP(depth, depths, max_array_depth);
 
 
-/*
+// /*
     auto get_array_column = [&] (const auto & column) -> const DB::ColumnArray * {
-        const ColumnArray * array = checkAndGetColumn<ColumnArray>(column.get());
+        //const ColumnArray * array = checkAndGetColumn<ColumnArray>(column.get());
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(column);
         if (!array)
         {
-            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(column.get());
+            //const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(column.get());
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(column);
             if (!const_array)
                 return nullptr;
             array_holders.emplace_back(const_array->convertToFullColumn());
@@ -318,8 +334,8 @@ DUMP(depth, depths, max_array_depth);
         }
         return array;
     };
-    (void)get_array_column;
-*/
+    //(void)get_array_column;
+// */
 
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
@@ -342,22 +358,74 @@ DUMP(depth, depths, max_array_depth);
             array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
         }
 
-        const ColumnArray::Offsets & offsets_i = array->getOffsets();
-        //auto offsets_i = array->getOffsets();
-        if (!offsets)
-        {
-            if (depths[array_num] == 2) { // TODO recurse here
-                auto sub_array = checkAndGetColumn<ColumnArray>(&array->getData());
+DUMP(array);
+
+for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth) {
+DUMP(array_num, col_depth, depths[array_num]);
+
+        auto sub_array = get_array_column(&array->getData());
+DUMP(sub_array);
+        if (sub_array) {
+            array = sub_array;
+        }
+        if (!sub_array) {
+            DUMP("Not subarray");
+            break;
+        }
+
+
+} 
+
+/*
+            if (0 && depths[array_num] > 1) { // TODO recurse here
+                //auto sub_array = checkAndGetColumn<ColumnArray>(&array->getData());
+
+                auto sub_array = get_array_column(&array->getData());
                 DUMP("getdata1=", array_num, depths[array_num], sub_array);
                 if(sub_array) {
                     //const ColumnArray::Offsets & sub_offsets_i = sub_array->getOffsets();
                     //offsets = &sub_offsets_i;
                     //offsets = &sub_array->getOffsets();
                     //offsets_column = sub_array->getOffsetsPtr();
-DUMP(sub_array->getOffsets());
-DUMP(sub_array->getOffsetsPtr());
+
+                    DUMP(1,sub_array);
+                    DUMP(1,sub_array->getOffsets());
+                    DUMP(1,sub_array->getOffsetsPtr());
+
+                    //sub_array = checkAndGetColumn<ColumnArray>(&sub_array->getData());
+                    DUMP(1, sub_array->getData());
+                    sub_array = get_array_column(&sub_array->getData());
+                    if (sub_array) {
+                        DUMP(2,sub_array);
+                        DUMP(2,sub_array->getOffsets());
+                        DUMP(2,sub_array->getOffsetsPtr());
+
+                        //sub_array = checkAndGetColumn<ColumnArray>(&sub_array->getData());
+                        DUMP(2,sub_array->getData());
+                        sub_array = get_array_column(&sub_array->getData());
+                        if (sub_array) {
+                            DUMP(3,sub_array);
+                            DUMP(3,sub_array->getOffsets());
+                            DUMP(3,sub_array->getOffsetsPtr());
+                            DUMP(3,sub_array->getData());
+                        //} else {
+                        //    DUMP(sub_array->getData());
+                        }
+                    //} else {
+                    //     DUMP(sub_array->getData());
+                    }
+                //} else {
+                //   DUMP(sub_array->getData());
                 }
             }
+*/
+
+
+        const ColumnArray::Offsets & offsets_i = array->getOffsets();
+        //auto offsets_i = array->getOffsets();
+        if (!offsets)
+        {
+DUMP(array->getOffsets());
             //if(!offsets) 
             {
 
@@ -374,6 +442,8 @@ DUMP(sub_array->getOffsetsPtr());
         ++array_num;
     }
 
+/*
+[[maybe_unused]]
     const NullMap * null_map = nullptr;
 
     for (size_t i = 0; i < data_columns.size(); ++i)
@@ -390,6 +460,7 @@ DUMP(sub_array->getOffsetsPtr());
             break;
         }
     }
+*/
 
     auto res_nested = ColumnUInt32::create();
 
@@ -402,6 +473,7 @@ DUMP(offsets);
 DUMP(data_columns);
 
     //if (num_arguments == 1)
+/*
     if (data_columns.size() == 1)
     {
 DUMP("ONE DATA");
@@ -420,9 +492,10 @@ DUMP("ONE DATA");
             executeHashed(*offsets, data_columns, res_values);
     }
     else
+*/
     {
 DUMP("MULTI DATA");
-        if (!execute128bit(*offsets, data_columns, res_values))
+        //if (!execute128bit(*offsets, data_columns, res_values))
             executeHashed(*offsets, data_columns, res_values);
     }
 
@@ -440,22 +513,70 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         [[maybe_unused]] const NullMap * null_map,
         ColumnUInt32::Container & res_values)
 {
-    typename Method::Set indices;
+    //typename Method::Set indices;
 DUMP(columns);
 DUMP(key_sizes);
-    typename Method::Method method(columns, key_sizes, nullptr);
-    Arena pool; /// Won't use it;
+    //typename Method::Method method(columns, key_sizes, nullptr);
+    //Arena pool; /// Won't use it;
 
     ColumnArray::Offset prev_off = 0;
+
+    using Map = ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>, HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+    Map indices;
 
 /*
 
 (1, [[1,2,3],[2,2,1],[3]], 2)
- ; 1 2 3 2 2 1 3
+    ; 1 2 3   2 2 1   3
 (2, [[1,2,3],[2,2,1],[3]], 2)
- ; 1 2 3; 2 2 1; 3
+    ; 1 2 3;  2 2 1;  3
 (1, [[1,2,3],[2,2,1],[3]], 1)
- ; [1,2,3] [2,2,1] [3]
+    ;[1,2,3] [2,2,1] [3]
+
+
+(1, [[1,2,3],[2,2,1],[3]], 2, [4,5,6], 1)
+    ; 1 2 3   2 2 1   3        4 5 6
+    ; 4 4 4   5 5 5   6      <-
+ idx: 1 2 3   4 5 6   7
+      1 1 1   2 2 2   3
+
+dep: {2,1}       d2end:
+     {1,1} {2,1} {3,1}
+
+index to end op depth:
+        3:2     6:2  7:2
+
+
+ d:2   d:1    d2mark   d1mark
+   1   4
+   2   
+   3   
+               3
+   2   5
+   2
+   1
+               6
+   3   6
+               7       3
+
+arrays:{1 2 3   2 2 1   3}, {4 5 6}
+marks{d1:{}, d2:{3,6})
+maxdepth: 2
+
+
+
+(2, [[1,2,3],[2,2,1],[3]], 2, [4,5,6], 1)
+    ; 1 2 3;  2 2 1;  3        4 5 6
+    ; 4 4 4;  5 5 5;  6      <-
+
+(1, [[1,2,3],[2,2,1],[3]], 1, [4,5,6], 1)
+    ;[1,2,3] [2,2,1] [3]       4 5 6
+    ;4       5       6       <-
+
+(1, [[1,2,3],[2,2,1],[3]], 1, [4,5,6], 0)
+    ;[1,2,3] [2,2,1] [3]       4 5 6
+    ;[4,5,6] [4,5,6] [4,5,6] <-
+
 
 (1, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 1)
     ;.                         .                         .
@@ -470,6 +591,38 @@ DUMP(key_sizes);
 (3, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3)
     ;  . . . ; . . . ; . . .  ;  . . . ; . . . ; . . .  ;  . .
 
+
+
+getArrayElement(array, depth, n)
+maxdepth=2
+[[1,2,3],[2,2,1],[3]], 0, 1 -> [[1,2,3],[2,2,1],[3]]  maxelements=1
+[[1,2,3],[2,2,1],[3]], 0, 2 -> exception
+[[1,2,3],[2,2,1],[3]], 1, 1 -> [1,2,3]                maxelements=3
+[[1,2,3],[2,2,1],[3]], 1, 2 -> [2,2,1]
+[[1,2,3],[2,2,1],[3]], 1, 3 -> [3]
+[[1,2,3],[2,2,1],[3]], 1, 4 -> exception
+[[1,2,3],[2,2,1],[3]], 2, 1 -> 1                      maxelements=7
+[[1,2,3],[2,2,1],[3]], 2, 2 -> 2
+[[1,2,3],[2,2,1],[3]], 2, 3 -> 3
+[[1,2,3],[2,2,1],[3]], 2, 4 -> 2
+[[1,2,3],[2,2,1],[3]], 2, 5 -> 2
+[[1,2,3],[2,2,1],[3]], 2, 6 -> 1
+[[1,2,3],[2,2,1],[3]], 2, 7 -> 3
+[[1,2,3],[2,2,1],[3]], 2, 8 -> exception
+[[1,2,3],[2,2,1],[3]], 3, 1 -> 1 ! depth>maxdepth     maxelements=7
+[[1,2,3],[2,2,1],[3]], 3, 2 -> 2
+
+maxdepth=1
+[1,2,3], 0, 1 -> [1,2,3]                              maxelements=1
+[1,2,3], 1, 1 -> 1                                    maxelements=3
+[1,2,3], 1, 2 -> 2
+[1,2,3], 1, 3 -> 3
+[1,2,3], 1, 4 -> exception
+[1,2,3], 2, 1 -> 1 ! depth>maxdepth                   maxelements=3
+[1,2,3], 2, 2 -> 2
+[1,2,3], 2, 3 -> 3
+[1,2,3], 2, 4 -> exception
+
 */
 
 
@@ -481,6 +634,7 @@ DUMP(key_sizes);
 DUMP("UNIQ", off);
 
             indices.clear();
+            
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
@@ -494,9 +648,15 @@ DUMP(j, prev_off, off);
                     }
                 }
 
+                /*
                 auto emplace_result = method.emplaceKey(indices, j, pool);
                 auto idx = emplace_result.getMapped() + 1;
                 emplace_result.setMapped(idx);
+                */
+                auto hash = hash128depths({j,j}, /*columns.size(),*/ columns);
+                auto idx = ++indices[hash];
+DUMP(j, idx, hash);
+
 
                 res_values[j] = idx;
                 DUMP(off, j, prev_off, res_values[j], idx);
@@ -529,16 +689,23 @@ DUMP(j, prev_off, off);
                     }
                 }
 
+/*
                 auto emplace_result = method.emplaceKey(indices, j, pool);
                 auto idx = emplace_result.getMapped();
+*/
 
+                auto hash = hash128depths({j,j}, /*columns.size(),*/ columns); // TODO!
+                auto idx = ++indices[hash];
+                DUMP(j, idx, hash);
+
+/* TODO
                 if (!idx)
                 {
                     idx = ++rank;
                     emplace_result.setMapped(idx);
                 }
+*/
 
-DUMP(j, idx);
                 res_values[j] = idx;
             }
             prev_off = off;
