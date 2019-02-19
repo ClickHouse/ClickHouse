@@ -8,25 +8,34 @@
 namespace DB
 {
 
-/** Row oriented input format: reads data row by row.
-  */
+/// Contains extra information about read data.
+struct RowReadExtension
+{
+    /// IRowInputStream.read() output. It contains non zero for columns that actually read from the source and zero otherwise.
+    /// It's used to attach defaults for partially filled rows.
+    std::vector<UInt8> read_columns;
+};
+
+/// Common parameters for generating blocks.
+struct RowInputFormatParams
+{
+    size_t max_block_size;
+
+    UInt64 allow_errors_num;
+    Float64 allow_errors_ratio;
+};
+
+///Row oriented input format: reads data row by row.
 class IRowInputFormat : public IInputFormat
 {
 public:
-    /// Common parameters for generating blocks.
-    struct Params
-    {
-        size_t max_block_size;
-
-        UInt64 allow_errors_num;
-        Float64 allow_errors_ratio;
-    };
+    using Params = RowInputFormatParams;
 
     IRowInputFormat(
         Block header,
         ReadBuffer & in,
         Params params)
-        : IInputFormat(header, in), params(std::move(params))
+        : IInputFormat(std::move(header), in), params(params)
     {
     }
 
@@ -36,7 +45,7 @@ protected:
     /** Read next row and append it to the columns.
       * If no more rows - return false.
       */
-    virtual bool readRow(MutableColumns & columns) = 0;
+    virtual bool readRow(MutableColumns & columns, RowReadExtension & extra) = 0;
 
     virtual void readPrefix() {};                /// delimiter before begin of result
     virtual void readSuffix() {};                /// delimiter after end of result

@@ -3,59 +3,11 @@
 #include <memory>
 #include <vector>
 #include <Core/Block.h>
+#include <Processors/Chunk.h>
 #include <Common/Exception.h>
 
 namespace DB
 {
-
-class ChunkInfo
-{
-public:
-    virtual ~ChunkInfo() = default;
-};
-
-using ChunkInfoPtr = std::shared_ptr<const ChunkInfo>;
-
-class Chunk
-{
-public:
-    Chunk() = default;
-    Chunk(const Chunk & other) = default;
-    Chunk(Chunk && other) noexcept;
-    Chunk(Columns columns_, UInt64 num_rows_);
-    Chunk(Columns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
-    Chunk(MutableColumns columns_, UInt64 num_rows_);
-    Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_);
-
-    Chunk & operator=(const Chunk & other) = default;
-    Chunk & operator=(Chunk && other) noexcept;
-
-    const Columns & getColumns() { return columns; }
-    void setColumns(Columns columns_, UInt64 num_rows_);
-    void setColumns(MutableColumns columns_, UInt64 num_rows_);
-    Columns detachColumns();
-    MutableColumns mutateColumns();
-
-    const ChunkInfoPtr & getChunkInfo() const { return chunk_info; }
-    void setChunkInfo(ChunkInfoPtr chunk_info_) { chunk_info = std::move(chunk_info_); }
-
-    UInt64 getNumRows() const { return num_rows; }
-    UInt64 getNumColumns() const { return columns.size(); }
-    bool empty() const { return num_rows == 0; }
-    operator bool() const { return !empty() || !columns.empty(); }
-
-    void clear();
-
-private:
-    Columns columns;
-    UInt64 num_rows = 0;
-    ChunkInfoPtr chunk_info;
-
-    void checkNumRowsIsConsistent();
-};
-
-using Chunks = std::vector<Chunk>;
-
 
 class InputPort;
 class OutputPort;

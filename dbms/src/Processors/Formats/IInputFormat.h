@@ -12,7 +12,7 @@ class ReadBuffer;
   */
 class IInputFormat : public ISource
 {
-private:
+protected:
 
     /// Skip GCC warning: ‘maybe_unused’ attribute ignored
 #pragma GCC diagnostic push

@@ -108,6 +108,7 @@ add_headers_and_sources(dbms src/Formats)
 add_headers_and_sources(dbms src/Processors)
 add_headers_and_sources(dbms src/Processors/Executors)
 add_headers_and_sources(dbms src/Processors/Formats)
+add_headers_and_sources(dbms src/Processors/Formats/Impl)
 add_headers_only(dbms src/Server)
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})

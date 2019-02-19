@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
@@ -42,6 +43,8 @@ Chunk IRowInputFormat::generate()
     MutableColumns columns = header.cloneEmptyColumns();
     size_t prev_rows = total_rows;
 
+    ChunkMissingValues chunk_missing_values;
+
     try
     {
         for (size_t rows = 0; rows < params.max_block_size; ++rows)
@@ -49,8 +52,21 @@ Chunk IRowInputFormat::generate()
             try
             {
                 ++total_rows;
-                if (!readRow(columns))
+
+                RowReadExtension info;
+                if (!readRow(columns, info))
                     break;
+
+                for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
+                {
+                    if (!info.read_columns[column_idx])
+                    {
+                        size_t column_size = columns[column_idx]->size();
+                        if (column_size == 0)
+                            throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+                        chunk_missing_values.setBit(column_idx, column_size - 1);
+                    }
+                }
             }
             catch (Exception & e)
             {
@@ -122,9 +138,14 @@ Chunk IRowInputFormat::generate()
         return {};
     }
 
-    Chunk chunk;
-    chunk.setColumns(std::move(columns), total_rows - prev_rows);
+    Chunk chunk(std::move(columns), total_rows - prev_rows);
+    chunk.setChunkInfo(std::make_unique<const ChunkMissingValues>(std::move(chunk_missing_values)));
     return chunk;
+}
+
+void IRowInputFormat::syncAfterError()
+{
+    throw Exception("Method syncAfterError is not implemented for input format", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }
