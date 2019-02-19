@@ -1,23 +1,22 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
+#include <Common/HashTable/ClearableHashMap.h>
 
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/getLeastSupertype.h> 
 #include <Core/iostream_debug_helpers.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -46,11 +45,12 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() == 0)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be at least 1.",
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-/*
+        /*
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
@@ -70,7 +70,7 @@ private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
-/*
+    /*
     template <typename T>
     struct MethodOneNumber
     {
@@ -103,22 +103,38 @@ private:
 */
     struct MethodHashed
     {
-        using Set =  ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+        using Set = ClearableHashMap<
+            UInt128,
+            UInt32,
+            UInt128TrivialHash,
+            HashTableGrower<INITIAL_SIZE_DEGREE>,
+            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
         using Method = ColumnsHashing::HashMethodHashed<typename Set::value_type, UInt32, false>;
     };
 
     template <typename Method>
-    void executeMethod(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, const Sizes & key_sizes,
-                       const NullMap * null_map, ColumnUInt32::Container & res_values);
+    void executeMethod(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const Sizes & key_sizes,
+        const NullMap * null_map,
+        ColumnUInt32::Container & res_values);
 
     template <typename Method, bool has_null_map>
-    void executeMethodImpl(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, const Sizes & key_sizes,
-                           const NullMap * null_map, ColumnUInt32::Container & res_values);
+    void executeMethodImpl(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        const Sizes & key_sizes,
+        const NullMap * null_map,
+        ColumnUInt32::Container & res_values);
 
     template <typename T>
-    bool executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
-    bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
-    bool executeFixedString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool executeNumber(
+        const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool executeString(
+        const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool executeFixedString(
+        const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
     bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
     void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
 };
@@ -139,55 +155,53 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(/*Block & block,*/ const 
     //std::vector<DepthType> depths;
     DepthTypes depths;
 
-//DUMP(block);
+    //DUMP(block);
     //bool want_array = 0;
 
     for (size_t i = 0; i < num_arguments; ++i)
     {
         //const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
         //const ColumnPtr & array_ptr = arguments[i].column;
-//DUMP(array_ptr);
+        //DUMP(array_ptr);
         //const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
 
         //const auto array = checkAndGetColumnConst<ColumnArray>(array_ptr.get());
-//DUMP(i, arguments[i]);
+        //DUMP(i, arguments[i]);
         const auto non_const = arguments[i].column->convertToFullColumnIfConst();
-//DUMP(non_const);
+        //DUMP(non_const);
         const auto array = typeid_cast<const ColumnArray *>(non_const.get());
         //const auto array = typeid_cast<const ColumnArray *>(array_ptr.get());
 
-//DUMP(array);
+        //DUMP(array);
 
-//DUMP(i, arguments[i], !!array);
+        //DUMP(i, arguments[i], !!array);
 
         if (!array)
         {
-
             //const auto & depth_column = block.getByPosition(arguments[i]).column;
             const auto & depth_column = arguments[i].column;
-//DUMP(i, depth_column); 
+            //DUMP(i, depth_column);
 
 
-//DUMP(depth_column->isColumnConst(), depth_column->getUInt(0));
-//DUMP(depth_column->isColumnConst());
+            //DUMP(depth_column->isColumnConst(), depth_column->getUInt(0));
+            //DUMP(depth_column->isColumnConst());
 
-            if (depth_column  // TODO
-            //   && depth_column->isColumnConst()
+            if (depth_column // TODO
+                //   && depth_column->isColumnConst()
             )
             {
-//DUMP(depth_column->size());
+                //DUMP(depth_column->size());
                 auto value = depth_column->getUInt(0);
-//DUMP(value);
-                 if (i == 0)
-                     depth = value;
-                 else
-                 {
-                     depths.emplace_back(value);
-                     if (max_array_depth < value)
+                //DUMP(value);
+                if (i == 0)
+                    depth = value;
+                else
+                {
+                    depths.emplace_back(value);
+                    if (max_array_depth < value)
                         max_array_depth = value;
-                 }
-                 // TODO: auto
-
+                }
+                // TODO: auto
             }
         }
     }
@@ -197,34 +211,26 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(/*Block & block,*/ const 
 }
 
 
-
 //ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const ColumnWithTypeAndName & n, const DataTypePtr & type, const Context & context)
 ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const int64_t n, const Context & context)
 {
     //const ColumnArray * array = checkAndGetColumn<ColumnArray>(arg.column.get());
     //const DataTypePtr & type = array->getNestedType();
-    auto array_type = typeid_cast<const DataTypeArray *>(arg.type.get()); 
+    auto array_type = typeid_cast<const DataTypeArray *>(arg.type.get());
     const auto & type = array_type->getNestedType();
     //DataTypeUInt32().createColumnConst(arg.size(), n);
 
     //ColumnWithTypeAndName n_col { DataTypeUInt32().createColumnConst(arg.column->size(), n), std::make_shared<DataTypeUInt32>(), "" };
 
-    Block temporary_block
-    {
-        arg,
-        //{ DataTypeUInt32().createColumnConst(arg.column->size(), n), DataTypeUInt32(), "" },
-        //n_col,
-        { DataTypeUInt32().createColumnConst(arg.column->size(), n), std::make_shared<DataTypeUInt32>(), "" },
-        {
-            nullptr,
-            type,
-            ""
-        }
-    };
+    Block temporary_block{arg,
+                          //{ DataTypeUInt32().createColumnConst(arg.column->size(), n), DataTypeUInt32(), "" },
+                          //n_col,
+                          {DataTypeUInt32().createColumnConst(arg.column->size(), n), std::make_shared<DataTypeUInt32>(), ""},
+                          {nullptr, type, ""}};
 
     FunctionBuilderPtr func_builder = FunctionFactory::instance().get("arrayElement", context);
 
-    ColumnsWithTypeAndName arguments{ temporary_block.getByPosition(0), temporary_block.getByPosition(1) };
+    ColumnsWithTypeAndName arguments{temporary_block.getByPosition(0), temporary_block.getByPosition(1)};
     auto func = func_builder->build(arguments);
 
     const size_t result_colum_num = 2;
@@ -236,7 +242,7 @@ ColumnPtr array(Block & block, const Context & context)
 {
     //const ColumnArray * array = checkAndGetColumn<ColumnArray>(arg.column.get());
     //const DataTypePtr & type = array->getNestedType();
-    //auto array_type = typeid_cast<const DataTypeArray *>(arg.type.get()); 
+    //auto array_type = typeid_cast<const DataTypeArray *>(arg.type.get());
     //const auto & type = array_type->getNestedType();
     //DataTypeUInt32().createColumnConst(arg.size(), n);
 
@@ -250,19 +256,14 @@ ColumnPtr array(Block & block, const Context & context)
 
     auto type = std::make_shared<DataTypeArray>(getLeastSupertype(types));
 
-    block.insert( 
-        {
-            nullptr,
-            type,
-            ""
-        }
-    );
+    block.insert({nullptr, type, ""});
 
     ColumnsWithTypeAndName arguments; //{ block.getByPosition(0), block.getByPosition(1) };
 
     ColumnNumbers arguments_nums(block.columns() - 1);
 
-    for (size_t i = 0; i < block.columns() - 1; ++i) {
+    for (size_t i = 0; i < block.columns() - 1; ++i)
+    {
         arguments.emplace_back(block.getByPosition(i));
         arguments_nums[i] = i;
     }
@@ -278,8 +279,7 @@ ColumnPtr array(Block & block, const Context & context)
 
 
 /// Hash a set of keys into a UInt128 value.
-static inline UInt128 ALWAYS_INLINE hash128depths(
-    std::vector<size_t> indexes, /*size_t keys_size,*/ const ColumnRawPtrs & key_columns)
+static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, /*size_t keys_size,*/ const ColumnRawPtrs & key_columns)
 {
     UInt128 key;
     SipHash hash;
@@ -294,7 +294,8 @@ static inline UInt128 ALWAYS_INLINE hash128depths(
 
 
 template <typename Derived>
-void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
+    Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();
@@ -304,12 +305,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(Block & block, c
     ColumnPtr offsets_column;
 
 
-
-
     ColumnsWithTypeAndName args;
 
     for (size_t i = 0; i < arguments.size(); ++i)
-        args.emplace_back( block.getByPosition(arguments[i]) );
+        args.emplace_back(block.getByPosition(arguments[i]));
 
     DepthType depth; //1;
     DepthType max_array_depth; //1;
@@ -318,11 +317,11 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(Block & block, c
 
     std::tie(depth, depths, max_array_depth) = getDepths(args);
 
-DUMP(depth, depths, max_array_depth);
+    DUMP(depth, depths, max_array_depth);
 
 
-// /*
-    auto get_array_column = [&] (const auto & column) -> const DB::ColumnArray * {
+    // /*
+    auto get_array_column = [&](const auto & column) -> const DB::ColumnArray * {
         //const ColumnArray * array = checkAndGetColumn<ColumnArray>(column.get());
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(column);
         if (!array)
@@ -337,7 +336,7 @@ DUMP(depth, depths, max_array_depth);
         return array;
     };
     //(void)get_array_column;
-// */
+    // */
 
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
@@ -346,12 +345,11 @@ DUMP(depth, depths, max_array_depth);
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
-            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
-                block.getByPosition(arguments[i]).column.get());
+            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
             if (!const_array)
                 continue;
 
-/*
+            /*
                 throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
@@ -360,32 +358,34 @@ DUMP(depth, depths, max_array_depth);
             array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
         }
 
-DUMP(array);
+        DUMP(array);
 
-std::vector<ColumnPtr> offsets_by_depth;
-    offsets_by_depth.emplace_back(array->getOffsetsPtr());
-
- for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth) {
-DUMP(array_num, col_depth, depths[array_num]);
-
-DUMP("offsets was:", array->getOffsets());
-
-        auto sub_array = get_array_column(&array->getData());
-DUMP(sub_array);
-        if (sub_array) {
-            array = sub_array;
-        }
-        if (!sub_array) {
-            DUMP("Not subarray");
-            break;
-        }
-
+        std::vector<ColumnPtr> offsets_by_depth;
         offsets_by_depth.emplace_back(array->getOffsetsPtr());
 
- } 
+        for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth)
+        {
+            DUMP(array_num, col_depth, depths[array_num]);
 
-DUMP(offsets_by_depth);
-/*
+            DUMP("offsets was:", array->getOffsets());
+
+            auto sub_array = get_array_column(&array->getData());
+            DUMP(sub_array);
+            if (sub_array)
+            {
+                array = sub_array;
+            }
+            if (!sub_array)
+            {
+                DUMP("Not subarray");
+                break;
+            }
+
+            offsets_by_depth.emplace_back(array->getOffsetsPtr());
+        }
+
+        DUMP(offsets_by_depth);
+        /*
             if (0 && depths[array_num] > 1) { // TODO recurse here
                 //auto sub_array = checkAndGetColumn<ColumnArray>(&array->getData());
 
@@ -434,24 +434,22 @@ DUMP(offsets_by_depth);
         //auto offsets_i = array->getOffsets();
         if (!offsets)
         {
-DUMP(array->getOffsets());
-            //if(!offsets) 
+            DUMP(array->getOffsets());
+            //if(!offsets)
             {
-
-            offsets = &offsets_i;
-            //offsets_column = array->getOffsetsPtr();
+                offsets = &offsets_i;
+                //offsets_column = array->getOffsetsPtr();
             }
         }
         else if (offsets_i != *offsets)
-            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
-                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
         auto * array_data = &array->getData();
         data_columns.emplace_back(array_data);
         ++array_num;
     }
 
-/*
+    /*
 [[maybe_unused]]
     const NullMap * null_map = nullptr;
 
@@ -476,13 +474,13 @@ DUMP(array->getOffsets());
     ColumnUInt32::Container & res_values = res_nested->getData();
     if (!offsets->empty())
         res_values.resize(offsets->back());
-DUMP(offsets->back(), res_values.size());
+    DUMP(offsets->back(), res_values.size());
 
-DUMP(offsets);
-DUMP(data_columns);
+    DUMP(offsets);
+    DUMP(data_columns);
 
     //if (num_arguments == 1)
-/*
+    /*
     if (data_columns.size() == 1)
     {
 DUMP("ONE DATA");
@@ -503,32 +501,32 @@ DUMP("ONE DATA");
     else
 */
     {
-DUMP("MULTI DATA");
+        DUMP("MULTI DATA");
         //if (!execute128bit(*offsets, data_columns, res_values))
-            //executeHashed(*offsets, data_columns, res_values);
-            //executeHashed(offsets_by_depth, data_columns, res_values);
-            //executeMethod<MethodHashed>(offsets_by_depth, data_columns, {}, nullptr, res_values);
-            executeMethodImpl<MethodHashed, false>(offsets_by_depth, data_columns, key_sizes, {} /*null_map*/, res_values);
+        //executeHashed(*offsets, data_columns, res_values);
+        //executeHashed(offsets_by_depth, data_columns, res_values);
+        //executeMethod<MethodHashed>(offsets_by_depth, data_columns, {}, nullptr, res_values);
+        executeMethodImpl<MethodHashed, false>(offsets_by_depth, data_columns, key_sizes, {} /*null_map*/, res_values);
     }
 
-DUMP(res_nested);
-DUMP(offsets_column);
+    DUMP(res_nested);
+    DUMP(offsets_column);
     block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
 }
 
 template <typename Derived>
 template <typename Method, bool has_null_map>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
-        //const ColumnArray::Offsets & offsets,
-        const std::vector<ColumnPtr> & offsets_by_depth,
-        const ColumnRawPtrs & columns,
-        const Sizes & key_sizes,
-        [[maybe_unused]] const NullMap * null_map,
-        ColumnUInt32::Container & res_values)
+    //const ColumnArray::Offsets & offsets,
+    const std::vector<ColumnPtr> & offsets_by_depth,
+    const ColumnRawPtrs & columns,
+    const Sizes & key_sizes,
+    [[maybe_unused]] const NullMap * null_map,
+    ColumnUInt32::Container & res_values)
 {
     //typename Method::Set indices;
-DUMP(columns);
-DUMP(key_sizes);
+    DUMP(columns);
+    DUMP(key_sizes);
     //typename Method::Method method(columns, key_sizes, nullptr);
     //Arena pool; /// Won't use it;
 
@@ -536,10 +534,15 @@ DUMP(key_sizes);
 
     ColumnArray::Offset prev_off = 0;
 
-    using Map = ClearableHashMap<UInt128, UInt32, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>, HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+    using Map = ClearableHashMap<
+        UInt128,
+        UInt32,
+        UInt128TrivialHash,
+        HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
     Map indices;
 
-/*
+    /*
 
 (1, [[1,2,3],[2,2,1],[3]], 2)
     ; 1 2 3   2 2 1   3
@@ -646,14 +649,14 @@ maxdepth=1
         // Unique
         for (size_t off : offsets)
         {
-DUMP("UNIQ", off);
+            DUMP("UNIQ", off);
 
             indices.clear();
-            
+
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
-DUMP(j, prev_off, off);
+                DUMP(j, prev_off, off);
                 if constexpr (has_null_map)
                 {
                     if ((*null_map)[j])
@@ -668,9 +671,9 @@ DUMP(j, prev_off, off);
                 auto idx = emplace_result.getMapped() + 1;
                 emplace_result.setMapped(idx);
                 */
-                auto hash = hash128depths({j,j}, /*columns.size(),*/ columns);
+                auto hash = hash128depths({j, j}, /*columns.size(),*/ columns);
                 auto idx = ++indices[hash];
-DUMP(j, idx, hash);
+                DUMP(j, idx, hash);
 
 
                 res_values[j] = idx;
@@ -684,13 +687,13 @@ DUMP(j, idx, hash);
         // Dense
         for (size_t off : offsets)
         {
-DUMP("DENSE", off);
+            DUMP("DENSE", off);
             indices.clear();
             UInt32 rank = 0;
             [[maybe_unused]] UInt32 null_index = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
-DUMP(j, prev_off, off);
+                DUMP(j, prev_off, off);
 
                 if constexpr (has_null_map)
                 {
@@ -704,16 +707,16 @@ DUMP(j, prev_off, off);
                     }
                 }
 
-/*
+                /*
                 auto emplace_result = method.emplaceKey(indices, j, pool);
                 auto idx = emplace_result.getMapped();
 */
 
-                auto hash = hash128depths({j,j}, /*columns.size(),*/ columns); // TODO!
+                auto hash = hash128depths({j, j}, /*columns.size(),*/ columns); // TODO!
                 auto idx = ++indices[hash];
                 DUMP(j, idx, hash);
 
-/* TODO
+                /* TODO
                 if (!idx)
                 {
                     idx = ++rank;
