@@ -52,13 +52,13 @@ private:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        UInt64 max_block_size) const;
+        size_t max_block_size) const;
 
     virtual std::function<void(std::ostream &)> getReadPOSTDataCallback(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
-        UInt64 max_block_size) const;
+        size_t max_block_size) const;
 
     virtual Block getHeaderBlock(const Names & column_names) const = 0;
 };

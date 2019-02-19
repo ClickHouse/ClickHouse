@@ -46,7 +46,7 @@ std::vector<std::pair<std::string, std::string>> StorageXDBC::getReadURIParams(c
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
-    UInt64 max_block_size) const
+    size_t max_block_size) const
 {
     NamesAndTypesList cols;
     for (const String & name : column_names)
