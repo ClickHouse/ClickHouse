@@ -261,6 +261,7 @@ include (cmake/find_base64.cmake)
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
 endif ()
+include (cmake/find_parquet.cmake)
 
 include (cmake/find_contrib_lib.cmake)
 find_contrib_lib(cityhash)
