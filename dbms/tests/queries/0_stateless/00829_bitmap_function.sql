@@ -21,7 +21,7 @@ SELECT pickup_date, groupBitmap( uid ) AS user_num, bitmapToArray(groupBitmapSta
 SELECT
     bitmapCardinality(day_today) AS today_users,
     bitmapCardinality(day_before) AS before_users,
-    bitmapOrCardinality(day_today, day_before)ll_users,
+    bitmapOrCardinality(day_today, day_before) AS all_users,
     bitmapAndCardinality(day_today, day_before) AS old_users,
     bitmapAndnotCardinality(day_today, day_before) AS new_users,
     bitmapXorCardinality(day_today, day_before) AS diff_users
