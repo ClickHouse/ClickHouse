@@ -66,4 +66,12 @@ UInt64 StringBloomFilter::getFingerPrint() const
     return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(filter.data()), size);
 }
 
+bool operator== (const StringBloomFilter & a, const StringBloomFilter & b)
+{
+    for (size_t i = 0; i < a.size; ++i)
+        if (a.filter[i] != b.filter[i])
+            return false;
+    return true;
+}
+
 }

@@ -54,11 +54,16 @@ public:
 
     /// For debug. Return filter print.
     UInt64 getFingerPrint() const;
+
+    friend bool operator== (const StringBloomFilter & a, const StringBloomFilter & b);
 private:
     size_t size;
     size_t hashes;
     size_t seed;
     std::vector<UInt8> filter;
 };
+
+
+bool operator== (const StringBloomFilter & a, const StringBloomFilter & b);
 
 }
