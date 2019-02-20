@@ -18,12 +18,6 @@
 * Множество исправлений для сборки под FreeBSD. [#4397](https://github.com/yandex/ClickHouse/pull/4397) ([proller](https://github.com/proller))
 * Возможность запускать `clickhouse-server` для stateless тестов из docker-образа. [#4347](https://github.com/yandex/ClickHouse/pull/4347) ([Vasily Nemkov](https://github.com/Enmk))
 
-## ClickHouse release 19.1.8, 2019-02-16
-
-### Исправления ошибок:
-
-* Исправлена установка пакета при отсутствующем файле /etc/clickhouse-server/config.xml. [#4343](https://github.com/yandex/ClickHouse/pull/4343) ([proller](https://github.com/proller))
-
 ## ClickHouse release 19.3.3, 2019-02-13
 
 ### Новые возможности:
@@ -130,6 +124,12 @@
 * Добавлена поддержка скалярных подзапросов, возвращающих состояние агрегатной функции. [#4348](https://github.com/yandex/ClickHouse/pull/4348) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Уменьшено время ожидания завершения сервера и завершения запросов `ALTER`. [#4372](https://github.com/yandex/ClickHouse/pull/4372) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Добавлена информация о значении настройки `replicated_can_become_leader` в таблицу `system.replicas`. Добавлено логирование в случае, если реплика не собирается стать лидером. [#4379](https://github.com/yandex/ClickHouse/pull/4379) ([Alex Zatelepin](https://github.com/ztlpn))
+
+## ClickHouse release 19.1.8, 2019-02-16
+
+### Исправления ошибок:
+
+* Исправлена установка пакета при отсутствующем файле /etc/clickhouse-server/config.xml. [#4343](https://github.com/yandex/ClickHouse/pull/4343) ([proller](https://github.com/proller))
 
 ## ClickHouse release 19.1.7, 2019-02-15
 
