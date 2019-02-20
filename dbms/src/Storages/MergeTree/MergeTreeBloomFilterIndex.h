@@ -22,11 +22,12 @@ struct MergeTreeBloomFilterIndexGranule : public IMergeTreeIndexGranule
 
     void deserializeBinary(ReadBuffer & istr) override;
 
-    bool empty() const override;
+    bool empty() const override { return !has_elems; };
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     const MergeTreeBloomFilterIndex & index;
     StringBloomFilter bloom_filter;
+    bool has_elems;
 };
 
 

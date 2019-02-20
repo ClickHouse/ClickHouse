@@ -348,6 +348,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
                     MergeTreeIndexFactory::instance().get(
                             all_columns,
                             std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
+                            *this,
                             global_context));
 
             if (indices_names.find(new_indices.back()->name) != indices_names.end())
