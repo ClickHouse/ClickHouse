@@ -48,7 +48,7 @@ private:
 };
 
 using TokenExtractor = std::function<
-        bool(const char * data, size_t len, size_t pos, size_t & token_start, size_t & token_len)>;
+        bool(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len)>;
 
 class MergeTreeBloomFilterIndex : public IMergeTreeIndex
 {
