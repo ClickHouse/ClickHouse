@@ -10,7 +10,7 @@
 ### Исправления ошибок:
 
 * Исправлен неверный результат запроса с модификатором `WITH ROLLUP` при группировке по единственному столбцу типа `LowCardinality`. [#4384](https://github.com/yandex/ClickHouse/pull/4384) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* Исправлена ошибка во вторичном индексе типа `SET` (гранулы, в которых было больше, чем `max_rows` строк, игнорировались). [#4386](https://github.com/yandex/ClickHouse/pull/4386) ([Nikita Vasilev](https://github.com/nikvas0))
+* Исправлена ошибка во вторичном индексе типа `set` (гранулы, в которых было больше, чем `max_rows` строк, игнорировались). [#4386](https://github.com/yandex/ClickHouse/pull/4386) ([Nikita Vasilev](https://github.com/nikvas0))
 * Исправлена подстановка alias-ов в запросах с подзапросом, содержащим этот же alias ([#4110](https://github.com/yandex/ClickHouse/issues/4110)). [#4351](https://github.com/yandex/ClickHouse/pull/4351) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Улучшения сборки/тестирования/пакетирования:
