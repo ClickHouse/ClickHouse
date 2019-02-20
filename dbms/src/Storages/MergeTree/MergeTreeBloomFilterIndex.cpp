@@ -23,6 +23,15 @@ namespace ErrorCodes
 }
 
 
+static void stringRefToBloomFilter(const StringRef & ref, TokenExtractor tokenExtractor, StringBloomFilter & bloom_filter) {
+    size_t cur = 0;
+    size_t token_start = 0;
+    size_t token_len = 0;
+    while (cur < ref.size && tokenExtractor(ref.data, ref.size, &cur, &token_start, &token_len))
+        bloom_filter.add(ref.data + token_start, token_len);
+}
+
+
 MergeTreeBloomFilterIndexGranule::MergeTreeBloomFilterIndexGranule(const MergeTreeBloomFilterIndex & index)
     : IMergeTreeIndexGranule()
     , index(index)
@@ -62,12 +71,7 @@ void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos,
     for (size_t i = 0; i < rows_read; ++i)
     {
         auto ref = column->getDataAt(*pos + i);
-        size_t cur = 0;
-        size_t token_start = 0;
-        size_t token_len = 0;
-
-        while (cur < ref.size && index.tokenExtractorFunc(ref.data, ref.size, &cur, &token_start, &token_len))
-            bloom_filter.add(ref.data + token_start, token_len);
+        stringRefToBloomFilter(ref, index.tokenExtractorFunc, bloom_filter);
     }
 
     has_elems = true;
@@ -129,7 +133,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
 
     /// TODO: support a number of columns.
     if (expr_list->children.size() > 1)
-        throw Exception(node->name + " index can be used only with one column.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("Bloom filter index can be used only with one column.", ErrorCodes::INCORRECT_QUERY);
 
     auto syntax = SyntaxAnalyzer(context, {}).analyze(
             expr_list, new_columns);
@@ -150,12 +154,12 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
 
         if (data_types.back()->getTypeId() != TypeIndex::String
             && data_types.back()->getTypeId() != TypeIndex::FixedString)
-            throw Exception(node->name + " index can be used only with `String` and `FixedString` column.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("Bloom filter index can be used only with `String` and `FixedString` column.", ErrorCodes::INCORRECT_QUERY);
     }
 
-    if (node->name == NgramTokenExtractor::getName()) {
+    if (node->type->name == NgramTokenExtractor::getName()) {
         if (!node->type->arguments || node->type->arguments->children.size() != 3)
-            throw Exception(node->name + " index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("`ngrambf` index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
 
         size_t n = typeid_cast<const ASTLiteral &>(
                 *node->type->arguments->children[0]).value.get<size_t>();
