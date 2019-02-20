@@ -1,3 +1,9 @@
+## ClickHouse release 19.1.8, 2019-02-16
+
+### Исправления ошибок:
+
+* Исправлена установка пакета при отсутствующем файле /etc/clickhouse-server/config.xml. [#4343](https://github.com/yandex/ClickHouse/pull/4343) ([proller](https://github.com/proller))
+
 ## ClickHouse release 19.1.7, 2019-02-15
 
 ### Исправления ошибок:
