@@ -223,16 +223,23 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         for (const auto & it : query_analyzer->getExternalTables())
             if (!context.tryGetExternalTable(it.first))
                 context.addExternalTable(it.first, it.second);
+    }
 
+    if (!only_analyze || modify_inplace)
+    {
         if (query_analyzer->isRewriteSubqueriesPredicate())
         {
             /// remake interpreter_subquery when PredicateOptimizer is rewrite subqueries and main table is subquery
             if (is_subquery)
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                    table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1,
-                    only_analyze);
+                    table_expression,
+                    getSubqueryContext(context),
+                    required_columns,
+                    QueryProcessingStage::Complete,
+                    subquery_depth + 1,
+                    only_analyze,
+                    modify_inplace);
         }
-
     }
 
     if (interpreter_subquery)

@@ -277,10 +277,10 @@ def main(args):
                                         report_testcase.append(skipped)
                                         print("{0} - no reference file".format(MSG_UNKNOWN))
                                     else:
-                                        result_is_different = subprocess.call(['diff', '-q', '-bEZ', reference_file, stdout_file], stdout = PIPE)
+                                        result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout = PIPE)
 
                                         if result_is_different:
-                                            diff = Popen(['diff', '--unified', '-bEZ', reference_file, stdout_file], stdout = PIPE).communicate()[0]
+                                            diff = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()[0]
                                             diff = unicode(diff, errors='replace', encoding='utf-8')
                                             cat = Popen(['cat', '-A'], stdin=PIPE, stdout=PIPE).communicate(input=diff)[0]
 
