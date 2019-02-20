@@ -54,6 +54,11 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(/*Block & block,*/ const 
 
         //const auto array = checkAndGetColumnConst<ColumnArray>(array_ptr.get());
         //DUMP(i, arguments[i]);
+if (!arguments[i].column)
+{
+    DUMP("No column at ", i, arguments[i]);
+    continue;
+}
         const auto non_const = arguments[i].column->convertToFullColumnIfConst();
         //DUMP(non_const);
         const auto array = typeid_cast<const ColumnArray *>(non_const.get());
@@ -93,7 +98,7 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(/*Block & block,*/ const 
         }
     }
     if (clear_depth > max_array_depth)
-        DUMP("IMPOSSIBLE");
+        DUMP("IMPOSSIBLE"); // TODO THROW
     return std::make_tuple(clear_depth, depths, max_array_depth);
 }
 
@@ -587,9 +592,25 @@ DUMP("ONE DATA");
         executeMethodImpl<MethodHashed, false>(offsets_by_depth, data_columns, clear_depth, max_array_depth, depths, res_values);
     }
 
+
+
     DUMP(res_nested);
     DUMP(offsets_column);
-    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
+    //auto result = ColumnArray::create(std::move(res_nested), offsets_column);
+
+    DUMP(max_array_depth, offsets_by_depth);
+
+    auto result_nested_array = ColumnArray::create(std::move(res_nested), *offsets_by_depth[max_array_depth-1]);
+
+    if (max_array_depth >= 2)
+    for (auto depth = max_array_depth-2; depth>=0; --depth) {
+DUMP(depth, offsets_by_depth[depth-1]);
+        ColumnArray::create(std::move(result_nested_array), *offsets_by_depth[depth-1]);
+    }
+    block.getByPosition(result).column = result_nested_array;
+
+DUMP("complete=", block.getByPosition(result).column);
+
 }
 
 
@@ -795,14 +816,15 @@ DUMP("levelup", col_n, depths[col_n]);
 
                 auto hash = hash128depths(indexes, columns);
                 auto idx = ++indices[hash];
-                DUMP(j, idx, hash);
-
+                DUMP(j,  hash, idx);
+                res_values[j] = idx;
 
                 ++indexes_by_depth[current_offset_depth - 1];
                 DUMP("++", j, indexes_by_depth[current_offset_depth - 1], current_offset_depth);
                 DUMP("i", indexes_by_depth);
             }
 
+           if (current_offset_depth >= 2)
             for (size_t depth = current_offset_depth - 2; depth > 0; --depth)
             { // TODO CHECK SIZE
                 ++indexes_by_depth[depth];
@@ -833,7 +855,7 @@ DUMP("levelup", col_n, depths[col_n]);
             }
             DUMP("nxt", indexes_by_depth);
             //prev_off_by_depth[current_offset_depth] = off;
-            ++current_offset_n_by_depth[current_offset_depth];
+            ++current_offset_n_by_depth[current_offset_depth-1];
             DUMP(current_offset_depth, current_offset_n_by_depth);
 
             //DUMP(prev_off_by_depth);
