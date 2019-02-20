@@ -53,11 +53,9 @@ void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos,
         size_t cur = 0;
         size_t token_start = 0;
         size_t token_len = 0;
-        while (cur < ref.size && index.tokenExtractorFunc(ref.data, ref.size, cur, token_start, token_len))
-        {
+
+        while (cur < ref.size && index.tokenExtractorFunc(ref.data, ref.size, &cur, &token_start, &token_len))
             bloom_filter.add(ref.data + token_start, token_len);
-            cur = token_start + token_len;
-        }
     }
 
     *pos += rows_read;
