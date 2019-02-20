@@ -135,26 +135,27 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 #endif
 
-    DepthType clear_depth;
-    DepthType max_array_depth;
-    DepthTypes depths;
+        DepthType clear_depth;
+        DepthType max_array_depth;
+        DepthTypes depths;
 
-    std::tie(clear_depth, depths, max_array_depth) = getDepths(arguments);
+        std::tie(clear_depth, depths, max_array_depth) = getDepths(arguments);
 
         if (arguments.size() == 0)
-             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be at least 1.",
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         DataTypePtr type = std::make_shared<DataTypeUInt32>();
-        for (DepthType i = 0; i < max_array_depth; ++i) {
+        for (DepthType i = 0; i < max_array_depth; ++i)
+        {
             type = std::make_shared<DataTypeArray>(type);
         }
 
-DUMP("return type=", type);
+        DUMP("return type=", type);
 
         return type; //std::make_shared<DataTypeArray>();
-
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
@@ -206,7 +207,7 @@ private:
         using Method = ColumnsHashing::HashMethodHashed<typename Set::value_type, UInt32, false>;
     };
 
-/*
+    /*
     template <typename Method>
     void executeMethod(
         const ColumnArray::Offsets & offsets,
@@ -222,7 +223,7 @@ private:
         //const ColumnArray::Offsets & offsets,
         //const std::vector<ColumnPtr> & offsets_by_depth,
         //const std::vector<IColumn::Offsets*> & offsets_by_depth,
-        const std::vector<const ColumnArray::Offsets*> & offsets_by_depth,
+        const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
         const ColumnRawPtrs & columns,
         //const Sizes & key_sizes,
         //const NullMap * null_map,
@@ -231,7 +232,7 @@ private:
         DepthTypes depths,
         ColumnUInt32::Container & res_values);
 
-/*
+    /*
     template <typename T>
     bool executeNumber(
         const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
@@ -243,9 +244,6 @@ private:
     void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
 */
 };
-
-
-
 
 
 //ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const ColumnWithTypeAndName & n, const DataTypePtr & type, const Context & context)
@@ -333,9 +331,6 @@ static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, /
 }
 
 
-
-
-
 template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
@@ -383,24 +378,23 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
     //std::vector<ColumnPtr> offsets_by_depth;
     //std::vector<IColumn::Offsets*> offsets_by_depth;
-    std::vector<const ColumnArray::Offsets*> offsets_by_depth;
+    std::vector<const ColumnArray::Offsets *> offsets_by_depth;
 
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
-DUMP(array_ptr);
+        DUMP(array_ptr);
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
-DUMP(array);
+        DUMP(array);
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
             if (!const_array)
-{
-DUMP("Not array", i);
+            {
+                DUMP("Not array", i);
                 continue;
-
-}
+            }
             /*
                 throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
@@ -422,12 +416,12 @@ DUMP("Not array", i);
 
             DUMP("offsets was:", array->getOffsets());
 
-//DUMP("test offsets column:", col_depth, max_array_depth);
-                if (col_depth == max_array_depth)
-{
-//DUMP("using offsets column:", col_depth, max_array_depth);
-                    offsets_column = array->getOffsetsPtr();
-}
+            //DUMP("test offsets column:", col_depth, max_array_depth);
+            if (col_depth == max_array_depth)
+            {
+                //DUMP("using offsets column:", col_depth, max_array_depth);
+                offsets_column = array->getOffsetsPtr();
+            }
 
 
             auto sub_array = get_array_column(&array->getData());
@@ -443,13 +437,13 @@ DUMP("Not array", i);
             }
 
             //if (array_num == 0) // TODO check with prev
-                //offsets_by_depth.emplace_back(array->getOffsetsPtr());
-//DUMP(offsets_by_depth.size(), "<" ,col_depth);
-                if (offsets_by_depth.size() <= col_depth)
-                    offsets_by_depth.emplace_back(&array->getOffsets());
+            //offsets_by_depth.emplace_back(array->getOffsetsPtr());
+            //DUMP(offsets_by_depth.size(), "<" ,col_depth);
+            if (offsets_by_depth.size() <= col_depth)
+                offsets_by_depth.emplace_back(&array->getOffsets());
 
 
-//array->getOffsets()
+            //array->getOffsets()
         }
 
         DUMP(offsets_by_depth);
@@ -498,7 +492,7 @@ DUMP("Not array", i);
 */
 
 
-/*
+        /*
         const ColumnArray::Offsets & offsets_i = array->getOffsets();
         //auto offsets_i = array->getOffsets();
         if (!offsets)
@@ -555,7 +549,7 @@ DUMP("Not array", i);
     */
 
     //res_values.resize(offsets_by_depth[clear_depth-1]->back()); // todo size check?
-    res_values.resize(offsets_by_depth[max_array_depth-1]->back()); // todo size check?
+    res_values.resize(offsets_by_depth[max_array_depth - 1]->back()); // todo size check?
 
     //DUMP(offsets->back(), res_values.size());
     DUMP("res total size=", res_values.size(), res_values);
@@ -605,17 +599,14 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     //const ColumnArray::Offsets & offsets,
     //const std::vector<ColumnPtr> & offsets_by_depth,
     //const std::vector<IColumn::Offsets*> & offsets_by_depth,
-    const std::vector<const ColumnArray::Offsets*> & offsets_by_depth,
+    const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
     const ColumnRawPtrs & columns,
     //const Sizes & key_sizes,
     //[[maybe_unused]] const NullMap * null_map,
 
-[[maybe_unused]]
-    DepthType clear_depth,
-[[maybe_unused]]
-    DepthType max_array_depth,
-[[maybe_unused]]
-DepthTypes depths,
+    [[maybe_unused]] DepthType clear_depth,
+    [[maybe_unused]] DepthType max_array_depth,
+    [[maybe_unused]] DepthTypes depths,
 
     ColumnUInt32::Container & res_values)
 {
@@ -630,9 +621,9 @@ DepthTypes depths,
     //const auto & offsets = *offsets_by_depth[clear_depth]; //->getData(); //depth!
     const size_t current_offset_depth = max_array_depth;
     //const auto & offsets = *offsets_by_depth[max_array_depth-1]; //->getData(); //depth!
-    const auto & offsets = *offsets_by_depth[current_offset_depth-1]; //->getData(); //depth!
+    const auto & offsets = *offsets_by_depth[current_offset_depth - 1]; //->getData(); //depth!
     //const auto & offsets = *offsets_by_depth[0];
-DUMP(max_array_depth, offsets);
+    DUMP(max_array_depth, offsets);
 
     ColumnArray::Offset prev_off = 0;
 
@@ -748,11 +739,11 @@ maxdepth=1
 
 */
 
-            //std::vector<size_t> indexestest(columns.size());
-            std::vector<size_t> indexes_by_depth(max_array_depth);
-            //std::vector<size_t> prev_off_by_depth(max_array_depth);
-            std::vector<size_t> current_offset_n_by_depth(max_array_depth);
-        
+    //std::vector<size_t> indexestest(columns.size());
+    std::vector<size_t> indexes_by_depth(max_array_depth);
+    //std::vector<size_t> prev_off_by_depth(max_array_depth);
+    std::vector<size_t> current_offset_n_by_depth(max_array_depth);
+
 
     if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniqRanked>)
     {
@@ -765,7 +756,7 @@ maxdepth=1
 
             std::vector<size_t> indexes(columns.size());
 
-/*
+            /*
             for (size_t j = prev_off; j < off; ++j)
             {
 
@@ -790,70 +781,69 @@ DUMP("levelup", col_n, depths[col_n]);
                 }           
 */
 
-bool want_clear = false;
+            bool want_clear = false;
 
 
             for (size_t j = prev_off; j < off; ++j)
             {
-
-
-                for (size_t col_n = 0; col_n < columns.size(); ++col_n ) {
-DUMP(col_n, depths[col_n], indexes_by_depth[depths[col_n]-1]);
-                    indexes[col_n] = indexes_by_depth[depths[col_n]-1];
-                }           
-DUMP(indexes);
+                for (size_t col_n = 0; col_n < columns.size(); ++col_n)
+                {
+                    DUMP(col_n, depths[col_n], indexes_by_depth[depths[col_n] - 1]);
+                    indexes[col_n] = indexes_by_depth[depths[col_n] - 1];
+                }
+                DUMP(indexes);
 
                 auto hash = hash128depths(indexes, columns);
                 auto idx = ++indices[hash];
                 DUMP(j, idx, hash);
 
 
-                 ++indexes_by_depth[current_offset_depth-1];
-DUMP("++", j, indexes_by_depth[current_offset_depth-1], current_offset_depth);
-DUMP("i", indexes_by_depth);
-
-
-
-
+                ++indexes_by_depth[current_offset_depth - 1];
+                DUMP("++", j, indexes_by_depth[current_offset_depth - 1], current_offset_depth);
+                DUMP("i", indexes_by_depth);
             }
-           
-            for(size_t depth = current_offset_depth-2; depth > 0; --depth) { // TODO CHECK SIZE
+
+            for (size_t depth = current_offset_depth - 2; depth > 0; --depth)
+            { // TODO CHECK SIZE
                 ++indexes_by_depth[depth];
-DUMP("dph", depth, indexes_by_depth[depth], current_offset_n_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
-//offsets_by_depth[
+                DUMP(
+                    "dph",
+                    depth,
+                    indexes_by_depth[depth],
+                    current_offset_n_by_depth[depth],
+                    (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
+                //offsets_by_depth[
 
 
                 //current_offset_n_by_depth[depth];
 
-//DUMP(offsets_by_depth[depth][current_offset_n_by_depth[depth]]);
-                if(indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
-{
-
-DUMP("cleartest", clear_depth, depth);
+                //DUMP(offsets_by_depth[depth][current_offset_n_by_depth[depth]]);
+                if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                {
+                    DUMP("cleartest", clear_depth, depth);
                     if (clear_depth == depth)
                         want_clear = true;
 
                     ++current_offset_n_by_depth[depth];
-}
-                else {
+                }
+                else
+                {
                     break;
-}
+                }
             }
-DUMP("nxt", indexes_by_depth);
+            DUMP("nxt", indexes_by_depth);
             //prev_off_by_depth[current_offset_depth] = off;
             ++current_offset_n_by_depth[current_offset_depth];
-DUMP(current_offset_depth, current_offset_n_by_depth);
+            DUMP(current_offset_depth, current_offset_n_by_depth);
 
-//DUMP(prev_off_by_depth);
+            //DUMP(prev_off_by_depth);
 
-            if (want_clear) {
-DUMP("Clear indx!");
+            if (want_clear)
+            {
+                DUMP("Clear indx!");
                 want_clear = false;
                 indices.clear();
             }
-
-
-
 
 
 #if 0
@@ -908,7 +898,7 @@ DUMP("Clear indx!");
             {
                 DUMP(j, prev_off, off);
 
-/*
+                /*
                 if constexpr (has_null_map)
                 {
                     if ((*null_map)[j])
