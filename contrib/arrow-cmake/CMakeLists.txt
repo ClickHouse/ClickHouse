@@ -201,6 +201,10 @@ include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmak
 target_link_libraries(${PARQUET_LIBRARY} PRIVATE ${ARROW_LIBRARY} ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})
 target_include_directories(${PARQUET_LIBRARY} PRIVATE ${Boost_INCLUDE_DIRS})
 
+if(SANITIZE STREQUAL "undefined")
+    target_compile_options(${PARQUET_LIBRARY} PRIVATE -fno-sanitize=undefined)
+    target_compile_options(${ARROW_LIBRARY} PRIVATE -fno-sanitize=undefined)
+endif()
 
 # === tools
 
@@ -208,5 +212,5 @@ set(TOOLS_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/tools/parquet)
 set(PARQUET_TOOLS parquet-dump-schema parquet-reader parquet-scan)
 foreach(TOOL ${PARQUET_TOOLS})
     add_executable(${TOOL} ${TOOLS_DIR}/${TOOL}.cc)
-    target_link_libraries(${TOOL} ${PARQUET_LIBRARY})
+    target_link_libraries(${TOOL} PRIVATE ${PARQUET_LIBRARY})
 endforeach()
