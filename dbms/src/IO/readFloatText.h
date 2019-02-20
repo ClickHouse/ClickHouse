@@ -618,7 +618,7 @@ inline void readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exp
 
                 ++places; // num zeroes before + current digit
                 if (digits + places > max_digits)
-                    throw Exception("Too many digits in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                    throw Exception("Too many digits (" + std::to_string(digits + places) + " > " + std::to_string(max_digits) + ") in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
                 digits += places;
                 if (after_point)

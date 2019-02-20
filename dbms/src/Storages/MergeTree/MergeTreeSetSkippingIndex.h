@@ -24,7 +24,7 @@ struct MergeTreeSetIndexGranule : public IMergeTreeIndexGranule
     size_t size() const { return set->getTotalRowCount(); }
     bool empty() const override { return !size(); }
 
-    void update(const Block & block, size_t * pos, UInt64 limit) override;
+    void update(const Block & block, size_t * pos, size_t limit) override;
     Block getElementsBlock() const;
 
     ~MergeTreeSetIndexGranule() override = default;
