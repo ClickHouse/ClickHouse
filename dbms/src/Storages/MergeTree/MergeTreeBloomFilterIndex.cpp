@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeBloomFilterIndex.h>
 
+#include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -23,7 +24,10 @@ namespace ErrorCodes
 
 
 MergeTreeBloomFilterIndexGranule::MergeTreeBloomFilterIndexGranule(const MergeTreeBloomFilterIndex & index)
-    : IMergeTreeIndexGranule(), index(index), bloom_filter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed)
+    : IMergeTreeIndexGranule()
+    , index(index)
+    , bloom_filter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed)
+    , has_elems(false)
 {
 }
 
@@ -42,6 +46,7 @@ void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
     std::vector<UInt8> filter(index.bloom_filter_size, 0);
     istr.read(reinterpret_cast<char *>(filter.data()), index.bloom_filter_size);
     bloom_filter.setFilter(std::move(filter));
+    has_elems = true;
 }
 
 void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos, size_t limit)
@@ -65,6 +70,7 @@ void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos,
             bloom_filter.add(ref.data + token_start, token_len);
     }
 
+    has_elems = true;
     *pos += rows_read;
 }
 
@@ -86,17 +92,22 @@ struct NgramTokenExtractor
     NgramTokenExtractor(size_t n) : n(n) {}
 
     static String getName() {
-        static String name = "ngram";
+        static String name = "ngrambf";
         return name;
     }
 
-    bool operator() (const char *, size_t len, size_t * pos, size_t * token_start, size_t * token_len)
+    bool operator() (const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len)
     {
-        if (*pos + n > len) {
-            return false;
-        }
         *token_start = *pos;
-        *token_len = n;
+        *token_len = 0;
+        for (size_t i = 0; i < n; ++i)
+        {
+            size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*token_start + *token_len]));
+            if (*token_start + *token_len + sz > len) {
+                return false;
+            }
+            *token_len += sz;
+        }
         ++*pos;
         return true;
     }
@@ -105,7 +116,7 @@ struct NgramTokenExtractor
 };
 
 
-std::unique_ptr<IMergeTreeIndex> BloomFilterIndexCreator(
+std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
         const NamesAndTypesList & new_columns,
         std::shared_ptr<ASTIndexDeclaration> node,
         const MergeTreeData & data,
@@ -153,8 +164,8 @@ std::unique_ptr<IMergeTreeIndex> BloomFilterIndexCreator(
         size_t seed = typeid_cast<const ASTLiteral &>(
                 *node->type->arguments->children[2]).value.get<size_t>();\
 
-        size_t bloom_filter_hashes = static_cast<size_t>(
-                n / (node->granularity * data.index_granularity) * log(2.));
+        auto bloom_filter_hashes = static_cast<size_t>(
+                n * log(2.) / (node->granularity * data.index_granularity));
 
         return std::make_unique<MergeTreeBloomFilterIndex>(
                 node->name, std::move(index_expr), columns, data_types, sample, node->granularity,

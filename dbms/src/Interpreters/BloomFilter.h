@@ -41,6 +41,7 @@ public:
 
     bool find(const char * data, size_t len);
     void add(const char * data, size_t len);
+    void clear();
 
     /// Checks if this contains everything from another bloom filter.
     /// Bloom filters must have equal size and seed.

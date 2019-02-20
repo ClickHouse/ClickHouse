@@ -40,6 +40,11 @@ void StringBloomFilter::add(const char * data, size_t len)
     }
 }
 
+void StringBloomFilter::clear()
+{
+    filter.assign(size, 0);
+}
+
 bool StringBloomFilter::contains(const StringBloomFilter & bf)
 {
     for (size_t i = 0; i < size; ++i)
