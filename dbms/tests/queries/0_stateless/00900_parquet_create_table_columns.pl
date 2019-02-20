@@ -44,7 +44,7 @@ sub columns ($json) {
         $name .= $column->{'Id'} if $uniq{$name}++; # Names can be non-unique
         push @list, {name => $name, type => $type};
     }
-    print join ', ', map {"$_->{name} $_->{type}"} @list;
+    print join ', ', map {"`$_->{name}` $_->{type}"} @list;
 }
 
 sub columns_file ($file) {
