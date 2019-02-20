@@ -55,4 +55,10 @@ bool StringBloomFilter::contains(const StringBloomFilter & bf)
     return true;
 }
 
+void StringBloomFilter::merge(const StringBloomFilter & bf)
+{
+    for (size_t i = 0; i < size; ++i)
+        filter[i] |= bf.filter[i];
+}
+
 }
