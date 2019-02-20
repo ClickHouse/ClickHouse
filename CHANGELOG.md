@@ -15,11 +15,6 @@
 ### Build/Testing/Packaging Improvements
 * Add ability to run `clickhouse-server` for stateless tests in docker image. [#4347](https://github.com/yandex/ClickHouse/pull/4347) ([Vasily Nemkov](https://github.com/Enmk))
 
-## ClickHouse release 19.1.8, 2019-02-16
-
-### Bug Fixes
-* Fix install package with missing /etc/clickhouse-server/config.xml. [#4343](https://github.com/yandex/ClickHouse/pull/4343) ([proller](https://github.com/proller))
-
 ## ClickHouse release 19.3.3, 2019-02-13
 
 ### New Features
@@ -120,6 +115,11 @@
 * Added support for scalar subqueries with aggregate function state result. [#4348](https://github.com/yandex/ClickHouse/pull/4348) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Improved server shutdown time and ALTERs waiting time. [#4372](https://github.com/yandex/ClickHouse/pull/4372) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Added info about the replicated_can_become_leader setting to system.replicas and add logging if the replica won't try to become leader. [#4379](https://github.com/yandex/ClickHouse/pull/4379) ([Alex Zatelepin](https://github.com/ztlpn))
+
+## ClickHouse release 19.1.8, 2019-02-16
+
+### Bug Fixes
+* Fix install package with missing /etc/clickhouse-server/config.xml. [#4343](https://github.com/yandex/ClickHouse/pull/4343) ([proller](https://github.com/proller))
 
 
 ## ClickHouse release 19.1.7, 2019-02-15
