@@ -476,7 +476,7 @@ namespace
 void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
-    UInt64 limit,
+    size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -572,7 +572,7 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
 void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    UInt64 limit,
+    size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {

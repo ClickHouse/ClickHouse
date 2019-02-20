@@ -31,17 +31,17 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        UInt64 max_block_size,
+        size_t max_block_size,
         unsigned num_streams) override;
 
 private:
     const std::string name;
     bool multithreaded;
-    std::optional<size_t> limit;
-    size_t offset;
+    std::optional<UInt64> limit;
+    UInt64 offset;
 
 protected:
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<size_t> limit_ = std::nullopt, size_t offset_ = 0);
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0);
 };
 
 }

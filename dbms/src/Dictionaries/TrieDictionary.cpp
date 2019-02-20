@@ -758,7 +758,7 @@ Columns TrieDictionary::getKeyColumns() const
     return {std::move(ip_column), std::move(mask_column)};
 }
 
-BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
+BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
