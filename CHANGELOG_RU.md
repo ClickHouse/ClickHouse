@@ -37,7 +37,7 @@
 * Добавлен формат `RowBinaryWithNamesAndTypes`. [#4200](https://github.com/yandex/ClickHouse/pull/4200) ([Oleg V. Kozlyuk](https://github.com/DarkWanderer))
 * Добавлены типы `IPv4` и `IPv6`. Более эффективная реализация функций `IPv*`. [#3669](https://github.com/yandex/ClickHouse/pull/3669) ([Vasily Nemkov](https://github.com/Enmk))
 * Добавлен выходной формат `Protobuf`. [#4005](https://github.com/yandex/ClickHouse/pull/4005) [#4158](https://github.com/yandex/ClickHouse/pull/4158) ([Vitaly Baranov](https://github.com/vitlibar))
-* В HTTP-интерфейсе добавлена поддержка алгоритма сжатия brotli для вставляемых данных. [#4235](https://github.com/yandex/ClickHouse/pull/4235) ([Mikhail ](https://github.com/fandyushin))
+* В HTTP-интерфейсе добавлена поддержка алгоритма сжатия brotli для вставляемых данных. [#4235](https://github.com/yandex/ClickHouse/pull/4235) ([Mikhail](https://github.com/fandyushin))
 * Клиент командной строки теперь подсказывает правильное имя, если пользователь опечатался в названии функции. [#4239](https://github.com/yandex/ClickHouse/pull/4239) ([Danila Kutenin](https://github.com/danlark1))
 * В HTTP-ответ сервера добавлен загловок `Query-Id`. [#4231](https://github.com/yandex/ClickHouse/pull/4231) ([Mikhail ](https://github.com/fandyushin))
 
