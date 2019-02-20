@@ -384,6 +384,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     //std::vector<ColumnPtr> offsets_by_depth;
     //std::vector<IColumn::Offsets*> offsets_by_depth;
     std::vector<const ColumnArray::Offsets *> offsets_by_depth;
+    std::vector<ColumnPtr> offsetsptr_by_depth;
 
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
@@ -412,8 +413,11 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         DUMP(array);
 
         if (array_num == 0) // TODO check with prev
+{
             //offsets_by_depth.emplace_back(array->getOffsetsPtr());
             offsets_by_depth.emplace_back(&array->getOffsets());
+            offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
+}
 
         for (DepthType col_depth = 1; col_depth <= depths[array_num]; ++col_depth)
         {
@@ -445,7 +449,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             //offsets_by_depth.emplace_back(array->getOffsetsPtr());
             //DUMP(offsets_by_depth.size(), "<" ,col_depth);
             if (offsets_by_depth.size() <= col_depth)
+{
                 offsets_by_depth.emplace_back(&array->getOffsets());
+                offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
+}
 
 
             //array->getOffsets()
@@ -600,16 +607,32 @@ DUMP("ONE DATA");
 
     DUMP(max_array_depth, offsets_by_depth);
 
-    auto result_nested_array = ColumnArray::create(std::move(res_nested), *offsets_by_depth[max_array_depth-1]);
+    //auto result_nested_array = ColumnArray::create(std::move(res_nested), *offsets_by_depth[max_array_depth-1]);
+    //auto result_nested_array = ColumnArray::create(std::move(res_nested), offsetsptr_by_depth[max_array_depth-1]);
+    //auto result_nested_array = ColumnArray::create(std::move(res_nested), offsetsptr_by_depth[max_array_depth-1]);
+    //ColumnArray::Ptr result_nested_array = res_nested;
+    ColumnPtr result_nested_array = std::move(res_nested);
+//DUMP(max_array_depth-1, result_nested_array, offsetsptr_by_depth[max_array_depth-1]);
 
-    if (max_array_depth >= 2)
-    for (auto depth = max_array_depth-2; depth>=0; --depth) {
-DUMP(depth, offsets_by_depth[depth-1]);
-        ColumnArray::create(std::move(result_nested_array), *offsets_by_depth[depth-1]);
+    //if (max_array_depth >= 2)
+    //for (auto depth = max_array_depth-2; depth>0; --depth) {
+DUMP(max_array_depth);
+   //if (max_array_depth >= 1)
+    //auto depth = max_array_depth-1;
+    //do {
+    //for (auto depth = max_array_depth-1; depth>=0; --depth) {
+    for (int depth = max_array_depth-1; depth>=0; --depth) {
+DUMP(depth);
+DUMP(offsets_by_depth[depth]);
+        //ColumnArray::create(std::move(result_nested_array), *offsets_by_depth[depth-1]);
+        result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
+DUMP(depth, result_nested_array, offsetsptr_by_depth[depth]);
     }
+    //while(--depth>0)
+
     block.getByPosition(result).column = result_nested_array;
 
-DUMP("complete=", block.getByPosition(result).column);
+//DUMP("complete=", block.getByPosition(result).column);
 
 }
 
