@@ -191,7 +191,6 @@ target_link_libraries (clickhouse_common_io
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${CITYHASH_LIBRARIES}
-    roaring
         PRIVATE
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
@@ -204,6 +203,8 @@ target_link_libraries (clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PUBLIC
+    roaring	
 )
 
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
