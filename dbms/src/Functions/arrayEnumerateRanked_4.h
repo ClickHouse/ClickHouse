@@ -335,7 +335,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
     std::tie(clear_depth, depths, max_array_depth) = getDepths(args);
 
-    DUMP(clear_depth, depths, max_array_depth);
+    DUMP("GO FUNC!=======", clear_depth, depths, max_array_depth);
 
 
     // /*
@@ -364,13 +364,18 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     for (size_t i = 0; i < num_arguments; ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
+DUMP(array_ptr);
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+DUMP(array);
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
             if (!const_array)
+{
+DUMP("Not array", i);
                 continue;
 
+}
             /*
                 throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
@@ -593,7 +598,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     //Arena pool; /// Won't use it;
 
     //const auto & offsets = *offsets_by_depth[clear_depth]; //->getData(); //depth!
-    const auto & offsets = *offsets_by_depth[max_array_depth-1]; //->getData(); //depth!
+    //const auto & offsets = *offsets_by_depth[max_array_depth-1]; //->getData(); //depth!
+    const auto & offsets = *offsets_by_depth[0];
 DUMP(max_array_depth, offsets);
 
     ColumnArray::Offset prev_off = 0;

@@ -119,6 +119,7 @@ private:
 template <typename Derived>
 void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
+DUMP("GOFUNC");
     const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns(num_arguments);
@@ -128,6 +129,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
     for (size_t i = 0; i < num_arguments; ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
+DUMP(i, array_ptr);
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
