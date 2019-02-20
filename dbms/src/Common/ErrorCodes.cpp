@@ -417,6 +417,7 @@ namespace ErrorCodes
     extern const int INVALID_LIMIT_EXPRESSION = 440;
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING = 441;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE = 442;
+    extern const int NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA = 443;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
