@@ -66,6 +66,21 @@ void buildScatterSelector(
     }
 }
 
+/// Compute ttls and find minimal
+void updateTTL(MergeTreeData::MutableDataPartPtr & data_part, const MergeTreeData::TTLEntry & ttl_entry, Block & block)
+{
+    if (!block.has(ttl_entry.result_column))
+        ttl_entry.expression->execute(block);
+
+    const auto & current = block.getByName(ttl_entry.result_column);
+    const ColumnUInt32 * column = typeid_cast<const ColumnUInt32 *>(current.column.get());
+    const ColumnUInt32::Container & vec = column->getData();
+
+    for (auto val : vec)
+        if (!data_part->min_ttl || val < data_part->min_ttl)
+            data_part->min_ttl = val;
+}
+
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block)
@@ -208,27 +223,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    /// Compute ttls and find minimal
     new_data_part->min_ttl = 0;
-    if (!data.ttl_expressions_by_column.empty())
-    {
-        for (const auto & [input_column, output_column] : data.ttl_result_columns_by_name)
-        {
-            if (!block.has(output_column))
-            {
-                const auto & expr = data.ttl_expressions_by_column[input_column];
-                expr->execute(block);
-            }
+    if (data.ttl_table_entry.expression)
+        updateTTL(new_data_part, data.ttl_table_entry, block);
 
-            const auto & current = block.getByName(output_column);
-            const ColumnUInt32 * column = typeid_cast<const ColumnUInt32 *>(current.column.get());
-            const ColumnUInt32::Container & vec = column->getData();
-
-            for (auto val : vec)
-                if (!new_data_part->min_ttl || val < new_data_part->min_ttl)
-                    new_data_part->min_ttl = val;
-        }
-    }
+    for (const auto & elem : data.ttl_entries_by_name)
+        updateTTL(new_data_part, elem.second, block);
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.

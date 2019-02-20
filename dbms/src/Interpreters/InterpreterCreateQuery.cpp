@@ -182,7 +182,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
     ColumnDefaults defaults{};
     ColumnCodecs codecs{};
     ColumnComments comments{};
-    ColumnTTLs ttl_expressions{};
+    ColumnTTLs ttl_asts{};
 
     /// Columns requiring type-deduction or default_expression type-check
     std::vector<std::pair<NameAndTypePair *, ASTColumnDeclaration *>> defaulted_columns{};
@@ -242,7 +242,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
         }
 
         if (col_decl.ttl)
-            ttl_expressions.emplace(col_decl.name, col_decl.ttl);
+            ttl_asts.emplace(col_decl.name, col_decl.ttl);
     }
 
     /// set missing types and wrap default_expression's in a conversion-function if necessary
@@ -307,7 +307,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
             codecs.emplace(new_name, codec);
     }
 
-    return {new_columns, defaults, codecs, comments, ttl_expressions};
+    return {new_columns, defaults, codecs, comments, ttl_asts};
 }
 
 
@@ -399,8 +399,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0);
         }
 
-        const auto ttl_it = columns.ttl_expressions.find(column.name);
-        if (ttl_it != columns.ttl_expressions.end())
+        const auto ttl_it = columns.ttl_asts.find(column.name);
+        if (ttl_it != columns.ttl_asts.end())
             column_declaration->ttl = ttl_it->second;
 
         columns_list->children.push_back(column_declaration_ptr);
@@ -421,7 +421,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
     res.defaults = std::move(columns_and_defaults.second);
     res.codecs = std::move(std::get<2>(parsed_columns));
     res.comments = std::move(std::get<3>(parsed_columns));
-    res.ttl_expressions = std::move(std::get<4>(parsed_columns));
+    res.ttl_asts = std::move(std::get<4>(parsed_columns));
 
     if (res.ordinary.size() + res.materialized.size() == 0)
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};

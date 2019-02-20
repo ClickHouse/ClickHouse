@@ -99,6 +99,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_primary_key("PRIMARY KEY");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_sample_by("SAMPLE BY");
+    ParserKeyword s_ttl("TTL");
     ParserKeyword s_settings("SETTINGS");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
@@ -110,6 +111,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr primary_key;
     ASTPtr order_by;
     ASTPtr sample_by;
+    ASTPtr ttl_table;
     ASTPtr settings;
 
     if (!s_engine.ignore(pos, expected))
@@ -154,6 +156,14 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        if (!ttl_table && s_ttl.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, ttl_table, expected))
+                continue;
+            else
+                return false;
+        }
+
         if (s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
@@ -169,6 +179,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
+    storage->set(storage->ttl_table, ttl_table);
     storage->set(storage->settings, settings);
 
     node = storage;

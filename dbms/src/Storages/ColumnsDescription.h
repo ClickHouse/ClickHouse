@@ -22,7 +22,7 @@ struct ColumnsDescription
     ColumnDefaults defaults;
     ColumnComments comments;
     ColumnCodecs codecs;
-    ColumnTTLs ttl_expressions;
+    ColumnTTLs ttl_asts;
 
     ColumnsDescription() = default;
 
@@ -33,14 +33,14 @@ struct ColumnsDescription
         ColumnDefaults defaults_,
         ColumnComments comments_,
         ColumnCodecs codecs_,
-        ColumnTTLs ttl_expressions_)
+        ColumnTTLs ttl_asts_)
         : ordinary(std::move(ordinary_))
         , materialized(std::move(materialized_))
         , aliases(std::move(aliases_))
         , defaults(std::move(defaults_))
         , comments(std::move(comments_))
         , codecs(std::move(codecs_))
-        , ttl_expressions(std::move(ttl_expressions_))
+        , ttl_asts(std::move(ttl_asts_))
     {}
 
     explicit ColumnsDescription(NamesAndTypesList ordinary_) : ordinary(std::move(ordinary_)) {}
@@ -53,7 +53,7 @@ struct ColumnsDescription
             && defaults == other.defaults
             && comments == other.comments
             && codecs == other.codecs
-            && ttl_expressions == other.ttl_expressions;
+            && ttl_asts == other.ttl_asts;
     }
 
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }

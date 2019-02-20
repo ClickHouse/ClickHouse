@@ -307,6 +307,7 @@ public:
                   const ASTPtr & order_by_ast_,
                   const ASTPtr & primary_key_ast_,
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
+                  const ASTPtr & ttl_table_ast_,
                   const MergingParams & merging_params_,
                   const MergeTreeSettings & settings_,
                   bool require_part_metadata_,
@@ -594,9 +595,17 @@ public:
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
-    using TTLExpressionsByColumn = std::unordered_map<std::string, ExpressionActionsPtr>;
-    TTLExpressionsByColumn ttl_expressions_by_column;
-    NameToNameMap ttl_result_columns_by_name;
+    struct TTLEntry
+    {
+        ExpressionActionsPtr expression;
+        String result_column;
+    };
+
+    using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
+    TTLEntriesByName ttl_entries_by_name;
+
+    TTLEntry ttl_table_entry;
+
 
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
@@ -622,6 +631,7 @@ private:
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
+    ASTPtr ttl_table_ast;
 
     bool require_part_metadata;
 
@@ -730,6 +740,8 @@ private:
 
     void initPartitionKey();
 
+    void initTTLExpressions();
+
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.
     /// out_rename_map maps column files for the out_expression onto new table files.
@@ -748,8 +760,6 @@ private:
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock);
-
-    String extractTTLResultColumn(const ExpressionActionsPtr & ttl_expression);
 
     /// Return parts in the Committed set that are covered by the new_part_info or the part that covers it.
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.

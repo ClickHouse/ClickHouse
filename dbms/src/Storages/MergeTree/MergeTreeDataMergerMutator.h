@@ -112,11 +112,6 @@ private:
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
-    /// Removes values with expired ttl and computes new min_ttl for part
-    void removeValuesWithExpiredTTL(
-        MergeTreeData::MutableDataPartPtr & new_data_part,
-        Block & block, NameSet & empty_columns);
-
 public:
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
@@ -133,7 +128,7 @@ private:
 
     MergeAlgorithm chooseMergeAlgorithm(
         const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate) const;
+        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const;
 
 private:
     MergeTreeData & data;
@@ -143,6 +138,9 @@ private:
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
+
+    /// Last time when TTLMergeSelector has been used
+    time_t last_merge_with_ttl = 0;
 };
 
 

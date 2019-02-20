@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
@@ -216,9 +217,15 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     if (aggressive)
         merge_settings.base = 1;
 
+    time_t merge_with_ttl_timeout = data.global_context.getConfigRef().getInt("merge_with_ttl_timeout", 300) * 1000;
+    bool can_merge_with_tll = (current_time - last_merge_with_ttl > merge_with_ttl_timeout);
+
     /// NOTE Could allow selection of different merge strategy.
-    if (has_part_with_expired_ttl)
+    if (can_merge_with_tll && has_part_with_expired_ttl)
+    {
         merge_selector = std::make_unique<TTLMergeSelector>();
+        last_merge_with_ttl = current_time;
+    }
     else
         merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
 
@@ -569,9 +576,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
 
+    bool need_remove_expired_values = false;
+    new_data_part->min_ttl = 0;
+
+    for (const MergeTreeData::DataPartPtr & part : parts)
+        if (part->min_ttl && part->min_ttl <= time_of_merge)
+            need_remove_expired_values = true;
+
     size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
 
-    MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate);
+    MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
     LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
@@ -630,10 +644,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         }
     }
 
-    time_t current_time = time(nullptr);
-    bool need_remove_expired_values = false;
-    new_data_part->min_ttl = 0;
-
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialBlockInputStream>(
@@ -647,9 +657,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.sorting_key_expr)));
         else
             src_streams.emplace_back(std::move(input));
-
-        if (part->min_ttl && part->min_ttl <= current_time)
-            need_remove_expired_values = true;
     }
 
     Names sort_columns = data.sorting_key_columns;
@@ -708,6 +715,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
+    if (need_remove_expired_values)
+        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge);
+
     MergedBlockOutputStream to{
         data, new_part_tmp_path, merging_columns, compression_codec, merged_column_to_size, data.settings.min_merge_bytes_to_use_direct_io};
 
@@ -717,18 +727,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t rows_written = 0;
     const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
-    NameSet empty_columns;
-    if (need_remove_expired_values)
-        for (const auto & elem : data.ttl_expressions_by_column)
-            empty_columns.emplace(elem.first);
-
     Block block;
     while (!actions_blocker.isCancelled() && (block = merged_stream->read()))
     {
         rows_written += block.rows();
-
-        if (need_remove_expired_values)
-            removeValuesWithExpiredTTL(new_data_part, block, empty_columns);
 
         to.write(block);
 
@@ -809,9 +811,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             column_to.writePrefix();
             while ((block = column_gathered_stream.read()))
             {
-                if (need_remove_expired_values)
-                    removeValuesWithExpiredTTL(new_data_part, block, empty_columns);
-
                 column_elems_written += block.rows();
                 column_to.write(block);
             }
@@ -837,8 +836,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         Poco::File(rows_sources_file_path).remove();
     }
 
-    new_data_part->empty_columns = std::move(empty_columns);
-
     for (const auto & part : parts)
         new_data_part->minmax_idx.merge(part->minmax_idx);
 
@@ -858,6 +855,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         to.writeSuffixAndFinalizePart(new_data_part);
     else
         to.writeSuffixAndFinalizePart(new_data_part, &all_columns, &checksums_gathered_columns);
+
+    LOG_DEBUG(log, "min_ttl: " << new_data_part->min_ttl);
 
     return new_data_part;
 }
@@ -905,6 +904,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         data, future_part.name, future_part.part_info);
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
+    new_data_part->min_ttl = source_part->min_ttl;
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
@@ -1037,11 +1037,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
 MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMergeAlgorithm(
     const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
-    const NamesAndTypesList & gathering_columns, bool deduplicate) const
+    const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const
 {
     if (deduplicate)
         return MergeAlgorithm::Horizontal;
     if (data.settings.enable_vertical_merge_algorithm == 0)
+        return MergeAlgorithm::Horizontal;
+    if (need_remove_expired_values)
         return MergeAlgorithm::Horizontal;
 
     bool is_supported_storage =
@@ -1113,46 +1115,6 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
     return new_data_part;
 }
-
-void MergeTreeDataMergerMutator::removeValuesWithExpiredTTL(
-    MergeTreeData::MutableDataPartPtr & new_data_part,
-    Block & block, NameSet & empty_columns)
-{
-    time_t current_time = time(nullptr);
-    for (const auto & [name, ttl_expr] : data.ttl_expressions_by_column)
-    {
-        const String & ttl_result_column_name = data.ttl_result_columns_by_name[name];
-
-        if (!block.has(ttl_result_column_name))
-            ttl_expr->execute(block);
-
-        auto & column_with_type = block.getByName(name);
-        const IColumn * values_column = column_with_type.column.get();
-        MutableColumnPtr result_column = values_column->cloneEmpty();
-        result_column->reserve(block.rows());
-
-        const auto & ttl_result_column = block.getByName(ttl_result_column_name);
-
-        const ColumnUInt32::Container & ttl_vec =
-            (typeid_cast<const ColumnUInt32 *>(ttl_result_column.column.get()))->getData();
-
-        for (size_t i = 0; i < block.rows(); ++i)
-        {
-            if (ttl_vec[i] <= current_time)
-                result_column->insertDefault();
-            else
-            {
-                if (!new_data_part->min_ttl || ttl_vec[i] < new_data_part->min_ttl)
-                    new_data_part->min_ttl = ttl_vec[i];
-
-                empty_columns.erase(name);
-                result_column->insertFrom(*values_column, i);
-            }
-        }
-        column_with_type.column = std::move(result_column);
-    }
-}
-
 
 size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
 {

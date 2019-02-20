@@ -95,6 +95,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
+    const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
@@ -106,6 +107,7 @@ MergeTreeData::MergeTreeData(
     settings(settings_),
     partition_by_ast(partition_by_ast_),
     sample_by_ast(sample_by_ast_),
+    ttl_table_ast(ttl_table_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     full_path(full_path_),
@@ -157,17 +159,7 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    for (const auto & [name, ast] : getColumns().ttl_expressions)
-    {
-        ASTPtr ttl_ast = ast;
-        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
-        auto expr = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
-
-        String result_column = extractTTLResultColumn(expr);
-
-        ttl_result_columns_by_name.emplace(name, result_column);
-        ttl_expressions_by_column.emplace(name, std::move(expr));
-    }
+    initTTLExpressions();
 
     auto path_exists = Poco::File(full_path).exists();
     /// Creating directories, if not exist.
@@ -447,6 +439,87 @@ void MergeTreeData::initPartitionKey()
             }
         }
     }
+}
+
+namespace
+{
+
+void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name)
+{
+    for (const auto & action : ttl_expression->getActions())
+    {
+        if (action.type == ExpressionAction::APPLY_FUNCTION)
+        {
+            IFunctionBase & func = *action.function_base;
+            if (!func.isDeterministic())
+                throw Exception("TTL expression cannot contain non-deterministic functions, "
+                    "but contains function " + func.getName(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
+    bool has_date_column = false;
+    for (const auto & elem : ttl_expression->getRequiredColumnsWithTypes())
+    {
+        if (typeid_cast<const DataTypeDateTime *>(elem.type.get()) || typeid_cast<const DataTypeDate *>(elem.type.get()))
+        {
+            has_date_column = true;
+            break;
+        }
+    }
+
+    if (!has_date_column)
+        throw Exception("TTL expression should use at least one Date or DateTime column", ErrorCodes::BAD_TTL_EXPRESSION);
+
+    const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
+
+    if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
+        && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
+    {
+        throw Exception("TTL expression result column should have DateTime or Date type, but has "
+            + result_column.type->getName(), ErrorCodes::BAD_TTL_EXPRESSION);
+    }
+}
+
+}
+
+
+void MergeTreeData::initTTLExpressions()
+{
+    auto create_ttl_entry = [this](ASTPtr ttl_ast) -> TTLEntry
+    {
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
+        auto expr = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
+
+        String result_column = ttl_ast->getColumnName();
+        checkTTLExpression(expr, result_column);
+
+        return {expr, result_column};
+    };
+
+    const auto & ttl_asts = getColumns().ttl_asts;
+    if (!ttl_asts.empty())
+    {
+        NameSet columns_ttl_forbidden;
+
+        if (partition_key_expr)
+            for (const auto & col : partition_key_expr->getRequiredColumns())
+                columns_ttl_forbidden.insert(col);
+
+        if (sorting_key_expr)
+            for (const auto & col : sorting_key_expr->getRequiredColumns())
+                columns_ttl_forbidden.insert(col);
+
+        for (const auto & [name, ast] : ttl_asts)
+        {
+            if (columns_ttl_forbidden.count(name))
+                throw Exception("Trying to set ttl for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
+            else
+                ttl_entries_by_name.emplace(name, create_ttl_entry(ast));
+        }
+    }
+
+    if (ttl_table_ast)
+        ttl_table_entry = create_ttl_entry(ttl_table_ast);
 }
 
 
@@ -1373,17 +1446,17 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
 {
-    if (!data_part->empty_columns.empty())
-    {
-        NamesAndTypesList new_columns;
-        for (const auto & [name, type] : data_part->columns)
-            if (!data_part->empty_columns.count(name))
-                new_columns.emplace_back(name, type);
+    if (data_part->empty_columns.empty())
+        return;
 
-        if (auto transaction = alterDataPart(data_part, new_columns, false))
-            transaction->commit();
-        data_part->empty_columns.clear();
-    }
+    NamesAndTypesList new_columns;
+    for (const auto & [name, type] : data_part->columns)
+        if (!data_part->empty_columns.count(name))
+            new_columns.emplace_back(name, type);
+
+    if (auto transaction = alterDataPart(data_part, new_columns, false))
+        transaction->commit();
+    data_part->empty_columns.clear();
 }
 
 void MergeTreeData::freezeAll(const String & with_name, const Context & context)
@@ -2563,50 +2636,6 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
     }
 
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
-}
-
-String MergeTreeData::extractTTLResultColumn(const ExpressionActionsPtr & ttl_expression)
-{
-    const auto & input_columns_with_types = ttl_expression->getRequiredColumnsWithTypes();
-    bool has_date_column = false;
-    for (const auto & elem : input_columns_with_types)
-    {
-        if (typeid_cast<const DataTypeDateTime *>(elem.type.get())
-            || typeid_cast<const DataTypeDate *>(elem.type.get()))
-        {
-            has_date_column = true;
-            break;
-        }
-    }
-
-    if (!has_date_column)
-        throw Exception("TTL expression should use at least one Date or DateTime column", ErrorCodes::BAD_TTL_EXPRESSION);
-
-    const auto & input_columns = input_columns_with_types.getNames();
-    NameSet input_columns_set = NameSet(input_columns.begin(), input_columns.end());
-    const NamesAndTypesList & output_columns = ttl_expression->getSampleBlock().getNamesAndTypesList();
-
-    NameAndTypePair result_column;
-
-    for (const auto & column : output_columns)
-    {
-        if (!input_columns_set.count(column.name))
-        {
-            if (result_column.name.empty())
-                result_column = column;
-            else
-                throw Exception("TTL expression has more than one result column", ErrorCodes::BAD_TTL_EXPRESSION);
-        }
-    }
-
-    if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
-        && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
-    {
-        throw Exception("TTL expression result column should have DateTime or Date type, but has "
-            + result_column.type->getName(), ErrorCodes::BAD_TTL_EXPRESSION);
-    }
-
-    return result_column.name;
 }
 
 }

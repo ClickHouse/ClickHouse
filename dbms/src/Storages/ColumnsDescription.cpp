@@ -119,8 +119,8 @@ String ColumnsDescription::toString() const
                 writeText(")", buf);
             }
 
-            const auto ttl_it = ttl_expressions.find(column.name);
-            if (ttl_it != ttl_expressions.end())
+            const auto ttl_it = ttl_asts.find(column.name);
+            if (ttl_it != ttl_asts.end())
             {
                 writeText("\tTTL\t", buf);
                 writeText(queryToString(ttl_it->second), buf);

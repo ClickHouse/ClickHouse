@@ -205,6 +205,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
+    const ASTPtr & ttl_table_ast_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
@@ -216,7 +217,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     data(database_name, table_name,
         full_path, columns_,
         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-        sample_by_ast_, merging_params_,
+        sample_by_ast_, ttl_table_ast_, merging_params_,
         settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()), queue(*this),
@@ -1069,13 +1070,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
         data.removeEmptyColumnsFromPart(part);
-
-        if (!part->columns.size())
-        {
-            MergeTreeData::DataPartsVector part_vec = {part};
-            data.removePartsFromWorkingSet(part_vec, true);
-            tryRemovePartsFromZooKeeperWithRetries(part_vec);
-        }
 
         try
         {
