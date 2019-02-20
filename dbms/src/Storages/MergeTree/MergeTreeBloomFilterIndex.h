@@ -78,7 +78,7 @@ private:
         std::unique_ptr<StringBloomFilter> bloom_filter;
     };
 
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, std::unique_ptr<StringBloomFilter> && bf)>;
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)>;
     using RPN = std::vector<RPNElement>;
 
     void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);

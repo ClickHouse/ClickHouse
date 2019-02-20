@@ -12,7 +12,7 @@ constexpr UInt64 LCG_C = 45989;
 constexpr UInt64 LCG_M = 217728;
 
 /// LinearCongruentialGenerator for generating random seeds for hash functions.
-/// It is used there because it is very fast and lightweight.
+/// It is used here because it is very fast and lightweight.
 /// https://en.wikipedia.org/wiki/Linear_congruential_generator
 class LinearCongruentialGenerator
 {
@@ -52,7 +52,7 @@ public:
     const std::vector<UInt8> & getFilter() const { return filter; };
     void setFilter(std::vector<UInt8> && new_filter) { filter = std::move(new_filter); };
 
-    /// For debug. Return filter print.
+    /// For debug.
     UInt64 getFingerPrint() const;
 
     friend bool operator== (const StringBloomFilter & a, const StringBloomFilter & b);
