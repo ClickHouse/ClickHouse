@@ -78,7 +78,7 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr)
 }
 
 
-void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
+void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const ColumnFixedString::Chars & data = typeid_cast<const ColumnFixedString &>(column).getChars();
 
@@ -92,7 +92,7 @@ void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffe
 }
 
 
-void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double /*avg_value_size_hint*/) const
+void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     ColumnFixedString::Chars & data = typeid_cast<ColumnFixedString &>(column).getChars();
 

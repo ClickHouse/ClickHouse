@@ -78,7 +78,7 @@ void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
     set->insertFromBlock(block);
 }
 
-void MergeTreeSetIndexGranule::update(const Block & new_block, size_t * pos, UInt64 limit)
+void MergeTreeSetIndexGranule::update(const Block & new_block, size_t * pos, size_t limit)
 {
     if (*pos >= new_block.rows())
         throw Exception(
