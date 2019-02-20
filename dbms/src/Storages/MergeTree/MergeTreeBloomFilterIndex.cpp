@@ -89,25 +89,33 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
 {
         {
                 "notEquals",
-                [] (RPNElement & out, std::unique_ptr<StringBloomFilter> && bf)
+                [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
                 {
                     out.function = RPNElement::FUNCTION_NOT_EQUALS;
-                    out.bloom_filter = std::move(bf);
+                    out.bloom_filter = std::make_unique<StringBloomFilter>(
+                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
+
+                    String str = value.get<String>();
+                    stringToBloomFilter(str.c_str(), str.size(), idx.tokenExtractorFunc, *out.bloom_filter);
                     return true;
                 }
         },
         {
                 "equals",
-                [] (RPNElement & out, std::unique_ptr<StringBloomFilter> && bf)
+                [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
                 {
                     out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::move(bf);
+                    out.bloom_filter = std::make_unique<StringBloomFilter>(
+                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
+
+                    String str = value.get<String>();
+                    stringToBloomFilter(str.c_str(), str.size(), idx.tokenExtractorFunc, *out.bloom_filter);
                     return true;
                 }
         },
         /*{
                 "like",
-                [] (RPNElement & out, std::unique_ptr<StringBloomFilter> && bf)
+                [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
                 {
                     out.function = RPNElement::FUNCTION_LIKE;
                     out.bloom_filter = std::move(bf);
@@ -116,7 +124,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
         },
         {
                 "notLike",
-                [] (RPNElement & out, std::unique_ptr<StringBloomFilter> && bf)
+                [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
                 {
                     out.function = RPNElement::FUNCTION_NOT_LIKE;
                     out.bloom_filter = std::move(bf);
@@ -176,10 +184,10 @@ bool BloomFilterCondition::alwaysUnknownOrTrue() const
             rpn_stack.push_back(true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
-                 || element.function == RPNElement::FUNCTION_NOT_EQUALS
-                 || element.function == RPNElement::FUNCTION_LIKE
-                 || element.function == RPNElement::FUNCTION_NOT_LIKE
-                 || element.function == RPNElement::ALWAYS_FALSE)
+             || element.function == RPNElement::FUNCTION_NOT_EQUALS
+             || element.function == RPNElement::FUNCTION_LIKE
+             || element.function == RPNElement::FUNCTION_NOT_LIKE
+             || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
         }
@@ -342,23 +350,18 @@ bool BloomFilterCondition::atomFromAST(
         if (const_type->getTypeId() != TypeIndex::String && const_type->getTypeId() != TypeIndex::FixedString)
             return false;
 
-        if (key_arg_pos == 1 && func->name != "equals") {
+        if (key_arg_pos == 1 && (func->name != "equals" || func->name != "notEquals"))
             return false;
-        } else {
+        else
             key_arg_pos = 0;
-        }
 
         const auto atom_it = atom_map.find(func->name);
         if (atom_it == std::end(atom_map))
             return false;
 
         out.key_column = key_column_num;
-        auto bf = std::make_unique<StringBloomFilter>(index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
-        String str = const_value.get<String>();
-        if (!str.empty())
-            stringToBloomFilter(str.c_str(), str.size(), index.tokenExtractorFunc, *bf);
 
-        return atom_it->second(out, std::move(bf));
+        return atom_it->second(out, const_value, index);
     }
     else if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
     {
