@@ -54,12 +54,10 @@ ANALYZE SELECT * FROM (SELECT * FROM test.test) WHERE id = 1;
 SELECT * FROM (SELECT * FROM test.test) WHERE id = 1;
 
 -- Optimize predicate expression with asterisk and nested subquery
--- FIXME: should be pushed down to the innermost subquery
 ANALYZE SELECT * FROM (SELECT * FROM (SELECT * FROM test.test)) WHERE id = 1;
 SELECT * FROM (SELECT * FROM (SELECT * FROM test.test)) WHERE id = 1;
 
 -- Optimize predicate expression with qualified asterisk
--- FIXME: should be pushed down to the innermost subquery
 ANALYZE SELECT * FROM (SELECT b.* FROM (SELECT * FROM test.test) AS b) WHERE id = 1;
 SELECT * FROM (SELECT b.* FROM (SELECT * FROM test.test) AS b) WHERE id = 1;
 
@@ -68,7 +66,6 @@ ANALYZE SELECT * FROM (SELECT date, id, name, value FROM test.test) WHERE id = 1
 SELECT * FROM (SELECT date, id, name, value FROM test.test) WHERE id = 1;
 
 -- Optimize predicate expression without asterisk and contains nested subquery
--- FIXME: should be pushed down to the innermost subquery
 ANALYZE SELECT * FROM (SELECT date, id, name, value FROM (SELECT date, id, name, value FROM test.test)) WHERE id = 1;
 SELECT * FROM (SELECT date, id, name, value FROM (SELECT date, id, name, value FROM test.test)) WHERE id = 1;
 
@@ -77,7 +74,6 @@ ANALYZE SELECT * FROM (SELECT * FROM test.test) AS b WHERE b.id = 1;
 SELECT * FROM (SELECT * FROM test.test) AS b WHERE b.id = 1;
 
 -- Optimize predicate expression with qualified and nested subquery
--- FIXME: should be pushed down to the innermost subquery
 ANALYZE SELECT * FROM (SELECT * FROM (SELECT * FROM test.test) AS a) AS b WHERE b.id = 1;
 SELECT * FROM (SELECT * FROM (SELECT * FROM test.test) AS a) AS b WHERE b.id = 1;
 
