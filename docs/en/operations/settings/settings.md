@@ -85,9 +85,9 @@ If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception
 
 For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
 
-## join_default_strictness
+## join_default_strictness {#settings-join_default_strictness}
 
-Sets default strictness for [JOIN clauses](../../query_language/select.md).
+Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
 **Possible values**
 
@@ -96,6 +96,18 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md).
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 **Default value**: `ALL`
+
+
+## join_use_nulls {#settings-join_use_nulls}
+
+Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables the empty cells may appear. ClickHouse fills them differently based on setting.
+
+**Possible values**
+
+- 0 — The empty cells are filled with the default value of the corresponding field type.
+- 1 — `JOIN` behaves like in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+
+**Default value**: 0.
 
 
 ## max_block_size
@@ -387,12 +399,6 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 ## format_csv_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
-
-## join_use_nulls
-
-Affects the behavior of [JOIN](../../query_language/select.md).
-
-With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
 ## insert_quorum {#settings-insert_quorum}
 
