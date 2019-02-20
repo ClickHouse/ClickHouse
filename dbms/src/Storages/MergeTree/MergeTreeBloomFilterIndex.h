@@ -45,7 +45,6 @@ public:
     bool alwaysUnknownOrTrue() const override;
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
-
 private:
     /// Uses RPN like KeyCondition
     struct RPNElement

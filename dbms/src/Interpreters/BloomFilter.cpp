@@ -61,4 +61,9 @@ void StringBloomFilter::merge(const StringBloomFilter & bf)
         filter[i] |= bf.filter[i];
 }
 
+UInt64 StringBloomFilter::getFingerPrint() const
+{
+    return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(filter.data()), size);
+}
+
 }
