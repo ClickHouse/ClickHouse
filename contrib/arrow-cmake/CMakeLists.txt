@@ -203,6 +203,7 @@ target_include_directories(${PARQUET_LIBRARY} PRIVATE ${Boost_INCLUDE_DIRS})
 
 if(SANITIZE STREQUAL "undefined")
     target_compile_options(${PARQUET_LIBRARY} PRIVATE -fno-sanitize=undefined)
+    target_compile_options(${ARROW_LIBRARY} PRIVATE -fno-sanitize=undefined)
 endif()
 
 # === tools
