@@ -201,6 +201,9 @@ include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmak
 target_link_libraries(${PARQUET_LIBRARY} PRIVATE ${ARROW_LIBRARY} ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})
 target_include_directories(${PARQUET_LIBRARY} PRIVATE ${Boost_INCLUDE_DIRS})
 
+if(SANITIZE STREQUAL "undefined")
+    target_compile_options(${PARQUET_LIBRARY} PRIVATE -fno-sanitize=undefined)
+endif()
 
 # === tools
 
