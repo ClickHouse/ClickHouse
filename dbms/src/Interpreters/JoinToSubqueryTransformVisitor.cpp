@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_AST;
     extern const int AMBIGUOUS_COLUMN_NAME;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -29,27 +30,78 @@ namespace
 /// Find columns with aliases to push them into rewritten subselects.
 /// Normalize table aliases: table_name.column_name -> table_alias.column_name
 /// Make aliases maps (alias -> column_name, column_name -> alias)
-struct ColumnAliasesVisitorData
+struct ColumnAliasesMatcher
 {
-    using TypeToVisit = ASTIdentifier;
+    struct Data
+    {
+        const std::vector<DatabaseAndTableWithAlias> tables;
+        AsteriskSemantic::RevertedAliases rev_aliases;
+        std::unordered_map<String, String> aliases;
+        std::vector<ASTIdentifier *> compound_identifiers;
 
-    const std::vector<DatabaseAndTableWithAlias> tables;
-    AsteriskSemantic::RevertedAliases rev_aliases;
-    std::unordered_map<String, String> aliases;
-    std::vector<ASTIdentifier *> compound_identifiers;
+        Data(std::vector<DatabaseAndTableWithAlias> && tables_)
+            : tables(tables_)
+        {}
 
-    ColumnAliasesVisitorData(std::vector<DatabaseAndTableWithAlias> && tables_)
-        : tables(tables_)
-    {}
+        void replaceIdentifiersWithAliases()
+        {
+            String hide_prefix = "--"; /// @note restriction: user should not use alises like `--table.column`
 
-    void visit(ASTIdentifier & node, ASTPtr &)
+            for (auto * identifier : compound_identifiers)
+            {
+                auto it = rev_aliases.find(identifier->name);
+                if (it == rev_aliases.end())
+                {
+                    bool last_table = IdentifierSemantic::canReferColumnToTable(*identifier, tables.back());
+                    if (!last_table)
+                    {
+                        String long_name = identifier->name;
+                        String alias = hide_prefix + long_name;
+                        aliases[alias] = long_name;
+                        rev_aliases[long_name].push_back(alias);
+
+                        identifier->setShortName(alias);
+                        //identifier->setAlias(long_name);
+                    }
+                }
+                else
+                {
+                    if (it->second.empty())
+                        throw Exception("No alias for '" + identifier->name + "'", ErrorCodes::LOGICAL_ERROR);
+                    identifier->setShortName(it->second[0]);
+                }
+            }
+        }
+    };
+
+    static constexpr const char * label = "ColumnAliases";
+
+    static bool needChildVisit(ASTPtr & node, const ASTPtr &)
+    {
+        if (typeid_cast<const ASTQualifiedAsterisk *>(node.get()))
+            return false;
+        return true;
+    }
+
+    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+            visit(*t, ast, data);
+
+        if (typeid_cast<ASTAsterisk *>(ast.get()) ||
+            typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
+            throw Exception("Multiple JOIN do not support asterisks yet", ErrorCodes::NOT_IMPLEMENTED);
+        return {};
+    }
+
+    static void visit(ASTIdentifier & node, ASTPtr &, Data & data)
     {
         if (node.isShort())
             return;
 
         bool last_table = false;
         String long_name;
-        for (auto & table : tables)
+        for (auto & table : data.tables)
         {
             if (IdentifierSemantic::canReferColumnToTable(node, table))
             {
@@ -57,7 +109,7 @@ struct ColumnAliasesVisitorData
                     throw Exception("Cannot refer column '" + node.name + "' to one table", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
                 IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
                 long_name = node.name;
-                if (&table == &tables.back())
+                if (&table == &data.tables.back())
                     last_table = true;
             }
         }
@@ -68,8 +120,8 @@ struct ColumnAliasesVisitorData
         String alias = node.tryGetAlias();
         if (!alias.empty())
         {
-            aliases[alias] = long_name;
-            rev_aliases[long_name].push_back(alias);
+            data.aliases[alias] = long_name;
+            data.rev_aliases[long_name].push_back(alias);
 
             if (!last_table)
             {
@@ -78,37 +130,7 @@ struct ColumnAliasesVisitorData
             }
         }
         else
-            compound_identifiers.push_back(&node);
-    }
-
-    void replaceIdentifiersWithAliases()
-    {
-        String hide_prefix = "--"; /// @note restriction: user should not use alises like `--table.column`
-
-        for (auto * identifier : compound_identifiers)
-        {
-            auto it = rev_aliases.find(identifier->name);
-            if (it == rev_aliases.end())
-            {
-                bool last_table = IdentifierSemantic::canReferColumnToTable(*identifier, tables.back());
-                if (!last_table)
-                {
-                    String long_name = identifier->name;
-                    String alias = hide_prefix + long_name;
-                    aliases[alias] = long_name;
-                    rev_aliases[long_name].push_back(alias);
-
-                    identifier->setShortName(alias);
-                    identifier->setAlias(long_name);
-                }
-            }
-            else
-            {
-                if (it->second.empty())
-                    throw Exception("No alias for '" + identifier->name + "'", ErrorCodes::LOGICAL_ERROR);
-                identifier->setShortName(it->second[0]);
-            }
-        }
+            data.compound_identifiers.push_back(&node);
     }
 };
 
@@ -179,11 +201,11 @@ bool needRewrite(ASTSelectQuery & select)
 
         auto join = typeid_cast<const ASTTableJoin *>(table->table_join.get());
         if (join->kind == ASTTableJoin::Kind::Comma)
-            throw Exception("Multiple COMMA JOIN is not supported", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Multiple COMMA JOIN is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
         /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
         if (!join || !join->on_expression)
-            throw Exception("Multiple JOIN expects JOIN with ON section", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Multiple JOIN expects JOIN with ON section", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     return true;
@@ -191,7 +213,6 @@ bool needRewrite(ASTSelectQuery & select)
 
 using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
 using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
-using ColumnAliasesMatcher = OneTypeMatcher<ColumnAliasesVisitorData>;
 using ColumnAliasesVisitor = InDepthNodeVisitor<ColumnAliasesMatcher, true>;
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
 using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
