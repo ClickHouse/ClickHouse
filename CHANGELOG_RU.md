@@ -99,7 +99,7 @@
 ### Обратно несовместимые изменения:
 
 * Удалена настройка `allow_experimental_low_cardinality_type`. Семейство типов данных `LowCardinality` готово для использования в production. [#4323](https://github.com/yandex/ClickHouse/pull/4323) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Размер кэша засечек и кэша разжатых блоков теперь уменьшается в зависимости от доступного объёма памяти. [#4240](https://github.com/yandex/ClickHouse/pull/4240) ([Lopatin Konstantin](https://github.com/k-lopatin)
+* Размер кэша засечек и кэша разжатых блоков теперь уменьшается в зависимости от доступного объёма памяти. [#4240](https://github.com/yandex/ClickHouse/pull/4240) ([Lopatin Konstantin](https://github.com/k-lopatin))
 * Для запроса `CREATE TABLE` добавлено ключевое слово `INDEX`. Имя столбца `index` теперь надо оборачивать в двойные или обратные кавычки: `` `index` ``.  [#4143](https://github.com/yandex/ClickHouse/pull/4143) ([Nikita Vasilev](https://github.com/nikvas0))
 * Функция `sumMap` теперь возвращает тип с большей областью значений вместо переполнения. Если необходимо старое поведение, следует использовать добавленную функцию `sumMapWithOverflow`. [#4151](https://github.com/yandex/ClickHouse/pull/4151) ([Léo Ercolanelli](https://github.com/ercolanelli-leo))
 
