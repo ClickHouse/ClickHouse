@@ -47,6 +47,8 @@ public:
     /// Bloom filters must have equal size and seed.
     bool contains(const StringBloomFilter & bf);
 
+    void merge(const StringBloomFilter & bf);
+
     const std::vector<UInt8> & getFilter() const { return filter; };
     void setFilter(std::vector<UInt8> && new_filter) { filter = std::move(new_filter); };
 

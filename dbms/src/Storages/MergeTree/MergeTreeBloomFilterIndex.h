@@ -2,6 +2,7 @@
 
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 #include <memory>
 
@@ -35,17 +36,62 @@ class BloomFilterCondition : public IIndexCondition
 {
 public:
     BloomFilterCondition(
-            const SelectQueryInfo &,
-            const Context &,
-            const MergeTreeBloomFilterIndex &) {};
+            const SelectQueryInfo & query_info,
+            const Context & context,
+            const MergeTreeBloomFilterIndex & index_);
 
     ~BloomFilterCondition() override = default;
 
-    bool alwaysUnknownOrTrue() const override { return true; };
+    bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const override { return true; };
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+
 private:
-    // const MergeTreeBloomFilterIndex & index;
+    /// Uses RPN like KeyCondition
+    struct RPNElement
+    {
+        enum Function
+        {
+            /// Atoms of a Boolean expression.
+            FUNCTION_EQUALS,
+            FUNCTION_NOT_EQUALS,
+            FUNCTION_LIKE,
+            FUNCTION_NOT_LIKE,
+            FUNCTION_IN,
+            FUNCTION_NOT_IN,
+            FUNCTION_UNKNOWN, /// Can take any value.
+            /// Operators of the logical expression.
+            FUNCTION_NOT,
+            FUNCTION_AND,
+            FUNCTION_OR,
+            /// Constants
+            ALWAYS_FALSE,
+            ALWAYS_TRUE,
+        };
+
+        RPNElement(
+            Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<StringBloomFilter> && const_bloom_filter_ = nullptr)
+            : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
+
+        Function function = FUNCTION_UNKNOWN;
+        /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS, FUNCTION_LIKE, FUNCTION_NOT_LIKE.
+        size_t key_column;
+        std::unique_ptr<StringBloomFilter> bloom_filter;
+    };
+
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, std::unique_ptr<StringBloomFilter> && bf)>;
+    using RPN = std::vector<RPNElement>;
+
+    void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
+    bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
+    bool operatorFromAST(const ASTFunction * func, RPNElement & out);
+
+    bool getKey(const ASTPtr & node, size_t & key_column_num);
+
+    static const AtomMap atom_map;
+
+    const MergeTreeBloomFilterIndex & index;
+    RPN rpn;
 };
 
 using TokenExtractor = std::function<
