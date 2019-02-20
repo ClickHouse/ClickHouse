@@ -106,18 +106,21 @@ Here, the sample of 10% is taken from the second half of data.
 
 ### ARRAY JOIN Clause {#select-array-join-clause}
 
-Allows executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](functions/array_functions.md#array_functions-join) function, but its functionality is broader.
+Allows executing `JOIN` with an array or nested data structure. Allows you to perform `JOIN` both with the external array and with the inner array in the table. The intent is similar to the [arrayJoin](functions/array_functions.md#array_functions-join) function, but its functionality is broader.
 
 ``` sql
 SELECT <expr_list>
-FROM <table_name>
-[LEFT] ARRAY JOIN <expr>
+FROM <left_subquery>
+[LEFT] ARRAY JOIN <right_subquery>
+[WHERE|PREWHERE <expr>]
 ...
 ```
 
 You can specify only a single `ARRAY JOIN` clause in a query.
 
-Examples below demonstrate the usage of the `ARRAY JOIN` clause. Create a table with an [Array](../data_types/array.md) type column and insert values:
+Unlike [JOIN](#select-join), when running the `ARRAY JOIN` there is an optimization of the query execution order. Although the `ARRAY JOIN` must be always specified before the `WHERE/PREWHERE` clause, it can be performed as before the `WHERE/PREWHERE` (if its result is needed in this clause), as after completing it (to reduce the volume of calculations). The processing order is controlled by the query optimizer. 
+
+Examples below demonstrate the usage of the `ARRAY JOIN` clause. Create a table with an [Array](../data_types/array.md) type column and insert values into it:
 
 ``` sql
 CREATE TABLE arrays_test
@@ -130,21 +133,24 @@ INSERT INTO arrays_test
 VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
 
 SELECT * FROM arrays_test;
-
-┌─s───────┬─arr─────┐
-│ Hello   │ [1,2]   │
-│ World   │ [3,4,5] │
-│ Goodbye │ []      │
-└─────────┴─────────┘
+```
+```
+┌─s───────────┬─arr─────┐
+│ Hello       │ [1,2]   │
+│ World       │ [3,4,5] │
+│ Goodbye     │ []      │
+│ Hello again │ [3,2]   │
+└─────────────┴─────────┘
 ```
 
-The `ARRAY JOIN` clause is essentially `INNER JOIN` with an array. Example:
+The first example shows using the `ARRAY JOIN` with the inner array:
 
 ``` sql
 SELECT s, arr
 FROM arrays_test
 ARRAY JOIN arr;
-
+```
+```
 ┌─s─────┬─arr─┐
 │ Hello │   1 │
 │ Hello │   2 │
@@ -154,9 +160,37 @@ ARRAY JOIN arr;
 └───────┴─────┘
 ```
 
-#### LEFT ARRAY JOIN
+!!! info
+    If you need the result of the `ARRAY JOIN` to contain the rows with empty arrays, use the [LEFT ARRAY JOIN](#select-left-array-join-clause) clause.
 
-If you need the result of the `ARRAY JOIN` to contain the rows with empty arrays, use `LEFT ARRAY JOIN` clause. Empty arrays are set to 0.
+The second example demonstrates using the `ARRAY JOIN` with the external array:
+
+``` sql
+SELECT s, arr_external
+FROM arrays_test 
+ARRAY JOIN [1, 2, 3] AS arr_external;
+```
+
+```
+┌─s───────────┬─arr_external─┐
+│ Hello       │            1 │
+│ Hello       │            2 │
+│ Hello       │            3 │
+│ World       │            1 │
+│ World       │            2 │
+│ World       │            3 │
+│ Goodbye     │            1 │
+│ Goodbye     │            2 │
+│ Goodbye     │            3 │
+│ Hello again │            1 │
+│ Hello again │            2 │
+│ Hello again │            3 │
+└─────────────┴──────────────┘
+```
+
+#### LEFT ARRAY JOIN {#select-left-array-join-clause}
+
+When using the `LEFT ARRAY JOIN` clause, the result contains the rows with empty arrays. The value for an empty array is set to 0.
 
 ``` sql
 SELECT s, arr
@@ -309,7 +343,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate) function:
+The example of using the [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -324,8 +358,6 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 │ World │   5 │  50 │ [3,4,5] │ [30,40,50] │   3 │
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
-
-The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
 ### JOIN Clause {#select-join}
 
