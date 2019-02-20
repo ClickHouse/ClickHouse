@@ -62,11 +62,13 @@ public:
             size_t granularity_,
             size_t bloom_filter_size_,
             size_t bloom_filter_hashes_,
-            size_t seed_)
+            size_t seed_,
+            TokenExtractor tokenExtractorFunc_)
             : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_)
             , bloom_filter_size(bloom_filter_size_)
             , bloom_filter_hashes(bloom_filter_hashes_)
-            , seed(seed_) {}
+            , seed(seed_)
+            , tokenExtractorFunc(tokenExtractorFunc_) {}
 
     ~MergeTreeBloomFilterIndex() override = default;
 

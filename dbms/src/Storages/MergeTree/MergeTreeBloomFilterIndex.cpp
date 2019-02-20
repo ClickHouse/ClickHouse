@@ -3,6 +3,13 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/SyntaxAnalyzer.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Parsers/ASTLiteral.h>
+
+#include <Poco/Logger.h>
 
 
 namespace DB
@@ -59,6 +66,102 @@ void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos,
     }
 
     *pos += rows_read;
+}
+
+
+MergeTreeIndexGranulePtr MergeTreeBloomFilterIndex::createIndexGranule() const
+{
+    return std::make_shared<MergeTreeBloomFilterIndexGranule>(*this);
+}
+
+IndexConditionPtr MergeTreeBloomFilterIndex::createIndexCondition(
+        const SelectQueryInfo & query, const Context & context) const
+{
+    return std::make_shared<BloomFilterCondition>(query, context, *this);
+};
+
+
+struct NgramTokenExtractor
+{
+    NgramTokenExtractor(size_t n) : n(n) {}
+
+    static String getName() {
+        static String name = "ngram";
+        return name;
+    }
+
+    bool operator() (const char *, size_t len, size_t * pos, size_t * token_start, size_t * token_len)
+    {
+        if (*pos + n > len) {
+            return false;
+        }
+        *token_start = *pos;
+        *token_len = n;
+        ++*pos;
+        return true;
+    }
+
+    size_t n;
+};
+
+
+std::unique_ptr<IMergeTreeIndex> BloomFilterIndexCreator(
+        const NamesAndTypesList & new_columns,
+        std::shared_ptr<ASTIndexDeclaration> node,
+        const MergeTreeData & data,
+        const Context & context)
+{
+    if (node->name.empty())
+        throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
+
+    ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
+
+    /// TODO: support a number of columns.
+    if (expr_list->children.size() > 1)
+        throw Exception(node->name + " index can be used only with one column.", ErrorCodes::INCORRECT_QUERY);
+
+    auto syntax = SyntaxAnalyzer(context, {}).analyze(
+            expr_list, new_columns);
+    auto index_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
+
+    auto sample = ExpressionAnalyzer(expr_list, syntax, context)
+            .getActions(true)->getSampleBlock();
+
+    Names columns;
+    DataTypes data_types;
+
+    for (size_t i = 0; i < expr_list->children.size(); ++i)
+    {
+        const auto & column = sample.getByPosition(i);
+
+        columns.emplace_back(column.name);
+        data_types.emplace_back(column.type);
+
+        if (data_types.back()->getTypeId() != TypeIndex::String
+            && data_types.back()->getTypeId() != TypeIndex::FixedString)
+            throw Exception(node->name + " index can be used only with `String` and `FixedString` column.", ErrorCodes::INCORRECT_QUERY);
+    }
+
+    if (node->name == NgramTokenExtractor::getName()) {
+        if (!node->type->arguments || node->type->arguments->children.size() != 3)
+            throw Exception(node->name + " index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
+
+        size_t n = typeid_cast<const ASTLiteral &>(
+                *node->type->arguments->children[0]).value.get<size_t>();
+        size_t bloom_filter_size = typeid_cast<const ASTLiteral &>(
+                *node->type->arguments->children[1]).value.get<size_t>();
+        size_t seed = typeid_cast<const ASTLiteral &>(
+                *node->type->arguments->children[2]).value.get<size_t>();\
+
+        size_t bloom_filter_hashes = static_cast<size_t>(
+                n / (node->granularity * data.index_granularity) * log(2.));
+
+        return std::make_unique<MergeTreeBloomFilterIndex>(
+                node->name, std::move(index_expr), columns, data_types, sample, node->granularity,
+                bloom_filter_size, bloom_filter_hashes, seed, NgramTokenExtractor(n));
+    } else {
+        throw Exception("Unknown index type: `" + node->name + "`.", ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 }
