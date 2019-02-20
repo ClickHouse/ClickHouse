@@ -36,7 +36,6 @@ struct ColumnAliasesVisitorData
     const std::vector<DatabaseAndTableWithAlias> tables;
     AsteriskSemantic::RevertedAliases rev_aliases;
     std::unordered_map<String, String> aliases;
-    std::vector<ASTIdentifier *> short_identifiers;
     std::vector<ASTIdentifier *> compound_identifiers;
 
     ColumnAliasesVisitorData(std::vector<DatabaseAndTableWithAlias> && tables_)
@@ -46,10 +45,7 @@ struct ColumnAliasesVisitorData
     void visit(ASTIdentifier & node, ASTPtr &)
     {
         if (node.isShort())
-        {
-            short_identifiers.push_back(&node);
             return;
-        }
 
         bool last_table = false;
         String long_name;
@@ -87,9 +83,7 @@ struct ColumnAliasesVisitorData
 
     void replaceIdentifiersWithAliases()
     {
-        for (auto * identifier : short_identifiers)
-            if (!aliases.count(identifier->name))
-                throw Exception("Short column name '" + identifier->name + "' is not an alias", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+        String hide_prefix = "--"; /// @note restriction: user should not use alises like `--table.column`
 
         for (auto * identifier : compound_identifiers)
         {
@@ -98,7 +92,15 @@ struct ColumnAliasesVisitorData
             {
                 bool last_table = IdentifierSemantic::canReferColumnToTable(*identifier, tables.back());
                 if (!last_table)
-                    throw Exception("Column name without alias '" + identifier->name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                {
+                    String long_name = identifier->name;
+                    String alias = hide_prefix + long_name;
+                    aliases[alias] = long_name;
+                    rev_aliases[long_name].push_back(alias);
+
+                    identifier->setShortName(alias);
+                    identifier->setAlias(long_name);
+                }
             }
             else
             {
