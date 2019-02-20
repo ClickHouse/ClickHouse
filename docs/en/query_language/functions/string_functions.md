@@ -103,7 +103,7 @@ Returns whether to end with the specified suffix. Returns 1 if the string ends w
 
 ## startsWith(s, prefix)
 
-Returns whether to end with the specified prefix. Returns 1 if the string ends with the specified prefix, otherwise it returns 0.
+Returns whether to start with the specified prefix. Returns 1 if the string starts with the specified prefix, otherwise it returns 0.
 
 ## trimLeft(s)
 
