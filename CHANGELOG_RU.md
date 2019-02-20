@@ -39,7 +39,7 @@
 * Добавлен выходной формат `Protobuf`. [#4005](https://github.com/yandex/ClickHouse/pull/4005) [#4158](https://github.com/yandex/ClickHouse/pull/4158) ([Vitaly Baranov](https://github.com/vitlibar))
 * В HTTP-интерфейсе добавлена поддержка алгоритма сжатия brotli для вставляемых данных. [#4235](https://github.com/yandex/ClickHouse/pull/4235) ([Mikhail](https://github.com/fandyushin))
 * Клиент командной строки теперь подсказывает правильное имя, если пользователь опечатался в названии функции. [#4239](https://github.com/yandex/ClickHouse/pull/4239) ([Danila Kutenin](https://github.com/danlark1))
-* В HTTP-ответ сервера добавлен загловок `Query-Id`. [#4231](https://github.com/yandex/ClickHouse/pull/4231) ([Mikhail ](https://github.com/fandyushin))
+* В HTTP-ответ сервера добавлен загловок `Query-Id`. [#4231](https://github.com/yandex/ClickHouse/pull/4231) ([Mikhail](https://github.com/fandyushin))
 
 ### Экспериментальные возможности:
 
