@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 
 static void stringToBloomFilter(
-    const char *data, size_t size, TokenExtractor tokenExtractor, StringBloomFilter &bloom_filter)
+    const char * data, size_t size, TokenExtractor tokenExtractor, StringBloomFilter & bloom_filter)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -49,6 +49,8 @@ void MergeTreeBloomFilterIndexGranule::serializeBinary(WriteBuffer & ostr) const
                 "Attempt to write empty minmax index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
 
     const auto & filter = bloom_filter.getFilter();
+    auto * log = &Poco::Logger::get("bf");
+    LOG_DEBUG(log, "writing fingerprint:" << bloom_filter.getFingerPrint());
     ostr.write(reinterpret_cast<const char *>(filter.data()), index.bloom_filter_size);
 }
 
@@ -57,6 +59,8 @@ void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
     std::vector<UInt8> filter(index.bloom_filter_size, 0);
     istr.read(reinterpret_cast<char *>(filter.data()), index.bloom_filter_size);
     bloom_filter.setFilter(std::move(filter));
+    auto * log = &Poco::Logger::get("bf");
+    LOG_DEBUG(log, "reading fingerprint:" << bloom_filter.getFingerPrint());
     has_elems = true;
 }
 
@@ -148,6 +152,14 @@ BloomFilterCondition::BloomFilterCondition(
     else
     {
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+    }
+
+    auto * log = &Poco::Logger::get("bf");
+    for (size_t i = 0; i < rpn.size(); ++i) {
+        if (rpn[i].bloom_filter)
+            LOG_DEBUG(log, "kek" << rpn[i].function << " " << rpn[i].key_column << " " << rpn[i].bloom_filter->getFingerPrint());
+        else
+            LOG_DEBUG(log, "kek" << rpn[i].function << " " << rpn[i].key_column << " " << "empty");
     }
 }
 
@@ -345,7 +357,7 @@ bool BloomFilterCondition::atomFromAST(
         auto bf = std::make_unique<StringBloomFilter>(index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
         String str = const_value.get<String>();
         if (!str.empty())
-            stringToBloomFilter(str.c_str(), str.size() - 1, index.tokenExtractorFunc, *bf);
+            stringToBloomFilter(str.c_str(), str.size(), index.tokenExtractorFunc, *bf);
 
         return atom_it->second(out, std::move(bf));
     }

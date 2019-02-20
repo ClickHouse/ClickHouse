@@ -52,6 +52,8 @@ public:
     const std::vector<UInt8> & getFilter() const { return filter; };
     void setFilter(std::vector<UInt8> && new_filter) { filter = std::move(new_filter); };
 
+    /// For debug. Return filter print.
+    UInt64 getFingerPrint() const;
 private:
     size_t size;
     size_t hashes;
