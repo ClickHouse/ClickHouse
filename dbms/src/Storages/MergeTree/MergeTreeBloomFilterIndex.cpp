@@ -157,9 +157,9 @@ BloomFilterCondition::BloomFilterCondition(
     auto * log = &Poco::Logger::get("bf");
     for (size_t i = 0; i < rpn.size(); ++i) {
         if (rpn[i].bloom_filter)
-            LOG_DEBUG(log, "kek" << rpn[i].function << " " << rpn[i].key_column << " " << rpn[i].bloom_filter->getFingerPrint());
+            LOG_DEBUG(log, ": " << rpn[i].function << " " << rpn[i].key_column << " " << rpn[i].bloom_filter->getFingerPrint());
         else
-            LOG_DEBUG(log, "kek" << rpn[i].function << " " << rpn[i].key_column << " " << "empty");
+            LOG_DEBUG(log, ": " << rpn[i].function << " " << rpn[i].key_column << " " << "empty");
     }
 }
 
@@ -228,8 +228,7 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
         else if (element.function == RPNElement::FUNCTION_EQUALS
                  || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
-            if (element.bloom_filter->contains(granule->bloom_filter)
-                && granule->bloom_filter.contains(*element.bloom_filter))
+            if (granule->bloom_filter == *(element.bloom_filter))
                 rpn_stack.emplace_back(true, true);
             else
                 rpn_stack.emplace_back(false, true);
@@ -367,14 +366,14 @@ bool BloomFilterCondition::atomFromAST(
         if (const_value.getType() == Field::Types::UInt64
         || const_value.getType() == Field::Types::Int64
         || const_value.getType() == Field::Types::Float64)
-    {
-        /// Zero in all types is represented in memory the same way as in UInt64.
-        out.function = const_value.get<UInt64>()
-                       ? RPNElement::ALWAYS_TRUE
-                       : RPNElement::ALWAYS_FALSE;
+        {
+            /// Zero in all types is represented in memory the same way as in UInt64.
+            out.function = const_value.get<UInt64>()
+                           ? RPNElement::ALWAYS_TRUE
+                           : RPNElement::ALWAYS_FALSE;
 
-        return true;
-    }
+            return true;
+        }
     }
 
     return false;
