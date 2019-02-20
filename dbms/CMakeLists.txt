@@ -58,10 +58,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
-
-        if (WEVERYTHING)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-        endif ()
     endif ()
 endif ()
 
@@ -296,6 +292,13 @@ endif ()
 
 if (USE_RDKAFKA)
     target_link_libraries (dbms PRIVATE clickhouse_storage_kafka)
+endif ()
+
+if (USE_PARQUET)
+    target_link_libraries(dbms PRIVATE ${PARQUET_LIBRARY})
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
+    endif ()
 endif ()
 
 target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)

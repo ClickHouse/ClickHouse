@@ -46,7 +46,7 @@ struct IDictionaryBase : public IExternalLoadable
 
     virtual bool isInjective(const std::string & attribute_name) const = 0;
 
-    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, UInt64 max_block_size) const = 0;
+    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
 
     bool supportUpdates() const override { return !isCached(); }
 

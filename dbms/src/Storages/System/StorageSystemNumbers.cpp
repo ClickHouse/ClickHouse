@@ -55,14 +55,14 @@ BlockInputStreams StorageSystemNumbers::read(
     const SelectQueryInfo &,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
-    UInt64 max_block_size,
+    size_t max_block_size,
     unsigned num_streams)
 {
     check(column_names);
 
     if (limit && *limit < max_block_size)
     {
-        max_block_size = std::min(max_block_size, *limit);
+        max_block_size = static_cast<size_t>(*limit);
         multithreaded = false;
     }
 

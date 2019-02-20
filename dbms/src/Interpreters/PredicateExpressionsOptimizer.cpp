@@ -119,8 +119,10 @@ bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquer
 
         for (const auto & subquery_function : extract_data.functions)
         {
-            const auto & function = FunctionFactory::instance().get(subquery_function->name, context);
-            if (function->isStateful())
+            const auto & function = FunctionFactory::instance().tryGet(subquery_function->name, context);
+
+            /// Skip lambda、tuple and other special functions
+            if (function && function->isStateful())
                 return false;
         }
 
