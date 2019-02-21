@@ -181,8 +181,12 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             }
         }
 
-        if (col_depth < depths[array_num]) {
-            throw Exception(getName() + ": Passed array number " + std::to_string(array_num) + " depth (" + std::to_string(depths[array_num]) + ") more than actual array depth ("+ std::to_string(col_depth) + ").", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH); //TODO this check!
+        if (col_depth < depths[array_num])
+        {
+            throw Exception(
+                getName() + ": Passed array number " + std::to_string(array_num) + " depth (" + std::to_string(depths[array_num])
+                    + ") more than actual array depth (" + std::to_string(col_depth) + ").",
+                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH); //TODO this check!
         }
 
         /*
