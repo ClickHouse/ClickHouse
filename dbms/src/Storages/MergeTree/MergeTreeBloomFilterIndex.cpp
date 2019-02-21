@@ -27,22 +27,22 @@ namespace ErrorCodes
 
 /// Adds all tokens from string to bloom filter.
 static void stringToBloomFilter(
-    const char * data, size_t size, TokenExtractor token_extractor, StringBloomFilter & bloom_filter)
+    const char * data, size_t size, const std::unique_ptr<TokenExtractor> & token_extractor, StringBloomFilter & bloom_filter)
 {
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
-    while (cur < size && token_extractor.next(data, size, &cur, &token_start, &token_len))
+    while (cur < size && token_extractor->next(data, size, &cur, &token_start, &token_len))
         bloom_filter.add(data + token_start, token_len);
 }
 
 /// Adds all tokens from like pattern string to bloom filter. (Because like pattern can contain `\%` and `\_`.)
 static void likeStringToBloomFilter(
-    const String & data, TokenExtractor token_extractor, StringBloomFilter & bloom_filter)
+    const String & data, const std::unique_ptr<TokenExtractor> & token_extractor, StringBloomFilter & bloom_filter)
 {
     size_t cur = 0;
     String token;
-    while (cur < data.size() && token_extractor.nextLike(data, &cur, token))
+    while (cur < data.size() && token_extractor->nextLike(data, &cur, token))
         bloom_filter.add(token.c_str(), token.size());
 }
 
@@ -265,6 +265,17 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
         }
+        else if (element.function == RPNElement::FUNCTION_LIKE
+                 || element.function == RPNElement::FUNCTION_NOT_LIKE)
+        {
+            if (element.bloom_filter->contains(granule->bloom_filter))
+                rpn_stack.emplace_back(true, true);
+            else
+                rpn_stack.emplace_back(false, true);
+
+            if (element.function == RPNElement::FUNCTION_NOT_LIKE)
+                rpn_stack.back() = !rpn_stack.back();
+        }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
             rpn_stack.back() = !rpn_stack.back();
@@ -441,83 +452,60 @@ IndexConditionPtr MergeTreeBloomFilterIndex::createIndexCondition(
 };
 
 
-bool TokenExtractor::next(const char *, size_t, size_t *, size_t *, size_t *)
+bool NgramTokenExtractor::next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const
 {
-    return false;
+    *token_start = *pos;
+    *token_len = 0;
+    for (size_t i = 0; i < n; ++i)
+    {
+        size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*token_start + *token_len]));
+        if (*token_start + *token_len + sz > len) {
+            return false;
+        }
+        *token_len += sz;
+    }
+    ++*pos;
+    return true;
 }
 
-bool TokenExtractor::nextLike(const String &, size_t *, String &)
+bool NgramTokenExtractor::nextLike(const String & str, size_t * pos, String & token) const
 {
+    token.clear();
+
+    bool escaped = false;
+    for (size_t i = *pos; i < str.size(); ++i)
+    {
+        if (escaped && (str[*pos] == '%' || str[*pos] == '_' || str[*pos] == '\\'))
+        {
+            token += str[*pos];
+            escaped = false;
+        }
+        else if (!escaped && (str[*pos] == '%' || str[*pos] == '_'))
+        {
+            /// This token is too small, go to the next.
+            token.clear();
+            escaped = false;
+            *pos = i;
+        }
+        else if (!escaped && str[*pos] == '\\')
+        {
+            token += str[*pos];
+            escaped = true;
+        }
+        else
+        {
+            token += str[*pos];
+            escaped = false;
+        }
+
+        if (token.size() == n) {
+            ++*pos;
+            return true;
+        }
+    }
+
     return false;
 }
-
-
-struct NgramTokenExtractor : TokenExtractor
-{
-    NgramTokenExtractor(size_t n_) : n(n_) {}
-
-    static String getName() {
-        static String name = "ngrambf";
-        return name;
-    }
-
-    bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) override
-    {
-        *token_start = *pos;
-        *token_len = 0;
-        for (size_t i = 0; i < n; ++i)
-        {
-            size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*token_start + *token_len]));
-            if (*token_start + *token_len + sz > len) {
-                return false;
-            }
-            *token_len += sz;
-        }
-        ++*pos;
-        return true;
-    }
-
-    bool nextLike(const String & str, size_t * pos, String & token) override
-    {
-        token.clear();
-
-        bool escaped = false;
-        for (size_t i = *pos; i < str.size(); ++i)
-        {
-            if (escaped && (str[*pos] == '%' || str[*pos] == '_' || str[*pos] == '\\'))
-            {
-                token += str[*pos];
-                escaped = false;
-            }
-            else if (!escaped && (str[*pos] == '%' || str[*pos] == '_'))
-            {
-                /// This token is too small, go to the next.
-                token.clear();
-                escaped = false;
-                *pos = i;
-            }
-            else if (!escaped && str[*pos] == '\\')
-            {
-                token += str[*pos];
-                escaped = true;
-            }
-            else
-            {
-                token += str[*pos];
-                escaped = false;
-            }
-
-            if (token.size() == n) {
-                ++*pos;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    size_t n;
-};
 
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
@@ -572,9 +560,11 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
         auto bloom_filter_hashes = static_cast<size_t>(
                 n * log(2.) / (node->granularity * data.index_granularity));
 
+        auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
+
         return std::make_unique<MergeTreeBloomFilterIndex>(
                 node->name, std::move(index_expr), columns, data_types, sample, node->granularity,
-                bloom_filter_size, bloom_filter_hashes, seed, NgramTokenExtractor(n));
+                bloom_filter_size, bloom_filter_hashes, seed, std::move(tokenizer));
     } else {
         throw Exception("Unknown index type: `" + node->name + "`.", ErrorCodes::LOGICAL_ERROR);
     }

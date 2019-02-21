@@ -97,10 +97,25 @@ struct TokenExtractor
 {
     virtual ~TokenExtractor() = default;
     /// Fast inplace implementation for regular use.
-    virtual bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len);
+    virtual bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const = 0;
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
-    virtual bool nextLike(const String & str, size_t * pos, String & token);
+    virtual bool nextLike(const String & str, size_t * pos, String & out) const = 0;
+};
+
+struct NgramTokenExtractor : public TokenExtractor
+{
+    NgramTokenExtractor(size_t n_) : n(n_) {}
+
+    static String getName() {
+        static String name = "ngrambf";
+        return name;
+    }
+
+    bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
+    bool nextLike(const String & str, size_t * pos, String & token) const override;
+
+    size_t n;
 };
 
 class MergeTreeBloomFilterIndex : public IMergeTreeIndex
@@ -116,12 +131,12 @@ public:
             size_t bloom_filter_size_,
             size_t bloom_filter_hashes_,
             size_t seed_,
-            TokenExtractor tokenExtractorFunc_)
+            std::unique_ptr<TokenExtractor> && tokenExtractorFunc_)
             : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_)
             , bloom_filter_size(bloom_filter_size_)
             , bloom_filter_hashes(bloom_filter_hashes_)
             , seed(seed_)
-            , tokenExtractorFunc(tokenExtractorFunc_) {}
+            , tokenExtractorFunc(std::move(tokenExtractorFunc_)) {}
 
     ~MergeTreeBloomFilterIndex() override = default;
 
@@ -137,7 +152,7 @@ public:
     /// Bloom filter seed.
     size_t seed;
     /// Fucntion for selecting next token
-    TokenExtractor tokenExtractorFunc;
+    std::unique_ptr<TokenExtractor> tokenExtractorFunc;
 };
 
 }
