@@ -54,11 +54,11 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(/*Block & block,*/ const 
 
         //const auto array = checkAndGetColumnConst<ColumnArray>(array_ptr.get());
         //DUMP(i, arguments[i]);
-if (!arguments[i].column)
-{
-    DUMP("No column at ", i, arguments[i]);
-    continue;
-}
+        if (!arguments[i].column)
+        {
+            DUMP("No column at ", i, arguments[i]);
+            continue;
+        }
         const auto non_const = arguments[i].column->convertToFullColumnIfConst();
         //DUMP(non_const);
         const auto array = typeid_cast<const ColumnArray *>(non_const.get());
@@ -413,11 +413,11 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         DUMP(array);
 
         if (array_num == 0) // TODO check with prev
-{
+        {
             //offsets_by_depth.emplace_back(array->getOffsetsPtr());
             offsets_by_depth.emplace_back(&array->getOffsets());
             offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
-}
+        }
 
         for (DepthType col_depth = 1; col_depth <= depths[array_num]; ++col_depth)
         {
@@ -449,10 +449,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             //offsets_by_depth.emplace_back(array->getOffsetsPtr());
             //DUMP(offsets_by_depth.size(), "<" ,col_depth);
             if (offsets_by_depth.size() <= col_depth)
-{
+            {
                 offsets_by_depth.emplace_back(&array->getOffsets());
                 offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
-}
+            }
 
 
             //array->getOffsets()
@@ -600,7 +600,6 @@ DUMP("ONE DATA");
     }
 
 
-
     DUMP(res_nested);
     DUMP(offsets_column);
     //auto result = ColumnArray::create(std::move(res_nested), offsets_column);
@@ -612,29 +611,29 @@ DUMP("ONE DATA");
     //auto result_nested_array = ColumnArray::create(std::move(res_nested), offsetsptr_by_depth[max_array_depth-1]);
     //ColumnArray::Ptr result_nested_array = res_nested;
     ColumnPtr result_nested_array = std::move(res_nested);
-//DUMP(max_array_depth-1, result_nested_array, offsetsptr_by_depth[max_array_depth-1]);
+    //DUMP(max_array_depth-1, result_nested_array, offsetsptr_by_depth[max_array_depth-1]);
 
     //if (max_array_depth >= 2)
     //for (auto depth = max_array_depth-2; depth>0; --depth) {
-//DUMP(max_array_depth);
-   //if (max_array_depth >= 1)
+    //DUMP(max_array_depth);
+    //if (max_array_depth >= 1)
     //auto depth = max_array_depth-1;
     //do {
     //for (auto depth = max_array_depth-1; depth>=0; --depth) {
-    for (int depth = max_array_depth-1; depth>=0; --depth) {
-//DUMP(depth);
-//DUMP(offsets_by_depth[depth]);
+    for (int depth = max_array_depth - 1; depth >= 0; --depth)
+    {
+        //DUMP(depth);
+        //DUMP(offsets_by_depth[depth]);
         //ColumnArray::create(std::move(result_nested_array), *offsets_by_depth[depth-1]);
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
-//DUMP(depth, result_nested_array, offsetsptr_by_depth[depth]);
+        //DUMP(depth, result_nested_array, offsetsptr_by_depth[depth]);
     }
     //while(--depth>0)
 
-DUMP(result_nested_array);
+    DUMP(result_nested_array);
     block.getByPosition(result).column = result_nested_array;
 
-//DUMP("complete=", block.getByPosition(result).column);
-
+    //DUMP("complete=", block.getByPosition(result).column);
 }
 
 
@@ -848,41 +847,49 @@ DUMP("levelup", col_n, depths[col_n]);
                 //DUMP("i", indexes_by_depth);
             }
 
-           if (current_offset_depth >= 2) {
-            for (int depth = current_offset_depth - 2; depth >= 0; --depth)
-            { // TODO CHECK SIZE
-                ++indexes_by_depth[depth];
-                DUMP("dph", depth, indexes_by_depth[depth],  current_offset_n_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
-                //offsets_by_depth[
+            if (current_offset_depth >= 2)
+            {
+                for (int depth = current_offset_depth - 2; depth >= 0; --depth)
+                { // TODO CHECK SIZE
+                    ++indexes_by_depth[depth];
+                    DUMP(
+                        "dph",
+                        depth,
+                        indexes_by_depth[depth],
+                        current_offset_n_by_depth[depth],
+                        (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
+                    //offsets_by_depth[
 
 
-                //current_offset_n_by_depth[depth];
+                    //current_offset_n_by_depth[depth];
 
-                DUMP("ctest", indexes_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
-                if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
-                {
-                    DUMP("cleartest", clear_depth-1, depth);
-                    if (clear_depth-1 == depth)
-                        want_clear = true;
+                    DUMP("ctest", indexes_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
+                    if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                    {
+                        DUMP("cleartest", clear_depth - 1, depth);
+                        if (clear_depth - 1 == depth)
+                            want_clear = true;
 
-                    ++current_offset_n_by_depth[depth];
-                }
-                else
-                {
-                    DUMP("no levelup", depth);
-                    break;
+                        ++current_offset_n_by_depth[depth];
+                    }
+                    else
+                    {
+                        DUMP("no levelup", depth);
+                        break;
+                    }
                 }
             }
-            } else {
-                DUMP("clearfirst test", current_offset_depth, indexes_by_depth[current_offset_depth-1]);
+            else
+            {
+                DUMP("clearfirst test", current_offset_depth, indexes_by_depth[current_offset_depth - 1]);
             }
             //DUMP("nxt", indexes_by_depth);
             //prev_off_by_depth[current_offset_depth] = off;
-            ++current_offset_n_by_depth[current_offset_depth-1];
+            ++current_offset_n_by_depth[current_offset_depth - 1];
             DUMP(current_offset_depth, current_offset_n_by_depth);
 
             //DUMP(prev_off_by_depth);
-DUMP(want_clear);
+            DUMP(want_clear);
             if (want_clear)
             {
                 DUMP("Clear indx!");
