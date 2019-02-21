@@ -326,8 +326,8 @@ static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, /
 
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
     {
-const auto & field = (*key_columns[j])[indexes[j]];
-       DUMP(j, indexes[j], field);
+        const auto & field = (*key_columns[j])[indexes[j]];
+        DUMP(j, indexes[j], field);
         key_columns[j]->updateHashWithValue(indexes[j], hash);
     }
 
@@ -846,54 +846,54 @@ DUMP("levelup", col_n, depths[col_n]);
                 //++indexes_by_depth[current_offset_depth - 1];
                 //DUMP("++", j, indexes_by_depth[current_offset_depth - 1], current_offset_depth);
                 //DUMP("i", indexes_by_depth);
-            //}
+                //}
 
-            //if (current_offset_depth >= 2)
-//DUMP("inc?", j, off);
-//if (j < off-1)
-            {
-                //for (int depth = current_offset_depth - 2; depth >= 0; --depth)
-                for (int depth = current_offset_depth - 1; depth >= 0; --depth)
-                { // TODO CHECK SIZE
-                    ++indexes_by_depth[depth];
-                    DUMP(
-                        "dph",
-                        depth,
-                        indexes_by_depth[depth],
-                        current_offset_n_by_depth[depth],
-                        (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]],
-                        offsets_by_depth[depth]->size());
-                    //offsets_by_depth[
+                //if (current_offset_depth >= 2)
+                //DUMP("inc?", j, off);
+                //if (j < off-1)
+                {
+                    //for (int depth = current_offset_depth - 2; depth >= 0; --depth)
+                    for (int depth = current_offset_depth - 1; depth >= 0; --depth)
+                    { // TODO CHECK SIZE
+                        ++indexes_by_depth[depth];
+                        DUMP(
+                            "dph",
+                            depth,
+                            indexes_by_depth[depth],
+                            current_offset_n_by_depth[depth],
+                            (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]],
+                            offsets_by_depth[depth]->size());
+                        //offsets_by_depth[
 
 
-                    //current_offset_n_by_depth[depth];
+                        //current_offset_n_by_depth[depth];
 
-                    DUMP("ctest", indexes_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
-                    if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
-                    {
-                        DUMP("cleartest", clear_depth - 1, depth);
-                        if (static_cast<int>(clear_depth - 1) == depth)
-                            want_clear = true;
+                        DUMP("ctest", indexes_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
+                        if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                        {
+                            DUMP("cleartest", clear_depth - 1, depth);
+                            if (static_cast<int>(clear_depth - 1) == depth)
+                                want_clear = true;
 
-/*DUMP("incoff?", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
+                            /*DUMP("incoff?", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
                         if (current_offset_n_by_depth[depth] < offsets_by_depth[depth]->size()-1) {
 */
                             ++current_offset_n_by_depth[depth];
-/*
+                            /*
 DUMP("incn", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
                         } else {
 DUMP("skiplastinc", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
                         }
 */
-                    }
-                    else
-                    {
-                        DUMP("no levelup", depth);
-                        break;
+                        }
+                        else
+                        {
+                            DUMP("no levelup", depth);
+                            break;
+                        }
                     }
                 }
-            }
-/*
+                /*
             else
             {
 DUMP("clearlast");
@@ -901,19 +901,23 @@ DUMP("clearlast");
             }
 */
 
-/*
+                /*
             else
             {
                 DUMP("clearfirst test", current_offset_depth, indexes_by_depth[current_offset_depth - 1]);
             }
 */
-
             }
             //DUMP("nxt", indexes_by_depth);
             //prev_off_by_depth[current_offset_depth] = off;
-DUMP(prev_off, off);
+            DUMP(prev_off, off);
             //!++current_offset_n_by_depth[current_offset_depth - 1];
-            DUMP("incCOD",current_offset_depth, current_offset_n_by_depth, current_offset_n_by_depth[current_offset_depth - 1], offsets_by_depth[current_offset_depth - 1]->size());
+            DUMP(
+                "incCOD",
+                current_offset_depth,
+                current_offset_n_by_depth,
+                current_offset_n_by_depth[current_offset_depth - 1],
+                offsets_by_depth[current_offset_depth - 1]->size());
 
             //DUMP(prev_off_by_depth);
             DUMP(want_clear);
