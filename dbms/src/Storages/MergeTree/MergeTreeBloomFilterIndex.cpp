@@ -12,6 +12,8 @@
 
 #include <Poco/Logger.h>
 
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
@@ -23,14 +25,25 @@ namespace ErrorCodes
 }
 
 
+/// Adds all tokens from string to bloom filter.
 static void stringToBloomFilter(
-    const char * data, size_t size, TokenExtractor tokenExtractor, StringBloomFilter & bloom_filter)
+    const char * data, size_t size, TokenExtractor token_extractor, StringBloomFilter & bloom_filter)
 {
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
-    while (cur < size && tokenExtractor(data, size, &cur, &token_start, &token_len))
+    while (cur < size && token_extractor.next(data, size, &cur, &token_start, &token_len))
         bloom_filter.add(data + token_start, token_len);
+}
+
+/// Adds all tokens from like pattern string to bloom filter. (Because like pattern can contain `\%` and `\_`.)
+static void likeStringToBloomFilter(
+    const String & data, TokenExtractor token_extractor, StringBloomFilter & bloom_filter)
+{
+    size_t cur = 0;
+    String token;
+    while (cur < data.size() && token_extractor.nextLike(data, &cur, token))
+        bloom_filter.add(token.c_str(), token.size());
 }
 
 
@@ -113,12 +126,16 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                     return true;
                 }
         },
-        /*{
+        {
                 "like",
                 [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
                 {
-                    out.function = RPNElement::FUNCTION_LIKE;
-                    out.bloom_filter = std::move(bf);
+                    out.function = RPNElement::FUNCTION_EQUALS;
+                    out.bloom_filter = std::make_unique<StringBloomFilter>(
+                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
+
+                    String str = value.get<String>();
+                    likeStringToBloomFilter(str, idx.tokenExtractorFunc, *out.bloom_filter);
                     return true;
                 }
         },
@@ -126,11 +143,15 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                 "notLike",
                 [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
                 {
-                    out.function = RPNElement::FUNCTION_NOT_LIKE;
-                    out.bloom_filter = std::move(bf);
+                    out.function = RPNElement::FUNCTION_EQUALS;
+                    out.bloom_filter = std::make_unique<StringBloomFilter>(
+                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
+
+                    String str = value.get<String>();
+                    likeStringToBloomFilter(str, idx.tokenExtractorFunc, *out.bloom_filter);
                     return true;
                 }
-        }*/
+        }
 };
 
 BloomFilterCondition::BloomFilterCondition(
@@ -360,7 +381,6 @@ bool BloomFilterCondition::atomFromAST(
             return false;
 
         out.key_column = key_column_num;
-
         return atom_it->second(out, const_value, index);
     }
     else if (KeyCondition::getConstant(node, block_with_constants, const_value, const_type))
@@ -421,7 +441,18 @@ IndexConditionPtr MergeTreeBloomFilterIndex::createIndexCondition(
 };
 
 
-struct NgramTokenExtractor
+bool TokenExtractor::next(const char *, size_t, size_t *, size_t *, size_t *)
+{
+    return false;
+}
+
+bool TokenExtractor::nextLike(const String &, size_t *, String &)
+{
+    return false;
+}
+
+
+struct NgramTokenExtractor : TokenExtractor
 {
     NgramTokenExtractor(size_t n_) : n(n_) {}
 
@@ -430,7 +461,7 @@ struct NgramTokenExtractor
         return name;
     }
 
-    bool operator() (const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len)
+    bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) override
     {
         *token_start = *pos;
         *token_len = 0;
@@ -444,6 +475,45 @@ struct NgramTokenExtractor
         }
         ++*pos;
         return true;
+    }
+
+    bool nextLike(const String & str, size_t * pos, String & token) override
+    {
+        token.clear();
+
+        bool escaped = false;
+        for (size_t i = *pos; i < str.size(); ++i)
+        {
+            if (escaped && (str[*pos] == '%' || str[*pos] == '_' || str[*pos] == '\\'))
+            {
+                token += str[*pos];
+                escaped = false;
+            }
+            else if (!escaped && (str[*pos] == '%' || str[*pos] == '_'))
+            {
+                /// This token is too small, go to the next.
+                token.clear();
+                escaped = false;
+                *pos = i;
+            }
+            else if (!escaped && str[*pos] == '\\')
+            {
+                token += str[*pos];
+                escaped = true;
+            }
+            else
+            {
+                token += str[*pos];
+                escaped = false;
+            }
+
+            if (token.size() == n) {
+                ++*pos;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     size_t n;
@@ -487,6 +557,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
             throw Exception("Bloom filter index can be used only with `String` and `FixedString` column.", ErrorCodes::INCORRECT_QUERY);
     }
 
+    boost::algorithm::to_lower(node->type->name);
     if (node->type->name == NgramTokenExtractor::getName()) {
         if (!node->type->arguments || node->type->arguments->children.size() != 3)
             throw Exception("`ngrambf` index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
