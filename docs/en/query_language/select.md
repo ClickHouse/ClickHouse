@@ -92,15 +92,15 @@ ClickHouse stores relative coefficients in the `_sample_factor` virtual column. 
 The example of the `_sample_factor` column usage is shown below:
 
 ``` sql
-SELECT sum(Duration * _sample_offset)
+SELECT sum(Duration * _sample_factor)
 FROM visits
 SAMPLE 10000000
 ```   
 
-If you need to get the approximate count of rows in a `SELECT .. SAMPLE n` query, get the sum() of `_sample_offset` column instead of counting `count(column * _sample_column)` value. For example:
+If you need to get the approximate count of rows in a `SELECT .. SAMPLE n` query, get the sum() of `_sample_factor` column instead of counting `count(column * _sample_factor)` value. For example:
 
 ``` sql
-SELECT sum(_sample_offset)
+SELECT sum(_sample_factor)
 FROM visits
 SAMPLE 10000000
 ```  
