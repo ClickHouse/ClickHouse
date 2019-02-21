@@ -3,6 +3,8 @@
 #
 # ubuntu:
 # prepare old (trusty or earlier) host system:
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/disco
+# sudo ln -s gutsy /usr/share/debootstrap/scripts/cosmic
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/artful
 # sudo ln -s gutsy /usr/share/debootstrap/scripts/bionic
 # build ubuntu:
@@ -53,7 +55,7 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
     "experimental" "unstable" "testing" "stable")
 
 # List of Ubuntu suites. Update these when needed.
-UBUNTU_SUITES=("cosmic" "bionic" "artful" "zesty" "xenial" "trusty" "devel")
+UBUNTU_SUITES=("disco" "cosmic" "bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 HOST_DIST=`lsb_release --short --codename`
@@ -164,7 +166,7 @@ esac
 
 if [ "$ARCH" != arm64 ]; then
     case "$DIST" in
-    "experimental")
+    "disco" | "experimental")
         EXTRAPACKAGES+=" liblld-8-dev libclang-8-dev llvm-8-dev liblld-8 "
         export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-8 $CMAKE_FLAGS"
         ;;
