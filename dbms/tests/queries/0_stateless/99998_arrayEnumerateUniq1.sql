@@ -1,4 +1,4 @@
-SET max_threads = 1;
+--SET max_threads = 1;
 
 --SELECT arrayEnumerateUniqRanked(1, [[1,2,3],[2,2,1],[3]],2);                                                                    -- f(1, y,2)     =[[1,1,1],[2,3,2],[2]] -- 1 2 3 2 2 1 3
 
@@ -44,4 +44,4 @@ SELECT '2,a3,2,a4,2', arrayEnumerateUniqRanked(2,a3,2,a4,2) FROM test.arrays_tes
 SELECT '2,a3,2,a4,1', arrayEnumerateUniqRanked(2,a3,2,a4,1) FROM test.arrays_test;
 SELECT '2,a3,1,a4,2', arrayEnumerateUniqRanked(2,a3,1,a4,2) FROM test.arrays_test;
 select '---------END';
---DROP TABLE test.arrays_test;
+DROP TABLE test.arrays_test;

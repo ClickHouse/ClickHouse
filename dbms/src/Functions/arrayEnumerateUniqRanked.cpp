@@ -1,11 +1,11 @@
-#include <Functions/arrayEnumerateRanked.h>
-#include <Functions/FunctionFactory.h>
+#include "arrayEnumerateRanked.h"
+#include "Functions/FunctionFactory.h"
 
 
 namespace DB
 {
 
-/** arrayEnumerateUniqRanked(start_level, arr1, deepth1, arr2, deepth2)
+/** arrayEnumerateUniqRanked(start_level, arr1, depth1, arr2, depth2)
   *  - outputs an array parallel (having same size) to this, where for each element specified
   *  how many times this element was encountered before (including this element) among elements with the same value.
   */
@@ -15,8 +15,6 @@ class FunctionArrayEnumerateUniqRanked : public FunctionArrayEnumerateRankedExte
 public:
     static constexpr auto name = "arrayEnumerateUniqRanked";
     using Base::create;
-
-    FunctionArrayEnumerateUniqRanked(const Context & context) : FunctionArrayEnumerateRankedExtended<FunctionArrayEnumerateUniqRanked>(context) {}
 };
 
 void registerFunctionArrayEnumerateUniqRanked(FunctionFactory & factory)
