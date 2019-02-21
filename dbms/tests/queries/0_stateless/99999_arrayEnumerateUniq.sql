@@ -1,10 +1,6 @@
 
--- SELECT arrayEnumerateUniq([1,1,2,2,1,1], [1,2,1,2,2,2], [1,2,1,2,2,2]);
 SELECT arrayEnumerateUniq(         [1,1,2,2,1,1],    [1,2,1,2,2,2]);
-
---SELECT arrayEnumerateUniqRanked(1, [[1,1,2,2,1,1]],2,                           [[1,2,1,2,2,2]],2); -- 1,2,3,4,1,1
 SELECT arrayEnumerateUniqRanked(1, [1,1,2,2,1,1], 1, [1,2,1,2,2,2],1);
-
 
 -- x=[1,2,1]
 -- x2=[a,b,c]
@@ -12,26 +8,25 @@ SELECT arrayEnumerateUniqRanked(1, [1,1,2,2,1,1], 1, [1,2,1,2,2,2],1);
 -- y2=[['a','b','a'],['a','b','a'],['c']]
 -- z=[[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]]
 
-
 SELECT 'same as arrayEnumerateUniq:';
 SELECT '[1,1,2] =';
 SELECT arrayEnumerateUniqRanked(1, [1,2,1], 1);                                                      -- f(1, x,1)     =[1,1,2] -- 1 2 1
-SELECT arrayEnumerateUniq([1,2,1]);
+SELECT arrayEnumerateUniq(         [1,2,1]);
 SELECT '[1,1,1] =';
 SELECT arrayEnumerateUniqRanked(1, ['a','b','c'], 1);                                                -- f(1, x2,1)    =[1,1,1] -- a b c
-SELECT arrayEnumerateUniq(['a','b','c']);
+SELECT arrayEnumerateUniq(         ['a','b','c']);
 SELECT '[1,1,1] =';
 SELECT arrayEnumerateUniqRanked(1, [1,2,1], 1, ['a','b','c'], 1);                                    -- f(1, x,1,x2,1)=[1,1,1] -- (1,a) (2,b) (1,c)
-SELECT arrayEnumerateUniq([1,2,1], ['a','b','c']);
+SELECT arrayEnumerateUniq(         [1,2,1],    ['a','b','c']);
 SELECT '[1,1,1] =';
 SELECT arrayEnumerateUniqRanked(1, [1,2,1], 1, [[1,2,3],[2,2,1],[3]], 1);                            -- f(1, x,1,y,1) =[1,1,1] -- (1,[1,2,3]) (2,[2,2,1]) (1,[3])
-SELECT arrayEnumerateUniq([1,2,1], [[1,2,3],[2,2,1], [3]]);
+SELECT arrayEnumerateUniq(         [1,2,1],    [[1,2,3],[2,2,1],[3]]);
 SELECT '[1,2,1] =';
 SELECT arrayEnumerateUniqRanked(1, [['a','b','a'],['a','b','a'],['c']], 1);                          -- f(1, y2,1)    =[1,2,1] -- [a,b,a] [a,b,a] [c]
-SELECT arrayEnumerateUniq([['a','b','a'],['a','b','a'],['c']]);
+SELECT arrayEnumerateUniq(         [['a','b','a'],['a','b','a'],['c']]);
 SELECT '[1,2,1] =';
 SELECT arrayEnumerateUniqRanked(1, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]],1); -- f(1, z,1)     =[1,2,1] -- [[1,2,3],[1,2,3],[1,2,3]] [[1,2,3],[1,2,3],[1,2,3]] [[1,2]]
-SELECT arrayEnumerateUniq([[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]]);
+SELECT arrayEnumerateUniq(         [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]]);
 
 select '1,..,2';
 -- подсчитываем вхождения глобально по всему значению в столбце, смотрим в глубину на два уровня,
@@ -109,8 +104,10 @@ SELECT '1,a1,1', arrayEnumerateUniqRanked(1,a1,1) FROM test.arrays_test ORDER BY
 SELECT '1,a2,1', arrayEnumerateUniqRanked(1,a2,1) FROM test.arrays_test ORDER BY a1, a2;
 SELECT '1,a3,1', arrayEnumerateUniqRanked(1,a3,1) FROM test.arrays_test ORDER BY a1, a2;
 SELECT '1,a4,1', arrayEnumerateUniqRanked(1,a4,1) FROM test.arrays_test ORDER BY a1, a2;
+SELECT 'arrayEnumerateUniqRanked(1,a1,1,a2,1) =';
 SELECT '1,a1,1,a2,1', arrayEnumerateUniqRanked(1,a1,1,a2,1) FROM test.arrays_test ORDER BY a1, a2;
---SELECT a1,a2,'=',arrayEnumerateUniq(a1, a2) FROM test.arrays_test;
+select 'arrayEnumerateUniq(a1, a2) =';
+SELECT arrayEnumerateUniq(a1, a2) FROM test.arrays_test ORDER BY a1, a2;
 select '---------GO2';
 SELECT '1,a3,1,a4,1', arrayEnumerateUniqRanked(1,a3,1,a4,1) FROM test.arrays_test ORDER BY a1, a2;
 SELECT '1,a3,2,a4,1', arrayEnumerateUniqRanked(1,a3,2,a4,1) FROM test.arrays_test ORDER BY a1, a2;
