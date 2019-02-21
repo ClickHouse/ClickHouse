@@ -4,12 +4,12 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/ClearableHashMap.h>
-#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -162,9 +162,14 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         {
             offsets_by_depth.emplace_back(&array->getOffsets());
             offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
-        } else {
-            if (*offsets_by_depth[0] != array->getOffsets()) {
-                throw Exception("Lengths and depths of all arrays passed to " + getName() + " must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+        }
+        else
+        {
+            if (*offsets_by_depth[0] != array->getOffsets())
+            {
+                throw Exception(
+                    "Lengths and depths of all arrays passed to " + getName() + " must be equal.",
+                    ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
             }
         }
 
@@ -181,9 +186,14 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             {
                 offsets_by_depth.emplace_back(&array->getOffsets());
                 offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
-            } else {
-                if (*offsets_by_depth[col_depth] != array->getOffsets()) {
-                    throw Exception("Lengths and depths of all arrays passed to " + getName() + " must be equal.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+            }
+            else
+            {
+                if (*offsets_by_depth[col_depth] != array->getOffsets())
+                {
+                    throw Exception(
+                        "Lengths and depths of all arrays passed to " + getName() + " must be equal.",
+                        ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
                 }
             }
         }
@@ -315,21 +325,21 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
             // Debug: DUMP(off, prev_off, j, indexes, res_values[j], columns);
 
-                for (int depth = current_offset_depth - 1; depth >= 0; --depth)
-                {
-                    ++indexes_by_depth[depth];
+            for (int depth = current_offset_depth - 1; depth >= 0; --depth)
+            {
+                ++indexes_by_depth[depth];
 
-                    if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
-                    {
-                        if (static_cast<int>(clear_depth - 1) == depth)
-                            want_clear = true;
-                        ++current_offset_n_by_depth[depth];
-                    }
-                    else
-                    {
-                        break;
-                    }
+                if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                {
+                    if (static_cast<int>(clear_depth - 1) == depth)
+                        want_clear = true;
+                    ++current_offset_n_by_depth[depth];
                 }
+                else
+                {
+                    break;
+                }
+            }
         }
         if (want_clear)
         {
