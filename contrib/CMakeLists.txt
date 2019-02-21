@@ -201,6 +201,9 @@ else()
             set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
         endif()
         add_subdirectory(snappy)
+        if(SANITIZE STREQUAL "undefined")
+            target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
+        endif()
     endif()
 
     add_subdirectory(arrow-cmake)

@@ -7,6 +7,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 
 
@@ -207,6 +208,25 @@ template <typename T>
 void DataTypeNumberBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
 {
     protobuf.writeNumber(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+}
+
+
+template <typename T>
+void DataTypeNumberBase<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    T value;
+    if (!protobuf.readNumber(value))
+        return;
+
+    auto & container = typeid_cast<ColumnVector<T> &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(value);
+        row_added = true;
+    }
+    else
+        container.back() = value;
 }
 
 

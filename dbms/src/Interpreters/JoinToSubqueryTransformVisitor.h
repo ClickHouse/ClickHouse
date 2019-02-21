@@ -42,7 +42,7 @@ private:
     static void visit(ASTSelectQuery & select, ASTPtr & ast, Data & data);
 
     /// @return combined TablesInSelectQueryElement or nullptr if cannot rewrite
-    static ASTPtr replaceJoin(ASTSelectQuery & select, ASTPtr left, ASTPtr right, const String & subquery_alias);
+    static ASTPtr replaceJoin(ASTPtr left, ASTPtr right);
 };
 
 using JoinToSubqueryTransformVisitor = InDepthNodeVisitor<JoinToSubqueryTransformMatcher, true>;
