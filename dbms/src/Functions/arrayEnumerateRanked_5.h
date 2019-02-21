@@ -446,9 +446,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
                 break;
             }
 
-            //if (array_num == 0) // TODO check with prev
-            //offsets_by_depth.emplace_back(array->getOffsetsPtr());
-            //DUMP(offsets_by_depth.size(), "<" ,col_depth);
             if (offsets_by_depth.size() <= col_depth)
             {
                 offsets_by_depth.emplace_back(&array->getOffsets());
@@ -458,52 +455,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
             //array->getOffsets()
         }
-
-        DUMP(offsets_by_depth);
-        /*
-            if (0 && depths[array_num] > 1) { // TODO recurse here
-                //auto sub_array = checkAndGetColumn<ColumnArray>(&array->getData());
-
-                auto sub_array = get_array_column(&array->getData());
-                DUMP("getdata1=", array_num, depths[array_num], sub_array);
-                if(sub_array) {
-                    //const ColumnArray::Offsets & sub_offsets_i = sub_array->getOffsets();
-                    //offsets = &sub_offsets_i;
-                    //offsets = &sub_array->getOffsets();
-                    //offsets_column = sub_array->getOffsetsPtr();
-
-                    DUMP(1,sub_array);
-                    DUMP(1,sub_array->getOffsets());
-                    DUMP(1,sub_array->getOffsetsPtr());
-
-                    //sub_array = checkAndGetColumn<ColumnArray>(&sub_array->getData());
-                    DUMP(1, sub_array->getData());
-                    sub_array = get_array_column(&sub_array->getData());
-                    if (sub_array) {
-                        DUMP(2,sub_array);
-                        DUMP(2,sub_array->getOffsets());
-                        DUMP(2,sub_array->getOffsetsPtr());
-
-                        //sub_array = checkAndGetColumn<ColumnArray>(&sub_array->getData());
-                        DUMP(2,sub_array->getData());
-                        sub_array = get_array_column(&sub_array->getData());
-                        if (sub_array) {
-                            DUMP(3,sub_array);
-                            DUMP(3,sub_array->getOffsets());
-                            DUMP(3,sub_array->getOffsetsPtr());
-                            DUMP(3,sub_array->getData());
-                        //} else {
-                        //    DUMP(sub_array->getData());
-                        }
-                    //} else {
-                    //     DUMP(sub_array->getData());
-                    }
-                //} else {
-                //   DUMP(sub_array->getData());
-                }
-            }
-*/
-
 
         /*
         const ColumnArray::Offsets & offsets_i = array->getOffsets();
@@ -530,145 +481,34 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         ++array_num;
     }
 
-
-    //offsets_column = *offsets_by_depth[depth-1]; // TODO check
-
-    /*
-[[maybe_unused]]
-    const NullMap * null_map = nullptr;
-
-    for (size_t i = 0; i < data_columns.size(); ++i)
-    {
-        if (data_columns[i]->isColumnNullable())
-        {
-            const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
-
-            //if (num_arguments == 1)
-            if (data_columns.size() == 1)
-                data_columns[i] = &nullable_col.getNestedColumn();
-
-            null_map = &nullable_col.getNullMapData();
-            break;
-        }
-    }
-*/
-
     auto res_nested = ColumnUInt32::create();
 
     ColumnUInt32::Container & res_values = res_nested->getData();
-    /*
-    if (!offsets->empty())
-        res_values.resize(offsets->back());
-    */
-
     //res_values.resize(offsets_by_depth[clear_depth-1]->back()); // todo size check?
     res_values.resize(offsets_by_depth[max_array_depth - 1]->back()); // todo size check?
 
-    //DUMP(offsets->back(), res_values.size());
-    DUMP("res total size=", res_values.size(), res_values);
+    executeMethodImpl<MethodHashed, false>(offsets_by_depth, data_columns, clear_depth, max_array_depth, depths, res_values);
 
-    //DUMP(offsets);
-    //DUMP(data_columns);
-
-    //if (num_arguments == 1)
-    /*
-    if (data_columns.size() == 1)
-    {
-DUMP("ONE DATA");
-        if (!(executeNumber<UInt8>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<UInt16>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<UInt32>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<UInt64>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<Int8>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<Int16>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<Int32>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<Int64>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<Float32>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
-            || executeString(*offsets, *data_columns[0], null_map, res_values)
-            || executeFixedString(*offsets, *data_columns[0], null_map, res_values)))
-            executeHashed(*offsets, data_columns, res_values);
-    }
-    else
-*/
-    {
-        //DUMP("MULTI DATA");
-        //if (!execute128bit(*offsets, data_columns, res_values))
-        //executeHashed(*offsets, data_columns, res_values);
-        //executeHashed(offsets_by_depth, data_columns, res_values);
-        //executeMethod<MethodHashed>(offsets_by_depth, data_columns, {}, nullptr, res_values);
-        executeMethodImpl<MethodHashed, false>(offsets_by_depth, data_columns, clear_depth, max_array_depth, depths, res_values);
-    }
-
-
-    DUMP(res_nested);
-    DUMP(offsets_column);
-    //auto result = ColumnArray::create(std::move(res_nested), offsets_column);
-
-    DUMP(max_array_depth, offsets_by_depth);
-
-    //auto result_nested_array = ColumnArray::create(std::move(res_nested), *offsets_by_depth[max_array_depth-1]);
-    //auto result_nested_array = ColumnArray::create(std::move(res_nested), offsetsptr_by_depth[max_array_depth-1]);
-    //auto result_nested_array = ColumnArray::create(std::move(res_nested), offsetsptr_by_depth[max_array_depth-1]);
-    //ColumnArray::Ptr result_nested_array = res_nested;
     ColumnPtr result_nested_array = std::move(res_nested);
-    //DUMP(max_array_depth-1, result_nested_array, offsetsptr_by_depth[max_array_depth-1]);
-
-    //if (max_array_depth >= 2)
-    //for (auto depth = max_array_depth-2; depth>0; --depth) {
-    //DUMP(max_array_depth);
-    //if (max_array_depth >= 1)
-    //auto depth = max_array_depth-1;
-    //do {
-    //for (auto depth = max_array_depth-1; depth>=0; --depth) {
     for (int depth = max_array_depth - 1; depth >= 0; --depth)
-    {
-        //DUMP(depth);
-        //DUMP(offsets_by_depth[depth]);
-        //ColumnArray::create(std::move(result_nested_array), *offsets_by_depth[depth-1]);
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
-        //DUMP(depth, result_nested_array, offsetsptr_by_depth[depth]);
-    }
-    //while(--depth>0)
 
-    DUMP(result_nested_array);
     block.getByPosition(result).column = result_nested_array;
-
-    //DUMP("complete=", block.getByPosition(result).column);
 }
 
 
 template <typename Derived>
 template <typename Method, bool has_null_map>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
-    //const ColumnArray::Offsets & offsets,
-    //const std::vector<ColumnPtr> & offsets_by_depth,
-    //const std::vector<IColumn::Offsets*> & offsets_by_depth,
     const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
     const ColumnRawPtrs & columns,
-    //const Sizes & key_sizes,
-    //[[maybe_unused]] const NullMap * null_map,
-
-    [[maybe_unused]] DepthType clear_depth,
-    [[maybe_unused]] DepthType max_array_depth,
-    [[maybe_unused]] DepthTypes depths,
-
+    DepthType clear_depth,
+    DepthType max_array_depth,
+     DepthTypes depths,
     ColumnUInt32::Container & res_values)
 {
-    //typename Method::Set indices;
-    DUMP("========= gocalc");
-    DUMP(offsets_by_depth);
-    DUMP(columns);
-    //DUMP(key_sizes);
-    //typename Method::Method method(columns, key_sizes, nullptr);
-    //Arena pool; /// Won't use it;
-
-    //const auto & offsets = *offsets_by_depth[clear_depth]; //->getData(); //depth!
     const size_t current_offset_depth = max_array_depth;
-    //const auto & offsets = *offsets_by_depth[max_array_depth-1]; //->getData(); //depth!
     const auto & offsets = *offsets_by_depth[current_offset_depth - 1]; //->getData(); //depth!
-    //const auto & offsets = *offsets_by_depth[0];
-    DUMP(max_array_depth, offsets, current_offset_depth);
 
     ColumnArray::Offset prev_off = 0;
 
@@ -733,60 +573,30 @@ maxdepth: 2
     ;[1,2,3] [2,2,1] [3]       4 5 6
     ;[4,5,6] [4,5,6] [4,5,6] <-
 
+. -  get data
+; - clean index
 
 (1, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 1)
     ;.                         .                         .
+
 (1, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 2)
     ; .       .       .         .       .       .         .
+
 (2, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 2)
     ; .       .       .       ; .       .       .       ; .
+
 (1, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3)
     ;  . . .   . . .   . . .     . . .   . . .   . . .     . .
+
 (2, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3)
     ;  . . .   . . .   . . .  ;  . . .   . . .   . . .  ;  . .
+
 (3, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3)
     ;  . . . ; . . . ; . . .  ;  . . . ; . . . ; . . .  ;  . .
-              3       6
-
-
-getArrayElement(array, depth, n)
-maxdepth=2
-[[1,2,3],[2,2,1],[3]], 0, 1 -> [[1,2,3],[2,2,1],[3]]  maxelements=1
-[[1,2,3],[2,2,1],[3]], 0, 2 -> exception
-[[1,2,3],[2,2,1],[3]], 1, 1 -> [1,2,3]                maxelements=3
-[[1,2,3],[2,2,1],[3]], 1, 2 -> [2,2,1]
-[[1,2,3],[2,2,1],[3]], 1, 3 -> [3]
-[[1,2,3],[2,2,1],[3]], 1, 4 -> exception
-[[1,2,3],[2,2,1],[3]], 2, 1 -> 1                      maxelements=7
-[[1,2,3],[2,2,1],[3]], 2, 2 -> 2
-[[1,2,3],[2,2,1],[3]], 2, 3 -> 3
-[[1,2,3],[2,2,1],[3]], 2, 4 -> 2
-[[1,2,3],[2,2,1],[3]], 2, 5 -> 2
-[[1,2,3],[2,2,1],[3]], 2, 6 -> 1
-[[1,2,3],[2,2,1],[3]], 2, 7 -> 3
-[[1,2,3],[2,2,1],[3]], 2, 8 -> exception
-[[1,2,3],[2,2,1],[3]], 3, 1 -> 1 ! depth>maxdepth     maxelements=7
-[[1,2,3],[2,2,1],[3]], 3, 2 -> 2
-
-maxdepth=1
-[1,2,3], 0, 1 -> [1,2,3]                              maxelements=1
-[1,2,3], 1, 1 -> 1                                    maxelements=3
-[1,2,3], 1, 2 -> 2
-[1,2,3], 1, 3 -> 3
-[1,2,3], 1, 4 -> exception
-[1,2,3], 2, 1 -> 1 ! depth>maxdepth                   maxelements=3
-[1,2,3], 2, 2 -> 2
-[1,2,3], 2, 3 -> 3
-[1,2,3], 2, 4 -> exception
-
-
-
 
 */
 
-    //std::vector<size_t> indexestest(columns.size());
     std::vector<size_t> indexes_by_depth(max_array_depth);
-    //std::vector<size_t> prev_off_by_depth(max_array_depth);
     std::vector<size_t> current_offset_n_by_depth(max_array_depth);
 
 
@@ -795,39 +605,10 @@ maxdepth=1
         // Unique
         for (size_t off : offsets)
         {
-            DUMP("UNIQ", off);
-
-            //indices.clear();
 
             std::vector<size_t> indexes(columns.size());
 
-            /*
-            for (size_t j = prev_off; j < off; ++j)
-            {
-
-                for (size_t col_n = 0; col_n < columns.size(); ++col_n ) {
-DUMP("++", col_n, depths[col_n]);
-
-                    if (depths[col_n] == current_offset_depth) {
-                        ++indexestest[col_n];
-                    }
-                }           
-DUMP("dosomething", j, indexestest);
-            }
-
-                for (size_t col_n = 0; col_n < columns.size(); ++col_n ) {
-DUMP("levelup", col_n, depths[col_n]);
-
-                    if (depths[col_n] == current_offset_depth-1) {
-                        //++indexestest[col_n];
-                        ++indexes_by_depth[]
-                    }
-
-                }           
-*/
-
             bool want_clear = false;
-
 
             for (size_t j = prev_off; j < off; ++j)
             {
@@ -856,115 +637,26 @@ DUMP("levelup", col_n, depths[col_n]);
                     for (int depth = current_offset_depth - 1; depth >= 0; --depth)
                     { // TODO CHECK SIZE
                         ++indexes_by_depth[depth];
-                        DUMP(
-                            "dph",
-                            depth,
-                            indexes_by_depth[depth],
-                            current_offset_n_by_depth[depth],
-                            (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]],
-                            offsets_by_depth[depth]->size());
-                        //offsets_by_depth[
 
-
-                        //current_offset_n_by_depth[depth];
-
-                        DUMP("ctest", indexes_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
                         if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                         {
-                            DUMP("cleartest", clear_depth - 1, depth);
                             if (static_cast<int>(clear_depth - 1) == depth)
                                 want_clear = true;
-
-                            /*DUMP("incoff?", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
-                        if (current_offset_n_by_depth[depth] < offsets_by_depth[depth]->size()-1) {
-*/
                             ++current_offset_n_by_depth[depth];
-                            /*
-DUMP("incn", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
-                        } else {
-DUMP("skiplastinc", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
-                        }
-*/
                         }
                         else
                         {
-                            DUMP("no levelup", depth);
                             break;
                         }
                     }
                 }
-                /*
-            else
-            {
-DUMP("clearlast");
-                            want_clear = true;
             }
-*/
-
-                /*
-            else
-            {
-                DUMP("clearfirst test", current_offset_depth, indexes_by_depth[current_offset_depth - 1]);
-            }
-*/
-            }
-            //DUMP("nxt", indexes_by_depth);
-            //prev_off_by_depth[current_offset_depth] = off;
-            DUMP(prev_off, off);
-            //!++current_offset_n_by_depth[current_offset_depth - 1];
-            DUMP(
-                "incCOD",
-                current_offset_depth,
-                current_offset_n_by_depth,
-                current_offset_n_by_depth[current_offset_depth - 1],
-                offsets_by_depth[current_offset_depth - 1]->size());
-
-            //DUMP(prev_off_by_depth);
-            DUMP(want_clear);
             if (want_clear)
             {
-                DUMP("Clear indx!");
                 want_clear = false;
                 indices.clear();
             }
 
-
-#if 0
-            //UInt32 null_count = 0;
-            for (size_t j = prev_off; j < off; ++j)
-            {
-                DUMP(j, prev_off, off);
-
-// offsets_by_depth[current_offset_depth]
-                for (size_t col_n = 0; col_n < columns.size(); ++col_n ) {
-                    indexes[col_n] = j;
-                }           
-
-/*
-                if constexpr (has_null_map)
-                {
-                    if ((*null_map)[j])
-                    {
-                        res_values[j] = ++null_count;
-                        continue;
-                    }
-                }
-*/
-                /*
-                auto emplace_result = method.emplaceKey(indices, j, pool);
-                auto idx = emplace_result.getMapped() + 1;
-                emplace_result.setMapped(idx);
-                */
-                //auto hash = hash128depths({j, j}, /*columns.size(),*/ columns);
-                auto hash = hash128depths(indexes, columns);
-                auto idx = ++indices[hash];
-                DUMP(j, idx, hash);
-
-
-                res_values[j] = idx;
-                DUMP(off, j, prev_off, res_values[j], idx);
-            }
-#endif
             prev_off = off;
         }
     }
