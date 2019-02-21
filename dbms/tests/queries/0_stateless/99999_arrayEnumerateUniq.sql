@@ -58,22 +58,9 @@ SELECT arrayEnumerateUniqRanked(2, [[1,2,3],[2,2,1],[3]], 2, [[[1,2,3],[1,2,3],[
 
 select 'more:';
 SELECT arrayEnumerateUniqRanked(2, [[1,2,3],[2,2,1],[3]], 2, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3);
-
 SELECT arrayEnumerateUniqRanked(3, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3);
 SELECT arrayEnumerateUniqRanked(2, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3);
 SELECT arrayEnumerateUniqRanked(1, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3);
-
-
--- SELECT max(arrayJoin(arr)) FROM (SELECT arrayEnumerateUniq(groupArray(intDiv(number, 54321)) AS nums, groupArray(toString(intDiv(number, 98765)))) AS arr FROM (SELECT number FROM system.numbers LIMIT 1000000) GROUP BY intHash32(number) % 100000);
-
---SELECT arrayEnumerateUniq([[1], [2], [34], [1]]);
---SELECT arrayEnumerateUniq([(1, 2), (3, 4), (1, 2)]);
-
-
---SELECT arrayEnumerateUniq([[1,1],[2,2]], [[1,2],[1,2]]);
-
---SELECT arrayEnumerateUniq(1, [1,1,2,2], [1,2,1,2]);
-
 
 select '---------Dense';
 SELECT arrayEnumerateDenseRanked(1, [10,20,10,30], 1);
