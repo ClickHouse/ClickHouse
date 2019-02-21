@@ -66,6 +66,8 @@ struct ColumnAliasesMatcher
                         if (is_public)
                             identifier->setAlias(long_name);
                     }
+                    else if (is_public)
+                        identifier->setAlias(identifier->name); /// prevent crop long to short name
                 }
                 else
                 {
