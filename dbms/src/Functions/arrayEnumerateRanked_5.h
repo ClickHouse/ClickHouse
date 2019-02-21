@@ -98,7 +98,8 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(/*Block & block,*/ const 
         }
     }
     if (clear_depth > max_array_depth)
-        DUMP("IMPOSSIBLE"); // TODO THROW
+        throw Exception( "Arguments for function arrayEnumerateUniqRanked incorrect: clear_depth=" + std::to_string(clear_depth)+ " cant be larger than max_array_depth=" + std::to_string(max_array_depth) + ".", ErrorCodes::BAD_ARGUMENTS);
+
     return std::make_tuple(clear_depth, depths, max_array_depth);
 }
 
@@ -117,28 +118,13 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    //DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-#if 0
         if (arguments.size() == 0)
             throw Exception(
                 "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
                     + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        /*
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (!array_type)
-                throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
-                    toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-*/
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
-#endif
 
         DepthType clear_depth;
         DepthType max_array_depth;
@@ -146,21 +132,11 @@ public:
 
         std::tie(clear_depth, depths, max_array_depth) = getDepths(arguments);
 
-        if (arguments.size() == 0)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         DataTypePtr type = std::make_shared<DataTypeUInt32>();
         for (DepthType i = 0; i < max_array_depth; ++i)
-        {
             type = std::make_shared<DataTypeArray>(type);
-        }
 
-        DUMP("return type=", type);
-
-        return type; //std::make_shared<DataTypeArray>();
+        return type;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
@@ -170,37 +146,6 @@ private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
-    /*
-    template <typename T>
-    struct MethodOneNumber
-    {
-        using Set = ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
-                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
-        using Method = ColumnsHashing::HashMethodOneNumber<typename Set::value_type, UInt32, T, false>;
-    };
-
-    struct MethodString
-    {
-        using Set = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
-        using Method = ColumnsHashing::HashMethodString<typename Set::value_type, UInt32, false, false>;
-    };
-
-    struct MethodFixedString
-    {
-        using Set = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
-                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
-        using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, UInt32, false, false>;
-    };
-
-    struct MethodFixed
-    {
-        using Set = ClearableHashMap<UInt128, UInt32, UInt128HashCRC32, HashTableGrower<INITIAL_SIZE_DEGREE>,
-                HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
-        using Method = ColumnsHashing::HashMethodKeysFixed<typename Set::value_type, UInt128, UInt32, false, false, false>;
-    };
-
-*/
     struct MethodHashed
     {
         using Set = ClearableHashMap<
@@ -212,111 +157,17 @@ private:
         using Method = ColumnsHashing::HashMethodHashed<typename Set::value_type, UInt32, false>;
     };
 
-    /*
-    template <typename Method>
-    void executeMethod(
-        const ColumnArray::Offsets & offsets,
-        const ColumnRawPtrs & columns,
-        const Sizes & key_sizes,
-        const NullMap * null_map,
-        ColumnUInt32::Container & res_values);
-*/
-
-
     template <typename Method, bool has_null_map>
     void executeMethodImpl(
-        //const ColumnArray::Offsets & offsets,
-        //const std::vector<ColumnPtr> & offsets_by_depth,
-        //const std::vector<IColumn::Offsets*> & offsets_by_depth,
         const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
         const ColumnRawPtrs & columns,
-        //const Sizes & key_sizes,
-        //const NullMap * null_map,
         DepthType clear_depth,
         DepthType max_array_depth,
         DepthTypes depths,
         ColumnUInt32::Container & res_values);
 
-    /*
-    template <typename T>
-    bool executeNumber(
-        const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
-    bool executeString(
-        const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
-    bool executeFixedString(
-        const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
-    bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
-    void executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
-*/
 };
 
-#if 0
-//ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const ColumnWithTypeAndName & n, const DataTypePtr & type, const Context & context)
-ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const int64_t n, const Context & context)
-{
-    //const ColumnArray * array = checkAndGetColumn<ColumnArray>(arg.column.get());
-    //const DataTypePtr & type = array->getNestedType();
-    auto array_type = typeid_cast<const DataTypeArray *>(arg.type.get());
-    const auto & type = array_type->getNestedType();
-    //DataTypeUInt32().createColumnConst(arg.size(), n);
-
-    //ColumnWithTypeAndName n_col { DataTypeUInt32().createColumnConst(arg.column->size(), n), std::make_shared<DataTypeUInt32>(), "" };
-
-    Block temporary_block{arg,
-                          //{ DataTypeUInt32().createColumnConst(arg.column->size(), n), DataTypeUInt32(), "" },
-                          //n_col,
-                          {DataTypeUInt32().createColumnConst(arg.column->size(), n), std::make_shared<DataTypeUInt32>(), ""},
-                          {nullptr, type, ""}};
-
-    FunctionBuilderPtr func_builder = FunctionFactory::instance().get("arrayElement", context);
-
-    ColumnsWithTypeAndName arguments{temporary_block.getByPosition(0), temporary_block.getByPosition(1)};
-    auto func = func_builder->build(arguments);
-
-    const size_t result_colum_num = 2;
-    func->execute(temporary_block, {0, 1}, result_colum_num, arg.column->size());
-    return temporary_block.getByPosition(result_colum_num).column;
-}
-
-ColumnPtr array(Block & block, const Context & context)
-{
-    //const ColumnArray * array = checkAndGetColumn<ColumnArray>(arg.column.get());
-    //const DataTypePtr & type = array->getNestedType();
-    //auto array_type = typeid_cast<const DataTypeArray *>(arg.type.get());
-    //const auto & type = array_type->getNestedType();
-    //DataTypeUInt32().createColumnConst(arg.size(), n);
-
-    //ColumnWithTypeAndName n_col { DataTypeUInt32().createColumnConst(arg.column->size(), n), std::make_shared<DataTypeUInt32>(), "" };
-
-
-    //auto type = func_builder->getReturnType(block);
-    DataTypes types;
-    for (size_t i = 0; i < block.columns(); ++i)
-        types.emplace_back(block.getByPosition(i).type);
-
-    auto type = std::make_shared<DataTypeArray>(getLeastSupertype(types));
-
-    block.insert({nullptr, type, ""});
-
-    ColumnsWithTypeAndName arguments; //{ block.getByPosition(0), block.getByPosition(1) };
-
-    ColumnNumbers arguments_nums(block.columns() - 1);
-
-    for (size_t i = 0; i < block.columns() - 1; ++i)
-    {
-        arguments.emplace_back(block.getByPosition(i));
-        arguments_nums[i] = i;
-    }
-
-    FunctionBuilderPtr func_builder = FunctionFactory::instance().get("array", context);
-    auto func = func_builder->build(arguments);
-
-    const size_t result_colum_num = block.columns() - 1;
-
-    func->execute(block, arguments_nums, result_colum_num, block.rows());
-    return block.getByPosition(result_colum_num).column;
-}
-#endif
 
 /// Hash a set of keys into a UInt128 value.
 static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, /*size_t keys_size,*/ const ColumnRawPtrs & key_columns)
@@ -326,8 +177,8 @@ static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, /
 
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
     {
-        const auto & field = (*key_columns[j])[indexes[j]];
-        DUMP(j, indexes[j], field);
+        //const auto & field = (*key_columns[j])[indexes[j]];
+        //DUMP(j, indexes[j], field);
         key_columns[j]->updateHashWithValue(indexes[j], hash);
     }
 
