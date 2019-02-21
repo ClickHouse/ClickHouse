@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnsNumber.h>
+#include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -77,6 +78,22 @@ void DataTypeUUID::serializeProtobuf(const IColumn & column, size_t row_num, Pro
     protobuf.writeUUID(UUID(static_cast<const ColumnUInt128 &>(column).getData()[row_num]));
 }
 
+void DataTypeUUID::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    UUID uuid;
+    if (!protobuf.readUUID(uuid))
+        return;
+
+    auto & container = static_cast<ColumnUInt128 &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(uuid);
+        row_added = true;
+    }
+    else
+        container.back() = uuid;
+}
 
 bool DataTypeUUID::equals(const IDataType & rhs) const
 {
