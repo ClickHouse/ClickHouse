@@ -24,8 +24,6 @@ public:
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writePrefix() override;
 
-    void flush() override;
-
     String getContentType() const override { return "application/octet-stream"; }
 
 protected:

@@ -242,7 +242,7 @@ void JSONRowOutputFormat::onProgress(const Progress & value)
 }
 
 
-void registerOutputFormatProcessorProcessorJSON(FormatFactory & factory)
+void registerOutputFormatProcessorJSON(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor("JSON", [](
         WriteBuffer & buf,

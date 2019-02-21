@@ -308,7 +308,7 @@ void registerInputFormatProcessorCapnProto(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatCapnProto(FormatFactory &) {}
+    void registerInputFormatProcessorCapnProto(FormatFactory &) {}
 }
 
 #endif // USE_CAPNP
