@@ -843,14 +843,17 @@ DUMP("levelup", col_n, depths[col_n]);
                 DUMP("res", j, hash, "=", idx);
                 res_values[j] = idx;
 
-                ++indexes_by_depth[current_offset_depth - 1];
+                //++indexes_by_depth[current_offset_depth - 1];
                 //DUMP("++", j, indexes_by_depth[current_offset_depth - 1], current_offset_depth);
                 //DUMP("i", indexes_by_depth);
-            }
+            //}
 
-            if (current_offset_depth >= 2)
+            //if (current_offset_depth >= 2)
+//DUMP("inc?", j, off);
+//if (j < off-1)
             {
-                for (int depth = current_offset_depth - 2; depth >= 0; --depth)
+                //for (int depth = current_offset_depth - 2; depth >= 0; --depth)
+                for (int depth = current_offset_depth - 1; depth >= 0; --depth)
                 { // TODO CHECK SIZE
                     ++indexes_by_depth[depth];
                     DUMP(
@@ -858,7 +861,8 @@ DUMP("levelup", col_n, depths[col_n]);
                         depth,
                         indexes_by_depth[depth],
                         current_offset_n_by_depth[depth],
-                        (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
+                        (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]],
+                        offsets_by_depth[depth]->size());
                     //offsets_by_depth[
 
 
@@ -871,7 +875,16 @@ DUMP("levelup", col_n, depths[col_n]);
                         if (static_cast<int>(clear_depth - 1) == depth)
                             want_clear = true;
 
-                        ++current_offset_n_by_depth[depth];
+/*DUMP("incoff?", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
+                        if (current_offset_n_by_depth[depth] < offsets_by_depth[depth]->size()-1) {
+*/
+                            ++current_offset_n_by_depth[depth];
+/*
+DUMP("incn", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
+                        } else {
+DUMP("skiplastinc", depth, current_offset_n_by_depth[depth], offsets_by_depth[depth]->size());
+                        }
+*/
                     }
                     else
                     {
@@ -880,14 +893,27 @@ DUMP("levelup", col_n, depths[col_n]);
                     }
                 }
             }
+/*
+            else
+            {
+DUMP("clearlast");
+                            want_clear = true;
+            }
+*/
+
+/*
             else
             {
                 DUMP("clearfirst test", current_offset_depth, indexes_by_depth[current_offset_depth - 1]);
             }
+*/
+
+            }
             //DUMP("nxt", indexes_by_depth);
             //prev_off_by_depth[current_offset_depth] = off;
-            ++current_offset_n_by_depth[current_offset_depth - 1];
-            DUMP(current_offset_depth, current_offset_n_by_depth);
+DUMP(prev_off, off);
+            //!++current_offset_n_by_depth[current_offset_depth - 1];
+            DUMP("incCOD",current_offset_depth, current_offset_n_by_depth, current_offset_n_by_depth[current_offset_depth - 1], offsets_by_depth[current_offset_depth - 1]->size());
 
             //DUMP(prev_off_by_depth);
             DUMP(want_clear);

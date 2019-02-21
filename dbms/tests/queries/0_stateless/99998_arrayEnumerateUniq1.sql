@@ -24,6 +24,7 @@ INSERT INTO test.arrays_test VALUES ([1,2,3], [2,2,1], [[1,2,3,4],[2,2,1],[3]], 
 INSERT INTO test.arrays_test VALUES ([1,2,3], [1,2,1],       [[1,2,3,4],[2,2,1],[3]], [[1,2,4,4],[2,2,1],[3]]), ([21,22,24], [21,22,21], [[21,22,23,24],[22,22,21],[23]], [[21,22,25,24],[22,22,21],[23]]);
 
 INSERT INTO test.arrays_test VALUES ([1,1,1], [1,1,1], [[1,1,1],[1,1,1],[1]], [[1,1,1],[1,1,1],[1]]);
+INSERT INTO test.arrays_test VALUES ([1,2,3], [4,5,6], [[7,8,9],[10,11,12],[13]], [[14,15,16],[17,18,19],[20]]);
 
 
 SELECT * FROM test.arrays_test;
@@ -35,6 +36,7 @@ SELECT '1,a4,1', arrayEnumerateUniqRanked(1,a4,1) FROM test.arrays_test;
 SELECT '1,a1,1,a2,1', arrayEnumerateUniqRanked(1,a1,1,a2,1) FROM test.arrays_test;
 --SELECT a1,a2,'=',arrayEnumerateUniq(a1, a2) FROM test.arrays_test;
 select '---------GO2';
+SELECT '1,a3,1,a4,1', arrayEnumerateUniqRanked(1,a3,1,a4,1) FROM test.arrays_test;
 SELECT '1,a3,2,a4,1', arrayEnumerateUniqRanked(1,a3,2,a4,1) FROM test.arrays_test;
 SELECT '1,a3,1,a4,2', arrayEnumerateUniqRanked(1,a3,1,a4,2) FROM test.arrays_test;
 SELECT '1,a3,2,a4,2', arrayEnumerateUniqRanked(1,a3,2,a4,2) FROM test.arrays_test;
