@@ -384,7 +384,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     //std::vector<ColumnPtr> offsets_by_depth;
     //std::vector<IColumn::Offsets*> offsets_by_depth;
     std::vector<const ColumnArray::Offsets *> offsets_by_depth;
-    std::vector<ColumnPtr> offsetsptr_by_depth;
+    std::vector<ColumnPtr> offsetsptr_by_depth; // TODO make one !
 
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
@@ -421,9 +421,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
         for (DepthType col_depth = 1; col_depth <= depths[array_num]; ++col_depth)
         {
-            DUMP(array_num, col_depth, depths[array_num]);
+            //DUMP(array_num, col_depth, depths[array_num]);
 
-            DUMP("offsets was:", array->getOffsets());
+            //DUMP("offsets was:", array->getOffsets());
 
             //DUMP("test offsets column:", col_depth, max_array_depth);
             if (col_depth == max_array_depth)
@@ -434,14 +434,14 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
 
             auto sub_array = get_array_column(&array->getData());
-            DUMP(sub_array);
+            //DUMP(sub_array);
             if (sub_array)
             {
                 array = sub_array;
             }
             if (!sub_array)
             {
-                DUMP("Not subarray");
+                //DUMP("Not subarray");
                 break;
             }
 
@@ -616,20 +616,21 @@ DUMP("ONE DATA");
 
     //if (max_array_depth >= 2)
     //for (auto depth = max_array_depth-2; depth>0; --depth) {
-DUMP(max_array_depth);
+//DUMP(max_array_depth);
    //if (max_array_depth >= 1)
     //auto depth = max_array_depth-1;
     //do {
     //for (auto depth = max_array_depth-1; depth>=0; --depth) {
     for (int depth = max_array_depth-1; depth>=0; --depth) {
-DUMP(depth);
-DUMP(offsets_by_depth[depth]);
+//DUMP(depth);
+//DUMP(offsets_by_depth[depth]);
         //ColumnArray::create(std::move(result_nested_array), *offsets_by_depth[depth-1]);
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
-DUMP(depth, result_nested_array, offsetsptr_by_depth[depth]);
+//DUMP(depth, result_nested_array, offsetsptr_by_depth[depth]);
     }
     //while(--depth>0)
 
+DUMP(result_nested_array);
     block.getByPosition(result).column = result_nested_array;
 
 //DUMP("complete=", block.getByPosition(result).column);
@@ -667,7 +668,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     //const auto & offsets = *offsets_by_depth[max_array_depth-1]; //->getData(); //depth!
     const auto & offsets = *offsets_by_depth[current_offset_depth - 1]; //->getData(); //depth!
     //const auto & offsets = *offsets_by_depth[0];
-    DUMP(max_array_depth, offsets);
+    DUMP(max_array_depth, offsets, current_offset_depth);
 
     ColumnArray::Offset prev_off = 0;
 
@@ -796,7 +797,7 @@ maxdepth=1
         {
             DUMP("UNIQ", off);
 
-            indices.clear();
+            //indices.clear();
 
             std::vector<size_t> indexes(columns.size());
 
@@ -832,57 +833,56 @@ DUMP("levelup", col_n, depths[col_n]);
             {
                 for (size_t col_n = 0; col_n < columns.size(); ++col_n)
                 {
-                    DUMP(col_n, depths[col_n], indexes_by_depth[depths[col_n] - 1]);
+                    //DUMP(col_n, depths[col_n], indexes_by_depth[depths[col_n] - 1]);
                     indexes[col_n] = indexes_by_depth[depths[col_n] - 1];
                 }
                 DUMP(indexes);
 
                 auto hash = hash128depths(indexes, columns);
                 auto idx = ++indices[hash];
-                DUMP(j,  hash, idx);
+                DUMP("res", j, hash, "=", idx);
                 res_values[j] = idx;
 
                 ++indexes_by_depth[current_offset_depth - 1];
-                DUMP("++", j, indexes_by_depth[current_offset_depth - 1], current_offset_depth);
-                DUMP("i", indexes_by_depth);
+                //DUMP("++", j, indexes_by_depth[current_offset_depth - 1], current_offset_depth);
+                //DUMP("i", indexes_by_depth);
             }
 
-           if (current_offset_depth >= 2)
-            for (size_t depth = current_offset_depth - 2; depth > 0; --depth)
+           if (current_offset_depth >= 2) {
+            for (int depth = current_offset_depth - 2; depth >= 0; --depth)
             { // TODO CHECK SIZE
                 ++indexes_by_depth[depth];
-                DUMP(
-                    "dph",
-                    depth,
-                    indexes_by_depth[depth],
-                    current_offset_n_by_depth[depth],
-                    (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
+                DUMP("dph", depth, indexes_by_depth[depth],  current_offset_n_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
                 //offsets_by_depth[
 
 
                 //current_offset_n_by_depth[depth];
 
-                //DUMP(offsets_by_depth[depth][current_offset_n_by_depth[depth]]);
+                DUMP("ctest", indexes_by_depth[depth], (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]]);
                 if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                 {
-                    DUMP("cleartest", clear_depth, depth);
-                    if (clear_depth == depth)
+                    DUMP("cleartest", clear_depth-1, depth);
+                    if (clear_depth-1 == depth)
                         want_clear = true;
 
                     ++current_offset_n_by_depth[depth];
                 }
                 else
                 {
+                    DUMP("no levelup", depth);
                     break;
                 }
             }
-            DUMP("nxt", indexes_by_depth);
+            } else {
+                DUMP("clearfirst test", current_offset_depth, indexes_by_depth[current_offset_depth-1]);
+            }
+            //DUMP("nxt", indexes_by_depth);
             //prev_off_by_depth[current_offset_depth] = off;
             ++current_offset_n_by_depth[current_offset_depth-1];
             DUMP(current_offset_depth, current_offset_n_by_depth);
 
             //DUMP(prev_off_by_depth);
-
+DUMP(want_clear);
             if (want_clear)
             {
                 DUMP("Clear indx!");
