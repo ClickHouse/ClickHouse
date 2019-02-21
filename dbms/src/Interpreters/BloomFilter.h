@@ -2,33 +2,11 @@
 
 #include <Core/Types.h>
 #include <vector>
+#include <random>
+
 
 namespace DB
 {
-
-/// Good constants for LCG from wikipedia.
-constexpr UInt64 LCG_A = 84589;
-constexpr UInt64 LCG_C = 45989;
-constexpr UInt64 LCG_M = 217728;
-
-/// LinearCongruentialGenerator for generating random seeds for hash functions.
-/// It is used here because it is very fast and lightweight.
-/// https://en.wikipedia.org/wiki/Linear_congruential_generator
-class LinearCongruentialGenerator
-{
-public:
-    LinearCongruentialGenerator(
-            size_t seed, UInt64 a_ = LCG_A, UInt64 c_ = LCG_C, UInt64 m_ = LCG_M);
-
-    UInt64 next();
-
-private:
-    UInt64 current;
-    UInt64 a;
-    UInt64 c;
-    UInt64 m;
-};
-
 
 /// Bloom filter for strings.
 class StringBloomFilter
@@ -57,6 +35,10 @@ public:
 
     friend bool operator== (const StringBloomFilter & a, const StringBloomFilter & b);
 private:
+    /// LinearCongruentialGenerator for generating random seeds for hash functions.
+    /// It is used here because it is very fast and lightweight.
+    using LinearCongruentialGenerator = std::linear_congruential_engine<UInt64, 84589, 45989, 217728>;
+
     size_t size;
     size_t hashes;
     size_t seed;
