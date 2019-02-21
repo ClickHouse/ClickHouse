@@ -2,6 +2,8 @@
 import warnings
 import pymysql.cursors
 import pymongo
+import subprocess
+import copy
 
 class ExternalSource(object):
     def __init__(self, name, internal_hostname, internal_port,
@@ -14,11 +16,11 @@ class ExternalSource(object):
         self.user = user
         self.password = password
 
-    def get_source_str(self):
+    def get_source_str(self, table_name):
         raise NotImplementedError("Method {} is not implemented for {}".format(
             "get_source_config_part", self.__class__.__name__))
 
-    def prepare(self, structure):
+    def prepare(self, structure, table_name, cluster):
         raise NotImplementedError("Method {} is not implemented for {}".format(
             "prepare_remote_source", self.__class__.__name__))
 
@@ -26,6 +28,10 @@ class ExternalSource(object):
     def load_data(self, data):
         raise NotImplementedError("Method {} is not implemented for {}".format(
             "prepare_remote_source", self.__class__.__name__))
+
+    def compatible_with_layout(self, layout):
+        return True
+
 
 class SourceMySQL(ExternalSource):
     TYPE_MAPPING = {
@@ -83,7 +89,7 @@ class SourceMySQL(ExternalSource):
                 tbl=table_name,
             )
 
-    def prepare(self, structure, table_name):
+    def prepare(self, structure, table_name, cluster):
         self.create_mysql_conn()
         self.execute_mysql_query("create database if not exists test default character set 'utf8'")
         fields_strs = []
@@ -93,16 +99,16 @@ class SourceMySQL(ExternalSource):
             {fields_str});
         '''.format(table_name=table_name, fields_str=','.join(fields_strs))
         self.execute_mysql_query(create_query)
+        self.ordered_names = structure.get_ordered_names()
         self.prepared = True
 
     def load_data(self, data, table_name):
         values_strs = []
         if not data:
             return
-        ordered_names = [name for name in data[0].data]
         for row in data:
             sorted_row = []
-            for name in ordered_names:
+            for name in self.ordered_names:
                 data = row.data[name]
                 if isinstance(row.data[name], str):
                     data = "'" + data + "'"
@@ -112,7 +118,7 @@ class SourceMySQL(ExternalSource):
             values_strs.append('(' + ','.join(sorted_row) + ')')
         query = 'insert into test.{} ({}) values {}'.format(
             table_name,
-            ','.join(ordered_names),
+            ','.join(self.ordered_names),
             ''.join(values_strs))
         self.execute_mysql_query(query)
 
@@ -137,7 +143,7 @@ class SourceMongo(ExternalSource):
             tbl=table_name,
         )
 
-    def prepare(self, structure, table_name):
+    def prepare(self, structure, table_name, cluster):
         connection_str = 'mongodb://{user}:{password}@{host}:{port}'.format(
             host=self.internal_hostname, port=self.internal_port,
             user=self.user, password=self.password)
@@ -151,6 +157,147 @@ class SourceMongo(ExternalSource):
         tbl = self.db[table_name]
         to_insert = [dict(row.data) for row in data]
         result = tbl.insert_many(to_insert)
-        print "IDS:", result.inserted_ids
-        for r in tbl.find():
-            print "RESULT:", r
+
+class SourceClickHouse(ExternalSource):
+
+    def get_source_str(self, table_name):
+        return '''
+            <clickhouse>
+                <host>{host}</host>
+                <port>{port}</port>
+                <user>{user}</user>
+                <password>{password}</password>
+                <db>test</db>
+                <table>{tbl}</table>
+            </clickhouse>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+            user=self.user,
+            password=self.password,
+            tbl=table_name,
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        self.node = cluster.instances[self.docker_hostname]
+        self.node.query("CREATE DATABASE IF NOT EXISTS test")
+        fields_strs = []
+        for field in structure.keys + structure.ordinary_fields + structure.range_fields:
+            fields_strs.append(field.name + ' ' + field.field_type)
+        create_query = '''CREATE TABLE test.{table_name} (
+            {fields_str}) ENGINE MergeTree ORDER BY tuple();
+        '''.format(table_name=table_name, fields_str=','.join(fields_strs))
+        self.node.query(create_query)
+        self.ordered_names = structure.get_ordered_names()
+        self.prepared = True
+
+    def load_data(self, data, table_name):
+        values_strs = []
+        if not data:
+            return
+        for row in data:
+            sorted_row = []
+            for name in self.ordered_names:
+                row_data = row.data[name]
+                if isinstance(row_data, str):
+                    row_data = "'" + row_data + "'"
+                else:
+                    row_data = str(row_data)
+                sorted_row.append(row_data)
+            values_strs.append('(' + ','.join(sorted_row) + ')')
+        query = 'INSERT INTO test.{} ({}) values {}'.format(
+            table_name,
+            ','.join(self.ordered_names),
+            ''.join(values_strs))
+        self.node.query(query)
+
+
+class SourceFile(ExternalSource):
+
+    def get_source_str(self, table_name):
+        table_path = "/" + table_name + ".tsv"
+        return '''
+            <file>
+                <path>{path}</path>
+                <format>TabSeparated</format>
+            </file>
+        '''.format(
+            path=table_path,
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        self.node = cluster.instances[self.docker_hostname]
+        path = "/" + table_name + ".tsv"
+        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)])
+        self.ordered_names = structure.get_ordered_names()
+        self.prepared = True
+
+    def load_data(self, data, table_name):
+        if not data:
+            return
+        path = "/" + table_name + ".tsv"
+        for row in list(data):
+            sorted_row = []
+            for name in self.ordered_names:
+                sorted_row.append(str(row.data[name]))
+
+            str_data = '\t'.join(sorted_row)
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)])
+
+    def compatible_with_layout(self, layout):
+        return 'cache' not in layout.name
+
+
+class _SourceExecutableBase(ExternalSource):
+
+    def _get_cmd(self, path):
+        raise NotImplementedError("Method {} is not implemented for {}".format(
+            "_get_cmd", self.__class__.__name__))
+
+    def get_source_str(self, table_name):
+        table_path = "/" + table_name + ".tsv"
+        return '''
+            <executable>
+                <command>{cmd}</command>
+                <format>TabSeparated</format>
+            </executable>
+        '''.format(
+            cmd=self._get_cmd(table_path),
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        self.node = cluster.instances[self.docker_hostname]
+        path = "/" + table_name + ".tsv"
+        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)])
+        self.ordered_names = structure.get_ordered_names()
+        self.prepared = True
+
+    def load_data(self, data, table_name):
+        if not data:
+            return
+        path = "/" + table_name + ".tsv"
+        for row in list(data):
+            sorted_row = []
+            for name in self.ordered_names:
+                sorted_row.append(str(row.data[name]))
+
+            str_data = '\t'.join(sorted_row)
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)])
+
+
+class SourceExecutableCache(_SourceExecutableBase):
+
+    def _get_cmd(self, path):
+        return "cat {}".format(path)
+
+    def compatible_with_layout(self, layout):
+        return 'cache' not in layout.name
+
+
+class SourceExecutableHashed(_SourceExecutableBase):
+
+    def _get_cmd(self, path):
+        return "cat - >/dev/null;cat {}".format(path)
+
+    def compatible_with_layout(self, layout):
+        return 'cache' in layout.name

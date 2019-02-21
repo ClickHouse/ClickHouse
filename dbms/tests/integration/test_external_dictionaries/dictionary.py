@@ -1,4 +1,5 @@
 #-*- coding: utf-8 -*-
+import copy
 
 
 class Layout(object):
@@ -135,8 +136,8 @@ class DictionaryStructure(object):
             <{key_block_name}>
                 {key_str}
             </{key_block_name}>
-            {attributes_str}
             {range_strs}
+            {attributes_str}
         </structure>'''.format(
             layout_str=self.layout.get_str(),
             key_block_name=self.layout.get_key_block_name(),
@@ -144,6 +145,18 @@ class DictionaryStructure(object):
             attributes_str='\n'.join(fields_strs),
             range_strs='\n'.join(ranged_strs),
         )
+
+    def get_ordered_names(self):
+        fields_strs = []
+        for key_field in self.keys:
+            fields_strs.append(key_field.name)
+        for range_field in self.range_fields:
+            fields_strs.append(range_field.name)
+        for field in self.ordinary_fields:
+            fields_strs.append(field.name)
+        return fields_strs
+
+
 
     def get_dict_get_expression(self, dict_name, field, row):
         if field in self.keys:
@@ -181,8 +194,8 @@ class DictionaryStructure(object):
 class Dictionary(object):
     def __init__(self, name, structure, source, config_path, table_name):
         self.name = name
-        self.structure = structure
-        self.source = source
+        self.structure = copy.deepcopy(structure)
+        self.source = copy.deepcopy(source)
         self.config_path = config_path
         self.table_name = table_name
 
@@ -208,8 +221,8 @@ class Dictionary(object):
                 source=self.source.get_source_str(self.table_name),
             ))
 
-    def prepare_source(self):
-        self.source.prepare(self.structure, self.table_name)
+    def prepare_source(self, cluster):
+        self.source.prepare(self.structure, self.table_name, cluster)
 
     def load_data(self, data):
         if not self.source.prepared:
