@@ -120,10 +120,10 @@ public:
         callback(data);
     }
 
+private:
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
 
-private:
     ColumnPtr data;
     ColumnPtr offsets;
 
