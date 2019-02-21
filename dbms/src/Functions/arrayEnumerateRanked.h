@@ -130,7 +130,6 @@ private:
         DepthType max_array_depth,
         DepthTypes depths,
         ColumnUInt32::Container & res_values);
-
 };
 
 
@@ -208,7 +207,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
         for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth)
         {
-
             auto sub_array = get_array_column(&array->getData());
             if (sub_array)
                 array = sub_array;
@@ -269,7 +267,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const ColumnRawPtrs & columns,
     DepthType clear_depth,
     DepthType max_array_depth,
-     DepthTypes depths,
+    DepthTypes depths,
     ColumnUInt32::Container & res_values)
 {
     const size_t current_offset_depth = max_array_depth;
@@ -327,26 +325,27 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
     UInt32 rank = 0;
 
-        // Unique
-        for (size_t off : offsets)
-        {
-
-            std::vector<size_t> indexes(columns.size());
-
-            bool want_clear = false;
-
-            for (size_t j = prev_off; j < off; ++j)
-            {
-                for (size_t col_n = 0; col_n < columns.size(); ++col_n)
-                    indexes[col_n] = indexes_by_depth[depths[col_n] - 1];
-
-                auto hash = hash128depths(indexes, columns);
-
-    if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniqRanked>)
+    // Unique
+    for (size_t off : offsets)
     {
+        std::vector<size_t> indexes(columns.size());
+
+        bool want_clear = false;
+
+        for (size_t j = prev_off; j < off; ++j)
+        {
+            for (size_t col_n = 0; col_n < columns.size(); ++col_n)
+                indexes[col_n] = indexes_by_depth[depths[col_n] - 1];
+
+            auto hash = hash128depths(indexes, columns);
+
+            if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniqRanked>)
+            {
                 auto idx = ++indices[hash];
                 res_values[j] = idx;
-    }else {
+            }
+            else
+            {
                 auto idx = indices[hash];
                 if (!idx)
                 {
@@ -354,36 +353,35 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
                     indices[hash] = idx;
                 }
                 res_values[j] = idx;
-    }
+            }
 
-                {
-                    for (int depth = current_offset_depth - 1; depth >= 0; --depth)
-                    { // TODO CHECK SIZE
-                        ++indexes_by_depth[depth];
+            {
+                for (int depth = current_offset_depth - 1; depth >= 0; --depth)
+                { // TODO CHECK SIZE
+                    ++indexes_by_depth[depth];
 
-                        if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
-                        {
-                            if (static_cast<int>(clear_depth - 1) == depth)
-                                want_clear = true;
-                            ++current_offset_n_by_depth[depth];
-                        }
-                        else
-                        {
-                            break;
-                        }
+                    if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
+                    {
+                        if (static_cast<int>(clear_depth - 1) == depth)
+                            want_clear = true;
+                        ++current_offset_n_by_depth[depth];
+                    }
+                    else
+                    {
+                        break;
                     }
                 }
             }
-            if (want_clear)
-            {
-                want_clear = false;
-                indices.clear();
-                rank = 0;
-            }
-
-            prev_off = off;
+        }
+        if (want_clear)
+        {
+            want_clear = false;
+            indices.clear();
+            rank = 0;
         }
 
+        prev_off = off;
+    }
 }
 
 }

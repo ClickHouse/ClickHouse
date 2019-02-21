@@ -2,7 +2,6 @@
 
 namespace DB
 {
-
 std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndName & arguments)
 {
     const size_t num_arguments = arguments.size();
@@ -21,7 +20,7 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndN
         {
             const auto & depth_column = arguments[i].column;
 
-            if (depth_column                && depth_column->isColumnConst()            )
+            if (depth_column && depth_column->isColumnConst())
             {
                 auto value = depth_column->getUInt(0);
                 if (i == 0)
@@ -38,7 +37,10 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndN
         }
     }
     if (clear_depth > max_array_depth)
-        throw Exception( "Arguments for function arrayEnumerateUniqRanked incorrect: clear_depth=" + std::to_string(clear_depth)+ " cant be larger than max_array_depth=" + std::to_string(max_array_depth) + ".", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(
+            "Arguments for function arrayEnumerateUniqRanked incorrect: clear_depth=" + std::to_string(clear_depth)
+                + " cant be larger than max_array_depth=" + std::to_string(max_array_depth) + ".",
+            ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_tuple(clear_depth, depths, max_array_depth);
 }
