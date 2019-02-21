@@ -26,7 +26,19 @@ std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 
 std::ostream & operator<<(std::ostream & stream, const Field & what)
 {
+
+stream << " dbffffld: ";
+        {
+        std::vector<Field> array;
+        array.emplace_back(what);
+        DB::WriteBufferFromOStream out(stream);
+        writeText(array, out);
+        }
+stream << "; ";
+
     stream << applyVisitor(FieldVisitorDump(), what);
+
+
     return stream;
 }
 

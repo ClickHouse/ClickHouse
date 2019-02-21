@@ -326,7 +326,8 @@ static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, /
 
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
     {
-        //DUMP(j, indexes[j], key_columns[j]->operator[](indexes[j]));
+const auto & field = (*key_columns[j])[indexes[j]];
+       DUMP(j, indexes[j], field);
         key_columns[j]->updateHashWithValue(indexes[j], hash);
     }
 
@@ -419,9 +420,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
         }
 
-        for (DepthType col_depth = 1; col_depth <= depths[array_num]; ++col_depth)
+        for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth)
         {
-            //DUMP(array_num, col_depth, depths[array_num]);
+            DUMP(array_num, col_depth, depths[array_num]);
 
             //DUMP("offsets was:", array->getOffsets());
 
@@ -434,7 +435,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
 
             auto sub_array = get_array_column(&array->getData());
-            //DUMP(sub_array);
+            DUMP(sub_array);
             if (sub_array)
             {
                 array = sub_array;
@@ -867,7 +868,7 @@ DUMP("levelup", col_n, depths[col_n]);
                     if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                     {
                         DUMP("cleartest", clear_depth - 1, depth);
-                        if (clear_depth - 1 == depth)
+                        if (static_cast<int>(clear_depth - 1) == depth)
                             want_clear = true;
 
                         ++current_offset_n_by_depth[depth];
