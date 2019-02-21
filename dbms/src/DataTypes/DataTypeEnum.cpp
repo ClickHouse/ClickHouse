@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -201,7 +202,7 @@ void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 
 template <typename Type>
 void DataTypeEnum<Type>::serializeBinaryBulk(
-    const IColumn & column, WriteBuffer & ostr, const UInt64 offset, UInt64 limit) const
+    const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const
 {
     const auto & x = typeid_cast<const ColumnType &>(column).getData();
     const auto size = x.size();
@@ -214,7 +215,7 @@ void DataTypeEnum<Type>::serializeBinaryBulk(
 
 template <typename Type>
 void DataTypeEnum<Type>::deserializeBinaryBulk(
-    IColumn & column, ReadBuffer & istr, const UInt64 limit, const double /*avg_value_size_hint*/) const
+    IColumn & column, ReadBuffer & istr, const size_t limit, const double /*avg_value_size_hint*/) const
 {
     auto & x = typeid_cast<ColumnType &>(column).getData();
     const auto initial_size = x.size();
@@ -228,6 +229,25 @@ void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_nu
 {
     protobuf.prepareEnumMapping(values);
     protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]);
+}
+
+template<typename Type>
+void DataTypeEnum<Type>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    protobuf.prepareEnumMapping(values);
+    row_added = false;
+    Type value;
+    if (!protobuf.readEnum(value))
+        return;
+
+    auto & container = static_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(value);
+        row_added = true;
+    }
+    else
+        container.back() = value;
 }
 
 template <typename Type>

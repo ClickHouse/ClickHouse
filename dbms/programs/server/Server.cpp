@@ -478,7 +478,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
-    LOG_INFO(log, "Loading metadata.");
+    LOG_INFO(log, "Loading metadata from " + path);
     try
     {
         loadMetadataSystem(*global_context);

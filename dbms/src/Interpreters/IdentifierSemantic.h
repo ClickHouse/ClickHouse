@@ -8,9 +8,10 @@ namespace DB
 
 struct IdentifierSemanticImpl
 {
-    bool special = false;
-    bool need_long_name = false;
-    bool can_be_alias = true;
+    bool special = false;       /// for now it's 'not a column': tables, subselects and some special stuff like FORMAT
+    bool need_long_name = false;/// if column presents in multiple tables we need qualified names
+    bool can_be_alias = true;   /// if it's a cropped name it could not be an alias
+    size_t membership = 0;      /// table position in join (starting from 1) detected by qualifier or 0 if not detected.
 };
 
 /// Static calss to manipulate IdentifierSemanticImpl via ASTIdentifier
@@ -27,9 +28,13 @@ struct IdentifierSemantic
 
     static size_t canReferColumnToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static String columnNormalName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
+    static String columnLongName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static void setColumnNormalName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
+    static void setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
     static void setNeedLongName(ASTIdentifier & identifier, bool); /// if set setColumnNormalName makes qualified name
     static bool canBeAlias(const ASTIdentifier & identifier);
+    static void setMembership(ASTIdentifier & identifier, size_t table_no);
+    static size_t getMembership(const ASTIdentifier & identifier);
 
 private:
     static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);

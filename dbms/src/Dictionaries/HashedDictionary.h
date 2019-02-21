@@ -144,7 +144,7 @@ public:
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, UInt64 max_block_size) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value>

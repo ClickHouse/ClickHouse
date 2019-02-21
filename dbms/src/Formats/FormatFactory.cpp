@@ -64,6 +64,7 @@ static FormatSettings getOutputFormatSetting(const Settings & settings)
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.write_statistics = settings.output_format_write_statistics;
+    format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
 
     return format_settings;
 }
@@ -182,6 +183,9 @@ void registerInputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory);
 void registerInputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatJSONEachRow(FormatFactory & factory);
+void registerInputFormatParquet(FormatFactory & factory);
+void registerOutputFormatParquet(FormatFactory & factory);
+void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
@@ -246,8 +250,11 @@ FormatFactory::FormatFactory()
     registerOutputFormatTSKV(*this);
     registerInputFormatJSONEachRow(*this);
     registerOutputFormatJSONEachRow(*this);
+    registerInputFormatProtobuf(*this);
     registerOutputFormatProtobuf(*this);
     registerInputFormatCapnProto(*this);
+    registerInputFormatParquet(*this);
+    registerOutputFormatParquet(*this);
 
     registerInputFormatProcessorNative(*this);
     registerOutputFormatProcessorNative(*this);

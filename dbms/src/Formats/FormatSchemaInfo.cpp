@@ -20,7 +20,7 @@ FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & schem
         {
             throw Exception(
                 "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format"
-                    + (schema_file_extension.empty() ? "" : "e.g. 'schema." + schema_file_extension + ":Message'"),
+                    + (schema_file_extension.empty() ? "" : ", e.g. 'schema." + schema_file_extension + ":Message'"),
                 ErrorCodes::BAD_ARGUMENTS);
         }
         return;
@@ -29,11 +29,11 @@ FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & schem
     size_t colon_pos = format_schema.find(':');
     Poco::Path path;
     if ((colon_pos == String::npos) || (colon_pos == 0) || (colon_pos == format_schema.length() - 1)
-        || path.assign(format_schema.substr(0, colon_pos)).getFileName().empty())
+        || path.assign(format_schema.substr(0, colon_pos)).makeFile().getFileName().empty())
     {
         throw Exception(
             "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format"
-                + (schema_file_extension.empty() ? "" : "e.g. 'schema." + schema_file_extension + ":Message'") + ". Got '" + format_schema
+                + (schema_file_extension.empty() ? "" : ", e.g. 'schema." + schema_file_extension + ":Message'") + ". Got '" + format_schema
                 + "'",
             ErrorCodes::BAD_ARGUMENTS);
     }

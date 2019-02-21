@@ -25,6 +25,7 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
