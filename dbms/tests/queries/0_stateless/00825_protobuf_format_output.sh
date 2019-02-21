@@ -2,7 +2,7 @@
 
 # To generate reference file for this test use the following commands:
 # ninja ProtobufDelimitedMessagesSerializer
-# build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer > dbms/tests/queries/0_stateless/00825_protobuf_format_output.reference
+# build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh

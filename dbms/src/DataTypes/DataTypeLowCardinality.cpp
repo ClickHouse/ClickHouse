@@ -476,7 +476,7 @@ namespace
 void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
-    UInt64 limit,
+    size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -572,7 +572,7 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
 void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    UInt64 limit,
+    size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -729,27 +729,43 @@ void DataTypeLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr)
     dictionary_type->deserializeBinary(field, istr);
 }
 
-template <typename OutputStream, typename ... Args>
+void DataTypeLowCardinality::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    if (allow_add_row)
+    {
+        deserializeImpl(column, &IDataType::deserializeProtobuf, protobuf, true, row_added);
+        return;
+    }
+
+    row_added = false;
+    auto & low_cardinality_column= getColumnLowCardinality(column);
+    auto  nested_column = low_cardinality_column.getDictionary().getNestedColumn();
+    auto temp_column = nested_column->cloneEmpty();
+    size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(low_cardinality_column.size() - 1);
+    temp_column->insertFrom(*nested_column, unique_row_number);
+    bool dummy;
+    dictionary_type.get()->deserializeProtobuf(*temp_column, protobuf, false, dummy);
+    low_cardinality_column.popBack(1);
+    low_cardinality_column.insertFromFullColumn(*temp_column, 0);
+}
+
+template <typename... Params, typename... Args>
 void DataTypeLowCardinality::serializeImpl(
-        const IColumn & column, size_t row_num,
-        DataTypeLowCardinality::SerializeFunctionPtr<OutputStream, Args ...> func,
-        OutputStream & ostr, Args & ... args) const
+    const IColumn & column, size_t row_num, DataTypeLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
 {
     auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
-    (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, ostr, std::forward<Args>(args)...);
+    (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
 }
 
-template <typename ... Args>
+template <typename... Params, typename... Args>
 void DataTypeLowCardinality::deserializeImpl(
-        IColumn & column,
-        DataTypeLowCardinality::DeserializeFunctionPtr<Args ...> func,
-        ReadBuffer & istr, Args & ... args) const
+    IColumn & column, DataTypeLowCardinality::DeserializeFunctionPtr<Params...> func, Args &&... args) const
 {
     auto & low_cardinality_column= getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    (dictionary_type.get()->*func)(*temp_column, istr, std::forward<Args>(args)...);
+    (dictionary_type.get()->*func)(*temp_column, std::forward<Args>(args)...);
 
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
 }
