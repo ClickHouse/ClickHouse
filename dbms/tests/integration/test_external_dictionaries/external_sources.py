@@ -301,3 +301,26 @@ class SourceExecutableHashed(_SourceExecutableBase):
 
     def compatible_with_layout(self, layout):
         return 'cache' in layout.name
+
+class SourceHTTPBase(ExternalSource):
+
+    def get_source_str(self, table_name):
+        url = "{schema}://{host}:5555/".format(schema=self._get_schema(), self.docker_hostname)
+        return '''
+            <http>
+                <url>{url}</url>
+                <format>TabSeparated</format>
+            </http>
+        '''.format(url=url)
+
+    def prepare(self, structure, table_name, cluster):
+        self.node = cluster.instances[self.docker_hostname]
+        path = "/" + table_name + ".tsv"
+        self.node.exec_in_container(["bash", "-c", "touch {}".format(path)])
+        with open('http_server.py', 'r') as server_code:
+            for line in server_code:
+                self.node.exec_in_container(["bash", "-c", "echo ".format(path)])
+
+        self.node.exec_in_container([])
+        self.ordered_names = structure.get_ordered_names()
+        self.prepared = True
