@@ -142,7 +142,7 @@ private:
     }
 };
 
-void registerInputFormatNativeProcessor(FormatFactory & factory)
+void registerInputFormatProcessorNative(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("Native", [](
         ReadBuffer & buf,
@@ -155,7 +155,7 @@ void registerInputFormatNativeProcessor(FormatFactory & factory)
     });
 }
 
-void registerOutputFormatNativeProcessor(FormatFactory & factory)
+void registerOutputFormatProcessorNative(FormatFactory & factory)
 {
     factory.registerOutputFormatProcessor("Native", [](
         WriteBuffer & buf,

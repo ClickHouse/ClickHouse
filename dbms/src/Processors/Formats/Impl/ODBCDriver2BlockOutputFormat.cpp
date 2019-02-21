@@ -16,7 +16,7 @@ ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
 {
 }
 
-void writeODBCString(WriteBuffer & out, const std::string & str)
+static void writeODBCString(WriteBuffer & out, const std::string & str)
 {
     writeIntBinary(Int32(str.size()), out);
     out.write(str.data(), str.size());
