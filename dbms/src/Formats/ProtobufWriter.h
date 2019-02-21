@@ -26,7 +26,9 @@ namespace protobuf
 #   define EMPTY_DEF_RET(a) {return a;}
 #   pragma GCC diagnostic push
 #   pragma GCC diagnostic ignored "-Wunused-parameter"
-#   pragma GCC diagnostic ignored "-Wextra-semi"
+#   if defined(__clang__)
+#      pragma GCC diagnostic ignored "-Wextra-semi"
+#   endif
 #endif
 
 
