@@ -462,12 +462,16 @@ void executeQuery(
 
     size_t max_query_size = context.getSettingsRef().max_query_size;
 
+    bool may_have_tail;
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         begin = istr.position();
         end = istr.buffer().end();
         istr.position() += end - begin;
+        /// Actually we don't know will query has additional data or not.
+        /// But we can't check istr.eof(), because begin and end pointers will became invalid
+        may_have_tail = true;
     }
     else
     {
@@ -479,12 +483,14 @@ void executeQuery(
 
         begin = parse_buf.data();
         end = begin + parse_buf.size();
+        /// Can check stream for eof, because we have copied data
+        may_have_tail = !istr.eof();
     }
 
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, !istr.eof());
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail);
 
     try
     {
