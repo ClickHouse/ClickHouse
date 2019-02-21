@@ -378,6 +378,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
             {
                 want_clear = false;
                 indices.clear();
+                rank = 0;
             }
 
             prev_off = off;
