@@ -224,7 +224,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     }
 
     new_data_part->min_ttl = 0;
-    if (data.ttl_table_entry.expression)
+    if (data.hasTableTTL())
         updateTTL(new_data_part, data.ttl_table_entry, block);
 
     for (const auto & elem : data.ttl_entries_by_name)

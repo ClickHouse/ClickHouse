@@ -1,11 +1,11 @@
 #pragma once
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
 
-class TTLBlockInputStream : public IProfilingBlockInputStream
+class TTLBlockInputStream : public IBlockInputStream
 {
 public:
     TTLBlockInputStream(

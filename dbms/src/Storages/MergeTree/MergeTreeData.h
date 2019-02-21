@@ -517,6 +517,7 @@ public:
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
+    bool hasTableTTL() const { return ttl_table_ast != nullptr; }
 
     ASTPtr getSortingKeyAST() const { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const { return primary_key_expr_ast; }

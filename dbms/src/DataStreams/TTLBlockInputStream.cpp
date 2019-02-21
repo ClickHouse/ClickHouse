@@ -30,7 +30,7 @@ Block TTLBlockInputStream::readImpl()
     if (!block)
         return block;
 
-    if (storage.ttl_table_entry.expression)
+    if (storage.hasTableTTL())
         removeRowsWithExpiredTableTTL(block);
 
     removeValuesWithExpiredColumnTTL(block);
