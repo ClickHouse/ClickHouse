@@ -118,3 +118,17 @@ SELECT '2,a3,2,a4,1', arrayEnumerateUniqRanked(2,a3,2,a4,1) FROM test.arrays_tes
 SELECT '2,a3,1,a4,2', arrayEnumerateUniqRanked(2,a3,1,a4,2) FROM test.arrays_test ORDER BY a1, a2;
 select '---------END';
 DROP TABLE test.arrays_test;
+
+select '---------BAD';
+SELECT arrayEnumerateUniqRanked(); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked([]); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked(1); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked(2,[]); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked(2,[],2); -- { serverError 190 }
+SELECT arrayEnumerateUniqRanked(2,[],[]); -- { serverError 36 }
+SELECT arrayEnumerateUniqRanked(2,[],[],3); -- { serverError 190 }
+SELECT arrayEnumerateUniqRanked([],2); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked([],2,[]);-- { serverError 190 }
+SELECT arrayEnumerateUniqRanked(0,[],0);
+SELECT arrayEnumerateUniqRanked(0,0,0); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked(1,1,1); -- { serverError 42 }

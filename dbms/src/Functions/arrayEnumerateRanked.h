@@ -31,46 +31,6 @@ class FunctionArrayEnumerateDenseRanked;
 using DepthType = uint32_t;
 using DepthTypes = std::vector<DepthType>;
 std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndName & arguments);
-#if 0
-{
-    const size_t num_arguments = arguments.size();
-    DepthType clear_depth = 1;
-    DepthType max_array_depth = 1;
-    DepthTypes depths;
-
-    for (size_t i = 0; i < num_arguments; ++i)
-    {
-        if (!arguments[i].column)
-            continue;
-        const auto non_const = arguments[i].column->convertToFullColumnIfConst();
-        const auto array = typeid_cast<const ColumnArray *>(non_const.get());
-
-        if (!array)
-        {
-            const auto & depth_column = arguments[i].column;
-
-            if (depth_column                && depth_column->isColumnConst()            )
-            {
-                auto value = depth_column->getUInt(0);
-                if (i == 0)
-                {
-                    clear_depth = value;
-                }
-                else
-                {
-                    depths.emplace_back(value);
-                    if (max_array_depth < value)
-                        max_array_depth = value;
-                }
-            }
-        }
-    }
-    if (clear_depth > max_array_depth)
-        throw Exception( "Arguments for function arrayEnumerateUniqRanked incorrect: clear_depth=" + std::to_string(clear_depth)+ " cant be larger than max_array_depth=" + std::to_string(max_array_depth) + ".", ErrorCodes::BAD_ARGUMENTS);
-
-    return std::make_tuple(clear_depth, depths, max_array_depth);
-}
-#endif
 
 template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
@@ -205,7 +165,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
         }
 
-        for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth)
+        DepthType col_depth = 1;
+        for (; col_depth < depths[array_num]; ++col_depth)
         {
             auto sub_array = get_array_column(&array->getData());
             if (sub_array)
@@ -218,6 +179,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
                 offsets_by_depth.emplace_back(&array->getOffsets());
                 offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
             }
+        }
+
+        if (col_depth < depths[array_num]) {
+            throw Exception(getName() + ": Passed array number " + std::to_string(array_num) + " depth (" + std::to_string(depths[array_num]) + ") more than actual array depth ("+ std::to_string(col_depth) + ").", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH); //TODO this check!
         }
 
         /*
@@ -244,6 +209,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         data_columns.emplace_back(array_data);
         ++array_num;
     }
+
+    if (offsets_by_depth.empty())
+        throw Exception("No arrays passed to function " + getName(), ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     auto res_nested = ColumnUInt32::create();
 
