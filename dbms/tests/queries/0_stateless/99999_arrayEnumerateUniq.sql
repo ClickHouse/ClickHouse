@@ -128,7 +128,9 @@ SELECT arrayEnumerateUniqRanked(2,[],2); -- { serverError 190 }
 SELECT arrayEnumerateUniqRanked(2,[],[]); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(2,[],[],3); -- { serverError 190 }
 SELECT arrayEnumerateUniqRanked([],2); -- { serverError 42 }
-SELECT arrayEnumerateUniqRanked([],2,[]);-- { serverError 190 }
-SELECT arrayEnumerateUniqRanked(0,[],0);
-SELECT arrayEnumerateUniqRanked(0,0,0); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked([],2,[]); -- { serverError 190 }
+SELECT arrayEnumerateUniqRanked(0,[],0); -- { serverError 36 }
+SELECT arrayEnumerateUniqRanked(0,0,0); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(1,1,1); -- { serverError 42 }
+SELECT arrayEnumerateDenseRanked(1, [10,20,10,30], 0); -- { serverError 36 }
+

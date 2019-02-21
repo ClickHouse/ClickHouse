@@ -23,6 +23,10 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndN
             if (depth_column && depth_column->isColumnConst())
             {
                 auto value = depth_column->getUInt(0);
+                if (!value)
+                    throw Exception("Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: depth (" + std::to_string(value) + ") cant be 0.",
+            ErrorCodes::BAD_ARGUMENTS);
+
                 if (i == 0)
                 {
                     clear_depth = value;
@@ -38,8 +42,8 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndN
     }
     if (clear_depth > max_array_depth)
         throw Exception(
-            "Arguments for function arrayEnumerateUniqRanked incorrect: clear_depth=" + std::to_string(clear_depth)
-                + " cant be larger than max_array_depth=" + std::to_string(max_array_depth) + ".",
+            "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: clear_depth (" + std::to_string(clear_depth)
+                + ") cant be larger than max_array_depth (" + std::to_string(max_array_depth) + ").",
             ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_tuple(clear_depth, depths, max_array_depth);
