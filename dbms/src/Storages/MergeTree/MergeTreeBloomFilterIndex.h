@@ -56,8 +56,8 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_LIKE,
             FUNCTION_NOT_LIKE,
-            FUNCTION_IN,
-            FUNCTION_NOT_IN,
+            /*FUNCTION_IN,
+            FUNCTION_NOT_IN,*/
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -93,8 +93,15 @@ private:
     RPN rpn;
 };
 
-using TokenExtractor = std::function<
-        bool(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len)>;
+struct TokenExtractor
+{
+    virtual ~TokenExtractor() = default;
+    /// Fast inplace implementation for regular use.
+    virtual bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len);
+    /// Special implementation for creating bloom filter for LIKE function.
+    /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
+    virtual bool nextLike(const String & str, size_t * pos, String & token);
+};
 
 class MergeTreeBloomFilterIndex : public IMergeTreeIndex
 {
