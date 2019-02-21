@@ -629,9 +629,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
-            args.data_path, args.database_name, args.table_name, args.columns, args.attach,
-            args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, ttl_table_ast, merging_params, storage_settings,
+            args.data_path, args.database_name, args.table_name, args.columns, indices_description,
+            args.attach, args.context, date_column_name, partition_by_ast, order_by_ast, 
+            primary_key_ast, sample_by_ast, ttl_table_ast, merging_params, storage_settings,
             args.has_force_restore_data_flag);
 }
 

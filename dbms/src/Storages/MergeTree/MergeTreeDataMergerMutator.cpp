@@ -223,7 +223,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     /// NOTE Could allow selection of different merge strategy.
     if (can_merge_with_tll && has_part_with_expired_ttl)
     {
-        merge_selector = std::make_unique<TTLMergeSelector>();
+        merge_selector = std::make_unique<TTLMergeSelector>(current_time);
         last_merge_with_ttl = current_time;
     }
     else

@@ -1542,7 +1542,7 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
         if (!data_part->empty_columns.count(name))
             new_columns.emplace_back(name, type);
 
-    if (auto transaction = alterDataPart(data_part, new_columns, false))
+    if (auto transaction = alterDataPart(data_part, new_columns, getIndicesDescription().indices, false))
         transaction->commit();
     data_part->empty_columns.clear();
 }

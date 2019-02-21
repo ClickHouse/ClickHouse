@@ -37,7 +37,6 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
         }
     }
 
-    time_t current_time = time(nullptr);
     if (partition_to_merge_index == -1 || partition_to_merge_min_ttl > current_time)
         return {};
 
