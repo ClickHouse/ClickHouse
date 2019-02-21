@@ -265,3 +265,136 @@ CREATE TABLE test.graphite2
     ) == TSV("0\t0\t2018-01-01\t101\n")
 
     q('DROP TABLE test.graphite2')
+
+
+def test_combined_rules(graphite_table):
+    # 1487970000 ~ Sat 25 Feb 00:00:00 MSK 2017
+    to_insert = 'INSERT INTO test.graphite VALUES '
+    expected_unmerged = ''
+    for i in range(384):
+        to_insert += "('five_min.count', {v}, {t}, toDate({t}), 1), ".format(
+            v=1, t=1487970000+(i*300)
+        )
+        to_insert += "('five_min.max', {v}, {t}, toDate({t}), 1), ".format(
+            v=i, t=1487970000+(i*300)
+        )
+        expected_unmerged += ("five_min.count\t{v1}\t{t}\n"
+                              "five_min.max\t{v2}\t{t}\n").format(
+                                  v1=1, v2=i,
+                                  t=1487970000+(i*300)
+                              )
+
+    q(to_insert)
+    assert TSV(q('SELECT metric, value, timestamp FROM test.graphite'
+               ' ORDER BY (timestamp, metric)')) == TSV(expected_unmerged)
+
+    q('OPTIMIZE TABLE test.graphite PARTITION 201702 FINAL')
+    expected_merged = '''
+        five_min.count	48	1487970000	2017-02-25	1
+        five_min.count	48	1487984400	2017-02-25	1
+        five_min.count	48	1487998800	2017-02-25	1
+        five_min.count	48	1488013200	2017-02-25	1
+        five_min.count	48	1488027600	2017-02-25	1
+        five_min.count	48	1488042000	2017-02-25	1
+        five_min.count	48	1488056400	2017-02-26	1
+        five_min.count	48	1488070800	2017-02-26	1
+        five_min.max	47	1487970000	2017-02-25	1
+        five_min.max	95	1487984400	2017-02-25	1
+        five_min.max	143	1487998800	2017-02-25	1
+        five_min.max	191	1488013200	2017-02-25	1
+        five_min.max	239	1488027600	2017-02-25	1
+        five_min.max	287	1488042000	2017-02-25	1
+        five_min.max	335	1488056400	2017-02-26	1
+        five_min.max	383	1488070800	2017-02-26	1
+    '''
+    assert TSV(q('SELECT * FROM test.graphite'
+                 ' ORDER BY (metric, timestamp)')) == TSV(expected_merged)
+
+
+def test_combined_rules_with_default(graphite_table):
+    q('''
+DROP TABLE IF EXISTS test.graphite;
+CREATE TABLE test.graphite
+    (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
+    ENGINE = GraphiteMergeTree('graphite_rollup_with_default')
+    PARTITION BY toYYYYMM(date)
+    ORDER BY (metric, timestamp)
+    SETTINGS index_granularity=1;
+      ''')
+    # 1487970000 ~ Sat 25 Feb 00:00:00 MSK 2017
+    to_insert = 'INSERT INTO test.graphite VALUES '
+    expected_unmerged = ''
+    for i in range(100):
+        to_insert += "('top_level.count', {v}, {t}, toDate({t}), 1), ".format(
+            v=1, t=1487970000+(i*60)
+        )
+        to_insert += "('top_level.max', {v}, {t}, toDate({t}), 1), ".format(
+            v=i, t=1487970000+(i*60)
+        )
+        expected_unmerged += ("top_level.count\t{v1}\t{t}\n"
+                              "top_level.max\t{v2}\t{t}\n").format(
+                                  v1=1, v2=i,
+                                  t=1487970000+(i*60)
+                              )
+
+    q(to_insert)
+    assert TSV(q('SELECT metric, value, timestamp FROM test.graphite'
+                 ' ORDER BY (timestamp, metric)')) == TSV(expected_unmerged)
+
+    q('OPTIMIZE TABLE test.graphite PARTITION 201702 FINAL')
+    expected_merged = '''
+        top_level.count	10	1487970000	2017-02-25	1
+        top_level.count	10	1487970600	2017-02-25	1
+        top_level.count	10	1487971200	2017-02-25	1
+        top_level.count	10	1487971800	2017-02-25	1
+        top_level.count	10	1487972400	2017-02-25	1
+        top_level.count	10	1487973000	2017-02-25	1
+        top_level.count	10	1487973600	2017-02-25	1
+        top_level.count	10	1487974200	2017-02-25	1
+        top_level.count	10	1487974800	2017-02-25	1
+        top_level.count	10	1487975400	2017-02-25	1
+        top_level.max	9	1487970000	2017-02-25	1
+        top_level.max	19	1487970600	2017-02-25	1
+        top_level.max	29	1487971200	2017-02-25	1
+        top_level.max	39	1487971800	2017-02-25	1
+        top_level.max	49	1487972400	2017-02-25	1
+        top_level.max	59	1487973000	2017-02-25	1
+        top_level.max	69	1487973600	2017-02-25	1
+        top_level.max	79	1487974200	2017-02-25	1
+        top_level.max	89	1487974800	2017-02-25	1
+        top_level.max	99	1487975400	2017-02-25	1
+    '''
+    assert TSV(q('SELECT * FROM test.graphite'
+                 ' ORDER BY (metric, timestamp)')) == TSV(expected_merged)
+
+
+def test_broken_partial_rollup(graphite_table):
+    q('''
+DROP TABLE IF EXISTS test.graphite;
+CREATE TABLE test.graphite
+    (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
+    ENGINE = GraphiteMergeTree('graphite_rollup_broken')
+    PARTITION BY toYYYYMM(date)
+    ORDER BY (metric, timestamp)
+    SETTINGS index_granularity=1;
+      ''')
+    to_insert = '''\
+one_min.x1	100	1000000000	2001-09-09	1
+zzzzzzzz	100	1000000001	2001-09-09	1
+zzzzzzzz	200	1000000001	2001-09-09	2
+'''
+
+    q('INSERT INTO test.graphite FORMAT TSV', to_insert)
+
+    expected = '''\
+one_min.x1	100	1000000000	2001-09-09	1
+zzzzzzzz	200	1000000001	2001-09-09	2
+'''
+
+    result = q('''
+OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL;
+
+SELECT * FROM test.graphite;
+''')
+
+    assert TSV(result) == TSV(expected)
