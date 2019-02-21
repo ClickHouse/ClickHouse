@@ -4,6 +4,7 @@ import pymysql.cursors
 import pymongo
 import subprocess
 import copy
+import base64
 
 class ExternalSource(object):
     def __init__(self, name, internal_hostname, internal_port,
@@ -305,7 +306,8 @@ class SourceExecutableHashed(_SourceExecutableBase):
 class SourceHTTPBase(ExternalSource):
 
     def get_source_str(self, table_name):
-        url = "{schema}://{host}:5555/".format(schema=self._get_schema(), self.docker_hostname)
+        self.http_port = 5555
+        url = "{schema}://{host}:{port}/".format(schema=self._get_schema(), host=self.docker_hostname, port=self.http_port)
         return '''
             <http>
                 <url>{url}</url>
@@ -315,12 +317,25 @@ class SourceHTTPBase(ExternalSource):
 
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
-        path = "/" + table_name + ".tsv"
         self.node.exec_in_container(["bash", "-c", "touch {}".format(path)])
-        with open('http_server.py', 'r') as server_code:
-            for line in server_code:
-                self.node.exec_in_container(["bash", "-c", "echo ".format(path)])
-
-        self.node.exec_in_container([])
+        self.node.copy_file_to_container('./http_server.py', '/http_server.py')
+        self.node.exec_in_container([
+            "bash",
+            "-c",
+            "python /http_server.py --data-path /{tbl}.tsv --schema={schema} --host={host} --port={port}".format(
+                tbl=table_name, schema=self._get_schema(), host=self.docker_hostname, port=self.http_port)
+        ])
         self.ordered_names = structure.get_ordered_names()
         self.prepared = True
+
+    def load_data(self, data, table_name):
+        if not data:
+            return
+        path = "/" + table_name + ".tsv"
+        for row in list(data):
+            sorted_row = []
+            for name in self.ordered_names:
+                sorted_row.append(str(row.data[name]))
+
+            str_data = '\t'.join(sorted_row)
+            self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)])
