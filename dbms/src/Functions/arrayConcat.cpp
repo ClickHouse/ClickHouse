@@ -9,7 +9,6 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
-#include <Core/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -89,23 +88,16 @@ public:
             {
                 is_const = true;
                 argument_column = argument_column_const->getDataColumnPtr();
-DUMP(rows, argument_column);
             }
 
-            if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get())) {
-
-DUMP(rows, argument_column_array);
+            if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column.get()))
                 sources.emplace_back(GatherUtils::createArraySource(*argument_column_array, is_const, rows));
-            }
             else
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
         }
 
-DUMP(rows, sources);
-DUMP(result_column);
         auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), rows);
         GatherUtils::concat(sources, *sink);
-DUMP(result_column);
 
         block.getByPosition(result).column = std::move(result_column);
     }

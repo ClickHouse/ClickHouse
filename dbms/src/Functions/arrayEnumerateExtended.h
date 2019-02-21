@@ -10,8 +10,6 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/ColumnsHashing.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -119,7 +117,6 @@ private:
 template <typename Derived>
 void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
-DUMP("GOFUNC");
     const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();
     ColumnRawPtrs data_columns(num_arguments);
@@ -129,7 +126,6 @@ DUMP("GOFUNC");
     for (size_t i = 0; i < num_arguments; ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
-DUMP(i, array_ptr);
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         if (!array)
         {
@@ -179,12 +175,8 @@ DUMP(i, array_ptr);
     if (!offsets->empty())
         res_values.resize(offsets->back());
 
-DUMP(offsets);
-DUMP(data_columns);
-
     if (num_arguments == 1)
     {
-DUMP("ONE DATA");
         if (!(executeNumber<UInt8>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<UInt16>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<UInt32>(*offsets, *data_columns[0], null_map, res_values)
@@ -201,13 +193,10 @@ DUMP("ONE DATA");
     }
     else
     {
-DUMP("MULTI DATA");
         if (!execute128bit(*offsets, data_columns, res_values))
             executeHashed(*offsets, data_columns, res_values);
     }
 
-DUMP(res_nested);
-DUMP(offsets_column);
     block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
 }
 
@@ -221,8 +210,6 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethodImpl(
         ColumnUInt32::Container & res_values)
 {
     typename Method::Set indices;
-DUMP(columns);
-DUMP(key_sizes);
     typename Method::Method method(columns, key_sizes, nullptr);
     Arena pool; /// Won't use it;
 
@@ -233,13 +220,10 @@ DUMP(key_sizes);
         // Unique
         for (size_t off : offsets)
         {
-DUMP("UNIQ", off);
-
             indices.clear();
             UInt32 null_count = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
-DUMP(j, prev_off, off);
                 if constexpr (has_null_map)
                 {
                     if ((*null_map)[j])
@@ -254,7 +238,6 @@ DUMP(j, prev_off, off);
                 emplace_result.setMapped(idx);
 
                 res_values[j] = idx;
-                DUMP(off, j, prev_off, res_values[j], idx);
             }
             prev_off = off;
         }
@@ -264,14 +247,11 @@ DUMP(j, prev_off, off);
         // Dense
         for (size_t off : offsets)
         {
-DUMP("DENSE", off);
             indices.clear();
             UInt32 rank = 0;
             [[maybe_unused]] UInt32 null_index = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
-DUMP(j, prev_off, off);
-
                 if constexpr (has_null_map)
                 {
                     if ((*null_map)[j])
@@ -293,7 +273,6 @@ DUMP(j, prev_off, off);
                     emplace_result.setMapped(idx);
                 }
 
-DUMP(j, idx);
                 res_values[j] = idx;
             }
             prev_off = off;
@@ -314,8 +293,6 @@ void FunctionArrayEnumerateExtended<Derived>::executeMethod(
         executeMethodImpl<Method, true>(offsets, columns, key_sizes, null_map, res_values);
     else
         executeMethodImpl<Method, false>(offsets, columns, key_sizes, null_map, res_values);
-
-DUMP(res_values);
 
 }
 
@@ -350,8 +327,6 @@ bool FunctionArrayEnumerateExtended<Derived>::executeFixedString(
     const auto * nested = checkAndGetColumn<ColumnString>(&data);
     if (nested)
         executeMethod<MethodFixedString>(offsets, {nested}, {}, null_map, res_values);
-
-DUMP(res_values);
 
     return nested;
 }

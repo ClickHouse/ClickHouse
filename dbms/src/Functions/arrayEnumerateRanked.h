@@ -11,8 +11,6 @@
 #include <Common/HashTable/ClearableHashMap.h>
 #include <DataTypes/getLeastSupertype.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -99,7 +97,7 @@ static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, c
 
     for (size_t j = 0, keys_size = key_columns.size(); j < keys_size; ++j)
     {
-        const auto & field = (*key_columns[j])[indexes[j]]; DUMP(j, indexes[j], field);
+        // Debug: const auto & field = (*key_columns[j])[indexes[j]]; DUMP(j, indexes[j], field);
         key_columns[j]->updateHashWithValue(indexes[j], hash);
     }
 
@@ -315,7 +313,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
                 res_values[j] = idx;
             }
 
-            DUMP(off, prev_off, j, indexes, res_values[j], columns);
+            // Debug: DUMP(off, prev_off, j, indexes, res_values[j], columns);
 
                 for (int depth = current_offset_depth - 1; depth >= 0; --depth)
                 {

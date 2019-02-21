@@ -4,7 +4,7 @@
 
 namespace DB
 {
-/** arrayEnumerateUniqRanked(start_level, arr1, depth1, arr2, depth2)
+/** arrayEnumerateUniqRanked(clear_depth, arr1, depth1, arr2, depth2)
   *  - outputs an array parallel (having same size) to this, where for each element specified
   *  how many times this element was encountered before (including this element) among elements with the same value.
   */

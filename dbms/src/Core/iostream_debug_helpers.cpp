@@ -26,17 +26,6 @@ std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 
 std::ostream & operator<<(std::ostream & stream, const Field & what)
 {
-/*
-stream << " dbffffld: ";
-        {
-        std::vector<Field> array;
-        array.emplace_back(what);
-        DB::WriteBufferFromOStream out(stream);
-        writeText(array, out);
-        }
-stream << "; ";
-*/
-
     stream << applyVisitor(FieldVisitorDump(), what);
     return stream;
 }
@@ -85,11 +74,7 @@ std::ostream & operator<<(std::ostream & stream, const Block & what)
 std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & what)
 {
     stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << what.type << ", column = ";
-//    if (what.column)
     return dumpValue(stream, what.column) << ")";
-/*    else
-        stream << "nullptr" << ")";
-    return stream;*/
 }
 
 std::ostream & operator<<(std::ostream & stream, const IColumn & what)
@@ -105,7 +90,7 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
         DB::WriteBufferFromOStream out(stream);
         if (i)
             stream << ",";
-            
+
         writeText(array, out);
     }
     stream << "}";
