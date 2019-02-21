@@ -4,7 +4,7 @@ import time
 
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
-from external_sources import SourceMySQL, SourceMongo
+from external_sources import SourceMySQL, SourceMongo, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -68,8 +68,8 @@ FIELDS = {
 }
 
 LAYOUTS = [
-    Layout("cache"),
     Layout("hashed"),
+    Layout("cache"),
     Layout("flat"),
     Layout("complex_key_hashed"),
     Layout("complex_key_cache"),
@@ -79,6 +79,11 @@ LAYOUTS = [
 SOURCES = [
     #SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
+    SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", ""),
+    SourceClickHouse("LocalClickHouse", "localhost", "9000", "node", "9000", "default", ""),
+    SourceFile("File", "localhost", "9000", "node", "9000", "", ""),
+    SourceExecutableHashed("ExecutableHashed", "localhost", "9000", "node", "9000", "", ""),
+    SourceExecutableCache("ExecutableCache", "localhost", "9000", "node", "9000", "", ""),
 ]
 
 DICTIONARIES = []
@@ -97,19 +102,22 @@ def setup_module(module):
 
     for layout in LAYOUTS:
         for source in SOURCES:
-            structure = DictionaryStructure(layout, FIELDS[layout.layout_type])
-            dict_name = source.name + "_" + layout.name
-            dict_path = os.path.join(dict_configs_path, dict_name + '.xml')
-            dictionary = Dictionary(dict_name, structure, source, dict_path, "table_" + dict_name)
-            print dict_name
-            dictionary.generate_config()
-            DICTIONARIES.append(dictionary)
+            if source.compatible_with_layout(layout):
+                structure = DictionaryStructure(layout, FIELDS[layout.layout_type])
+                dict_name = source.name + "_" + layout.name
+                dict_path = os.path.join(dict_configs_path, dict_name + '.xml')
+                dictionary = Dictionary(dict_name, structure, source, dict_path, "table_" + dict_name)
+                dictionary.generate_config()
+                DICTIONARIES.append(dictionary)
+            else:
+                print "Source", source.name, "incompatible with layout", layout.name
 
     main_configs = []
     for fname in os.listdir(dict_configs_path):
         main_configs.append(os.path.join(dict_configs_path, fname))
     cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
     node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True)
+    cluster.add_instance('clickhouse1')
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -117,7 +125,7 @@ def started_cluster():
         cluster.start()
         for dictionary in DICTIONARIES:
             print "Preparing", dictionary.name
-            dictionary.prepare_source()
+            dictionary.prepare_source(cluster)
             print "Prepared"
 
         yield cluster
