@@ -18,7 +18,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD;
-    extern const int CANNOT_CONVERT_TO_PROTOBUF_TYPE;
+    extern const int PROTOBUF_BAD_CAST;
     extern const int PROTOBUF_FIELD_NOT_REPEATED;
 }
 
@@ -67,14 +67,14 @@ protected:
     {
         throw Exception(
             "Could not convert data type '" + type_name + "' to protobuf type '" + field->type_name() + "' (field: " + field->name() + ")",
-            ErrorCodes::CANNOT_CONVERT_TO_PROTOBUF_TYPE);
+            ErrorCodes::PROTOBUF_BAD_CAST);
     }
 
     void cannotConvertValue(const String & value)
     {
         throw Exception(
             "Could not convert value '" + value + "' to protobuf type '" + field->type_name() + "' (field: " + field->name() + ")",
-            ErrorCodes::CANNOT_CONVERT_TO_PROTOBUF_TYPE);
+            ErrorCodes::PROTOBUF_BAD_CAST);
     }
 
     template <typename To, typename From>
