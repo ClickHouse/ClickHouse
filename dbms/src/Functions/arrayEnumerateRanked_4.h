@@ -12,7 +12,7 @@
 
 #include <Core/iostream_debug_helpers.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Functions/FunctionFactory.h>
+//#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -250,7 +250,7 @@ private:
 */
 };
 
-
+#if 0
 //ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const ColumnWithTypeAndName & n, const DataTypePtr & type, const Context & context)
 ColumnPtr arrayElement(const ColumnWithTypeAndName & arg, const int64_t n, const Context & context)
 {
@@ -316,7 +316,7 @@ ColumnPtr array(Block & block, const Context & context)
     func->execute(block, arguments_nums, result_colum_num, block.rows());
     return block.getByPosition(result_colum_num).column;
 }
-
+#endif
 
 /// Hash a set of keys into a UInt128 value.
 static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, /*size_t keys_size,*/ const ColumnRawPtrs & key_columns)
