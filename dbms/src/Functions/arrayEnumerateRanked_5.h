@@ -341,36 +341,27 @@ template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
-    //const ColumnArray::Offsets * offsets = nullptr;
     size_t num_arguments = arguments.size();
-    ColumnRawPtrs data_columns; //(num_arguments);
+    ColumnRawPtrs data_columns;
 
     Columns array_holders;
     ColumnPtr offsets_column;
-
 
     ColumnsWithTypeAndName args;
 
     for (size_t i = 0; i < arguments.size(); ++i)
         args.emplace_back(block.getByPosition(arguments[i]));
 
-    DepthType clear_depth; //1;
-    DepthType max_array_depth; //1;
-    //std::vector<DepthType> depths;
+    DepthType clear_depth;
+    DepthType max_array_depth;
     DepthTypes depths;
 
     std::tie(clear_depth, depths, max_array_depth) = getDepths(args);
 
-    DUMP("GO FUNC!=======", clear_depth, depths, max_array_depth);
-
-
-    // /*
     auto get_array_column = [&](const auto & column) -> const DB::ColumnArray * {
-        //const ColumnArray * array = checkAndGetColumn<ColumnArray>(column.get());
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(column);
         if (!array)
         {
-            //const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(column.get());
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(column);
             if (!const_array)
                 return nullptr;
@@ -379,11 +370,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         }
         return array;
     };
-    //(void)get_array_column;
-    // */
 
-    //std::vector<ColumnPtr> offsets_by_depth;
-    //std::vector<IColumn::Offsets*> offsets_by_depth;
     std::vector<const ColumnArray::Offsets *> offsets_by_depth;
     std::vector<ColumnPtr> offsetsptr_by_depth; // TODO make one !
 
@@ -391,69 +378,43 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     for (size_t i = 0; i < num_arguments; ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
-        DUMP(array_ptr);
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
-        DUMP(array);
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
             if (!const_array)
-            {
-                DUMP("Not array", i);
                 continue;
-            }
-            /*
-                throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
-                    + " of " + toString(i + 1) + "-th argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-*/
             array_holders.emplace_back(const_array->convertToFullColumn());
             array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
         }
 
-        DUMP(array);
-
         if (array_num == 0) // TODO check with prev
         {
-            //offsets_by_depth.emplace_back(array->getOffsetsPtr());
             offsets_by_depth.emplace_back(&array->getOffsets());
             offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
         }
 
         for (DepthType col_depth = 1; col_depth < depths[array_num]; ++col_depth)
         {
-            DUMP(array_num, col_depth, depths[array_num]);
 
-            //DUMP("offsets was:", array->getOffsets());
-
-            //DUMP("test offsets column:", col_depth, max_array_depth);
+/*
             if (col_depth == max_array_depth)
             {
-                //DUMP("using offsets column:", col_depth, max_array_depth);
                 offsets_column = array->getOffsetsPtr();
             }
-
+*/
 
             auto sub_array = get_array_column(&array->getData());
-            DUMP(sub_array);
             if (sub_array)
-            {
                 array = sub_array;
-            }
             if (!sub_array)
-            {
-                //DUMP("Not subarray");
                 break;
-            }
 
             if (offsets_by_depth.size() <= col_depth)
             {
                 offsets_by_depth.emplace_back(&array->getOffsets());
                 offsetsptr_by_depth.emplace_back(array->getOffsetsPtr());
             }
-
-
-            //array->getOffsets()
         }
 
         /*
@@ -484,7 +445,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     auto res_nested = ColumnUInt32::create();
 
     ColumnUInt32::Container & res_values = res_nested->getData();
-    //res_values.resize(offsets_by_depth[clear_depth-1]->back()); // todo size check?
     res_values.resize(offsets_by_depth[max_array_depth - 1]->back()); // todo size check?
 
     executeMethodImpl<MethodHashed, false>(offsets_by_depth, data_columns, clear_depth, max_array_depth, depths, res_values);
