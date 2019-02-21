@@ -13,7 +13,6 @@ namespace DB
 /** Calculate similarity metrics:
   *
   * trigramSimilarity(haystack, needle) --- calculate trigram distance between haystack and needle
-  * levensteinDistance(haystack, needle) --- calculate Levenstein distance between haystack and needle
   */
 
 namespace ErrorCodes
