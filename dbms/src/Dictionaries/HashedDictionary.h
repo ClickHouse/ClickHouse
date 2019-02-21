@@ -27,8 +27,6 @@ public:
         bool require_nonempty,
         BlockPtr saved_block = nullptr);
 
-    HashedDictionary(const HashedDictionary & other);
-
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
     std::string getName() const override { return name; }
@@ -47,7 +45,10 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<HashedDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override
+    {
+        return std::make_unique<HashedDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

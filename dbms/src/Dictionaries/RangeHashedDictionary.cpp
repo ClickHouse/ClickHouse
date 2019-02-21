@@ -94,12 +94,6 @@ RangeHashedDictionary::RangeHashedDictionary(
     creation_time = std::chrono::system_clock::now();
 }
 
-RangeHashedDictionary::RangeHashedDictionary(const RangeHashedDictionary & other)
-    : RangeHashedDictionary{
-          other.dictionary_name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
-{
-}
-
 
 #define DECLARE_MULTIPLE_GETTER(TYPE) \
     void RangeHashedDictionary::get##TYPE( \

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ConfigProcessor.h"
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <time.h>
@@ -81,7 +82,7 @@ private:
     Updater updater;
 
     std::atomic<bool> quit{false};
-    std::thread thread;
+    ThreadFromGlobalPool thread;
 
     /// Locked inside reloadIfNewer.
     std::mutex reload_mutex;

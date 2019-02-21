@@ -4,7 +4,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
 #include <Common/Throttler.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <atomic>
 #include <memory>
 #include <chrono>

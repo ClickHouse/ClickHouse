@@ -3,4 +3,5 @@ target_link_libraries (clickhouse-format-lib PRIVATE dbms clickhouse_common_io c
 if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-format clickhouse-format.cpp)
     target_link_libraries (clickhouse-format PRIVATE clickhouse-format-lib)
+    install (TARGETS clickhouse-format ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()

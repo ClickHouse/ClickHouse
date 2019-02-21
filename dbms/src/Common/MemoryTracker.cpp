@@ -190,17 +190,20 @@ namespace CurrentMemoryTracker
 {
     void alloc(Int64 size)
     {
-        DB::CurrentThread::getMemoryTracker().alloc(size);
+        if (DB::current_thread)
+            DB::CurrentThread::getMemoryTracker().alloc(size);
     }
 
     void realloc(Int64 old_size, Int64 new_size)
     {
-        DB::CurrentThread::getMemoryTracker().alloc(new_size - old_size);
+        if (DB::current_thread)
+            DB::CurrentThread::getMemoryTracker().alloc(new_size - old_size);
     }
 
     void free(Int64 size)
     {
-        DB::CurrentThread::getMemoryTracker().free(size);
+        if (DB::current_thread)
+            DB::CurrentThread::getMemoryTracker().free(size);
     }
 }
 

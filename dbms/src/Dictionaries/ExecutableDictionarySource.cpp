@@ -6,6 +6,7 @@
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Common/ShellCommand.h>
+#include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
@@ -14,7 +15,7 @@
 
 namespace DB
 {
-static const size_t max_block_size = 8192;
+static const UInt64 max_block_size = 8192;
 
 
 namespace
@@ -114,7 +115,7 @@ namespace
     /** A stream, that also runs and waits for background thread
   * (that will feed data into pipe to be read from the other side of the pipe).
   */
-    class BlockInputStreamWithBackgroundThread final : public IProfilingBlockInputStream
+    class BlockInputStreamWithBackgroundThread final : public IBlockInputStream
     {
     public:
         BlockInputStreamWithBackgroundThread(
@@ -149,7 +150,7 @@ namespace
 
         void readSuffix() override
         {
-            IProfilingBlockInputStream::readSuffix();
+            IBlockInputStream::readSuffix();
             if (!wait_called)
             {
                 wait_called = true;
@@ -165,7 +166,7 @@ namespace
         BlockInputStreamPtr stream;
         std::unique_ptr<ShellCommand> command;
         std::packaged_task<void()> task;
-        std::thread thread;
+        ThreadFromGlobalPool thread;
         bool wait_called = false;
     };
 
@@ -233,7 +234,8 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr {
+                                 Context & context) -> DictionarySourcePtr
+    {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 

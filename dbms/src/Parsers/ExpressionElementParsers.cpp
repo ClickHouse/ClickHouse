@@ -169,19 +169,19 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     String name;
+    std::vector<String> parts;
     const ASTExpressionList & list = static_cast<const ASTExpressionList &>(*id_list.get());
     for (const auto & child : list.children)
     {
         if (!name.empty())
             name += '.';
-        name += *getIdentifierName(child);
+        parts.emplace_back(*getIdentifierName(child));
+        name += parts.back();
     }
 
-    node = std::make_shared<ASTIdentifier>(name);
-
-    /// In `children`, remember the identifiers-components, if there are more than one.
-    if (list.children.size() > 1)
-        node->children.insert(node->children.end(), list.children.begin(), list.children.end());
+    if (parts.size() == 1)
+        parts.clear();
+    node = std::make_shared<ASTIdentifier>(name, std::move(parts));
 
     return true;
 }
@@ -672,8 +672,6 @@ bool ParserRightExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto begin = pos;
-
     if (!ParserKeyword("EXTRACT").ignore(pos, expected))
         return false;
 
@@ -734,14 +732,10 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
     auto function = std::make_shared<ASTFunction>();
     auto exp_list = std::make_shared<ASTExpressionList>();
-    function->range.first = begin->begin;
-    function->range.second = pos->begin;
     function->name = function_name; //"toYear";
     function->arguments = exp_list;
     function->children.push_back(exp_list);
     exp_list->children.push_back(expr);
-    exp_list->range.first = begin->begin;
-    exp_list->range.second = pos->begin;
     node = function;
 
     return true;
@@ -1136,6 +1130,9 @@ const char * ParserAlias::restricted_keywords[] =
     "FORMAT",
     "UNION",
     "INTO",
+    "NOT",
+    "BETWEEN",
+    "LIKE",
     nullptr
 };
 

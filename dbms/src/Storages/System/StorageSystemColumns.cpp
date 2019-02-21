@@ -52,13 +52,13 @@ namespace
 }
 
 
-class ColumnsBlockInputStream : public IProfilingBlockInputStream
+class ColumnsBlockInputStream : public IBlockInputStream
 {
 public:
     ColumnsBlockInputStream(
         const std::vector<UInt8> & columns_mask,
         const Block & header,
-        size_t max_block_size,
+        UInt64 max_block_size,
         ColumnPtr databases,
         ColumnPtr tables,
         Storages storages)
@@ -247,7 +247,7 @@ protected:
 private:
     std::vector<UInt8> columns_mask;
     Block header;
-    size_t max_block_size;
+    UInt64 max_block_size;
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;

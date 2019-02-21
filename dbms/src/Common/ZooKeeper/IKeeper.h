@@ -61,6 +61,7 @@ struct Request
 {
     Request() = default;
     Request(const Request &) = default;
+    Request & operator=(const Request &) = default;
     virtual ~Request() = default;
     virtual String getPath() const = 0;
     virtual void addRootPath(const String & /* root_path */) {}
@@ -76,6 +77,7 @@ struct Response
     int32_t error = 0;
     Response() = default;
     Response(const Response &) = default;
+    Response & operator=(const Response &) = default;
     virtual ~Response() = default;
     virtual void removeRootPath(const String & /* root_path */) {}
 };

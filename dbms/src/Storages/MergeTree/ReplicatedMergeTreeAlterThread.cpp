@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/setThreadName.h>
@@ -144,43 +145,20 @@ void ReplicatedMergeTreeAlterThread::run()
                 parts = storage.data.getDataParts();
 
             const auto columns_for_parts = storage.getColumns().getAllPhysical();
+            const auto indices_for_parts = storage.getIndicesDescription();
 
             for (const MergeTreeData::DataPartPtr & part : parts)
             {
                 /// Update the part and write result to temporary files.
                 /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                 /// node /flags/force_alter.
-                auto transaction = storage.data.alterDataPart(part, columns_for_parts, false);
-
+                auto transaction = storage.data.alterDataPart(part, columns_for_parts, indices_for_parts.indices, false);
                 if (!transaction)
                     continue;
 
+                storage.updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);
+
                 ++changed_parts;
-
-                /// Update part metadata in ZooKeeper.
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeSetRequest(
-                    storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-                ops.emplace_back(zkutil::makeSetRequest(
-                    storage.replica_path + "/parts/" + part->name + "/checksums",
-                    storage.getChecksumsForZooKeeper(transaction->getNewChecksums()),
-                    -1));
-
-                try
-                {
-                    zookeeper->multi(ops);
-                }
-                catch (const Coordination::Exception & e)
-                {
-                    /// The part does not exist in ZK. We will add to queue for verification - maybe the part is superfluous, and it must be removed locally.
-                    if (e.code == Coordination::ZNONODE)
-                        storage.enqueuePartForCheck(part->name);
-
-                    throw;
-                }
-
-                /// Apply file changes.
-                transaction->commit();
             }
 
             /// Columns sizes could be quietly changed in case of MODIFY/ADD COLUMN

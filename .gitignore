@@ -180,18 +180,10 @@ utils/zookeeper-create-entry-to-download-part/zookeeper-create-entry-to-download
 utils/zookeeper-dump-tree/zookeeper-dump-tree
 utils/zookeeper-remove-by-list/zookeeper-remove-by-list
 dbms/src/Storages/tests/remove_symlink_directory
-debian/control
-debian/copyright
-debian/tmp/
 libs/libcommon/src/tests/json_test
 utils/compressor/zstd_test
 utils/wikistat-loader/wikistat-loader
 dbms/src/Common/tests/pod_array
-debian/clickhouse-benchmark/
-debian/clickhouse-client/
-debian/clickhouse-server-base/
-debian/clickhouse-server-common/
-debian/files
 
 dbms/src/Server/data/*
 dbms/src/Server/metadata/*
@@ -210,9 +202,6 @@ vgcore*
 *.changes
 build-stamp
 configure-stamp
-debian/*.debhelper.log
-debian/*.debhelper
-debian/*.substvars
 
 *.bin
 *.mrk
@@ -254,3 +243,5 @@ website/package-lock.json
 
 # ccls cache
 /.ccls-cache
+
+/compile_commands.json

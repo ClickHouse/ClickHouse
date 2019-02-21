@@ -159,7 +159,7 @@ protected:
 
     /// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
     void waitForTerminationRequest()
-#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
+#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
     override
 #endif
     ;
@@ -231,6 +231,10 @@ private:
 
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
     std::string config_logger;
+
+    /// Check SSE and others instructions availability
+    /// Calls exit on fail
+    void checkRequiredInstructions();
 };
 
 

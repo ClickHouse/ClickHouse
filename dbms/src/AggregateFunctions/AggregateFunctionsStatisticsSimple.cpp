@@ -24,9 +24,9 @@ AggregateFunctionPtr createAggregateFunctionStatisticsUnary(const std::string & 
     AggregateFunctionPtr res;
     DataTypePtr data_type = argument_types[0];
     if (isDecimal(data_type))
-        res.reset(createWithDecimalType<FunctionTemplate>(*data_type, *data_type));
+        res.reset(createWithDecimalType<FunctionTemplate>(*data_type, *data_type, argument_types));
     else
-        res.reset(createWithNumericType<FunctionTemplate>(*data_type));
+        res.reset(createWithNumericType<FunctionTemplate>(*data_type, argument_types));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
@@ -40,7 +40,7 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(const std::string &
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);
 
-    AggregateFunctionPtr res(createWithTwoNumericTypes<FunctionTemplate>(*argument_types[0], *argument_types[1]));
+    AggregateFunctionPtr res(createWithTwoNumericTypes<FunctionTemplate>(*argument_types[0], *argument_types[1], argument_types));
     if (!res)
         throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
             + " of arguments for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

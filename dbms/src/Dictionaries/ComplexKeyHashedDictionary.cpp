@@ -43,12 +43,6 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
     creation_time = std::chrono::system_clock::now();
 }
 
-ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(const ComplexKeyHashedDictionary & other)
-    : ComplexKeyHashedDictionary{
-          other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty, other.saved_block}
-{
-}
-
 #define DECLARE(TYPE) \
     void ComplexKeyHashedDictionary::get##TYPE( \
         const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \

@@ -2,7 +2,7 @@
 
 The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
-`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a row are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#collapsing) section of the document.
+`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a row are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#table_engine-collapsingmergetree-collapsing) section of the document.
 
 The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
 
@@ -31,7 +31,7 @@ For a description of query parameters, see [query description](../../query_langu
 
 **Query clauses**
 
-When creating a `CollapsingMergeTree` table, the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `CollapsingMergeTree` table, the same [query clauses](mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
@@ -55,13 +55,13 @@ All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
 </details>
 
 
-## Collapsing
+## Collapsing {#table_engine-collapsingmergetree-collapsing}
 
 ### Data
 
 Consider the situation where you need to save continually changing data for some object. It sounds logical to have one row for an object and update it at any change, but update operation is expensive and slow for DBMS because it requires rewriting of the data in the storage. If you need to write data quickly, update not acceptable, but you can write the changes of an object sequentially as follows.
 
-Use the particular column `Sign` when writing row. If `Sign = 1` it means that the row is a state of an object, let's call it "state" row. If `Sign = -1` it means the cancellation of the state of an object with the same attributes, let's call it "cancel" row.
+Use the particular column `Sign`. If `Sign = 1` it means that the row is a state of an object, let's call it "state" row. If `Sign = -1` it means the cancellation of the state of an object with the same attributes, let's call it "cancel" row.
 
 For example, we want to calculate how much pages users checked at some site and how long they were there. At some moment of time we write the following row with the state of user activity:
 
@@ -95,15 +95,15 @@ As we need only the last state of user activity, the rows
 
 can be deleted collapsing the invalid (old) state of an object. `CollapsingMergeTree` does this while merging of the data parts.
 
-Why we need 2 rows for each change read in the "Algorithm" paragraph.
+Why we need 2 rows for each change read in the [Algorithm](#table_engine-collapsingmergetree-collapsing-algorithm) paragraph.
 
 **Peculiar properties of such approach**
 
 1. The program that writes the data should remember the state of an object to be able to cancel it. "Cancel" string should be the copy of "state" string with the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
 2. Long growing arrays in columns reduce the efficiency of the engine due to load for writing. The more straightforward data, the higher efficiency.
-3. `SELECT` results depend strongly on the consistency of object changes history. Be accurate when preparing data for inserting. You can get unpredictable results in inconsistent data, for example, negative values for non-negative metrics such as session depth.
+3. The `SELECT` results depend strongly on the consistency of object changes history. Be accurate when preparing data for inserting. You can get unpredictable results in inconsistent data, for example, negative values for non-negative metrics such as session depth.
 
-### Algorithm
+### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
 
 When ClickHouse merges data parts, each group of consecutive rows with the same primary key is reduced to not more than two rows, one with `Sign = 1` ("state" row) and another with `Sign = -1` ("cancel" row). In other words, entries collapse.
 
@@ -181,8 +181,8 @@ SELECT * FROM UAct
 ```
 
 What do we see and where is collapsing?
-With two `INSERT` queries, we created 2 data parts. The `SELECT` query was performed in 2 threads, and we got a random order of rows.
-Collapsing not occurred because there was no merge of the data parts yet. ClickHouse merges data part in an unknown moment of time which we can not predict.
+
+With two `INSERT` queries, we created 2 data parts. The `SELECT` query was performed in 2 threads, and we got a random order of rows. Collapsing not occurred because there was no merge of the data parts yet. ClickHouse merges data part in an unknown moment of time which we can not predict.
 
 Thus we need aggregation:
 

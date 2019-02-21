@@ -46,8 +46,7 @@ bool RequiredSourceColumnsMatcher::needChildVisit(ASTPtr & node, const ASTPtr & 
         return false;
 
     /// Processed. Do not need children.
-    if (typeid_cast<ASTIdentifier *>(node.get()) ||
-        typeid_cast<ASTTableExpression *>(node.get()) ||
+    if (typeid_cast<ASTTableExpression *>(node.get()) ||
         typeid_cast<ASTArrayJoin *>(node.get()) ||
         typeid_cast<ASTSelectQuery *>(node.get()))
         return false;
@@ -69,7 +68,6 @@ std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & d
 
     if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        data.addColumnAliasIfAny(*ast);
         visit(*t, ast, data);
         return {};
     }
@@ -122,9 +120,9 @@ std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTSelectQuery & selec
     for (auto & node : select.select_expression_list->children)
     {
         if (auto * identifier = typeid_cast<ASTIdentifier *>(node.get()))
-            data.addColumnIdentifier(*identifier, true);
+            data.addColumnIdentifier(*identifier);
         else
-            data.addColumnAliasIfAny(*node, true);
+            data.addColumnAliasIfAny(*node);
     }
 
     std::vector<ASTPtr *> out;
@@ -157,7 +155,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
                 local_aliases.push_back(name);
 
         /// visit child with masked local aliases
-        visit(node.arguments->children[1], data);
+        RequiredSourceColumnsVisitor(data).visit(node.arguments->children[1]);
 
         for (const auto & name : local_aliases)
             data.private_aliases.erase(name);

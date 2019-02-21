@@ -121,8 +121,8 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
-
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+    CancellationCode killMutation(const String & mutation_id) override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -153,6 +153,7 @@ public:
     struct Status
     {
         bool is_leader;
+        bool can_become_leader;
         bool is_readonly;
         bool is_session_expired;
         ReplicatedMergeTreeQueue::Status queue;
@@ -372,8 +373,14 @@ private:
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id_path = "") const;
 
+    /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
+    void updatePartHeaderInZooKeeperAndCommit(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        MergeTreeData::AlterDataPartTransaction & transaction);
+
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops);
+    /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
+    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
@@ -546,6 +553,7 @@ protected:
         bool attach,
         const String & path_, const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
+        const IndicesDescription & indices_,
         Context & context_,
         const String & date_column_name,
         const ASTPtr & partition_by_ast_,

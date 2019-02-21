@@ -3,7 +3,7 @@
 #include <Interpreters/Aggregator.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ParallelInputsProcessor.h>
 
 
@@ -16,7 +16,7 @@ namespace DB
   * If final == false, aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
   * This is necessary so that aggregation can continue (for example, by combining streams of partially aggregated data).
   */
-class ParallelAggregatingBlockInputStream : public IProfilingBlockInputStream
+class ParallelAggregatingBlockInputStream : public IBlockInputStream
 {
 public:
     /** Columns from key_names and arguments of aggregate functions must already be computed.

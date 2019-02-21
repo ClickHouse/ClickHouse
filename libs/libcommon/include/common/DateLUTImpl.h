@@ -14,6 +14,11 @@
 #define DATE_LUT_MAX_YEAR 2105 /// Last supported year
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
+#if defined(__PPC__)
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+#endif
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -278,6 +283,7 @@ public:
     inline time_t toStartOfMinute(time_t t) const { return t / 60 * 60; }
     inline time_t toStartOfFiveMinute(time_t t) const { return t / 300 * 300; }
     inline time_t toStartOfFifteenMinutes(time_t t) const { return t / 900 * 900; }
+    inline time_t toStartOfTenMinutes(time_t t) const { return t / 600 * 600; }
 
     inline time_t toStartOfHour(time_t t) const
     {
@@ -418,6 +424,71 @@ public:
     inline time_t toRelativeMinuteNum(DayNum d) const
     {
         return toRelativeMinuteNum(lut[d].date);
+    }
+
+    inline DayNum toStartOfYearInterval(DayNum d, UInt64 years) const
+    {
+        if (years == 1)
+            return toFirstDayNumOfYear(d);
+        return years_lut[(lut[d].year - DATE_LUT_MIN_YEAR) / years * years];
+    }
+
+    inline DayNum toStartOfQuarterInterval(DayNum d, UInt64 quarters) const
+    {
+        if (quarters == 1)
+            return toFirstDayNumOfQuarter(d);
+        return toStartOfMonthInterval(d, quarters * 3);
+    }
+
+    inline DayNum toStartOfMonthInterval(DayNum d, UInt64 months) const
+    {
+        if (months == 1)
+            return toFirstDayNumOfMonth(d);
+        const auto & date = lut[d];
+        UInt32 month_total_index = (date.year - DATE_LUT_MIN_YEAR) * 12 + date.month - 1;
+        return years_months_lut[month_total_index / months * months];
+    }
+
+    inline DayNum toStartOfWeekInterval(DayNum d, UInt64 weeks) const
+    {
+        if (weeks == 1)
+            return toFirstDayNumOfWeek(d);
+        UInt64 days = weeks * 7;
+        // January 1st 1970 was Thursday so we need this 4-days offset to make weeks start on Monday.
+        return DayNum(4 + (d - 4) / days * days);
+    }
+
+    inline time_t toStartOfDayInterval(DayNum d, UInt64 days) const
+    {
+        if (days == 1)
+            return toDate(d);
+        return lut[d / days * days].date;
+    }
+
+    inline time_t toStartOfHourInterval(time_t t, UInt64 hours) const
+    {
+        if (hours == 1)
+            return toStartOfHour(t);
+        UInt64 seconds = hours * 3600;
+        t = t / seconds * seconds;
+        if (offset_is_whole_number_of_hours_everytime)
+            return t;
+        return toStartOfHour(t);
+    }
+
+    inline time_t toStartOfMinuteInterval(time_t t, UInt64 minutes) const
+    {
+        if (minutes == 1)
+            return toStartOfMinute(t);
+        UInt64 seconds = 60 * minutes;
+        return t / seconds * seconds;
+    }
+
+    inline time_t toStartOfSecondInterval(time_t t, UInt64 seconds) const
+    {
+        if (seconds == 1)
+            return t;
+        return t / seconds * seconds;
     }
 
     /// Create DayNum from year, month, day of month.
@@ -684,3 +755,9 @@ public:
         return s;
     }
 };
+
+#if defined(__PPC__)
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+#endif

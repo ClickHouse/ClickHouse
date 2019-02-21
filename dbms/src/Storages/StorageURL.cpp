@@ -11,7 +11,7 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -35,7 +35,7 @@ IStorageURLBase::IStorageURLBase(const Poco::URI & uri_,
 
 namespace
 {
-    class StorageURLBlockInputStream : public IProfilingBlockInputStream
+    class StorageURLBlockInputStream : public IBlockInputStream
     {
     public:
         StorageURLBlockInputStream(const Poco::URI & uri,
@@ -45,7 +45,7 @@ namespace
             const String & name_,
             const Block & sample_block,
             const Context & context,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const ConnectionTimeouts & timeouts)
             : name(name_)
         {
