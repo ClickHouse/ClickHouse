@@ -12,6 +12,9 @@ namespace DB
 class StringBloomFilter
 {
 public:
+    using StorageType = UInt8;
+    using Container = std::vector<StorageType>;
+
     /// size -- size of filter in bytes.
     /// hashes -- number of used hash functions.
     /// seed -- random seed for hash functions generation.
@@ -27,8 +30,8 @@ public:
 
     void merge(const StringBloomFilter & bf);
 
-    const std::vector<UInt8> & getFilter() const { return filter; };
-    void setFilter(std::vector<UInt8> && new_filter) { filter = std::move(new_filter); };
+    const Container & getFilter() const { return filter; };
+    void setFilter(Container && new_filter) { filter = std::move(new_filter); };
 
     /// For debug.
     UInt64 getFingerPrint() const;
@@ -42,7 +45,7 @@ private:
     size_t size;
     size_t hashes;
     size_t seed;
-    std::vector<UInt8> filter;
+    Container filter;
 };
 
 

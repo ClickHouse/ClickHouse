@@ -27,7 +27,7 @@ struct MergeTreeBloomFilterIndexGranule : public IMergeTreeIndexGranule
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     const MergeTreeBloomFilterIndex & index;
-    StringBloomFilter bloom_filter;
+    std::vector<StringBloomFilter> bloom_filters;
     bool has_elems;
 };
 
@@ -92,6 +92,8 @@ private:
 
     const MergeTreeBloomFilterIndex & index;
     RPN rpn;
+    /// Sets from syntax analyzer.
+    PreparedSets prepared_sets;
 };
 
 struct TokenExtractor
@@ -163,8 +165,6 @@ public:
     size_t seed;
     /// Fucntion for selecting next token.
     std::unique_ptr<TokenExtractor> token_extractor_func;
-    /// Sets from syntax analyzer.
-    PreparedSets prepared_sets;
 };
 
 }
