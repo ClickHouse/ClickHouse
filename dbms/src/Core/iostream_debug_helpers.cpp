@@ -80,16 +80,9 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
     stream << "{";
     for (size_t i = 0; i < what.size(); ++i)
     {
-        const auto & field = what[i];
-
-        // TODO write one field without array
-        std::vector<Field> array;
-        array.emplace_back(field);
-        DB::WriteBufferFromOStream out(stream);
+        stream << applyVisitor(FieldVisitorDump(), what[i]);
         if (i)
-            stream << ",";
-
-        writeText(array, out);
+            stream << ", ";
     }
     stream << "}";
 
