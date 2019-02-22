@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/QueryNormalizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -89,7 +90,7 @@ void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos,
     for (size_t i = 0; i < rows_read; ++i)
     {
         auto ref = column->getDataAt(*pos + i);
-        stringToBloomFilter(ref.data, ref.size, index.tokenExtractorFunc, bloom_filter);
+        stringToBloomFilter(ref.data, ref.size, index.token_extractor_func, bloom_filter);
     }
 
     has_elems = true;
@@ -108,7 +109,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
                     const auto & str = value.get<String>();
-                    stringToBloomFilter(str.c_str(), str.size(), idx.tokenExtractorFunc, *out.bloom_filter);
+                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
                     return true;
                 }
         },
@@ -121,7 +122,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
                     const auto & str = value.get<String>();
-                    stringToBloomFilter(str.c_str(), str.size(), idx.tokenExtractorFunc, *out.bloom_filter);
+                    stringToBloomFilter(str.c_str(), str.size(), idx.token_extractor_func, *out.bloom_filter);
                     return true;
                 }
         },
@@ -134,7 +135,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
                     const auto & str = value.get<String>();
-                    likeStringToBloomFilter(str, idx.tokenExtractorFunc, *out.bloom_filter);
+                    likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
                     return true;
                 }
         },
@@ -147,7 +148,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
                     const auto & str = value.get<String>();
-                    likeStringToBloomFilter(str, idx.tokenExtractorFunc, *out.bloom_filter);
+                    likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
                     return true;
                 }
         }
@@ -256,7 +257,7 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
              || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
             rpn_stack.emplace_back(
-                    granule->bloom_filter == *element.bloom_filter, true);
+                    granule->bloom_filter.contains(*element.bloom_filter), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -266,9 +267,6 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
         {
             rpn_stack.emplace_back(
                     granule->bloom_filter.contains(*element.bloom_filter), true);
-
-            auto * log = &Poco::Logger::get("like check:");
-            LOG_DEBUG(log, granule->bloom_filter.contains(*(element.bloom_filter)));
 
             if (element.function == RPNElement::FUNCTION_NOT_LIKE)
                 rpn_stack.back() = !rpn_stack.back();
@@ -351,7 +349,7 @@ bool BloomFilterCondition::getKey(const ASTPtr & node, size_t & key_column_num)
 }
 
 bool BloomFilterCondition::atomFromAST(
-    const ASTPtr & node, const Context &, Block & block_with_constants, RPNElement & out)
+    const ASTPtr & node, const Context & /* context */, Block & block_with_constants, RPNElement & out)
 {
     Field const_value;
     DataTypePtr const_type;
@@ -365,6 +363,11 @@ bool BloomFilterCondition::atomFromAST(
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
 
+        /*if (functionIsInOrGlobalInOperator(func->name) && tryPrepareSetBloomFilter(args, context, out, key_column_num))
+        {
+            key_arg_pos = 0;
+        }
+        else */
         if (KeyCondition::getConstant(args[1], block_with_constants, const_value, const_type) && getKey(args[0], key_column_num))
         {
             key_arg_pos = 0;
@@ -435,6 +438,15 @@ bool BloomFilterCondition::operatorFromAST(
 
     return true;
 }
+
+/*bool BloomFilterCondition::tryPrepareSetBloomFilter(
+    const ASTs & args,
+    const Context & context,
+    RPNElement & out,
+    size_t & out_key_column_num)
+{
+    return false;
+}*/
 
 
 MergeTreeIndexGranulePtr MergeTreeBloomFilterIndex::createIndexGranule() const

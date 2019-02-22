@@ -86,6 +86,7 @@ private:
     bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
     bool getKey(const ASTPtr & node, size_t & key_column_num);
+    //bool tryPrepareSetBloomFilter(const ASTs & args, const Context & context, RPNElement & out, size_t & out_key_column_num);
 
     static const AtomMap atom_map;
 
@@ -108,8 +109,7 @@ struct NgramTokenExtractor : public TokenExtractor
     NgramTokenExtractor(size_t n_) : n(n_) {}
 
     static String getName() {
-        static String name = "ngrambf";
-        return name;
+        return "ngrambf";
     }
 
     bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
@@ -117,6 +117,16 @@ struct NgramTokenExtractor : public TokenExtractor
 
     size_t n;
 };
+
+/*struct SplitTokenExtractor : public TokenExtractor
+{
+    static String getName() {
+        return "tokenbf";
+    }
+
+    bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
+    bool nextLike(const String & str, size_t * pos, String & token) const override;
+};*/
 
 class MergeTreeBloomFilterIndex : public IMergeTreeIndex
 {
@@ -131,12 +141,12 @@ public:
             size_t bloom_filter_size_,
             size_t bloom_filter_hashes_,
             size_t seed_,
-            std::unique_ptr<TokenExtractor> && tokenExtractorFunc_)
+            std::unique_ptr<TokenExtractor> && token_extractor_func_)
             : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_)
             , bloom_filter_size(bloom_filter_size_)
             , bloom_filter_hashes(bloom_filter_hashes_)
             , seed(seed_)
-            , tokenExtractorFunc(std::move(tokenExtractorFunc_)) {}
+            , token_extractor_func(std::move(token_extractor_func_)) {}
 
     ~MergeTreeBloomFilterIndex() override = default;
 
@@ -151,8 +161,10 @@ public:
     size_t bloom_filter_hashes;
     /// Bloom filter seed.
     size_t seed;
-    /// Fucntion for selecting next token
-    std::unique_ptr<TokenExtractor> tokenExtractorFunc;
+    /// Fucntion for selecting next token.
+    std::unique_ptr<TokenExtractor> token_extractor_func;
+    /// Sets from syntax analyzer.
+    PreparedSets prepared_sets;
 };
 
 }
