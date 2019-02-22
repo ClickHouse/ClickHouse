@@ -79,7 +79,7 @@ private:
 
 
 /// Hash a set of keys into a UInt128 value.
-static inline UInt128 ALWAYS_INLINE hash128depths(std::vector<size_t> indexes, const ColumnRawPtrs & key_columns)
+static inline UInt128 ALWAYS_INLINE hash128depths(const std::vector<size_t> & indexes, const ColumnRawPtrs & key_columns)
 {
     UInt128 key;
     SipHash hash;
