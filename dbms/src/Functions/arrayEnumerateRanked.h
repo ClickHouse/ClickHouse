@@ -132,16 +132,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-        const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
-        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+        const auto * array = get_array_column(block.getByPosition(arguments[i]).column.get());
         if (!array)
-        {
-            const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[i]).column.get());
-            if (!const_array)
-                continue;
-            array_holders.emplace_back(const_array->convertToFullColumn());
-            array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
-        }
+            continue;
 
         if (array_num == 0) // TODO check with prev
         {
