@@ -5,19 +5,18 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
-#include <Common/FieldVisitors.h>
-#include <Common/COWPtr.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
-#include <Storages/IStorage.h>
+#include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/IAST.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <Storages/IStorage.h>
+#include <Common/COWPtr.h>
+#include <Common/FieldVisitors.h>
 
 namespace DB
 {
-
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
     stream << "IBlockInputStream(name = " << what.getName() << ")";
@@ -45,8 +44,7 @@ std::ostream & operator<<(std::ostream & stream, const IDataType & what)
 std::ostream & operator<<(std::ostream & stream, const IStorage & what)
 {
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
-           << what.getColumns().getAllPhysical().toString()
-           << "}";
+           << what.getColumns().getAllPhysical().toString() << "}";
     return stream;
 }
 
@@ -58,16 +56,15 @@ std::ostream & operator<<(std::ostream & stream, const TableStructureReadLock &)
 
 std::ostream & operator<<(std::ostream & stream, const IFunctionBuilder & what)
 {
-    stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = "
-           << what.getNumberOfArguments() << ")";
+    stream << "IFunction(name = " << what.getName() << ", variadic = " << what.isVariadic() << ", args = " << what.getNumberOfArguments()
+           << ")";
     return stream;
 }
 
 std::ostream & operator<<(std::ostream & stream, const Block & what)
 {
     stream << "Block("
-           << "num_columns = " << what.columns()
-           << "){" << what.dumpStructure() << "}";
+           << "num_columns = " << what.columns() << "){" << what.dumpStructure() << "}";
     return stream;
 }
 
@@ -81,7 +78,8 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
 {
     stream << "IColumn(" << what.dumpStructure() << ")";
     stream << "{";
-    for (size_t i = 0; i < what.size(); ++i) {
+    for (size_t i = 0; i < what.size(); ++i)
+    {
         const auto & field = what[i];
 
         // TODO write one field without array
@@ -101,8 +99,8 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
 std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what)
 {
     stream << "Connection::Packet("
-        << "type = " << what.type;
-        // types description: Core/Protocol.h
+           << "type = " << what.type;
+    // types description: Core/Protocol.h
     if (what.exception)
         stream << "exception = " << what.exception.get();
     // TODO: profile_info
