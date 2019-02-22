@@ -4,7 +4,7 @@ import time
 
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
-from external_sources import SourceMySQL, SourceMongo, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
+from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed
 from external_sources import SourceHTTP, SourceHTTPS
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
