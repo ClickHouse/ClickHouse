@@ -12,7 +12,8 @@ namespace DB
 
 /** Calculate similarity metrics:
   *
-  * trigramSimilarity(haystack, needle) --- calculate trigram distance between haystack and needle
+  * distance(haystack, needle) --- calculate so called "distance" between haystack and needle.
+  * Returns float number from 0 to 1 - the closer to zero, the more strings are similar to each other.
   */
 
 namespace ErrorCodes
@@ -20,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 template <typename Impl, typename Name>
@@ -63,7 +65,14 @@ public:
         if (col_haystack_const)
         {
             ResultType res{};
-            Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
+            const String & needle = col_needle_const->getValue<String>();
+            if (needle.size() > Impl::MaxStringSize)
+            {
+                throw Exception(
+                    "String size of needle is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::MaxStringSize),
+                        ErrorCodes::TOO_LARGE_STRING_SIZE);
+            }
+            Impl::constant_constant(col_haystack_const->getValue<String>(), needle, res);
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
             return;
         }
@@ -76,13 +85,24 @@ public:
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
 
         if (col_haystack_vector)
+        {
+            const String & needle = col_needle_const->getValue<String>();
+            if (needle.size() > Impl::MaxStringSize)
+            {
+                throw Exception(
+                    "String size of needle is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::MaxStringSize),
+                        ErrorCodes::TOO_LARGE_STRING_SIZE);
+            }
             Impl::vector_constant(
-                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), col_needle_const->getValue<String>(), vec_res);
+                col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
+        }
         else
+        {
             throw Exception(
                 "Illegal columns " + block.getByPosition(arguments[0]).column->getName() + " and "
                     + block.getByPosition(arguments[1]).column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+        }
 
         block.getByPosition(result).column = std::move(col_res);
     }
