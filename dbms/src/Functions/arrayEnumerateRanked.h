@@ -173,6 +173,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             }
         }
 
+        // Force default depth for array = 1
+        if (depths.size() <= array_num)
+            depths.emplace_back(1);
         DepthType col_depth = 1;
         for (; col_depth < depths[array_num]; ++col_depth)
         {
