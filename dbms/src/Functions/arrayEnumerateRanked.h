@@ -127,7 +127,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     };
 
     std::vector<const ColumnArray::Offsets *> offsets_by_depth;
-    std::vector<ColumnPtr> offsetsptr_by_depth; // TODO make one !
+    std::vector<ColumnPtr> offsetsptr_by_depth;
 
     size_t array_num = 0;
     for (size_t i = 0; i < num_arguments; ++i)
@@ -196,9 +196,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     auto res_nested = ColumnUInt32::create();
 
     ColumnUInt32::Container & res_values = res_nested->getData();
-    res_values.resize(offsets_by_depth[arrays_depths.max_array_depth - 1]->back()); // todo size check?
+    res_values.resize(offsets_by_depth[arrays_depths.max_array_depth - 1]->back());
 
-    executeMethodImpl(offsets_by_depth, data_columns, /*clear_depth, max_array_depth, depths*/ arrays_depths, res_values);
+    executeMethodImpl(offsets_by_depth, data_columns, arrays_depths, res_values);
 
     ColumnPtr result_nested_array = std::move(res_nested);
     for (int depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
@@ -207,28 +207,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     block.getByPosition(result).column = result_nested_array;
 }
 
-
-template <typename Derived>
-void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
-    const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
-    const ColumnRawPtrs & columns,
-    const ArraysDepths & arrays_depths,
-    ColumnUInt32::Container & res_values)
-{
-    const size_t current_offset_depth = arrays_depths.max_array_depth;
-    const auto & offsets = *offsets_by_depth[current_offset_depth - 1];
-
-    ColumnArray::Offset prev_off = 0;
-
-    using Map = ClearableHashMap<
-        UInt128,
-        UInt32,
-        UInt128TrivialHash,
-        HashTableGrower<INITIAL_SIZE_DEGREE>,
-        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
-    Map indices;
-
-    /*
+/*
 
 (2, [[1,2,3],[2,2,1],[3]], 2, [4,5,6], 1)
     ; 1 2 3;  2 2 1;  3        4 5 6
@@ -263,7 +242,27 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 (3, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3)
     ;  . . . ; . . . ; . . .  ;  . . . ; . . . ; . . .  ;  . .
 
-    */
+*/
+
+template <typename Derived>
+void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
+    const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
+    const ColumnRawPtrs & columns,
+    const ArraysDepths & arrays_depths,
+    ColumnUInt32::Container & res_values)
+{
+    const size_t current_offset_depth = arrays_depths.max_array_depth;
+    const auto & offsets = *offsets_by_depth[current_offset_depth - 1];
+
+    ColumnArray::Offset prev_off = 0;
+
+    using Map = ClearableHashMap<
+        UInt128,
+        UInt32,
+        UInt128TrivialHash,
+        HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+    Map indices;
 
     std::vector<size_t> indexes_by_depth(arrays_depths.max_array_depth);
     std::vector<size_t> current_offset_n_by_depth(arrays_depths.max_array_depth);
