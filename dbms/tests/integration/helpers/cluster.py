@@ -457,10 +457,10 @@ class ClickHouseInstance:
         return self.client.get_query_request(*args, **kwargs)
 
 
-    def exec_in_container(self, cmd, **kwargs):
+    def exec_in_container(self, cmd, detach=False, **kwargs):
         container = self.get_docker_handle()
         exec_id = self.docker_client.api.exec_create(container.id, cmd, **kwargs)
-        output = self.docker_client.api.exec_start(exec_id, detach=False)
+        output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
         output = output.decode('utf8')
         exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
