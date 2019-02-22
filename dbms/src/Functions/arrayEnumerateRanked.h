@@ -27,7 +27,13 @@ class FunctionArrayEnumerateDenseRanked;
 
 using DepthType = uint32_t;
 using DepthTypes = std::vector<DepthType>;
-std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndName & arguments);
+struct ArraysDepths {
+        DepthType clear_depth;
+        DepthTypes depths;
+        DepthType max_array_depth;
+};
+/// Return depth info about passed arrays
+ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments);
 
 template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
@@ -48,14 +54,10 @@ public:
                     + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        DepthType clear_depth;
-        DepthType max_array_depth;
-        DepthTypes depths;
-
-        std::tie(clear_depth, depths, max_array_depth) = getDepths(arguments);
+        const auto & arrays_depths = getArraysDepths(arguments);
 
         DataTypePtr type = std::make_shared<DataTypeUInt32>();
-        for (DepthType i = 0; i < max_array_depth; ++i)
+        for (DepthType i = 0; i < arrays_depths.max_array_depth; ++i)
             type = std::make_shared<DataTypeArray>(type);
 
         return type;
@@ -70,9 +72,7 @@ private:
     void executeMethodImpl(
         const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
         const ColumnRawPtrs & columns,
-        DepthType clear_depth,
-        DepthType max_array_depth,
-        DepthTypes depths,
+        const ArraysDepths & arrays_depths,
         ColumnUInt32::Container & res_values);
 };
 
@@ -110,11 +110,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     for (size_t i = 0; i < arguments.size(); ++i)
         args.emplace_back(block.getByPosition(arguments[i]));
 
-    DepthType clear_depth;
-    DepthType max_array_depth;
-    DepthTypes depths;
-
-    std::tie(clear_depth, depths, max_array_depth) = getDepths(args);
+    const auto & arrays_depths = getArraysDepths(args);
 
     auto get_array_column = [&](const auto & column) -> const DB::ColumnArray * {
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(column);
@@ -162,7 +158,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         }
 
         DepthType col_depth = 1;
-        for (; col_depth < depths[array_num]; ++col_depth)
+        for (; col_depth < arrays_depths.depths[array_num]; ++col_depth)
         {
             auto sub_array = get_array_column(&array->getData());
             if (sub_array)
@@ -186,10 +182,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             }
         }
 
-        if (col_depth < depths[array_num])
+        if (col_depth < arrays_depths.depths[array_num])
         {
             throw Exception(
-                getName() + ": Passed array number " + std::to_string(array_num) + " depth (" + std::to_string(depths[array_num])
+                getName() + ": Passed array number " + std::to_string(array_num) + " depth (" + std::to_string(arrays_depths.depths[array_num])
                     + ") more than actual array depth (" + std::to_string(col_depth) + ").",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
         }
@@ -205,12 +201,12 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     auto res_nested = ColumnUInt32::create();
 
     ColumnUInt32::Container & res_values = res_nested->getData();
-    res_values.resize(offsets_by_depth[max_array_depth - 1]->back()); // todo size check?
+    res_values.resize(offsets_by_depth[arrays_depths.max_array_depth - 1]->back()); // todo size check?
 
-    executeMethodImpl(offsets_by_depth, data_columns, clear_depth, max_array_depth, depths, res_values);
+    executeMethodImpl(offsets_by_depth, data_columns, /*clear_depth, max_array_depth, depths*/ arrays_depths, res_values);
 
     ColumnPtr result_nested_array = std::move(res_nested);
-    for (int depth = max_array_depth - 1; depth >= 0; --depth)
+    for (int depth = arrays_depths.max_array_depth - 1; depth >= 0; --depth)
         result_nested_array = ColumnArray::create(std::move(result_nested_array), offsetsptr_by_depth[depth]);
 
     block.getByPosition(result).column = result_nested_array;
@@ -221,13 +217,11 @@ template <typename Derived>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
     const ColumnRawPtrs & columns,
-    DepthType clear_depth,
-    DepthType max_array_depth,
-    DepthTypes depths,
+    const ArraysDepths & arrays_depths,
     ColumnUInt32::Container & res_values)
 {
-    const size_t current_offset_depth = max_array_depth;
-    const auto & offsets = *offsets_by_depth[current_offset_depth - 1]; //->getData(); //depth!
+    const size_t current_offset_depth = arrays_depths.max_array_depth;
+    const auto & offsets = *offsets_by_depth[current_offset_depth - 1];
 
     ColumnArray::Offset prev_off = 0;
 
@@ -274,10 +268,10 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 (3, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3)
     ;  . . . ; . . . ; . . .  ;  . . . ; . . . ; . . .  ;  . .
 
-*/
+    */
 
-    std::vector<size_t> indexes_by_depth(max_array_depth);
-    std::vector<size_t> current_offset_n_by_depth(max_array_depth);
+    std::vector<size_t> indexes_by_depth(arrays_depths.max_array_depth);
+    std::vector<size_t> current_offset_n_by_depth(arrays_depths.max_array_depth);
 
     UInt32 rank = 0;
 
@@ -289,7 +283,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
         for (size_t j = prev_off; j < off; ++j)
         {
             for (size_t col_n = 0; col_n < columns.size(); ++col_n)
-                columns_indexes[col_n] = indexes_by_depth[depths[col_n] - 1];
+                columns_indexes[col_n] = indexes_by_depth[arrays_depths.depths[col_n] - 1];
 
             auto hash = hash128depths(columns_indexes, columns);
 
@@ -317,7 +311,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
                 if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                 {
-                    if (static_cast<int>(clear_depth) == depth + 1)
+                    if (static_cast<int>(arrays_depths.clear_depth) == depth + 1)
                         want_clear = true;
                     ++current_offset_n_by_depth[depth];
                 }
