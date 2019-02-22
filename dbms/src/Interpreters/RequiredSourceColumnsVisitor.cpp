@@ -88,7 +88,6 @@ void RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
 
     if (auto * t = typeid_cast<ASTTableExpression *>(ast.get()))
     {
-        //data.addTableAliasIfAny(*ast); alias is attached to child
         visit(*t, ast, data);
         return;
     }
@@ -182,27 +181,17 @@ void RequiredSourceColumnsMatcher::visit(ASTTablesInSelectQueryElement & node, c
     data.tables.emplace_back(ColumnNamesContext::JoinedTable{expr, join});
 }
 
+/// ASTIdentifiers here are tables. Do not visit them as generic ones.
 void RequiredSourceColumnsMatcher::visit(ASTTableExpression & node, const ASTPtr &, Data & data)
 {
-    /// ASTIdentifiers here are tables. Do not visit them as generic ones.
     if (node.database_and_table_name)
         data.addTableAliasIfAny(*node.database_and_table_name);
 
-    std::vector<ASTPtr *> out;
     if (node.table_function)
-    {
         data.addTableAliasIfAny(*node.table_function);
-        out.push_back(&node.table_function);
-    }
 
     if (node.subquery)
-    {
         data.addTableAliasIfAny(*node.subquery);
-        out.push_back(&node.subquery);
-    }
-
-    for (ASTPtr * add_node : out)
-        Visitor(data).visit(*add_node);
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTArrayJoin & node, const ASTPtr &, Data & data)
