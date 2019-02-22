@@ -151,6 +151,7 @@ def test_simple_dictionaries(started_cluster):
         dct.load_data(data)
 
     node.query("system reload dictionaries")
+
     queries_with_answers = []
     for dct in simple_dicts:
         for row in data:
@@ -183,6 +184,7 @@ def test_complex_dictionaries(started_cluster):
         dct.load_data(data)
 
     node.query("system reload dictionaries")
+
     queries_with_answers = []
     for dct in complex_dicts:
         for row in data:
