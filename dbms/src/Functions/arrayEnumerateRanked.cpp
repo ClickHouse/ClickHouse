@@ -16,18 +16,20 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndN
     DepthType last_array_depth = 0;
     for (size_t i = 0; i < num_arguments; ++i)
     {
-
         const auto type = arguments[i].type;
 
-        if (isArray(type)){
-            if (depths.size() < array_num && last_array_depth) {
+        if (isArray(type))
+        {
+            if (depths.size() < array_num && last_array_depth)
+            {
                 depths.emplace_back(last_array_depth);
                 last_array_depth = 0;
             }
 
             DepthType depth = 0;
             auto sub_type = type;
-            do {
+            do
+            {
                 auto sub_type_array = typeid_cast<const DataTypeArray *>(sub_type.get());
                 if (!sub_type_array)
                     break;
@@ -64,29 +66,34 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndN
                 else
                 {
                     //if (depths.size() >= array_num + (!array_num ? 1 : 0))  {
-                    if (depths.size() >= array_num)  {
+                    if (depths.size() >= array_num)
+                    {
                         throw Exception(
-                        "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: depth ("
-                            + std::to_string(value) + ") for missing array.",
-                        ErrorCodes::BAD_ARGUMENTS);
+                            "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: depth ("
+                                + std::to_string(value) + ") for missing array.",
+                            ErrorCodes::BAD_ARGUMENTS);
                     }
                     depths.emplace_back(value);
                 }
             }
         }
     }
-            if (depths.size() < array_num) {
-                depths.emplace_back(last_array_depth);
-            }
+    if (depths.size() < array_num)
+    {
+        depths.emplace_back(last_array_depth);
+    }
 
 
-            for (auto & depth : depths) {
-                    if (max_array_depth < depth)
-                        max_array_depth = depth;
-            }
+    for (auto & depth : depths)
+    {
+        if (max_array_depth < depth)
+            max_array_depth = depth;
+    }
 
     if (depths.empty())
-        throw Exception("Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: At least one array should be passed.", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(
+            "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: At least one array should be passed.",
+            ErrorCodes::BAD_ARGUMENTS);
 
     if (clear_depth > max_array_depth)
         throw Exception(
