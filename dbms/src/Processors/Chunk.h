@@ -38,10 +38,13 @@ public:
 
     UInt64 getNumRows() const { return num_rows; }
     UInt64 getNumColumns() const { return columns.size(); }
-    bool empty() const { return num_rows == 0; }
-    operator bool() const { return !empty() || !columns.empty(); }
+    bool hasNoRows() const { return num_rows == 0; }
+    bool hasNoColumns() const { return columns.empty(); }
+    bool empty() const { return hasNoRows() && hasNoColumns(); }
+    operator bool() const { return !empty(); }
 
     void clear();
+    void erase(size_t position);
 
 private:
     Columns columns;

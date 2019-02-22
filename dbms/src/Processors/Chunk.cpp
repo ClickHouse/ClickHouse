@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int POSITION_OUT_OF_BOUND;
+}
+
 Chunk::Chunk(DB::Columns columns_, UInt64 num_rows_) : columns(std::move(columns_)), num_rows(num_rows_)
 {
     checkNumRowsIsConsistent();
@@ -98,6 +103,18 @@ void Chunk::clear()
     num_rows = 0;
     columns.clear();
     chunk_info.reset();
+}
+
+void Chunk::erase(size_t position)
+{
+    if (columns.empty())
+        throw Exception("Chunk is empty", ErrorCodes::POSITION_OUT_OF_BOUND);
+
+    if (position >= columns.size())
+        throw Exception("Position " + toString(position) + " out of bound in Chunk::erase(), max position = "
+                        + toString(columns.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
+
+    columns.erase(columns.begin() + position);
 }
 
 
