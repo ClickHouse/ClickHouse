@@ -576,6 +576,21 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     analyzed_join.calculateAvailableJoinedColumns(make_nullable);
 }
 
+Names qualifyOccupiedNames(NamesAndTypesList & columns, const NameSet & source_columns, const DatabaseAndTableWithAlias& table)
+{
+    Names originals;
+    originals.reserve(columns.size());
+
+    for (auto & column : columns)
+    {
+        originals.push_back(column.name);
+        if (source_columns.count(column.name))
+            column.name = table.getQualifiedNamePrefix() + column.name;
+    }
+
+    return originals;
+}
+
 }
 
 
@@ -617,7 +632,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
             DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
 
             NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(joined_expression, context);
-            result.analyzed_join.calculateColumnsFromJoinedTable(source_columns_set, table, joined_columns);
+            Names original_names = qualifyOccupiedNames(joined_columns, source_columns_set, table);
+            result.analyzed_join.calculateColumnsFromJoinedTable(joined_columns, original_names);
         }
 
         translateQualifiedNames(query, *select_query, context,

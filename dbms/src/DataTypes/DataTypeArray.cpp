@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -439,6 +440,36 @@ void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, Pr
     const IColumn & nested_column = column_array.getData();
     for (size_t i = offset; i < next_offset; ++i)
         nested->serializeProtobuf(nested_column, i, protobuf);
+}
+
+
+void DataTypeArray::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    ColumnArray & column_array = static_cast<ColumnArray &>(column);
+    IColumn & nested_column = column_array.getData();
+    ColumnArray::Offsets & offsets = column_array.getOffsets();
+    size_t old_size = offsets.size();
+    try
+    {
+        bool nested_row_added;
+        do
+            nested->deserializeProtobuf(nested_column, protobuf, true, nested_row_added);
+        while (nested_row_added && protobuf.maybeCanReadValue());
+        if (allow_add_row)
+        {
+            offsets.emplace_back(nested_column.size());
+            row_added = true;
+        }
+        else
+            offsets.back() = nested_column.size();
+    }
+    catch (...)
+    {
+        offsets.resize_assume_reserved(old_size);
+        nested_column.popBack(nested_column.size() - offsets.back());
+        throw;
+    }
 }
 
 
