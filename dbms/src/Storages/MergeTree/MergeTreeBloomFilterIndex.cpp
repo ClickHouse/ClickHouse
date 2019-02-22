@@ -50,7 +50,8 @@ static void likeStringToBloomFilter(
 MergeTreeBloomFilterIndexGranule::MergeTreeBloomFilterIndexGranule(const MergeTreeBloomFilterIndex & index)
     : IMergeTreeIndexGranule()
     , index(index)
-    , bloom_filter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed)
+    , bloom_filters(
+            index.columns.size(), StringBloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
     , has_elems(false)
 {
 }
@@ -61,19 +62,24 @@ void MergeTreeBloomFilterIndexGranule::serializeBinary(WriteBuffer & ostr) const
         throw Exception(
                 "Attempt to write empty minmax index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & filter = bloom_filter.getFilter();
-    auto * log = &Poco::Logger::get("bf");
-    LOG_DEBUG(log, "writing fingerprint:" << bloom_filter.getFingerPrint());
-    ostr.write(reinterpret_cast<const char *>(filter.data()), index.bloom_filter_size);
+    for (const auto & filter : bloom_filters)
+    {
+        auto *log = &Poco::Logger::get("bf");
+        LOG_DEBUG(log, "writing fingerprint:" << filter.getFingerPrint());
+        ostr.write(reinterpret_cast<const char *>(filter.getFilter().data()), index.bloom_filter_size);
+    }
 }
 
 void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
 {
-    std::vector<UInt8> filter(index.bloom_filter_size, 0);
-    istr.read(reinterpret_cast<char *>(filter.data()), index.bloom_filter_size);
-    bloom_filter.setFilter(std::move(filter));
-    auto * log = &Poco::Logger::get("bf");
-    LOG_DEBUG(log, "reading fingerprint:" << bloom_filter.getFingerPrint());
+    StringBloomFilter::Container filter_data(index.bloom_filter_size, 0);
+    for (auto & filter : bloom_filters)
+    {
+        istr.read(reinterpret_cast<char *>(filter_data.data()), index.bloom_filter_size);
+        filter.setFilter(std::move(filter_data));
+        auto *log = &Poco::Logger::get("bf");
+        LOG_DEBUG(log, "reading fingerprint:" << filter.getFingerPrint());
+    }
     has_elems = true;
 }
 
@@ -86,13 +92,15 @@ void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos,
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
-    const auto & column = block.getByName(index.columns.front()).column;
-    for (size_t i = 0; i < rows_read; ++i)
+    for (size_t i = 0; i < index.columns.size(); ++i)
     {
-        auto ref = column->getDataAt(*pos + i);
-        stringToBloomFilter(ref.data, ref.size, index.token_extractor_func, bloom_filter);
+        const auto & column = block.getByName(index.columns[i]).column;
+        for (size_t i = 0; i < rows_read; ++i)
+        {
+            auto ref = column->getDataAt(*pos + i);
+            stringToBloomFilter(ref.data, ref.size, index.token_extractor_func, bloom_filters[i]);
+        }
     }
-
     has_elems = true;
     *pos += rows_read;
 }
@@ -257,7 +265,7 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
              || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
             rpn_stack.emplace_back(
-                    granule->bloom_filter.contains(*element.bloom_filter), true);
+                    granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -266,7 +274,7 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
              || element.function == RPNElement::FUNCTION_NOT_LIKE)
         {
             rpn_stack.emplace_back(
-                    granule->bloom_filter.contains(*element.bloom_filter), true);
+                    granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_LIKE)
                 rpn_stack.back() = !rpn_stack.back();
@@ -535,10 +543,6 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
-
-    /// TODO: support many columns.
-    if (expr_list->children.size() > 1)
-        throw Exception("Bloom filter index can be used only with one column.", ErrorCodes::INCORRECT_QUERY);
 
     auto syntax = SyntaxAnalyzer(context, {}).analyze(
             expr_list, new_columns);
