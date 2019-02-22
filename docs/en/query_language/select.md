@@ -118,11 +118,11 @@ FROM <left_subquery>
 
 You can specify only a single `ARRAY JOIN` clause in a query.
 
-When running the `ARRAY JOIN` there is an optimization of the query execution order. Although the `ARRAY JOIN` must be always specified before the `WHERE/PREWHERE` clause, it can be performed as before the `WHERE/PREWHERE` (if its result is needed in this clause), as after completing it (to reduce the volume of calculations). The processing order is controlled by the query optimizer.
+When running the `ARRAY JOIN`, there is an optimization of the query execution order. Although the `ARRAY JOIN` must be always specified before the `WHERE/PREWHERE` clause, it can be performed as before the `WHERE/PREWHERE` (if its result is needed in this clause), as after completing it (to reduce the volume of calculations). The processing order is controlled by the query optimizer.
 
 Supported types of `ARRAY JOIN` are listed below:
 
-- `ARRAY JOIN` - Executing `JOIN` with an array or nested data structure. Empty arrays are ignored.
+- `ARRAY JOIN` - Executing `JOIN` with an array or nested data structure. Empty arrays are not included in the result.
 - `LEFT ARRAY JOIN` - Unlike `ARRAY JOIN`, when using the `LEFT ARRAY JOIN` the result contains the rows with empty arrays. The value for an empty array is set to 0.
 
 Examples below demonstrate the usage of the `ARRAY JOIN` clause. Create a table with an [Array](../data_types/array.md) type column and insert values into it:
