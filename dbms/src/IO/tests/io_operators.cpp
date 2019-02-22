@@ -31,5 +31,11 @@ int main(int, char **)
         std::cerr << hello << '\n';
     }
 
+    {
+        DB::WriteBufferFromFileDescriptor buf(STDOUT_FILENO);
+        size_t x = 11;
+        buf << "Column " << x  << ", \n";
+    }
+
     return 0;
 }
