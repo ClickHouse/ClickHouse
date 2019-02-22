@@ -27,10 +27,11 @@ class FunctionArrayEnumerateDenseRanked;
 
 using DepthType = uint32_t;
 using DepthTypes = std::vector<DepthType>;
-struct ArraysDepths {
-        DepthType clear_depth;
-        DepthTypes depths;
-        DepthType max_array_depth;
+struct ArraysDepths
+{
+    DepthType clear_depth;
+    DepthTypes depths;
+    DepthType max_array_depth;
 };
 /// Return depth info about passed arrays
 ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments);
@@ -185,8 +186,9 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
         if (col_depth < arrays_depths.depths[array_num])
         {
             throw Exception(
-                getName() + ": Passed array number " + std::to_string(array_num) + " depth (" + std::to_string(arrays_depths.depths[array_num])
-                    + ") more than actual array depth (" + std::to_string(col_depth) + ").",
+                getName() + ": Passed array number " + std::to_string(array_num) + " depth ("
+                    + std::to_string(arrays_depths.depths[array_num]) + ") more than actual array depth (" + std::to_string(col_depth)
+                    + ").",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
         }
 
