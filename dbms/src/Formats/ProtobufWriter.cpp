@@ -1,15 +1,16 @@
-#include "ProtobufWriter.h"
+#include <Common/config.h>
 #if USE_PROTOBUF
 
 #include <cassert>
-#include <optional>
 #include <math.h>
+#include <optional>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <boost/numeric/conversion/cast.hpp>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include "ProtobufWriter.h"
 
 
 namespace DB
@@ -797,5 +798,4 @@ void ProtobufWriter::writeAggregateFunction(const AggregateFunctionPtr & functio
 }
 
 }
-
 #endif
