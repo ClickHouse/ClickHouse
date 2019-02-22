@@ -12,7 +12,6 @@
 
 namespace DB
 {
-
 /** Distance function implementation.
   * We calculate all the trigrams from left string and count by the index of
   * 16 bits hash of them in the map.
@@ -45,7 +44,8 @@ struct DistanceImpl
 
         CodePoint res = 0;
         /// this is faster than just memcpy because of compiler optimizations with moving bytes
-        switch (length) {
+        switch (length)
+        {
             case 1:
                 memcpy(&res, pos, 1);
                 break;
@@ -120,17 +120,15 @@ struct DistanceImpl
             UInt16 hash = (intHashCRC32(intHashCRC32(cp1) ^ cp2) ^ cp3) & 0xFFFFu;
 
             /// Unsigned integer tricks
-            if (ans[hash] < std::numeric_limits<UInt16>::max() / 2) {
+            if (ans[hash] < std::numeric_limits<UInt16>::max() / 2)
                 --distance;
-            } else {
+            else
                 ++distance;
-            }
             trigram_storage[trigram_cnt++] = hash;
             --ans[hash];
         }
-        for (size_t i = 0; i < trigram_cnt; ++i) {
+        for (size_t i = 0; i < trigram_cnt; ++i)
             ++ans[trigram_storage[i]];
-        }
         return trigram_cnt;
     }
 
@@ -140,15 +138,19 @@ struct DistanceImpl
         memset(common_stats, std::numeric_limits<UInt8>::max(), sizeof(common_stats));
         size_t second_size = calculateNeedleStats(needle.data(), needle.size(), common_stats);
         size_t distance = second_size;
-        if (data.size() <= MaxStringSize) {
+        if (data.size() <= MaxStringSize)
+        {
             size_t first_size = calculateHaystackStatsAndMetric(data.data(), data.size(), common_stats, distance);
             res = distance * 1.0 / std::max(first_size + second_size, size_t(1));
-        } else {
+        }
+        else
+        {
             res = 1.f;
         }
     }
 
-    static void vector_constant(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & needle, PaddedPODArray<Float32> & res)
+    static void vector_constant(
+        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & needle, PaddedPODArray<Float32> & res)
     {
         TrigramDiff common_stats;
         memset(common_stats, std::numeric_limits<UInt8>::max(), sizeof(common_stats));
@@ -159,10 +161,14 @@ struct DistanceImpl
         {
             const auto * haystack = &data[prev_offset];
             const size_t haystack_size = offsets[i] - prev_offset - 1;
-            if (haystack_size <= MaxStringSize) {
-                size_t haystack_stats_size = calculateHaystackStatsAndMetric(reinterpret_cast<const char *>(haystack), haystack_size, common_stats, distance);
+            if (haystack_size <= MaxStringSize)
+            {
+                size_t haystack_stats_size
+                    = calculateHaystackStatsAndMetric(reinterpret_cast<const char *>(haystack), haystack_size, common_stats, distance);
                 res[i] = distance * 1.0 / std::max(haystack_stats_size + needle_stats_size, size_t(1));
-            } else {
+            }
+            else
+            {
                 res[i] = 1.f;
             }
             distance = needle_stats_size;
