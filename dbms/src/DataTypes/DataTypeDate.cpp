@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 
 
@@ -76,6 +77,23 @@ void DataTypeDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const
 void DataTypeDate::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
 {
     protobuf.writeDate(DayNum(static_cast<const ColumnUInt16 &>(column).getData()[row_num]));
+}
+
+void DataTypeDate::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    DayNum d;
+    if (!protobuf.readDate(d))
+        return;
+
+    auto & container = static_cast<ColumnUInt16 &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(d);
+        row_added = true;
+    }
+    else
+        container.back() = d;
 }
 
 bool DataTypeDate::equals(const IDataType & rhs) const
