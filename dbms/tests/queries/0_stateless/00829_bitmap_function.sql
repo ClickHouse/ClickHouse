@@ -14,6 +14,7 @@ CREATE TABLE test.bitmap_test(pickup_date Date, city_id UInt32, uid UInt32)ENGIN
 INSERT INTO test.bitmap_test SELECT '2019-01-01', 1, number FROM numbers(1,50);
 INSERT INTO test.bitmap_test SELECT '2019-01-02', 1, number FROM numbers(11,60);
 
+
 SELECT groupBitmap( uid ) AS user_num FROM test.bitmap_test;
 
 SELECT pickup_date, groupBitmap( uid ) AS user_num, bitmapToArray(groupBitmapState( uid )) AS users FROM test.bitmap_test GROUP BY pickup_date;
@@ -53,4 +54,24 @@ ALL LEFT JOIN
 USING city_id;
 
 
+DROP TABLE IF EXISTS test.bitmap_state_test;
+CREATE TABLE test.bitmap_state_test
+(
+	pickup_date Date,
+	city_id UInt32,
+    uv AggregateFunction( groupBitmap, UInt32 )	
+)
+ENGINE = AggregatingMergeTree( pickup_date, ( pickup_date, city_id ), 8192);
+
+INSERT INTO test.bitmap_state_test SELECT 
+    pickup_date, 
+    city_id,
+    groupBitmapState(uid) AS uv
+FROM test.bitmap_test
+GROUP BY pickup_date, city_id;
+	
+SELECT pickup_date, groupBitmapMerge(uv) AS users from test.bitmap_state_test group by pickup_date;
+
 DROP TABLE IF EXISTS test.bitmap_test;
+DROP TABLE IF EXISTS test.bitmap_state_test;
+
