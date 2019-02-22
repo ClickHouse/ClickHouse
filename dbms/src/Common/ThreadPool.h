@@ -168,10 +168,11 @@ public:
 
     void join()
     {
-        {
-            std::lock_guard lock(*mutex);
-        }
-        mutex.reset();
+        reset();
+    }
+    void detach()
+    {
+        reset();
     }
 
     bool joinable() const
@@ -181,6 +182,14 @@ public:
 
 private:
     std::unique_ptr<std::mutex> mutex;  /// Object must be moveable.
+
+    void reset()
+    {
+        {
+            std::lock_guard lock(*mutex);
+        }
+        mutex.reset();
+    }
 };
 
 
