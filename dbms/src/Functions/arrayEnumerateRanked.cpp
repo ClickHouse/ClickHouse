@@ -1,7 +1,4 @@
 #include "arrayEnumerateRanked.h"
-//#include <Common/typeid_cast.h>
-
-#include <Core/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -65,7 +62,6 @@ std::tuple<DepthType, DepthTypes, DepthType> getDepths(const ColumnsWithTypeAndN
                 }
                 else
                 {
-                    //if (depths.size() >= array_num + (!array_num ? 1 : 0))  {
                     if (depths.size() >= array_num)
                     {
                         throw Exception(

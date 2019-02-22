@@ -67,18 +67,6 @@ private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
-    struct MethodHashed
-    {
-        using Set = ClearableHashMap<
-            UInt128,
-            UInt32,
-            UInt128TrivialHash,
-            HashTableGrower<INITIAL_SIZE_DEGREE>,
-            HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
-        using Method = ColumnsHashing::HashMethodHashed<typename Set::value_type, UInt32, false>;
-    };
-
-    template <typename Method, bool has_null_map>
     void executeMethodImpl(
         const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
         const ColumnRawPtrs & columns,
@@ -219,7 +207,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     ColumnUInt32::Container & res_values = res_nested->getData();
     res_values.resize(offsets_by_depth[max_array_depth - 1]->back()); // todo size check?
 
-    executeMethodImpl<MethodHashed, false>(offsets_by_depth, data_columns, clear_depth, max_array_depth, depths, res_values);
+    executeMethodImpl(offsets_by_depth, data_columns, clear_depth, max_array_depth, depths, res_values);
 
     ColumnPtr result_nested_array = std::move(res_nested);
     for (int depth = max_array_depth - 1; depth >= 0; --depth)
@@ -230,7 +218,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
 
 template <typename Derived>
-template <typename Method, bool has_null_map>
 void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
     const std::vector<const ColumnArray::Offsets *> & offsets_by_depth,
     const ColumnRawPtrs & columns,
