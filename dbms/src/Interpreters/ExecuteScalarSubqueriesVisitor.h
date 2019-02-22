@@ -36,14 +36,12 @@ public:
         size_t subquery_depth;
     };
 
-    static constexpr const char * label = "ExecuteScalarSubqueries";
-
     static bool needChildVisit(ASTPtr & node, const ASTPtr &);
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
+    static void visit(ASTPtr & ast, Data & data);
 
 private:
     static void visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data);
-    static std::vector<ASTPtr *> visit(const ASTFunction & func, ASTPtr & ast, Data & data);
+    static void visit(const ASTFunction & func, ASTPtr & ast, Data & data);
 };
 
 using ExecuteScalarSubqueriesVisitor = InDepthNodeVisitor<ExecuteScalarSubqueriesMatcher, true>;
