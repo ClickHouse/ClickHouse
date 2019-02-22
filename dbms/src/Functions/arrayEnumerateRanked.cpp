@@ -40,8 +40,10 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
         if (!arguments[i].column)
             continue;
 
-        const auto non_const = arguments[i].column->convertToFullColumnIfConst();
-        const auto array = typeid_cast<const ColumnArray *>(non_const.get());
+        const IColumn * non_const = nullptr;
+        if (auto const_array_column = typeid_cast<const ColumnConst *>(arguments[i].column.get()))
+            non_const = const_array_column->getDataColumnPtr().get();
+        const auto array = typeid_cast<const ColumnArray *>(non_const ? non_const : arguments[i].column.get());
 
         if (!array)
         {
