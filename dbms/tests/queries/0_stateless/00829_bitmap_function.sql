@@ -52,4 +52,5 @@ ALL LEFT JOIN
 )
 USING city_id;
 
+
 DROP TABLE IF EXISTS test.bitmap_test;
