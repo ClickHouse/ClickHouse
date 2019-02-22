@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
@@ -316,7 +315,7 @@ void BloomFilterCondition::traverseAST(
     /// The same as in KeyCondition.
     RPNElement element;
 
-    if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
+    if (auto * func = typeid_cast<ASTFunction *>(&*node))
     {
         if (operatorFromAST(func, element))
         {
@@ -356,7 +355,7 @@ bool BloomFilterCondition::atomFromAST(
 {
     Field const_value;
     DataTypePtr const_type;
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
     {
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
