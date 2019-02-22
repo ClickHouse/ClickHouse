@@ -90,9 +90,11 @@ SELECT arrayEnumerateUniqRanked(2, [[1,2,3],[2,2,1],[3]],1,[[[1,2,3],[1,2,3],[1,
 
 select 'more:';
 SELECT arrayEnumerateUniqRanked(2, [[1,2,3],[2,2,1],[3]], 2, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3);
+SELECT arrayEnumerateUniqRanked(2, [[1,2,3],[2,2,1],[3]], [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]]); -- same
 SELECT arrayEnumerateUniqRanked(3, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3);
 SELECT arrayEnumerateUniqRanked(2, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3);
 SELECT arrayEnumerateUniqRanked(1, [[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]], 3);
+SELECT arrayEnumerateUniqRanked([[[1,2,3],[1,2,3],[1,2,3]],[[1,2,3],[1,2,3],[1,2,3]],[[1,2]]]); --same
 
 select '---------Dense';
 SELECT arrayEnumerateDenseRanked(1, [10,20,10,30], 1);
@@ -163,3 +165,4 @@ SELECT arrayEnumerateDenseRanked([], [], []);
 SELECT arrayEnumerateDenseRanked([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []);
 SELECT arrayEnumerateDenseRanked([1,2], [1,2], [1,2]);
 SELECT arrayEnumerateUniqRanked([1,2], [1,2], [1,2]);
+SELECT arrayEnumerateUniqRanked([1,2], 3, 4, 5);
