@@ -4,9 +4,11 @@
 namespace DB
 {
 
-ISimpleTransform::ISimpleTransform(Block input_header, Block output_header)
-    : IProcessor({std::move(input_header)}, {std::move(output_header)}),
-    input(inputs.front()), output(outputs.front())
+ISimpleTransform::ISimpleTransform(Block input_header, Block output_header, bool skip_empty_chunks)
+    : IProcessor({std::move(input_header)}, {std::move(output_header)})
+    , input(inputs.front())
+    , output(outputs.front())
+    , skip_empty_chunks(skip_empty_chunks)
 {
 }
 
@@ -59,7 +61,13 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 void ISimpleTransform::work()
 {
     transform(current_chunk);
-    transformed = true;
+
+    if (!skip_empty_chunks || current_chunk)
+        transformed = true;
+
+    if (transformed && !current_chunk)
+        /// Support invariant that chunks must have the same number of columns as header.
+        current_chunk = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
 }
 
 }
