@@ -108,7 +108,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                     out.bloom_filter = std::make_unique<StringBloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
-                    String str = value.get<String>();
+                    const auto & str = value.get<String>();
                     stringToBloomFilter(str.c_str(), str.size(), idx.tokenExtractorFunc, *out.bloom_filter);
                     return true;
                 }
@@ -121,7 +121,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                     out.bloom_filter = std::make_unique<StringBloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
-                    String str = value.get<String>();
+                    const auto & str = value.get<String>();
                     stringToBloomFilter(str.c_str(), str.size(), idx.tokenExtractorFunc, *out.bloom_filter);
                     return true;
                 }
@@ -130,11 +130,11 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                 "like",
                 [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
                 {
-                    out.function = RPNElement::FUNCTION_EQUALS;
+                    out.function = RPNElement::FUNCTION_LIKE;
                     out.bloom_filter = std::make_unique<StringBloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
-                    String str = value.get<String>();
+                    const auto & str = value.get<String>();
                     likeStringToBloomFilter(str, idx.tokenExtractorFunc, *out.bloom_filter);
                     return true;
                 }
@@ -143,11 +143,11 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                 "notLike",
                 [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
                 {
-                    out.function = RPNElement::FUNCTION_EQUALS;
+                    out.function = RPNElement::FUNCTION_NOT_LIKE;
                     out.bloom_filter = std::make_unique<StringBloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
-                    String str = value.get<String>();
+                    const auto & str = value.get<String>();
                     likeStringToBloomFilter(str, idx.tokenExtractorFunc, *out.bloom_filter);
                     return true;
                 }
@@ -247,31 +247,29 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
-    for (size_t i = 0; i < rpn.size(); ++i)
+    for (const auto & element : rpn)
     {
-        const auto & element = rpn[i];
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
         }
         else if (element.function == RPNElement::FUNCTION_EQUALS
-                 || element.function == RPNElement::FUNCTION_NOT_EQUALS)
+             || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
-            if (granule->bloom_filter == *(element.bloom_filter))
-                rpn_stack.emplace_back(true, true);
-            else
-                rpn_stack.emplace_back(false, true);
+            rpn_stack.emplace_back(
+                    granule->bloom_filter == *element.bloom_filter, true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_LIKE
-                 || element.function == RPNElement::FUNCTION_NOT_LIKE)
+             || element.function == RPNElement::FUNCTION_NOT_LIKE)
         {
-            if (element.bloom_filter->contains(granule->bloom_filter))
-                rpn_stack.emplace_back(true, true);
-            else
-                rpn_stack.emplace_back(false, true);
+            rpn_stack.emplace_back(
+                    granule->bloom_filter.contains(*element.bloom_filter), true);
+
+            auto * log = &Poco::Logger::get("like check:");
+            LOG_DEBUG(log, granule->bloom_filter.contains(*(element.bloom_filter)));
 
             if (element.function == RPNElement::FUNCTION_NOT_LIKE)
                 rpn_stack.back() = !rpn_stack.back();
@@ -456,7 +454,7 @@ bool NgramTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 {
     *token_start = *pos;
     *token_len = 0;
-    for (size_t i = 0; i < n; ++i)
+    for (size_t code_points = 0; code_points < n; ++code_points)
     {
         size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*token_start + *token_len]));
         if (*token_start + *token_len + sz > len) {
@@ -464,7 +462,7 @@ bool NgramTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         }
         *token_len += sz;
     }
-    ++*pos;
+    *pos += UTF8::seqLength(static_cast<UInt8>(data[*pos]));
     return true;
 }
 
@@ -472,34 +470,42 @@ bool NgramTokenExtractor::nextLike(const String & str, size_t * pos, String & to
 {
     token.clear();
 
+    size_t code_points = 0;
     bool escaped = false;
-    for (size_t i = *pos; i < str.size(); ++i)
+    for (size_t i = *pos; i < str.size();)
     {
-        if (escaped && (str[*pos] == '%' || str[*pos] == '_' || str[*pos] == '\\'))
+        if (escaped && (str[i] == '%' || str[i] == '_' || str[i] == '\\'))
         {
-            token += str[*pos];
+            token += str[i];
+            ++code_points;
             escaped = false;
+            ++i;
         }
-        else if (!escaped && (str[*pos] == '%' || str[*pos] == '_'))
+        else if (!escaped && (str[i] == '%' || str[i] == '_'))
         {
             /// This token is too small, go to the next.
             token.clear();
+            code_points = 0;
             escaped = false;
-            *pos = i;
+            *pos = ++i;
         }
-        else if (!escaped && str[*pos] == '\\')
+        else if (!escaped && str[i] == '\\')
         {
-            token += str[*pos];
             escaped = true;
+            ++i;
         }
         else
         {
-            token += str[*pos];
+            const size_t sz = UTF8::seqLength(static_cast<UInt8>(str[i]));
+            for (size_t j = 0; j < sz; ++j)
+                token += str[i + j];
+            i += sz;
+            ++code_points;
             escaped = false;
         }
 
-        if (token.size() == n) {
-            ++*pos;
+        if (code_points == n) {
+            *pos += UTF8::seqLength(static_cast<UInt8>(str[*pos]));
             return true;
         }
     }
@@ -509,10 +515,10 @@ bool NgramTokenExtractor::nextLike(const String & str, size_t * pos, String & to
 
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
-        const NamesAndTypesList & new_columns,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const MergeTreeData & data,
-        const Context & context)
+    const NamesAndTypesList & new_columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const MergeTreeData & data,
+    const Context & context)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
