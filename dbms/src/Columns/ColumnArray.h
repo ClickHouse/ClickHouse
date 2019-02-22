@@ -121,11 +121,12 @@ public:
     }
 
 private:
+    ColumnPtr data;
+    ColumnPtr offsets;
+
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return getOffsets()[i - 1]; }
     size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return getOffsets()[i] - getOffsets()[i - 1]; }
 
-    ColumnPtr data;
-    ColumnPtr offsets;
 
     /// Multiply values if the nested column is ColumnVector<T>.
     template <typename T>
