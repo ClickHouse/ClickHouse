@@ -24,10 +24,368 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+    // Note: We cannot simply use writeVarUInt() from IO/VarInt.h here because there is one small difference:
+    // Google protobuf's representation of 64-bit integer contains from 1 to 10 bytes, whileas writeVarUInt() writes from 1 to 9 bytes
+    // because it omits the tenth byte (which is not necessary to decode actually).
+    void writePbVarUInt(UInt64 value, WriteBuffer & buf)
+    {
+        while (value >= 0x80)
+        {
+            buf.write(static_cast<char>(value | 0x80));
+            value >>= 7;
+        }
+        buf.write(static_cast<char>(value));
+    }
+
+    void writePbVarInt(Int64 value, WriteBuffer & buf)
+    {
+        writePbVarUInt((static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63), buf);
+    }
+
+    void writePbVarIntNoZigZagEncoding(Int64 value, WriteBuffer & buf) { writePbVarUInt(static_cast<UInt64>(value), buf); }
+}
+
+
+enum ProtobufWriter::SimpleWriter::WireType : UInt32
+{
+    VARINT = 0,
+    BITS64 = 1,
+    LENGTH_DELIMITED = 2,
+    BITS32 = 5
+};
+
+ProtobufWriter::SimpleWriter::SimpleWriter(WriteBuffer & out_) : out(out_)
+{
+}
+
+ProtobufWriter::SimpleWriter::~SimpleWriter()
+{
+    finishCurrentMessage();
+}
+
+void ProtobufWriter::SimpleWriter::newMessage()
+{
+    finishCurrentMessage();
+    were_messages = true;
+}
+
+void ProtobufWriter::SimpleWriter::finishCurrentMessage()
+{
+    if (!were_messages)
+        return;
+    finishCurrentField();
+    current_field_number = 0;
+    StringRef str = message_buffer.stringRef();
+    writePbVarUInt(str.size, out);
+    out.write(str.data, str.size);
+    message_buffer.restart();
+}
+
+void ProtobufWriter::SimpleWriter::setCurrentField(UInt32 field_number)
+{
+    finishCurrentField();
+    assert(current_field_number < field_number);
+    current_field_number = field_number;
+    num_normal_values = 0;
+    num_packed_values = 0;
+}
+
+void ProtobufWriter::SimpleWriter::finishCurrentField()
+{
+    if (num_packed_values)
+    {
+        assert(!num_normal_values);
+        StringRef str = repeated_packing_buffer.stringRef();
+        if (str.size)
+        {
+            writeKey(LENGTH_DELIMITED, message_buffer);
+            writePbVarUInt(str.size, message_buffer);
+            message_buffer.write(str.data, str.size);
+            repeated_packing_buffer.restart();
+        }
+    }
+}
+
+void ProtobufWriter::SimpleWriter::writeKey(WireType wire_type, WriteBuffer & buf)
+{
+    writePbVarUInt((current_field_number << 3) | wire_type, buf);
+}
+
+void ProtobufWriter::SimpleWriter::writeInt32(Int32 value)
+{
+    assert(current_field_number);
+    writeKey(VARINT, message_buffer);
+    writePbVarIntNoZigZagEncoding(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeUInt32(UInt32 value)
+{
+    assert(current_field_number);
+    writeKey(VARINT, message_buffer);
+    writePbVarUInt(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeSInt32(Int32 value)
+{
+    assert(current_field_number);
+    writeKey(VARINT, message_buffer);
+    writePbVarInt(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeInt64(Int64 value)
+{
+    assert(current_field_number);
+    writeKey(VARINT, message_buffer);
+    writePbVarIntNoZigZagEncoding(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeUInt64(UInt64 value)
+{
+    assert(current_field_number);
+    writeKey(VARINT, message_buffer);
+    writePbVarUInt(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeSInt64(Int64 value)
+{
+    assert(current_field_number);
+    writeKey(VARINT, message_buffer);
+    writePbVarInt(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeFixed32(UInt32 value)
+{
+    assert(current_field_number);
+    writeKey(BITS32, message_buffer);
+    writePODBinary(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeSFixed32(Int32 value)
+{
+    assert(current_field_number);
+    writeKey(BITS32, message_buffer);
+    writePODBinary(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeFloat(float value)
+{
+    assert(current_field_number);
+    writeKey(BITS32, message_buffer);
+    writePODBinary(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeFixed64(UInt64 value)
+{
+    assert(current_field_number);
+    writeKey(BITS64, message_buffer);
+    writePODBinary(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeSFixed64(Int64 value)
+{
+    assert(current_field_number);
+    writeKey(BITS64, message_buffer);
+    writePODBinary(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeDouble(double value)
+{
+    assert(current_field_number);
+    writeKey(BITS64, message_buffer);
+    writePODBinary(value, message_buffer);
+    ++num_normal_values;
+}
+
+void ProtobufWriter::SimpleWriter::writeString(const StringRef & str)
+{
+    assert(current_field_number);
+    ++num_normal_values;
+    writeKey(LENGTH_DELIMITED, message_buffer);
+    writePbVarUInt(str.size, message_buffer);
+    message_buffer.write(str.data, str.size);
+}
+
+void ProtobufWriter::SimpleWriter::writeInt32IfNonZero(Int32 value)
+{
+    if (value)
+        writeInt32(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeUInt32IfNonZero(UInt32 value)
+{
+    if (value)
+        writeUInt32(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeSInt32IfNonZero(Int32 value)
+{
+    if (value)
+        writeSInt32(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeInt64IfNonZero(Int64 value)
+{
+    if (value)
+        writeInt64(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeUInt64IfNonZero(UInt64 value)
+{
+    if (value)
+        writeUInt64(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeSInt64IfNonZero(Int64 value)
+{
+    if (value)
+        writeSInt64(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeFixed32IfNonZero(UInt32 value)
+{
+    if (value)
+        writeFixed32(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeSFixed32IfNonZero(Int32 value)
+{
+    if (value)
+        writeSFixed32(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeFloatIfNonZero(float value)
+{
+    if (value != 0)
+        writeFloat(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeFixed64IfNonZero(UInt64 value)
+{
+    if (value)
+        writeFixed64(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeSFixed64IfNonZero(Int64 value)
+{
+    if (value)
+        writeSFixed64(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeDoubleIfNonZero(double value)
+{
+    if (value != 0)
+        writeDouble(value);
+}
+
+void ProtobufWriter::SimpleWriter::writeStringIfNotEmpty(const StringRef & str)
+{
+    if (str.size)
+        writeString(str);
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedInt32(Int32 value)
+{
+    assert(current_field_number);
+    writePbVarIntNoZigZagEncoding(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedUInt32(UInt32 value)
+{
+    assert(current_field_number);
+    writePbVarUInt(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedSInt32(Int32 value)
+{
+    assert(current_field_number);
+    writePbVarInt(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedInt64(Int64 value)
+{
+    assert(current_field_number);
+    writePbVarIntNoZigZagEncoding(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedUInt64(UInt64 value)
+{
+    assert(current_field_number);
+    writePbVarUInt(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedSInt64(Int64 value)
+{
+    assert(current_field_number);
+    writePbVarInt(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedFixed32(UInt32 value)
+{
+    assert(current_field_number);
+    writePODBinary(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedSFixed32(Int32 value)
+{
+    assert(current_field_number);
+    writePODBinary(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedFloat(float value)
+{
+    assert(current_field_number);
+    writePODBinary(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedFixed64(UInt64 value)
+{
+    assert(current_field_number);
+    writePODBinary(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedSFixed64(Int64 value)
+{
+    assert(current_field_number);
+    writePODBinary(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+void ProtobufWriter::SimpleWriter::packRepeatedDouble(double value)
+{
+    assert(current_field_number);
+    writePODBinary(value, repeated_packing_buffer);
+    ++num_packed_values;
+}
+
+
+
 class ProtobufWriter::Converter : private boost::noncopyable
 {
 public:
-    Converter(ProtobufSimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+    Converter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
         : simple_writer(simple_writer_), field(field_)
     {
     }
@@ -124,7 +482,7 @@ protected:
         return field->is_optional() && (field->file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
     }
 
-    ProtobufSimpleWriter & simple_writer;
+    SimpleWriter & simple_writer;
     const google::protobuf::FieldDescriptor * field;
 };
 
@@ -132,7 +490,7 @@ protected:
 class ProtobufWriter::ToStringConverter : public Converter
 {
 public:
-    ToStringConverter(ProtobufSimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+    ToStringConverter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
         : Converter(simple_writer_, field_)
     {
         initWriteFieldFunction();
@@ -222,10 +580,10 @@ private:
 
     void initWriteFieldFunction()
     {
-        write_field_function = skipNullValue() ? &ProtobufSimpleWriter::writeStringIfNotEmpty : &ProtobufSimpleWriter::writeString;
+        write_field_function = skipNullValue() ? &SimpleWriter::writeStringIfNotEmpty : &SimpleWriter::writeString;
     }
 
-    void (ProtobufSimpleWriter::*write_field_function)(const StringRef & str);
+    void (SimpleWriter::*write_field_function)(const StringRef & str);
     WriteBufferFromOwnString text_buffer;
     std::optional<std::unordered_map<Int16, String>> enum_value_to_name_map;
 };
@@ -235,7 +593,7 @@ template <typename T>
 class ProtobufWriter::ToNumberConverter : public Converter
 {
 public:
-    ToNumberConverter(ProtobufSimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+    ToNumberConverter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
         : Converter(simple_writer_, field_)
     {
         initWriteFieldFunction();
@@ -295,18 +653,18 @@ private:
             {
                 case google::protobuf::FieldDescriptor::TYPE_INT32:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedInt32
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeInt32IfNonZero : &ProtobufSimpleWriter::writeInt32);
+                        ? &SimpleWriter::packRepeatedInt32
+                        : (skipNullValue() ? &SimpleWriter::writeInt32IfNonZero : &SimpleWriter::writeInt32);
                     break;
                 case google::protobuf::FieldDescriptor::TYPE_SINT32:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedSInt32
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeSInt32IfNonZero : &ProtobufSimpleWriter::writeSInt32);
+                        ? &SimpleWriter::packRepeatedSInt32
+                        : (skipNullValue() ? &SimpleWriter::writeSInt32IfNonZero : &SimpleWriter::writeSInt32);
                     break;
                 case google::protobuf::FieldDescriptor::TYPE_SFIXED32:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedSFixed32
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeSFixed32IfNonZero : &ProtobufSimpleWriter::writeSFixed32);
+                        ? &SimpleWriter::packRepeatedSFixed32
+                        : (skipNullValue() ? &SimpleWriter::writeSFixed32IfNonZero : &SimpleWriter::writeSFixed32);
                     break;
                 default:
                     assert(false);
@@ -318,13 +676,13 @@ private:
             {
                 case google::protobuf::FieldDescriptor::TYPE_UINT32:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedUInt32
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeUInt32IfNonZero : &ProtobufSimpleWriter::writeUInt32);
+                        ? &SimpleWriter::packRepeatedUInt32
+                        : (skipNullValue() ? &SimpleWriter::writeUInt32IfNonZero : &SimpleWriter::writeUInt32);
                     break;
                 case google::protobuf::FieldDescriptor::TYPE_FIXED32:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedFixed32
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeFixed32IfNonZero : &ProtobufSimpleWriter::writeFixed32);
+                        ? &SimpleWriter::packRepeatedFixed32
+                        : (skipNullValue() ? &SimpleWriter::writeFixed32IfNonZero : &SimpleWriter::writeFixed32);
                     break;
                 default:
                     assert(false);
@@ -336,18 +694,18 @@ private:
             {
                 case google::protobuf::FieldDescriptor::TYPE_INT64:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedInt64
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeInt64IfNonZero : &ProtobufSimpleWriter::writeInt64);
+                        ? &SimpleWriter::packRepeatedInt64
+                        : (skipNullValue() ? &SimpleWriter::writeInt64IfNonZero : &SimpleWriter::writeInt64);
                     break;
                 case google::protobuf::FieldDescriptor::TYPE_SINT64:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedSInt64
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeSInt64IfNonZero : &ProtobufSimpleWriter::writeSInt64);
+                        ? &SimpleWriter::packRepeatedSInt64
+                        : (skipNullValue() ? &SimpleWriter::writeSInt64IfNonZero : &SimpleWriter::writeSInt64);
                     break;
                 case google::protobuf::FieldDescriptor::TYPE_SFIXED64:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedSFixed64
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeSFixed64IfNonZero : &ProtobufSimpleWriter::writeSFixed64);
+                        ? &SimpleWriter::packRepeatedSFixed64
+                        : (skipNullValue() ? &SimpleWriter::writeSFixed64IfNonZero : &SimpleWriter::writeSFixed64);
                     break;
                 default:
                     assert(false);
@@ -359,13 +717,13 @@ private:
             {
                 case google::protobuf::FieldDescriptor::TYPE_UINT64:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedUInt64
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeUInt64IfNonZero : &ProtobufSimpleWriter::writeUInt64);
+                        ? &SimpleWriter::packRepeatedUInt64
+                        : (skipNullValue() ? &SimpleWriter::writeUInt64IfNonZero : &SimpleWriter::writeUInt64);
                     break;
                 case google::protobuf::FieldDescriptor::TYPE_FIXED64:
                     write_field_function = packRepeated()
-                        ? &ProtobufSimpleWriter::packRepeatedFixed64
-                        : (skipNullValue() ? &ProtobufSimpleWriter::writeFixed64IfNonZero : &ProtobufSimpleWriter::writeFixed64);
+                        ? &SimpleWriter::packRepeatedFixed64
+                        : (skipNullValue() ? &SimpleWriter::writeFixed64IfNonZero : &SimpleWriter::writeFixed64);
                     break;
                 default:
                     assert(false);
@@ -374,14 +732,14 @@ private:
         else if constexpr (std::is_same_v<T, float>)
         {
             write_field_function = packRepeated()
-                ? &ProtobufSimpleWriter::packRepeatedFloat
-                : (skipNullValue() ? &ProtobufSimpleWriter::writeFloatIfNonZero : &ProtobufSimpleWriter::writeFloat);
+                ? &SimpleWriter::packRepeatedFloat
+                : (skipNullValue() ? &SimpleWriter::writeFloatIfNonZero : &SimpleWriter::writeFloat);
         }
         else if constexpr (std::is_same_v<T, double>)
         {
             write_field_function = packRepeated()
-                ? &ProtobufSimpleWriter::packRepeatedDouble
-                : (skipNullValue() ? &ProtobufSimpleWriter::writeDoubleIfNonZero : &ProtobufSimpleWriter::writeDouble);
+                ? &SimpleWriter::packRepeatedDouble
+                : (skipNullValue() ? &SimpleWriter::writeDoubleIfNonZero : &SimpleWriter::writeDouble);
         }
         else
         {
@@ -389,14 +747,14 @@ private:
         }
     }
 
-    void (ProtobufSimpleWriter::*write_field_function)(T value);
+    void (SimpleWriter::*write_field_function)(T value);
 };
 
 
 class ProtobufWriter::ToBoolConverter : public Converter
 {
 public:
-    ToBoolConverter(ProtobufSimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+    ToBoolConverter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
         : Converter(simple_writer_, field_)
     {
         initWriteFieldFunction();
@@ -438,18 +796,18 @@ private:
     void initWriteFieldFunction()
     {
         write_field_function = packRepeated()
-            ? &ProtobufSimpleWriter::packRepeatedUInt32
-            : (skipNullValue() ? &ProtobufSimpleWriter::writeUInt32IfNonZero : &ProtobufSimpleWriter::writeUInt32);
+            ? &SimpleWriter::packRepeatedUInt32
+            : (skipNullValue() ? &SimpleWriter::writeUInt32IfNonZero : &SimpleWriter::writeUInt32);
     }
 
-    void (ProtobufSimpleWriter::*write_field_function)(UInt32 b);
+    void (SimpleWriter::*write_field_function)(UInt32 b);
 };
 
 
 class ProtobufWriter::ToEnumConverter : public Converter
 {
 public:
-    ToEnumConverter(ProtobufSimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+    ToEnumConverter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
         : Converter(simple_writer_, field_)
     {
         initWriteFieldFunction();
@@ -535,11 +893,11 @@ private:
     void initWriteFieldFunction()
     {
         write_field_function = packRepeated()
-            ? &ProtobufSimpleWriter::packRepeatedUInt32
-            : (skipNullValue() ? &ProtobufSimpleWriter::writeUInt32IfNonZero : &ProtobufSimpleWriter::writeUInt32);
+            ? &SimpleWriter::packRepeatedUInt32
+            : (skipNullValue() ? &SimpleWriter::writeUInt32IfNonZero : &SimpleWriter::writeUInt32);
     }
 
-    void (ProtobufSimpleWriter::*write_field_function)(UInt32 enum_number);
+    void (SimpleWriter::*write_field_function)(UInt32 enum_number);
     std::optional<std::unordered_map<StringRef, int>> enum_name_to_pbnumber_map;
     std::optional<std::unordered_map<Int16, int>> enum_value_to_pbnumber_map;
 };
