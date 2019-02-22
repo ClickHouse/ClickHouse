@@ -42,10 +42,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() < 3)
+        if (arguments.size() == 0)
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at least 3.",
+                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
+                    + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         DepthType clear_depth;
@@ -173,9 +173,6 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             }
         }
 
-        // Force default depth for array = 1
-        if (depths.size() <= array_num)
-            depths.emplace_back(1);
         DepthType col_depth = 1;
         for (; col_depth < depths[array_num]; ++col_depth)
         {
@@ -206,7 +203,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
             throw Exception(
                 getName() + ": Passed array number " + std::to_string(array_num) + " depth (" + std::to_string(depths[array_num])
                     + ") more than actual array depth (" + std::to_string(col_depth) + ").",
-                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH); //TODO this check!
+                ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
         }
 
         auto * array_data = &array->getData();
@@ -297,18 +294,17 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
     UInt32 rank = 0;
 
+    std::vector<size_t> columns_indexes(columns.size());
     for (size_t off : offsets)
     {
-        std::vector<size_t> indexes(columns.size());
-
         bool want_clear = false;
 
         for (size_t j = prev_off; j < off; ++j)
         {
             for (size_t col_n = 0; col_n < columns.size(); ++col_n)
-                indexes[col_n] = indexes_by_depth[depths[col_n] - 1];
+                columns_indexes[col_n] = indexes_by_depth[depths[col_n] - 1];
 
-            auto hash = hash128depths(indexes, columns);
+            auto hash = hash128depths(columns_indexes, columns);
 
             if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniqRanked>)
             {
@@ -326,7 +322,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
                 res_values[j] = idx;
             }
 
-            // Debug: DUMP(off, prev_off, j, indexes, res_values[j], columns);
+            // Debug: DUMP(off, prev_off, j, columns_indexes, res_values[j], columns);
 
             for (int depth = current_offset_depth - 1; depth >= 0; --depth)
             {
@@ -334,7 +330,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeMethodImpl(
 
                 if (indexes_by_depth[depth] == (*offsets_by_depth[depth])[current_offset_n_by_depth[depth]])
                 {
-                    if (static_cast<int>(clear_depth - 1) == depth)
+                    if (static_cast<int>(clear_depth) == depth + 1)
                         want_clear = true;
                     ++current_offset_n_by_depth[depth];
                 }

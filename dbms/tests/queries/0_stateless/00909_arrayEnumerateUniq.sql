@@ -142,17 +142,17 @@ DROP TABLE test.arrays_test;
 
 select '---------BAD';
 SELECT arrayEnumerateUniqRanked(); -- { serverError 42 }
-SELECT arrayEnumerateUniqRanked([]); -- { serverError 42 }
-SELECT arrayEnumerateUniqRanked(1); -- { serverError 42 }
-SELECT arrayEnumerateUniqRanked(2,[]); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked([]);
+SELECT arrayEnumerateUniqRanked(1); -- { serverError 36 }
+SELECT arrayEnumerateUniqRanked(2,[]); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(2,[],2); -- { serverError 190 }
 SELECT arrayEnumerateUniqRanked(2,[],[]); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(2,[],[],3); -- { serverError 190 }
-SELECT arrayEnumerateUniqRanked([],2); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked([],2); -- { serverError 190 }
 SELECT arrayEnumerateUniqRanked([],2,[]); -- { serverError 190 }
 SELECT arrayEnumerateUniqRanked(0,[],0); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(0,0,0); -- { serverError 36 }
-SELECT arrayEnumerateUniqRanked(1,1,1); -- { serverError 42 }
+SELECT arrayEnumerateUniqRanked(1,1,1); -- { serverError 36 }
 SELECT arrayEnumerateDenseRanked(1, [10,20,10,30], 0); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(1, [[7,8,9,10],[10,11,12]], 2, [[14,15,16],[17,18,19],[20],[21]], 2); -- { serverError 190 }
 
@@ -165,4 +165,8 @@ SELECT arrayEnumerateDenseRanked([], [], []);
 SELECT arrayEnumerateDenseRanked([], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []);
 SELECT arrayEnumerateDenseRanked([1,2], [1,2], [1,2]);
 SELECT arrayEnumerateUniqRanked([1,2], [1,2], [1,2]);
-SELECT arrayEnumerateUniqRanked([1,2], 3, 4, 5);
+SELECT arrayEnumerateUniqRanked([1,2], 3, 4, 5); -- { serverError 36 }
+SELECT arrayEnumerateUniqRanked([1,2], 1, 2); -- { serverError 36 }
+SELECT arrayEnumerateUniqRanked([1,2], 1, 3, 4, 5); -- { serverError 36 }
+SELECT arrayEnumerateUniqRanked([1,2], 1, 3, [4], 5); -- { serverError 36 }
+SELECT arrayEnumerateDenseRanked([[[[[[[[[[42]]]]]]]]]]);
