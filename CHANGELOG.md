@@ -1,7 +1,7 @@
 ## ClickHouse release 19.3.5, 2019-02-21
 
 ### Bug fixes
-* Fixed bug with long http insert queries processing. [#4454](https://github.com/yandex/ClickHouse/pull/4454) ([alesapin](https://github.com/alesapin))
+* Fixed bug with large http insert queries processing. [#4454](https://github.com/yandex/ClickHouse/pull/4454) ([alesapin](https://github.com/alesapin))
 * Fixed backward incompatibility with old versions due to wrong implementation of `send_logs_level` setting. [#4445](https://github.com/yandex/ClickHouse/pull/4445) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed backward incompatibility of table function `remote` introduced with column comments. [#4446](https://github.com/yandex/ClickHouse/pull/4446) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
