@@ -30,6 +30,8 @@ struct ASTTableExpression;
 class ExecuteScalarSubqueriesMatcher
 {
 public:
+    using Visitor = InDepthNodeVisitor<ExecuteScalarSubqueriesMatcher, true>;
+
     struct Data
     {
         const Context & context;
@@ -44,6 +46,6 @@ private:
     static void visit(const ASTFunction & func, ASTPtr & ast, Data & data);
 };
 
-using ExecuteScalarSubqueriesVisitor = InDepthNodeVisitor<ExecuteScalarSubqueriesMatcher, true>;
+using ExecuteScalarSubqueriesVisitor = ExecuteScalarSubqueriesMatcher::Visitor;
 
 }

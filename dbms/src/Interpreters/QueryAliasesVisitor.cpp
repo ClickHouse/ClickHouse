@@ -33,7 +33,7 @@ bool QueryAliasesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
     /// Don't descent into table functions and subqueries and special case for ArrayJoin.
     if (typeid_cast<ASTTableExpression *>(node.get()) ||
-        typeid_cast<ASTSubquery *>(node.get()) ||
+        typeid_cast<ASTSelectWithUnionQuery *>(node.get()) ||
         typeid_cast<ASTArrayJoin *>(node.get()))
         return false;
     return true;
@@ -71,9 +71,6 @@ void QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data &
 /// 2) result of different scalar subqueries can be cached inside expressions compilation cache and must have different names
 void QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data)
 {
-    if (!data.subqueries)
-        return;
-
     Aliases & aliases = data.aliases;
 
     static std::atomic_uint64_t subquery_index = 0;

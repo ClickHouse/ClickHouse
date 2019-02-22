@@ -156,7 +156,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
             out.push_back(&child);
 
     for (ASTPtr * add_node : out)
-        ExecuteScalarSubqueriesVisitor(data).visit(*add_node);
+        Visitor(data).visit(*add_node);
 }
 
 }

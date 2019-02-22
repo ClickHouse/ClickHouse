@@ -20,7 +20,6 @@ public:
     struct Data
     {
         Aliases & aliases;
-        bool subqueries = true;
     };
 
     static void visit(ASTPtr & ast, Data & data);
