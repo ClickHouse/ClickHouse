@@ -66,10 +66,10 @@ public:
         {
             ResultType res{};
             const String & needle = col_needle_const->getValue<String>();
-            if (needle.size() > Impl::MaxStringSize)
+            if (needle.size() > Impl::max_string_size)
             {
                 throw Exception(
-                    "String size of needle is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::MaxStringSize),
+                    "String size of needle is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::max_string_size),
                         ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::constant_constant(col_haystack_const->getValue<String>(), needle, res);
@@ -87,10 +87,10 @@ public:
         if (col_haystack_vector)
         {
             const String & needle = col_needle_const->getValue<String>();
-            if (needle.size() > Impl::MaxStringSize)
+            if (needle.size() > Impl::max_string_size)
             {
                 throw Exception(
-                    "String size of needle is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::MaxStringSize),
+                    "String size of needle is too big for function " + getName() + ". Should be at most " + std::to_string(Impl::max_string_size),
                         ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
             Impl::vector_constant(

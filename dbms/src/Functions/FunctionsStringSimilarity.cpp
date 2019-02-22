@@ -26,14 +26,14 @@ struct DistanceImpl
     using ResultType = Float32;
     using CodePoint = UInt32;
 
-    /// MapSize for trigram difference
-    static constexpr size_t MapSize = 1u << 16;
+    /// map_size for trigram difference
+    static constexpr size_t map_size = 1u << 16;
 
     /// If the haystack size is bigger than this, behaviour is unspecified for this function
-    static constexpr size_t MaxStringSize = 1u << 15;
+    static constexpr size_t max_string_size = 1u << 15;
 
     /// This fits mostly in L2 cache all the time
-    using TrigramDiff = UInt16[MapSize];
+    using TrigramStats = UInt16[map_size];
 
     static inline CodePoint readCodePoint(const char *& pos, const char * end) noexcept
     {
@@ -64,7 +64,7 @@ struct DistanceImpl
         return res;
     }
 
-    static inline size_t calculateNeedleStats(const char * data, const size_t size, TrigramDiff & ans) noexcept
+    static inline size_t calculateNeedleStats(const char * data, const size_t size, TrigramStats & trigram_stats) noexcept
     {
         size_t len = 0;
         size_t trigram_cnt = 0;
@@ -82,12 +82,12 @@ struct DistanceImpl
             if (len < 3)
                 continue;
             ++trigram_cnt;
-            ++ans[(intHashCRC32(intHashCRC32(cp1) ^ cp2) ^ cp3) & 0xFFFFu];
+            ++trigram_stats[(intHashCRC32(intHashCRC32(cp1) ^ cp2) ^ cp3) & 0xFFFFu];
         }
         return trigram_cnt;
     }
 
-    static inline UInt64 calculateHaystackStatsAndMetric(const char * data, const size_t size, TrigramDiff & ans, size_t & distance)
+    static inline UInt64 calculateHaystackStatsAndMetric(const char * data, const size_t size, TrigramStats & trigram_stats, size_t & distance)
     {
         size_t len = 0;
         size_t trigram_cnt = 0;
@@ -120,25 +120,25 @@ struct DistanceImpl
             UInt16 hash = (intHashCRC32(intHashCRC32(cp1) ^ cp2) ^ cp3) & 0xFFFFu;
 
             /// Unsigned integer tricks
-            if (ans[hash] < std::numeric_limits<UInt16>::max() / 2)
+            if (trigram_stats[hash] < std::numeric_limits<UInt16>::max() / 2)
                 --distance;
             else
                 ++distance;
             trigram_storage[trigram_cnt++] = hash;
-            --ans[hash];
+            --trigram_stats[hash];
         }
         for (size_t i = 0; i < trigram_cnt; ++i)
-            ++ans[trigram_storage[i]];
+            ++trigram_stats[trigram_storage[i]];
         return trigram_cnt;
     }
 
     static void constant_constant(const std::string & data, const std::string & needle, Float32 & res)
     {
-        TrigramDiff common_stats;
+        TrigramStats common_stats;
         memset(common_stats, std::numeric_limits<UInt8>::max(), sizeof(common_stats));
         size_t second_size = calculateNeedleStats(needle.data(), needle.size(), common_stats);
         size_t distance = second_size;
-        if (data.size() <= MaxStringSize)
+        if (data.size() <= max_string_size)
         {
             size_t first_size = calculateHaystackStatsAndMetric(data.data(), data.size(), common_stats, distance);
             res = distance * 1.0 / std::max(first_size + second_size, size_t(1));
@@ -152,7 +152,7 @@ struct DistanceImpl
     static void vector_constant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & needle, PaddedPODArray<Float32> & res)
     {
-        TrigramDiff common_stats;
+        TrigramStats common_stats;
         memset(common_stats, std::numeric_limits<UInt8>::max(), sizeof(common_stats));
         const size_t needle_stats_size = calculateNeedleStats(needle.data(), needle.size(), common_stats);
         size_t distance = needle_stats_size;
@@ -161,7 +161,7 @@ struct DistanceImpl
         {
             const auto * haystack = &data[prev_offset];
             const size_t haystack_size = offsets[i] - prev_offset - 1;
-            if (haystack_size <= MaxStringSize)
+            if (haystack_size <= max_string_size)
             {
                 size_t haystack_stats_size
                     = calculateHaystackStatsAndMetric(reinterpret_cast<const char *>(haystack), haystack_size, common_stats, distance);
