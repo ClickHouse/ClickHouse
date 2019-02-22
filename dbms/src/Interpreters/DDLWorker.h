@@ -41,20 +41,26 @@ public:
     }
 
 private:
+    using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
+
+    ZooKeeperPtr tryGetZooKeeper() const;
+    ZooKeeperPtr getAndSetZooKeeper();
+
     void processTasks();
 
     /// Reads entry and check that the host belongs to host list of the task
     /// Returns true and sets current_task if entry parsed and the check is passed
-    bool initAndCheckTask(const String & entry_name, String & out_reason);
+    bool initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper);
 
 
-    void processTask(DDLTask & task);
+    void processTask(DDLTask & task, const ZooKeeperPtr & zookeeper);
 
     void processTaskAlter(
         DDLTask & task,
         const ASTAlterQuery * ast_alter,
         const String & rewritten_query,
-        const String & node_path);
+        const String & node_path,
+        const ZooKeeperPtr & zookeeper);
 
     void parseQueryAndResolveHost(DDLTask & task);
 
@@ -64,7 +70,7 @@ private:
     void cleanupQueue();
 
     /// Init task node
-    void createStatusDirs(const std::string & node_name);
+    void createStatusDirs(const std::string & node_name, const ZooKeeperPtr & zookeeper);
 
 
     void run();
@@ -83,14 +89,16 @@ private:
     /// Name of last task that was skipped or successfully executed
     std::string last_processed_task_name;
 
-    std::shared_ptr<zkutil::ZooKeeper> zookeeper;
+    mutable std::mutex zookeeper_mutex;
+    ZooKeeperPtr current_zookeeper;
 
     /// Save state of executed task to avoid duplicate execution on ZK error
     using DDLTaskPtr = std::unique_ptr<DDLTask>;
     DDLTaskPtr current_task;
 
-    std::shared_ptr<Poco::Event> event_queue_updated;
+    std::shared_ptr<Poco::Event> event_queue_updated = std::make_shared<Poco::Event>();
     std::atomic<bool> stop_flag{false};
+
     ThreadFromGlobalPool thread;
 
     Int64 last_cleanup_time_seconds = 0;

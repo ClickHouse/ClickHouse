@@ -190,7 +190,7 @@ struct DDLTask
 
 
 static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
-    std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
+    const std::shared_ptr<zkutil::ZooKeeper> & zookeeper, const String & lock_prefix, const String & lock_name, const String & lock_message)
 {
     auto zookeeper_holder = std::make_shared<zkutil::ZooKeeperHolder>();
     zookeeper_holder->initFromInstance(zookeeper);
@@ -239,8 +239,6 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     host_fqdn = getFQDNOrHostName();
     host_fqdn_id = Cluster::Address::toString(host_fqdn, context.getTCPPort());
 
-    event_queue_updated = std::make_shared<Poco::Event>();
-
     thread = ThreadFromGlobalPool(&DDLWorker::run, this);
 }
 
@@ -253,7 +251,24 @@ DDLWorker::~DDLWorker()
 }
 
 
-bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
+DDLWorker::ZooKeeperPtr DDLWorker::tryGetZooKeeper() const
+{
+    std::lock_guard lock(zookeeper_mutex);
+    return current_zookeeper;
+}
+
+DDLWorker::ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
+{
+    std::lock_guard lock(zookeeper_mutex);
+
+    if (!current_zookeeper || current_zookeeper->expired())
+        current_zookeeper = context.getZooKeeper();
+
+    return current_zookeeper;
+}
+
+
+bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
 {
     String node_data;
     String entry_path = queue_dir + "/" + entry_name;
@@ -284,7 +299,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
         String status = ExecutionStatus::fromCurrentException().serializeText();
         try
         {
-            createStatusDirs(entry_path);
+            createStatusDirs(entry_path, zookeeper);
             zookeeper->tryCreate(entry_path + "/finished/" + host_fqdn_id, status, zkutil::CreateMode::Persistent);
         }
         catch (...)
@@ -341,6 +356,7 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 void DDLWorker::processTasks()
 {
     LOG_DEBUG(log, "Processing tasks");
+    auto zookeeper = tryGetZooKeeper();
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, event_queue_updated);
     filterAndSortQueueNodes(queue_nodes);
@@ -373,7 +389,7 @@ void DDLWorker::processTasks()
         if (!current_task)
         {
             String reason;
-            if (!initAndCheckTask(entry_name, reason))
+            if (!initAndCheckTask(entry_name, reason, zookeeper))
             {
                 LOG_DEBUG(log, "Will not execute task " << entry_name << ": " << reason);
                 last_processed_task_name = entry_name;
@@ -395,7 +411,7 @@ void DDLWorker::processTasks()
         {
             try
             {
-                processTask(task);
+                processTask(task, zookeeper);
             }
             catch (...)
             {
@@ -559,7 +575,7 @@ void DDLWorker::attachToThreadGroup()
 }
 
 
-void DDLWorker::processTask(DDLTask & task)
+void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 {
     LOG_DEBUG(log, "Processing task " << task.entry_name << " (" << task.entry.query << ")");
 
@@ -576,7 +592,7 @@ void DDLWorker::processTask(DDLTask & task)
     else if (code == Coordination::ZNONODE)
     {
         /// There is no parent
-        createStatusDirs(task.entry_path);
+        createStatusDirs(task.entry_path, zookeeper);
         if (Coordination::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
             throw Coordination::Exception(code, active_node_path);
     }
@@ -595,7 +611,7 @@ void DDLWorker::processTask(DDLTask & task)
 
             if (auto ast_alter = dynamic_cast<const ASTAlterQuery *>(rewritten_ast.get()))
             {
-                processTaskAlter(task, ast_alter, rewritten_query, task.entry_path);
+                processTaskAlter(task, ast_alter, rewritten_query, task.entry_path, zookeeper);
             }
             else
             {
@@ -629,7 +645,8 @@ void DDLWorker::processTaskAlter(
     DDLTask & task,
     const ASTAlterQuery * ast_alter,
     const String & rewritten_query,
-    const String & node_path)
+    const String & node_path,
+    const ZooKeeperPtr & zookeeper)
 {
     String database = ast_alter->database.empty() ? context.getCurrentDatabase() : ast_alter->database;
     StoragePtr storage = context.getTable(database, ast_alter->table);
@@ -760,6 +777,7 @@ void DDLWorker::cleanupQueue()
 
     LOG_DEBUG(log, "Cleaning queue");
 
+    auto zookeeper = tryGetZooKeeper();
     Strings queue_nodes = zookeeper->getChildren(queue_dir);
     filterAndSortQueueNodes(queue_nodes);
 
@@ -839,7 +857,7 @@ void DDLWorker::cleanupQueue()
 
 
 /// Try to create nonexisting "status" dirs for a node
-void DDLWorker::createStatusDirs(const std::string & node_path)
+void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper)
 {
     Coordination::Requests ops;
     {
@@ -864,6 +882,8 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     if (entry.hosts.empty())
         throw Exception("Empty host list in a distributed DDL task", ErrorCodes::LOGICAL_ERROR);
 
+    auto zookeeper = getAndSetZooKeeper();
+
     String query_path_prefix = queue_dir + "/query-";
     zookeeper->createAncestors(query_path_prefix);
 
@@ -872,7 +892,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
     /// Optional step
     try
     {
-        createStatusDirs(node_path);
+        createStatusDirs(node_path, zookeeper);
     }
     catch (...)
     {
@@ -896,7 +916,7 @@ void DDLWorker::run()
         {
             try
             {
-                zookeeper = context.getZooKeeper();
+                auto zookeeper = getAndSetZooKeeper();
                 zookeeper->createAncestors(queue_dir + "/");
                 initialized = true;
             }
@@ -945,7 +965,7 @@ void DDLWorker::run()
                 {
                     try
                     {
-                        zookeeper = context.getZooKeeper();
+                        getAndSetZooKeeper();
                         break;
                     }
                     catch (...)
