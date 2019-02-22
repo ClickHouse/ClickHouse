@@ -12,7 +12,7 @@ namespace DB
 
 /** Calculate similarity metrics:
   *
-  * distance(haystack, needle) --- calculate so called "distance" between haystack and needle.
+  * trigramDistance(haystack, needle) --- calculate so called 3-gram distance between haystack and needle.
   * Returns float number from 0 to 1 - the closer to zero, the more strings are similar to each other.
   */
 

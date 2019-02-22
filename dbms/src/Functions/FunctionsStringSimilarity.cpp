@@ -6,9 +6,12 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/UTF8Helpers.h>
 
+#include <Core/Defines.h>
+
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <memory>
 
 namespace DB
 {
@@ -21,7 +24,7 @@ namespace DB
   * calculation. If the right string size is big (more than 2**15 bytes),
   * the strings are not similar at all and we return 1.
   */
-struct DistanceImpl
+struct TrigramDistanceImpl
 {
     using ResultType = Float32;
     using CodePoint = UInt32;
@@ -32,32 +35,42 @@ struct DistanceImpl
     /// If the haystack size is bigger than this, behaviour is unspecified for this function
     static constexpr size_t max_string_size = 1u << 15;
 
-    /// This fits mostly in L2 cache all the time
+    /** This fits mostly in L2 cache all the time.
+      * Actually use UInt16 as addings and subtractions do not UB overflow. But think of it as a signed
+      * integer array.
+      */
     using TrigramStats = UInt16[map_size];
 
-    static inline CodePoint readCodePoint(const char *& pos, const char * end) noexcept
+    static ALWAYS_INLINE UInt16 trigramHash(CodePoint one, CodePoint two, CodePoint three)
+    {
+        return (intHashCRC32((static_cast<UInt64>(one) << 32) | two) ^ intHashCRC32(three)) & 0xFFFFu;
+    }
+
+    static ALWAYS_INLINE CodePoint readCodePoint(const char *& pos, const char * end) noexcept
     {
         size_t length = UTF8::seqLength(*pos);
 
         if (pos + length > end)
             length = end - pos;
 
-        CodePoint res = 0;
-        /// this is faster than just memcpy because of compiler optimizations with moving bytes
+        CodePoint res;
+        /// This is faster than just memcpy because of compiler optimizations with moving bytes.
         switch (length)
         {
             case 1:
+                res = 0;
                 memcpy(&res, pos, 1);
                 break;
             case 2:
+                res = 0;
                 memcpy(&res, pos, 2);
                 break;
             case 3:
+                res = 0;
                 memcpy(&res, pos, 3);
                 break;
             default:
                 memcpy(&res, pos, 4);
-                break;
         }
 
         pos += length;
@@ -67,12 +80,12 @@ struct DistanceImpl
     static inline size_t calculateNeedleStats(const char * data, const size_t size, TrigramStats & trigram_stats) noexcept
     {
         size_t len = 0;
-        size_t trigram_cnt = 0;
         const char * start = data;
         const char * end = data + size;
         CodePoint cp1 = 0;
         CodePoint cp2 = 0;
         CodePoint cp3 = 0;
+
         while (start != end)
         {
             cp1 = cp2;
@@ -81,10 +94,9 @@ struct DistanceImpl
             ++len;
             if (len < 3)
                 continue;
-            ++trigram_cnt;
-            ++trigram_stats[(intHashCRC32(intHashCRC32(cp1) ^ cp2) ^ cp3) & 0xFFFFu];
+            ++trigram_stats[trigramHash(cp1, cp2, cp3)];
         }
-        return trigram_cnt;
+        return std::max(static_cast<Int64>(0), static_cast<Int64>(len) - 2);
     }
 
     static inline UInt64 calculateHaystackStatsAndMetric(const char * data, const size_t size, TrigramStats & trigram_stats, size_t & distance)
@@ -117,31 +129,36 @@ struct DistanceImpl
             ++len;
             if (len < 3)
                 continue;
-            UInt16 hash = (intHashCRC32(intHashCRC32(cp1) ^ cp2) ^ cp3) & 0xFFFFu;
 
-            /// Unsigned integer tricks
-            if (trigram_stats[hash] < std::numeric_limits<UInt16>::max() / 2)
+            UInt16 hash = trigramHash(cp1, cp2, cp3);
+
+            /// If the stats is bigger than 0, subtraction decreases the distance, otherwise, increases.
+            if (static_cast<Int16>(trigram_stats[hash]) > 0)
                 --distance;
             else
                 ++distance;
+
             trigram_storage[trigram_cnt++] = hash;
             --trigram_stats[hash];
         }
+
+        /// Return the state of hash map to its initial.
         for (size_t i = 0; i < trigram_cnt; ++i)
             ++trigram_stats[trigram_storage[i]];
+
         return trigram_cnt;
     }
 
     static void constant_constant(const std::string & data, const std::string & needle, Float32 & res)
     {
         TrigramStats common_stats;
-        memset(common_stats, std::numeric_limits<UInt8>::max(), sizeof(common_stats));
+        memset(common_stats, 0, sizeof(common_stats));
         size_t second_size = calculateNeedleStats(needle.data(), needle.size(), common_stats);
         size_t distance = second_size;
         if (data.size() <= max_string_size)
         {
             size_t first_size = calculateHaystackStatsAndMetric(data.data(), data.size(), common_stats, distance);
-            res = distance * 1.0 / std::max(first_size + second_size, size_t(1));
+            res = distance * 1.f / std::max(first_size + second_size, size_t(1));
         }
         else
         {
@@ -153,19 +170,19 @@ struct DistanceImpl
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & needle, PaddedPODArray<Float32> & res)
     {
         TrigramStats common_stats;
-        memset(common_stats, std::numeric_limits<UInt8>::max(), sizeof(common_stats));
+        memset(common_stats, 0, sizeof(common_stats));
         const size_t needle_stats_size = calculateNeedleStats(needle.data(), needle.size(), common_stats);
         size_t distance = needle_stats_size;
         size_t prev_offset = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            const auto * haystack = &data[prev_offset];
+            const UInt8 * haystack = &data[prev_offset];
             const size_t haystack_size = offsets[i] - prev_offset - 1;
             if (haystack_size <= max_string_size)
             {
                 size_t haystack_stats_size
                     = calculateHaystackStatsAndMetric(reinterpret_cast<const char *>(haystack), haystack_size, common_stats, distance);
-                res[i] = distance * 1.0 / std::max(haystack_stats_size + needle_stats_size, size_t(1));
+                res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
             }
             else
             {
@@ -178,16 +195,16 @@ struct DistanceImpl
 };
 
 
-struct DistanceName
+struct TrigramDistanceName
 {
-    static constexpr auto name = "distance";
+    static constexpr auto name = "trigramDistance";
 };
 
-using FunctionDistance = FunctionsStringSimilarity<DistanceImpl, DistanceName>;
+using FunctionTrigramsDistance = FunctionsStringSimilarity<TrigramDistanceImpl, TrigramDistanceName>;
 
 void registerFunctionsStringSimilarity(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionDistance>();
+    factory.registerFunction<FunctionTrigramsDistance>();
 }
 
 }
