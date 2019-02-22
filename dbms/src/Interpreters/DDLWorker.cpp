@@ -239,15 +239,18 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     host_fqdn = getFQDNOrHostName();
     host_fqdn_id = Cluster::Address::toString(host_fqdn, context.getTCPPort());
 
-    thread = ThreadFromGlobalPool(&DDLWorker::run, this);
+    main_thread = ThreadFromGlobalPool(&DDLWorker::runMainThread, this);
+    cleanup_thread = ThreadFromGlobalPool(&DDLWorker::runCleanupThread, this);
 }
 
 
 DDLWorker::~DDLWorker()
 {
     stop_flag = true;
-    event_queue_updated->set();
-    thread.join();
+    queue_updated_event->set();
+    cleanup_event->set();
+    main_thread.join();
+    cleanup_thread.join();
 }
 
 
@@ -358,7 +361,7 @@ void DDLWorker::processTasks()
     LOG_DEBUG(log, "Processing tasks");
     auto zookeeper = tryGetZooKeeper();
 
-    Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, event_queue_updated);
+    Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, queue_updated_event);
     filterAndSortQueueNodes(queue_nodes);
     if (queue_nodes.empty())
         return;
@@ -763,21 +766,10 @@ void DDLWorker::processTaskAlter(
 }
 
 
-void DDLWorker::cleanupQueue()
+void DDLWorker::cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
 {
-    /// Both ZK and Poco use Unix epoch
-    Int64 current_time_seconds = Poco::Timestamp().epochTime();
-    constexpr UInt64 zookeeper_time_resolution = 1000;
-
-    /// Too early to check
-    if (last_cleanup_time_seconds && current_time_seconds < last_cleanup_time_seconds + cleanup_delay_period)
-        return;
-
-    last_cleanup_time_seconds = current_time_seconds;
-
     LOG_DEBUG(log, "Cleaning queue");
 
-    auto zookeeper = tryGetZooKeeper();
     Strings queue_nodes = zookeeper->getChildren(queue_dir);
     filterAndSortQueueNodes(queue_nodes);
 
@@ -786,6 +778,9 @@ void DDLWorker::cleanupQueue()
 
     for (auto it = queue_nodes.cbegin(); it < queue_nodes.cend(); ++it)
     {
+        if (stop_flag)
+            return;
+
         String node_name = *it;
         String node_path = queue_dir + "/" + node_name;
         String lock_path = node_path + "/lock";
@@ -800,6 +795,7 @@ void DDLWorker::cleanupQueue()
                 continue;
 
             /// Delete node if its lifetmie is expired (according to task_max_lifetime parameter)
+            constexpr UInt64 zookeeper_time_resolution = 1000;
             Int64 zookeeper_time_seconds = stat.ctime / zookeeper_time_resolution;
             bool node_lifetime_is_expired = zookeeper_time_seconds + task_max_lifetime < current_time_seconds;
 
@@ -904,7 +900,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 }
 
 
-void DDLWorker::run()
+void DDLWorker::runMainThread()
 {
     setThreadName("DDLWorker");
     LOG_DEBUG(log, "Started DDLWorker thread");
@@ -936,7 +932,8 @@ void DDLWorker::run()
             tryLogCurrentException(log, "Terminating. Cannot initialize DDL queue.");
             return;
         }
-    } while (!initialized && !stop_flag);
+    }
+    while (!initialized && !stop_flag);
 
     while (!stop_flag)
     {
@@ -944,16 +941,11 @@ void DDLWorker::run()
         {
             attachToThreadGroup();
 
+            cleanup_event->set();
             processTasks();
 
             LOG_DEBUG(log, "Waiting a watch");
-            event_queue_updated->wait();
-
-            if (stop_flag)
-                break;
-
-            /// TODO: it might delay the execution, move it to separate thread.
-            cleanupQueue();
+            queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {
@@ -982,14 +974,47 @@ void DDLWorker::run()
                 LOG_ERROR(log, "Unexpected ZooKeeper error: " << getCurrentExceptionMessage(true) << ". Terminating.");
                 return;
             }
-
-            /// Unlock the processing just in case
-            event_queue_updated->set();
         }
         catch (...)
         {
             tryLogCurrentException(log, "Unexpected error, will terminate:");
             return;
+        }
+    }
+}
+
+
+void DDLWorker::runCleanupThread()
+{
+    setThreadName("DDLWorkerClnr");
+    LOG_DEBUG(log, "Started DDLWorker cleanup thread");
+
+    Int64 last_cleanup_time_seconds = 0;
+    while (!stop_flag)
+    {
+        try
+        {
+            cleanup_event->wait();
+            if (stop_flag)
+                break;
+
+            Int64 current_time_seconds = Poco::Timestamp().epochTime();
+            if (last_cleanup_time_seconds && current_time_seconds < last_cleanup_time_seconds + cleanup_delay_period)
+            {
+                LOG_TRACE(log, "Too early to clean queue, will do it later.");
+                continue;
+            }
+
+            auto zookeeper = tryGetZooKeeper();
+            if (zookeeper->expired())
+                continue;
+
+            cleanupQueue(current_time_seconds, zookeeper);
+            last_cleanup_time_seconds = current_time_seconds;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, __PRETTY_FUNCTION__);
         }
     }
 }
