@@ -35,19 +35,21 @@ struct ColumnAliasesMatcher
     struct Data
     {
         const std::vector<DatabaseAndTableWithAlias> tables;
+        bool public_names;
         AsteriskSemantic::RevertedAliases rev_aliases;
         std::unordered_map<String, String> aliases;
-        std::vector<ASTIdentifier *> compound_identifiers;
+        std::vector<std::pair<ASTIdentifier *, bool>> compound_identifiers;
 
         Data(std::vector<DatabaseAndTableWithAlias> && tables_)
             : tables(tables_)
+            , public_names(false)
         {}
 
         void replaceIdentifiersWithAliases()
         {
             String hide_prefix = "--"; /// @note restriction: user should not use alises like `--table.column`
 
-            for (auto * identifier : compound_identifiers)
+            for (auto & [identifier, is_public] : compound_identifiers)
             {
                 auto it = rev_aliases.find(identifier->name);
                 if (it == rev_aliases.end())
@@ -61,8 +63,11 @@ struct ColumnAliasesMatcher
                         rev_aliases[long_name].push_back(alias);
 
                         identifier->setShortName(alias);
-                        //identifier->setAlias(long_name);
+                        if (is_public)
+                            identifier->setAlias(long_name);
                     }
+                    else if (is_public)
+                        identifier->setAlias(identifier->name); /// prevent crop long to short name
                 }
                 else
                 {
@@ -130,7 +135,7 @@ struct ColumnAliasesMatcher
             }
         }
         else
-            data.compound_identifiers.push_back(&node);
+            data.compound_identifiers.emplace_back(&node, data.public_names);
     }
 };
 
@@ -236,7 +241,11 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
 
     ColumnAliasesVisitor::Data aliases_data(getDatabaseAndTables(select, ""));
     if (select.select_expression_list)
+    {
+        aliases_data.public_names = true;
         ColumnAliasesVisitor(aliases_data).visit(select.select_expression_list);
+        aliases_data.public_names = false;
+    }
     if (select.where_expression)
         ColumnAliasesVisitor(aliases_data).visit(select.where_expression);
     if (select.prewhere_expression)
