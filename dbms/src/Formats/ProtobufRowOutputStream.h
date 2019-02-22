@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Formats/IRowOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufWriter.h>
 
@@ -25,23 +25,21 @@ namespace DB
   * SELECT * from table FORMAT Protobuf SETTINGS format_schema = 'schema:Message'
   * where schema is the name of "schema.proto" file specifying protobuf schema.
   */
-class ProtobufBlockOutputStream : public IBlockOutputStream
+class ProtobufRowOutputStream : public IRowOutputStream
 {
 public:
-    ProtobufBlockOutputStream(
+    ProtobufRowOutputStream(
         WriteBuffer & buffer_,
         const Block & header_,
-        const google::protobuf::Descriptor * message_prototype_,
-        const FormatSettings & format_settings_);
+        const google::protobuf::Descriptor * message_prototype_);
 
-    Block getHeader() const override { return header; }
-    void write(const Block & block) override;
+    void write(const Block & block, size_t row_num) override;
     std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
     ProtobufWriter writer;
-    const Block header;
-    const FormatSettings format_settings;
+    DataTypes data_types;
+    std::vector<size_t> column_indices;
 };
 
 }
