@@ -2,9 +2,8 @@
 import warnings
 import pymysql.cursors
 import pymongo
-import subprocess
-import copy
-import base64
+import os
+
 
 class ExternalSource(object):
     def __init__(self, name, internal_hostname, internal_port,
@@ -305,9 +304,11 @@ class SourceExecutableHashed(_SourceExecutableBase):
 
 class SourceHTTPBase(ExternalSource):
 
+    PORT_COUNTER = 5555
     def get_source_str(self, table_name):
-        self.http_port = 5555
+        self.http_port = SourceHTTPBase.PORT_COUNTER
         url = "{schema}://{host}:{port}/".format(schema=self._get_schema(), host=self.docker_hostname, port=self.http_port)
+        SourceHTTPBase.PORT_COUNTER += 1
         return '''
             <http>
                 <url>{url}</url>
@@ -317,14 +318,18 @@ class SourceHTTPBase(ExternalSource):
 
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
+        path = "/" + table_name + ".tsv"
         self.node.exec_in_container(["bash", "-c", "touch {}".format(path)])
-        self.node.copy_file_to_container('./http_server.py', '/http_server.py')
+
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        self.node.copy_file_to_container(os.path.join(script_dir, './http_server.py'), '/http_server.py')
+        self.node.copy_file_to_container(os.path.join(script_dir, './fake_cert.pem'), '/fake_cert.pem')
         self.node.exec_in_container([
             "bash",
             "-c",
-            "python /http_server.py --data-path /{tbl}.tsv --schema={schema} --host={host} --port={port}".format(
-                tbl=table_name, schema=self._get_schema(), host=self.docker_hostname, port=self.http_port)
-        ])
+            "python2 /http_server.py --data-path={tbl} --schema={schema} --host={host} --port={port} --cert-path=/fake_cert.pem".format(
+                tbl=path, schema=self._get_schema(), host=self.docker_hostname, port=self.http_port)
+        ], detach=True)
         self.ordered_names = structure.get_ordered_names()
         self.prepared = True
 
@@ -339,3 +344,13 @@ class SourceHTTPBase(ExternalSource):
 
             str_data = '\t'.join(sorted_row)
             self.node.exec_in_container(["bash", "-c", "echo \"{row}\" >> {fname}".format(row=str_data, fname=path)])
+
+
+class SourceHTTP(SourceHTTPBase):
+    def _get_schema(self):
+        return "http"
+
+
+class SourceHTTPS(SourceHTTPBase):
+    def _get_schema(self):
+        return "https"

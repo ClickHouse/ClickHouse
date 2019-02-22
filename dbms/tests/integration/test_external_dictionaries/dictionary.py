@@ -48,7 +48,7 @@ class Row(object):
 
 
 class Field(object):
-    def __init__(self, name, field_type, is_key=False, is_range_key=False, default=None, hierarchical=False, range_hash_type=None):
+    def __init__(self, name, field_type, is_key=False, is_range_key=False, default=None, hierarchical=False, range_hash_type=None, default_value_for_get=None):
         self.name = name
         self.field_type = field_type
         self.is_key = is_key
@@ -57,6 +57,7 @@ class Field(object):
         self.range_hash_type = range_hash_type
         self.is_range = self.range_hash_type is not None
         self.is_range_key = is_range_key
+        self.default_value_for_get = default_value_for_get
 
     def get_attribute_str(self):
         return '''
@@ -157,21 +158,26 @@ class DictionaryStructure(object):
         return fields_strs
 
 
-
-    def get_dict_get_expression(self, dict_name, field, row):
+    def _get_dict_get_common_expression(self, dict_name, field, row, or_default, with_type, has):
         if field in self.keys:
             raise Exception("Trying to receive key field {} from dictionary".format(field.name))
 
         if not self.layout.is_complex:
-            key_expr = 'toUInt64({})'.format(row.data[self.keys[0].name])
+            if not or_default:
+                key_expr = ', toUInt64({})'.format(row.data[self.keys[0].name])
+            else:
+                key_expr = ', toUInt64({})'.format(self.keys[0].default_value_for_get)
         else:
             key_exprs_strs = []
             for key in self.keys:
-                val = row.data[key.name]
+                if not or_default:
+                    val = row.data[key.name]
+                else:
+                    val = key.default_value_for_get
                 if isinstance(val, str):
                     val = "'" + val + "'"
                 key_exprs_strs.append('to{type}({value})'.format(type=key.field_type, value=val))
-            key_expr = '(' + ','.join(key_exprs_strs) + ')'
+            key_expr = ', (' + ','.join(key_exprs_strs) + ')'
 
         date_expr = ''
         if self.layout.is_ranged:
@@ -182,13 +188,68 @@ class DictionaryStructure(object):
 
             date_expr = ', ' + val
 
-        return "dictGet{field_type}('{dict_name}', '{field_name}', {key_expr}{date_expr})".format(
-            field_type=field.field_type,
+            if or_default:
+                raise Exception("Can create 'dictGetOrDefault' query for ranged dictionary")
+
+        if or_default:
+            or_default_expr = 'OrDefault'
+            if field.default_value_for_get is None:
+                raise Exception("Can create 'dictGetOrDefault' query for field {} without default_value_for_get".format(field.name))
+
+            val = field.default_value_for_get
+            if isinstance(val, str):
+                val = "'" + val + "'"
+            default_value_for_get = ', to{type}({value})'.format(type=field.field_type, value=val)
+        else:
+            or_default_expr = ''
+            default_value_for_get = ''
+
+        if with_type:
+            field_type = field.field_type
+        else:
+            field_type = ''
+
+        field_name = ", '" + field.name + "'"
+        if has:
+            what = "Has"
+            field_type = ''
+            or_default = ''
+            field_name = ''
+            date_expr = ''
+            def_for_get = ''
+        else:
+            what = "Get"
+
+        return "dict{what}{field_type}{or_default}('{dict_name}'{field_name}{key_expr}{date_expr}{def_for_get})".format(
+            what=what,
+            field_type=field_type,
             dict_name=dict_name,
-            field_name=field.name,
+            field_name=field_name,
             key_expr=key_expr,
             date_expr=date_expr,
+            or_default=or_default_expr,
+            def_for_get=default_value_for_get,
         )
+
+    def get_get_expressions(self, dict_name, field, row):
+        return [
+            self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=False, has=False),
+            self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=True, has=False),
+        ]
+
+    def get_get_or_default_expressions(self, dict_name, field, row):
+        if not self.layout.is_ranged:
+            return [
+                self._get_dict_get_common_expression(dict_name, field, row, or_default=True, with_type=False, has=False),
+                self._get_dict_get_common_expression(dict_name, field, row, or_default=True, with_type=True, has=False),
+            ]
+        return []
+
+
+    def get_has_expressions(self, dict_name, field, row):
+        if not self.layout.is_ranged:
+            return [self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=False, has=True)]
+        return []
 
 
 class Dictionary(object):
@@ -230,8 +291,14 @@ class Dictionary(object):
 
         self.source.load_data(data, self.table_name)
 
-    def get_select_query(self, field, row):
-        return 'select {}'.format(self.structure.get_dict_get_expression(self.name, field, row))
+    def get_select_get_queries(self, field, row):
+        return ['select {}'.format(expr) for expr in self.structure.get_get_expressions(self.name, field, row)]
+
+    def get_select_get_or_default_queries(self, field, row):
+        return ['select {}'.format(expr) for expr in self.structure.get_get_or_default_expressions(self.name, field, row)]
+
+    def get_select_has_queries(self, field, row):
+        return ['select {}'.format(expr) for expr in self.structure.get_has_expressions(self.name, field, row)]
 
     def is_complex(self):
         return self.structure.layout.is_complex
