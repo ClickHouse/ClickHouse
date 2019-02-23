@@ -96,17 +96,22 @@ private:
     PreparedSets prepared_sets;
 };
 
-struct TokenExtractor
+
+/// Interface for string parsers.
+struct ITokenExtractor
 {
-    virtual ~TokenExtractor() = default;
+    virtual ~ITokenExtractor() = default;
     /// Fast inplace implementation for regular use.
+    /// Gets string (data ptr and len) and start position for extracting next token (state of extractor).
+    /// Returns false if parsing is finished, otherwise returns true.
     virtual bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const = 0;
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
     virtual bool nextLike(const String & str, size_t * pos, String & out) const = 0;
 };
 
-struct NgramTokenExtractor : public TokenExtractor
+/// Parser extracting all ngrams from string.
+struct NgramTokenExtractor : public ITokenExtractor
 {
     NgramTokenExtractor(size_t n_) : n(n_) {}
 
@@ -143,7 +148,7 @@ public:
             size_t bloom_filter_size_,
             size_t bloom_filter_hashes_,
             size_t seed_,
-            std::unique_ptr<TokenExtractor> && token_extractor_func_)
+            std::unique_ptr<ITokenExtractor> && token_extractor_func_)
             : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_)
             , bloom_filter_size(bloom_filter_size_)
             , bloom_filter_hashes(bloom_filter_hashes_)
@@ -164,7 +169,7 @@ public:
     /// Bloom filter seed.
     size_t seed;
     /// Fucntion for selecting next token.
-    std::unique_ptr<TokenExtractor> token_extractor_func;
+    std::unique_ptr<ITokenExtractor> token_extractor_func;
 };
 
 }

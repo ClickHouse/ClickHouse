@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 /// Adds all tokens from string to bloom filter.
 static void stringToBloomFilter(
-    const char * data, size_t size, const std::unique_ptr<TokenExtractor> & token_extractor, StringBloomFilter & bloom_filter)
+    const char * data, size_t size, const std::unique_ptr<ITokenExtractor> & token_extractor, StringBloomFilter & bloom_filter)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -38,7 +38,7 @@ static void stringToBloomFilter(
 
 /// Adds all tokens from like pattern string to bloom filter. (Because like pattern can contain `\%` and `\_`.)
 static void likeStringToBloomFilter(
-    const String & data, const std::unique_ptr<TokenExtractor> & token_extractor, StringBloomFilter & bloom_filter)
+    const String & data, const std::unique_ptr<ITokenExtractor> & token_extractor, StringBloomFilter & bloom_filter)
 {
     size_t cur = 0;
     String token;
