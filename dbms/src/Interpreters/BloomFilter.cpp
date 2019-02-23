@@ -11,10 +11,10 @@ static constexpr UInt64 SEED_GEN_B = 217728422;
 
 
 StringBloomFilter::StringBloomFilter(size_t size_, size_t hashes_, size_t seed_)
-    : size(size_), hashes(hashes_), seed(seed_), filter(size, 0) {}
+    : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)), filter(words, 0) {}
 
 StringBloomFilter::StringBloomFilter(const StringBloomFilter & bloom_filter)
-    : size(bloom_filter.size), hashes(bloom_filter.hashes), seed(bloom_filter.seed), filter(bloom_filter.filter) {}
+    : size(bloom_filter.size), hashes(bloom_filter.hashes), seed(bloom_filter.seed), words(bloom_filter.words), filter(bloom_filter.filter) {}
 
 bool StringBloomFilter::find(const char * data, size_t len)
 {
@@ -24,7 +24,7 @@ bool StringBloomFilter::find(const char * data, size_t len)
     for (size_t i = 0; i < hashes; ++i)
     {
         size_t pos = (hash1 + i * hash2 + i * i) % (8 * size);
-        if (!(filter[pos / 8] & (1 << (pos % 8))))
+        if (!(filter[pos / (8 * sizeof(UnderType))] & (1ULL << (pos % (8 * sizeof(UnderType))))))
             return false;
     }
     return true;
@@ -38,18 +38,18 @@ void StringBloomFilter::add(const char * data, size_t len)
     for (size_t i = 0; i < hashes; ++i)
     {
         size_t pos = (hash1 + i * hash2 + i * i) % (8 * size);
-        filter[pos / 8] |= (1 << (pos % 8));
+        filter[pos / (8 * sizeof(UnderType))] |= (1ULL << (pos % (8 * sizeof(UnderType))));
     }
 }
 
 void StringBloomFilter::clear()
 {
-    filter.assign(size, 0);
+    filter.assign(words, 0);
 }
 
 bool StringBloomFilter::contains(const StringBloomFilter & bf)
 {
-    for (size_t i = 0; i < size; ++i)
+    for (size_t i = 0; i < words; ++i)
     {
         if ((filter[i] & bf.filter[i]) != bf.filter[i])
             return false;
@@ -59,7 +59,7 @@ bool StringBloomFilter::contains(const StringBloomFilter & bf)
 
 void StringBloomFilter::merge(const StringBloomFilter & bf)
 {
-    for (size_t i = 0; i < size; ++i)
+    for (size_t i = 0; i < words; ++i)
         filter[i] |= bf.filter[i];
 }
 
@@ -71,14 +71,14 @@ UInt64 StringBloomFilter::getFingerPrint() const
 UInt64 StringBloomFilter::getSum() const
 {
     UInt64 res = 0;
-    for (size_t i = 0; i < size; ++i)
+    for (size_t i = 0; i < words; ++i)
         res += filter[i];
     return res;
 }
 
 bool operator== (const StringBloomFilter & a, const StringBloomFilter & b)
 {
-    for (size_t i = 0; i < a.size; ++i)
+    for (size_t i = 0; i < a.words; ++i)
         if (a.filter[i] != b.filter[i])
             return false;
     return true;
