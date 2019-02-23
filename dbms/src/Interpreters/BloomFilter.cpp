@@ -6,6 +6,10 @@
 namespace DB
 {
 
+static constexpr UInt64 SEED_GEN_A = 845897321;
+static constexpr UInt64 SEED_GEN_B = 217728422;
+
+
 StringBloomFilter::StringBloomFilter(size_t size_, size_t hashes_, size_t seed_)
     : size(size_), hashes(hashes_), seed(seed_), filter(size, 0) {}
 
@@ -14,10 +18,12 @@ StringBloomFilter::StringBloomFilter(const StringBloomFilter & bloom_filter)
 
 bool StringBloomFilter::find(const char * data, size_t len)
 {
-    LinearCongruentialGenerator lcg(seed);
+    size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);
+    size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed + SEED_GEN_B);
+
     for (size_t i = 0; i < hashes; ++i)
     {
-        size_t pos = CityHash_v1_0_2::CityHash64WithSeed(data, len, lcg()) % (8 * size);
+        size_t pos = (hash1 + i * hash2 + i * i) % (8 * size);
         if (!(filter[pos / 8] & (1 << (pos % 8))))
             return false;
     }
@@ -26,10 +32,12 @@ bool StringBloomFilter::find(const char * data, size_t len)
 
 void StringBloomFilter::add(const char * data, size_t len)
 {
-    LinearCongruentialGenerator lcg(seed);
+    size_t hash1 = CityHash_v1_0_2::CityHash64WithSeed(data, len, seed);
+    size_t hash2 = CityHash_v1_0_2::CityHash64WithSeed(data, len, SEED_GEN_A * seed + SEED_GEN_B);
+
     for (size_t i = 0; i < hashes; ++i)
     {
-        size_t pos = CityHash_v1_0_2::CityHash64WithSeed(data, len, lcg()) % (8 * size);
+        size_t pos = (hash1 + i * hash2 + i * i) % (8 * size);
         filter[pos / 8] |= (1 << (pos % 8));
     }
 }

@@ -2,7 +2,6 @@
 
 #include <Core/Types.h>
 #include <vector>
-#include <random>
 
 
 namespace DB
@@ -39,9 +38,6 @@ public:
 
     friend bool operator== (const StringBloomFilter & a, const StringBloomFilter & b);
 private:
-    /// LinearCongruentialGenerator for generating random seeds for hash functions.
-    /// It is used here because it is very fast and lightweight.
-    using LinearCongruentialGenerator = std::linear_congruential_engine<UInt64, 84589, 45989, 217728>;
 
     size_t size;
     size_t hashes;
