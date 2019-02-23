@@ -11,7 +11,8 @@ namespace DB
 class StringBloomFilter
 {
 public:
-    using Container = std::vector<UInt8>;
+    using UnderType = UInt64;
+    using Container = std::vector<UnderType>;
 
     /// size -- size of filter in bytes.
     /// hashes -- number of used hash functions.
@@ -42,6 +43,7 @@ private:
     size_t size;
     size_t hashes;
     size_t seed;
+    size_t words;
     Container filter;
 };
 
