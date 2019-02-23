@@ -12,13 +12,13 @@ namespace DB
 class StringBloomFilter
 {
 public:
-    using StorageType = UInt8;
-    using Container = std::vector<StorageType>;
+    using Container = std::vector<UInt8>;
 
     /// size -- size of filter in bytes.
     /// hashes -- number of used hash functions.
     /// seed -- random seed for hash functions generation.
     StringBloomFilter(size_t size_, size_t hashes_, size_t seed_);
+    StringBloomFilter(const StringBloomFilter & bloom_filter);
 
     bool find(const char * data, size_t len);
     void add(const char * data, size_t len);
@@ -35,6 +35,7 @@ public:
 
     /// For debug.
     UInt64 getFingerPrint() const;
+    UInt64 getSum() const;
 
     friend bool operator== (const StringBloomFilter & a, const StringBloomFilter & b);
 private:

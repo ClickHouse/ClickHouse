@@ -62,23 +62,23 @@ void MergeTreeBloomFilterIndexGranule::serializeBinary(WriteBuffer & ostr) const
         throw Exception(
                 "Attempt to write empty minmax index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
 
-    for (const auto & filter : bloom_filters)
+    for (const auto & bloom_filter : bloom_filters)
     {
         auto *log = &Poco::Logger::get("bf");
-        LOG_DEBUG(log, "writing fingerprint:" << filter.getFingerPrint());
-        ostr.write(reinterpret_cast<const char *>(filter.getFilter().data()), index.bloom_filter_size);
+        LOG_DEBUG(log, "writing fingerprint:" << bloom_filter.getFingerPrint() << " " << bloom_filter.getSum());
+        ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), index.bloom_filter_size);
     }
 }
 
 void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
 {
-    StringBloomFilter::Container filter_data(index.bloom_filter_size, 0);
-    for (auto & filter : bloom_filters)
+    for (auto & bloom_filter : bloom_filters)
     {
+        StringBloomFilter::Container filter_data(index.bloom_filter_size, 0);
         istr.read(reinterpret_cast<char *>(filter_data.data()), index.bloom_filter_size);
-        filter.setFilter(std::move(filter_data));
+        bloom_filter.setFilter(std::move(filter_data));
         auto *log = &Poco::Logger::get("bf");
-        LOG_DEBUG(log, "reading fingerprint:" << filter.getFingerPrint());
+        LOG_DEBUG(log, "reading fingerprint:" << bloom_filter.getFingerPrint() << " " << bloom_filter.getSum());
     }
     has_elems = true;
 }
@@ -92,13 +92,13 @@ void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos,
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
-    for (size_t i = 0; i < index.columns.size(); ++i)
+    for (size_t col = 0; col < index.columns.size(); ++col)
     {
-        const auto & column = block.getByName(index.columns[i]).column;
+        const auto & column = block.getByName(index.columns[col]).column;
         for (size_t i = 0; i < rows_read; ++i)
         {
             auto ref = column->getDataAt(*pos + i);
-            stringToBloomFilter(ref.data, ref.size, index.token_extractor_func, bloom_filters[i]);
+            stringToBloomFilter(ref.data, ref.size, index.token_extractor_func, bloom_filters[col]);
         }
     }
     has_elems = true;
@@ -159,7 +159,8 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                     likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
                     return true;
                 }
-        }
+        },
+        /// TODO: function IN
 };
 
 BloomFilterCondition::BloomFilterCondition(
