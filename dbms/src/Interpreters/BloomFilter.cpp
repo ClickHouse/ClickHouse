@@ -9,6 +9,9 @@ namespace DB
 StringBloomFilter::StringBloomFilter(size_t size_, size_t hashes_, size_t seed_)
     : size(size_), hashes(hashes_), seed(seed_), filter(size, 0) {}
 
+StringBloomFilter::StringBloomFilter(const StringBloomFilter & bloom_filter)
+    : size(bloom_filter.size), hashes(bloom_filter.hashes), seed(bloom_filter.seed), filter(bloom_filter.filter) {}
+
 bool StringBloomFilter::find(const char * data, size_t len)
 {
     LinearCongruentialGenerator lcg(seed);
@@ -55,6 +58,14 @@ void StringBloomFilter::merge(const StringBloomFilter & bf)
 UInt64 StringBloomFilter::getFingerPrint() const
 {
     return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(filter.data()), size);
+}
+
+UInt64 StringBloomFilter::getSum() const
+{
+    UInt64 res = 0;
+    for (size_t i = 0; i < size; ++i)
+        res += filter[i];
+    return res;
 }
 
 bool operator== (const StringBloomFilter & a, const StringBloomFilter & b)
