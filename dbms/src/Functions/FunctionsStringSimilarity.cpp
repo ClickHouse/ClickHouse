@@ -13,6 +13,10 @@
 #include <limits>
 #include <memory>
 
+#ifdef __SSE4_2__
+#include <nmmintrin.h>
+#endif
+
 namespace DB
 {
 /** Distance function implementation.
@@ -20,7 +24,7 @@ namespace DB
   * 16 bits hash of them in the map.
   * Then calculate all the trigrams from the right string and calculate
   * the trigram distance on the flight by adding and subtracting from the hashmap.
-  * Then return the map into the condition of which it was after left string
+  * Then return the map into the condition of which it was after the left string
   * calculation. If the right string size is big (more than 2**15 bytes),
   * the strings are not similar at all and we return 1.
   */
@@ -43,7 +47,12 @@ struct TrigramDistanceImpl
 
     static ALWAYS_INLINE UInt16 trigramHash(CodePoint one, CodePoint two, CodePoint three)
     {
-        return (intHashCRC32((static_cast<UInt64>(one) << 32) | two) ^ intHashCRC32(three)) & 0xFFFFu;
+        UInt64 combined = (static_cast<UInt64>(one) << 32) | two;
+#ifdef __SSE4_2__
+        return _mm_crc32_u64(three, combined) & 0xFFFFu;
+#else
+        return (intHashCRC32(combined) ^ intHashCRC32(three)) & 0xFFFFu;
+#endif
     }
 
     static ALWAYS_INLINE CodePoint readCodePoint(const char *& pos, const char * end) noexcept
@@ -132,7 +141,6 @@ struct TrigramDistanceImpl
 
             UInt16 hash = trigramHash(cp1, cp2, cp3);
 
-            /// If the stats is bigger than 0, subtraction decreases the distance, otherwise, increases.
             if (static_cast<Int16>(trigram_stats[hash]) > 0)
                 --distance;
             else
