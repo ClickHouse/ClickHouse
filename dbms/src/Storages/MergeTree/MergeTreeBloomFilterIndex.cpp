@@ -64,8 +64,8 @@ void MergeTreeBloomFilterIndexGranule::serializeBinary(WriteBuffer & ostr) const
 
     for (const auto & bloom_filter : bloom_filters)
     {
-        auto *log = &Poco::Logger::get("bf");
-        LOG_DEBUG(log, "writing fingerprint:" << bloom_filter.getFingerPrint() << " " << bloom_filter.getSum());
+        /*auto *log = &Poco::Logger::get("bf");
+        LOG_DEBUG(log, "writing fingerprint:" << bloom_filter.getFingerPrint() << " " << bloom_filter.getSum());*/
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), index.bloom_filter_size);
     }
 }
@@ -77,8 +77,8 @@ void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
         StringBloomFilter::Container filter_data(index.bloom_filter_size, 0);
         istr.read(reinterpret_cast<char *>(filter_data.data()), index.bloom_filter_size);
         bloom_filter.setFilter(std::move(filter_data));
-        auto *log = &Poco::Logger::get("bf");
-        LOG_DEBUG(log, "reading fingerprint:" << bloom_filter.getFingerPrint() << " " << bloom_filter.getSum());
+        /*auto *log = &Poco::Logger::get("bf");
+        LOG_DEBUG(log, "reading fingerprint:" << bloom_filter.getFingerPrint() << " " << bloom_filter.getSum());*/
     }
     has_elems = true;
 }
@@ -192,13 +192,13 @@ BloomFilterCondition::BloomFilterCondition(
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
     }
 
-    auto * log = &Poco::Logger::get("bf");
+    /*auto * log = &Poco::Logger::get("bf");
     for (size_t i = 0; i < rpn.size(); ++i) {
         if (rpn[i].bloom_filter)
             LOG_DEBUG(log, ": " << rpn[i].function << " " << rpn[i].key_column << " " << rpn[i].bloom_filter->getFingerPrint());
         else
             LOG_DEBUG(log, ": " << rpn[i].function << " " << rpn[i].key_column << " " << "empty");
-    }
+    }*/
 }
 
 bool BloomFilterCondition::alwaysUnknownOrTrue() const
@@ -474,16 +474,13 @@ bool NgramTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 {
     *token_start = *pos;
     *token_len = 0;
-    for (size_t code_points = 0; code_points < n; ++code_points)
+    for (size_t code_points = 0; code_points < n && *token_start + *token_len <= len; ++code_points)
     {
         size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*token_start + *token_len]));
-        if (*token_start + *token_len + sz > len) {
-            return false;
-        }
         *token_len += sz;
     }
     *pos += UTF8::seqLength(static_cast<UInt8>(data[*pos]));
-    return true;
+    return *token_start + *token_len <= len;
 }
 
 bool NgramTokenExtractor::nextLike(const String & str, size_t * pos, String & token) const
@@ -581,6 +578,8 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
 
         auto bloom_filter_hashes = static_cast<size_t>(
                 n * log(2.) / (node->granularity * data.index_granularity));
+        if (bloom_filter_hashes < 1)
+            bloom_filter_hashes = 1;
 
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
 
