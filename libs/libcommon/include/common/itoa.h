@@ -31,6 +31,7 @@
 #include "likely.h"
 #include "unaligned.h"
 
+using int128_t = __int128;
 using uint128_t = unsigned __int128;
 
 namespace impl
@@ -313,9 +314,9 @@ static inline char * writeLeadingMinus(char * pos)
     return pos + 1;
 }
 
-static inline char * writeSIntText(__int128 x, char * pos)
+static inline char * writeSIntText(int128_t x, char * pos)
 {
-    static const __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+    static const int128_t min_int128 = int128_t(0x8000000000000000ll) << 64;
 
     if (unlikely(x == min_int128))
     {
@@ -328,7 +329,7 @@ static inline char * writeSIntText(__int128 x, char * pos)
         x = -x;
         pos = writeLeadingMinus(pos);
     }
-    return writeUIntText(static_cast<unsigned __int128>(x), pos);
+    return writeUIntText(static_cast<uint128_t>(x), pos);
 }
 
 }
@@ -339,12 +340,14 @@ char * itoa(I i, char * p)
     return impl::convert::itoa(i, p);
 }
 
-static inline char * itoa(uint128_t i, char * p)
+template <>
+inline char * itoa<uint128_t>(uint128_t i, char * p)
 {
     return impl::writeUIntText(i, p);
 }
 
-static inline char * itoa(__int128 i, char * p)
+template <>
+inline char * itoa<int128_t>(int128_t i, char * p)
 {
     return impl::writeSIntText(i, p);
 }
