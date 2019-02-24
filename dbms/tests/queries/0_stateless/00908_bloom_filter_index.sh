@@ -37,8 +37,8 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test.bloom_filter_idx VALUES
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s = 'aбвгдеёж' ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s = 'aбвгдеёж' ORDER BY k FORMAT JSON" | grep "rows_read"
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s = 'abc' ORDER BY k"
-$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s = 'abc' ORDER BY k FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE lower(s) = 'abc' ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE lower(s) = 'abc' ORDER BY k FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
