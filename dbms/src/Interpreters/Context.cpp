@@ -1580,7 +1580,7 @@ PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
-    /// System logs are shutting down.
+    /// No part log or system logs are shutting down.
     if (!shared->system_logs || !shared->system_logs->part_log)
         return nullptr;
 
