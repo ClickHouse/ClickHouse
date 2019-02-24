@@ -54,7 +54,9 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test.bloom_filter_idx2 VALUES
 (9, '2_2%2_2\\\\'),
 (13, 'abc')"
 
-
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s IN ('aбвгдеёж', 'abc') ORDER BY k FORMAT JSON" | grep "rows_read"
+exit(0)
+# EQUAL
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx2 WHERE lower(s) = 'aбвгдеёж' OR s = 'aбвгдеёж' ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx2 WHERE lower(s) = 'aбвгдеёж' OR s = 'aбвгдеёж' ORDER BY k FORMAT JSON" | grep "rows_read"
 
@@ -64,6 +66,7 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s = 'aбв
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE lower(s) = 'abc' ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE lower(s) = 'abc' ORDER BY k FORMAT JSON" | grep "rows_read"
 
+# LIKE
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
 
@@ -92,6 +95,9 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s LIKE '2\
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s LIKE '2\\\\_2\\\\%2_2_' ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s LIKE '2\\\\_2\\\\%2_2_' ORDER BY k FORMAT JSON" | grep "rows_read"
 
+# IN
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s IN ('aбвгдеёж', 'abc') ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s IN ('aбвгдеёж', 'abc') ORDER BY k FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE test.bloom_filter_idx"
 $CLICKHOUSE_CLIENT --query="DROP TABLE test.bloom_filter_idx2"
