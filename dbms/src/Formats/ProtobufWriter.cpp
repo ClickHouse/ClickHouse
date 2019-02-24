@@ -382,44 +382,42 @@ void ProtobufWriter::SimpleWriter::packRepeatedDouble(double value)
 
 
 
-class ProtobufWriter::Converter : private boost::noncopyable
+class ProtobufWriter::ConverterBaseImpl : public IConverter
 {
 public:
-    Converter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+    ConverterBaseImpl(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
         : simple_writer(simple_writer_), field(field_)
     {
     }
 
-    virtual ~Converter() = default;
+    virtual void writeString(const StringRef &) override { cannotConvertType("String"); }
 
-    virtual void writeString(const StringRef &) { cannotConvertType("String"); }
+    virtual void writeInt8(Int8) override { cannotConvertType("Int8"); }
+    virtual void writeUInt8(UInt8) override { cannotConvertType("UInt8"); }
+    virtual void writeInt16(Int16) override { cannotConvertType("Int16"); }
+    virtual void writeUInt16(UInt16) override { cannotConvertType("UInt16"); }
+    virtual void writeInt32(Int32) override { cannotConvertType("Int32"); }
+    virtual void writeUInt32(UInt32) override { cannotConvertType("UInt32"); }
+    virtual void writeInt64(Int64) override { cannotConvertType("Int64"); }
+    virtual void writeUInt64(UInt64) override { cannotConvertType("UInt64"); }
+    virtual void writeUInt128(const UInt128 &) override { cannotConvertType("UInt128"); }
+    virtual void writeFloat32(Float32) override { cannotConvertType("Float32"); }
+    virtual void writeFloat64(Float64) override { cannotConvertType("Float64"); }
 
-    virtual void writeInt8(Int8) { cannotConvertType("Int8"); }
-    virtual void writeUInt8(UInt8) { cannotConvertType("UInt8"); }
-    virtual void writeInt16(Int16) { cannotConvertType("Int16"); }
-    virtual void writeUInt16(UInt16) { cannotConvertType("UInt16"); }
-    virtual void writeInt32(Int32) { cannotConvertType("Int32"); }
-    virtual void writeUInt32(UInt32) { cannotConvertType("UInt32"); }
-    virtual void writeInt64(Int64) { cannotConvertType("Int64"); }
-    virtual void writeUInt64(UInt64) { cannotConvertType("UInt64"); }
-    virtual void writeUInt128(const UInt128 &) { cannotConvertType("UInt128"); }
-    virtual void writeFloat32(Float32) { cannotConvertType("Float32"); }
-    virtual void writeFloat64(Float64) { cannotConvertType("Float64"); }
+    virtual void prepareEnumMappingInt8(const std::vector<std::pair<std::string, Int8>> &) override {}
+    virtual void prepareEnumMappingInt16(const std::vector<std::pair<std::string, Int16>> &) override {}
+    virtual void writeEnumInt8(Int8) override { cannotConvertType("Enum"); }
+    virtual void writeEnumInt16(Int16) override { cannotConvertType("Enum"); }
 
-    virtual void prepareEnumMappingInt8(const std::vector<std::pair<std::string, Int8>> &) {}
-    virtual void prepareEnumMappingInt16(const std::vector<std::pair<std::string, Int16>> &) {}
-    virtual void writeEnumInt8(Int8) { cannotConvertType("Enum"); }
-    virtual void writeEnumInt16(Int16) { cannotConvertType("Enum"); }
+    virtual void writeUUID(const UUID &) override { cannotConvertType("UUID"); }
+    virtual void writeDate(DayNum) override { cannotConvertType("Date"); }
+    virtual void writeDateTime(time_t) override { cannotConvertType("DateTime"); }
 
-    virtual void writeUUID(const UUID &) { cannotConvertType("UUID"); }
-    virtual void writeDate(DayNum) { cannotConvertType("Date"); }
-    virtual void writeDateTime(time_t) { cannotConvertType("DateTime"); }
+    virtual void writeDecimal32(Decimal32, UInt32) override { cannotConvertType("Decimal32"); }
+    virtual void writeDecimal64(Decimal64, UInt32) override { cannotConvertType("Decimal64"); }
+    virtual void writeDecimal128(const Decimal128 &, UInt32) override { cannotConvertType("Decimal128"); }
 
-    virtual void writeDecimal32(Decimal32, UInt32) { cannotConvertType("Decimal32"); }
-    virtual void writeDecimal64(Decimal64, UInt32) { cannotConvertType("Decimal64"); }
-    virtual void writeDecimal128(const Decimal128 &, UInt32) { cannotConvertType("Decimal128"); }
-
-    virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) { cannotConvertType("AggregateFunction"); }
+    virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) override { cannotConvertType("AggregateFunction"); }
 
 protected:
     void cannotConvertType(const String & type_name)
@@ -487,11 +485,12 @@ protected:
 };
 
 
-class ProtobufWriter::ToStringConverter : public Converter
+
+class ProtobufWriter::ConverterToString : public ConverterBaseImpl
 {
 public:
-    ToStringConverter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
-        : Converter(simple_writer_, field_)
+    ConverterToString(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+        : ConverterBaseImpl(simple_writer_, field_)
     {
         initWriteFieldFunction();
     }
@@ -588,13 +587,24 @@ private:
     std::optional<std::unordered_map<Int16, String>> enum_value_to_name_map;
 };
 
+#define PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(field_type_id) \
+    template<> \
+    class ProtobufWriter::ConverterImpl<field_type_id> : public ConverterToString \
+    { \
+        using ConverterToString::ConverterToString; \
+    }
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_STRING);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_BYTES);
+#undef PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS
+
+
 
 template <typename T>
-class ProtobufWriter::ToNumberConverter : public Converter
+class ProtobufWriter::ConverterToNumber : public ConverterBaseImpl
 {
 public:
-    ToNumberConverter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
-        : Converter(simple_writer_, field_)
+    ConverterToNumber(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+        : ConverterBaseImpl(simple_writer_, field_)
     {
         initWriteFieldFunction();
     }
@@ -750,12 +760,34 @@ private:
     void (SimpleWriter::*write_field_function)(T value);
 };
 
+#define PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
+    template<> \
+    class ProtobufWriter::ConverterImpl<field_type_id> : public ConverterToNumber<field_type> \
+    { \
+        using ConverterToNumber::ConverterToNumber; \
+    }
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT32, Int32);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT32, Int32);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT32, UInt32);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT64, Int64);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT64, Int64);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT64, UInt64);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED32, UInt32);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED32, Int32);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED64, UInt64);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED64, Int64);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
+PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
+#undef PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS
 
-class ProtobufWriter::ToBoolConverter : public Converter
+
+
+template<>
+class ProtobufWriter::ConverterImpl<google::protobuf::FieldDescriptor::TYPE_BOOL> : public ConverterBaseImpl
 {
 public:
-    ToBoolConverter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
-        : Converter(simple_writer_, field_)
+    ConverterImpl(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+        : ConverterBaseImpl(simple_writer_, field_)
     {
         initWriteFieldFunction();
     }
@@ -804,11 +836,13 @@ private:
 };
 
 
-class ProtobufWriter::ToEnumConverter : public Converter
+
+template<>
+class ProtobufWriter::ConverterImpl<google::protobuf::FieldDescriptor::TYPE_ENUM> : public ConverterBaseImpl
 {
 public:
-    ToEnumConverter(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
-        : Converter(simple_writer_, field_)
+    ConverterImpl(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
+        : ConverterBaseImpl(simple_writer_, field_)
     {
         initWriteFieldFunction();
     }
@@ -937,43 +971,30 @@ void ProtobufWriter::createConverters()
     for (size_t i = 0; i != fields_in_write_order.size(); ++i)
     {
         const auto * field = fields_in_write_order[i];
-        std::unique_ptr<Converter> converter;
+        std::unique_ptr<IConverter> converter;
         switch (field->type())
         {
-            case google::protobuf::FieldDescriptor::TYPE_INT32:
-            case google::protobuf::FieldDescriptor::TYPE_SINT32:
-            case google::protobuf::FieldDescriptor::TYPE_SFIXED32:
-                converter = std::make_unique<ToNumberConverter<Int32>>(simple_writer, field);
-                break;
-            case google::protobuf::FieldDescriptor::TYPE_UINT32:
-            case google::protobuf::FieldDescriptor::TYPE_FIXED32:
-                converter = std::make_unique<ToNumberConverter<UInt32>>(simple_writer, field);
-                break;
-            case google::protobuf::FieldDescriptor::TYPE_INT64:
-            case google::protobuf::FieldDescriptor::TYPE_SFIXED64:
-            case google::protobuf::FieldDescriptor::TYPE_SINT64:
-                converter = std::make_unique<ToNumberConverter<Int64>>(simple_writer, field);
-                break;
-            case google::protobuf::FieldDescriptor::TYPE_UINT64:
-            case google::protobuf::FieldDescriptor::TYPE_FIXED64:
-                converter = std::make_unique<ToNumberConverter<UInt64>>(simple_writer, field);
-                break;
-            case google::protobuf::FieldDescriptor::TYPE_FLOAT:
-                converter = std::make_unique<ToNumberConverter<float>>(simple_writer, field);
-                break;
-            case google::protobuf::FieldDescriptor::TYPE_DOUBLE:
-                converter = std::make_unique<ToNumberConverter<double>>(simple_writer, field);
-                break;
-            case google::protobuf::FieldDescriptor::TYPE_BOOL:
-                converter = std::make_unique<ToBoolConverter>(simple_writer, field);
-                break;
-            case google::protobuf::FieldDescriptor::TYPE_ENUM:
-                converter = std::make_unique<ToEnumConverter>(simple_writer, field);
-                break;
-            case google::protobuf::FieldDescriptor::TYPE_STRING:
-            case google::protobuf::FieldDescriptor::TYPE_BYTES:
-                converter = std::make_unique<ToStringConverter>(simple_writer, field);
-                break;
+#define PROTOBUF_WRITER_CONVERTER_CREATING_CASE(field_type_id) \
+            case field_type_id: \
+                converter = std::make_unique<ConverterImpl<field_type_id>>(simple_writer, field); \
+                break
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_STRING);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_BYTES);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_INT32);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_SINT32);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_UINT32);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_FIXED32);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_SFIXED32);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_INT64);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_SINT64);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_UINT64);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_FIXED64);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_SFIXED64);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_FLOAT);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_DOUBLE);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_BOOL);
+            PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_ENUM);
+#undef PROTOBUF_WRITER_CONVERTER_CREATING_CASE
             default:
                 throw Exception(String("Protobuf type '") + field->type_name() + "' isn't supported", ErrorCodes::NOT_IMPLEMENTED);
         }
@@ -1038,121 +1059,6 @@ void ProtobufWriter::finishCurrentField()
             "Cannot write more than single value to the non-repeated field '" + current_field->name() + "'",
             ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
     }
-}
-
-void ProtobufWriter::writeNumber(Int8 value)
-{
-    current_converter->writeInt8(value);
-}
-
-void ProtobufWriter::writeNumber(UInt8 value)
-{
-    current_converter->writeUInt8(value);
-}
-
-void ProtobufWriter::writeNumber(Int16 value)
-{
-    current_converter->writeInt16(value);
-}
-
-void ProtobufWriter::writeNumber(UInt16 value)
-{
-    current_converter->writeUInt16(value);
-}
-
-void ProtobufWriter::writeNumber(Int32 value)
-{
-    current_converter->writeInt32(value);
-}
-
-void ProtobufWriter::writeNumber(UInt32 value)
-{
-    current_converter->writeUInt32(value);
-}
-
-void ProtobufWriter::writeNumber(Int64 value)
-{
-    current_converter->writeInt64(value);
-}
-
-void ProtobufWriter::writeNumber(UInt64 value)
-{
-    current_converter->writeUInt64(value);
-}
-
-void ProtobufWriter::writeNumber(UInt128 value)
-{
-    current_converter->writeUInt128(value);
-}
-
-void ProtobufWriter::writeNumber(Float32 value)
-{
-    current_converter->writeFloat32(value);
-}
-
-void ProtobufWriter::writeNumber(Float64 value)
-{
-    current_converter->writeFloat64(value);
-}
-
-void ProtobufWriter::writeString(const StringRef & str)
-{
-    current_converter->writeString(str);
-}
-
-void ProtobufWriter::prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & enum_values)
-{
-    current_converter->prepareEnumMappingInt8(enum_values);
-}
-
-void ProtobufWriter::prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & enum_values)
-{
-    current_converter->prepareEnumMappingInt16(enum_values);
-}
-
-void ProtobufWriter::writeEnum(Int8 value)
-{
-    current_converter->writeEnumInt8(value);
-}
-
-void ProtobufWriter::writeEnum(Int16 value)
-{
-    current_converter->writeEnumInt16(value);
-}
-
-void ProtobufWriter::writeUUID(const UUID & uuid)
-{
-    current_converter->writeUUID(uuid);
-}
-
-void ProtobufWriter::writeDate(DayNum date)
-{
-    current_converter->writeDate(date);
-}
-
-void ProtobufWriter::writeDateTime(time_t tm)
-{
-    current_converter->writeDateTime(tm);
-}
-
-void ProtobufWriter::writeDecimal(Decimal32 decimal, UInt32 scale)
-{
-    current_converter->writeDecimal32(decimal, scale);
-}
-
-void ProtobufWriter::writeDecimal(Decimal64 decimal, UInt32 scale)
-{
-    current_converter->writeDecimal64(decimal, scale);
-}
-
-void ProtobufWriter::writeDecimal(const Decimal128 & decimal, UInt32 scale)
-{
-    current_converter->writeDecimal128(decimal, scale);
-}
-
-void ProtobufWriter::writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place)
-{
-    current_converter->writeAggregateFunction(function, place);
 }
 
 }

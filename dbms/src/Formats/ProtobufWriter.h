@@ -49,42 +49,31 @@ public:
     /// The value returned by this function changes after calling nextField() or newMessage().
     const google::protobuf::FieldDescriptor * currentField() const { return current_field; }
 
-    void writeNumber(Int8 value);
-    void writeNumber(UInt8 value);
-    void writeNumber(Int16 value);
-    void writeNumber(UInt16 value);
-    void writeNumber(Int32 value);
-    void writeNumber(UInt32 value);
-    void writeNumber(Int64 value);
-    void writeNumber(UInt64 value);
-    void writeNumber(UInt128 value);
-    void writeNumber(Float32 value);
-    void writeNumber(Float64 value);
-
-    void writeString(const StringRef & value);
-
-    void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & name_value_pairs);
-    void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & name_value_pairs);
-    void writeEnum(Int8 value);
-    void writeEnum(Int16 value);
-
-    void writeUUID(const UUID & value);
-    void writeDate(DayNum date);
-    void writeDateTime(time_t tm);
-
-    void writeDecimal(Decimal32 decimal, UInt32 scale);
-    void writeDecimal(Decimal64 decimal, UInt32 scale);
-    void writeDecimal(const Decimal128 & decimal, UInt32 scale);
-
-    void writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place);
+    void writeNumber(Int8 value) { current_converter->writeInt8(value); }
+    void writeNumber(UInt8 value) { current_converter->writeUInt8(value); }
+    void writeNumber(Int16 value) { current_converter->writeInt16(value); }
+    void writeNumber(UInt16 value) { current_converter->writeUInt16(value); }
+    void writeNumber(Int32 value) { current_converter->writeInt32(value); }
+    void writeNumber(UInt32 value) { current_converter->writeUInt32(value); }
+    void writeNumber(Int64 value) { current_converter->writeInt64(value); }
+    void writeNumber(UInt64 value) { current_converter->writeUInt64(value); }
+    void writeNumber(UInt128 value) { current_converter->writeUInt128(value); }
+    void writeNumber(Float32 value) { current_converter->writeFloat32(value); }
+    void writeNumber(Float64 value) { current_converter->writeFloat64(value); }
+    void writeString(const StringRef & str) { current_converter->writeString(str); }
+    void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & enum_values) { current_converter->prepareEnumMappingInt8(enum_values); }
+    void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & enum_values) { current_converter->prepareEnumMappingInt16(enum_values); }
+    void writeEnum(Int8 value) { current_converter->writeEnumInt8(value); }
+    void writeEnum(Int16 value) { current_converter->writeEnumInt16(value); }
+    void writeUUID(const UUID & uuid) { current_converter->writeUUID(uuid); }
+    void writeDate(DayNum date) { current_converter->writeDate(date); }
+    void writeDateTime(time_t tm) { current_converter->writeDateTime(tm); }
+    void writeDecimal(Decimal32 decimal, UInt32 scale) { current_converter->writeDecimal32(decimal, scale); }
+    void writeDecimal(Decimal64 decimal, UInt32 scale) { current_converter->writeDecimal64(decimal, scale); }
+    void writeDecimal(const Decimal128 & decimal, UInt32 scale) { current_converter->writeDecimal128(decimal, scale); }
+    void writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { current_converter->writeAggregateFunction(function, place); }
 
 private:
-    void enumerateFieldsInWriteOrder(const google::protobuf::Descriptor * message_type);
-    void createConverters();
-
-    void finishCurrentMessage();
-    void finishCurrentField();
-
     class SimpleWriter
     {
     public:
@@ -153,20 +142,53 @@ private:
         WriteBufferFromOwnString repeated_packing_buffer;
     };
 
+    class IConverter
+    {
+    public:
+        virtual ~IConverter() = default;
+        virtual void writeString(const StringRef &) = 0;
+        virtual void writeInt8(Int8) = 0;
+        virtual void writeUInt8(UInt8) = 0;
+        virtual void writeInt16(Int16) = 0;
+        virtual void writeUInt16(UInt16) = 0;
+        virtual void writeInt32(Int32) = 0;
+        virtual void writeUInt32(UInt32) = 0;
+        virtual void writeInt64(Int64) = 0;
+        virtual void writeUInt64(UInt64) = 0;
+        virtual void writeUInt128(const UInt128 &) = 0;
+        virtual void writeFloat32(Float32) = 0;
+        virtual void writeFloat64(Float64) = 0;
+        virtual void prepareEnumMappingInt8(const std::vector<std::pair<std::string, Int8>> &) = 0;
+        virtual void prepareEnumMappingInt16(const std::vector<std::pair<std::string, Int16>> &) = 0;
+        virtual void writeEnumInt8(Int8) = 0;
+        virtual void writeEnumInt16(Int16) = 0;
+        virtual void writeUUID(const UUID &) = 0;
+        virtual void writeDate(DayNum) = 0;
+        virtual void writeDateTime(time_t) = 0;
+        virtual void writeDecimal32(Decimal32, UInt32) = 0;
+        virtual void writeDecimal64(Decimal64, UInt32) = 0;
+        virtual void writeDecimal128(const Decimal128 &, UInt32) = 0;
+        virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) = 0;
+    };
+
+    class ConverterBaseImpl;
+    template <int type_id> class ConverterImpl;
+    class ConverterToString;
+    template <typename ToType>
+    class ConverterToNumber;
+
+    void enumerateFieldsInWriteOrder(const google::protobuf::Descriptor * message_type);
+    void createConverters();
+    void finishCurrentMessage();
+    void finishCurrentField();
+
     SimpleWriter simple_writer;
     std::vector<const google::protobuf::FieldDescriptor *> fields_in_write_order;
     size_t current_field_index = -1;
     const google::protobuf::FieldDescriptor * current_field = nullptr;
 
-    class Converter;
-    class ToStringConverter;
-    template <typename T>
-    class ToNumberConverter;
-    class ToBoolConverter;
-    class ToEnumConverter;
-
-    std::vector<std::unique_ptr<Converter>> converters;
-    Converter * current_converter = nullptr;
+    std::vector<std::unique_ptr<IConverter>> converters;
+    IConverter * current_converter = nullptr;
 };
 
 }
