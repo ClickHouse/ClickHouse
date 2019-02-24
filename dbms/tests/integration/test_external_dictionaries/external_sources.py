@@ -119,7 +119,7 @@ class SourceMySQL(ExternalSource):
         query = 'insert into test.{} ({}) values {}'.format(
             table_name,
             ','.join(self.ordered_names),
-            ''.join(values_strs))
+            ','.join(values_strs))
         self.execute_mysql_query(query)
 
 
@@ -208,7 +208,7 @@ class SourceClickHouse(ExternalSource):
         query = 'INSERT INTO test.{} ({}) values {}'.format(
             table_name,
             ','.join(self.ordered_names),
-            ''.join(values_strs))
+            ','.join(values_strs))
         self.node.query(query)
 
 
