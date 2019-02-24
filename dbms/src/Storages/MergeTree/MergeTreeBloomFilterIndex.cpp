@@ -559,9 +559,8 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
         columns.emplace_back(column.name);
         data_types.emplace_back(column.type);
 
-        if (data_types.back()->getTypeId() != TypeIndex::String
-            && data_types.back()->getTypeId() != TypeIndex::FixedString)
-            throw Exception("Bloom filter index can be used only with `String` and `FixedString` column.", ErrorCodes::INCORRECT_QUERY);
+        if (data_types.back()->getTypeId() != TypeIndex::String) /// FixedString?
+            throw Exception("Bloom filter index can be used only with `String` column.", ErrorCodes::INCORRECT_QUERY);
     }
 
     boost::algorithm::to_lower(node->type->name);
