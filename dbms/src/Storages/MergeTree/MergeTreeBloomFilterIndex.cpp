@@ -166,7 +166,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
 BloomFilterCondition::BloomFilterCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
-    const MergeTreeBloomFilterIndex & index_) : index(index_)
+    const MergeTreeBloomFilterIndex & index_) : index(index_), prepared_sets(query_info.sets)
 {
     /// Do preparation similar to KeyCondition.
     Block block_with_constants = KeyCondition::getBlockWithConstants(
@@ -474,13 +474,14 @@ bool NgramTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 {
     *token_start = *pos;
     *token_len = 0;
-    for (size_t code_points = 0; code_points < n && *token_start + *token_len <= len; ++code_points)
+    size_t code_points = 0;
+    for (; code_points < n && *token_start + *token_len < len; ++code_points)
     {
         size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*token_start + *token_len]));
         *token_len += sz;
     }
     *pos += UTF8::seqLength(static_cast<UInt8>(data[*pos]));
-    return *token_start + *token_len <= len;
+    return code_points == n;
 }
 
 bool NgramTokenExtractor::nextLike(const String & str, size_t * pos, String & token) const
@@ -530,11 +531,10 @@ bool NgramTokenExtractor::nextLike(const String & str, size_t * pos, String & to
     return false;
 }
 
-
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const MergeTreeData & data,
+    const MergeTreeData & /* data */,
     const Context & context)
 {
     if (node->name.empty())
@@ -566,26 +566,39 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
 
     boost::algorithm::to_lower(node->type->name);
     if (node->type->name == NgramTokenExtractor::getName()) {
-        if (!node->type->arguments || node->type->arguments->children.size() != 3)
-            throw Exception("`ngrambf` index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
+        if (!node->type->arguments || node->type->arguments->children.size() != 4)
+            throw Exception("`ngrambf` index must have exactly 4 arguments.", ErrorCodes::INCORRECT_QUERY);
 
         size_t n = typeid_cast<const ASTLiteral &>(
                 *node->type->arguments->children[0]).value.get<size_t>();
         size_t bloom_filter_size = typeid_cast<const ASTLiteral &>(
                 *node->type->arguments->children[1]).value.get<size_t>();
+        size_t bloom_filter_hashes = typeid_cast<const ASTLiteral &>(
+                *node->type->arguments->children[2]).value.get<size_t>();
         size_t seed = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[2]).value.get<size_t>();\
-
-        auto bloom_filter_hashes = static_cast<size_t>(
-                n * log(2.) / (node->granularity * data.index_granularity));
-        if (bloom_filter_hashes < 1)
-            bloom_filter_hashes = 1;
+                *node->type->arguments->children[3]).value.get<size_t>();
 
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
 
         return std::make_unique<MergeTreeBloomFilterIndex>(
                 node->name, std::move(index_expr), columns, data_types, sample, node->granularity,
                 bloom_filter_size, bloom_filter_hashes, seed, std::move(tokenizer));
+    /*} else if (node->type->name == SplitTokenExtractor::getName()) {
+        if (!node->type->arguments || node->type->arguments->children.size() != 2)
+            throw Exception("`tokenbf` index must have exactly 2 arguments.", ErrorCodes::INCORRECT_QUERY);
+
+        size_t bloom_filter_size = typeid_cast<const ASTLiteral &>(
+                *node->type->arguments->children[0]).value.get<size_t>();
+        size_t seed = typeid_cast<const ASTLiteral &>(
+                *node->type->arguments->children[1]).value.get<size_t>();
+        size_t bloom_filter_hashes = typeid_cast<const ASTLiteral &>(
+                *node->type->arguments->children[2]).value.get<size_t>();
+
+        auto tokenizer = std::make_unique<SplitTokenExtractor>();
+
+        return std::make_unique<MergeTreeBloomFilterIndex>(
+                node->name, std::move(index_expr), columns, data_types, sample, node->granularity,
+                bloom_filter_size, bloom_filter_hashes, seed, std::move(tokenizer));*/
     } else {
         throw Exception("Unknown index type: `" + node->name + "`.", ErrorCodes::LOGICAL_ERROR);
     }
