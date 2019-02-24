@@ -34,7 +34,7 @@ int main(int, char **)
     {
         DB::WriteBufferFromFileDescriptor buf(STDOUT_FILENO);
         size_t x = 11;
-        buf << "Column " << x  << ", \n";
+        buf << "Column " << x << ", \n";
     }
 
     return 0;
