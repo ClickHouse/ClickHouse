@@ -125,7 +125,8 @@ struct NgramTokenExtractor : public ITokenExtractor
     size_t n;
 };
 
-/*struct SplitTokenExtractor : public TokenExtractor
+/*/// Parser extracting tokens (sequences of numbers and ascii letters).
+struct SplitTokenExtractor : public ITokenExtractor
 {
     static String getName() {
         return "tokenbf";
@@ -134,6 +135,7 @@ struct NgramTokenExtractor : public ITokenExtractor
     bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;
 };*/
+
 
 class MergeTreeBloomFilterIndex : public IMergeTreeIndex
 {

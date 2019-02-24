@@ -12,7 +12,7 @@ CREATE TABLE test.bloom_filter_idx
 (
     k UInt64,
     s String,
-    INDEX bf (s, lower(s)) TYPE ngrambf(3, 512, 0) GRANULARITY 1
+    INDEX bf (s, lower(s)) TYPE ngrambf(3, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
 SETTINGS index_granularity = 2;"
