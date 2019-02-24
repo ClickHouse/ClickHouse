@@ -1,5 +1,7 @@
 8	aбвгдеёж
 		"rows_read": 2,
+8	aбвгдеёж
+		"rows_read": 2,
 13	abc
 		"rows_read": 1,
 1	ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
