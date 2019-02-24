@@ -121,7 +121,7 @@ def setup_module(module):
         main_configs.append(os.path.join(dict_configs_path, fname))
     cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
     node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True)
-    cluster.add_instance('clickhouse1', image="python")
+    cluster.add_instance('clickhouse1')
 
 @pytest.fixture(scope="module")
 def started_cluster():
