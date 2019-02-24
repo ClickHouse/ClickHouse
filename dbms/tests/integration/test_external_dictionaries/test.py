@@ -26,6 +26,7 @@ FIELDS = {
         Field("String_", 'String', default_value_for_get='hi'),
         Field("Float32_", 'Float32', default_value_for_get=555.11),
         Field("Float64_", 'Float64', default_value_for_get=777.11),
+        Field("ParentKeyField", "UInt64", default_value_for_get=444, hierarchical=True)
     ],
     "complex": [
         Field("KeyField1", 'UInt64', is_key=True, default_value_for_get=9999999),
@@ -78,7 +79,7 @@ LAYOUTS = [
 ]
 
 SOURCES = [
-    # some kind of troubles with that dictionary
+    # some troubles with that dictionary
     #SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
     SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", ""),
@@ -144,11 +145,11 @@ def test_simple_dictionaries(started_cluster):
         Row(fields,
             [1, 22, 333, 4444, 55555, -6, -77,
             -888, -999, '550e8400-e29b-41d4-a716-446655440003',
-            '1973-06-28', '1985-02-28 23:43:25', 'hello', 22.543, 3332154213.4]),
+             '1973-06-28', '1985-02-28 23:43:25', 'hello', 22.543, 3332154213.4, 0]),
         Row(fields,
             [2, 3, 4, 5, 6, -7, -8,
             -9, -10, '550e8400-e29b-41d4-a716-446655440002',
-            '1978-06-28', '1986-02-28 23:42:25', 'hello', 21.543, 3222154213.4]),
+             '1978-06-28', '1986-02-28 23:42:25', 'hello', 21.543, 3222154213.4, 1]),
     ]
 
     simple_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "simple"]
@@ -170,9 +171,22 @@ def test_simple_dictionaries(started_cluster):
 
                     for query in dct.get_select_get_or_default_queries(field, row):
                         queries_with_answers.append((query, field.default_value_for_get))
+        for query in dct.get_hierarchical_queries(data[0]):
+            queries_with_answers.append((query, [1]))
+
+        for query in dct.get_hierarchical_queries(data[1]):
+            queries_with_answers.append((query, [2, 1]))
+
+        for query in dct.get_is_in_queries(data[0], data[1]):
+            queries_with_answers.append((query, 0))
+
+        for query in dct.get_is_in_queries(data[1], data[0]):
+            queries_with_answers.append((query, 1))
 
     for query, answer in queries_with_answers:
         print query
+        if isinstance(answer, list):
+            answer = str(answer).replace(' ', '')
         assert node.query(query) == str(answer) + '\n'
 
 def test_complex_dictionaries(started_cluster):
@@ -187,7 +201,7 @@ def test_complex_dictionaries(started_cluster):
             [2, 'qwerty2', 52, 2345, 6544, 9191991, -2,
             -717, -81818, -92929, '550e8400-e29b-41d4-a716-446655440007',
             '1975-09-28', '2000-02-28 23:33:24',
-            'my', 255.543, 333222154213.4]),
+             'my', 255.543, 3332221.44]),
     ]
 
     complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
@@ -225,10 +239,10 @@ def test_ranged_dictionaries(started_cluster):
             22.543, 3332154213.4]),
         Row(fields,
             [1, '2019-04-10', '2019-04-01', '2019-04-28',
-            555, 32323, 414144, 5255515, -65, -747, -8388, -9099,
+            11, 3223, 41444, 52515, -65, -747, -8388, -9099,
             '550e8400-e29b-41d4-a716-446655440004',
             '1973-06-29', '2002-02-28 23:23:25', '!!!!',
-            32.543, 33321545513.4]),
+            32.543, 3332543.4]),
     ]
 
     ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]

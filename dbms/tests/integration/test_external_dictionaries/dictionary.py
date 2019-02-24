@@ -251,6 +251,31 @@ class DictionaryStructure(object):
             return [self._get_dict_get_common_expression(dict_name, field, row, or_default=False, with_type=False, has=True)]
         return []
 
+    def get_hierarchical_expressions(self, dict_name, row):
+        if self.layout.is_simple:
+            key_expr = 'toUInt64({})'.format(row.data[self.keys[0].name])
+            return [
+                "dictGetHierarchy('{dict_name}', {key})".format(
+                    dict_name=dict_name,
+                    key=key_expr,
+                ),
+            ]
+
+        return []
+
+    def get_is_in_expressions(self, dict_name, row, parent_row):
+        if self.layout.is_simple:
+            child_key_expr = 'toUInt64({})'.format(row.data[self.keys[0].name])
+            parent_key_expr = 'toUInt64({})'.format(parent_row.data[self.keys[0].name])
+            return [
+                "dictIsIn('{dict_name}', {child_key}, {parent_key})".format(
+                    dict_name=dict_name,
+                    child_key=child_key_expr,
+                    parent_key=parent_key_expr,)
+            ]
+
+        return []
+
 
 class Dictionary(object):
     def __init__(self, name, structure, source, config_path, table_name):
@@ -299,6 +324,12 @@ class Dictionary(object):
 
     def get_select_has_queries(self, field, row):
         return ['select {}'.format(expr) for expr in self.structure.get_has_expressions(self.name, field, row)]
+
+    def get_hierarchical_queries(self, row):
+        return ['select {}'.format(expr) for expr in self.structure.get_hierarchical_expressions(self.name, row)]
+
+    def get_is_in_queries(self, row, parent_row):
+        return ['select {}'.format(expr) for expr in self.structure.get_is_in_expressions(self.name, row, parent_row)]
 
     def is_complex(self):
         return self.structure.layout.is_complex
