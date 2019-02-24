@@ -21,6 +21,10 @@
         <min_time/>
     </main_metric>
 
+    <settings>
+        <max_memory_usage>20000000000</max_memory_usage>
+    </settings>
+
     <substitutions>
         <substitution>
            <name>table</name>
@@ -33,11 +37,11 @@
 
 <query>SELECT count() FROM {table}</query>
 <query>SELECT count() FROM {table} WHERE AdvEngineID != 0</query>
-<query>SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM {table} </query>
-<query>SELECT sum(UserID) FROM {table} </query>
-<query>SELECT uniq(UserID) FROM {table} </query>
-<query>SELECT uniq(SearchPhrase) FROM {table} </query>
-<query>SELECT min(EventDate), max(EventDate) FROM {table} </query>
+<query>SELECT sum(AdvEngineID), count(), avg(ResolutionWidth) FROM {table}</query>
+<query>SELECT sum(UserID) FROM {table}</query>
+<query>SELECT uniq(UserID) FROM {table}</query>
+<query>SELECT uniq(SearchPhrase) FROM {table}</query>
+<query>SELECT min(EventDate), max(EventDate) FROM {table}</query>
 <query>SELECT AdvEngineID, count() FROM {table} WHERE AdvEngineID != 0 GROUP BY AdvEngineID ORDER BY count() DESC</query>
 <query>SELECT RegionID, uniq(UserID) AS u FROM {table} GROUP BY RegionID ORDER BY u DESC LIMIT 10</query>
 <query>SELECT RegionID, sum(AdvEngineID), count() AS c, avg(ResolutionWidth), uniq(UserID) FROM {table} GROUP BY RegionID ORDER BY c DESC LIMIT 10</query>
@@ -54,7 +58,7 @@
 <query>SELECT count() FROM {table} WHERE URL LIKE '%metrika%'</query>
 <query>SELECT SearchPhrase, any(URL), count() AS c FROM {table} WHERE URL LIKE '%metrika%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10</query>
 <query>SELECT SearchPhrase, any(URL), any(Title), count() AS c, uniq(UserID) FROM {table} WHERE Title LIKE '%Яндекс%' AND URL NOT LIKE '%.yandex.%' AND SearchPhrase != '' GROUP BY SearchPhrase ORDER BY c DESC LIMIT 10</query>
-<query>SELECT * FROM {table} PREWHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10</query>
+<query>SELECT * FROM {table} WHERE URL LIKE '%metrika%' ORDER BY EventTime LIMIT 10</query>
 <query>SELECT SearchPhrase FROM {table} WHERE SearchPhrase != '' ORDER BY EventTime LIMIT 10</query>
 <query>SELECT SearchPhrase FROM {table} WHERE SearchPhrase != '' ORDER BY SearchPhrase LIMIT 10</query>
 <query>SELECT SearchPhrase FROM {table} WHERE SearchPhrase != '' ORDER BY EventTime, SearchPhrase LIMIT 10</query>
