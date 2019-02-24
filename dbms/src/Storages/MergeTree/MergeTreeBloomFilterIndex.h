@@ -46,6 +46,13 @@ public:
 
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 private:
+    struct KeyTuplePositionMapping
+    {
+        KeyTuplePositionMapping(size_t tuple_index_, size_t key_index_) : tuple_index(tuple_index_), key_index(key_index_) {}
+
+        size_t tuple_index;
+        size_t key_index;
+    };
     /// Uses RPN like KeyCondition
     struct RPNElement
     {
@@ -56,8 +63,8 @@ private:
             FUNCTION_NOT_EQUALS,
             FUNCTION_LIKE,
             FUNCTION_NOT_LIKE,
-            /*FUNCTION_IN,
-            FUNCTION_NOT_IN,*/
+            FUNCTION_IN,
+            FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -76,6 +83,9 @@ private:
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS, FUNCTION_LIKE, FUNCTION_NOT_LIKE.
         size_t key_column;
         std::unique_ptr<StringBloomFilter> bloom_filter;
+        /// For FUNCTION_IN and FUNCTION_NOT_IN
+        std::vector<StringBloomFilter> set_bloom_filters;
+        std::vector<KeyTuplePositionMapping> set_mapping;
     };
 
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)>;
@@ -86,7 +96,7 @@ private:
     bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
     bool getKey(const ASTPtr & node, size_t & key_column_num);
-    //bool tryPrepareSetBloomFilter(const ASTs & args, const Context & context, RPNElement & out, size_t & out_key_column_num);
+    bool tryPrepareSetBloomFilter(const ASTs & args, const Context & context, RPNElement & out);
 
     static const AtomMap atom_map;
 

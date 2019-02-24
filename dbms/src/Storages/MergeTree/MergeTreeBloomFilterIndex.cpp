@@ -9,7 +9,9 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <Poco/Logger.h>
 
@@ -148,19 +150,21 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
                 }
         },
         {
-                "notLike",
-                [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
+                "notIn",
+                [] (RPNElement & out, const Field &, const MergeTreeBloomFilterIndex &)
                 {
-                    out.function = RPNElement::FUNCTION_NOT_LIKE;
-                    out.bloom_filter = std::make_unique<StringBloomFilter>(
-                            idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
-
-                    const auto & str = value.get<String>();
-                    likeStringToBloomFilter(str, idx.token_extractor_func, *out.bloom_filter);
+                    out.function = RPNElement::FUNCTION_NOT_IN;
                     return true;
                 }
         },
-        /// TODO: function IN
+        {
+                "in",
+                [] (RPNElement & out, const Field &, const MergeTreeBloomFilterIndex &)
+                {
+                    out.function = RPNElement::FUNCTION_IN;
+                    return true;
+                }
+        },
 };
 
 BloomFilterCondition::BloomFilterCondition(
@@ -192,13 +196,13 @@ BloomFilterCondition::BloomFilterCondition(
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
     }
 
-    /*auto * log = &Poco::Logger::get("bf");
+    auto * log = &Poco::Logger::get("bf");
     for (size_t i = 0; i < rpn.size(); ++i) {
         if (rpn[i].bloom_filter)
             LOG_DEBUG(log, ": " << rpn[i].function << " " << rpn[i].key_column << " " << rpn[i].bloom_filter->getFingerPrint());
         else
             LOG_DEBUG(log, ": " << rpn[i].function << " " << rpn[i].key_column << " " << "empty");
-    }*/
+    }
 }
 
 bool BloomFilterCondition::alwaysUnknownOrTrue() const
@@ -217,6 +221,8 @@ bool BloomFilterCondition::alwaysUnknownOrTrue() const
              || element.function == RPNElement::FUNCTION_NOT_EQUALS
              || element.function == RPNElement::FUNCTION_LIKE
              || element.function == RPNElement::FUNCTION_NOT_LIKE
+             || element.function == RPNElement::FUNCTION_IN
+             || element.function == RPNElement::FUNCTION_NOT_IN
              || element.function == RPNElement::ALWAYS_FALSE)
         {
             rpn_stack.push_back(false);
@@ -278,6 +284,30 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
                     granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_LIKE)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_IN
+                 || element.function == RPNElement::FUNCTION_NOT_IN)
+        {
+            rpn_stack.emplace_back(true, true);
+            auto *log = &Poco::Logger::get("bf");
+            LOG_DEBUG(log, "IN FUNC SIZE:" << element.set_mapping.size());
+
+            for (size_t i = 0; i < element.set_mapping.size(); ++i)
+            {
+                size_t key_idx = element.set_mapping[i].key_index;
+                size_t tuple_idx = element.set_mapping[i].tuple_index;
+
+                LOG_DEBUG(log, "IN FUNC:" << element.set_bloom_filters[tuple_idx].getFingerPrint() << " " << element.set_bloom_filters[tuple_idx].getSum());
+
+                if (!granule->bloom_filters[key_idx].contains(element.set_bloom_filters[tuple_idx]))
+                {
+                    rpn_stack.back().can_be_true = false;
+                    break;
+                }
+            }
+
+            if (element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_NOT)
@@ -358,7 +388,7 @@ bool BloomFilterCondition::getKey(const ASTPtr & node, size_t & key_column_num)
 }
 
 bool BloomFilterCondition::atomFromAST(
-    const ASTPtr & node, const Context & /* context */, Block & block_with_constants, RPNElement & out)
+    const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
 {
     Field const_value;
     DataTypePtr const_type;
@@ -372,12 +402,13 @@ bool BloomFilterCondition::atomFromAST(
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
 
-        /*if (functionIsInOrGlobalInOperator(func->name) && tryPrepareSetBloomFilter(args, context, out, key_column_num))
+        if (functionIsInOrGlobalInOperator(func->name) && tryPrepareSetBloomFilter(args, context, out))
         {
+            auto *log = &Poco::Logger::get("atom");
+            LOG_DEBUG(log, "bf: in0000000000000");
             key_arg_pos = 0;
         }
-        else */
-        if (KeyCondition::getConstant(args[1], block_with_constants, const_value, const_type) && getKey(args[0], key_column_num))
+        else if (KeyCondition::getConstant(args[1], block_with_constants, const_value, const_type) && getKey(args[0], key_column_num))
         {
             key_arg_pos = 0;
         }
@@ -396,6 +427,8 @@ bool BloomFilterCondition::atomFromAST(
         else
             key_arg_pos = 0;
 
+        auto *log = &Poco::Logger::get("atom");
+        LOG_DEBUG(log, "bf: name:"<< func->name);
         const auto atom_it = atom_map.find(func->name);
         if (atom_it == std::end(atom_map))
             return false;
@@ -448,14 +481,83 @@ bool BloomFilterCondition::operatorFromAST(
     return true;
 }
 
-/*bool BloomFilterCondition::tryPrepareSetBloomFilter(
+bool BloomFilterCondition::tryPrepareSetBloomFilter(
     const ASTs & args,
-    const Context & context,
-    RPNElement & out,
-    size_t & out_key_column_num)
+    const Context &,
+    RPNElement & out)
 {
-    return false;
-}*/
+    auto *log = &Poco::Logger::get("atom");
+    LOG_DEBUG(log, "bf: tryPrepareSetBloomFilter");
+    const ASTPtr & left_arg = args[0];
+    const ASTPtr & right_arg = args[1];
+
+    std::vector<KeyTuplePositionMapping> key_tuple_mapping;
+    DataTypes data_types;
+
+    const auto * left_arg_tuple = typeid_cast<const ASTFunction *>(left_arg.get());
+    if (left_arg_tuple && left_arg_tuple->name == "tuple")
+    {
+        const auto & tuple_elements = left_arg_tuple->arguments->children;
+        for (size_t i = 0; i < tuple_elements.size(); ++i)
+        {
+            size_t key = 0;
+            if (getKey(tuple_elements[i], key))
+            {
+                key_tuple_mapping.emplace_back(i, key);
+                data_types.push_back(index.data_types[key]);
+            }
+        }
+    }
+    else
+    {
+        size_t key = 0;
+        if (getKey(left_arg, key))
+        {
+            key_tuple_mapping.emplace_back(-1, key);
+            data_types.push_back(index.data_types[key]);
+        }
+    }
+
+    if (key_tuple_mapping.empty())
+        return false;
+    LOG_DEBUG(log, "bf: key_tuple_mapping");
+
+    PreparedSetKey set_key;
+    if (typeid_cast<const ASTSubquery *>(right_arg.get()) || typeid_cast<const ASTIdentifier *>(right_arg.get()))
+        set_key = PreparedSetKey::forSubquery(*right_arg);
+    else
+        set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
+
+    auto set_it = prepared_sets.find(set_key);
+    if (set_it == prepared_sets.end())
+        return false;
+    LOG_DEBUG(log, "bf: set_it");
+
+    const SetPtr & prepared_set = set_it->second;
+    if (!prepared_set->hasExplicitSetElements())
+        return false;
+    LOG_DEBUG(log, "bf: hasExplicitSetElements");
+
+    std::vector<StringBloomFilter> bloom_filters;
+
+    const auto & columns = prepared_set->getSetElements();
+    for (size_t col = 0; col < key_tuple_mapping.size(); ++col)
+    {
+        bloom_filters.emplace_back(index.bloom_filter_size, index.bloom_filter_hashes, index.seed);
+        size_t tuple_idx = key_tuple_mapping[col].tuple_index;
+        const auto & column = columns[tuple_idx];
+        for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
+        {
+            auto ref = column->getDataAt(row);
+            stringToBloomFilter(ref.data, ref.size, index.token_extractor_func, bloom_filters.back());
+        }
+    }
+
+    out.set_mapping = std::move(key_tuple_mapping);
+    out.set_bloom_filters = std::move(bloom_filters);
+
+    return true;
+}
 
 
 MergeTreeIndexGranulePtr MergeTreeBloomFilterIndex::createIndexGranule() const
