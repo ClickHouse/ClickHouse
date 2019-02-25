@@ -138,15 +138,12 @@ public:
         }
     };
 
-    static constexpr const char * label = "GlobalSubqueries";
-
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
             visit(*t, ast, data);
         if (auto * t = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
             visit(*t, ast, data);
-        return {};
     }
 
     static bool needChildVisit(ASTPtr &, const ASTPtr & child)
