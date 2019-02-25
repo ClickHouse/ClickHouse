@@ -5,8 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.bloom_filter_idx;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.bloom_filter_idx2;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.bloom_filter_idx2;"
 
 
+# NGRAM BF
 $CLICKHOUSE_CLIENT -n --query="
 SET allow_experimental_data_skipping_indices = 1;
 CREATE TABLE test.bloom_filter_idx
@@ -100,5 +102,43 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s IN ('aб
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE (s, lower(s)) IN (('aбвгдеёж', 'aбвгдеёж'), ('abc', 'cba')) ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE (s, lower(s)) IN (('aбвгдеёж', 'aбвгдеёж'), ('abc', 'cba')) ORDER BY k FORMAT JSON" | grep "rows_read"
 
+
+# TOKEN BF
+$CLICKHOUSE_CLIENT -n --query="
+SET allow_experimental_data_skipping_indices = 1;
+CREATE TABLE test.bloom_filter_idx3
+(
+    k UInt64,
+    s String,
+    INDEX bf (s, lower(s)) TYPE tokenbf(512, 3, 0) GRANULARITY 1
+) ENGINE = MergeTree()
+ORDER BY k
+SETTINGS index_granularity = 2;"
+
+$CLICKHOUSE_CLIENT --query="INSERT INTO test.bloom_filter_idx3 VALUES
+(0, 'ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).'),
+(1, 'column-oriented'),
+(2, 'column-oriented'),
+(6, 'some string'),
+(8, 'column with ints'),
+(9, '2_2%2_2\\\\'),
+(13, 'abc')"
+
+# EQUAL
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE lower(s) = 'column-oriented' OR s = 'column-oriented' ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE lower(s) = 'column-oriented' OR s = 'column-oriented' ORDER BY k FORMAT JSON" | grep "rows_read"
+
+# LIKE
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s LIKE '%database%' AND s LIKE '%ClickHouse%' ORDER BY k FORMAT JSON" | grep "rows_read"
+
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s LIKE '%_\\\\%2\\\\__\\\\' ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s LIKE '%_\\\\%2\\\\__\\\\' ORDER BY k FORMAT JSON" | grep "rows_read"
+
+# IN
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s IN ('some string', 'abc') ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s IN ('some string', 'abc') ORDER BY k FORMAT JSON" | grep "rows_read"
+
 $CLICKHOUSE_CLIENT --query="DROP TABLE test.bloom_filter_idx"
 $CLICKHOUSE_CLIENT --query="DROP TABLE test.bloom_filter_idx2"
+$CLICKHOUSE_CLIENT --query="DROP TABLE test.bloom_filter_idx3"

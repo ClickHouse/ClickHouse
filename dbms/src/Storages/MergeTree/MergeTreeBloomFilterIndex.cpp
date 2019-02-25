@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeBloomFilterIndex.h>
 
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
@@ -34,8 +35,12 @@ static void stringToBloomFilter(
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
-    while (cur < size && token_extractor->next(data, size, &cur, &token_start, &token_len))
+    auto *log = &Poco::Logger::get("bf");
+    LOG_DEBUG(log, "tooooooooooooooooooooooken: ");
+    while (cur < size && token_extractor->next(data, size, &cur, &token_start, &token_len)) {
+        LOG_DEBUG(log, "token: " << String(data + token_start, token_len));
         bloom_filter.add(data + token_start, token_len);
+    }
 }
 
 /// Adds all tokens from like pattern string to bloom filter. (Because like pattern can contain `\%` and `\_`.)
@@ -635,14 +640,17 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
     *token_len = 0;
     while (*pos < len)
     {
-        if (!std::isalnum(data[*pos]))
+        if (!isAlphaNumericASCII(data[*pos]))
         {
             if (*token_len > 0)
                 return true;
             *token_start = ++*pos;
         }
         else
+        {
             ++*pos;
+            ++*token_len;
+        }
     }
     return *token_len > 0;
 }
@@ -653,7 +661,7 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
 
     while (*pos < str.size())
     {
-        if (!std::isalnum(str[*pos]))
+        if (!isAlphaNumericASCII(str[*pos]))
         {
             if (token.empty())
             {
@@ -663,7 +671,10 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
                 return true;
         }
         else
+        {
+            token += str[*pos];
             ++*pos;
+        }
     }
 
     return !token.empty();
