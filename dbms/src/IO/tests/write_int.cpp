@@ -18,6 +18,6 @@ void NO_INLINE write(WriteBuffer & out, size_t size)
 int main(int, char **)
 {
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
-    write(out, 12);
+    write(out, 80);
     return 0;
 }
