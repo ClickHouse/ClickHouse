@@ -16,6 +16,7 @@ from kazoo.exceptions import KazooException
 import psycopg2
 import requests
 import base64
+import pymongo
 
 import docker
 from docker.errors import ContainerError
@@ -99,6 +100,7 @@ class ClickHouseCluster:
         self.with_kafka = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
+        self.with_mongo = False
 
         self.docker_client = None
         self.is_up = False
@@ -110,7 +112,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -128,7 +130,7 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path,
+            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address)
 
@@ -177,6 +179,11 @@ class ClickHouseCluster:
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
 
+        if with_mongo and not self.with_mongo:
+            self.with_mongo = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')])
+            self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
 
         return instance
 
@@ -249,6 +256,20 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait HDFS to start")
 
+    def wait_mongo_to_start(self, timeout=30):
+        connection_str = 'mongodb://{user}:{password}@{host}:{port}'.format(
+            host='localhost', port='27018', user='root', password='clickhouse')
+        connection = pymongo.MongoClient(connection_str)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                connection.database_names()
+                print "Connected to Mongo dbs:", connection.database_names()
+                return
+            except Exception as ex:
+                print "Can't connect to Mongo " + str(ex)
+                time.sleep(1)
+
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
@@ -290,6 +311,10 @@ class ClickHouseCluster:
         if self.with_hdfs and self.base_hdfs_cmd:
             subprocess_check_call(self.base_hdfs_cmd + ['up', '-d', '--force-recreate'])
             self.wait_hdfs_to_start(120)
+
+        if self.with_mongo and self.base_mongo_cmd:
+            subprocess_check_call(self.base_mongo_cmd + ['up', '-d', '--force-recreate'])
+            self.wait_mongo_to_start(30)
 
         subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
@@ -389,7 +414,7 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
             stay_alive=False, ipv4_address=None, ipv6_address=None):
 
@@ -413,6 +438,7 @@ class ClickHouseInstance:
 
         self.with_mysql = with_mysql
         self.with_kafka = with_kafka
+        self.with_mongo = with_mongo
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')

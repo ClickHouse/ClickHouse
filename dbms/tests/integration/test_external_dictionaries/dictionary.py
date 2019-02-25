@@ -157,6 +157,8 @@ class DictionaryStructure(object):
             fields_strs.append(field.name)
         return fields_strs
 
+    def get_all_fields(self):
+        return self.keys + self.range_fields + self.ordinary_fields
 
     def _get_dict_get_common_expression(self, dict_name, field, row, or_default, with_type, has):
         if field in self.keys:
