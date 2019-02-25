@@ -150,12 +150,12 @@ public:
             derivative += weights[i] * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];;
         }
         derivative *= target;
-        derivative = learning_rate * exp(derivative);
+        derivative =  exp(derivative);
 
-        batch_gradient[weights.size()] += target / (derivative + 1);;
+        batch_gradient[weights.size()] += learning_rate * target / (derivative + 1);;
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            batch_gradient[i] += target / (derivative + 1) * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+            batch_gradient[i] += learning_rate * target / (derivative + 1) * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
         }
     }
     Float64 predict(const std::vector<Float64> & predict_feature, const std::vector<Float64> & weights, Float64 bias) const override
@@ -178,12 +178,28 @@ public:
     }
     void predict_for_all(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const std::vector<Float64> & weights, Float64 bias) const override
     {
-        // TODO
-        std::ignore = container;
-        std::ignore = block;
-        std::ignore = arguments;
-        std::ignore = weights;
-        std::ignore = bias;
+        size_t rows_num = block.rows();
+        std::vector<Float64> results(rows_num, bias);
+
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
+            ColumnPtr cur_col = block.getByPosition(arguments[i]).column;
+            for (size_t row_num = 0; row_num != rows_num; ++row_num)
+            {
+
+                const auto &element = (*cur_col)[row_num];
+                if (element.getType() != Field::Types::Float64)
+                    throw Exception("Prediction arguments must be values of type Float",
+                                    ErrorCodes::BAD_ARGUMENTS);
+
+                results[row_num] += weights[i - 1] * element.get<Float64>();
+            }
+        }
+        for (size_t row_num = 0; row_num != rows_num; ++row_num)
+        {
+            results[row_num] = 1 / (1 + exp(-results[row_num]));
+            container.emplace_back(results[row_num]);
+        }
     }
 };
 
@@ -218,31 +234,31 @@ public:
     void update(UInt32 batch_size, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override {
         /// batch_size is already checked to be greater than  0
 
-        if (hk_.size() == 0)
+        if (accumulated_gradient.size() == 0)
         {
-            hk_.resize(batch_gradient.size(), Float64{0.0});
+            accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
         }
         for (size_t i = 0; i < batch_gradient.size(); ++i)
         {
-            hk_[i] = hk_[i] * alpha_ + batch_gradient[i];
+            accumulated_gradient[i] = accumulated_gradient[i] * alpha_ + batch_gradient[i];
         }
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            weights[i] += hk_[i] / batch_size;
+            weights[i] += accumulated_gradient[i] / batch_size;
         }
-        bias += hk_[weights.size()] / batch_size;
+        bias += accumulated_gradient[weights.size()] / batch_size;
     }
     virtual void merge(const IWeightsUpdater & rhs, Float64 frac, Float64 rhs_frac) override {
-        const auto & momentum_rhs = dynamic_cast<const Momentum &>(rhs);
-        for (size_t i = 0; i < hk_.size(); ++i)
+        auto & momentum_rhs = static_cast<const Momentum &>(rhs);
+        for (size_t i = 0; i < accumulated_gradient.size(); ++i)
         {
-            hk_[i] = hk_[i] * frac + momentum_rhs.hk_[i] * rhs_frac;
+            accumulated_gradient[i] = accumulated_gradient[i] * frac + momentum_rhs.accumulated_gradient[i] * rhs_frac;
         }
     }
 
 private:
     Float64 alpha_{0.1};
-    std::vector<Float64> hk_;
+    std::vector<Float64> accumulated_gradient;
 };
 
 class LinearModelData
