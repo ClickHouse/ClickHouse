@@ -29,7 +29,7 @@ public:
     bool contains(const StringBloomFilter & bf);
 
     const Container & getFilter() const { return filter; };
-    void setFilter(Container && new_filter) { filter = std::move(new_filter); };
+    Container & getFilter() { return filter; };
 
     /// For debug.
     UInt64 isEmpty() const;

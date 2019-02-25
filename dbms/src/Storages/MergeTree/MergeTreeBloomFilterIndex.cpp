@@ -73,9 +73,7 @@ void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
 {
     for (auto & bloom_filter : bloom_filters)
     {
-        StringBloomFilter::Container filter_data(index.bloom_filter_size, 0);
-        istr.read(reinterpret_cast<char *>(filter_data.data()), index.bloom_filter_size);
-        bloom_filter.setFilter(std::move(filter_data));
+        istr.read(reinterpret_cast<char *>(bloom_filter.getFilter().data()), index.bloom_filter_size);
     }
     has_elems = true;
 }
