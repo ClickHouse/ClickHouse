@@ -127,9 +127,7 @@ struct NgramTokenExtractor : public ITokenExtractor
 {
     NgramTokenExtractor(size_t n_) : n(n_) {}
 
-    static String getName() {
-        return "ngrambf";
-    }
+    static String getName() { return "ngrambf"; }
 
     bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;
@@ -142,9 +140,7 @@ struct NgramTokenExtractor : public ITokenExtractor
 /// Parser extracting tokens (sequences of numbers and ascii letters).
 struct SplitTokenExtractor : public ITokenExtractor
 {
-    static String getName() {
-        return "tokenbf";
-    }
+    static String getName() { return "tokenbf"; }
 
     bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;

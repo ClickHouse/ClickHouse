@@ -605,7 +605,8 @@ bool NgramTokenExtractor::nextLike(const String & str, size_t * pos, String & to
             escaped = false;
         }
 
-        if (code_points == n) {
+        if (code_points == n)
+        {
             *pos += UTF8::seqLength(static_cast<UInt8>(str[*pos]));
             return true;
         }
@@ -674,7 +675,8 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
     }
 
     boost::algorithm::to_lower(node->type->name);
-    if (node->type->name == NgramTokenExtractor::getName()) {
+    if (node->type->name == NgramTokenExtractor::getName())
+    {
         if (!node->type->arguments || node->type->arguments->children.size() != 4)
             throw Exception("`ngrambf` index must have exactly 4 arguments.", ErrorCodes::INCORRECT_QUERY);
 
@@ -692,7 +694,9 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
         return std::make_unique<MergeTreeBloomFilterIndex>(
                 node->name, std::move(index_expr), columns, data_types, sample, node->granularity,
                 bloom_filter_size, bloom_filter_hashes, seed, std::move(tokenizer));
-    } else if (node->type->name == SplitTokenExtractor::getName()) {
+    }
+    else if (node->type->name == SplitTokenExtractor::getName())
+    {
         if (!node->type->arguments || node->type->arguments->children.size() != 3)
             throw Exception("`tokenbf` index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
 
@@ -708,7 +712,9 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
         return std::make_unique<MergeTreeBloomFilterIndex>(
                 node->name, std::move(index_expr), columns, data_types, sample, node->granularity,
                 bloom_filter_size, bloom_filter_hashes, seed, std::move(tokenizer));
-    } else {
+    }
+    else
+    {
         throw Exception("Unknown index type: `" + node->name + "`.", ErrorCodes::LOGICAL_ERROR);
     }
 }
