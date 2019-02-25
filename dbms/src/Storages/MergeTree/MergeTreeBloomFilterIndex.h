@@ -84,7 +84,7 @@ private:
         size_t key_column;
         std::unique_ptr<StringBloomFilter> bloom_filter;
         /// For FUNCTION_IN and FUNCTION_NOT_IN
-        std::vector<StringBloomFilter> set_bloom_filters;
+        std::vector<std::vector<StringBloomFilter>> set_bloom_filters;
         std::vector<KeyTuplePositionMapping> set_mapping;
     };
 
@@ -173,6 +173,8 @@ public:
 
     IndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, const Context & context) const override;
+
+    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
     /// Bloom filter size in bytes.
     size_t bloom_filter_size;

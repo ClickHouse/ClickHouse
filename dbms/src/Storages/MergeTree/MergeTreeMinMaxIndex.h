@@ -68,6 +68,7 @@ public:
     IndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query, const Context & context) const override;
 
+    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 };
 
 }
