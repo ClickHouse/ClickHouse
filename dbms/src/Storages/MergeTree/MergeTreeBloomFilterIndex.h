@@ -118,6 +118,8 @@ struct ITokenExtractor
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
     virtual bool nextLike(const String & str, size_t * pos, String & out) const = 0;
+
+    virtual bool supportLike() const = 0;
 };
 
 /// Parser extracting all ngrams from string.
@@ -132,6 +134,8 @@ struct NgramTokenExtractor : public ITokenExtractor
     bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;
 
+    bool supportLike() const override { return true; };
+
     size_t n;
 };
 
@@ -144,6 +148,8 @@ struct SplitTokenExtractor : public ITokenExtractor
 
     bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;
+
+    bool supportLike() const override { return false; };
 };
 
 
