@@ -118,7 +118,16 @@ IndexConditionPtr MergeTreeMinMaxIndex::createIndexCondition(
 bool MergeTreeMinMaxIndex::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
-    return true; // rewrite
+
+    for (const auto & name : columns)
+        if (column_name == name)
+            return true;
+
+    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
+        if (func->arguments->children.size() == 1)
+            return mayBenefitFromIndexForIn(func->arguments->children.front());
+
+    return false;
 }
 
 std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
