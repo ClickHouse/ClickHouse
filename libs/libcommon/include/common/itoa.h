@@ -72,38 +72,36 @@ struct Division
 };
 
 /// Select a type with appropriate number of bytes from the list of types.
-/// First parameter is the number of bytes requested. Second parameter is the number of bytes in the first type in the list.
-/// The list goes in increasing order: subsequent type is 2x large than the previous.
-/// Example: SelectType<4, 2, uint16_t, uint32_t, uint64_t> will select uint32_t.
-template <size_t, size_t, typename...>
-struct SelectType;
-
-/// When size matches, select the first type from the list.
+/// First parameter is the number of bytes requested. Then goes a list of types with 1, 2, 4, ... number of bytes.
+/// Example: SelectType<4, uint8_t, uint16_t, uint32_t, uint64_t> will select uint32_t.
 template <size_t N, typename T, typename... Ts>
-struct SelectType<N, N, T, Ts...> { using Result = T; };
+struct SelectType
+{
+    using Result = typename SelectType<N / 2, Ts...>::Result;
+};
 
-/// Shift the list and proceed recursively.
-template <size_t N, size_t M, typename T, typename... Ts>
-struct SelectType<N, M, T, Ts...> { using Result = typename SelectType<N, 2 * M, Ts...>::Result; };
+template <typename T, typename... Ts>
+struct SelectType<1, T, Ts...>
+{
+    using Result = T;
+};
+
 
 /// Division by 10^N where N is the size of the type.
 template <size_t N>
 using DivisionBy10PowN = typename SelectType
 <
     N,
-    1,
     Division<uint8_t, 0, 205U, 11>,                           /// divide by 10
     Division<uint16_t, 1, 41943U, 22>,                        /// divide by 100
     Division<uint32_t, 0, 3518437209U, 45>,                   /// divide by 10000
-    Division<uint64_t, 0, 12379400392853802749ULL, 90>,       /// divide by 100000000
-    Division<uint128_t, 0, 0U, 0>
+    Division<uint64_t, 0, 12379400392853802749ULL, 90>        /// divide by 100000000
 >::Result;
 
 template <size_t N>
 using UnsignedOfSize = typename SelectType
 <
     N,
-    1,
     uint8_t,
     uint16_t,
     uint32_t,
