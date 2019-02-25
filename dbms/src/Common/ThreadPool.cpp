@@ -188,6 +188,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (threads.size() > scheduled_jobs + max_free_threads)
             {
+                thread_it->detach();
                 threads.erase(thread_it);
                 job_finished.notify_all();
                 return;
