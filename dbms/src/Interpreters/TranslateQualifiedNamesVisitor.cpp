@@ -44,22 +44,21 @@ bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
     return true;
 }
 
-std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data & data)
+void TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
-        return visit(*t, ast, data);
+        visit(*t, ast, data);
     if (auto * t = typeid_cast<ASTTableJoin *>(ast.get()))
-        return visit(*t, ast, data);
+        visit(*t, ast, data);
     if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
-        return visit(*t, ast, data);
+        visit(*t, ast, data);
     if (auto * node = typeid_cast<ASTExpressionList *>(ast.get()))
         visit(*node, ast, data);
     if (auto * node = typeid_cast<ASTFunction *>(ast.get()))
         visit(*node, ast, data);
-    return {};
 }
 
-std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, Data & data)
+void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, Data & data)
 {
     if (IdentifierSemantic::getColumnName(identifier))
     {
@@ -82,8 +81,6 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTIdentifier & iden
         if (!data.tables.empty())
             IdentifierSemantic::setColumnNormalName(identifier, data.tables[best_table_pos].first);
     }
-
-    return {};
 }
 
 /// As special case, treat count(*) as count(), not as count(list of all columns).
@@ -98,7 +95,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
         func_arguments->children.clear();
 }
 
-std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & , const ASTPtr & ast, Data & data)
+void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & , const ASTPtr & ast, Data & data)
 {
     if (ast->children.size() != 1)
         throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
@@ -110,22 +107,24 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAs
 
     for (const auto & known_table : data.tables)
         if (db_and_table.satisfies(known_table.first, true))
-            return {};
+            return;
 
     throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
-std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data &)
+void TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data & data)
 {
     std::vector<ASTPtr *> out;
     if (join.using_expression_list)
         out.push_back(&join.using_expression_list);
     else if (join.on_expression)
         out.push_back(&join.on_expression);
-    return out;
+
+    for (ASTPtr * add_node : out)
+        Visitor(data).visit(*add_node);
 }
 
-std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr & , Data & data)
+void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr & , Data & data)
 {
     if (auto join = select.join())
         extractJoinUsingColumns(join->table_join, data);
@@ -139,7 +138,9 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & sel
         out.push_back(&select.where_expression);
     if (select.having_expression)
         out.push_back(&select.having_expression);
-    return out;
+
+    for (ASTPtr * add_node : out)
+        Visitor(data).visit(*add_node);
 }
 
 /// qualifed names for duplicates
