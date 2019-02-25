@@ -272,9 +272,9 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
         {
             std::vector<bool> result(element.set_bloom_filters.back().size(), true);
 
-            for (size_t column = 0; column < element.set_mapping.size(); ++column)
+            for (size_t column = 0; column < element.set_key_position.size(); ++column)
             {
-                size_t key_idx = element.set_mapping[column].key_index;
+                const size_t key_idx = element.set_key_position[column];
 
                 const auto & bloom_filters = element.set_bloom_filters[column];
                 for (size_t row = 0; row < bloom_filters.size(); ++row)
@@ -511,11 +511,14 @@ bool BloomFilterCondition::tryPrepareSetBloomFilter(
             return false;
 
     std::vector<std::vector<StringBloomFilter>> bloom_filters;
+    std::vector<size_t> key_position;
 
     const auto & columns = prepared_set->getSetElements();
     for (size_t col = 0; col < key_tuple_mapping.size(); ++col)
     {
         bloom_filters.emplace_back();
+        key_position.push_back(key_tuple_mapping[col].key_index);
+
         size_t tuple_idx = key_tuple_mapping[col].tuple_index;
         const auto & column = columns[tuple_idx];
         for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
@@ -526,7 +529,7 @@ bool BloomFilterCondition::tryPrepareSetBloomFilter(
         }
     }
 
-    out.set_mapping = std::move(key_tuple_mapping);
+    out.set_key_position = std::move(key_position);
     out.set_bloom_filters = std::move(bloom_filters);
 
     return true;

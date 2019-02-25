@@ -85,7 +85,7 @@ private:
         std::unique_ptr<StringBloomFilter> bloom_filter;
         /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<std::vector<StringBloomFilter>> set_bloom_filters;
-        std::vector<KeyTuplePositionMapping> set_mapping;
+        std::vector<size_t> set_key_position;
     };
 
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)>;
