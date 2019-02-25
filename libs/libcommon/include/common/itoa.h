@@ -161,7 +161,7 @@ static inline char * outTwoDigits(char * p, uint8_t value)
 }
 
 
-struct convert
+namespace convert
 {
     //===----------------------------------------------------------===//
     //     head: find most significant digit, skip leading zeros
