@@ -642,11 +642,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
             *token_start = ++*pos;
         }
         else
-        {
-            size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*pos]));
-            *pos += sz;
-            *token_len += sz;
-        }
+            ++*pos;
     }
     return *token_len > 0;
 }
@@ -667,12 +663,7 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
                 return true;
         }
         else
-        {
-            const size_t sz = UTF8::seqLength(static_cast<UInt8>(str[*pos]));
-            for (size_t j = 0; j < sz; ++j)
-                token += str[*pos + j];
-            *pos += sz;
-        }
+            ++*pos;
     }
 
     return !token.empty();
