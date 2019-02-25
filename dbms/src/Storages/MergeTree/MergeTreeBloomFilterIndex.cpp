@@ -183,13 +183,9 @@ BloomFilterCondition::BloomFilterCondition(
         }
     }
     else if (select.prewhere_expression)
-    {
         traverseAST(select.prewhere_expression, context, block_with_constants);
-    }
     else
-    {
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-    }
 }
 
 bool BloomFilterCondition::alwaysUnknownOrTrue() const
@@ -403,6 +399,8 @@ bool BloomFilterCondition::atomFromAST(
             return false;
 
         if (key_arg_pos == 1 && (func->name != "equals" || func->name != "notEquals"))
+            return false;
+        else if (!index.token_extractor_func->supportLike() && (func->name == "like" || func->name == "notLike"))
             return false;
         else
             key_arg_pos = 0;
@@ -637,29 +635,9 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
     return *token_len > 0;
 }
 
-bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & token) const
+bool SplitTokenExtractor::nextLike(const String &, size_t *, String &) const
 {
-    token.clear();
-
-    while (*pos < str.size())
-    {
-        if (!isAlphaNumericASCII(str[*pos]))
-        {
-            if (token.empty())
-            {
-                ++*pos;
-            }
-            else
-                return true;
-        }
-        else
-        {
-            token += str[*pos];
-            ++*pos;
-        }
-    }
-
-    return !token.empty();
+    throw Exception("It's a bug: Like queries are not supported by SplitTokenExtractor.", ErrorCodes::LOGICAL_ERROR);
 }
 
 
