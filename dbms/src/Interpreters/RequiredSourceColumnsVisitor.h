@@ -21,25 +21,24 @@ struct ASTTableExpression;
 class RequiredSourceColumnsMatcher
 {
 public:
+    using Visitor = InDepthNodeVisitor<RequiredSourceColumnsMatcher, false>;
     using Data = ColumnNamesContext;
 
-    static constexpr const char * label = "RequiredSourceColumns";
-
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
+    static void visit(ASTPtr & ast, Data & data);
 
 private:
     static void visit(const ASTIdentifier & node, const ASTPtr &, Data & data);
     static void visit(const ASTFunction & node, const ASTPtr &, Data & data);
     static void visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data);
-    static std::vector<ASTPtr *> visit(ASTTableExpression & node, const ASTPtr &, Data & data);
-    static std::vector<ASTPtr *> visit(const ASTArrayJoin & node, const ASTPtr &, Data & data);
-    static std::vector<ASTPtr *> visit(ASTSelectQuery & select, const ASTPtr &, Data & data);
+    static void visit(ASTTableExpression & node, const ASTPtr &, Data & data);
+    static void visit(const ASTArrayJoin & node, const ASTPtr &, Data & data);
+    static void visit(ASTSelectQuery & select, const ASTPtr &, Data & data);
 };
 
 /// Extracts all the information about columns and tables from ASTSelectQuery block into ColumnNamesContext object.
 /// It doesn't use anything but AST. It visits nodes from bottom to top except ASTFunction content to get aliases in right manner.
 /// @note There's some ambiguousness with nested columns names that can't be solved without schema.
-using RequiredSourceColumnsVisitor = InDepthNodeVisitor<RequiredSourceColumnsMatcher, false>;
+using RequiredSourceColumnsVisitor = RequiredSourceColumnsMatcher::Visitor;
 
 }
