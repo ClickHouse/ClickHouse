@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import warnings
 import pymysql.cursors
-#import pymongo
+import pymongo
+from tzlocal import get_localzone
+import datetime
 import os
 
 
@@ -50,6 +52,7 @@ class SourceMySQL(ExternalSource):
         'Float32': 'float',
         'Float64': 'double'
     }
+
     def create_mysql_conn(self):
         self.connection = pymysql.connect(
             user=self.user,
@@ -123,40 +126,55 @@ class SourceMySQL(ExternalSource):
         self.execute_mysql_query(query)
 
 
-#class SourceMongo(ExternalSource):
-#
-#    def get_source_str(self, table_name):
-#        return '''
-#            <mongodb>
-#                <host>{host}</host>
-#                <port>{port}</port>
-#                <user>{user}</user>
-#                <password>{password}</password>
-#                <db>test</db>
-#                <collection>{tbl}</collection>
-#            </mongodb>
-#        '''.format(
-#            host=self.docker_hostname,
-#            port=self.docker_port,
-#            user=self.user,
-#            password=self.password,
-#            tbl=table_name,
-#        )
-#
-#    def prepare(self, structure, table_name, cluster):
-#        connection_str = 'mongodb://{user}:{password}@{host}:{port}'.format(
-#            host=self.internal_hostname, port=self.internal_port,
-#            user=self.user, password=self.password)
-#        self.connection = pymongo.MongoClient(connection_str)
-#        self.connection.create
-#        self.structure = structure
-#        self.db = self.connection['test']
-#        self.prepared = True
-#
-#    def load_data(self, data, table_name):
-#        tbl = self.db[table_name]
-#        to_insert = [dict(row.data) for row in data]
-#        result = tbl.insert_many(to_insert)
+class SourceMongo(ExternalSource):
+
+    def get_source_str(self, table_name):
+        return '''
+            <mongodb>
+                <host>{host}</host>
+                <port>{port}</port>
+                <user>{user}</user>
+                <password>{password}</password>
+                <db>test</db>
+                <collection>{tbl}</collection>
+            </mongodb>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+            user=self.user,
+            password=self.password,
+            tbl=table_name,
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        connection_str = 'mongodb://{user}:{password}@{host}:{port}'.format(
+            host=self.internal_hostname, port=self.internal_port,
+            user=self.user, password=self.password)
+        self.connection = pymongo.MongoClient(connection_str)
+        self.converters = {}
+        for field in structure.get_all_fields():
+            if field.field_type == "Date":
+                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d")
+            elif field.field_type == "DateTime":
+                self.converters[field.name] = lambda x: get_localzone().localize(datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S"))
+            else:
+                self.converters[field.name] = lambda x: x
+
+        self.db = self.connection['test']
+        self.db.add_user(self.user, self.password)
+        self.prepared = True
+
+    def load_data(self, data, table_name):
+        tbl = self.db[table_name]
+
+        to_insert = []
+        for row in data:
+            row_dict = {}
+            for cell_name, cell_value in row.data.items():
+                row_dict[cell_name] = self.converters[cell_name](cell_value)
+            to_insert.append(row_dict)
+
+        result = tbl.insert_many(to_insert)
 
 class SourceClickHouse(ExternalSource):
 
