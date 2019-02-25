@@ -163,6 +163,9 @@ static inline char * outTwoDigits(char * p, uint8_t value)
 
 namespace convert
 {
+    template <typename UInt, size_t N = sizeof(UInt)> static char * head(char * p, UInt u);
+    template <typename UInt, size_t N = sizeof(UInt)> static char * tail(char * p, UInt u);
+
     //===----------------------------------------------------------===//
     //     head: find most significant digit, skip leading zeros
     //===----------------------------------------------------------===//
@@ -178,7 +181,7 @@ namespace convert
     }
 
     // "u" is less than 10^2*N
-    template <typename UInt, size_t N = sizeof(UInt)>
+    template <typename UInt, size_t N>
     static inline char * head(char * p, UInt u)
     {
         return u < pow10<UnsignedOfSize<N>>(N)
@@ -200,7 +203,7 @@ namespace convert
     //===----------------------------------------------------------===//
 
     // recursive step, "u" is less than 10^2*N
-    template <typename UInt, size_t N = sizeof(UInt)>
+    template <typename UInt, size_t N>
     static inline char * tail(char * p, UInt u)
     {
         QuotientAndRemainder<N> x = split<N>(u);
