@@ -109,13 +109,11 @@ public:
             std::unique_ptr<IMergeTreeIndex>(
                     const NamesAndTypesList & columns,
                     std::shared_ptr<ASTIndexDeclaration> node,
-                    const MergeTreeData & data,
                     const Context & context)>;
 
     std::unique_ptr<IMergeTreeIndex> get(
         const NamesAndTypesList & columns,
         std::shared_ptr<ASTIndexDeclaration> node,
-        const MergeTreeData & data,
         const Context & context) const;
 
     void registerIndex(const std::string & name, Creator creator);

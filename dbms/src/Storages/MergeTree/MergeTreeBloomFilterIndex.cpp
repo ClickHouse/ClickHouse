@@ -174,16 +174,16 @@ BloomFilterCondition::BloomFilterCondition(
     const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
     if (select.where_expression)
     {
-        traverseAST(select.where_expression, context, block_with_constants);
+        traverseAST(select.where_expression, block_with_constants);
 
         if (select.prewhere_expression)
         {
-            traverseAST(select.prewhere_expression, context, block_with_constants);
+            traverseAST(select.prewhere_expression, block_with_constants);
             rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
     }
     else if (select.prewhere_expression)
-        traverseAST(select.prewhere_expression, context, block_with_constants);
+        traverseAST(select.prewhere_expression, block_with_constants);
     else
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
 }
@@ -325,7 +325,7 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
 }
 
 void BloomFilterCondition::traverseAST(
-    const ASTPtr & node, const Context & context, Block & block_with_constants)
+    const ASTPtr & node, Block & block_with_constants)
 {
     /// The same as in KeyCondition.
     RPNElement element;
@@ -337,7 +337,7 @@ void BloomFilterCondition::traverseAST(
             auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
             for (size_t i = 0, size = args.size(); i < size; ++i)
             {
-                traverseAST(args[i], context, block_with_constants);
+                traverseAST(args[i], block_with_constants);
 
                 if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
                     rpn.emplace_back(std::move(element));
@@ -347,7 +347,7 @@ void BloomFilterCondition::traverseAST(
         }
     }
 
-    if (!atomFromAST(node, context, block_with_constants, element))
+    if (!atomFromAST(node, block_with_constants, element))
     {
         element.function = RPNElement::FUNCTION_UNKNOWN;
     }
@@ -366,7 +366,7 @@ bool BloomFilterCondition::getKey(const ASTPtr & node, size_t & key_column_num)
 }
 
 bool BloomFilterCondition::atomFromAST(
-    const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out)
+    const ASTPtr & node, Block & block_with_constants, RPNElement & out)
 {
     Field const_value;
     DataTypePtr const_type;
@@ -380,7 +380,7 @@ bool BloomFilterCondition::atomFromAST(
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
 
-        if (functionIsInOrGlobalInOperator(func->name) && tryPrepareSetBloomFilter(args, context, out))
+        if (functionIsInOrGlobalInOperator(func->name) && tryPrepareSetBloomFilter(args, out))
         {
             key_arg_pos = 0;
         }
@@ -459,7 +459,6 @@ bool BloomFilterCondition::operatorFromAST(
 
 bool BloomFilterCondition::tryPrepareSetBloomFilter(
     const ASTs & args,
-    const Context &,
     RPNElement & out)
 {
     const ASTPtr & left_arg = args[0];
@@ -644,7 +643,6 @@ bool SplitTokenExtractor::nextLike(const String &, size_t *, String &) const
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const MergeTreeData & /* data */,
     const Context & context)
 {
     if (node->name.empty())

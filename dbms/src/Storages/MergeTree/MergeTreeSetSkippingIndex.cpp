@@ -357,10 +357,9 @@ bool MergeTreeSetSkippingIndex::mayBenefitFromIndexForIn(const ASTPtr &) const
 
 
 std::unique_ptr<IMergeTreeIndex> setIndexCreator(
-        const NamesAndTypesList & new_columns,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const MergeTreeData &,
-        const Context & context)
+    const NamesAndTypesList & new_columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
