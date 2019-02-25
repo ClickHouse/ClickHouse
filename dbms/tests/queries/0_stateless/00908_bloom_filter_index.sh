@@ -54,8 +54,6 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test.bloom_filter_idx2 VALUES
 (9, '2_2%2_2\\\\'),
 (13, 'abc')"
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s IN ('aбвгдеёж', 'abc') ORDER BY k FORMAT JSON" | grep "rows_read"
-exit(0)
 # EQUAL
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx2 WHERE lower(s) = 'aбвгдеёж' OR s = 'aбвгдеёж' ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx2 WHERE lower(s) = 'aбвгдеёж' OR s = 'aбвгдеёж' ORDER BY k FORMAT JSON" | grep "rows_read"
@@ -98,6 +96,9 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s LIKE '2\
 # IN
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s IN ('aбвгдеёж', 'abc') ORDER BY k"
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE s IN ('aбвгдеёж', 'abc') ORDER BY k FORMAT JSON" | grep "rows_read"
+
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE (s, lower(s)) IN (('aбвгдеёж', 'aбвгдеёж'), ('abc', 'cba')) ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx WHERE (s, lower(s)) IN (('aбвгдеёж', 'aбвгдеёж'), ('abc', 'cba')) ORDER BY k FORMAT JSON" | grep "rows_read"
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE test.bloom_filter_idx"
 $CLICKHOUSE_CLIENT --query="DROP TABLE test.bloom_filter_idx2"

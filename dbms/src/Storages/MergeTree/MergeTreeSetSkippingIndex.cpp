@@ -350,6 +350,11 @@ IndexConditionPtr MergeTreeSetSkippingIndex::createIndexCondition(
     return std::make_shared<SetIndexCondition>(query, context, *this);
 };
 
+bool MergeTreeSetSkippingIndex::mayBenefitFromIndexForIn(const ASTPtr &) const
+{
+    return false;
+}
+
 
 std::unique_ptr<IMergeTreeIndex> setIndexCreator(
         const NamesAndTypesList & new_columns,
