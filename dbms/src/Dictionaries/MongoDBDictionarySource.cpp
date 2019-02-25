@@ -192,7 +192,8 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     {
 #    if POCO_VERSION >= 0x01070800
         Poco::MongoDB::Database poco_db(db);
-        poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method);
+        if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
+            throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
 #    else
         authenticate(*connection, db, user, password);
 #    endif
