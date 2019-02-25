@@ -79,8 +79,6 @@ struct ColumnAliasesMatcher
         }
     };
 
-    static constexpr const char * label = "ColumnAliases";
-
     static bool needChildVisit(ASTPtr & node, const ASTPtr &)
     {
         if (typeid_cast<const ASTQualifiedAsterisk *>(node.get()))
@@ -88,7 +86,7 @@ struct ColumnAliasesMatcher
         return true;
     }
 
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
             visit(*t, ast, data);
@@ -96,7 +94,6 @@ struct ColumnAliasesMatcher
         if (typeid_cast<ASTAsterisk *>(ast.get()) ||
             typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
             throw Exception("Multiple JOIN do not support asterisks yet", ErrorCodes::NOT_IMPLEMENTED);
-        return {};
     }
 
     static void visit(ASTIdentifier & node, ASTPtr &, Data & data)
@@ -225,11 +222,10 @@ using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 } /// namelesspace
 
 
-std::vector<ASTPtr *> JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
+void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
         visit(*t, ast, data);
-    return {};
 }
 
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)

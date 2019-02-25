@@ -16,7 +16,7 @@ namespace DB
 class TableFunctionRemote : public ITableFunction
 {
 public:
-    explicit TableFunctionRemote(const std::string & name_ = "remote", bool secure = false);
+    TableFunctionRemote(const std::string & name, bool secure = false);
 
     std::string getName() const override { return name; }
 
