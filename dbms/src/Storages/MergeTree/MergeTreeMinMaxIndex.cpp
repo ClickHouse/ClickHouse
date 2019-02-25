@@ -133,7 +133,6 @@ bool MergeTreeMinMaxIndex::mayBenefitFromIndexForIn(const ASTPtr & node) const
 std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const MergeTreeData &,
     const Context & context)
 {
     if (node->name.empty())

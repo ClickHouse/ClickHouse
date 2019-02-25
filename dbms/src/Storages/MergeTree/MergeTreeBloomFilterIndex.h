@@ -91,12 +91,12 @@ private:
     using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)>;
     using RPN = std::vector<RPNElement>;
 
-    void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
-    bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
+    void traverseAST(const ASTPtr & node, Block & block_with_constants);
+    bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
     bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
     bool getKey(const ASTPtr & node, size_t & key_column_num);
-    bool tryPrepareSetBloomFilter(const ASTs & args, const Context & context, RPNElement & out);
+    bool tryPrepareSetBloomFilter(const ASTs & args, RPNElement & out);
 
     static const AtomMap atom_map;
 

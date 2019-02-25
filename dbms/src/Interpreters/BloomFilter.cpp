@@ -57,23 +57,12 @@ bool StringBloomFilter::contains(const StringBloomFilter & bf)
     return true;
 }
 
-void StringBloomFilter::merge(const StringBloomFilter & bf)
+UInt64 StringBloomFilter::isEmpty() const
 {
     for (size_t i = 0; i < words; ++i)
-        filter[i] |= bf.filter[i];
-}
-
-UInt64 StringBloomFilter::getFingerPrint() const
-{
-    return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(filter.data()), size);
-}
-
-UInt64 StringBloomFilter::getSum() const
-{
-    UInt64 res = 0;
-    for (size_t i = 0; i < words; ++i)
-        res += filter[i];
-    return res;
+        if (filter[i] != 0)
+            return false;
+    return true;
 }
 
 bool operator== (const StringBloomFilter & a, const StringBloomFilter & b)

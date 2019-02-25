@@ -29,7 +29,6 @@ void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creat
 std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
     const NamesAndTypesList & columns,
     std::shared_ptr<ASTIndexDeclaration> node,
-    const MergeTreeData & data,
     const Context & context) const
 {
     if (!node->type)
@@ -52,26 +51,23 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
                                 return lft + ", " + rht.first;
                         }),
                 ErrorCodes::INCORRECT_QUERY);
-    return it->second(columns, node, data, context);
+    return it->second(columns, node, context);
 }
 
 
 std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
         const NamesAndTypesList & columns,
         std::shared_ptr<ASTIndexDeclaration> node,
-        const MergeTreeData & data,
         const Context & context);
 
 std::unique_ptr<IMergeTreeIndex> setIndexCreator(
         const NamesAndTypesList & columns,
         std::shared_ptr<ASTIndexDeclaration> node,
-        const MergeTreeData & data,
         const Context & context);
 
 std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
         const NamesAndTypesList & columns,
         std::shared_ptr<ASTIndexDeclaration> node,
-        const MergeTreeData & data,
         const Context & context);
 
 
