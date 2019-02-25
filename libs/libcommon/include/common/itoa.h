@@ -36,25 +36,6 @@ using uint128_t = unsigned __int128;
 
 namespace impl
 {
-// Using a lookup table to convert binary numbers from 0 to 99
-// into ascii characters as described by Andrei Alexandrescu in
-// https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
-
-static const char digits[201] = "00010203040506070809"
-                                "10111213141516171819"
-                                "20212223242526272829"
-                                "30313233343536373839"
-                                "40414243444546474849"
-                                "50515253545556575859"
-                                "60616263646566676869"
-                                "70717273747576777879"
-                                "80818283848586878889"
-                                "90919293949596979899";
-
-static inline uint16_t const & dd(uint8_t u)
-{
-    return reinterpret_cast<uint16_t const *>(digits)[u];
-}
 
 template <typename T>
 static constexpr T pow10(size_t x)
@@ -78,61 +59,107 @@ static constexpr T pow10(size_t x)
 // and compensating for rounding errors. The algorithm described below
 // was invented by Terje Mathisen, Norway, and not published elsewhere."
 
-template <typename UInt, bool A, UInt M, unsigned S>
-struct MulInv
+/// Division by constant is performed by:
+/// 1. Adding 1 if needed;
+/// 2. Multiplying by another constant;
+/// 3. Shifting right by another constant.
+template <typename UInt, bool add_, UInt multiplier_, unsigned shift_>
+struct Division
 {
-    using type = UInt;
-    static constexpr bool a{A};
-    static constexpr UInt m{M};
-    static constexpr unsigned s{S};
+    static constexpr bool add{add_};
+    static constexpr UInt multiplier{multiplier_};
+    static constexpr unsigned shift{shift_};
 };
-template <int, int, class...>
-struct UT;
-template <int N, class T, class... Ts>
-struct UT<N, N, T, Ts...>
-{
-    using U = T;
-};
-template <int N, int M, class T, class... Ts>
-struct UT<N, M, T, Ts...>
-{
-    using U = typename UT<N, 2 * M, Ts...>::U;
-};
-template <int N>
-using MI = typename UT<
+
+/// Select a type with appropriate number of bytes from the list of types.
+/// First parameter is the number of bytes requested. Second parameter is the number of bytes in the first type in the list.
+/// The list goes in increasing order: subsequent type is 2x large than the previous.
+/// Example: SelectType<4, 2, uint16_t, uint32_t, uint64_t> will select uint32_t.
+template <size_t, size_t, typename...>
+struct SelectType;
+
+/// When size matches, select the first type from the list.
+template <size_t N, typename T, typename... Ts>
+struct SelectType<N, N, T, Ts...> { using Result = T; };
+
+/// Shift the list and proceed recursively.
+template <size_t N, size_t M, typename T, typename... Ts>
+struct SelectType<N, M, T, Ts...> { using Result = typename SelectType<N, 2 * M, Ts...>::Result; };
+
+/// Division by 10^N where N is the size of the type.
+template <size_t N>
+using DivisionBy10PowN = typename SelectType
+<
     N,
     1,
-    MulInv<uint8_t, 0, 205U, 11>,
-    MulInv<uint16_t, 1, 41943U, 22>,
-    MulInv<uint32_t, 0, 3518437209U, 45>,
-    MulInv<uint64_t, 0, 12379400392853802749U, 90>,
-    MulInv<uint128_t, 0, 0, 0>>::U;
-template <int N>
-using U = typename MI<N>::type;
+    Division<uint8_t, 0, 205U, 11>,                           /// divide by 10
+    Division<uint16_t, 1, 41943U, 22>,                        /// divide by 100
+    Division<uint32_t, 0, 3518437209U, 45>,                   /// divide by 10000
+    Division<uint64_t, 0, 12379400392853802749ULL, 90>,       /// divide by 100000000
+    Division<uint128_t, 0, 0U, 0>
+>::Result;
 
-// struct QR holds the result of dividing an unsigned N-byte variable
-// by 10^N resulting in
 template <size_t N>
-struct QR
+using UnsignedOfSize = typename SelectType
+<
+    N,
+    1,
+    uint8_t,
+    uint16_t,
+    uint32_t,
+    uint64_t,
+    uint128_t
+>::Result;
+
+/// Holds the result of dividing an unsigned N-byte variable by 10^N resulting in
+template <size_t N>
+struct QuotientAndRemainder
 {
-    U<N> q; // quotient with fewer than 2*N decimal digits
-    U<N / 2> r; // remainder with at most N decimal digits
+    UnsignedOfSize<N> quotient; // quotient with fewer than 2*N decimal digits
+    UnsignedOfSize<N / 2> remainder; // remainder with at most N decimal digits
 };
+
 template <size_t N>
-QR<N> static inline split(U<N> u)
+QuotientAndRemainder<N> static inline split(UnsignedOfSize<N> value)
 {
-    constexpr MI<N> mi{};
-    U<N> q = (mi.m * (U<2 * N>(u) + mi.a)) >> mi.s;
-    return {q, U<N / 2>(u - q * pow10<U<N / 2>>(N))};
+    constexpr DivisionBy10PowN<N> division;
+
+    UnsignedOfSize<N> quotient = (division.multiplier * (UnsignedOfSize<2 * N>(value) + division.add)) >> division.shift;
+    UnsignedOfSize<N / 2> remainder = value - quotient * pow10<UnsignedOfSize<N / 2>>(N);
+
+    return {quotient, remainder};
 }
 
-template <typename T>
-static inline char * out(char * p, T && obj)
+
+static inline char * outDigit(char * p, uint8_t value)
 {
-    memcpy(p, reinterpret_cast<const void *>(&obj), sizeof(T));
-    p += sizeof(T);
+    *p = '0' + value;
+    ++p;
     return p;
 }
+
+// Using a lookup table to convert binary numbers from 0 to 99
+// into ascii characters as described by Andrei Alexandrescu in
+// https://www.facebook.com/notes/facebook-engineering/three-optimization-tips-for-c/10151361643253920/
+
+static const char digits[201] = "00010203040506070809"
+                                "10111213141516171819"
+                                "20212223242526272829"
+                                "30313233343536373839"
+                                "40414243444546474849"
+                                "50515253545556575859"
+                                "60616263646566676869"
+                                "70717273747576777879"
+                                "80818283848586878889"
+                                "90919293949596979899";
+
+static inline char * outTwoDigits(char * p, uint8_t value)
+{
+    memcpy(p, &digits[value * 2], 2);
+    p += 2;
+    return p;
+}
+
 
 struct convert
 {
@@ -143,20 +170,30 @@ struct convert
     // "x" contains quotient and remainder after division by 10^N
     // quotient is less than 10^N
     template <size_t N>
-    static inline char * head(char * p, QR<N> x)
+    static inline char * head(char * p, QuotientAndRemainder<N> x)
     {
-        return tail(head(p, U<N / 2>(x.q)), x.r);
+        p = head(p, UnsignedOfSize<N / 2>(x.quotient));
+        p = tail(p, x.remainder);
+        return p;
     }
 
     // "u" is less than 10^2*N
     template <typename UInt, size_t N = sizeof(UInt)>
     static inline char * head(char * p, UInt u)
     {
-        return (u < pow10<U<N>>(N) ? (head(p, U<N / 2>(u))) : (head<N>(p, split<N>(u))));
+        return u < pow10<UnsignedOfSize<N>>(N)
+            ? head(p, UnsignedOfSize<N / 2>(u))
+            : head<N>(p, split<N>(u));
     }
 
     // recursion base case, selected when "u" is one byte
-    static inline char * head(char * p, U<1> u) { return (u < 10 ? (out<char>(p, '0' + u)) : (out(p, dd(u)))); }
+    template <>
+    inline char * head<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
+    {
+        return u < 10
+            ? outDigit(p, u)
+            : outTwoDigits(p, u);
+    }
 
     //===----------------------------------------------------------===//
     //     tail: produce all digits including leading zeros
@@ -166,12 +203,18 @@ struct convert
     template <typename UInt, size_t N = sizeof(UInt)>
     static inline char * tail(char * p, UInt u)
     {
-        QR<N> x = split<N>(u);
-        return tail(tail(p, U<N / 2>(x.q)), x.r);
+        QuotientAndRemainder<N> x = split<N>(u);
+        p = tail(p, UnsignedOfSize<N / 2>(x.quotient));
+        p = tail(p, x.remainder);
+        return p;
     }
 
     // recursion base case, selected when "u" is one byte
-    static inline char * tail(char * p, U<1> u) { return out(p, dd(u)); }
+    template <>
+    inline char * tail<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
+    {
+        return outTwoDigits(p, u);
+    }
 
     //===----------------------------------------------------------===//
     // large values are >= 10^2*N
@@ -179,10 +222,13 @@ struct convert
     //===----------------------------------------------------------===//
 
     template <size_t N>
-    static inline char * large(char * p, QR<N> x)
+    static inline char * large(char * p, QuotientAndRemainder<N> x)
     {
-        QR<N> y = split<N>(x.q);
-        return tail(tail(head(p, U<N / 2>(y.q)), y.r), x.r);
+        QuotientAndRemainder<N> y = split<N>(x.quotient);
+        p = head(p, UnsignedOfSize<N / 2>(y.quotient));
+        p = tail(p, y.remainder);
+        p = tail(p, x.remainder);
+        return p;
     }
 
     //===----------------------------------------------------------===//
@@ -193,20 +239,29 @@ struct convert
     template <typename UInt, size_t N = sizeof(UInt)>
     static inline char * itoa(char * p, UInt u)
     {
-        if (u < pow10<U<N>>(N))
-            return head(p, U<N / 2>(u));
-        QR<N> x = split<N>(u);
-        return (u < pow10<U<N>>(2 * N) ? (head<N>(p, x)) : (large<N>(p, x)));
+        if (u < pow10<UnsignedOfSize<N>>(N))
+            return head(p, UnsignedOfSize<N / 2>(u));
+        QuotientAndRemainder<N> x = split<N>(u);
+
+        return u < pow10<UnsignedOfSize<N>>(2 * N)
+            ? head<N>(p, x)
+            : large<N>(p, x);
     }
 
     // selected when "u" is one byte
-    static inline char * itoa(char * p, U<1> u)
+    template <>
+    inline char * itoa<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
     {
         if (u < 10)
-            return out<char>(p, '0' + u);
-        if (u < 100)
-            return out(p, dd(u));
-        return out(out<char>(p, '0' + u / 100), dd(u % 100));
+            return outDigit(p, u);
+        else if (u < 100)
+            return outTwoDigits(p, u);
+        else
+        {
+            p = outDigit(p, u / 100);
+            p = outTwoDigits(p, u % 100);
+            return p;
+        }
     }
 
     //===----------------------------------------------------------===//
@@ -214,14 +269,14 @@ struct convert
     //===----------------------------------------------------------===//
 
     // itoa: handle unsigned integral operands (selected by SFINAE)
-    template <typename U, std::enable_if_t<not std::is_signed<U>::value && std::is_integral<U>::value> * = nullptr>
+    template <typename U, std::enable_if_t<!std::is_signed_v<U> && std::is_integral_v<U>> * = nullptr>
     static inline char * itoa(U u, char * p)
     {
         return convert::itoa(p, u);
     }
 
     // itoa: handle signed integral operands (selected by SFINAE)
-    template <typename I, size_t N = sizeof(I), std::enable_if_t<std::is_signed<I>::value && std::is_integral<I>::value> * = nullptr>
+    template <typename I, size_t N = sizeof(I), std::enable_if_t<std::is_signed_v<I> && std::is_integral_v<I>> * = nullptr>
     static inline char * itoa(I i, char * p)
     {
         // Need "mask" to be filled with a copy of the sign bit.
@@ -231,19 +286,19 @@ struct convert
         // Use a conditional expression to be portable,
         // a good optimizing compiler generates an arithmetic right shift
         // and avoids the conditional branch.
-        U<N> mask = i < 0 ? ~U<N>(0) : 0;
-        // Now get the absolute value of "i" and cast to unsigned type U<N>.
+        UnsignedOfSize<N> mask = i < 0 ? ~UnsignedOfSize<N>(0) : 0;
+        // Now get the absolute value of "i" and cast to unsigned type UnsignedOfSize<N>.
         // Cannot use std::abs() because the result is undefined
         // in 2's complement systems for the most-negative value.
         // Want to avoid conditional branch for performance reasons since
         // CPU branch prediction will be ineffective when negative values
         // occur randomly.
-        // Let "u" be "i" cast to unsigned type U<N>.
+        // Let "u" be "i" cast to unsigned type UnsignedOfSize<N>.
         // Subtract "u" from 2*u if "i" is positive or 0 if "i" is negative.
         // This yields the absolute value with the desired type without
         // using a conditional branch and without invoking undefined or
         // implementation defined behavior:
-        U<N> u = ((2 * U<N>(i)) & ~mask) - U<N>(i);
+        UnsignedOfSize<N> u = ((2 * UnsignedOfSize<N>(i)) & ~mask) - UnsignedOfSize<N>(i);
         // Unconditionally store a minus sign when producing digits
         // in a forward direction and increment the pointer only if
         // the value is in fact negative.
@@ -299,12 +354,12 @@ static inline char * writeUIntText(uint128_t x, char * p)
         const auto i = x % 100;
         x /= 100;
         pp -= 2;
-        unalignedStore(pp, dd(i));
+        outTwoDigits(pp, i);
     }
     if (x < 10)
         *p = '0' + x;
     else
-        unalignedStore(p, dd(x));
+        outTwoDigits(p, x);
     return p + len;
 }
 
