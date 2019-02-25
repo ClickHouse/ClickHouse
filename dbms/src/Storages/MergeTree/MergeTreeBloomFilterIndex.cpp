@@ -35,12 +35,8 @@ static void stringToBloomFilter(
     size_t cur = 0;
     size_t token_start = 0;
     size_t token_len = 0;
-    auto *log = &Poco::Logger::get("bf");
-    LOG_DEBUG(log, "tooooooooooooooooooooooken: ");
-    while (cur < size && token_extractor->next(data, size, &cur, &token_start, &token_len)) {
-        LOG_DEBUG(log, "token: " << String(data + token_start, token_len));
+    while (cur < size && token_extractor->next(data, size, &cur, &token_start, &token_len))
         bloom_filter.add(data + token_start, token_len);
-    }
 }
 
 /// Adds all tokens from like pattern string to bloom filter. (Because like pattern can contain `\%` and `\_`.)
@@ -70,11 +66,7 @@ void MergeTreeBloomFilterIndexGranule::serializeBinary(WriteBuffer & ostr) const
                 "Attempt to write empty minmax index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
 
     for (const auto & bloom_filter : bloom_filters)
-    {
-        /*auto *log = &Poco::Logger::get("bf");
-        LOG_DEBUG(log, "writing fingerprint:" << bloom_filter.getFingerPrint() << " " << bloom_filter.getSum());*/
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), index.bloom_filter_size);
-    }
 }
 
 void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
@@ -84,8 +76,6 @@ void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
         StringBloomFilter::Container filter_data(index.bloom_filter_size, 0);
         istr.read(reinterpret_cast<char *>(filter_data.data()), index.bloom_filter_size);
         bloom_filter.setFilter(std::move(filter_data));
-        /*auto *log = &Poco::Logger::get("bf");
-        LOG_DEBUG(log, "reading fingerprint:" << bloom_filter.getFingerPrint() << " " << bloom_filter.getSum());*/
     }
     has_elems = true;
 }
@@ -199,14 +189,6 @@ BloomFilterCondition::BloomFilterCondition(
     else
     {
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-    }
-
-    auto * log = &Poco::Logger::get("bf");
-    for (size_t i = 0; i < rpn.size(); ++i) {
-        if (rpn[i].bloom_filter)
-            LOG_DEBUG(log, ": " << rpn[i].function << " " << rpn[i].key_column << " " << rpn[i].bloom_filter->getFingerPrint());
-        else
-            LOG_DEBUG(log, ": " << rpn[i].function << " " << rpn[i].key_column << " " << "empty");
     }
 }
 
