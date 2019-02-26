@@ -9,6 +9,7 @@
 
 namespace DB
 {
+
 namespace detail
 {
     template <typename T>
