@@ -132,7 +132,7 @@ struct NgramTokenExtractor : public ITokenExtractor
     bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;
 
-    bool supportLike() const override { return true; };
+    bool supportLike() const override { return true; }
 
     size_t n;
 };
@@ -145,7 +145,7 @@ struct SplitTokenExtractor : public ITokenExtractor
     bool next(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
     bool nextLike(const String & str, size_t * pos, String & token) const override;
 
-    bool supportLike() const override { return false; };
+    bool supportLike() const override { return false; }
 };
 
 
