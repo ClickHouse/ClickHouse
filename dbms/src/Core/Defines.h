@@ -114,3 +114,9 @@
     /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
     #define NO_SANITIZE_UNDEFINED
 #endif
+
+#if defined __GNUC__ && !defined __clang__
+    #define OPTIMIZE(x) __attribute__((__optimize__(x)))
+#else
+    #define OPTIMIZE(x)
+#endif
