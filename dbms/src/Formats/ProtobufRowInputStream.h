@@ -24,7 +24,7 @@ class FormatSchemaInfo;
 class ProtobufRowInputStream : public IRowInputStream
 {
 public:
-    ProtobufRowInputStream(ReadBuffer & in_, const Block & header, const FormatSchemaInfo & info);
+    ProtobufRowInputStream(ReadBuffer & in_, const Block & header, const FormatSchemaInfo & format_schema);
     ~ProtobufRowInputStream() override;
 
     bool read(MutableColumns & columns, RowReadExtension & extra) override;
