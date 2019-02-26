@@ -87,9 +87,9 @@ public:
 
         if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
         {
-            /// QuantileTiming only supports unsigned integers.
-            if (!isUnsignedInteger(argument_type))
-                throw Exception("Argument for function " + std::string(Name::name) + " must be unsigned integer, but it has type "
+            /// QuantileTiming only supports integers (it works only for unsigned integers but signed are also accepted for convenience).
+            if (!isInteger(argument_type))
+                throw Exception("Argument for function " + std::string(Name::name) + " must be integer, but it has type "
                     + argument_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
