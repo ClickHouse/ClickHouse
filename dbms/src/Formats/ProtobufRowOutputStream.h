@@ -30,7 +30,7 @@ class FormatSchemaInfo;
 class ProtobufRowOutputStream : public IRowOutputStream
 {
 public:
-    ProtobufRowOutputStream(WriteBuffer & out, const Block & header, const FormatSchemaInfo & info);
+    ProtobufRowOutputStream(WriteBuffer & out, const Block & header, const FormatSchemaInfo & format_schema);
 
     void write(const Block & block, size_t row_num) override;
     std::string getContentType() const override { return "application/octet-stream"; }
