@@ -89,8 +89,13 @@ SELECT * FROM (SELECT * FROM test.test UNION ALL SELECT * FROM test.test) WHERE 
 ANALYZE SELECT * FROM (SELECT * FROM test.test) ANY LEFT JOIN (SELECT * FROM test.test) USING id WHERE id = 1;
 SELECT * FROM (SELECT * FROM test.test) ANY LEFT JOIN (SELECT * FROM test.test) USING id WHERE id = 1;
 
+ANALYZE SELECT * FROM (SELECT toInt8(1) AS id) ANY LEFT JOIN test.test USING id WHERE value = 1;
+SELECT * FROM (SELECT toInt8(1) AS id) ANY LEFT JOIN test.test USING id WHERE value = 1;
+
+ANALYZE SELECT b.value FROM (SELECT toInt8(1) AS id) ANY LEFT JOIN test.test AS b USING id WHERE value = 1;
+SELECT b.value FROM (SELECT toInt8(1) AS id) ANY LEFT JOIN test.test AS b USING id WHERE value = 1;
+
 -- Optimize predicate expression with join and nested subquery
--- FIXME: should be pushed down to the innermost subqueries in both parts
 ANALYZE SELECT * FROM (SELECT * FROM (SELECT * FROM test.test) ANY LEFT JOIN (SELECT * FROM test.test) USING id) WHERE id = 1;
 SELECT * FROM (SELECT * FROM (SELECT * FROM test.test) ANY LEFT JOIN (SELECT * FROM test.test) USING id) WHERE id = 1;
 
