@@ -25,6 +25,9 @@ protected:
     virtual void consume(Chunk chunk) = 0;
     virtual Chunk generate() = 0;
 
+    /// This method can be called once per consume call. In case if some chunks are ready.
+    void setReadyChunk(Chunk chunk);
+
 public:
     IAccumulatingTransform(Block input_header, Block output_header);
 
