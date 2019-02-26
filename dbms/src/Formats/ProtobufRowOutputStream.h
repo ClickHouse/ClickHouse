@@ -38,6 +38,7 @@ public:
 private:
     DataTypes data_types;
     ProtobufWriter writer;
+    std::vector<size_t> value_indices;
 };
 
 }
