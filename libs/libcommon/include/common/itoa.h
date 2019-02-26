@@ -28,8 +28,6 @@
 
 #include <cstdint>
 #include <type_traits>
-#include "likely.h"
-#include "unaligned.h"
 
 using int128_t = __int128;
 using uint128_t = unsigned __int128;
@@ -238,7 +236,7 @@ namespace convert
     //===----------------------------------------------------------===//
 
     template <typename UInt, size_t N = sizeof(UInt)>
-    static inline char * itoa(char * p, UInt u)
+    static inline char * uitoa(char * p, UInt u)
     {
         if (u < pow10<UnsignedOfSize<N>>(N))
             return head(p, UnsignedOfSize<N / 2>(u));
@@ -251,7 +249,7 @@ namespace convert
 
     // selected when "u" is one byte
     template <>
-    inline char * itoa<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
+    inline char * uitoa<UnsignedOfSize<1>, 1>(char * p, UnsignedOfSize<1> u)
     {
         if (u < 10)
             return outDigit(p, u);
@@ -273,7 +271,7 @@ namespace convert
     template <typename U, std::enable_if_t<!std::is_signed_v<U> && std::is_integral_v<U>> * = nullptr>
     static inline char * itoa(U u, char * p)
     {
-        return convert::itoa(p, u);
+        return convert::uitoa(p, u);
     }
 
     // itoa: handle signed integral operands (selected by SFINAE)
@@ -308,10 +306,10 @@ namespace convert
         // minus sign when the value is not negative.
         *p = '-';
         p += (mask & 1);
-        p = convert::itoa(p, u);
+        p = convert::uitoa(p, u);
         return p;
     }
-};
+}
 
 static inline int digits10(uint128_t x)
 {
