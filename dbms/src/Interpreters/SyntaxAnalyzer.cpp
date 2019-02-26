@@ -605,11 +605,12 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
     if (table_expr.database_and_table_name)
     {
         auto & table_id = typeid_cast<ASTIdentifier &>(*table_expr.database_and_table_name.get());
-        String expr = "(select * from " + table_id.name + ")";
+        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
 
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
         //        we can't replace aliased tables.
-        if (table_id.alias.empty())
+        // FIXME: long table names include database name, which we can't save within alias.
+        if (table_id.alias.empty() && table_id.isShort())
         {
             ParserTableExpression parser;
             table_expr = static_cast<ASTTableExpression &>(*parseQuery(parser, expr, 0));
