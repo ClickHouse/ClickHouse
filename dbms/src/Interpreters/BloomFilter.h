@@ -28,8 +28,8 @@ public:
     /// Bloom filters must have equal size and seed.
     bool contains(const StringBloomFilter & bf);
 
-    const Container & getFilter() const { return filter; };
-    Container & getFilter() { return filter; };
+    const Container & getFilter() const { return filter; }
+    Container & getFilter() { return filter; }
 
     /// For debug.
     UInt64 isEmpty() const;
