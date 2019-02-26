@@ -134,10 +134,11 @@ public:
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
     {
-        mutex = std::make_unique<std::mutex>();
+        mutex = std::make_shared<std::mutex>();
 
         /// The function object must be copyable, so we wrap lock_guard in shared_ptr.
         GlobalThreadPool::instance().scheduleOrThrow([
+            mutex = mutex,
             lock = std::make_shared<std::lock_guard<std::mutex>>(*mutex),
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]
@@ -154,7 +155,7 @@ public:
 
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
-        if (mutex)
+        if (joinable())
             std::terminate();
         mutex = std::move(rhs.mutex);
         return *this;
@@ -162,15 +163,24 @@ public:
 
     ~ThreadFromGlobalPool()
     {
-        if (mutex)
+        if (joinable())
             std::terminate();
     }
 
     void join()
     {
+        if (!joinable())
+            std::terminate();
         {
             std::lock_guard lock(*mutex);
         }
+        mutex.reset();
+    }
+
+    void detach()
+    {
+        if (!joinable())
+            std::terminate();
         mutex.reset();
     }
 
@@ -180,7 +190,7 @@ public:
     }
 
 private:
-    std::unique_ptr<std::mutex> mutex;  /// Object must be moveable.
+    std::shared_ptr<std::mutex> mutex;  /// Object must be moveable.
 };
 
 

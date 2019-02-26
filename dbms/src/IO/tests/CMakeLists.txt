@@ -51,7 +51,7 @@ add_executable (hashing_read_buffer hashing_read_buffer.cpp)
 target_link_libraries (hashing_read_buffer PRIVATE clickhouse_common_io)
 add_check (hashing_read_buffer)
 
-add_executable (io_operators operators.cpp)
+add_executable (io_operators io_operators.cpp)
 target_link_libraries (io_operators PRIVATE clickhouse_common_io)
 
 if (OS_LINUX)
