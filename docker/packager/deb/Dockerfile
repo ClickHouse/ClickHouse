@@ -52,7 +52,9 @@ RUN apt-get --allow-unauthenticated update -y \
             libre2-dev \
             libjemalloc-dev \
             unixodbc-dev \
-            odbcinst
+            odbcinst \
+            tzdata
 
 
-CMD /bin/bash build/release --no-pbuilder && mv /*.deb /output
+
+CMD /bin/bash build/release --no-pbuilder && mv /*.deb /output && mv *.changes /output && mv *.buildinfo /output

@@ -78,6 +78,7 @@ public:
             DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & reader, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
