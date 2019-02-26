@@ -1,14 +1,16 @@
 #pragma once
 
-#include <common/DayNum.h>
-#include <Common/UInt128.h>
 #include <Core/UUID.h>
+#include <Common/UInt128.h>
+#include <common/DayNum.h>
 
 #include <Common/config.h>
 #if USE_PROTOBUF
 
-#include <boost/noncopyable.hpp>
+#include <Formats/ProtobufColumnMatcher.h>
 #include <IO/WriteBufferFromString.h>
+#include <boost/noncopyable.hpp>
+#include <Common/PODArray.h>
 
 
 namespace google
@@ -32,46 +34,46 @@ using ConstAggregateDataPtr = const char *;
 class ProtobufWriter : private boost::noncopyable
 {
 public:
-    ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type);
+    ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names);
     ~ProtobufWriter();
 
-    /// Returns fields of the protobuf schema sorted by their numbers.
-    const std::vector<const google::protobuf::FieldDescriptor *> & fieldsInWriteOrder() const;
+    /// Should be called at the beginning of writing a message.
+    void startMessage();
 
-    /// Should be called when we start writing a new message.
-    void newMessage();
+    /// Should be called at the end of writing a message.
+    void endMessage();
 
-    /// Should be called when we start writing a new field.
-    /// Returns false if there is no more fields in the message type.
-    bool nextField();
+    /// Prepares for writing values of a field.
+    /// Returns true and sets 'column_index' to the corresponding column's index.
+    /// Returns false if there are no more fields to write in the message type (call endMessage() in this case).
+    bool writeField(size_t & column_index);
 
-    /// Returns the current field of the message type.
-    /// The value returned by this function changes after calling nextField() or newMessage().
-    const google::protobuf::FieldDescriptor * currentField() const { return current_field; }
-
-    void writeNumber(Int8 value) { current_converter->writeInt8(value); }
-    void writeNumber(UInt8 value) { current_converter->writeUInt8(value); }
-    void writeNumber(Int16 value) { current_converter->writeInt16(value); }
-    void writeNumber(UInt16 value) { current_converter->writeUInt16(value); }
-    void writeNumber(Int32 value) { current_converter->writeInt32(value); }
-    void writeNumber(UInt32 value) { current_converter->writeUInt32(value); }
-    void writeNumber(Int64 value) { current_converter->writeInt64(value); }
-    void writeNumber(UInt64 value) { current_converter->writeUInt64(value); }
-    void writeNumber(UInt128 value) { current_converter->writeUInt128(value); }
-    void writeNumber(Float32 value) { current_converter->writeFloat32(value); }
-    void writeNumber(Float64 value) { current_converter->writeFloat64(value); }
-    void writeString(const StringRef & str) { current_converter->writeString(str); }
-    void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & enum_values) { current_converter->prepareEnumMappingInt8(enum_values); }
-    void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & enum_values) { current_converter->prepareEnumMappingInt16(enum_values); }
-    void writeEnum(Int8 value) { current_converter->writeEnumInt8(value); }
-    void writeEnum(Int16 value) { current_converter->writeEnumInt16(value); }
-    void writeUUID(const UUID & uuid) { current_converter->writeUUID(uuid); }
-    void writeDate(DayNum date) { current_converter->writeDate(date); }
-    void writeDateTime(time_t tm) { current_converter->writeDateTime(tm); }
-    void writeDecimal(Decimal32 decimal, UInt32 scale) { current_converter->writeDecimal32(decimal, scale); }
-    void writeDecimal(Decimal64 decimal, UInt32 scale) { current_converter->writeDecimal64(decimal, scale); }
-    void writeDecimal(const Decimal128 & decimal, UInt32 scale) { current_converter->writeDecimal128(decimal, scale); }
-    void writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { current_converter->writeAggregateFunction(function, place); }
+    /// Writes a value. This function should be called one or multiple times after writeField().
+    /// Returns false if there are no more place for the values in the protobuf's field.
+    /// This can happen if the protobuf's field is not declared as repeated in the protobuf schema.
+    void writeNumber(Int8 value) { writeValue(&IConverter::writeInt8, value); }
+    void writeNumber(UInt8 value) { writeValue(&IConverter::writeUInt8, value); }
+    void writeNumber(Int16 value) { writeValue(&IConverter::writeInt16, value); }
+    void writeNumber(UInt16 value) { writeValue(&IConverter::writeUInt16, value); }
+    void writeNumber(Int32 value) { writeValue(&IConverter::writeInt32, value); }
+    void writeNumber(UInt32 value) { writeValue(&IConverter::writeUInt32, value); }
+    void writeNumber(Int64 value) { writeValue(&IConverter::writeInt64, value); }
+    void writeNumber(UInt64 value) { writeValue(&IConverter::writeUInt64, value); }
+    void writeNumber(UInt128 value) { writeValue(&IConverter::writeUInt128, value); }
+    void writeNumber(Float32 value) { writeValue(&IConverter::writeFloat32, value); }
+    void writeNumber(Float64 value) { writeValue(&IConverter::writeFloat64, value); }
+    void writeString(const StringRef & str) { writeValue(&IConverter::writeString, str); }
+    void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & enum_values) { current_converter->prepareEnumMapping8(enum_values); }
+    void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & enum_values) { current_converter->prepareEnumMapping16(enum_values); }
+    void writeEnum(Int8 value) { writeValue(&IConverter::writeEnum8, value); }
+    void writeEnum(Int16 value) { writeValue(&IConverter::writeEnum16, value); }
+    void writeUUID(const UUID & uuid) { writeValue(&IConverter::writeUUID, uuid); }
+    void writeDate(DayNum date) { writeValue(&IConverter::writeDate, date); }
+    void writeDateTime(time_t tm) { writeValue(&IConverter::writeDateTime, tm); }
+    void writeDecimal(Decimal32 decimal, UInt32 scale) { writeValue(&IConverter::writeDecimal32, decimal, scale); }
+    void writeDecimal(Decimal64 decimal, UInt32 scale) { writeValue(&IConverter::writeDecimal64, decimal, scale); }
+    void writeDecimal(const Decimal128 & decimal, UInt32 scale) { writeValue(&IConverter::writeDecimal128, decimal, scale); }
+    void writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { writeValue(&IConverter::writeAggregateFunction, function, place); }
 
 private:
     class SimpleWriter
@@ -80,66 +82,38 @@ private:
         SimpleWriter(WriteBuffer & out_);
         ~SimpleWriter();
 
-        void newMessage();
-        void setCurrentField(UInt32 field_number);
-        UInt32 currentFieldNumber() const { return current_field_number; }
-        size_t numValues() const { return num_normal_values + num_packed_values; }
+        void startMessage();
+        void endMessage();
 
-        void writeInt32(Int32 value);
-        void writeUInt32(UInt32 value);
-        void writeSInt32(Int32 value);
-        void writeInt64(Int64 value);
-        void writeUInt64(UInt64 value);
-        void writeSInt64(Int64 value);
-        void writeFixed32(UInt32 value);
-        void writeSFixed32(Int32 value);
-        void writeFloat(float value);
-        void writeFixed64(UInt64 value);
-        void writeSFixed64(Int64 value);
-        void writeDouble(double value);
-        void writeString(const StringRef & str);
+        void writeInt(UInt32 field_number, Int64 value);
+        void writeUInt(UInt32 field_number, UInt64 value);
+        void writeSInt(UInt32 field_number, Int64 value);
+        template <typename T>
+        void writeFixed(UInt32 field_number, T value);
+        void writeString(UInt32 field_number, const StringRef & str);
 
-        void writeInt32IfNonZero(Int32 value);
-        void writeUInt32IfNonZero(UInt32 value);
-        void writeSInt32IfNonZero(Int32 value);
-        void writeInt64IfNonZero(Int64 value);
-        void writeUInt64IfNonZero(UInt64 value);
-        void writeSInt64IfNonZero(Int64 value);
-        void writeFixed32IfNonZero(UInt32 value);
-        void writeSFixed32IfNonZero(Int32 value);
-        void writeFloatIfNonZero(float value);
-        void writeFixed64IfNonZero(UInt64 value);
-        void writeSFixed64IfNonZero(Int64 value);
-        void writeDoubleIfNonZero(double value);
-        void writeStringIfNotEmpty(const StringRef & str);
-
-        void packRepeatedInt32(Int32 value);
-        void packRepeatedUInt32(UInt32 value);
-        void packRepeatedSInt32(Int32 value);
-        void packRepeatedInt64(Int64 value);
-        void packRepeatedUInt64(UInt64 value);
-        void packRepeatedSInt64(Int64 value);
-        void packRepeatedFixed32(UInt32 value);
-        void packRepeatedSFixed32(Int32 value);
-        void packRepeatedFloat(float value);
-        void packRepeatedFixed64(UInt64 value);
-        void packRepeatedSFixed64(Int64 value);
-        void packRepeatedDouble(double value);
+        void startRepeatedPack();
+        void addIntToRepeatedPack(Int64 value);
+        void addUIntToRepeatedPack(UInt64 value);
+        void addSIntToRepeatedPack(Int64 value);
+        template <typename T>
+        void addFixedToRepeatedPack(T value);
+        void endRepeatedPack(UInt32 field_number);
 
     private:
-        void finishCurrentMessage();
-        void finishCurrentField();
-
-        enum WireType : UInt32;
-        void writeKey(WireType wire_type, WriteBuffer & buf);
+        struct Piece
+        {
+            size_t start;
+            size_t end;
+            Piece(size_t start, size_t end) : start(start), end(end) {}
+            Piece() = default;
+        };
 
         WriteBuffer & out;
-        bool were_messages = false;
-        WriteBufferFromOwnString message_buffer;
-        UInt32 current_field_number = 0;
-        size_t num_normal_values = 0;
-        size_t num_packed_values = 0;
-        WriteBufferFromOwnString repeated_packing_buffer;
+        PODArray<UInt8> buffer;
+        std::vector<Piece> pieces;
+        size_t current_piece_start;
+        size_t num_bytes_skipped;
     };
 
     class IConverter
@@ -158,10 +132,10 @@ private:
         virtual void writeUInt128(const UInt128 &) = 0;
         virtual void writeFloat32(Float32) = 0;
         virtual void writeFloat64(Float64) = 0;
-        virtual void prepareEnumMappingInt8(const std::vector<std::pair<std::string, Int8>> &) = 0;
-        virtual void prepareEnumMappingInt16(const std::vector<std::pair<std::string, Int16>> &) = 0;
-        virtual void writeEnumInt8(Int8) = 0;
-        virtual void writeEnumInt16(Int16) = 0;
+        virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) = 0;
+        virtual void prepareEnumMapping16(const std::vector<std::pair<std::string, Int16>> &) = 0;
+        virtual void writeEnum8(Int8) = 0;
+        virtual void writeEnum16(Int16) = 0;
         virtual void writeUUID(const UUID &) = 0;
         virtual void writeDate(DayNum) = 0;
         virtual void writeDateTime(time_t) = 0;
@@ -172,23 +146,54 @@ private:
     };
 
     class ConverterBaseImpl;
-    template <int type_id> class ConverterImpl;
+    template <bool skip_null_value>
     class ConverterToString;
-    template <typename ToType>
+    template <int field_type_id, typename ToType, bool skip_null_value, bool pack_repeated>
     class ConverterToNumber;
+    template <bool skip_null_value, bool pack_repeated>
+    class ConverterToBool;
+    template <bool skip_null_value, bool pack_repeated>
+    class ConverterToEnum;
 
-    void enumerateFieldsInWriteOrder(const google::protobuf::Descriptor * message_type);
-    void createConverters();
-    void finishCurrentMessage();
-    void finishCurrentField();
+    struct ColumnMatcherTraits
+    {
+        struct FieldData
+        {
+            std::unique_ptr<IConverter> converter;
+            bool is_required;
+            bool is_repeatable;
+            bool should_pack_repeated;
+        };
+        struct MessageData {};
+    };
+    using Message = ProtobufColumnMatcher::Message<ColumnMatcherTraits>;
+    using Field = ProtobufColumnMatcher::Field<ColumnMatcherTraits>;
+
+    void setTraitsDataAfterMatchingColumns(Message * message);
+
+    template <int field_type_id>
+    std::unique_ptr<IConverter> createConverter(const google::protobuf::FieldDescriptor * field);
+
+    template <typename... Params>
+    using WriteValueFunctionPtr = void (IConverter::*)(Params...);
+
+    template <typename... Params, typename... Args>
+    void writeValue(WriteValueFunctionPtr<Params...> func, Args &&... args)
+    {
+        (current_converter->*func)(std::forward<Args>(args)...);
+        ++num_values;
+    }
+
+    void endWritingField();
 
     SimpleWriter simple_writer;
-    std::vector<const google::protobuf::FieldDescriptor *> fields_in_write_order;
-    size_t current_field_index = -1;
-    const google::protobuf::FieldDescriptor * current_field = nullptr;
+    std::unique_ptr<Message> root_message;
 
-    std::vector<std::unique_ptr<IConverter>> converters;
+    bool writing_message = false;
+    size_t current_field_index = 0;
+    const Field * current_field = nullptr;
     IConverter * current_converter = nullptr;
+    size_t num_values = 0;
 };
 
 }

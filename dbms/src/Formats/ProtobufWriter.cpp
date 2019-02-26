@@ -2,9 +2,10 @@
 #if USE_PROTOBUF
 
 #include <cassert>
-#include <math.h>
 #include <optional>
+#include <math.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <boost/numeric/conversion/cast.hpp>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
@@ -26,372 +27,238 @@ namespace ErrorCodes
 
 namespace
 {
-    // Note: We cannot simply use writeVarUInt() from IO/VarInt.h here because there is one small difference:
-    // Google protobuf's representation of 64-bit integer contains from 1 to 10 bytes, whileas writeVarUInt() writes from 1 to 9 bytes
-    // because it omits the tenth byte (which is not necessary to decode actually).
-    void writePbVarUInt(UInt64 value, WriteBuffer & buf)
+    constexpr size_t MAX_VARINT_SIZE = 10;
+    constexpr size_t REPEATED_PACK_PADDING = 2 * MAX_VARINT_SIZE;
+
+    // Note: There is a difference between this function and writeVarUInt() from IO/VarInt.h:
+    // Google protobuf's representation of 64-bit integer contains from 1 to 10 bytes,
+    // whileas writeVarUInt() writes from 1 to 9 bytes because it omits the tenth byte (which is not necessary to decode actually).
+    void writeVarint(UInt64 value, WriteBuffer & out)
     {
         while (value >= 0x80)
         {
-            buf.write(static_cast<char>(value | 0x80));
+            out.write(static_cast<char>(value | 0x80));
             value >>= 7;
         }
-        buf.write(static_cast<char>(value));
+        out.write(static_cast<char>(value));
     }
 
-    void writePbVarInt(Int64 value, WriteBuffer & buf)
+    UInt8 * writeVarint(UInt64 value, UInt8 * ptr)
     {
-        writePbVarUInt((static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63), buf);
-    }
-
-    void writePbVarIntNoZigZagEncoding(Int64 value, WriteBuffer & buf) { writePbVarUInt(static_cast<UInt64>(value), buf); }
-}
-
-
-enum ProtobufWriter::SimpleWriter::WireType : UInt32
-{
-    VARINT = 0,
-    BITS64 = 1,
-    LENGTH_DELIMITED = 2,
-    BITS32 = 5
-};
-
-ProtobufWriter::SimpleWriter::SimpleWriter(WriteBuffer & out_) : out(out_)
-{
-}
-
-ProtobufWriter::SimpleWriter::~SimpleWriter()
-{
-    finishCurrentMessage();
-}
-
-void ProtobufWriter::SimpleWriter::newMessage()
-{
-    finishCurrentMessage();
-    were_messages = true;
-}
-
-void ProtobufWriter::SimpleWriter::finishCurrentMessage()
-{
-    if (!were_messages)
-        return;
-    finishCurrentField();
-    current_field_number = 0;
-    StringRef str = message_buffer.stringRef();
-    writePbVarUInt(str.size, out);
-    out.write(str.data, str.size);
-    message_buffer.restart();
-}
-
-void ProtobufWriter::SimpleWriter::setCurrentField(UInt32 field_number)
-{
-    finishCurrentField();
-    assert(current_field_number < field_number);
-    current_field_number = field_number;
-    num_normal_values = 0;
-    num_packed_values = 0;
-}
-
-void ProtobufWriter::SimpleWriter::finishCurrentField()
-{
-    if (num_packed_values)
-    {
-        assert(!num_normal_values);
-        StringRef str = repeated_packing_buffer.stringRef();
-        if (str.size)
+        while (value >= 0x80)
         {
-            writeKey(LENGTH_DELIMITED, message_buffer);
-            writePbVarUInt(str.size, message_buffer);
-            message_buffer.write(str.data, str.size);
-            repeated_packing_buffer.restart();
+            *ptr++ = static_cast<UInt8>(value | 0x80);
+            value >>= 7;
         }
+        *ptr++ = static_cast<UInt8>(value);
+        return ptr;
+    }
+
+    void writeVarint(UInt64 value, PODArray<UInt8> & buf)
+    {
+        size_t old_size = buf.size();
+        buf.reserve(old_size + MAX_VARINT_SIZE);
+        UInt8 * ptr = &buf[old_size];
+        ptr = writeVarint(value, ptr);
+        buf.resize_assume_reserved(ptr - buf.data());
+    }
+
+    UInt64 encodeZigZag(Int64 value) { return (static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63); }
+
+    enum WireType
+    {
+        VARINT = 0,
+        BITS64 = 1,
+        LENGTH_DELIMITED = 2,
+        GROUP_START = 3,
+        GROUP_END = 4,
+        BITS32 = 5
+    };
+
+    UInt8 * writeFieldNumber(UInt32 field_number, WireType wire_type, UInt8 * ptr)
+    {
+        return writeVarint((field_number << 3) | wire_type, ptr);
+    }
+
+    void writeFieldNumber(UInt32 field_number, WireType wire_type, PODArray<UInt8> & buf) { writeVarint((field_number << 3) | wire_type, buf); }
+
+    // Should we pack repeated values while storing them.
+    // It depends on type of the field in the protobuf schema and the syntax of that schema.
+    bool shouldPackRepeated(const google::protobuf::FieldDescriptor * field)
+    {
+        if (!field->is_repeated())
+            return false;
+        switch (field->type())
+        {
+            case google::protobuf::FieldDescriptor::TYPE_INT32:
+            case google::protobuf::FieldDescriptor::TYPE_UINT32:
+            case google::protobuf::FieldDescriptor::TYPE_SINT32:
+            case google::protobuf::FieldDescriptor::TYPE_INT64:
+            case google::protobuf::FieldDescriptor::TYPE_UINT64:
+            case google::protobuf::FieldDescriptor::TYPE_SINT64:
+            case google::protobuf::FieldDescriptor::TYPE_FIXED32:
+            case google::protobuf::FieldDescriptor::TYPE_SFIXED32:
+            case google::protobuf::FieldDescriptor::TYPE_FIXED64:
+            case google::protobuf::FieldDescriptor::TYPE_SFIXED64:
+            case google::protobuf::FieldDescriptor::TYPE_FLOAT:
+            case google::protobuf::FieldDescriptor::TYPE_DOUBLE:
+            case google::protobuf::FieldDescriptor::TYPE_BOOL:
+            case google::protobuf::FieldDescriptor::TYPE_ENUM:
+                break;
+            default:
+                return false;
+        }
+        if (field->options().has_packed())
+            return field->options().packed();
+        return field->file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3;
+    }
+
+    // Should we omit null values (zero for numbers / empty string for strings) while storing them.
+    bool shouldSkipNullValue(const google::protobuf::FieldDescriptor * field)
+    {
+        return field->is_optional() && (field->file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
     }
 }
 
-void ProtobufWriter::SimpleWriter::writeKey(WireType wire_type, WriteBuffer & buf)
+
+// SimpleWriter is an utility class to serialize protobufs.
+// Knows nothing about protobuf schemas, just provides useful functions to serialize data.
+ProtobufWriter::SimpleWriter::SimpleWriter(WriteBuffer & out_) : out(out_), current_piece_start(0), num_bytes_skipped(0)
 {
-    writePbVarUInt((current_field_number << 3) | wire_type, buf);
 }
 
-void ProtobufWriter::SimpleWriter::writeInt32(Int32 value)
+ProtobufWriter::SimpleWriter::~SimpleWriter() = default;
+
+void ProtobufWriter::SimpleWriter::startMessage()
 {
-    assert(current_field_number);
-    writeKey(VARINT, message_buffer);
-    writePbVarIntNoZigZagEncoding(value, message_buffer);
-    ++num_normal_values;
 }
 
-void ProtobufWriter::SimpleWriter::writeUInt32(UInt32 value)
+void ProtobufWriter::SimpleWriter::endMessage()
 {
-    assert(current_field_number);
-    writeKey(VARINT, message_buffer);
-    writePbVarUInt(value, message_buffer);
-    ++num_normal_values;
+    pieces.emplace_back(current_piece_start, buffer.size());
+    size_t size_of_message = buffer.size() - num_bytes_skipped;
+    writeVarint(size_of_message, out);
+    for (const auto & piece : pieces)
+        out.write(reinterpret_cast<char *>(&buffer[piece.start]), piece.end - piece.start);
+    buffer.clear();
+    pieces.clear();
+    num_bytes_skipped = 0;
+    current_piece_start = 0;
 }
 
-void ProtobufWriter::SimpleWriter::writeSInt32(Int32 value)
+void ProtobufWriter::SimpleWriter::writeUInt(UInt32 field_number, UInt64 value)
 {
-    assert(current_field_number);
-    writeKey(VARINT, message_buffer);
-    writePbVarInt(value, message_buffer);
-    ++num_normal_values;
+    size_t old_size = buffer.size();
+    buffer.reserve(old_size + 2 * MAX_VARINT_SIZE);
+    UInt8 * ptr = &buffer[old_size];
+    ptr = writeFieldNumber(field_number, VARINT, ptr);
+    ptr = writeVarint(value, ptr);
+    buffer.resize_assume_reserved(ptr - buffer.data());
 }
 
-void ProtobufWriter::SimpleWriter::writeInt64(Int64 value)
+void ProtobufWriter::SimpleWriter::writeInt(UInt32 field_number, Int64 value)
 {
-    assert(current_field_number);
-    writeKey(VARINT, message_buffer);
-    writePbVarIntNoZigZagEncoding(value, message_buffer);
-    ++num_normal_values;
+    writeUInt(field_number, static_cast<UInt64>(value));
 }
 
-void ProtobufWriter::SimpleWriter::writeUInt64(UInt64 value)
+void ProtobufWriter::SimpleWriter::writeSInt(UInt32 field_number, Int64 value)
 {
-    assert(current_field_number);
-    writeKey(VARINT, message_buffer);
-    writePbVarUInt(value, message_buffer);
-    ++num_normal_values;
+    writeUInt(field_number, encodeZigZag(value));
 }
 
-void ProtobufWriter::SimpleWriter::writeSInt64(Int64 value)
+template <typename T>
+void ProtobufWriter::SimpleWriter::writeFixed(UInt32 field_number, T value)
 {
-    assert(current_field_number);
-    writeKey(VARINT, message_buffer);
-    writePbVarInt(value, message_buffer);
-    ++num_normal_values;
+    static_assert((sizeof(T) == 4) || (sizeof(T) == 8));
+    constexpr WireType wire_type = (sizeof(T) == 4) ? BITS32 : BITS64;
+    size_t old_size = buffer.size();
+    buffer.reserve(old_size + MAX_VARINT_SIZE + sizeof(T));
+    UInt8 * ptr = &buffer[old_size];
+    ptr = writeFieldNumber(field_number, wire_type, ptr);
+    memcpy(ptr, &value, sizeof(T));
+    ptr += sizeof(T);
+    buffer.resize_assume_reserved(ptr - buffer.data());
 }
 
-void ProtobufWriter::SimpleWriter::writeFixed32(UInt32 value)
+void ProtobufWriter::SimpleWriter::writeString(UInt32 field_number, const StringRef & str)
 {
-    assert(current_field_number);
-    writeKey(BITS32, message_buffer);
-    writePODBinary(value, message_buffer);
-    ++num_normal_values;
+    size_t old_size = buffer.size();
+    buffer.reserve(old_size + 2 * MAX_VARINT_SIZE + str.size);
+    UInt8 * ptr = &buffer[old_size];
+    ptr = writeFieldNumber(field_number, LENGTH_DELIMITED, ptr);
+    ptr = writeVarint(str.size, ptr);
+    memcpy(ptr, str.data, str.size);
+    ptr += str.size;
+    buffer.resize_assume_reserved(ptr - buffer.data());
 }
 
-void ProtobufWriter::SimpleWriter::writeSFixed32(Int32 value)
+void ProtobufWriter::SimpleWriter::startRepeatedPack()
 {
-    assert(current_field_number);
-    writeKey(BITS32, message_buffer);
-    writePODBinary(value, message_buffer);
-    ++num_normal_values;
+    pieces.emplace_back(current_piece_start, buffer.size());
+
+    // We skip enough bytes to have place for inserting the field number and the size of the repeated pack afterwards
+    // when we finish writing the repeated pack itself. We don't know the size of the repeated pack at the point of
+    // calling startRepeatedPack(), that's why we have to do this skipping.
+    current_piece_start = buffer.size() + REPEATED_PACK_PADDING;
+    buffer.resize(current_piece_start);
+    num_bytes_skipped += REPEATED_PACK_PADDING;
 }
 
-void ProtobufWriter::SimpleWriter::writeFloat(float value)
+void ProtobufWriter::SimpleWriter::endRepeatedPack(UInt32 field_number)
 {
-    assert(current_field_number);
-    writeKey(BITS32, message_buffer);
-    writePODBinary(value, message_buffer);
-    ++num_normal_values;
+    size_t size = buffer.size() - current_piece_start;
+    if (!size)
+    {
+        current_piece_start = pieces.back().start;
+        buffer.resize(pieces.back().end);
+        pieces.pop_back();
+        num_bytes_skipped -= REPEATED_PACK_PADDING;
+        return;
+    }
+    UInt8 * ptr = &buffer[pieces.back().end];
+    UInt8 * endptr = writeFieldNumber(field_number, LENGTH_DELIMITED, ptr);
+    endptr = writeVarint(size, endptr);
+    size_t num_bytes_inserted = endptr - ptr;
+    pieces.back().end += num_bytes_inserted;
+    num_bytes_skipped -= num_bytes_inserted;
 }
 
-void ProtobufWriter::SimpleWriter::writeFixed64(UInt64 value)
+void ProtobufWriter::SimpleWriter::addUIntToRepeatedPack(UInt64 value)
 {
-    assert(current_field_number);
-    writeKey(BITS64, message_buffer);
-    writePODBinary(value, message_buffer);
-    ++num_normal_values;
+    writeVarint(value, buffer);
 }
 
-void ProtobufWriter::SimpleWriter::writeSFixed64(Int64 value)
+void ProtobufWriter::SimpleWriter::addIntToRepeatedPack(Int64 value)
 {
-    assert(current_field_number);
-    writeKey(BITS64, message_buffer);
-    writePODBinary(value, message_buffer);
-    ++num_normal_values;
+    writeVarint(static_cast<UInt64>(value), buffer);
 }
 
-void ProtobufWriter::SimpleWriter::writeDouble(double value)
+void ProtobufWriter::SimpleWriter::addSIntToRepeatedPack(Int64 value)
 {
-    assert(current_field_number);
-    writeKey(BITS64, message_buffer);
-    writePODBinary(value, message_buffer);
-    ++num_normal_values;
+    writeVarint(encodeZigZag(value), buffer);
 }
 
-void ProtobufWriter::SimpleWriter::writeString(const StringRef & str)
+template <typename T>
+void ProtobufWriter::SimpleWriter::addFixedToRepeatedPack(T value)
 {
-    assert(current_field_number);
-    ++num_normal_values;
-    writeKey(LENGTH_DELIMITED, message_buffer);
-    writePbVarUInt(str.size, message_buffer);
-    message_buffer.write(str.data, str.size);
-}
-
-void ProtobufWriter::SimpleWriter::writeInt32IfNonZero(Int32 value)
-{
-    if (value)
-        writeInt32(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeUInt32IfNonZero(UInt32 value)
-{
-    if (value)
-        writeUInt32(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeSInt32IfNonZero(Int32 value)
-{
-    if (value)
-        writeSInt32(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeInt64IfNonZero(Int64 value)
-{
-    if (value)
-        writeInt64(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeUInt64IfNonZero(UInt64 value)
-{
-    if (value)
-        writeUInt64(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeSInt64IfNonZero(Int64 value)
-{
-    if (value)
-        writeSInt64(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeFixed32IfNonZero(UInt32 value)
-{
-    if (value)
-        writeFixed32(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeSFixed32IfNonZero(Int32 value)
-{
-    if (value)
-        writeSFixed32(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeFloatIfNonZero(float value)
-{
-    if (value != 0)
-        writeFloat(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeFixed64IfNonZero(UInt64 value)
-{
-    if (value)
-        writeFixed64(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeSFixed64IfNonZero(Int64 value)
-{
-    if (value)
-        writeSFixed64(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeDoubleIfNonZero(double value)
-{
-    if (value != 0)
-        writeDouble(value);
-}
-
-void ProtobufWriter::SimpleWriter::writeStringIfNotEmpty(const StringRef & str)
-{
-    if (str.size)
-        writeString(str);
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedInt32(Int32 value)
-{
-    assert(current_field_number);
-    writePbVarIntNoZigZagEncoding(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedUInt32(UInt32 value)
-{
-    assert(current_field_number);
-    writePbVarUInt(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedSInt32(Int32 value)
-{
-    assert(current_field_number);
-    writePbVarInt(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedInt64(Int64 value)
-{
-    assert(current_field_number);
-    writePbVarIntNoZigZagEncoding(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedUInt64(UInt64 value)
-{
-    assert(current_field_number);
-    writePbVarUInt(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedSInt64(Int64 value)
-{
-    assert(current_field_number);
-    writePbVarInt(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedFixed32(UInt32 value)
-{
-    assert(current_field_number);
-    writePODBinary(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedSFixed32(Int32 value)
-{
-    assert(current_field_number);
-    writePODBinary(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedFloat(float value)
-{
-    assert(current_field_number);
-    writePODBinary(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedFixed64(UInt64 value)
-{
-    assert(current_field_number);
-    writePODBinary(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedSFixed64(Int64 value)
-{
-    assert(current_field_number);
-    writePODBinary(value, repeated_packing_buffer);
-    ++num_packed_values;
-}
-
-void ProtobufWriter::SimpleWriter::packRepeatedDouble(double value)
-{
-    assert(current_field_number);
-    writePODBinary(value, repeated_packing_buffer);
-    ++num_packed_values;
+    static_assert((sizeof(T) == 4) || (sizeof(T) == 8));
+    size_t old_size = buffer.size();
+    buffer.resize(old_size + sizeof(T));
+    memcpy(&buffer[old_size], &value, sizeof(T));
 }
 
 
-
+// Implementation for a converter from any DB data type to any protobuf field type.
 class ProtobufWriter::ConverterBaseImpl : public IConverter
 {
 public:
     ConverterBaseImpl(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
         : simple_writer(simple_writer_), field(field_)
     {
+        field_number = field->number();
     }
 
     virtual void writeString(const StringRef &) override { cannotConvertType("String"); }
-
     virtual void writeInt8(Int8) override { cannotConvertType("Int8"); }
     virtual void writeUInt8(UInt8) override { cannotConvertType("UInt8"); }
     virtual void writeInt16(Int16) override { cannotConvertType("Int16"); }
@@ -403,16 +270,13 @@ public:
     virtual void writeUInt128(const UInt128 &) override { cannotConvertType("UInt128"); }
     virtual void writeFloat32(Float32) override { cannotConvertType("Float32"); }
     virtual void writeFloat64(Float64) override { cannotConvertType("Float64"); }
-
-    virtual void prepareEnumMappingInt8(const std::vector<std::pair<std::string, Int8>> &) override {}
-    virtual void prepareEnumMappingInt16(const std::vector<std::pair<std::string, Int16>> &) override {}
-    virtual void writeEnumInt8(Int8) override { cannotConvertType("Enum"); }
-    virtual void writeEnumInt16(Int16) override { cannotConvertType("Enum"); }
-
+    virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) override {}
+    virtual void prepareEnumMapping16(const std::vector<std::pair<std::string, Int16>> &) override {}
+    virtual void writeEnum8(Int8) override { cannotConvertType("Enum"); }
+    virtual void writeEnum16(Int16) override { cannotConvertType("Enum"); }
     virtual void writeUUID(const UUID &) override { cannotConvertType("UUID"); }
     virtual void writeDate(DayNum) override { cannotConvertType("Date"); }
     virtual void writeDateTime(time_t) override { cannotConvertType("DateTime"); }
-
     virtual void writeDecimal32(Decimal32, UInt32) override { cannotConvertType("Decimal32"); }
     virtual void writeDecimal64(Decimal64, UInt32) override { cannotConvertType("Decimal64"); }
     virtual void writeDecimal128(const Decimal128 &, UInt32) override { cannotConvertType("Decimal128"); }
@@ -466,34 +330,17 @@ protected:
         return result;
     }
 
-    bool packRepeated() const
-    {
-        if (!field->is_repeated())
-            return false;
-        if (field->options().has_packed())
-            return field->options().packed();
-        return field->file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3;
-    }
-
-    bool skipNullValue() const
-    {
-        return field->is_optional() && (field->file()->syntax() == google::protobuf::FileDescriptor::SYNTAX_PROTO3);
-    }
-
     SimpleWriter & simple_writer;
     const google::protobuf::FieldDescriptor * field;
+    UInt32 field_number;
 };
 
 
-
+template <bool skip_null_value>
 class ProtobufWriter::ConverterToString : public ConverterBaseImpl
 {
 public:
-    ConverterToString(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
-        : ConverterBaseImpl(simple_writer_, field_)
-    {
-        initWriteFieldFunction();
-    }
+    using ConverterBaseImpl::ConverterBaseImpl;
 
     void writeString(const StringRef & str) override { writeField(str); }
 
@@ -508,18 +355,18 @@ public:
     void writeFloat32(Float32 value) override { convertToStringAndWriteField(value); }
     void writeFloat64(Float64 value) override { convertToStringAndWriteField(value); }
 
-    void prepareEnumMappingInt8(const std::vector<std::pair<String, Int8>> & name_value_pairs) override
+    void prepareEnumMapping8(const std::vector<std::pair<String, Int8>> & name_value_pairs) override
     {
         prepareEnumValueToNameMap(name_value_pairs);
     }
-    void prepareEnumMappingInt16(const std::vector<std::pair<String, Int16>> & name_value_pairs) override
+    void prepareEnumMapping16(const std::vector<std::pair<String, Int16>> & name_value_pairs) override
     {
         prepareEnumValueToNameMap(name_value_pairs);
     }
 
-    void writeEnumInt8(Int8 value) override { writeEnumInt16(value); }
+    void writeEnum8(Int8 value) override { writeEnum16(value); }
 
-    void writeEnumInt16(Int16 value) override
+    void writeEnum16(Int16 value) override
     {
         auto it = enum_value_to_name_map->find(value);
         if (it == enum_value_to_name_map->end())
@@ -575,41 +422,42 @@ private:
             enum_value_to_name_map->emplace(name_value_pair.second, name_value_pair.first);
     }
 
-    void writeField(const StringRef & str) { (simple_writer.*write_field_function)(str); }
-
-    void initWriteFieldFunction()
+    void writeField(const StringRef & str)
     {
-        write_field_function = skipNullValue() ? &SimpleWriter::writeStringIfNotEmpty : &SimpleWriter::writeString;
+        if constexpr (skip_null_value)
+        {
+            if (!str.size)
+                return;
+        }
+        simple_writer.writeString(field_number, str);
     }
 
-    void (SimpleWriter::*write_field_function)(const StringRef & str);
     WriteBufferFromOwnString text_buffer;
     std::optional<std::unordered_map<Int16, String>> enum_value_to_name_map;
 };
 
-#define PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(field_type_id) \
-    template<> \
-    class ProtobufWriter::ConverterImpl<field_type_id> : public ConverterToString \
+#define PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(field_type_id) \
+    template <> \
+    std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<field_type_id>( \
+        const google::protobuf::FieldDescriptor * field) \
     { \
-        using ConverterToString::ConverterToString; \
+        if (shouldSkipNullValue(field)) \
+            return std::make_unique<ConverterToString<true>>(simple_writer, field); \
+        else \
+            return std::make_unique<ConverterToString<false>>(simple_writer, field); \
     }
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_STRING);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_BYTES);
-#undef PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_STRING)
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_BYTES)
+#undef PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS
 
 
-
-template <typename T>
+template <int field_type_id, typename ToType, bool skip_null_value, bool pack_repeated>
 class ProtobufWriter::ConverterToNumber : public ConverterBaseImpl
 {
 public:
-    ConverterToNumber(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
-        : ConverterBaseImpl(simple_writer_, field_)
-    {
-        initWriteFieldFunction();
-    }
+    using ConverterBaseImpl::ConverterBaseImpl;
 
-    void writeString(const StringRef & str) override { writeField(parseFromString<T>(str)); }
+    void writeString(const StringRef & str) override { writeField(parseFromString<ToType>(str)); }
 
     void writeInt8(Int8 value) override { castNumericAndWriteField(value); }
     void writeUInt8(UInt8 value) override { castNumericAndWriteField(value); }
@@ -622,11 +470,11 @@ public:
     void writeFloat32(Float32 value) override { castNumericAndWriteField(value); }
     void writeFloat64(Float64 value) override { castNumericAndWriteField(value); }
 
-    void writeEnumInt8(Int8 value) override { writeEnumInt16(value); }
+    void writeEnum8(Int8 value) override { writeEnum16(value); }
 
-    void writeEnumInt16(Int16 value) override
+    void writeEnum16(Int16 value) override
     {
-        if constexpr (!std::is_integral_v<T>)
+        if constexpr (!std::is_integral_v<ToType>)
             cannotConvertType("Enum"); // It's not correct to convert enum to floating point.
         castNumericAndWriteField(value);
     }
@@ -636,161 +484,100 @@ public:
 
     void writeDecimal32(Decimal32 decimal, UInt32 scale) override { writeDecimal(decimal, scale); }
     void writeDecimal64(Decimal64 decimal, UInt32 scale) override { writeDecimal(decimal, scale); }
+    void writeDecimal128(const Decimal128 & decimal, UInt32 scale) override { writeDecimal(decimal, scale); }
 
 private:
-    template <typename From>
-    void castNumericAndWriteField(From value)
+    template <typename FromType>
+    void castNumericAndWriteField(FromType value)
     {
-        writeField(numericCast<T>(value));
+        writeField(numericCast<ToType>(value));
     }
 
     template <typename S>
     void writeDecimal(const Decimal<S> & decimal, UInt32 scale)
     {
-        if constexpr (std::is_integral_v<T>)
-            castNumericAndWriteField(decimal.value / decimalScaleMultiplier<S>(scale));
-        else
-            castNumericAndWriteField(double(decimal.value) * pow(10., -double(scale)));
+        castNumericAndWriteField(convertFromDecimal<DataTypeDecimal<Decimal<S>>, DataTypeNumber<ToType>>(decimal.value, scale));
     }
 
-    void writeField(T value) { (simple_writer.*write_field_function)(value); }
-
-    void initWriteFieldFunction()
+    void writeField(ToType value)
     {
-        if constexpr (std::is_same_v<T, Int32>)
+        if constexpr (skip_null_value)
         {
-            switch (field->type())
-            {
-                case google::protobuf::FieldDescriptor::TYPE_INT32:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedInt32
-                        : (skipNullValue() ? &SimpleWriter::writeInt32IfNonZero : &SimpleWriter::writeInt32);
-                    break;
-                case google::protobuf::FieldDescriptor::TYPE_SINT32:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedSInt32
-                        : (skipNullValue() ? &SimpleWriter::writeSInt32IfNonZero : &SimpleWriter::writeSInt32);
-                    break;
-                case google::protobuf::FieldDescriptor::TYPE_SFIXED32:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedSFixed32
-                        : (skipNullValue() ? &SimpleWriter::writeSFixed32IfNonZero : &SimpleWriter::writeSFixed32);
-                    break;
-                default:
-                    assert(false);
-            }
+            if (value == 0)
+                return;
         }
-        else if constexpr (std::is_same_v<T, UInt32>)
+        if constexpr (((field_type_id == google::protobuf::FieldDescriptor::TYPE_INT32) && std::is_same_v<ToType, Int32>)
+                   || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_INT64) && std::is_same_v<ToType, Int64>))
         {
-            switch (field->type())
-            {
-                case google::protobuf::FieldDescriptor::TYPE_UINT32:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedUInt32
-                        : (skipNullValue() ? &SimpleWriter::writeUInt32IfNonZero : &SimpleWriter::writeUInt32);
-                    break;
-                case google::protobuf::FieldDescriptor::TYPE_FIXED32:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedFixed32
-                        : (skipNullValue() ? &SimpleWriter::writeFixed32IfNonZero : &SimpleWriter::writeFixed32);
-                    break;
-                default:
-                    assert(false);
-            }
+            if constexpr (pack_repeated)
+                simple_writer.addIntToRepeatedPack(value);
+            else
+                simple_writer.writeInt(field_number, value);
         }
-        else if constexpr (std::is_same_v<T, Int64>)
+        else if constexpr (((field_type_id == google::protobuf::FieldDescriptor::TYPE_SINT32) && std::is_same_v<ToType, Int32>)
+                        || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SINT64) && std::is_same_v<ToType, Int64>))
         {
-            switch (field->type())
-            {
-                case google::protobuf::FieldDescriptor::TYPE_INT64:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedInt64
-                        : (skipNullValue() ? &SimpleWriter::writeInt64IfNonZero : &SimpleWriter::writeInt64);
-                    break;
-                case google::protobuf::FieldDescriptor::TYPE_SINT64:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedSInt64
-                        : (skipNullValue() ? &SimpleWriter::writeSInt64IfNonZero : &SimpleWriter::writeSInt64);
-                    break;
-                case google::protobuf::FieldDescriptor::TYPE_SFIXED64:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedSFixed64
-                        : (skipNullValue() ? &SimpleWriter::writeSFixed64IfNonZero : &SimpleWriter::writeSFixed64);
-                    break;
-                default:
-                    assert(false);
-            }
+            if constexpr (pack_repeated)
+                simple_writer.addSIntToRepeatedPack(value);
+            else
+                simple_writer.writeSInt(field_number, value);
         }
-        else if constexpr (std::is_same_v<T, UInt64>)
+        else if constexpr (((field_type_id == google::protobuf::FieldDescriptor::TYPE_UINT32) && std::is_same_v<ToType, UInt32>)
+                        || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_UINT64) && std::is_same_v<ToType, UInt64>))
         {
-            switch (field->type())
-            {
-                case google::protobuf::FieldDescriptor::TYPE_UINT64:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedUInt64
-                        : (skipNullValue() ? &SimpleWriter::writeUInt64IfNonZero : &SimpleWriter::writeUInt64);
-                    break;
-                case google::protobuf::FieldDescriptor::TYPE_FIXED64:
-                    write_field_function = packRepeated()
-                        ? &SimpleWriter::packRepeatedFixed64
-                        : (skipNullValue() ? &SimpleWriter::writeFixed64IfNonZero : &SimpleWriter::writeFixed64);
-                    break;
-                default:
-                    assert(false);
-            }
-        }
-        else if constexpr (std::is_same_v<T, float>)
-        {
-            write_field_function = packRepeated()
-                ? &SimpleWriter::packRepeatedFloat
-                : (skipNullValue() ? &SimpleWriter::writeFloatIfNonZero : &SimpleWriter::writeFloat);
-        }
-        else if constexpr (std::is_same_v<T, double>)
-        {
-            write_field_function = packRepeated()
-                ? &SimpleWriter::packRepeatedDouble
-                : (skipNullValue() ? &SimpleWriter::writeDoubleIfNonZero : &SimpleWriter::writeDouble);
+            if constexpr (pack_repeated)
+                simple_writer.addUIntToRepeatedPack(value);
+            else
+                simple_writer.writeUInt(field_number, value);
         }
         else
         {
-            assert(false);
+            static_assert(((field_type_id == google::protobuf::FieldDescriptor::TYPE_FIXED32) && std::is_same_v<ToType, UInt32>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SFIXED32) && std::is_same_v<ToType, Int32>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_FIXED64) && std::is_same_v<ToType, UInt64>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SFIXED64) && std::is_same_v<ToType, Int64>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_FLOAT) && std::is_same_v<ToType, float>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_DOUBLE) && std::is_same_v<ToType, double>));
+            if constexpr (pack_repeated)
+                simple_writer.addFixedToRepeatedPack(value);
+            else
+                simple_writer.writeFixed(field_number, value);
         }
     }
-
-    void (SimpleWriter::*write_field_function)(T value);
 };
 
-#define PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
-    template<> \
-    class ProtobufWriter::ConverterImpl<field_type_id> : public ConverterToNumber<field_type> \
+#define PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
+    template <> \
+    std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<field_type_id>( \
+        const google::protobuf::FieldDescriptor * field) \
     { \
-        using ConverterToNumber::ConverterToNumber; \
+        if (shouldSkipNullValue(field)) \
+            return std::make_unique<ConverterToNumber<field_type_id, field_type, true, false>>(simple_writer, field); \
+        else if (shouldPackRepeated(field)) \
+            return std::make_unique<ConverterToNumber<field_type_id, field_type, false, true>>(simple_writer, field); \
+        else \
+            return std::make_unique<ConverterToNumber<field_type_id, field_type, false, false>>(simple_writer, field); \
     }
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT32, Int32);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT32, Int32);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT32, UInt32);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT64, Int64);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT64, Int64);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT64, UInt64);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED32, UInt32);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED32, Int32);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED64, UInt64);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED64, Int64);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
-PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
-#undef PROTOBUF_WRITER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT32, Int32);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT32, Int32);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT32, UInt32);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT64, Int64);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT64, Int64);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT64, UInt64);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED32, UInt32);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED32, Int32);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED64, UInt64);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED64, Int64);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
+PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
+#undef PROTOBUF_WRITER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS
 
 
-
-template<>
-class ProtobufWriter::ConverterImpl<google::protobuf::FieldDescriptor::TYPE_BOOL> : public ConverterBaseImpl
+template <bool skip_null_value, bool pack_repeated>
+class ProtobufWriter::ConverterToBool : public ConverterBaseImpl
 {
 public:
-    ConverterImpl(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
-        : ConverterBaseImpl(simple_writer_, field_)
-    {
-        initWriteFieldFunction();
-    }
+    using ConverterBaseImpl::ConverterBaseImpl;
 
     void writeString(const StringRef & str) override
     {
@@ -823,29 +610,38 @@ private:
         writeField(static_cast<bool>(value));
     }
 
-    void writeField(bool b) { (simple_writer.*write_field_function)(b); }
-
-    void initWriteFieldFunction()
+    void writeField(bool b)
     {
-        write_field_function = packRepeated()
-            ? &SimpleWriter::packRepeatedUInt32
-            : (skipNullValue() ? &SimpleWriter::writeUInt32IfNonZero : &SimpleWriter::writeUInt32);
+        if constexpr (skip_null_value)
+        {
+            if (!b)
+                return;
+        }
+        if constexpr (pack_repeated)
+            simple_writer.addUIntToRepeatedPack(b);
+        else
+            simple_writer.writeUInt(field_number, b);
     }
-
-    void (SimpleWriter::*write_field_function)(UInt32 b);
 };
 
+template <>
+std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<google::protobuf::FieldDescriptor::TYPE_BOOL>(
+    const google::protobuf::FieldDescriptor * field)
+{
+    if (shouldSkipNullValue(field))
+        return std::make_unique<ConverterToBool<true, false>>(simple_writer, field);
+    else if (shouldPackRepeated(field))
+        return std::make_unique<ConverterToBool<false, true>>(simple_writer, field);
+    else
+        return std::make_unique<ConverterToBool<false, false>>(simple_writer, field);
+}
 
 
-template<>
-class ProtobufWriter::ConverterImpl<google::protobuf::FieldDescriptor::TYPE_ENUM> : public ConverterBaseImpl
+template <bool skip_null_value, bool pack_repeated>
+class ProtobufWriter::ConverterToEnum : public ConverterBaseImpl
 {
 public:
-    ConverterImpl(SimpleWriter & simple_writer_, const google::protobuf::FieldDescriptor * field_)
-        : ConverterBaseImpl(simple_writer_, field_)
-    {
-        initWriteFieldFunction();
-    }
+    using ConverterBaseImpl::ConverterBaseImpl;
 
     void writeString(const StringRef & str) override
     {
@@ -865,23 +661,30 @@ public:
     void writeInt64(Int64 value) override { convertToEnumAndWriteField(value); }
     void writeUInt64(UInt64 value) override { convertToEnumAndWriteField(value); }
 
-    void prepareEnumMappingInt8(const std::vector<std::pair<String, Int8>> & name_value_pairs) override
+    void prepareEnumMapping8(const std::vector<std::pair<String, Int8>> & name_value_pairs) override
     {
         prepareEnumValueToPbNumberMap(name_value_pairs);
     }
-    void prepareEnumMappingInt16(const std::vector<std::pair<String, Int16>> & name_value_pairs) override
+    void prepareEnumMapping16(const std::vector<std::pair<String, Int16>> & name_value_pairs) override
     {
         prepareEnumValueToPbNumberMap(name_value_pairs);
     }
 
-    void writeEnumInt8(Int8 value) override { writeEnumInt16(value); }
+    void writeEnum8(Int8 value) override { writeEnum16(value); }
 
-    void writeEnumInt16(Int16 value) override
+    void writeEnum16(Int16 value) override
     {
-        auto it = enum_value_to_pbnumber_map->find(value);
-        if (it == enum_value_to_pbnumber_map->end())
-            cannotConvertValue(toString(value));
-        writeField(it->second);
+        int pbnumber;
+        if (enum_value_always_equals_pbnumber)
+            pbnumber = value;
+        else
+        {
+            auto it = enum_value_to_pbnumber_map->find(value);
+            if (it == enum_value_to_pbnumber_map->end())
+                cannotConvertValue(toString(value));
+            pbnumber = it->second;
+        }
+        writeField(pbnumber);
     }
 
 private:
@@ -913,70 +716,90 @@ private:
         if (enum_value_to_pbnumber_map.has_value())
             return;
         enum_value_to_pbnumber_map.emplace();
+        enum_value_always_equals_pbnumber = true;
         for (const auto & name_value_pair : name_value_pairs)
         {
             Int16 value = name_value_pair.second;
             const auto * enum_descriptor = field->enum_type()->FindValueByName(name_value_pair.first);
             if (enum_descriptor)
+            {
                 enum_value_to_pbnumber_map->emplace(value, enum_descriptor->number());
+                if (value != enum_descriptor->number())
+                    enum_value_always_equals_pbnumber = false;
+            }
+            else
+                enum_value_always_equals_pbnumber = false;
         }
     }
 
-    void writeField(int enum_number) { (simple_writer.*write_field_function)(enum_number); }
-
-    void initWriteFieldFunction()
+    void writeField(int enum_pbnumber)
     {
-        write_field_function = packRepeated()
-            ? &SimpleWriter::packRepeatedUInt32
-            : (skipNullValue() ? &SimpleWriter::writeUInt32IfNonZero : &SimpleWriter::writeUInt32);
+        if constexpr (skip_null_value)
+        {
+            if (!enum_pbnumber)
+                return;
+        }
+        if constexpr (pack_repeated)
+            simple_writer.addUIntToRepeatedPack(enum_pbnumber);
+        else
+            simple_writer.writeUInt(field_number, enum_pbnumber);
     }
 
-    void (SimpleWriter::*write_field_function)(UInt32 enum_number);
     std::optional<std::unordered_map<StringRef, int>> enum_name_to_pbnumber_map;
     std::optional<std::unordered_map<Int16, int>> enum_value_to_pbnumber_map;
+    bool enum_value_always_equals_pbnumber;
 };
 
-
-ProtobufWriter::ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type) : simple_writer(out)
+template <>
+std::unique_ptr<ProtobufWriter::IConverter> ProtobufWriter::createConverter<google::protobuf::FieldDescriptor::TYPE_ENUM>(
+    const google::protobuf::FieldDescriptor * field)
 {
-    enumerateFieldsInWriteOrder(message_type);
-    createConverters();
+    if (shouldSkipNullValue(field))
+        return std::make_unique<ConverterToEnum<true, false>>(simple_writer, field);
+    else if (shouldPackRepeated(field))
+        return std::make_unique<ConverterToEnum<false, true>>(simple_writer, field);
+    else
+        return std::make_unique<ConverterToEnum<false, false>>(simple_writer, field);
 }
 
-ProtobufWriter::~ProtobufWriter()
-{
-    finishCurrentMessage();
-}
 
-void ProtobufWriter::enumerateFieldsInWriteOrder(const google::protobuf::Descriptor * message_type)
+ProtobufWriter::ProtobufWriter(
+    WriteBuffer & out, const google::protobuf::Descriptor * message_type, const std::vector<String> & column_names)
+    : simple_writer(out)
 {
-    assert(fields_in_write_order.empty());
-    fields_in_write_order.reserve(message_type->field_count());
-    for (int i = 0; i < message_type->field_count(); ++i)
-        fields_in_write_order.emplace_back(message_type->field(i));
-
-    std::sort(
-        fields_in_write_order.begin(),
-        fields_in_write_order.end(),
-        [](const google::protobuf::FieldDescriptor * left, const google::protobuf::FieldDescriptor * right)
-        {
-            return left->number() < right->number();
-        });
-}
-
-void ProtobufWriter::createConverters()
-{
-    assert(converters.empty());
-    converters.reserve(fields_in_write_order.size());
-    for (size_t i = 0; i != fields_in_write_order.size(); ++i)
+    std::vector<const google::protobuf::FieldDescriptor *> field_descriptors_without_match;
+    root_message = ProtobufColumnMatcher::matchColumns<ColumnMatcherTraits>(column_names, message_type, field_descriptors_without_match);
+    for (const auto * field_descriptor_without_match : field_descriptors_without_match)
     {
-        const auto * field = fields_in_write_order[i];
-        std::unique_ptr<IConverter> converter;
-        switch (field->type())
+        if (field_descriptor_without_match->is_required())
+            throw Exception(
+                "Output doesn't have a column named '" + field_descriptor_without_match->name()
+                    + "' which is required to write the output in the protobuf format.",
+                ErrorCodes::NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD);
+    }
+    setTraitsDataAfterMatchingColumns(root_message.get());
+}
+
+ProtobufWriter::~ProtobufWriter() = default;
+
+void ProtobufWriter::setTraitsDataAfterMatchingColumns(Message * message)
+{
+    for (auto & field : message->fields)
+    {
+        field.data.is_required = field.field_descriptor->is_required();
+        field.data.is_repeatable = field.field_descriptor->is_repeated();
+        field.data.should_pack_repeated = shouldPackRepeated(field.field_descriptor);
+
+        if (field.nested_message)
+        {
+            setTraitsDataAfterMatchingColumns(field.nested_message.get());
+            continue;
+        }
+        switch (field.field_descriptor->type())
         {
 #define PROTOBUF_WRITER_CONVERTER_CREATING_CASE(field_type_id) \
             case field_type_id: \
-                converter = std::make_unique<ConverterImpl<field_type_id>>(simple_writer, field); \
+                field.data.converter = createConverter<field_type_id>(field.field_descriptor); \
                 break
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_STRING);
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_BYTES);
@@ -996,69 +819,60 @@ void ProtobufWriter::createConverters()
             PROTOBUF_WRITER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_ENUM);
 #undef PROTOBUF_WRITER_CONVERTER_CREATING_CASE
             default:
-                throw Exception(String("Protobuf type '") + field->type_name() + "' isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception(
+                    String("Protobuf type '") + field.field_descriptor->type_name() + "' isn't supported", ErrorCodes::NOT_IMPLEMENTED);
         }
-        converters.emplace_back(std::move(converter));
     }
 }
 
-const std::vector<const google::protobuf::FieldDescriptor *> & ProtobufWriter::fieldsInWriteOrder() const
+void ProtobufWriter::startMessage()
 {
-    return fields_in_write_order;
-}
-
-void ProtobufWriter::newMessage()
-{
-    finishCurrentMessage();
-    simple_writer.newMessage();
-    if (fields_in_write_order.empty())
-        return;
-
+    writing_message = true;
     current_field_index = 0;
-    current_field = fields_in_write_order[current_field_index];
-    current_converter = converters[current_field_index].get();
-    simple_writer.setCurrentField(current_field->number());
+    simple_writer.startMessage();
 }
 
-void ProtobufWriter::finishCurrentMessage()
+void ProtobufWriter::endMessage()
 {
-    if (current_field)
-    {
-        assert(current_field_index == fields_in_write_order.size() - 1);
-        finishCurrentField();
-    }
+    if (!writing_message)
+        return;
+    endWritingField();
+    simple_writer.endMessage();
+    writing_message = false;
 }
 
-bool ProtobufWriter::nextField()
+bool ProtobufWriter::writeField(size_t & column_index)
 {
-    if (current_field_index == fields_in_write_order.size() - 1)
+    endWritingField();
+    if (current_field_index >= root_message->fields.size())
         return false;
-
-    finishCurrentField();
-
-    ++current_field_index;
-    current_field = fields_in_write_order[current_field_index];
-    current_converter = converters[current_field_index].get();
-    simple_writer.setCurrentField(current_field->number());
+    current_field = &root_message->fields[current_field_index];
+    current_converter = current_field->data.converter.get();
+    column_index = current_field->column_index;
+    if (current_field->data.should_pack_repeated)
+        simple_writer.startRepeatedPack();
     return true;
 }
 
-void ProtobufWriter::finishCurrentField()
+void ProtobufWriter::endWritingField()
 {
-    assert(current_field);
-    size_t num_values = simple_writer.numValues();
-    if (num_values == 0)
-    {
-        if (current_field->is_required())
-            throw Exception(
-                "No data for the required field '" + current_field->name() + "'", ErrorCodes::NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD);
-    }
-    else if (num_values > 1 && !current_field->is_repeated())
-    {
+    if (!current_field)
+        return;
+    if (current_field->data.should_pack_repeated)
+        simple_writer.endRepeatedPack(current_field->field_number);
+    else if ((num_values == 0) && current_field->data.is_required)
         throw Exception(
-            "Cannot write more than single value to the non-repeated field '" + current_field->name() + "'",
+            "No data for the required field '" + current_field->field_descriptor->name() + "'",
+            ErrorCodes::NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD);
+    else if ((num_values > 1) && !current_field->data.is_repeatable)
+        throw Exception(
+            "Cannot write more than single value to the non-repeated field '" + current_field->field_descriptor->name() + "'",
             ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
-    }
+
+    current_field = nullptr;
+    current_converter = nullptr;
+    num_values = 0;
+    ++current_field_index;
 }
 
 }
