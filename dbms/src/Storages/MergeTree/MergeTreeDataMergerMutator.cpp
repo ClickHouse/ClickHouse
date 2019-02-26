@@ -194,9 +194,9 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
-        part_info.min_ttl = part->min_ttl;
+        part_info.min_ttl = part->ttl_infos.part_min_ttl;
 
-        if (part->min_ttl && part->min_ttl <= current_time)
+        if (part_info.min_ttl && part_info.min_ttl <= current_time)
             has_part_with_expired_ttl = true;
 
         partitions.back().emplace_back(part_info);
@@ -217,7 +217,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     if (aggressive)
         merge_settings.base = 1;
 
-    time_t merge_with_ttl_timeout = data.global_context.getConfigRef().getInt("merge_with_ttl_timeout", 300) * 1000;
+    time_t merge_with_ttl_timeout = data.global_context.getConfigRef().getInt("merge_with_ttl_timeout", 3600) * 1000;
     bool can_merge_with_tll = (current_time - last_merge_with_ttl > merge_with_ttl_timeout);
 
     /// NOTE Could allow selection of different merge strategy.
@@ -554,11 +554,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->is_temp = true;
 
     bool need_remove_expired_values = false;
-    new_data_part->min_ttl = 0;
-
     for (const MergeTreeData::DataPartPtr & part : parts)
-        if (part->min_ttl && part->min_ttl <= time_of_merge)
-            need_remove_expired_values = true;
+        new_data_part->ttl_infos.update(part->ttl_infos);
+
+    const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
+    if (part_min_ttl && part_min_ttl <= time_of_merge)
+        need_remove_expired_values = true;
 
     size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
 
@@ -840,8 +841,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     else
         to.writeSuffixAndFinalizePart(new_data_part, &all_columns, &checksums_gathered_columns);
 
-    LOG_DEBUG(log, "min_ttl: " << new_data_part->min_ttl);
-
     return new_data_part;
 }
 
@@ -889,7 +888,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         data, future_part.name, future_part.part_info);
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
-    new_data_part->min_ttl = source_part->min_ttl;
+    new_data_part->ttl_infos = source_part->ttl_infos;
 
     String new_part_tmp_path = new_data_part->getFullPath();
 

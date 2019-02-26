@@ -402,11 +402,11 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.write(out);
     }
 
-    if (new_part->min_ttl)
+    if (new_part->ttl_infos.part_min_ttl)
     {
-        /// Write a file with value of minimal ttl.
-        WriteBufferFromFile out(part_path + "min_ttl.txt", 4096);
-        writeIntText(new_part->min_ttl, out);
+        /// Write a file with ttl infos in json format.
+        WriteBufferFromFile out(part_path + "ttl.txt");
+        new_part->ttl_infos.write(out);
     }
 
     new_part->rows_count = rows_count;

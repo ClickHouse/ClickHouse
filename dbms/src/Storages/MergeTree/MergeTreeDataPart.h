@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
@@ -127,8 +128,10 @@ struct MergeTreeDataPart
         Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
     };
 
-    /// Minimal time, when we need to delete some data from this part
-    time_t min_ttl;
+    using TTLInfo = MergeTreeDataPartTTLInfo;
+    using TTLInfos = MergeTreeDataPartTTLInfos;
+
+    TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     mutable State state{State::Temporary};
@@ -285,8 +288,8 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    /// Loads min_ttl value from min_ttl.txt. If file doesn`t exists assume min_ttl = 0
-    void loadMinTTLValue();
+    /// Loads ttl infos in json format from file ttl.txt. If file doesn`t exists assigns ttl infos with all zeros
+    void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
 

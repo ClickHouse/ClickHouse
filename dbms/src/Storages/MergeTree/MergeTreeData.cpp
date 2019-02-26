@@ -1534,17 +1534,28 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
 {
-    if (data_part->empty_columns.empty())
+    auto & empty_columns = data_part->empty_columns;
+    if (empty_columns.empty())
         return;
 
     NamesAndTypesList new_columns;
     for (const auto & [name, type] : data_part->columns)
-        if (!data_part->empty_columns.count(name))
+        if (!empty_columns.count(name))
             new_columns.emplace_back(name, type);
+
+    std::stringstream log_message;
+    for (auto it = empty_columns.begin(); it != empty_columns.end(); ++it)
+    {
+        if (it != empty_columns.begin())
+            log_message << ", ";
+        log_message << *it;
+    }
+
+    LOG_DEBUG(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
 
     if (auto transaction = alterDataPart(data_part, new_columns, getIndicesDescription().indices, false))
         transaction->commit();
-    data_part->empty_columns.clear();
+    empty_columns.clear();
 }
 
 void MergeTreeData::freezeAll(const String & with_name, const Context & context)

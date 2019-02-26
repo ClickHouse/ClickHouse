@@ -11,11 +11,24 @@ TTLBlockInputStream::TTLBlockInputStream(
     : storage(storage_)
     , data_part(data_part_)
     , current_time(current_time_)
+    , old_ttl_infos(data_part->ttl_infos)
+    , log(&Logger::get(storage.getLogName() + " (TTLBlockInputStream)"))
 {
     children.push_back(input_);
 
-    for (const auto & elem : storage.ttl_entries_by_name)
-        data_part->empty_columns.emplace(elem.first);
+    for (const auto & [name, ttl_info] : old_ttl_infos.columns_ttl)
+    {
+        if (ttl_info.min <= current_time)
+        {
+            new_ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
+            empty_columns.emplace(name);
+        }
+        else
+            new_ttl_infos.columns_ttl.emplace(name, ttl_info);
+    }
+
+    if (old_ttl_infos.table_ttl.min > current_time)
+        new_ttl_infos.table_ttl = old_ttl_infos.table_ttl;
 }
 
 
@@ -31,11 +44,35 @@ Block TTLBlockInputStream::readImpl()
         return block;
 
     if (storage.hasTableTTL())
-        removeRowsWithExpiredTableTTL(block);
+    {
+        /// Skip all data if table ttl is expired for part
+        if (old_ttl_infos.table_ttl.max <= current_time)
+        {
+            rows_removed = data_part->rows_count;
+            return {};
+        }
+
+        if (old_ttl_infos.table_ttl.min <= current_time)
+            removeRowsWithExpiredTableTTL(block);
+    }
 
     removeValuesWithExpiredColumnTTL(block);
 
     return block;
+}
+
+void TTLBlockInputStream::readSuffixImpl()
+{
+    for (const auto & elem : new_ttl_infos.columns_ttl)
+        new_ttl_infos.updatePartMinTTL(elem.second.min);
+
+    new_ttl_infos.updatePartMinTTL(new_ttl_infos.table_ttl.min);
+
+    data_part->ttl_infos = std::move(new_ttl_infos);
+    data_part->empty_columns = std::move(empty_columns);
+
+    if (rows_removed)
+        LOG_DEBUG(log, "Removed " << rows_removed << " rows with expired ttl from part " << data_part->name);
 }
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
@@ -59,14 +96,15 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
             time_t cur_ttl = ttl_table_result_column->getData()[i];
             if (cur_ttl > current_time)
             {
-                if (!data_part->min_ttl || cur_ttl < data_part->min_ttl)
-                    data_part->min_ttl = cur_ttl;
-
+                new_ttl_infos.table_ttl.update(cur_ttl);
                 result_column->insertFrom(*values_column, i);
             }
+            else
+                ++rows_removed;
         }
         result_columns.emplace_back(std::move(result_column));
     }
+
     block = getHeader().cloneWithColumns(std::move(result_columns));
 }
 
@@ -74,6 +112,15 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
 {
     for (const auto & [name, ttl_entry] : storage.ttl_entries_by_name)
     {
+        const auto & old_ttl_info = old_ttl_infos.columns_ttl[name];
+        auto & new_ttl_info = new_ttl_infos.columns_ttl[name];
+
+        if (old_ttl_info.min > current_time)
+            continue;
+
+        if (old_ttl_info.max <= current_time)
+            continue;
+
         if (!block.has(ttl_entry.result_column))
             ttl_entry.expression->execute(block);
 
@@ -93,10 +140,8 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
                 result_column->insertDefault();
             else
             {
-                if (!data_part->min_ttl || ttl_vec[i] < data_part->min_ttl)
-                    data_part->min_ttl = ttl_vec[i];
-
-                data_part->empty_columns.erase(name);
+                new_ttl_info.update(ttl_vec[i]);
+                empty_columns.erase(name);
                 result_column->insertFrom(*values_column, i);
             }
         }

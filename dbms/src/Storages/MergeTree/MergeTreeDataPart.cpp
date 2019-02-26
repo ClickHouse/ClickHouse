@@ -22,6 +22,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <common/logger_useful.h>
+#include <common/JSON.h>
 
 #define MERGE_TREE_MARK_SIZE (2 * sizeof(UInt64))
 
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
+    extern const int BAD_TTL_FILE;
 }
 
 
@@ -470,7 +472,7 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
     loadIndex();
     loadRowsCount(); /// Must be called after loadIndex() as it uses the value of `marks_count`.
     loadPartitionAndMinMaxIndex();
-    loadMinTTLValue();
+    loadTTLInfos();
     if (check_consistency)
         checkConsistency(require_columns_checksums);
 }
@@ -626,17 +628,31 @@ void MergeTreeDataPart::loadRowsCount()
     }
 }
 
-void MergeTreeDataPart::loadMinTTLValue()
+void MergeTreeDataPart::loadTTLInfos()
 {
-    String path = getFullPath() + "min_ttl.txt";
+    String path = getFullPath() + "ttl.txt";
     if (Poco::File(path).exists())
     {
-        ReadBufferFromFile file = openForReading(path);
-        readIntText(min_ttl, file);
-        assertEOF(file);
+        ReadBufferFromFile in = openForReading(path);
+        assertString("ttl format version: ", in);
+        size_t format_version;
+        readText(format_version, in);
+        assertChar('\n', in);
+
+        if (format_version == 1)
+        {
+            try
+            {
+                ttl_infos.read(in);
+            }
+            catch (const JSONException & e)
+            {
+                throw Exception("Error while parsing file ttl.txt in part: " + name, ErrorCodes::BAD_TTL_FILE);
+            }
+        }
+        else
+            throw Exception("Unknown ttl format version: " + toString(format_version), ErrorCodes::BAD_TTL_FILE);
     }
-    else
-        min_ttl = 0;
 }
 
 void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

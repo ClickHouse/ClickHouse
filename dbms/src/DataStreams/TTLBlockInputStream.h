@@ -1,6 +1,7 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPart.h>
 
 namespace DB
 {
@@ -22,15 +23,24 @@ public:
 protected:
     Block readImpl() override;
 
+    /// Finalizes ttl infos and updates data part
+    void readSuffixImpl() override;
+
 private:
     const MergeTreeData & storage;
 
-    /// min_ttl and empty_columns are updating while reading
-    MergeTreeData::MutableDataPartPtr data_part;
+    /// ttl_infos and empty_columns are updating while reading
+    const MergeTreeData::MutableDataPartPtr & data_part;
 
     time_t current_time;
 
-    Block header;
+    MergeTreeDataPart::TTLInfos old_ttl_infos;
+    MergeTreeDataPart::TTLInfos new_ttl_infos;
+    NameSet empty_columns;
+
+    size_t rows_removed = 0;
+
+    Logger * log;
 
 private:
     /// Removes values with expired ttl and computes new min_ttl and empty_columns for part
