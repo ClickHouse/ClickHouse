@@ -60,13 +60,12 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
     return true;
 }
 
-std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
+void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTSubquery *>(ast.get()))
         visit(*t, ast, data);
     if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
-        return visit(*t, ast, data);
-    return {};
+        visit(*t, ast, data);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
@@ -134,7 +133,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     }
 }
 
-std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
+void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
     /// Don't descend into subqueries in arguments of IN operator.
     /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
@@ -156,7 +155,8 @@ std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & 
         for (auto & child : ast->children)
             out.push_back(&child);
 
-    return out;
+    for (ASTPtr * add_node : out)
+        Visitor(data).visit(*add_node);
 }
 
 }
