@@ -2,6 +2,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 
