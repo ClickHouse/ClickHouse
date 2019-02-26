@@ -18,10 +18,8 @@ public:
         bool done = false;
     };
 
-    static constexpr const char * label = "JoinToSubqueryTransform";
-
     static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
+    static void visit(ASTPtr & ast, Data & data);
 
 private:
     /// - combines two source TablesInSelectQueryElement into resulting one (Subquery)

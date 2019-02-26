@@ -181,11 +181,10 @@ static ASTPtr getCrossJoin(ASTSelectQuery & select, std::vector<DatabaseAndTable
 }
 
 
-std::vector<ASTPtr *> CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
+void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
         visit(*t, ast, data);
-    return {};
 }
 
 void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
