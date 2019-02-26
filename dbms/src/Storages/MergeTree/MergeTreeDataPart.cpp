@@ -645,7 +645,7 @@ void MergeTreeDataPart::loadTTLInfos()
             {
                 ttl_infos.read(in);
             }
-            catch (const JSONException & e)
+            catch (const JSONException &)
             {
                 throw Exception("Error while parsing file ttl.txt in part: " + name, ErrorCodes::BAD_TTL_FILE);
             }
