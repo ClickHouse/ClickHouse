@@ -92,6 +92,7 @@ SELECT * FROM (SELECT * FROM test.test) ANY LEFT JOIN (SELECT * FROM test.test) 
 ANALYZE SELECT * FROM (SELECT toInt8(1) AS id) ANY LEFT JOIN test.test USING id WHERE value = 1;
 SELECT * FROM (SELECT toInt8(1) AS id) ANY LEFT JOIN test.test USING id WHERE value = 1;
 
+-- FIXME: no support for aliased tables for now.
 ANALYZE SELECT b.value FROM (SELECT toInt8(1) AS id) ANY LEFT JOIN test.test AS b USING id WHERE value = 1;
 SELECT b.value FROM (SELECT toInt8(1) AS id) ANY LEFT JOIN test.test AS b USING id WHERE value = 1;
 
