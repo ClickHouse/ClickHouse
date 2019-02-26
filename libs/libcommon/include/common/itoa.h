@@ -27,6 +27,8 @@
 //===----------------------------------------------------------------------===//
 
 #include <cstdint>
+#include <cstddef>
+#include <cstring>
 #include <type_traits>
 
 using int128_t = __int128;
