@@ -92,6 +92,15 @@ MutableColumns Chunk::mutateColumns()
     return mut_columns;
 }
 
+MutableColumns Chunk::cloneEmptyColumns() const
+{
+    size_t num_columns = columns.size();
+    MutableColumns mut_columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        mut_columns[i] = columns[i]->cloneEmpty();
+    return mut_columns;
+}
+
 Columns Chunk::detachColumns()
 {
     num_rows = 0;
@@ -115,6 +124,15 @@ void Chunk::erase(size_t position)
                         + toString(columns.size() - 1), ErrorCodes::POSITION_OUT_OF_BOUND);
 
     columns.erase(columns.begin() + position);
+}
+
+UInt64 Chunk::allocatedBytes() const
+{
+    UInt64 res = 0;
+    for (const auto & column : columns)
+        res += column->allocatedBytes();
+
+    return res;
 }
 
 

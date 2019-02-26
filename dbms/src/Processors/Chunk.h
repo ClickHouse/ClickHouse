@@ -32,6 +32,8 @@ public:
     void setColumns(MutableColumns columns_, UInt64 num_rows_);
     Columns detachColumns();
     MutableColumns mutateColumns();
+    /** Get empty columns with the same types as in block. */
+    MutableColumns cloneEmptyColumns() const;
 
     const ChunkInfoPtr & getChunkInfo() const { return chunk_info; }
     void setChunkInfo(ChunkInfoPtr chunk_info_) { chunk_info = std::move(chunk_info_); }
@@ -45,6 +47,8 @@ public:
 
     void clear();
     void erase(size_t position);
+
+    UInt64 allocatedBytes() const;
 
 private:
     Columns columns;
