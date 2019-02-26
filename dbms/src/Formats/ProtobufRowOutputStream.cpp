@@ -17,14 +17,17 @@ namespace DB
 ProtobufRowOutputStream::ProtobufRowOutputStream(WriteBuffer & out, const Block & header, const FormatSchemaInfo & info)
     : data_types(header.getDataTypes()), writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info), header.getNames())
 {
+    value_indices.resize(header.columns());
 }
 
 void ProtobufRowOutputStream::write(const Block & block, size_t row_num)
 {
     writer.startMessage();
+    std::fill(value_indices.begin(), value_indices.end(), 0);
     size_t column_index;
     while (writer.writeField(column_index))
-        data_types[column_index]->serializeProtobuf(*block.getByPosition(column_index).column, row_num, writer);
+        data_types[column_index]->serializeProtobuf(
+            *block.getByPosition(column_index).column, row_num, writer, value_indices[column_index]);
     writer.endMessage();
 }
 

@@ -29,6 +29,7 @@ namespace
 {
     constexpr size_t MAX_VARINT_SIZE = 10;
     constexpr size_t REPEATED_PACK_PADDING = 2 * MAX_VARINT_SIZE;
+    constexpr size_t NESTED_MESSAGE_PADDING = 2 * MAX_VARINT_SIZE;
 
     // Note: There is a difference between this function and writeVarUInt() from IO/VarInt.h:
     // Google protobuf's representation of 64-bit integer contains from 1 to 10 bytes,
@@ -144,6 +145,55 @@ void ProtobufWriter::SimpleWriter::endMessage()
     pieces.clear();
     num_bytes_skipped = 0;
     current_piece_start = 0;
+}
+
+void ProtobufWriter::SimpleWriter::startNestedMessage()
+{
+    nested_infos.emplace_back(pieces.size(), num_bytes_skipped);
+    pieces.emplace_back(current_piece_start, buffer.size());
+
+    // We skip enough bytes to have place for inserting the field number and the size of the nested message afterwards
+    // when we finish writing the nested message itself. We don't know the size of the nested message at the point of
+    // calling startNestedMessage(), that's why we have to do this skipping.
+    current_piece_start = buffer.size() + NESTED_MESSAGE_PADDING;
+    buffer.resize(current_piece_start);
+    num_bytes_skipped = NESTED_MESSAGE_PADDING;
+}
+
+void ProtobufWriter::SimpleWriter::endNestedMessage(UInt32 field_number, bool is_group, bool skip_if_empty)
+{
+    const auto & nested_info = nested_infos.back();
+    size_t num_pieces_at_start = nested_info.num_pieces_at_start;
+    size_t num_bytes_skipped_at_start = nested_info.num_bytes_skipped_at_start;
+    nested_infos.pop_back();
+    auto & piece_before_message = pieces[num_pieces_at_start];
+    size_t message_start = piece_before_message.end;
+    size_t message_size = buffer.size() - message_start - num_bytes_skipped;
+    if (!message_size && skip_if_empty)
+    {
+        current_piece_start = piece_before_message.start;
+        buffer.resize(piece_before_message.end);
+        pieces.resize(num_pieces_at_start);
+        num_bytes_skipped = num_bytes_skipped_at_start;
+        return;
+    }
+    size_t num_bytes_inserted;
+    if (is_group)
+    {
+        writeFieldNumber(field_number, GROUP_END, buffer);
+        UInt8 * ptr = &buffer[piece_before_message.end];
+        UInt8 * endptr = writeFieldNumber(field_number, GROUP_START, ptr);
+        num_bytes_inserted = endptr - ptr;
+    }
+    else
+    {
+        UInt8 * ptr = &buffer[piece_before_message.end];
+        UInt8 * endptr = writeFieldNumber(field_number, LENGTH_DELIMITED, ptr);
+        endptr = writeVarint(message_size, endptr);
+        num_bytes_inserted = endptr - ptr;
+    }
+    piece_before_message.end += num_bytes_inserted;
+    num_bytes_skipped += num_bytes_skipped_at_start - num_bytes_inserted;
 }
 
 void ProtobufWriter::SimpleWriter::writeUInt(UInt32 field_number, UInt64 value)
@@ -784,10 +834,24 @@ ProtobufWriter::~ProtobufWriter() = default;
 
 void ProtobufWriter::setTraitsDataAfterMatchingColumns(Message * message)
 {
+    Field * parent_field = message->parent ? &message->parent->fields[message->index_in_parent] : nullptr;
+    message->data.parent_field_number = parent_field ? parent_field->field_number : 0;
+    message->data.is_required = parent_field && parent_field->data.is_required;
+
+    if (parent_field && parent_field->data.is_repeatable)
+        message->data.repeatable_container_message = message;
+    else if (message->parent)
+        message->data.repeatable_container_message = message->parent->data.repeatable_container_message;
+    else
+        message->data.repeatable_container_message = nullptr;
+
+    message->data.is_group = parent_field && (parent_field->field_descriptor->type() == google::protobuf::FieldDescriptor::TYPE_GROUP);
+
     for (auto & field : message->fields)
     {
-        field.data.is_required = field.field_descriptor->is_required();
         field.data.is_repeatable = field.field_descriptor->is_repeated();
+        field.data.is_required = field.field_descriptor->is_required();
+        field.data.repeatable_container_message = message->data.repeatable_container_message;
         field.data.should_pack_repeated = shouldPackRepeated(field.field_descriptor);
 
         if (field.nested_message)
@@ -827,31 +891,66 @@ void ProtobufWriter::setTraitsDataAfterMatchingColumns(Message * message)
 
 void ProtobufWriter::startMessage()
 {
-    writing_message = true;
+    current_message = root_message.get();
     current_field_index = 0;
     simple_writer.startMessage();
 }
 
 void ProtobufWriter::endMessage()
 {
-    if (!writing_message)
+    if (!current_message)
         return;
     endWritingField();
+    while (current_message->parent)
+    {
+        simple_writer.endNestedMessage(
+            current_message->data.parent_field_number, current_message->data.is_group, !current_message->data.is_required);
+        current_message = current_message->parent;
+    }
     simple_writer.endMessage();
-    writing_message = false;
+    current_message = nullptr;
 }
 
 bool ProtobufWriter::writeField(size_t & column_index)
 {
     endWritingField();
-    if (current_field_index >= root_message->fields.size())
+    while (true)
+    {
+        if (current_field_index < current_message->fields.size())
+        {
+            Field & field = current_message->fields[current_field_index];
+            if (!field.nested_message)
+            {
+                current_field = &current_message->fields[current_field_index];
+                current_converter = current_field->data.converter.get();
+                column_index = current_field->column_index;
+                if (current_field->data.should_pack_repeated)
+                    simple_writer.startRepeatedPack();
+                return true;
+            }
+            simple_writer.startNestedMessage();
+            current_message = field.nested_message.get();
+            current_message->data.need_repeat = false;
+            current_field_index = 0;
+            continue;
+        }
+        if (current_message->parent)
+        {
+            simple_writer.endNestedMessage(
+                current_message->data.parent_field_number, current_message->data.is_group, !current_message->data.is_required);
+            if (current_message->data.need_repeat)
+            {
+                simple_writer.startNestedMessage();
+                current_message->data.need_repeat = false;
+                current_field_index = 0;
+                continue;
+            }
+            current_field_index = current_message->index_in_parent + 1;
+            current_message = current_message->parent;
+            continue;
+        }
         return false;
-    current_field = &root_message->fields[current_field_index];
-    current_converter = current_field->data.converter.get();
-    column_index = current_field->column_index;
-    if (current_field->data.should_pack_repeated)
-        simple_writer.startRepeatedPack();
-    return true;
+    }
 }
 
 void ProtobufWriter::endWritingField()
@@ -864,15 +963,21 @@ void ProtobufWriter::endWritingField()
         throw Exception(
             "No data for the required field '" + current_field->field_descriptor->name() + "'",
             ErrorCodes::NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD);
-    else if ((num_values > 1) && !current_field->data.is_repeatable)
-        throw Exception(
-            "Cannot write more than single value to the non-repeated field '" + current_field->field_descriptor->name() + "'",
-            ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
 
     current_field = nullptr;
     current_converter = nullptr;
     num_values = 0;
     ++current_field_index;
+}
+
+void ProtobufWriter::setNestedMessageNeedsRepeat()
+{
+    if (current_field->data.repeatable_container_message)
+        current_field->data.repeatable_container_message->data.need_repeat = true;
+    else
+        throw Exception(
+            "Cannot write more than single value to the non-repeated field '" + current_field->field_descriptor->name() + "'",
+            ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED);
 }
 
 }

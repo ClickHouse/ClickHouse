@@ -51,29 +51,29 @@ public:
     /// Writes a value. This function should be called one or multiple times after writeField().
     /// Returns false if there are no more place for the values in the protobuf's field.
     /// This can happen if the protobuf's field is not declared as repeated in the protobuf schema.
-    void writeNumber(Int8 value) { writeValue(&IConverter::writeInt8, value); }
-    void writeNumber(UInt8 value) { writeValue(&IConverter::writeUInt8, value); }
-    void writeNumber(Int16 value) { writeValue(&IConverter::writeInt16, value); }
-    void writeNumber(UInt16 value) { writeValue(&IConverter::writeUInt16, value); }
-    void writeNumber(Int32 value) { writeValue(&IConverter::writeInt32, value); }
-    void writeNumber(UInt32 value) { writeValue(&IConverter::writeUInt32, value); }
-    void writeNumber(Int64 value) { writeValue(&IConverter::writeInt64, value); }
-    void writeNumber(UInt64 value) { writeValue(&IConverter::writeUInt64, value); }
-    void writeNumber(UInt128 value) { writeValue(&IConverter::writeUInt128, value); }
-    void writeNumber(Float32 value) { writeValue(&IConverter::writeFloat32, value); }
-    void writeNumber(Float64 value) { writeValue(&IConverter::writeFloat64, value); }
-    void writeString(const StringRef & str) { writeValue(&IConverter::writeString, str); }
+    bool writeNumber(Int8 value) { return writeValueIfPossible(&IConverter::writeInt8, value); }
+    bool writeNumber(UInt8 value) { return writeValueIfPossible(&IConverter::writeUInt8, value); }
+    bool writeNumber(Int16 value) { return writeValueIfPossible(&IConverter::writeInt16, value); }
+    bool writeNumber(UInt16 value) { return writeValueIfPossible(&IConverter::writeUInt16, value); }
+    bool writeNumber(Int32 value) { return writeValueIfPossible(&IConverter::writeInt32, value); }
+    bool writeNumber(UInt32 value) { return writeValueIfPossible(&IConverter::writeUInt32, value); }
+    bool writeNumber(Int64 value) { return writeValueIfPossible(&IConverter::writeInt64, value); }
+    bool writeNumber(UInt64 value) { return writeValueIfPossible(&IConverter::writeUInt64, value); }
+    bool writeNumber(UInt128 value) { return writeValueIfPossible(&IConverter::writeUInt128, value); }
+    bool writeNumber(Float32 value) { return writeValueIfPossible(&IConverter::writeFloat32, value); }
+    bool writeNumber(Float64 value) { return writeValueIfPossible(&IConverter::writeFloat64, value); }
+    bool writeString(const StringRef & str) { return writeValueIfPossible(&IConverter::writeString, str); }
     void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & enum_values) { current_converter->prepareEnumMapping8(enum_values); }
     void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & enum_values) { current_converter->prepareEnumMapping16(enum_values); }
-    void writeEnum(Int8 value) { writeValue(&IConverter::writeEnum8, value); }
-    void writeEnum(Int16 value) { writeValue(&IConverter::writeEnum16, value); }
-    void writeUUID(const UUID & uuid) { writeValue(&IConverter::writeUUID, uuid); }
-    void writeDate(DayNum date) { writeValue(&IConverter::writeDate, date); }
-    void writeDateTime(time_t tm) { writeValue(&IConverter::writeDateTime, tm); }
-    void writeDecimal(Decimal32 decimal, UInt32 scale) { writeValue(&IConverter::writeDecimal32, decimal, scale); }
-    void writeDecimal(Decimal64 decimal, UInt32 scale) { writeValue(&IConverter::writeDecimal64, decimal, scale); }
-    void writeDecimal(const Decimal128 & decimal, UInt32 scale) { writeValue(&IConverter::writeDecimal128, decimal, scale); }
-    void writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { writeValue(&IConverter::writeAggregateFunction, function, place); }
+    bool writeEnum(Int8 value) { return writeValueIfPossible(&IConverter::writeEnum8, value); }
+    bool writeEnum(Int16 value) { return writeValueIfPossible(&IConverter::writeEnum16, value); }
+    bool writeUUID(const UUID & uuid) { return writeValueIfPossible(&IConverter::writeUUID, uuid); }
+    bool writeDate(DayNum date) { return writeValueIfPossible(&IConverter::writeDate, date); }
+    bool writeDateTime(time_t tm) { return writeValueIfPossible(&IConverter::writeDateTime, tm); }
+    bool writeDecimal(Decimal32 decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal32, decimal, scale); }
+    bool writeDecimal(Decimal64 decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal64, decimal, scale); }
+    bool writeDecimal(const Decimal128 & decimal, UInt32 scale) { return writeValueIfPossible(&IConverter::writeDecimal128, decimal, scale); }
+    bool writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { return writeValueIfPossible(&IConverter::writeAggregateFunction, function, place); }
 
 private:
     class SimpleWriter
@@ -84,6 +84,9 @@ private:
 
         void startMessage();
         void endMessage();
+
+        void startNestedMessage();
+        void endNestedMessage(UInt32 field_number, bool is_group, bool skip_if_empty);
 
         void writeInt(UInt32 field_number, Int64 value);
         void writeUInt(UInt32 field_number, UInt64 value);
@@ -109,11 +112,22 @@ private:
             Piece() = default;
         };
 
+        struct NestedInfo
+        {
+            size_t num_pieces_at_start;
+            size_t num_bytes_skipped_at_start;
+            NestedInfo(size_t num_pieces_at_start, size_t num_bytes_skipped_at_start)
+                : num_pieces_at_start(num_pieces_at_start), num_bytes_skipped_at_start(num_bytes_skipped_at_start)
+            {
+            }
+        };
+
         WriteBuffer & out;
         PODArray<UInt8> buffer;
         std::vector<Piece> pieces;
         size_t current_piece_start;
         size_t num_bytes_skipped;
+        std::vector<NestedInfo> nested_infos;
     };
 
     class IConverter
@@ -163,8 +177,16 @@ private:
             bool is_required;
             bool is_repeatable;
             bool should_pack_repeated;
+            ProtobufColumnMatcher::Message<ColumnMatcherTraits> * repeatable_container_message;
         };
-        struct MessageData {};
+        struct MessageData
+        {
+            UInt32 parent_field_number;
+            bool is_group;
+            bool is_required;
+            ProtobufColumnMatcher::Message<ColumnMatcherTraits> * repeatable_container_message;
+            bool need_repeat;
+        };
     };
     using Message = ProtobufColumnMatcher::Message<ColumnMatcherTraits>;
     using Field = ProtobufColumnMatcher::Field<ColumnMatcherTraits>;
@@ -178,18 +200,25 @@ private:
     using WriteValueFunctionPtr = void (IConverter::*)(Params...);
 
     template <typename... Params, typename... Args>
-    void writeValue(WriteValueFunctionPtr<Params...> func, Args &&... args)
+    bool writeValueIfPossible(WriteValueFunctionPtr<Params...> func, Args &&... args)
     {
+        if (num_values && !current_field->data.is_repeatable)
+        {
+            setNestedMessageNeedsRepeat();
+            return false;
+        }
         (current_converter->*func)(std::forward<Args>(args)...);
         ++num_values;
+        return true;
     }
 
+    void setNestedMessageNeedsRepeat();
     void endWritingField();
 
     SimpleWriter simple_writer;
     std::unique_ptr<Message> root_message;
 
-    bool writing_message = false;
+    Message * current_message;
     size_t current_field_index = 0;
     const Field * current_field = nullptr;
     IConverter * current_converter = nullptr;
@@ -209,29 +238,29 @@ using ConstAggregateDataPtr = const char *;
 class ProtobufWriter
 {
 public:
-    void writeNumber(Int8 value) {}
-    void writeNumber(UInt8 value) {}
-    void writeNumber(Int16 value) {}
-    void writeNumber(UInt16 value) {}
-    void writeNumber(Int32 value) {}
-    void writeNumber(UInt32 value) {}
-    void writeNumber(Int64 value) {}
-    void writeNumber(UInt64 value) {}
-    void writeNumber(UInt128 value) {}
-    void writeNumber(Float32 value) {}
-    void writeNumber(Float64 value) {}
-    void writeString(const StringRef & value) {}
+    bool writeNumber(Int8 value) { return false; }
+    bool writeNumber(UInt8 value) { return false; }
+    bool writeNumber(Int16 value) { return false; }
+    bool writeNumber(UInt16 value) { return false; }
+    bool writeNumber(Int32 value) { return false; }
+    bool writeNumber(UInt32 value) { return false; }
+    bool writeNumber(Int64 value) { return false; }
+    bool writeNumber(UInt64 value) { return false; }
+    bool writeNumber(UInt128 value) { return false; }
+    bool writeNumber(Float32 value) { return false; }
+    bool writeNumber(Float64 value) { return false; }
+    bool writeString(const StringRef & value) { return false; }
     void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & name_value_pairs) {}
     void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & name_value_pairs) {}
-    void writeEnum(Int8 value) {}
-    void writeEnum(Int16 value) {}
-    void writeUUID(const UUID & value) {}
-    void writeDate(DayNum date) {}
-    void writeDateTime(time_t tm) {}
-    void writeDecimal(Decimal32 decimal, UInt32 scale) {}
-    void writeDecimal(Decimal64 decimal, UInt32 scale) {}
-    void writeDecimal(const Decimal128 & decimal, UInt32 scale) {}
-    void writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) {}
+    bool writeEnum(Int8 value) { return false; }
+    bool writeEnum(Int16 value) { return false; }
+    bool writeUUID(const UUID & value) { return false; }
+    bool writeDate(DayNum date) { return false; }
+    bool writeDateTime(time_t tm) { return false; }
+    bool writeDecimal(Decimal32 decimal, UInt32 scale) { return false; }
+    bool writeDecimal(Decimal64 decimal, UInt32 scale) { return false; }
+    bool writeDecimal(const Decimal128 & decimal, UInt32 scale) { return false; }
+    bool writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { return false; }
 };
 
 }
