@@ -1,20 +1,17 @@
 #include <Interpreters/SyntaxAnalyzer.h>
-
-#include <Interpreters/ArrayJoinedColumnsVisitor.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/CrossToInnerJoinVisitor.h>
-#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
-#include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
-#include <Interpreters/QueryAliasesVisitor.h>
-#include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Interpreters/ExternalDictionaries.h>
+#include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -650,18 +647,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     if (source_columns_set.size() != source_columns_list.size())
         throw Exception("Unexpected duplicates in source columns list.", ErrorCodes::LOGICAL_ERROR);
-
-    if (settings.allow_experimental_multiple_joins_emulation)
-    {
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data;
-        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query);
-    }
-
-    if (settings.allow_experimental_cross_to_join_conversion)
-    {
-        CrossToInnerJoinVisitor::Data cross_to_inner;
-        CrossToInnerJoinVisitor(cross_to_inner).visit(query);
-    }
 
     if (select_query)
     {
