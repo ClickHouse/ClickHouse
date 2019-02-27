@@ -41,15 +41,7 @@ struct ColumnsDescription
 
     explicit ColumnsDescription(NamesAndTypesList ordinary_) : ordinary(std::move(ordinary_)) {}
 
-    bool operator==(const ColumnsDescription & other) const
-    {
-        return ordinary == other.ordinary
-            && materialized == other.materialized
-            && aliases == other.aliases
-            && defaults == other.defaults
-            && comments == other.comments
-            && codecs == other.codecs;
-    }
+    bool operator==(const ColumnsDescription & other) const;
 
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
