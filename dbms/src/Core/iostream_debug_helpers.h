@@ -6,7 +6,6 @@
 
 namespace DB
 {
-
 class IBlockInputStream;
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what);
 
