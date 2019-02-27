@@ -36,7 +36,7 @@ public:
 
     Status prepare() override
     {
-        auto & output = outputs[0];
+        auto & output = outputs.front();
 
         /// Check can output.
 
@@ -69,27 +69,29 @@ public:
         /// Check for inputs we need.
         bool all_inputs_finished = true;
         bool all_inputs_has_data = true;
-        for (size_t i = 0; i < inputs.size(); ++i)
+        auto it = inputs.begin();
+        for (size_t i = 0; it != inputs.end(); ++it, ++i)
         {
+            auto & input = *it;
             if (!finished[i])
             {
-                if (!inputs[i].isFinished())
+                if (!input.isFinished())
                 {
                     all_inputs_finished = false;
                     bool needed = positions[i] >= chunks[i].getNumRows();
                     if (needed)
                     {
-                        inputs[i].setNeeded();
-                        if (inputs[i].hasData())
+                        input.setNeeded();
+                        if (input.hasData())
                         {
-                            chunks[i] = inputs[i].pull();
+                            chunks[i] = input.pull();
                             positions[i] = 0;
                         }
                         else
                             all_inputs_has_data = false;
                     }
                     else
-                        inputs[i].setNotNeeded();
+                        input.setNotNeeded();
                 }
                 else
                     finished[i] = true;
@@ -144,7 +146,7 @@ public:
         res.setColumns(Columns({std::move(col)}), num_rows);
     }
 
-    OutputPort & getOutputPort() { return outputs[0]; }
+    OutputPort & getOutputPort() { return outputs.front(); }
 
 private:
     Chunks chunks;
@@ -188,7 +190,8 @@ public:
     explicit SleepyTransform(unsigned sleep_useconds)
             : ISimpleTransform(
             Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}),
-            Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}))
+            Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}),
+            false)
             , sleep_useconds(sleep_useconds) {}
 
     String getName() const override { return "SleepyTransform"; }
@@ -285,9 +288,10 @@ try
         connect(transform2->getOutputPort(), limit2->getInputPort());
         connect(transform3->getOutputPort(), limit3->getInputPort());
 
-        connect(limit1->getOutputPort(), merge->getInputs()[0]);
-        connect(limit2->getOutputPort(), merge->getInputs()[1]);
-        connect(limit3->getOutputPort(), merge->getInputs()[2]);
+        auto it = merge->getInputs().begin();
+        connect(limit1->getOutputPort(), *(it++));
+        connect(limit2->getOutputPort(), *(it++));
+        connect(limit3->getOutputPort(), *(it++));
 
         connect(merge->getOutputPort(), limit_fin->getInputPort());
         connect(limit_fin->getOutputPort(), sink->getPort());

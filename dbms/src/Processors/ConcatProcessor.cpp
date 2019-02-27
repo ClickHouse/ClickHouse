@@ -6,7 +6,7 @@ namespace DB
 
 ConcatProcessor::Status ConcatProcessor::prepare()
 {
-    auto & output = outputs[0];
+    auto & output = outputs.front();
 
     /// Check can output.
 

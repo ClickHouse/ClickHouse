@@ -55,7 +55,8 @@ public:
     explicit SleepyTransform(unsigned sleep_useconds)
         : ISimpleTransform(
                 Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}),
-                Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}))
+                Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}),
+                /*skip_empty_chunks =*/ false)
         , sleep_useconds(sleep_useconds) {}
 
     String getName() const override { return "SleepyTransform"; }

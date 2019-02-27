@@ -59,7 +59,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in, Block header, 
 
 /// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
-void fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+static void fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column_data = static_cast<VectorType &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -78,7 +78,7 @@ void fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, Mu
 /// Inserts chars and offsets right into internal column data to reduce an overhead.
 /// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
 /// Also internal strings are null terminated.
-void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+static void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     PaddedPODArray<UInt8> & column_chars_t = static_cast<ColumnString &>(*internal_column).getChars();
     PaddedPODArray<UInt64> & column_offsets = static_cast<ColumnString &>(*internal_column).getOffsets();
@@ -116,7 +116,7 @@ void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, Mut
     }
 }
 
-void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+static void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column_data = static_cast<ColumnVector<UInt8> &>(*internal_column).getData();
     column_data.resize(arrow_column->length());
@@ -133,7 +133,7 @@ void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, Mu
 }
 
 /// Arrow stores Parquet::DATE in Int32, while ClickHouse stores Date in UInt16. Therefore, it should be checked before saving
-void fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+static void fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     PaddedPODArray<UInt16> & column_data = static_cast<ColumnVector<UInt16> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -161,7 +161,7 @@ void fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, Mut
 }
 
 /// Arrow stores Parquet::DATETIME in Int64, while ClickHouse stores DateTime in UInt32. Therefore, it should be checked before saving
-void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+static void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column_data = static_cast<ColumnVector<UInt32> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -177,7 +177,7 @@ void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, Mut
     }
 }
 
-void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+static void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column_data = static_cast<ColumnVector<UInt32> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -213,7 +213,7 @@ void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, 
     }
 }
 
-void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+static void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column = static_cast<ColumnDecimal<Decimal128> &>(*internal_column);
     auto & column_data = column.getData();
@@ -230,7 +230,7 @@ void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, Mu
 }
 
 /// Creates a null bytemap from arrow's null bitmap
-void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & bytemap)
+static void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & bytemap)
 {
     PaddedPODArray<UInt8> & bytemap_data = static_cast<ColumnVector<UInt8> &>(*bytemap).getData();
     bytemap_data.reserve(arrow_column->length());

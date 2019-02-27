@@ -57,7 +57,7 @@ public:
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
-    InputPort & getPort(PortKind kind) { return inputs[kind]; }
+    InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
 };
 }
 

@@ -25,7 +25,7 @@ public:
 
     Status prepare() override;
 
-    OutputPort & getOutputPort() { return outputs[0]; }
+    OutputPort & getOutputPort() { return outputs.front(); }
 
 private:
     InputPorts::iterator current_input;
