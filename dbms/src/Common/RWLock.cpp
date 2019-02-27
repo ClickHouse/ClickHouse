@@ -33,28 +33,28 @@ namespace ErrorCodes
 }
 
 
-class RWLockImpl::LockHandlerImpl
+class RWLockImpl::LockHolderImpl
 {
     RWLock parent;
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
-    ThreadToHandler::iterator it_thread;
-    QueryIdToHandler::iterator it_query;
+    ThreadToHolder::iterator it_thread;
+    QueryIdToHolder::iterator it_query;
     CurrentMetrics::Increment active_client_increment;
 
-    LockHandlerImpl(RWLock && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client);
+    LockHolderImpl(RWLock && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client);
 
 public:
 
-    LockHandlerImpl(const LockHandlerImpl & other) = delete;
+    LockHolderImpl(const LockHolderImpl & other) = delete;
 
-    ~LockHandlerImpl();
+    ~LockHolderImpl();
 
     friend class RWLockImpl;
 };
 
 
-RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id)
+RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id)
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     CurrentMetrics::Increment waiting_client_increment((type == Read) ? CurrentMetrics::RWLockWaitingReaders
@@ -73,27 +73,27 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, const String 
     std::unique_lock lock(mutex);
 
     /// Check if the same query is acquiring previously acquired lock
-    LockHandler existing_handler_ptr;
+    LockHolder existing_holder_ptr;
 
     auto this_thread_id = std::this_thread::get_id();
-    auto it_thread = thread_to_handler.find(this_thread_id);
+    auto it_thread = thread_to_holder.find(this_thread_id);
 
-    auto it_query = query_id_to_handler.end();
+    auto it_query = query_id_to_holder.end();
     if (!query_id.empty())
-        it_query = query_id_to_handler.find(query_id);
+        it_query = query_id_to_holder.find(query_id);
 
-    if (it_thread != thread_to_handler.end())
-        existing_handler_ptr = it_thread->second.lock();
-    else if (it_query != query_id_to_handler.end())
-        existing_handler_ptr = it_query->second.lock();
+    if (it_thread != thread_to_holder.end())
+        existing_holder_ptr = it_thread->second.lock();
+    else if (it_query != query_id_to_holder.end())
+        existing_holder_ptr = it_query->second.lock();
 
-    if (existing_handler_ptr)
+    if (existing_holder_ptr)
     {
         /// XXX: it means we can't upgrade lock from read to write - with proper waiting!
-        if (type != Read || existing_handler_ptr->it_group->type != Read)
+        if (type != Read || existing_holder_ptr->it_group->type != Read)
             throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
 
-        return existing_handler_ptr;
+        return existing_holder_ptr;
     }
 
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
@@ -121,14 +121,14 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, const String 
         throw;
     }
 
-    LockHandler res(new LockHandlerImpl(shared_from_this(), it_group, it_client));
+    LockHolder res(new LockHolderImpl(shared_from_this(), it_group, it_client));
 
-    /// Insert myself (weak_ptr to the handler) to threads set to implement recursive lock
-    it_thread = thread_to_handler.emplace(this_thread_id, res).first;
+    /// Insert myself (weak_ptr to the holder) to threads set to implement recursive lock
+    it_thread = thread_to_holder.emplace(this_thread_id, res).first;
     res->it_thread = it_thread;
 
     if (!query_id.empty())
-        it_query = query_id_to_handler.emplace(query_id, res).first;
+        it_query = query_id_to_holder.emplace(query_id, res).first;
     res->it_query = it_query;
 
     /// We are first, we should not wait anything
@@ -147,15 +147,15 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, const String 
 }
 
 
-RWLockImpl::LockHandlerImpl::~LockHandlerImpl()
+RWLockImpl::LockHolderImpl::~LockHolderImpl()
 {
     std::unique_lock lock(parent->mutex);
 
-    /// Remove weak_ptrs to the handler, since there are no owners of the current lock
-    parent->thread_to_handler.erase(it_thread);
+    /// Remove weak_ptrs to the holder, since there are no owners of the current lock
+    parent->thread_to_holder.erase(it_thread);
 
-    if (it_query != parent->query_id_to_handler.end())
-        parent->query_id_to_handler.erase(it_query);
+    if (it_query != parent->query_id_to_holder.end())
+        parent->query_id_to_holder.erase(it_query);
 
     /// Removes myself from client list of our group
     it_group->clients.erase(it_client);
@@ -174,7 +174,7 @@ RWLockImpl::LockHandlerImpl::~LockHandlerImpl()
 }
 
 
-RWLockImpl::LockHandlerImpl::LockHandlerImpl(RWLock && parent, RWLockImpl::GroupsContainer::iterator it_group,
+RWLockImpl::LockHolderImpl::LockHolderImpl(RWLock && parent, RWLockImpl::GroupsContainer::iterator it_group,
                                              RWLockImpl::ClientsContainer::iterator it_client)
     : parent{std::move(parent)}, it_group{it_group}, it_client{it_client},
       active_client_increment{(*it_client == RWLockImpl::Read) ? CurrentMetrics::RWLockActiveReaders
