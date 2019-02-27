@@ -87,7 +87,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProtobuf(FormatFactory & factory) {}
+void registerInputFormatProtobuf(FormatFactory &) {}
 }
 
 #endif
