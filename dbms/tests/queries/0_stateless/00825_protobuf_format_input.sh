@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e -o pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+$CLICKHOUSE_CLIENT --multiquery <<'EOF'
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.table;
 
@@ -32,7 +32,9 @@ CREATE TABLE test.table (uuid UUID,
                          someRatio Float32,
                          temperature Decimal32(1),
                          randomBigNumber Int64,
-                         measureUnits Nested (unit String, coef Float32)
+                         measureUnits Nested (unit String, coef Float32),
+                         nestiness_a_b_c_d Nullable(UInt32),
+                         `nestiness_a_B.c_E` Array(UInt32)
                          ) ENGINE = MergeTree ORDER BY tuple();
 EOF
 

@@ -303,9 +303,11 @@ void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, con
 }
 
 
-void DataTypeString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    protobuf.writeString(static_cast<const ColumnString &>(column).getDataAt(row_num));
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeString(static_cast<const ColumnString &>(column).getDataAt(row_num)));
 }
 
 
