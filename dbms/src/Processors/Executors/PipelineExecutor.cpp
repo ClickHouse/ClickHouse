@@ -14,80 +14,70 @@ PipelineExecutor::PipelineExecutor(Processors processors, ThreadPool * pool)
     buildGraph();
 }
 
-
-void PipelineExecutor::buildGraph()
+void PipelineExecutor::addEdges(const ProcessorsMap & processors_map, UInt64 node, UInt64 from_input, UInt64 from_output)
 {
-    std::unordered_map<const IProcessor *, UInt64> proc_map;
-    UInt64 num_processors = processors.size();
-
     auto throwUnknownProcessor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
     {
         String msg = "Processor " + proc->getName() + " was found as " + (from_input_port ? "input" : "output")
-                + " for processor " + parent->getName() + ", but not found in original list or all processors.";
+                     + " for processor " + parent->getName() + ", but not found in list of processors.";
 
         throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
     };
+
+    const IProcessor * cur = graph[node].processor;
+
+    auto add_edge = [&](auto & from_port, const IProcessor * to_proc, Edges & edges)
+    {
+        auto it = processors_map.find(to_proc);
+        if (it == processors_map.end())
+            throwUnknownProcessor(to_proc, cur, true);
+
+        UInt64 proc_num = it->second;
+        Edge * edge_ptr = nullptr;
+
+        for (auto & edge : edges)
+            if (edge.to == proc_num)
+                edge_ptr = &edge;
+
+        if (!edge_ptr)
+        {
+            edge_ptr = &edges.emplace_back();
+            edge_ptr->to = proc_num;
+        }
+
+        from_port.setVersion(&edge_ptr->version);
+    };
+
+    auto & inputs = processors[node]->getInputs();
+    for (auto it = std::next(inputs.begin(), from_input); it != inputs.end(); ++it)
+    {
+        const IProcessor * proc = &it->getOutputPort().getProcessor();
+        add_edge(*it, proc, graph[node].backEdges);
+    }
+
+    auto & outputs = processors[node]->getOutputs();
+    for (auto it = std::next(outputs.begin(), from_output); it != outputs.end(); ++it)
+    {
+        const IProcessor * proc = &it->getInputPort().getProcessor();
+        add_edge(*it, proc, graph[node].directEdges);
+    }
+}
+
+void PipelineExecutor::buildGraph()
+{
+    ProcessorsMap processors_map;
+    UInt64 num_processors = processors.size();
 
     graph.resize(num_processors);
     for (UInt64 node = 0; node < num_processors; ++node)
     {
         IProcessor * proc = processors[node].get();
-        proc_map[proc] = node;
+        processors_map[proc] = node;
         graph[node].processor = proc;
     }
 
     for (UInt64 node = 0; node < num_processors; ++node)
-    {
-        const IProcessor * cur = graph[node].processor;
-
-        for (InputPort & input_port : processors[node]->getInputs())
-        {
-            const IProcessor * proc = &input_port.getOutputPort().getProcessor();
-
-            auto it = proc_map.find(proc);
-            if (it == proc_map.end())
-                throwUnknownProcessor(proc, cur, true);
-
-            UInt64 proc_num = it->second;
-            Edge * edge_ptr = nullptr;
-
-            for (auto & edge : graph[node].backEdges)
-                if (edge.to == proc_num)
-                    edge_ptr = &edge;
-
-            if (!edge_ptr)
-            {
-                edge_ptr = &graph[node].backEdges.emplace_back();
-                edge_ptr->to = proc_num;
-            }
-
-            input_port.setVersion(&edge_ptr->version);
-        }
-
-        for (OutputPort & output_port : processors[node]->getOutputs())
-        {
-            const IProcessor * proc = &output_port.getInputPort().getProcessor();
-
-            auto it = proc_map.find(proc);
-            if (it == proc_map.end())
-                throwUnknownProcessor(proc, cur, true);
-
-            UInt64 proc_num = it->second;
-            Edge * edge_ptr = nullptr;
-
-            for (auto & edge : graph[node].directEdges)
-                if (edge.to == proc_num)
-                    edge_ptr = &edge;
-
-            if (!edge_ptr)
-            {
-                edge_ptr = &graph[node].directEdges.emplace_back();
-                edge_ptr->to = proc_num;
-            }
-
-            output_port.setVersion(&edge_ptr->version);
-        }
-    }
+        addEdges(processors_map, node, 0, 0);
 }
 
 void PipelineExecutor::addChildlessProcessorsToQueue()
@@ -180,6 +170,36 @@ void PipelineExecutor::addAsyncJob(UInt64 pid)
     ++num_tasks_to_wait;
 }
 
+void PipelineExecutor::expendPipeline(UInt64 pid)
+{
+    auto & cur_node = graph[pid];
+    UInt64 from_input = cur_node.processor->getInputs().size();
+    UInt64 from_output = cur_node.processor->getOutputs().size();
+    UInt64 from_processor = processors.size();
+    auto new_processors = cur_node.processor->expandPipeline();
+
+    ProcessorsMap processors_map;
+    processors_map[cur_node.processor] = pid;
+    for (const auto & processor : new_processors)
+    {
+        processors_map[processor.get()] = graph.size();
+        graph.emplace_back();
+        graph.back().processor = processor.get();
+    }
+
+    processors.insert(processors.end(), new_processors.begin(), new_processors.end());
+    UInt64 num_processors = processors.size();
+
+    for (UInt64 node = from_processor; node < num_processors; ++node)
+    {
+        addEdges(processors_map, node, 0, 0);
+        prepare_queue.push(node);
+        graph[node].status = ExecStatus::Preparing;
+    }
+
+    addEdges(processors_map, pid, from_input, from_output);
+}
+
 void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
 {
     auto & node = graph[pid];
@@ -235,7 +255,11 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
         }
         case IProcessor::Status::ExpandPipeline:
         {
-            throw Exception("ExpandPipeline is not supported in PipelineExecutor.", ErrorCodes::LOGICAL_ERROR);
+            expendPipeline(pid);
+            /// Add node to queue again.
+            prepare_queue.push(pid);
+            node.status = ExecStatus::Preparing;
+            break;
         }
     }
 }
