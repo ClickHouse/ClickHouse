@@ -47,6 +47,6 @@ WHERE a = 'b\0'
 
 This behavior differs from MySQL behavior for the `CHAR` type (where strings are padded with spaces, and the spaces are removed for output).
 
-Note that the length of the `FixedString` value is constant even if it is filled with null bytes. The `empty` and `notEmpty` functions do not work correctly with the `FixedString` data type.
+Note that the length of the `FixedString` value is constant even if it is filled with null bytes only. The [empty](../query_language/functions/string_functions.md#string_functions-empty) functions returns `1` if the `FixedString` value contains the null bytes only.
 
 [Original article](https://clickhouse.yandex/docs/en/data_types/fixedstring/) <!--hide-->
