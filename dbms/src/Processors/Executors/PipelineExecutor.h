@@ -66,8 +66,16 @@ public:
 
     String getName() const { return "PipelineExecutor"; }
 
+    const Processors & getProcessors() const { return processors; }
+
 private:
+    /// Graph related methods.
+    using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
+    void addEdges(const ProcessorsMap & processors_map, UInt64 node, UInt64 from_input, UInt64 from_output);
     void buildGraph();
+    void expendPipeline(UInt64 pid);
+
+    /// Pipeline execution related methods.
     void addChildlessProcessorsToQueue();
     void processFinishedExecutionQueue();
     void processFinishedExecutionQueueSafe();
