@@ -225,10 +225,12 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf) const
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf, size_t & value_index) const
 {
+    if (value_index)
+        return;
     protobuf.prepareEnumMapping(values);
-    protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]);
+    value_index = static_cast<bool>(protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]));
 }
 
 template<typename Type>
