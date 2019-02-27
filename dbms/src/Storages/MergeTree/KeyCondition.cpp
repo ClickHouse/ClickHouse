@@ -15,6 +15,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Core/iostream_debug_helpers.h>
 
 
 namespace DB
@@ -183,10 +184,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 };
 
 
-inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
-inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
-
-
 FieldWithInfinity::FieldWithInfinity(const Field & field_)
     : field(field_),
     type(Type::NORMAL)
@@ -328,25 +325,6 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
 }
 
 
-static void applyFunction(
-    const FunctionBasePtr & func,
-    const DataTypePtr & arg_type, const Field & arg_value,
-    DataTypePtr & res_type, Field & res_value)
-{
-    res_type = func->getReturnType();
-
-    Block block
-    {
-        { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
-        { nullptr, res_type, "y" }
-    };
-
-    func->execute(block, {0}, 1, 1);
-
-    block.safeGetByPosition(1).column->get(0, res_value);
-}
-
-
 void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
 {
     RPNElement element;
@@ -457,8 +435,10 @@ bool KeyCondition::tryPrepareSetIndex(
         MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
         index_mapping.tuple_index = tuple_index;
         DataTypePtr data_type;
-        if (isKeyPossiblyWrappedByMonotonicFunctions(
-                node, context, index_mapping.key_index, data_type, index_mapping.functions))
+        FunctionsChain invertible_functions;
+        FunctionArgumentStack argument_stack;
+        if (isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(
+                node, context, index_mapping.key_index, data_type, index_mapping.functions, invertible_functions, argument_stack))
         {
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
@@ -504,42 +484,118 @@ bool KeyCondition::tryPrepareSetIndex(
 }
 
 
-bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
+bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(
     const ASTPtr & node,
     const Context & context,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
-    MonotonicFunctionsChain & out_functions_chain)
+    FunctionsChain & out_monotonic_functions_chain,
+    FunctionsChain & out_invertible_functions_chain,
+    FunctionArgumentStack & out_function_argument_stack)
 {
-    std::vector<const ASTFunction *> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
+    FunctionsChain monotonic_chain;
 
-    if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(node, out_key_column_num, key_column_type, chain_not_tested_for_monotonicity))
-        return false;
-
-    for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
+    if (!isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
+            node,
+            context,
+            out_key_column_num,
+            key_column_type,
+            monotonic_chain,
+            out_invertible_functions_chain,
+            out_function_argument_stack))
     {
-        auto func_builder = FunctionFactory::instance().tryGet((*it)->name, context);
-        ColumnsWithTypeAndName arguments{{ nullptr, key_column_type, "" }};
-        auto func = func_builder->build(arguments);
-
-        if (!func || !func->hasInformationAboutMonotonicity())
-            return false;
-
-        key_column_type = func->getReturnType();
-        out_functions_chain.push_back(func);
+        return false;
     }
 
     out_key_res_column_type = key_column_type;
-
+    out_monotonic_functions_chain = std::move(monotonic_chain);
     return true;
 }
 
-bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
-    const ASTPtr & node,
+bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExpr(
+  //  const ASTPtr & node,
+    const String & name,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
-    std::vector<const ASTFunction *> & out_functions_chain)
+    FunctionsChain & out_invertible_functions_chain,
+    FunctionArgumentStack & out_function_argument_stack)
+{
+    FunctionsChain invertible_chain;
+    FunctionArgumentStack argument_stack;
+    if (!isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(name, out_key_column_num, out_key_column_type, invertible_chain, argument_stack))
+    {
+        return false;
+    }
+    out_invertible_functions_chain = std::move(invertible_chain);
+    out_function_argument_stack = std::move(argument_stack);
+    return true;
+}
+
+
+bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
+    const String & name,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    FunctionsChain & out_functions_chain,
+    FunctionArgumentStack & out_function_argument_stack)
+{
+    String expr_name = name;
+    const auto & sample_block = key_expr->getSampleBlock();
+    bool found_type = false;
+    DataTypePtr type;
+    if (sample_block.has(expr_name)) {
+        type = sample_block.getByName(expr_name).type;
+        found_type = true;
+    }
+    for (const ExpressionAction & a : key_expr->getActions())
+    {
+        const auto & args = a.argument_names;
+        if (a.type == ExpressionAction::Type::APPLY_FUNCTION)
+        {
+            if (!found_type)
+            {
+                if (a.result_name == expr_name)
+                {
+                    type = a.result_type;
+                    found_type = true;
+                }
+            }
+        }
+        if (a.type == ExpressionAction::Type::APPLY_FUNCTION && a.function_base->isInvertible())
+        {
+
+            auto arg_it = find(args.begin(), args.end(), expr_name);
+            if (arg_it != args.end())
+            {
+                size_t ind = static_cast<size_t>(arg_it - args.begin());
+                out_function_argument_stack.push_back(ind);
+                out_functions_chain.push_back(a.function_base);
+                expr_name = a.result_name;
+                auto key_it = key_columns.find(expr_name);
+                if (key_it != key_columns.end())
+                {
+                    out_key_column_type = type;
+                    out_key_column_num = key_it->second;
+                    return true;
+                }
+            }
+
+        }
+    }
+    return false;
+}
+
+
+
+bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
+    const ASTPtr & node,
+    const Context & context,
+    size_t & out_key_column_num,
+    DataTypePtr & out_key_column_type,
+    FunctionsChain & out_monotonic_functions_chain,
+    FunctionsChain & out_invertible_functions_chain,
+    FunctionArgumentStack & out_function_argument_stack)
 {
     /** By itself, the key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
@@ -555,18 +611,38 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         return true;
     }
 
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExpr(name, out_key_column_num, out_key_column_type, out_invertible_functions_chain, out_function_argument_stack))
     {
-        const auto & args = func->arguments->children;
+        return true;
+    }
+
+    if (const ASTFunction * func_ptr = typeid_cast<const ASTFunction *>(node.get()))
+    {
+        const auto & args = func_ptr->arguments->children;
         if (args.size() != 1)
             return false;
 
-        out_functions_chain.push_back(func);
 
-        if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain))
-            return false;
+        if (isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
+                args[0],
+                context,
+                out_key_column_num,
+                out_key_column_type,
+                out_monotonic_functions_chain,
+                out_invertible_functions_chain,
+                out_function_argument_stack))
+        {
+            auto func_builder = FunctionFactory::instance().tryGet(func_ptr->name, context);
+            ColumnsWithTypeAndName arguments{{nullptr, out_key_column_type, ""}};
+            auto func = func_builder->build(arguments);
 
-        return true;
+            if (func && func->hasInformationAboutMonotonicity()) {
+                out_key_column_type = func->getReturnType();
+                out_monotonic_functions_chain.push_back(func);
+                return true;
+            }
+        }
+
     }
 
     return false;
@@ -611,7 +687,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
-        MonotonicFunctionsChain chain;
+        FunctionsChain monotonic_chain;
+        FunctionsChain invertible_chain;
+        FunctionArgumentStack argument_stack;
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
@@ -622,7 +700,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             is_set_const = true;
         }
         else if (getConstant(args[1], block_with_constants, const_value, const_type)
-            && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
+            && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[0], context, key_column_num, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
         {
             key_arg_pos = 0;
         }
@@ -633,7 +711,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             is_constant_transformed = true;
         }
         else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            && isKeyPossiblyWrappedByMonotonicFunctions(args[1], context, key_column_num, key_expr_type, chain))
+            && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[1], context, key_column_num, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
         {
             key_arg_pos = 1;
         }
@@ -644,7 +722,10 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             is_constant_transformed = true;
         }
         else
+        {
             return false;
+        }
+        
 
         if (key_column_num == static_cast<size_t>(-1))
             throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -679,7 +760,10 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         }
 
         out.key_column = key_column_num;
-        out.monotonic_functions_chain = std::move(chain);
+        out.monotonic_functions_chain = std::move(monotonic_chain);
+        out.invertible_functions_chain = std::move(invertible_chain);
+        out.function_argument_stack = std::move(argument_stack);
+        out.data_type = key_expr_type;
 
         const auto atom_it = atom_map.find(func_name);
         if (atom_it == std::end(atom_map))
@@ -704,7 +788,6 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             out.function = const_value.get<UInt64>()
                 ? RPNElement::ALWAYS_TRUE
                 : RPNElement::ALWAYS_FALSE;
-
             return true;
         }
     }
@@ -911,7 +994,7 @@ bool KeyCondition::mayBeTrueInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    MonotonicFunctionsChain & functions,
+    FunctionsChain & functions,
     DataTypePtr current_type
 )
 {
@@ -946,6 +1029,50 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
+
+std::optional<RangeSet> KeyCondition::applyMonotonicFunctionsChainToRangeSet(
+    RangeSet key_range_set,
+    const FunctionsChain &functions,
+    DataTypePtr current_type)
+{
+    for (const auto& func : functions)
+    {
+        DataTypePtr new_type;
+        auto new_range_set = key_range_set.applyMonotonicFunction(func, current_type, new_type);
+        if (!new_range_set || !new_type) {
+            return {};
+        }
+        current_type.swap(new_type);
+        key_range_set = std::move(*new_range_set);
+    }
+    return key_range_set;
+}
+
+
+std::optional<RangeSet> KeyCondition::applyInvertibleFunctionsChainToRange(
+    RangeSet key_range_set,
+    const FunctionsChain & functions,
+    const FunctionArgumentStack& argument_stack)
+{
+    for (size_t i = 0; i < functions.size(); ++i)
+    {
+        auto func = functions[functions.size() - i - 1];
+        size_t arg_index = argument_stack[functions.size() - i - 1];
+        auto new_result = key_range_set.applyInvertibleFunction(func, arg_index);
+        if (!new_result)
+        {
+            return {};
+        }
+        else
+        {
+            key_range_set = std::move(*new_result);
+        }
+    }
+    return key_range_set;
+}
+
+
+
 bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
@@ -962,26 +1089,38 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
             const Range * key_range = &parallelogram[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
-            Range transformed_range;
+            RangeSet transformed_range_set = *key_range;
+            if (!element.invertible_functions_chain.empty()) {
+                auto new_range_set = applyInvertibleFunctionsChainToRange(
+                    transformed_range_set,
+                    element.invertible_functions_chain,
+                    element.function_argument_stack
+                );
+                if (!new_range_set)
+                {
+                    rpn_stack.emplace_back(true, true);
+                };
+                transformed_range_set = std::move(*new_range_set);
+            }
             if (!element.monotonic_functions_chain.empty())
             {
-                std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    *key_range,
+                auto new_range_set = applyMonotonicFunctionsChainToRangeSet(
+                    transformed_range_set,
                     element.monotonic_functions_chain,
-                    data_types[element.key_column]
+                    element.data_type
                 );
 
-                if (!new_range)
+                if (!new_range_set)
                 {
                     rpn_stack.emplace_back(true, true);
                     continue;
                 }
-                transformed_range = *new_range;
-                key_range = &transformed_range;
+
+                transformed_range_set = std::move(*new_range_set);
             }
 
-            bool intersects = element.range.intersectsRange(*key_range);
-            bool contains = element.range.containsRange(*key_range);
+            bool intersects = transformed_range_set.intersectsRange(element.range);
+            bool contains = transformed_range_set.isContainedBy(element.range);
 
             rpn_stack.emplace_back(intersects, !contains);
             if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
@@ -1053,12 +1192,24 @@ String KeyCondition::RPNElement::toString() const
     auto print_wrapped_column = [this](std::ostringstream & ss)
     {
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
+        {
             ss << (*it)->getName() << "(";
-
+        }
+        if (monotonic_functions_chain.empty()) {
+            ss << "(";
+        }
+        for (size_t i = 0; i < invertible_functions_chain.size(); ++i)
+        {
+            ss << "arg #" << function_argument_stack[i] << " of function " << invertible_functions_chain[i]->getName() << ", which is ";
+        }
         ss << "column " << key_column;
-
-        for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
+        if (monotonic_functions_chain.empty()) {
             ss << ")";
+        }
+        for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
+        {
+            ss << ")";
+        }
     };
 
     std::ostringstream ss;

@@ -1,15 +1,20 @@
+#pragma once
+
 #include <Core/Field.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Common/FieldVisitors.h>
+#include <Functions/IFunction.h>
 
 namespace DB {
 /** Range with open or closed ends; possibly unbounded.
   */
-    struct Range {
-    private:
+
+    class Range {
+    public:
         static bool equals(const Field &lhs, const Field &rhs);
 
         static bool less(const Field &lhs, const Field &rhs);
 
-    public:
         Field left;                       /// the left border, if any
         Field right;                      /// the right border, if any
         bool left_bounded = false;        /// bounded at the left
@@ -158,4 +163,28 @@ namespace DB {
         String toString() const;
     };
 
+    class RangeSet {
+    public:
+        std::vector<Range> data;
+        void normalize();
+        RangeSet();
+        RangeSet(const Range & range);
+        RangeSet(const std::vector<Range> & data);
+
+        RangeSet & operator |= (const RangeSet & rhs);
+        RangeSet operator | (const RangeSet & rhs) const;
+        bool intersectsRange(const Range & rhs) const;
+        bool isContainedBy(const Range & rhs) const;
+
+        std::optional<RangeSet> applyMonotonicFunction(const FunctionBasePtr & func, DataTypePtr & arg_type, DataTypePtr & res_type);
+        std::optional<RangeSet> applyInvertibleFunction(const FunctionBasePtr & func, size_t arg_index);
+
+    };
+
+    void applyFunction(
+            const FunctionBasePtr & func,
+            const DataTypePtr & arg_type, const Field & arg_value,
+            DataTypePtr & res_type, Field & res_value);
 }
+
+

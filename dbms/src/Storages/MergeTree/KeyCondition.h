@@ -12,6 +12,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/FieldRange.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -96,7 +97,8 @@ public:
       * If the key column is wrapped in functions that can be monotonous in some value ranges
       * (for example: -toFloat64(toDayOfWeek(date))), then here the functions will be located: toDayOfWeek, toFloat64, negate.
       */
-    using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
+    using FunctionsChain = std::vector<FunctionBasePtr>;
+    using FunctionArgumentStack = std::vector<size_t>;
 
 
     static Block getBlockWithConstants(
@@ -104,8 +106,16 @@ public:
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
-        MonotonicFunctionsChain & functions,
+        FunctionsChain & functions,
         DataTypePtr current_type);
+    static std::optional<RangeSet> applyMonotonicFunctionsChainToRangeSet(
+            RangeSet key_range_set,
+            const FunctionsChain & functions,
+            DataTypePtr current_type);
+    static std::optional<RangeSet> applyInvertibleFunctionsChainToRange(
+            RangeSet key_range_set,
+            const FunctionsChain & functions,
+            const FunctionArgumentStack& argument_stack);
 
 private:
     /// The expression is stored as Reverse Polish Notation.
@@ -141,12 +151,14 @@ private:
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range;
         size_t key_column = 0;
-        std::vector<size_t> function_argument_stack;
+        DataTypePtr data_type;
+        FunctionArgumentStack function_argument_stack;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
-        mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
+        mutable FunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
+        mutable FunctionsChain invertible_functions_chain;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -175,18 +187,41 @@ private:
       * If these conditions are true, then returns number of column in key, type of resulting expression
       *  and fills chain of possibly-monotonic functions.
       */
-    bool isKeyPossiblyWrappedByMonotonicFunctions(
+
+    /*bool inferTypeFromASTNode(
+        const ASTPtr & node,
+        const DataTypePtr & out_type);*/
+
+    bool isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExpr(
+       // const ASTPtr & node,
+        const String & name,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        FunctionsChain & out_invertible_functions_chain,
+        FunctionArgumentStack & out_function_argument_stack);
+    bool isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
+        const String & name,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        FunctionsChain & out_invertible_functions_chain,
+        FunctionArgumentStack & out_function_argument_stack);
+    bool isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(
         const ASTPtr & node,
         const Context & context,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
-        MonotonicFunctionsChain & out_functions_chain);
+        FunctionsChain & out_monotonic_functions_chain,
+        FunctionsChain & out_invertible_functions_chain,
+        FunctionArgumentStack & out_function_argument_stack);
 
-    bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
+    bool isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
         const ASTPtr & node,
+        const Context & context,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
-        std::vector<const ASTFunction *> & out_functions_chain);
+        FunctionsChain & out_monotonic_functions_chain,
+        FunctionsChain & out_invertible_functions_chain,
+        FunctionArgumentStack & out_function_argument_stack);
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const ASTPtr & node,

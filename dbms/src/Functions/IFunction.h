@@ -21,6 +21,10 @@ namespace llvm
 namespace DB
 {
 
+class Range;
+class RangeSet;
+
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -238,7 +242,7 @@ public:
     virtual bool isInvertible() const { return false; }
 
     /// Computes the inverse image of given range of values in the form of a vector of parallelograms.
-    virtual std::vector<std::vector<Range>> invertRange(const Range& /*value range*/) const
+    virtual bool invertRange(const Range& /*value range*/, size_t /*argument index*/, const DataTypes& /*argument types*/, RangeSet& /*result*/) const
     {
         throw Exception("Function " + getName() + " cannot be inverted.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -487,6 +491,13 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
+
+    bool isInvertible() const override { return function->isInvertible(); }
+
+    bool invertRange(const Range& value_range, size_t arg_index, const DataTypes& arg_types, RangeSet & result) const override
+    {
+        return function->invertRange(value_range, arg_index, arg_types, result);
+    }
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {

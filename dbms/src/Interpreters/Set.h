@@ -15,7 +15,7 @@
 namespace DB
 {
 
-struct Range;
+class Range;
 class FieldWithInfinity;
 
 class IFunctionBase;
