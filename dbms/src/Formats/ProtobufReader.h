@@ -158,9 +158,10 @@ private:
     };
 
     class ConverterBaseImpl;
-    template <int type_id> class ConverterImpl;
     class ConverterFromString;
     template<int field_type_id, typename FromType> class ConverterFromNumber;
+    class ConverterFromBool;
+    class ConverterFromEnum;
 
     struct ColumnMatcherTraits
     {
@@ -177,6 +178,9 @@ private:
     using Field = ProtobufColumnMatcher::Field<ColumnMatcherTraits>;
 
     void setTraitsDataAfterMatchingColumns(Message * message);
+
+    template <int field_type_id>
+    std::unique_ptr<IConverter> createConverter(const google::protobuf::FieldDescriptor * field);
 
     SimpleReader simple_reader;
     std::unique_ptr<Message> root_message;

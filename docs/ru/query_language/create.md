@@ -46,7 +46,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков](../operations/table_engines/index.md#table_engines).
 
-### Значения по умолчанию
+### Значения по умолчанию {#create-default-values}
 
 В описании столбца, может быть указано выражение для значения по умолчанию, одного из следующих видов:
 `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
