@@ -1,6 +1,6 @@
 # Functions for working with strings
 
-## empty
+## empty {#string_functions-empty}
 
 Returns 1 for an empty string or 0 for a non-empty string.
 The result type is UInt8.
