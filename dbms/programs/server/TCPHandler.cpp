@@ -724,7 +724,7 @@ bool TCPHandler::receiveData()
                 query_context.addExternalTable(external_table_name, storage);
             }
             /// The data will be written directly to the table.
-            state.io.out = storage->write(ASTPtr(), query_context.getSettingsRef());
+            state.io.out = storage->write(ASTPtr(), query_context);
         }
         if (block)
             state.io.out->write(block);

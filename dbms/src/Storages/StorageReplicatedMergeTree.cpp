@@ -2992,10 +2992,11 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Settings & settings)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
     assertNotReadonly();
 
+    const Settings & settings = context.getSettingsRef();
     bool deduplicate = data.settings.replicated_deduplication_window != 0 && settings.insert_deduplicate;
 
     return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this,
@@ -3123,7 +3124,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
     {
         /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructure(false);
+        auto table_lock = lockStructure(false, query_context.getCurrentQueryId());
 
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
@@ -3381,7 +3382,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockStructure(false);
+                auto lock = lockStructure(false, query_context.getCurrentQueryId());
                 data.freezePartition(command.partition, command.with_name, query_context);
             }
             break;
@@ -3392,7 +3393,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructure(false);
+                auto lock = lockStructure(false, query_context.getCurrentQueryId());
                 data.freezeAll(command.with_name, query_context);
             }
             break;
@@ -4739,8 +4740,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace,
                                                       const Context & context)
 {
-    auto lock1 = lockStructure(false);
-    auto lock2 = source_table->lockStructure(false);
+    auto lock1 = lockStructure(false, context.getCurrentQueryId());
+    auto lock2 = source_table->lockStructure(false, context.getCurrentQueryId());
 
     Stopwatch watch;
     MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);
