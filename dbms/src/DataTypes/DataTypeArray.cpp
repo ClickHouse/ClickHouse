@@ -431,15 +431,22 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 }
 
 
-void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[row_num - 1] + value_index;
     size_t next_offset = offsets[row_num];
     const IColumn & nested_column = column_array.getData();
-    for (size_t i = offset; i < next_offset; ++i)
-        nested->serializeProtobuf(nested_column, i, protobuf);
+    size_t i;
+    for (i = offset; i < next_offset; ++i)
+    {
+        size_t element_stored = 0;
+        nested->serializeProtobuf(nested_column, i, protobuf, element_stored);
+        if (!element_stored)
+            break;
+    }
+    value_index += i - offset;
 }
 
 
