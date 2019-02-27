@@ -19,6 +19,12 @@ using RWLock = std::shared_ptr<RWLockImpl>;
 
 /// Implements shared lock with FIFO service
 /// Can be acquired recursively (several calls for the same query or the same OS thread) in Read mode
+///
+/// NOTE: it is important to allow acquiring the same lock in Read mode without waiting if it is already
+/// acquired by another thread of the same query. Otherwise the following deadlock is possible:
+/// - SELECT thread 1 locks in the Read mode
+/// - ALTER tries to lock in the Write mode (waits for SELECT thread 1)
+/// - SELECT thread 2 tries to lock in the Read mode (waits for ALTER)
 class RWLockImpl : public std::enable_shared_from_this<RWLockImpl>
 {
 public:
