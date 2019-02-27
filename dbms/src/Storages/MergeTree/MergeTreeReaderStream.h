@@ -18,7 +18,7 @@ public:
             const MarkRanges & all_mark_ranges,
             MarkCache * mark_cache, bool save_marks_in_cache,
             UncompressedCache * uncompressed_cache,
-            size_t aio_threshold, size_t max_read_buffer_size,
+            size_t file_size, size_t aio_threshold, size_t max_read_buffer_size,
             const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void seekToMark(size_t index);
@@ -28,8 +28,6 @@ public:
     ReadBuffer * data_buffer;
 
 private:
-    MergeTreeReaderStream() = default;
-
     /// NOTE: lazily loads marks from the marks cache.
     const MarkInCompressedFile & getMark(size_t index);
 

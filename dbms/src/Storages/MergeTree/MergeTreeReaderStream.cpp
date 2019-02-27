@@ -20,7 +20,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         const MarkRanges & all_mark_ranges,
         MarkCache * mark_cache_, bool save_marks_in_cache_,
         UncompressedCache * uncompressed_cache,
-        size_t aio_threshold, size_t max_read_buffer_size,
+        size_t file_size, size_t aio_threshold, size_t max_read_buffer_size,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
         : path_prefix(path_prefix_), extension(extension_), marks_count(marks_count_)
         , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)
@@ -54,7 +54,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
             || (right_mark + 1 == marks_count
                 && getMark(right_mark).offset_in_compressed_file == getMark(mark_range.end).offset_in_compressed_file))
         {
-            mark_range_bytes = Poco::File(path_prefix + extension).getSize() - getMark(left_mark).offset_in_compressed_file;
+            mark_range_bytes = file_size - getMark(left_mark).offset_in_compressed_file;
         }
         else
         {
