@@ -3,11 +3,11 @@
 #include <Common/config.h>
 #if USE_PROTOBUF
 
-#include "ProtobufBlockOutputStream.h"
+#include "ProtobufBlockOutputStream.h" // Y_IGNORE
 
 #include <Core/Block.h>
 #include <Formats/FormatSchemaInfo.h>
-#include <Formats/ProtobufSchemas.h>
+#include <Formats/ProtobufSchemas.h> // Y_IGNORE
 #include <Interpreters/Context.h>
 #include <google/protobuf/descriptor.h>
 
