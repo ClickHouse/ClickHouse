@@ -8,8 +8,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/numeric/conversion/cast.hpp>
-#include <google/protobuf/descriptor.h>
-#include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/descriptor.h> // Y_IGNORE
+#include <google/protobuf/descriptor.pb.h> // Y_IGNORE
 
 
 namespace DB
