@@ -30,15 +30,15 @@ public:
 
     static RWLock create() { return RWLock(new RWLockImpl); }
 
-    /// Just use LockHandler::reset() to release the lock
-    class LockHandlerImpl;
-    friend class LockHandlerImpl;
-    using LockHandler = std::shared_ptr<LockHandlerImpl>;
+    /// Just use LockHolder::reset() to release the lock
+    class LockHolderImpl;
+    friend class LockHolderImpl;
+    using LockHolder = std::shared_ptr<LockHolderImpl>;
 
 
     /// Waits in the queue and returns appropriate lock
     /// Empty query_id means the lock is acquired out of the query context (e.g. in a background thread).
-    LockHandler getLock(Type type, const String & query_id = String());
+    LockHolder getLock(Type type, const String & query_id = String());
 
 private:
     RWLockImpl() = default;
@@ -46,8 +46,8 @@ private:
     struct Group;
     using GroupsContainer = std::list<Group>;
     using ClientsContainer = std::list<Type>;
-    using ThreadToHandler = std::map<std::thread::id, std::weak_ptr<LockHandlerImpl>>;
-    using QueryIdToHandler = std::map<String, std::weak_ptr<LockHandlerImpl>>;
+    using ThreadToHolder = std::map<std::thread::id, std::weak_ptr<LockHolderImpl>>;
+    using QueryIdToHolder = std::map<String, std::weak_ptr<LockHolderImpl>>;
 
     /// Group of clients that should be executed concurrently
     /// i.e. a group could contain several readers, but only one writer
@@ -64,8 +64,8 @@ private:
 
     mutable std::mutex mutex;
     GroupsContainer queue;
-    ThreadToHandler thread_to_handler;
-    QueryIdToHandler query_id_to_handler;
+    ThreadToHolder thread_to_holder;
+    QueryIdToHolder query_id_to_holder;
 };
 
 

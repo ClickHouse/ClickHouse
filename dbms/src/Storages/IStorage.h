@@ -60,8 +60,8 @@ private:
 
     StoragePtr storage;
     /// Order is important.
-    RWLockImpl::LockHandler data_lock;
-    RWLockImpl::LockHandler structure_lock;
+    RWLockImpl::LockHolder data_lock;
+    RWLockImpl::LockHolder structure_lock;
 
 public:
     TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data, const String & query_id);
@@ -71,8 +71,8 @@ public:
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
-using TableStructureWriteLock = RWLockImpl::LockHandler;
-using TableDataWriteLock = RWLockImpl::LockHandler;
+using TableStructureWriteLock = RWLockImpl::LockHolder;
+using TableDataWriteLock = RWLockImpl::LockHolder;
 using TableFullWriteLock = std::pair<TableDataWriteLock, TableStructureWriteLock>;
 
 
