@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/Types.h>
 #include <boost/core/noncopyable.hpp>
 #include <list>
 #include <vector>
@@ -17,7 +18,7 @@ using RWLock = std::shared_ptr<RWLockImpl>;
 
 
 /// Implements shared lock with FIFO service
-/// Can be acquired recursively (several calls from the same thread) in Read mode
+/// Can be acquired recursively (several calls for the same query or the same OS thread) in Read mode
 class RWLockImpl : public std::enable_shared_from_this<RWLockImpl>
 {
 public:
@@ -36,7 +37,8 @@ public:
 
 
     /// Waits in the queue and returns appropriate lock
-    LockHandler getLock(Type type);
+    /// Empty query_id means the lock is acquired out of the query context (e.g. in a background thread).
+    LockHandler getLock(Type type, const String & query_id = String());
 
 private:
     RWLockImpl() = default;
@@ -45,6 +47,7 @@ private:
     using GroupsContainer = std::list<Group>;
     using ClientsContainer = std::list<Type>;
     using ThreadToHandler = std::map<std::thread::id, std::weak_ptr<LockHandlerImpl>>;
+    using QueryIdToHandler = std::map<String, std::weak_ptr<LockHandlerImpl>>;
 
     /// Group of clients that should be executed concurrently
     /// i.e. a group could contain several readers, but only one writer
@@ -62,6 +65,7 @@ private:
     mutable std::mutex mutex;
     GroupsContainer queue;
     ThreadToHandler thread_to_handler;
+    QueryIdToHandler query_id_to_handler;
 };
 
 
