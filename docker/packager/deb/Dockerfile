@@ -57,4 +57,4 @@ RUN apt-get --allow-unauthenticated update -y \
 
 
 
-CMD /bin/bash build/release --no-pbuilder && mv /*.deb /output
+CMD /bin/bash build/release --no-pbuilder && mv /*.deb /output && mv *.changes /output && mv *.buildinfo /output
