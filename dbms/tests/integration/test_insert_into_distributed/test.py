@@ -60,15 +60,12 @@ CREATE TABLE distributed (date Date, id UInt32) ENGINE = Distributed('shard_with
 ''')
 
         shard1.query('''
-SET allow_experimental_low_cardinality_type = 1;
 CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE = MergeTree(d, x, 8192)''')
 
         shard2.query('''
-SET allow_experimental_low_cardinality_type = 1;
 CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE = MergeTree(d, x, 8192)''')
 
         shard1.query('''
-SET allow_experimental_low_cardinality_type = 1;
 CREATE TABLE low_cardinality_all (d Date, x UInt32, s LowCardinality(String)) ENGINE = Distributed('shard_with_low_cardinality', 'default', 'low_cardinality', sipHash64(s))''')
 
         yield cluster

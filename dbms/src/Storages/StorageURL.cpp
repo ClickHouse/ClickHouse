@@ -45,7 +45,7 @@ namespace
             const String & name_,
             const Block & sample_block,
             const Context & context,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const ConnectionTimeouts & timeouts)
             : name(name_)
         {

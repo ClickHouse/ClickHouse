@@ -13,7 +13,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -69,7 +68,7 @@ public:
       */
     MergingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-        size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
+        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -134,8 +133,8 @@ protected:
 
     const SortDescription description;
     const size_t max_block_size;
-    size_t limit;
-    size_t total_merged_rows = 0;
+    UInt64 limit;
+    UInt64 total_merged_rows = 0;
 
     bool first = true;
     bool has_collation = false;

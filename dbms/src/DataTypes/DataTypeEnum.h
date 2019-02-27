@@ -61,7 +61,7 @@ public:
     explicit DataTypeEnum(const Values & values_);
 
     const Values & getValues() const { return values; }
-    std::string getName() const override { return type_name; }
+    std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
 
     TypeIndex getTypeId() const override { return sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16; }
@@ -105,7 +105,8 @@ public:
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const override;
 
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override { return ColumnType::create(); }
 

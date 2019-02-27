@@ -75,6 +75,14 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::AggregateFunctionState:
+                {
+                    AggregateFunctionStateData value;
+                    DB::readStringBinary(value.name, buf);
+                    DB::readStringBinary(value.data, buf);
+                    x.push_back(value);
+                    break;
+                }
             }
         }
     }
@@ -126,6 +134,12 @@ namespace DB
                 case Field::Types::Tuple:
                 {
                     DB::writeBinary(get<Tuple>(*it), buf);
+                    break;
+                }
+                case Field::Types::AggregateFunctionState:
+                {
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().name, buf);
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().data, buf);
                     break;
                 }
             }
@@ -209,6 +223,14 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::AggregateFunctionState:
+                {
+                    AggregateFunctionStateData value;
+                    DB::readStringBinary(value.name, buf);
+                    DB::readStringBinary(value.data, buf);
+                    x.push_back(value);
+                    break;
+                }
             }
         }
     }
@@ -260,6 +282,12 @@ namespace DB
                 case Field::Types::Tuple:
                 {
                     DB::writeBinary(get<Tuple>(*it), buf);
+                    break;
+                }
+                case Field::Types::AggregateFunctionState:
+                {
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().name, buf);
+                    DB::writeStringBinary(it->get<AggregateFunctionStateData>().data, buf);
                     break;
                 }
             }

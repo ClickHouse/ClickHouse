@@ -91,16 +91,6 @@ public:
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    /// This functionality seems strange.
-    //void initialize(Poco::Util::Application & self [[maybe_unused]])
-    //{
-    //    std::string home_path;
-    //    const char * home_path_cstr = getenv("HOME");
-    //    if (home_path_cstr)
-    //        home_path = home_path_cstr;
-    //    configReadClient(Poco::Util::Application::instance().config(), home_path);
-    //}
-
     int run()
     {
         std::string name;
@@ -119,6 +109,10 @@ public:
         processTestsConfigurations(input_files);
 
         return 0;
+    }
+    void setContextSetting(const String & name, const std::string & value)
+    {
+        global_context.setSetting(name, value);
     }
 
 private:
@@ -170,11 +164,13 @@ private:
             for (auto & test_config : tests_configurations)
             {
                 auto [output, signal] = runTest(test_config);
-                if (lite_output)
-                    std::cout << output;
-                else
-                    outputs.push_back(output);
-
+                if (!output.empty())
+                {
+                    if (lite_output)
+                        std::cout << output;
+                    else
+                        outputs.push_back(output);
+                }
                 if (signal)
                     break;
             }
@@ -199,30 +195,36 @@ private:
 
     std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
     {
-        PerformanceTestInfo info(test_config, profiles_file);
+        PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
         PerformanceTest current(test_config, connection, interrupt_listener, info, global_context, query_indexes[info.path]);
 
-        current.checkPreconditions();
-        LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
-        LOG_INFO(log, "Preparing for run, have " << info.create_queries.size()
-            << " create queries and " << info.fill_queries.size() << " fill queries");
-        current.prepare();
-        LOG_INFO(log, "Prepared");
-        LOG_INFO(log, "Running test '" << info.test_name << "'");
-        auto result = current.execute();
-        LOG_INFO(log, "Test '" << info.test_name << "' finished");
+        if (current.checkPreconditions())
+        {
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
+            LOG_INFO(
+                log,
+                "Preparing for run, have " << info.create_queries.size() << " create queries and " << info.fill_queries.size()
+                                           << " fill queries");
+            current.prepare();
+            LOG_INFO(log, "Prepared");
+            LOG_INFO(log, "Running test '" << info.test_name << "'");
+            auto result = current.execute();
+            LOG_INFO(log, "Test '" << info.test_name << "' finished");
 
-        LOG_INFO(log, "Running post run queries");
-        current.finish();
-        LOG_INFO(log, "Postqueries finished");
-
-        if (lite_output)
-            return {report_builder->buildCompactReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+            LOG_INFO(log, "Running post run queries");
+            current.finish();
+            LOG_INFO(log, "Postqueries finished");
+            if (lite_output)
+                return {report_builder->buildCompactReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+            else
+                return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
+        }
         else
-            return {report_builder->buildFullReport(info, result, query_indexes[info.path]), current.checkSIGINT()};
-    }
+            LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are not fullfilled, skip run");
 
+        return {"", current.checkSIGINT()};
+    }
 };
 
 }
@@ -322,6 +324,7 @@ try
     using Strings = DB::Strings;
 
 
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")
@@ -342,7 +345,10 @@ try
         ("skip-names-regexp", value<Strings>()->multitoken(), "Do not run tests with names matching regexp")
         ("input-files", value<Strings>()->multitoken(), "Input .xml files")
         ("query-indexes", value<std::vector<size_t>>()->multitoken(), "Input query indexes")
-        ("recursive,r", "Recurse in directories to find all xml's");
+        ("recursive,r", "Recurse in directories to find all xml's")
+    APPLY_FOR_SETTINGS(DECLARE_SETTING);
+#undef DECLARE_SETTING
+
 
     po::options_description cmdline_options;
     cmdline_options.add(desc);
@@ -400,6 +406,15 @@ try
         std::move(skip_names_regexp),
         queries_with_indexes,
         timeouts);
+    /// Extract settings from the options.
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    if (options.count(#NAME)) \
+    { \
+        performance_test_suite.setContextSetting(#NAME, options[#NAME].as<std::string>()); \
+    }
+    APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+#undef EXTRACT_SETTING
+
     return performance_test_suite.run();
 }
 catch (...)

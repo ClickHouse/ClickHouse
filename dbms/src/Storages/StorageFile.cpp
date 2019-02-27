@@ -116,7 +116,7 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
-    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
+    StorageFileBlockInputStream(StorageFile & storage_, const Context & context, UInt64 max_block_size)
         : storage(storage_)
     {
         if (storage.use_table_fd)

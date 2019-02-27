@@ -627,7 +627,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## uncompressed_cache_size
+## uncompressed_cache_size  {#server-settings-uncompressed_cache_size}
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 

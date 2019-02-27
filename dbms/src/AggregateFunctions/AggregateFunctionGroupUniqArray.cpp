@@ -15,11 +15,15 @@ namespace
 /// Substitute return type for Date and DateTime
 class AggregateFunctionGroupUniqArrayDate : public AggregateFunctionGroupUniqArray<DataTypeDate::FieldType>
 {
+public:
+    AggregateFunctionGroupUniqArrayDate(const DataTypePtr & argument_type) : AggregateFunctionGroupUniqArray<DataTypeDate::FieldType>(argument_type) {}
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDate>()); }
 };
 
 class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType>
 {
+public:
+    AggregateFunctionGroupUniqArrayDateTime(const DataTypePtr & argument_type) : AggregateFunctionGroupUniqArray<DataTypeDateTime::FieldType>(argument_type) {}
     DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>()); }
 };
 
@@ -27,8 +31,8 @@ class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUni
 static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type)
 {
     WhichDataType which(argument_type);
-         if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate;
-    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime;
+         if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate(argument_type);
+    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime(argument_type);
     else
     {
         /// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric
@@ -44,7 +48,7 @@ AggregateFunctionPtr createAggregateFunctionGroupUniqArray(const std::string & n
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0]));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray>(*argument_types[0], argument_types[0]));
 
     if (!res)
         res = AggregateFunctionPtr(createWithExtraTypes(argument_types[0]));

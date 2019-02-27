@@ -1,4 +1,7 @@
 <?xml version="1.0"?>
+<!--
+  NOTE: User and query level settings are set up in "users.xml" file.
+-->
 <yandex>
     <logger>
         <!-- Possible levels: https://github.com/pocoproject/poco/blob/develop/Foundation/include/Poco/Logger.h#L105 -->
@@ -291,12 +294,20 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
 
+    <!-- Query thread log. Has information about all threads participated in query execution.
+         Used only for queries with setting log_query_threads = 1. -->
+    <query_thread_log>
+        <database>system</database>
+        <table>query_thread_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_thread_log>
 
-    <!-- Uncomment if use part_log
+    <!-- Uncomment if use part log.
+         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
     <part_log>
         <database>system</database>
         <table>part_log</table>
-
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </part_log>
     -->

@@ -10,9 +10,9 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/ZlibDeflatingWriteBuffer.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Progress.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <IO/Progress.h>
 
 
 namespace Poco
@@ -54,7 +54,7 @@ private:
 
     std::ostream * response_body_ostr = nullptr;
 
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
     std::ostream * response_header_ostr = nullptr;
 #endif
 

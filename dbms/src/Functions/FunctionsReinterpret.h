@@ -10,9 +10,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <Common/memcpySmall.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/memcpySmall.h>
 
 
 namespace DB

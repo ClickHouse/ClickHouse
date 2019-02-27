@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 
 MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index)
-    : MergeTreeIndexGranule(), index(index), parallelogram()
+    : IMergeTreeIndexGranule(), index(index), parallelogram()
 {
 }
 
@@ -39,42 +39,32 @@ void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
 void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
 {
     parallelogram.clear();
+    Field min_val;
+    Field max_val;
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const DataTypePtr & type = index.data_types[i];
-
-        Field min_val;
         type->deserializeBinary(min_val, istr);
-        Field max_val;
         type->deserializeBinary(max_val, istr);
 
         parallelogram.emplace_back(min_val, true, max_val, true);
     }
 }
 
-String MergeTreeMinMaxGranule::toString() const
-{
-    String res = "";
-
-    for (size_t i = 0; i < parallelogram.size(); ++i)
-    {
-        res += "["
-                + applyVisitor(FieldVisitorToString(), parallelogram[i].left) + ", "
-                + applyVisitor(FieldVisitorToString(), parallelogram[i].right) + "]";
-    }
-
-    return res;
-}
-
 void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
 {
+    if (*pos >= block.rows())
+        throw Exception(
+                "The provided position is not less than the number of block rows. Position: "
+                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
+    Field field_min;
+    Field field_max;
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & column = block.getByName(index.columns[i]).column;
-
-        Field field_min, field_max;
         column->cut(*pos, rows_read)->getExtremes(field_min, field_max);
 
         if (parallelogram.size() <= i)
@@ -96,7 +86,7 @@ MinMaxCondition::MinMaxCondition(
     const SelectQueryInfo &query,
     const Context &context,
     const MergeTreeMinMaxIndex &index)
-    : IndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
+    : IIndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
 
 bool MinMaxCondition::alwaysUnknownOrTrue() const
 {
@@ -109,8 +99,7 @@ bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
         = std::dynamic_pointer_cast<MergeTreeMinMaxGranule>(idx_granule);
     if (!granule)
         throw Exception(
-            "Minmax index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
-
+            "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
     return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
 }
 
@@ -123,11 +112,11 @@ MergeTreeIndexGranulePtr MergeTreeMinMaxIndex::createIndexGranule() const
 IndexConditionPtr MergeTreeMinMaxIndex::createIndexCondition(
     const SelectQueryInfo & query, const Context & context) const
 {
-return std::make_shared<MinMaxCondition>(query, context, *this);
+    return std::make_shared<MinMaxCondition>(query, context, *this);
 };
 
 
-std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
+std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
     const Context & context)
@@ -158,7 +147,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
     }
 
     return std::make_unique<MergeTreeMinMaxIndex>(
-        node->name, std::move(minmax_expr), columns, data_types, sample, node->granularity.get<size_t>());
+        node->name, std::move(minmax_expr), columns, data_types, sample, node->granularity);
 }
 
 }

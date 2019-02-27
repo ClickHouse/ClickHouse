@@ -5,7 +5,6 @@
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
-#include <common/logger_useful.h>
 #include <pcg_random.hpp>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
@@ -42,6 +41,7 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
@@ -142,7 +142,7 @@ struct ContextShared
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::optional<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
-    std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
+    std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
@@ -150,7 +150,7 @@ struct ContextShared
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
-    SystemLogsPtr system_logs;                              /// Used to log queries and operations on parts
+    std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -275,6 +275,7 @@ struct ContextShared
         external_models.reset();
         background_pool.reset();
         schedule_pool.reset();
+        ddl_worker.reset();
     }
 
 private:
@@ -1361,12 +1362,12 @@ BackgroundSchedulePool & Context::getSchedulePool()
     return *shared->schedule_pool;
 }
 
-void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
+void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
     if (shared->ddl_worker)
         throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
-    shared->ddl_worker = ddl_worker;
+    shared->ddl_worker = std::move(ddl_worker);
 }
 
 DDLWorker & Context::getDDLWorker() const
@@ -1549,7 +1550,7 @@ void Context::initializeSystemLogs()
     if (!global_context)
         throw Exception("Logical error: no global context for system logs", ErrorCodes::LOGICAL_ERROR);
 
-    shared->system_logs = std::make_shared<SystemLogs>(*global_context, getConfigRef());
+    shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
 
@@ -1579,7 +1580,7 @@ PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
-    /// System logs are shutting down.
+    /// No part log or system logs are shutting down.
     if (!shared->system_logs || !shared->system_logs->part_log)
         return nullptr;
 
@@ -1698,7 +1699,7 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const
+BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
 {
     return FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size);
 }
@@ -1868,7 +1869,7 @@ SessionCleaner::~SessionCleaner()
 
 void SessionCleaner::run()
 {
-    setThreadName("HTTPSessionCleaner");
+    setThreadName("SessionCleaner");
 
     std::unique_lock lock{mutex};
 

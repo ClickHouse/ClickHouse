@@ -43,8 +43,10 @@ namespace fs = boost::filesystem;
 
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,
-    const std::string & profiles_file_)
+    const std::string & profiles_file_,
+    const Settings & global_settings_)
     : profiles_file(profiles_file_)
+    , settings(global_settings_)
 {
     test_name = config->getString("name");
     path = config->getString("path");

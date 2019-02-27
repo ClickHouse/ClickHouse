@@ -140,7 +140,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
@@ -154,7 +154,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
-    const size_t max_block_size,
+    const UInt64 max_block_size,
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
@@ -520,6 +520,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     RangesInDataParts parts_with_ranges;
 
+    std::vector<std::pair<MergeTreeIndexPtr, IndexConditionPtr>> useful_indices;
+    for (const auto & index : data.skip_indices)
+    {
+        auto condition = index->createIndexCondition(query_info, context);
+        if (!condition->alwaysUnknownOrTrue())
+            useful_indices.emplace_back(index, condition);
+    }
+
     /// Let's find what range to read from each part.
     size_t sum_marks = 0;
     size_t sum_ranges = 0;
@@ -532,16 +540,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         else
             ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
 
-        /// It can be done in multiple threads (one thread for each part).
-        /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
-        for (const auto & index : data.skip_indices)
-        {
-            auto condition = index->createIndexCondition(query_info, context);
-            if (!condition->alwaysUnknownOrTrue())
-            {
-                ranges.ranges = filterMarksUsingIndex(index, condition, part, ranges.ranges, settings);
-            }
-        }
+        for (const auto & index_and_condition : useful_indices)
+            ranges.ranges = filterMarksUsingIndex(
+                    index_and_condition.first, index_and_condition.second, part, ranges.ranges, settings);
 
         if (!ranges.ranges.empty())
         {
@@ -623,7 +624,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     RangesInDataParts && parts,
     size_t num_streams,
     const Names & column_names,
-    size_t max_block_size,
+    UInt64 max_block_size,
     bool use_uncompressed_cache,
     const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,
@@ -765,7 +766,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     RangesInDataParts && parts,
     const Names & column_names,
-    size_t max_block_size,
+    UInt64 max_block_size,
     bool use_uncompressed_cache,
     const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,
@@ -1009,7 +1010,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 continue;
             }
 
-            if (res.empty() || res.back().end - data_range.begin >= min_marks_for_seek)
+            if (res.empty() || res.back().end - data_range.begin > min_marks_for_seek)
                 res.push_back(data_range);
             else
                 res.back().end = data_range.end;
