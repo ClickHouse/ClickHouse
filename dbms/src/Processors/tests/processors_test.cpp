@@ -183,8 +183,8 @@ try
 
     auto concat = std::make_shared<ConcatProcessor>(header, 2);
 
-    connect(limit3->getOutputPort(), concat->getInputs()[0]);
-    connect(limit4->getOutputPort(), concat->getInputs()[1]);
+    connect(limit3->getOutputPort(), concat->getInputs().front());
+    connect(limit4->getOutputPort(), concat->getInputs().back());
 
     auto fork = std::make_shared<ForkProcessor>(header, 2);
 
@@ -192,18 +192,19 @@ try
 
     auto print_after_concat = std::make_shared<PrintSink>("---------- ");
 
-    connect(fork->getOutputs()[1], print_after_concat->getPort());
+    connect(fork->getOutputs().back(), print_after_concat->getPort());
 
     auto resize = std::make_shared<ResizeProcessor>(header, 4, 1);
 
-    connect(queue->getOutputPort(), resize->getInputs()[0]);
-    connect(source1->getPort(), resize->getInputs()[1]);
-    connect(source2->getPort(), resize->getInputs()[2]);
-    connect(fork->getOutputs()[0], resize->getInputs()[3]);
+    auto input_it = resize->getInputs().begin();
+    connect(queue->getOutputPort(), *(input_it++));
+    connect(source1->getPort(), *(input_it++));
+    connect(source2->getPort(), *(input_it++));
+    connect(fork->getOutputs().front(), *(input_it++));
 
     auto limit = std::make_shared<LimitTransform>(header, 100, 0);
 
-    connect(resize->getOutputs()[0], limit->getInputPort());
+    connect(resize->getOutputs().front(), limit->getInputPort());
 
     auto sink = std::make_shared<PrintSink>("");
 

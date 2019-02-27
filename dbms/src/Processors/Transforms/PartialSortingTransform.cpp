@@ -4,7 +4,7 @@
 namespace DB
 {
 
-PartialSortingTransform::PartialSortingTransform(const Block & header, SortDescription & description, UInt64 limit = 0)
+PartialSortingTransform::PartialSortingTransform(const Block & header, SortDescription & description, UInt64 limit)
     : ISimpleTransform(header, header, false)
     , description(description), limit(limit)
 {

@@ -16,7 +16,7 @@ MergingSortedTransform::MergingSortedTransform(
     , description(description_), max_block_size(max_block_size), limit(limit), quiet(quiet)
     , merged_data(header), source_chunks(num_inputs), cursors(num_inputs)
 {
-    auto & sample = outputs[0].getHeader();
+    auto & sample = outputs.front().getHeader();
     /// Replace column names in description to positions.
     for (auto & column_description : description)
     {
@@ -31,7 +31,7 @@ MergingSortedTransform::MergingSortedTransform(
 
 IProcessor::Status MergingSortedTransform::prepare()
 {
-    auto & output = outputs[0];
+    auto & output = outputs.front();
 
     /// Special case for no inputs.
     if (inputs.empty())
@@ -64,7 +64,7 @@ IProcessor::Status MergingSortedTransform::prepare()
     /// Special case for single input.
     if (inputs.size() == 1)
     {
-        auto & input = inputs[0];
+        auto & input = inputs.front();
         if (input.isFinished())
         {
             output.finish();
@@ -89,26 +89,28 @@ IProcessor::Status MergingSortedTransform::prepare()
     {
         /// Check for inputs we need.
         bool all_inputs_has_data = true;
-        for (size_t i = 0; i < inputs.size(); ++i)
+        auto it = inputs.begin();
+        for (size_t i = 0; it != inputs.end(); ++i, ++it)
         {
-            if (inputs[i].isFinished())
+            auto & input = *it;
+            if (input.isFinished())
                 continue;
 
             if (!cursors[i].empty())
             {
-                inputs[i].setNotNeeded();
+                input.setNotNeeded();
                 continue;
             }
 
-            inputs[i].setNeeded();
+            input.setNeeded();
 
-            if (!inputs[i].hasData())
+            if (!input.hasData())
             {
                 all_inputs_has_data = false;
                 continue;
             }
 
-            auto chunk = inputs[i].pull();
+            auto chunk = input.pull();
             if (chunk.hasNoRows())
             {
                 all_inputs_has_data = false;
@@ -136,14 +138,15 @@ IProcessor::Status MergingSortedTransform::prepare()
             for (auto & input : inputs)
                 input.close();
 
-            outputs[0].finish();
+            outputs.front().finish();
 
             return Status::Finished;
         }
 
         if (need_data)
         {
-            auto & input = inputs[next_input_to_read];
+
+            auto & input = *std::next(inputs.begin(), next_input_to_read);
             if (!input.isFinished())
             {
                 input.setNeeded();

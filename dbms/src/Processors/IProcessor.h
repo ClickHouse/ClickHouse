@@ -10,6 +10,10 @@ class EventCounter;
 namespace DB
 {
 
+class IProcessor;
+using ProcessorPtr = std::shared_ptr<IProcessor>;
+using Processors = std::vector<ProcessorPtr>;
+
 /** Processor is an element (low level building block) of a query execution pipeline.
   * It has zero or more input ports and zero or more output ports.
   *
@@ -141,6 +145,10 @@ public:
         /// Processor is doing some work in background.
         /// You may wait for next event or do something else and then you should call 'prepare' again.
         Wait,
+
+        /// Processor wants to add other processors to pipeline.
+        /// New processors must be obtained by expandPipeline() call.
+        ExpandPipeline,
     };
 
     static std::string statusToName(Status status);
@@ -189,6 +197,20 @@ public:
         throw Exception("Method 'schedule' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /** You must call this method if 'prepare' returned ExpandPipeline.
+      * This method cannot access any port, but it can create new ports for current processor.
+      *
+      * Method should return set of new already connected processors.
+      * All added processors must be connected only to each other or current processor.
+      *
+      * Method can't remove or reconnect existing ports, move data from/to port or perform calculations.
+      * 'prepare' should be called again after expanding pipeline.
+      */
+    virtual Processors expandPipeline()
+    {
+        throw Exception("Method 'expandPipeline' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
@@ -198,8 +220,7 @@ public:
     void dump() const;
 };
 
-using ProcessorPtr = std::shared_ptr<IProcessor>;
-using Processors = std::vector<ProcessorPtr>;
+
 
 
 }

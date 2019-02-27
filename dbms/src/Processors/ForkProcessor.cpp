@@ -6,7 +6,7 @@ namespace DB
 
 ForkProcessor::Status ForkProcessor::prepare()
 {
-    auto & input = inputs[0];
+    auto & input = inputs.front();
 
     /// Check can output.
 

@@ -17,7 +17,7 @@ IOutputFormat::Status IOutputFormat::prepare()
 
     for (auto kind : {Main, Totals, Extremes})
     {
-        auto & input = inputs[kind];
+        auto & input = getPort(kind);
 
         if (kind != Main && !input.isConnected())
             continue;

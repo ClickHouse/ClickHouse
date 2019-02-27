@@ -27,7 +27,7 @@ public:
 
     Status prepare() override;
 
-    InputPort & getInputPort() { return inputs[0]; }
+    InputPort & getInputPort() { return inputs.front(); }
 };
 
 }

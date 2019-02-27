@@ -293,8 +293,8 @@ public:
 };
 
 
-using InputPorts = std::vector<InputPort>;
-using OutputPorts = std::vector<OutputPort>;
+using InputPorts = std::list<InputPort>;
+using OutputPorts = std::list<OutputPort>;
 
 
 void connect(OutputPort & output, InputPort & input);

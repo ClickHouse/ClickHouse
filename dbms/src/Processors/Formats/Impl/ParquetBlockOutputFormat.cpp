@@ -39,14 +39,14 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out, Block head
 {
 }
 
-void checkStatus(arrow::Status & status, const std::string & column_name)
+static void checkStatus(arrow::Status & status, const std::string & column_name)
 {
     if (!status.ok())
         throw Exception{"Error with a parquet column \"" + column_name + "\": " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 template <typename NumericType, typename ArrowBuilderType>
-void fillArrowArrayWithNumericColumnData(
+static void fillArrowArrayWithNumericColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const PaddedPODArray<NumericType> & internal_data = static_cast<const ColumnVector<NumericType> &>(*write_column).getData();
@@ -73,7 +73,7 @@ void fillArrowArrayWithNumericColumnData(
 }
 
 template <typename ColumnType>
-void fillArrowArrayWithStringColumnData(
+static void fillArrowArrayWithStringColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const auto & internal_column = static_cast<const ColumnType &>(*write_column);
@@ -99,7 +99,7 @@ void fillArrowArrayWithStringColumnData(
     checkStatus(status, write_column->getName());
 }
 
-void fillArrowArrayWithDateColumnData(
+static void fillArrowArrayWithDateColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const PaddedPODArray<UInt16> & internal_data = static_cast<const ColumnVector<UInt16> &>(*write_column).getData();
@@ -121,7 +121,7 @@ void fillArrowArrayWithDateColumnData(
     checkStatus(status, write_column->getName());
 }
 
-void fillArrowArrayWithDateTimeColumnData(
+static void fillArrowArrayWithDateTimeColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     auto & internal_data = static_cast<const ColumnVector<UInt32> &>(*write_column).getData();
@@ -146,7 +146,7 @@ void fillArrowArrayWithDateTimeColumnData(
 }
 
 template <typename DataType>
-void fillArrowArrayWithDecimalColumnData(
+static void fillArrowArrayWithDecimalColumnData(
     ColumnPtr write_column,
     std::shared_ptr<arrow::Array> & arrow_array,
     const PaddedPODArray<UInt8> * null_bytemap,
@@ -230,7 +230,7 @@ const std::unordered_map<String, std::shared_ptr<arrow::DataType>> internal_type
     {"FixedString", arrow::utf8()},
 };
 
-const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
+static const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
 {
     ColumnPtr null_column = static_cast<const ColumnNullable &>(*column).getNullMapColumnPtr();
     const PaddedPODArray<UInt8> & null_bytemap = static_cast<const ColumnVector<UInt8> &>(*null_column).getData();
