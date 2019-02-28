@@ -118,7 +118,7 @@ public:
       * WARNING: You need to call methods from ITableDeclaration under such a lock. Without it, they are not thread safe.
       * WARNING: To avoid deadlocks, this method must not be called under lock of Context.
       */
-    TableStructureReadLockPtr lockStructure(bool will_modify_data, const String & query_id = String())
+    TableStructureReadLockPtr lockStructure(bool will_modify_data, const String & query_id)
     {
         TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data, query_id);
         if (is_dropped)
@@ -128,7 +128,7 @@ public:
 
     /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP, TRUNCATE.
       */
-    TableFullWriteLock lockForAlter(const String & query_id = String())
+    TableFullWriteLock lockForAlter(const String & query_id)
     {
         /// The calculation order is important.
         auto res_data_lock = lockDataForAlter(query_id);
@@ -141,7 +141,7 @@ public:
       * It is taken during write temporary data in ALTER MODIFY.
       * Under this lock, you can take lockStructureForAlter() to change the structure of the table.
       */
-    TableDataWriteLock lockDataForAlter(const String & query_id = String())
+    TableDataWriteLock lockDataForAlter(const String & query_id)
     {
         auto res = data_lock->getLock(RWLockImpl::Write, query_id);
         if (is_dropped)
@@ -149,7 +149,7 @@ public:
         return res;
     }
 
-    TableStructureWriteLock lockStructureForAlter(const String & query_id = String())
+    TableStructureWriteLock lockStructureForAlter(const String & query_id)
     {
         auto res = structure_lock->getLock(RWLockImpl::Write, query_id);
         if (is_dropped)

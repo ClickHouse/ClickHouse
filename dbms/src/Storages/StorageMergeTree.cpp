@@ -452,7 +452,7 @@ bool StorageMergeTree::merge(
     bool deduplicate,
     String * out_disable_reason)
 {
-    auto structure_lock = lockStructure(true);
+    auto structure_lock = lockStructure(true, RWLockImpl::NO_QUERY);
 
     FutureMergedMutatedPart future_part;
 
@@ -562,7 +562,7 @@ bool StorageMergeTree::merge(
 
 bool StorageMergeTree::tryMutatePart()
 {
-    auto structure_lock = lockStructure(true);
+    auto structure_lock = lockStructure(true, RWLockImpl::NO_QUERY);
 
     FutureMergedMutatedPart future_part;
     MutationCommands commands;
