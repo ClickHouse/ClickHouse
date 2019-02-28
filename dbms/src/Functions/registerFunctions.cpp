@@ -33,6 +33,7 @@ void registerFunctionsRound(FunctionFactory &);
 void registerFunctionsString(FunctionFactory &);
 void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
+void registerFunctionsStringSimilarity(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
@@ -72,6 +73,7 @@ void registerFunctions()
     registerFunctionsString(factory);
     registerFunctionsStringArray(factory);
     registerFunctionsStringSearch(factory);
+    registerFunctionsStringSimilarity(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
