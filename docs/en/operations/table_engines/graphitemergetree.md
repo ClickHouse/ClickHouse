@@ -95,7 +95,14 @@ default
     ...
 ```
 
-When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` sections could contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
+**Important:** The order of patterns should be next:
+
+1. Patterns *without* `function` *or* `retention`.
+1. Patterns *with* both `function` *and* `retention`.
+1. Pattern `dafault`.
+
+
+When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections could contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
 Fields for `pattern` and `default` sections:
 
