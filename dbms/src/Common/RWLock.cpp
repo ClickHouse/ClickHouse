@@ -79,7 +79,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     auto it_thread = thread_to_holder.find(this_thread_id);
 
     auto it_query = query_id_to_holder.end();
-    if (!query_id.empty())
+    if (query_id != RWLockImpl::NO_QUERY)
         it_query = query_id_to_holder.find(query_id);
 
     if (it_thread != thread_to_holder.end())
@@ -127,7 +127,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     it_thread = thread_to_holder.emplace(this_thread_id, res).first;
     res->it_thread = it_thread;
 
-    if (!query_id.empty())
+    if (query_id != RWLockImpl::NO_QUERY)
         it_query = query_id_to_holder.emplace(query_id, res).first;
     res->it_query = it_query;
 

@@ -41,10 +41,12 @@ public:
     friend class LockHolderImpl;
     using LockHolder = std::shared_ptr<LockHolderImpl>;
 
-
     /// Waits in the queue and returns appropriate lock
     /// Empty query_id means the lock is acquired out of the query context (e.g. in a background thread).
-    LockHolder getLock(Type type, const String & query_id = String());
+    LockHolder getLock(Type type, const String & query_id);
+
+    /// Use as query_id to acquire a lock outside the query context.
+    inline static const String NO_QUERY = String();
 
 private:
     RWLockImpl() = default;
