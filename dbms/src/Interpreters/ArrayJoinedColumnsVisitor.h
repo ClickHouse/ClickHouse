@@ -28,6 +28,8 @@ namespace ErrorCodes
 class ArrayJoinedColumnsMatcher
 {
 public:
+    using Visitor = InDepthNodeVisitor<ArrayJoinedColumnsMatcher, true>;
+
     struct Data
     {
         const Aliases & aliases;
@@ -35,8 +37,6 @@ public:
         NameToNameMap & array_join_alias_to_name;
         NameToNameMap & array_join_result_to_source;
     };
-
-    static constexpr const char * label = "ArrayJoinedColumns";
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child)
     {
@@ -50,17 +50,16 @@ public:
         return true;
     }
 
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
             visit(*t, ast, data);
         if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
-            return visit(*t, ast, data);
-        return {};
+            visit(*t, ast, data);
     }
 
 private:
-    static std::vector<ASTPtr *> visit(const ASTSelectQuery & node, ASTPtr &, Data & data)
+    static void visit(const ASTSelectQuery & node, ASTPtr &, Data & data)
     {
         ASTPtr array_join_expression_list = node.array_join_expression_list();
         if (!array_join_expression_list)
@@ -87,7 +86,8 @@ private:
                 out.emplace_back(&child2);
         }
 
-        return out;
+        for (ASTPtr * add_node : out)
+            Visitor(data).visit(*add_node);
     }
 
     static void visit(const ASTIdentifier & node, ASTPtr &, Data & data)
@@ -130,6 +130,6 @@ private:
     }
 };
 
-using ArrayJoinedColumnsVisitor = InDepthNodeVisitor<ArrayJoinedColumnsMatcher, true>;
+using ArrayJoinedColumnsVisitor = ArrayJoinedColumnsMatcher::Visitor;
 
 }

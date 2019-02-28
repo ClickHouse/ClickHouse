@@ -1,9 +1,15 @@
+#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Formats/IRowOutputStream.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 void IRowOutputStream::write(const Block & block, size_t row_num)
 {
@@ -21,6 +27,11 @@ void IRowOutputStream::write(const Block & block, size_t row_num)
     }
 
     writeRowEndDelimiter();
+}
+
+void IRowOutputStream::writeField(const IColumn &, const IDataType &, size_t)
+{
+    throw Exception("Method writeField is not implemented for output format", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

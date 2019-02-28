@@ -37,7 +37,8 @@ ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
     std::lock_guard lock(mutex);
     if (!pool_map->count(connection_str))
     {
-        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str] {
+        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str]
+        {
             return std::make_shared<Poco::Data::SessionPool>("ODBC", validateODBCConnectionString(connection_str));
         }));
     }

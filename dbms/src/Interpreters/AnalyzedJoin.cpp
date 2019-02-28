@@ -79,20 +79,14 @@ Names AnalyzedJoin::getOriginalColumnNames(const NameSet & required_columns_from
     return original_columns;
 }
 
-void AnalyzedJoin::calculateColumnsFromJoinedTable(
-        const NameSet & source_columns, const DatabaseAndTableWithAlias & table_name_with_alias, const NamesAndTypesList & columns)
+void AnalyzedJoin::calculateColumnsFromJoinedTable(const NamesAndTypesList & columns, const Names & original_names)
 {
     columns_from_joined_table.clear();
 
+    size_t i = 0;
     for (auto & column : columns)
     {
-        JoinedColumn joined_column(column, column.name);
-
-        if (source_columns.count(column.name))
-        {
-            auto qualified_name = table_name_with_alias.getQualifiedNamePrefix() + column.name;
-            joined_column.name_and_type.name = qualified_name;
-        }
+        JoinedColumn joined_column(column, original_names[i++]);
 
         /// We don't want to select duplicate columns from the joined subquery if they appear
         if (std::find(columns_from_joined_table.begin(), columns_from_joined_table.end(), joined_column) == columns_from_joined_table.end())
