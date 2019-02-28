@@ -183,7 +183,7 @@ protected:
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
-    WriteBuffer * out_row_sources_buf;
+    WriteBuffer * out_row_sources_buf = nullptr;
 
     /// Chunks currently being merged.
     std::vector<SharedChunkPtr> source_chunks;
