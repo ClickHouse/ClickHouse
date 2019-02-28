@@ -613,12 +613,15 @@ Port for communicating with clients over the TCP protocol.
 
 Port for communicating with clients over the secure connection by TCP protocol. Use it with [OpenSSL](#server_settings-openssl) settings.
 
-**Example**
+**Possible values**
+
+Positive integer.
+
+**Default value**
 
 ```xml
-<tcp_port>9440</tcp_port>
+<tcp_port_secure>9440</tcp_port_secure>
 ```
-
 
 ## tmp_path
 
