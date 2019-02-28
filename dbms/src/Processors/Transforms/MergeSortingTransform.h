@@ -14,7 +14,9 @@
 namespace DB
 {
 
-class MergeSortingTransform : public IAccumulatingTransform
+class MergeSorter;
+
+class MergeSortingTransform : public IProcessor
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
@@ -27,8 +29,10 @@ public:
     String getName() const override { return "MergeSortingTransform"; }
 
 protected:
-    void consume(Chunk chunk) override;
-    Chunk generate() override;
+
+    Status prepare() override;
+    void work() override;
+    Processors expandPipeline() override;
 
 private:
     SortDescription description;
@@ -58,25 +62,34 @@ private:
     /// Everything below is for external sorting.
     std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
 
-    /// For reading data from temporary file.
-    struct TemporaryFileStream
-    {
-        ReadBufferFromFile file_in;
-        CompressedReadBuffer compressed_in;
-        BlockInputStreamPtr block_in;
-
-        TemporaryFileStream(const std::string & path, const Block & header)
-                : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header, 0)) {}
-    };
-
-    std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
-
-    BlockInputStreams inputs_to_merge;
-
     /// Merge all accumulated blocks to keep no more than limit rows.
     void remerge();
 
     void removeConstColumns(Chunk & chunk);
+
+    enum class Stage
+    {
+        Consume = 0,
+        Generate,
+        Serialize,
+    };
+
+    Stage stage = Stage::Consume;
+    bool generated_prefix = false;
+    Chunk current_chunk;
+    Chunk generated_chunk;
+
+    std::unique_ptr<MergeSorter> merge_sorter;
+    ProcessorPtr current_processor;
+    Processors processors;
+
+    Status prepareConsume();
+    Status prepareSerialize();
+    Status prepareGenerate();
+
+    void consume(Chunk chunk);
+    void serialize();
+    void generate();
 };
 
 }
