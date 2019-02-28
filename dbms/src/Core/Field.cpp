@@ -10,7 +10,7 @@
 
 namespace DB
 {
-    inline void readBinary(Array & x, ReadBuffer & buf)
+    void readBinary(Array & x, ReadBuffer & buf)
     {
         size_t size;
         UInt8 type;
@@ -151,12 +151,8 @@ namespace DB
         DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
         buf.write(res.data(), res.size());
     }
-}
 
-
-namespace DB
-{
-    inline void readBinary(Tuple & x_def, ReadBuffer & buf)
+    void readBinary(Tuple & x_def, ReadBuffer & buf)
     {
         auto & x = x_def.toUnderType();
         size_t size;
