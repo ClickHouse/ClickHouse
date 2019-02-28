@@ -196,7 +196,7 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL](#openssl) must be configured.
+If `https_port` is specified, [openSSL](#server_settings-openssl) must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
@@ -430,7 +430,7 @@ For more information, see the MergeTreeSettings.h header file.
 ```
 
 
-## openSSL
+## openSSL {#server_settings-openssl}
 
 SSL client/server configuration.
 
@@ -607,6 +607,16 @@ Port for communicating with clients over the TCP protocol.
 
 ```xml
 <tcp_port>9000</tcp_port>
+```
+
+## tcp_port_secure {#server_settings-tcp_port_secure}
+
+Port for communicating with clients over the secure connection by TCP protocol. Use it with [OpenSSL](#server_settings-openssl) settings.
+
+**Example**
+
+```xml
+<tcp_port>9440</tcp_port>
 ```
 
 
