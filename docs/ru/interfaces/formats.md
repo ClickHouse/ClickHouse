@@ -24,11 +24,12 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 [PrettyCompactMonoBlock](#prettycompactmonoblock) | ✗ | ✔ |
 [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
 [PrettySpace](#prettyspace) | ✗ | ✔ |
+[Protobuf](#protobuf) | ✔ | ✔ |
 [RowBinary](#rowbinary) | ✔ | ✔ |
 [Native](#native) | ✔ | ✔ |
 [Null](#null) | ✗ | ✔ |
 [XML](#xml) | ✗ | ✔ |
-[CapnProto](#capnproto) | ✔ | ✔ |
+[CapnProto](#capnproto) | ✔ | ✗ |
 
 ## TabSeparated {#tabseparated}
 
@@ -565,11 +566,10 @@ test: string with \'quotes\' and \t with some special \n characters
 
 Cap'n Proto - формат бинарных сообщений, похож на Protocol Buffers и Thrift, но не похож на JSON или MessagePack.
 
-Сообщения Cap'n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется для каждого запроса.
+Сообщения Cap'n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется между запросами.
 
-``` sql
-SELECT SearchPhrase, count() AS c FROM test.hits
-       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
+```bash
+cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
 Где `schema.capnp` выглядит следующим образом:
@@ -581,9 +581,81 @@ struct Message {
 }
 ```
 
-
-Файлы со схемами находятся в файле, который находится в каталоге указанном в параметре [format_schema_path](../operations/server_settings/settings.md) конфигурации сервера.
-
 Десериализация эффективна и обычно не повышает нагрузку на систему.
+
+См. также [схема формата](#formatschema).
+
+## Protobuf {#protobuf}
+
+Protobuf - формат [Protocol Buffers](https://developers.google.com/protocol-buffers/).
+
+Формат нуждается во внешнем описании схемы. Схема кэшируется между запросами.
+Пример использования формата:
+
+```sql
+SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+или
+
+```bash
+cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
+```
+
+Где файл `schemafile.proto` может выглядеть так:
+
+```
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+};
+```
+
+Соответствие между столбцами таблицы и полями сообщения Protocol Buffers устанавливается по имени,
+при этом игнорируется регистр букв и символы `_` (подчеркивание) и `.` (точка) считаются одинаковыми.
+Если типы столбцов не соответствуют точно типам полей сообщения Protocol Buffers, производится необходимая конвертация.
+
+Вложенные сообщения поддерживаются, например, для поля `z` в таком сообщении
+
+```
+message MessageType {
+  message XType {
+    message YType {
+      int32 z;
+    };
+    repeated YType y;
+  };
+  XType x;
+};
+```
+
+ClickHouse попытается найти столбец с именем `x.y.z` (или `x_y_z`, или `X.y_Z` и т.п.).
+Вложенные сообщения удобно использовать в качестве соответствия для [вложенной структуры данных](../data_types/nested_data_structures/nested/).
+
+Значения по умолчанию, определенные в схеме, например,
+
+```
+message MessageType {
+  optional int32 result_per_page = 3 [default = 10];
+}
+```
+
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../query_language/create.md#create-default-values).
+
+## Схема формата {#formatschema}
+
+Имя файла со схемой записывается в настройке `format_schema`. При использовании форматов `Cap'n Proto` и `Protobuf` требуется указать схему.
+Схема представляет собой имя файла и имя типа в этом файле, разделенные двоеточием, например `schemafile.proto:MessageType`.
+Если файл имеет стандартное расширение для данного формата (например `.proto` для `Protobuf`),
+то можно его не указывать и записывать схему так `schemafile:MessageType`.
+
+Если для ввода/вывода данных используется [клиент](../interfaces/cli/), то при записи схемы можно использовать абсолютный путь или записывать путь
+относительно текущей директории на клиенте.
+Если для ввода/вывода данных используется [HTTP-интерфейс](../interfaces/http/), то файл со схемой должен располагаться на сервере в каталоге,
+указанном в параметре [format_schema_path](../data_types/nested_data_structures/nested/) конфигурации сервера.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/formats/) <!--hide-->
