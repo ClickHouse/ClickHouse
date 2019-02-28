@@ -24,7 +24,7 @@ if (OS_LINUX AND COMPILER_CLANG)
         endif ()
 
         if (LIBCXX_PATH)
-#            include_directories (SYSTEM BEFORE "${LIBCXX_PATH}/include" "${LIBCXX_PATH}/include/c++/v1")
+            include_directories (SYSTEM BEFORE "${LIBCXX_PATH}/include" "${LIBCXX_PATH}/include/c++/v1")
             link_directories ("${LIBCXX_PATH}/lib")
         endif ()
     endif ()
