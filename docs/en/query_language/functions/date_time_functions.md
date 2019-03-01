@@ -119,10 +119,10 @@ Rounds down a date with time to the start of the ten-minute interval.
 Rounds down the date with time to the start of the fifteen-minute interval.
 
 ## toStartOfInterval(time_or_data, INTERVAL x unit [, time_zone])
-This is a generalization of other functions named `toStartOf*`. For example,
-`toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
-`toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,
-`toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,
+This is a generalization of other functions named `toStartOf*`. For example,  
+`toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,  
+`toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,  
+`toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,  
 `toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)` etc.
 
 ## toTime
