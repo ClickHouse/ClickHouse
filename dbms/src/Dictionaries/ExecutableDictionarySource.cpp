@@ -88,6 +88,7 @@ std::string ExecutableDictionarySource::getUpdateFieldAndDate()
     }
     else
     {
+        update_time = std::chrono::system_clock::now();
         std::string str_time("\"0000-00-00 00:00:00\""); ///for initial load
         return command + " " + update_field + " " + str_time;
     }
