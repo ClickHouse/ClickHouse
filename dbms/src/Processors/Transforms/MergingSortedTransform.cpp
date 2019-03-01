@@ -151,7 +151,11 @@ IProcessor::Status MergingSortedTransform::prepare()
                 if (!input.hasData())
                     return Status::NeedData;
 
-                updateCursor(input.pull(), next_input_to_read);
+                auto chunk = input.pull();
+                if (chunk.hasNoRows())
+                    return Status::NeedData;
+
+                updateCursor(std::move(chunk), next_input_to_read);
                 pushToQueue(next_input_to_read);
                 need_data = false;
             }
@@ -265,6 +269,7 @@ void MergingSortedTransform::merge(std::priority_queue<TSortCursor> & queue)
             }
         }
     }
+    is_finished = true;
 }
 
 void MergingSortedTransform::insertFromChunk(size_t source_num)

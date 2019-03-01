@@ -52,6 +52,8 @@ public:
         if (stream)
         {
             stream->writeSuffix();
+            compressed_buf.next();
+            file_buf.next();
             LOG_INFO(log, "Done writing part of data into temporary file " + path);
         }
 
@@ -87,6 +89,7 @@ public:
         auto block = block_in->read();
         if (!block)
         {
+            block_in->readSuffix();
             block_in.reset();
             return {};
         }
@@ -266,6 +269,7 @@ MergeSortingTransform::MergeSortingTransform(
     /// Remove constants from header and map old indexes to new.
     size_t num_columns = sample.columns();
     ColumnNumbers map(num_columns, num_columns);
+    const_columns_to_remove.assign(num_columns, true);
     for (size_t pos = 0; pos < num_columns; ++pos)
     {
         const auto & column = sample.getByPosition(pos);
@@ -273,6 +277,7 @@ MergeSortingTransform::MergeSortingTransform(
         {
             map[pos] = header_without_constants.columns();
             header_without_constants.insert(column);
+            const_columns_to_remove[pos] = false;
         }
     }
 
@@ -292,6 +297,8 @@ MergeSortingTransform::MergeSortingTransform(
 
     description.swap(description_without_constants);
 }
+
+MergeSortingTransform::~MergeSortingTransform() = default;
 
 IProcessor::Status MergeSortingTransform::prepare()
 {
@@ -380,7 +387,7 @@ IProcessor::Status MergeSortingTransform::prepareSerialize()
 
     if (!output.canPush())
     {
-        input.setNotNeeded();
+        // input.setNotNeeded();
         return Status::PortFull;
     }
 
@@ -417,10 +424,10 @@ IProcessor::Status MergeSortingTransform::prepareGenerate()
 
     if (merge_sorter)
     {
-        if (!current_chunk)
+        if (!generated_chunk)
             return Status::Ready;
 
-        output.push(std::move(current_chunk));
+        output.push(std::move(generated_chunk));
         return Status::PortFull;
     }
     else
