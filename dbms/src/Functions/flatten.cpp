@@ -94,7 +94,7 @@ result: Row 1: [1, 2, 3], Row2: [4]
             const IColumn::Offsets * next_offsets = &next_col->getOffsets();
 
             for (size_t i = 0; i < input_rows_count; ++i)
-                result_offsets[i] = (*next_offsets)[(*prev_offsets)[i] - 1];
+                result_offsets[i] = (*next_offsets)[(*prev_offsets)[i] - 1];    /// -1 array subscript is Ok, see PaddedPODArray
 
             prev_offsets = &result_offsets;
             prev_data = &next_col->getData();
