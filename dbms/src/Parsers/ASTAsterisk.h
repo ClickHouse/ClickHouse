@@ -6,6 +6,9 @@
 namespace DB
 {
 
+struct AsteriskSemantic;
+struct AsteriskSemanticImpl;
+
 class ASTAsterisk : public IAST
 {
 public:
@@ -15,6 +18,11 @@ public:
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+
+private:
+    std::shared_ptr<AsteriskSemanticImpl> semantic; /// pimpl
+
+    friend struct AsteriskSemantic;
 };
 
 }

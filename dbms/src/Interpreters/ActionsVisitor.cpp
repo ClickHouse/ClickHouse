@@ -35,6 +35,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {

@@ -6,7 +6,6 @@
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
-#include <common/logger_useful.h>
 #include <pcg_random.hpp>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
@@ -44,6 +43,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
@@ -145,7 +145,7 @@ struct ContextShared
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::optional<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
-    std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
+    std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
@@ -282,6 +282,7 @@ struct ContextShared
         external_models.reset();
         background_pool.reset();
         schedule_pool.reset();
+        ddl_worker.reset();
 
         /// Close trace pipe - definitely nobody needs to write there after
         /// databases shutdown
@@ -1382,12 +1383,12 @@ BackgroundSchedulePool & Context::getSchedulePool()
     return *shared->schedule_pool;
 }
 
-void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
+void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
     if (shared->ddl_worker)
         throw Exception("DDL background thread has already been initialized.", ErrorCodes::LOGICAL_ERROR);
-    shared->ddl_worker = ddl_worker;
+    shared->ddl_worker = std::move(ddl_worker);
 }
 
 DDLWorker & Context::getDDLWorker() const
@@ -1605,7 +1606,7 @@ PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
-    /// System logs are shutting down.
+    /// No part log or system logs are shutting down.
     if (!shared->system_logs || !shared->system_logs->part_log)
         return nullptr;
 
@@ -1734,7 +1735,7 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const
+BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
 {
     return FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size);
 }
@@ -1904,7 +1905,7 @@ SessionCleaner::~SessionCleaner()
 
 void SessionCleaner::run()
 {
-    setThreadName("HTTPSessionCleaner");
+    setThreadName("SessionCleaner");
 
     std::unique_lock lock{mutex};
 

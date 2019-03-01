@@ -119,8 +119,10 @@ bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquer
 
         for (const auto & subquery_function : extract_data.functions)
         {
-            const auto & function = FunctionFactory::instance().get(subquery_function->name, context);
-            if (function->isStateful())
+            const auto & function = FunctionFactory::instance().tryGet(subquery_function->name, context);
+
+            /// Skip lambda、tuple and other special functions
+            if (function && function->isStateful())
                 return false;
         }
 
@@ -250,7 +252,6 @@ void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
                     name = ast->getAliasOrColumnName();
                 }
 
-                IdentifierSemantic::setNeedLongName(*identifier, false);
                 identifier->setShortName(name);
             }
         }
@@ -338,9 +339,9 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
     std::unordered_map<String, ASTPtr> aliases;
     std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
 
-    std::vector<TableWithColumnNames> tables_with_columns;
-    TranslateQualifiedNamesVisitor::Data::setTablesOnly(tables, tables_with_columns);
-    TranslateQualifiedNamesVisitor::Data qn_visitor_data{{}, tables_with_columns};
+    /// TODO: get tables from evaluateAsterisk instead of tablesOnly() to extract asterisks in general way
+    std::vector<TableWithColumnNames> tables_with_columns = TranslateQualifiedNamesVisitor::Data::tablesOnly(tables);
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data({}, tables_with_columns, false);
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
 
     QueryAliasesVisitor::Data query_aliases_data{aliases};

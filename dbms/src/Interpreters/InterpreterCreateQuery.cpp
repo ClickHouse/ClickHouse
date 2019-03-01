@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
+    extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
 }
 
 
@@ -429,45 +430,25 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 }
 
 
-void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & columns, const Context & context)
-{
-    const auto & settings = context.getSettingsRef();
-    bool allow_low_cardinality = settings.allow_experimental_low_cardinality_type != 0;
-
-    if (allow_low_cardinality)
-        return;
-
-    auto check_types = [&](const NamesAndTypesList & list)
-    {
-        for (const auto & column : list)
-        {
-            if (!allow_low_cardinality && column.type && column.type->lowCardinality())
-            {
-                String message = "Cannot create table with column '" + column.name + "' which type is '"
-                                 + column.type->getName() + "' because LowCardinality type is not allowed. "
-                                 + "Set setting allow_experimental_low_cardinality_type = 1 in order to allow it.";
-                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
-            }
-        }
-    };
-
-    check_types(columns.ordinary);
-    check_types(columns.materialized);
-}
-
-
 ColumnsDescription InterpreterCreateQuery::setColumns(
     ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const
 {
     ColumnsDescription res;
+    IndicesDescription indices;
 
-    if (create.columns_list && create.columns_list->columns)
+    if (create.columns_list)
     {
-        res = getColumnsDescription(*create.columns_list->columns, context);
+        if (create.columns_list->columns)
+            res = getColumnsDescription(*create.columns_list->columns, context);
+        if (create.columns_list->indices)
+            for (const auto & index : create.columns_list->indices->children)
+                indices.indices.push_back(
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
     }
     else if (!create.as_table.empty())
     {
         res = as_storage->getColumns();
+        indices = as_storage->getIndicesDescription();
     }
     else if (create.select)
     {
@@ -479,6 +460,8 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(res);
+    ASTPtr new_indices = formatIndices(indices);
+
     if (!create.columns_list)
     {
         auto new_columns_list = std::make_shared<ASTColumns>();
@@ -489,6 +472,11 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
         create.columns_list->replace(create.columns_list->columns, new_columns);
     else
         create.columns_list->set(create.columns_list->columns, new_columns);
+
+    if (new_indices && create.columns_list->indices)
+        create.columns_list->replace(create.columns_list->indices, new_indices);
+    else if (new_indices)
+        create.columns_list->set(create.columns_list->indices, new_indices);
 
     /// Check for duplicates
     std::set<String> all_columns;
@@ -560,6 +548,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
     }
 
+    /// Temporary tables are created out of databases.
+    if (create.temporary && !create.database.empty())
+        throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
+            ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
+
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
 
@@ -598,15 +591,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
-        as_storage_lock = as_storage->lockStructure(false);
+        as_storage_lock = as_storage->lockStructure(false, context.getCurrentQueryId());
     }
 
     /// Set and retrieve list of columns.
     ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
-
-    /// Some column types may be not allowed according to settings.
-    if (!create.attach)
-        checkSupportedTypes(columns, context);
 
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);

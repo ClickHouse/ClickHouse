@@ -62,21 +62,20 @@ bool RequiredSourceColumnsMatcher::needChildVisit(ASTPtr & node, const ASTPtr & 
     return true;
 }
 
-std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
+void RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
 {
     /// results are columns
 
     if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        data.addColumnAliasIfAny(*ast);
         visit(*t, ast, data);
-        return {};
+        return;
     }
     if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
     {
         data.addColumnAliasIfAny(*ast);
         visit(*t, ast, data);
-        return {};
+        return;
     }
 
     /// results are tables
@@ -84,24 +83,24 @@ std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & d
     if (auto * t = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
         visit(*t, ast, data);
-        return {};
+        return;
     }
 
     if (auto * t = typeid_cast<ASTTableExpression *>(ast.get()))
     {
-        //data.addTableAliasIfAny(*ast); alias is attached to child
         visit(*t, ast, data);
-        return {};
+        return;
     }
     if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
         data.addTableAliasIfAny(*ast);
-        return visit(*t, ast, data);
+        visit(*t, ast, data);
+        return;
     }
     if (typeid_cast<ASTSubquery *>(ast.get()))
     {
         data.addTableAliasIfAny(*ast);
-        return {};
+        return;
     }
 
     /// other
@@ -109,21 +108,20 @@ std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & d
     if (auto * t = typeid_cast<ASTArrayJoin *>(ast.get()))
     {
         data.has_array_join = true;
-        return visit(*t, ast, data);
+        visit(*t, ast, data);
+        return;
     }
-
-    return {};
 }
 
-std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
+void RequiredSourceColumnsMatcher::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
     /// special case for top-level SELECT items: they are publics
     for (auto & node : select.select_expression_list->children)
     {
         if (auto * identifier = typeid_cast<ASTIdentifier *>(node.get()))
-            data.addColumnIdentifier(*identifier, true);
+            data.addColumnIdentifier(*identifier);
         else
-            data.addColumnAliasIfAny(*node, true);
+            data.addColumnAliasIfAny(*node);
     }
 
     std::vector<ASTPtr *> out;
@@ -133,7 +131,9 @@ std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTSelectQuery & selec
 
     /// revisit select_expression_list (with children) when all the aliases are set
     out.push_back(&select.select_expression_list);
-    return out;
+
+    for (ASTPtr * add_node : out)
+        Visitor(data).visit(*add_node);
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
@@ -181,29 +181,20 @@ void RequiredSourceColumnsMatcher::visit(ASTTablesInSelectQueryElement & node, c
     data.tables.emplace_back(ColumnNamesContext::JoinedTable{expr, join});
 }
 
-std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTTableExpression & node, const ASTPtr &, Data & data)
+/// ASTIdentifiers here are tables. Do not visit them as generic ones.
+void RequiredSourceColumnsMatcher::visit(ASTTableExpression & node, const ASTPtr &, Data & data)
 {
-    /// ASTIdentifiers here are tables. Do not visit them as generic ones.
     if (node.database_and_table_name)
         data.addTableAliasIfAny(*node.database_and_table_name);
 
-    std::vector<ASTPtr *> out;
     if (node.table_function)
-    {
         data.addTableAliasIfAny(*node.table_function);
-        out.push_back(&node.table_function);
-    }
 
     if (node.subquery)
-    {
         data.addTableAliasIfAny(*node.subquery);
-        out.push_back(&node.subquery);
-    }
-
-    return out;
 }
 
-std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(const ASTArrayJoin & node, const ASTPtr &, Data & data)
+void RequiredSourceColumnsMatcher::visit(const ASTArrayJoin & node, const ASTPtr &, Data & data)
 {
     ASTPtr expression_list = node.expression_list;
     if (!expression_list || expression_list->children.empty())
@@ -225,7 +216,8 @@ std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(const ASTArrayJoin & n
         out.push_back(&expr);
     }
 
-    return out;
+    for (ASTPtr * add_node : out)
+        Visitor(data).visit(*add_node);
 }
 
 }

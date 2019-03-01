@@ -191,6 +191,7 @@ nav:
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
+  - '使用的第三方库': 'development/contrib.md'
 
 - '新功能特性':
   - '路线图': 'roadmap.md'

@@ -46,7 +46,7 @@ public:
     /// the structure of sub-tables is not checked
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override;
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
 private:
     String name;
@@ -56,9 +56,9 @@ private:
 
     using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
 
-    StorageListWithLocks getSelectedTables() const;
+    StorageListWithLocks getSelectedTables(const String & query_id) const;
 
-    StorageMerge::StorageListWithLocks getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock) const;
+    StorageMerge::StorageListWithLocks getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
@@ -75,7 +75,7 @@ protected:
                          const Context & context, QueryProcessingStage::Enum processed_stage);
 
     BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                          const size_t max_block_size, const Block & header, const StoragePtr & storage,
+                                          const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
                                           const TableStructureReadLockPtr & struct_lock, Names & real_column_names,
                                           Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                           bool concat_streams = false);

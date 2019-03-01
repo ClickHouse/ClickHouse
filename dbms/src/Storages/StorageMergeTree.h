@@ -38,7 +38,10 @@ public:
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & /* query_context */) const override
+    {
+        return data.mayBenefitFromIndexForIn(left_in_operand);
+    }
 
     const ColumnsDescription & getColumns() const override { return data.getColumns(); }
     void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
@@ -57,7 +60,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     /** Perform the next step in combining the parts.
       */
@@ -66,8 +69,8 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
-
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+    CancellationCode killMutation(const String & mutation_id) override;
 
     void drop() override;
     void truncate(const ASTPtr &, const Context &) override;
@@ -120,7 +123,8 @@ private:
 
     mutable std::mutex currently_merging_mutex;
     MergeTreeData::DataParts currently_merging;
-    std::multimap<Int64, MergeTreeMutationEntry> current_mutations_by_version;
+    std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
+    std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     Logger * log;
 

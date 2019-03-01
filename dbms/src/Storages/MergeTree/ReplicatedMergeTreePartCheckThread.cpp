@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -203,7 +202,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructure(false);
+        auto table_lock = storage.lockStructure(false, RWLockImpl::NO_QUERY);
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
             part->columns, part->checksums);

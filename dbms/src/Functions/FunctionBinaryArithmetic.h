@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Native.h>
+#include <DataTypes/NumberTraits.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
@@ -16,7 +17,6 @@
 #include "intDiv.h"
 #include "castTypeToEither.h"
 #include "FunctionFactory.h"
-#include <DataTypes/NumberTraits.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
 #include <Common/config.h>

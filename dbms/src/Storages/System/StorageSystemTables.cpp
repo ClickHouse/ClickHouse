@@ -66,7 +66,7 @@ public:
     TablesBlockInputStream(
         std::vector<UInt8> columns_mask,
         Block header,
-        size_t max_block_size,
+        UInt64 max_block_size,
         ColumnPtr databases,
         const Context & context)
         : columns_mask(std::move(columns_mask)), header(std::move(header)), max_block_size(max_block_size), databases(std::move(databases)), context(context) {}
@@ -298,7 +298,7 @@ protected:
 private:
     std::vector<UInt8> columns_mask;
     Block header;
-    size_t max_block_size;
+    UInt64 max_block_size;
     ColumnPtr databases;
     size_t database_idx = 0;
     DatabaseIteratorPtr tables_it;

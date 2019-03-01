@@ -6,6 +6,7 @@ nav:
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
   - 'Производительность': 'introduction/performance.md'
   - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
+  - 'Информационная поддержка': 'introduction/info.md'
 
 - 'Начало работы':
   - 'Установка и запуск': 'getting_started/index.md'
@@ -69,8 +70,8 @@ nav:
     - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
     - 'VersionedCollapsingMergeTree': 'operations/table_engines/versionedcollapsingmergetree.md'
     - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
-  - 'Log Family':
-    - 'Introduction': 'operations/table_engines/log_family.md'
+  - 'Семейство Log':
+    - 'Введение': 'operations/table_engines/log_family.md'
     - 'StripeLog': 'operations/table_engines/stripelog.md'
     - 'Log': 'operations/table_engines/log.md'
     - 'TinyLog': 'operations/table_engines/tinylog.md'
@@ -160,7 +161,7 @@ nav:
   - 'Введение': 'operations/index.md'
   - 'Требования': 'operations/requirements.md'
   - 'Мониторинг': 'operations/monitoring.md'
-  - 'Решение проблем': 'operations/troubleshooting.md'
+  - 'Устранение неисправностей': 'operations/troubleshooting.md'
   - 'Советы по эксплуатации': 'operations/tips.md'
   - 'Обновление ClickHouse': 'operations/update.md'
   - 'Права доступа': 'operations/access_rights.md'
@@ -192,6 +193,7 @@ nav:
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
+  - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
   - 'Changelog': 'changelog.md'

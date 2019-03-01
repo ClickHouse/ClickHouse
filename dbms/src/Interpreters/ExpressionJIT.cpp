@@ -654,7 +654,7 @@ std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(cons
     return dependents;
 }
 
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache, size_t min_count_to_compile)
+void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache, size_t min_count_to_compile_expression)
 {
     static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
     static std::mutex mutex;
@@ -688,7 +688,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             auto hash_key = ExpressionActions::ActionsHash{}(fused[i]);
             {
                 std::lock_guard lock(mutex);
-                if (counter[hash_key]++ < min_count_to_compile)
+                if (counter[hash_key]++ < min_count_to_compile_expression)
                     continue;
             }
 

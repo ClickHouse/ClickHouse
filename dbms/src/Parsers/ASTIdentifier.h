@@ -26,7 +26,7 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name); }
 
-    ASTPtr clone() const override { return std::make_shared<ASTIdentifier>(*this); }
+    ASTPtr clone() const override;
 
     void collectIdentifierNames(IdentifierNameSet & set) const override
     {
@@ -36,11 +36,7 @@ public:
     bool compound() const { return !name_parts.empty(); }
     bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
 
-    void setShortName(const String & new_name)
-    {
-        name = new_name;
-        name_parts.clear();
-    }
+    void setShortName(const String & new_name);
 
     const String & shortName() const
     {

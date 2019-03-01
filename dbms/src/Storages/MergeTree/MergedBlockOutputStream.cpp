@@ -110,7 +110,7 @@ void IMergedBlockOutputStream::writeData(
     size_t prev_mark = 0;
     while (prev_mark < size)
     {
-        size_t limit = 0;
+        UInt64 limit = 0;
 
         /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
         if (prev_mark == 0 && index_offset != 0)
@@ -448,9 +448,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     WrittenOffsetColumns offset_columns;
 
     auto primary_key_column_names = storage.primary_key_columns;
-    Names skip_indexes_column_names;
+    std::set<String> skip_indexes_column_names_set;
     for (const auto & index : storage.skip_indices)
-        std::copy(index->columns.cbegin(), index->columns.cend(), std::back_inserter(skip_indexes_column_names));
+        std::copy(index->columns.cbegin(), index->columns.cend(),
+                std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
     /// Here we will add the columns related to the Primary Key, then write the index.
     std::vector<ColumnWithTypeAndName> primary_key_columns(primary_key_column_names.size());
@@ -542,6 +544,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     rows_count += rows;
 
     {
+        /// Creating block for update
+        Block indices_update_block(skip_indexes_columns);
         /// Filling and writing skip indices like in IMergedBlockOutputStream::writeData
         for (size_t i = 0; i < storage.skip_indices.size(); ++i)
         {
@@ -551,7 +555,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
             while (prev_pos < rows)
             {
-                size_t limit = 0;
+                UInt64 limit = 0;
                 if (prev_pos == 0 && index_offset != 0)
                 {
                     limit = index_offset;
@@ -573,7 +577,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
 
                 size_t pos = prev_pos;
-                skip_indices_granules[i]->update(block, &pos, limit);
+                skip_indices_granules[i]->update(indices_update_block, &pos, limit);
 
                 if (pos == prev_pos + limit)
                 {

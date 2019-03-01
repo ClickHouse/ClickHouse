@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -224,10 +225,31 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf) const
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    protobuf.prepareEnumMapping(values);
+    value_index = static_cast<bool>(protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]));
+}
+
+template<typename Type>
+void DataTypeEnum<Type>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
 {
     protobuf.prepareEnumMapping(values);
-    protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]);
+    row_added = false;
+    Type value;
+    if (!protobuf.readEnum(value))
+        return;
+
+    auto & container = static_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(value);
+        row_added = true;
+    }
+    else
+        container.back() = value;
 }
 
 template <typename Type>
