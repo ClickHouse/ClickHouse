@@ -184,13 +184,15 @@ void SelectStreamFactory::createForShard(
                 local_delay]()
             -> BlockInputStreamPtr
         {
+            auto current_settings = context.getSettingsRef();
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
             std::vector<ConnectionPoolWithFailover::TryResult> try_results;
             try
             {
                 if (table_func_ptr)
-                    try_results = pool->getManyForTableFunction(&context.getSettingsRef(), PoolMode::GET_MANY);
+                    try_results = pool->getManyForTableFunction(timeouts, &current_settings, PoolMode::GET_MANY);
                 else
-                    try_results = pool->getManyChecked(&context.getSettingsRef(), PoolMode::GET_MANY, main_table);
+                    try_results = pool->getManyChecked(timeouts, &current_settings, PoolMode::GET_MANY, main_table);
             }
             catch (const Exception & ex)
             {
