@@ -82,10 +82,10 @@ SELECT
 Округляет дату-с-временем вниз до начала пятнадцатиминутного интервала.
 
 ## toStartOfInterval(time_or_data, INTERVAL x unit [, time_zone])
-Обобщение остальных функций `toStartOf*`. Например,
-`toStartOfInterval(t, INTERVAL 1 year)` возвращает то же самое, что и `toStartOfYear(t)`,
-`toStartOfInterval(t, INTERVAL 1 month)` возвращает то же самое, что и `toStartOfMonth(t)`,
-`toStartOfInterval(t, INTERVAL 1 day)` возвращает то же самое, что и `toStartOfDay(t)`,
+Обобщение остальных функций `toStartOf*`. Например,  
+`toStartOfInterval(t, INTERVAL 1 year)` возвращает то же самое, что и `toStartOfYear(t)`,  
+`toStartOfInterval(t, INTERVAL 1 month)` возвращает то же самое, что и `toStartOfMonth(t)`,  
+`toStartOfInterval(t, INTERVAL 1 day)` возвращает то же самое, что и `toStartOfDay(t)`,  
 `toStartOfInterval(t, INTERVAL 15 minute)` возвращает то же самое, что и `toStartOfFifteenMinutes(t)`, и т.п.
 
 ## toTime
