@@ -61,6 +61,12 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
         } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{2.0})
         {
             wu = std::make_shared<Momentum>();
+        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{3.0})
+        {
+            wu = std::make_shared<Nesterov>();
+        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{4.0})
+        {
+            wu = std::make_shared<Adam>();
         } else
         {
             throw Exception("Such weights updater is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
