@@ -398,7 +398,7 @@ BlockInputStreams StorageTinyLog::read(
 
 
 BlockOutputStreamPtr StorageTinyLog::write(
-    const ASTPtr & /*query*/, const Settings & /*settings*/)
+    const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<TinyLogBlockOutputStream>(*this);
 }

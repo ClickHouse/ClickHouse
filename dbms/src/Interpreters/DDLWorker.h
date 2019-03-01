@@ -115,7 +115,7 @@ private:
 
     ThreadGroupStatusPtr thread_group;
 
-    friend class DDLQueryStatusInputSream;
+    friend class DDLQueryStatusInputStream;
     friend struct DDLTask;
 };
 

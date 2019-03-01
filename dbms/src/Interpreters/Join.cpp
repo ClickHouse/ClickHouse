@@ -1317,10 +1317,10 @@ private:
 
         for (; it != end; ++it)
         {
-            if (it->second.getUsed())
+            if (it->getSecond().getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, columns_left, columns_keys_and_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->getSecond(), rows_added, columns_left, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
             {

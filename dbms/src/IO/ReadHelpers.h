@@ -403,6 +403,7 @@ void readBackQuotedString(String & s, ReadBuffer & buf);
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
+void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.
