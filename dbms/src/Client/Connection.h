@@ -57,7 +57,6 @@ public:
     Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
-        const ConnectionTimeouts & timeouts_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
         Protocol::Secure secure_ = Protocol::Secure::Disable,
@@ -68,7 +67,6 @@ public:
         client_name(client_name_),
         compression(compression_),
         secure(secure_),
-        timeouts(timeouts_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
     {
@@ -106,11 +104,16 @@ public:
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);
 
-    void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision);
-    UInt64 getServerRevision();
+    void getServerVersion(const ConnectionTimeouts & timeouts,
+                          String & name,
+                          UInt64 & version_major,
+                          UInt64 & version_minor,
+                          UInt64 & version_patch,
+                          UInt64 & revision);
+    UInt64 getServerRevision(const ConnectionTimeouts & timeouts);
 
-    const String & getServerTimezone();
-    const String & getServerDisplayName();
+    const String & getServerTimezone(const ConnectionTimeouts & timeouts);
+    const String & getServerDisplayName(const ConnectionTimeouts & timeouts);
 
     /// For log and exception messages.
     const String & getDescription() const;
@@ -119,13 +122,14 @@ public:
     const String & getDefaultDatabase() const;
 
     /// For proper polling.
-    inline const auto & getTimeouts() const
-    {
-        return timeouts;
-    }
+    //inline const auto & getTimeouts() const
+    //{
+    //    return timeouts;
+    //}
 
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
+        const ConnectionTimeouts & timeouts,
         const String & query,
         const String & query_id_ = "",
         UInt64 stage = QueryProcessingStage::Complete,
@@ -156,9 +160,10 @@ public:
     Packet receivePacket();
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
-    void forceConnected();
+    void forceConnected(const ConnectionTimeouts & timeouts);
 
-    TablesStatusResponse getTablesStatus(const TablesStatusRequest & request);
+    TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
+                                         const TablesStatusRequest & request);
 
     /** Disconnect.
       * This may be used, if connection is left in unsynchronised state
@@ -216,7 +221,7 @@ private:
       */
     ThrottlerPtr throttler;
 
-    ConnectionTimeouts timeouts;
+    //ConnectionTimeouts timeouts;
     Poco::Timespan sync_request_timeout;
 
     /// From where to read query execution result.
@@ -252,7 +257,7 @@ private:
 
     LoggerWrapper log_wrapper;
 
-    void connect();
+    void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
     void receiveHello();
     bool ping();
