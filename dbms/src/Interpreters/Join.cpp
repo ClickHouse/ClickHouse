@@ -300,7 +300,7 @@ void Join::setSampleBlock(const Block & block)
         if (column.get() != column_no_lc.get())
         {
             materialized_columns.emplace_back(std::move(column_no_lc));
-            key_columns[i] = materialized_columns[i].get();
+            key_columns[i] = materialized_columns.back().get();
         }
 
         /// We will join only keys, where all components are not NULL.
