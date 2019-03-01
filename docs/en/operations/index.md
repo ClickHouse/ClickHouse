@@ -6,7 +6,7 @@ ClickHouse operations manual consists of the following major sections:
   - [Monitoring](monitoring.md)
   - [Troubleshooting](troubleshooting.md)
   - [Usage Recommendations](tips.md)
-  - [ClickHouse Update](update.md)
+  - [Update Procedure](update.md)
   - [Access Rights](access_rights.md)
   - [Data Backup](backup.md)
   - [Configuration Files](configuration_files.md)

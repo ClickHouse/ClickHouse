@@ -45,12 +45,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 
-#include <Parsers/formatAST.h>
-
 #include <ext/range.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -307,7 +304,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
     {
         const IAST & args = *func->arguments;
 
-        if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0)))
+        if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0), context))
         {
             const ASTPtr & arg = args.children.at(1);
             if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
@@ -960,8 +957,8 @@ void ExpressionAnalyzer::collectUsedColumns()
     for (const auto & name : source_columns)
         std::cerr << "'" << name.name << "' ";
     std::cerr << "required: ";
-    for (const auto & name : required)
-        std::cerr << "'" << name << "' ";
+    for (const auto & pr : required)
+        std::cerr << "'" << pr.first << "' ";
     std::cerr << std::endl;
 #endif
 
@@ -994,7 +991,10 @@ void ExpressionAnalyzer::collectUsedColumns()
         for (const auto & joined_column : analyzed_join.available_joined_columns)
         {
             auto & name = joined_column.name_and_type.name;
-            if (required.count(name) && !avaliable_columns.count(name))
+            if (avaliable_columns.count(name))
+                continue;
+
+            if (required.count(name))
             {
                 columns_added_by_join.push_back(joined_column);
                 required.erase(name);
@@ -1022,9 +1022,10 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     for (NamesAndTypesList::iterator it = source_columns.begin(); it != source_columns.end();)
     {
-        unknown_required_source_columns.erase(it->name);
+        const String & column_name = it->name;
+        unknown_required_source_columns.erase(column_name);
 
-        if (!required.count(it->name))
+        if (!required.count(column_name))
             source_columns.erase(it++);
         else
             ++it;
@@ -1056,7 +1057,7 @@ void ExpressionAnalyzer::collectUsedColumns()
             ss << "'" << name.name << "' ";
 
         throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin()
-            + (select_query && !select_query->tables ? ". Note that there is no tables (FROM clause) in your query" : "")
+            + (select_query && !select_query->tables ? ". Note that there are no tables (FROM clause) in your query" : "")
             + ", context: " + ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 }

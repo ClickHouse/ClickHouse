@@ -58,10 +58,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
-
-        if (WEVERYTHING)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-        endif ()
     endif ()
 endif ()
 
@@ -102,7 +98,6 @@ add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)
 add_headers_and_sources(dbms src/Storages)
 add_headers_and_sources(dbms src/Storages/Distributed)
-add_headers_and_sources(dbms src/Storages/Kafka)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Formats)
@@ -129,7 +124,9 @@ list (APPEND dbms_headers
     src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
 list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
+list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctions/TableFunctionFactory.h)
+list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
+list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
 
 add_library(clickhouse_common_io ${LINK_MODE} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
@@ -226,7 +223,6 @@ target_link_libraries (dbms
         PUBLIC
     clickhouse_common_io
         PRIVATE
-    clickhouse_dictionaries
     clickhouse_dictionaries_embedded
         PUBLIC
     pocoext
@@ -295,10 +291,13 @@ if (USE_CAPNP)
 endif ()
 
 if (USE_RDKAFKA)
-    target_link_libraries (dbms PRIVATE ${RDKAFKA_LIBRARY})
-    target_link_libraries (dbms PRIVATE ${CPPKAFKA_LIBRARY})
-    if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
-        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
+    target_link_libraries (dbms PRIVATE clickhouse_storage_kafka)
+endif ()
+
+if (USE_PARQUET)
+    target_link_libraries(dbms PRIVATE ${PARQUET_LIBRARY})
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
     endif ()
 endif ()
 
@@ -315,6 +314,11 @@ endif ()
 if (USE_HDFS)
     target_link_libraries (clickhouse_common_io PRIVATE ${HDFS3_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
+endif()
+
+if (USE_BROTLI)
+    target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
 
 if (USE_JEMALLOC)

@@ -94,7 +94,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
                 }
                 catch (const Poco::Exception & e)
                 {
-                    if (e.displayText() == "mysqlxx::Pool is full") /// NOTE: String comparison is trashy code.
+                    if (e.displayText().find("mysqlxx::Pool is full") != std::string::npos) /// NOTE: String comparison is trashy code.
                     {
                         full_pool = &pool;
                     }

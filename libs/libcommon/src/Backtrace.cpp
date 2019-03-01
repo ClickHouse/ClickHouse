@@ -6,7 +6,21 @@
 #include <execinfo.h>
 
 #if USE_UNWIND
-std::vector<void *> backtraceLibUnwind(size_t max_frames, ucontext_t & context)
+/** We suppress the following ASan report. Also shown by Valgrind.
+==124==ERROR: AddressSanitizer: stack-use-after-scope on address 0x7f054be57000 at pc 0x0000068b0649 bp 0x7f060eeac590 sp 0x7f060eeabd40
+READ of size 1 at 0x7f054be57000 thread T3
+    #0 0x68b0648 in write (/usr/bin/clickhouse+0x68b0648)
+    #1 0x717da02 in write_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:110:13
+    #2 0x717da02 in mincore_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:146
+    #3 0x717dec1 in validate_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:206:7
+    #4 0x717dec1 in access_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:240
+    #5 0x71881a9 in dwarf_get /build/obj-x86_64-linux-gnu/../contrib/libunwind/include/tdep-x86_64/libunwind_i.h:168:12
+    #6 0x71881a9 in apply_reg_state /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:872
+    #7 0x718705c in _ULx86_64_dwarf_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:953:10
+    #8 0x718f155 in _ULx86_64_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Gstep.c:71:9
+    #9 0x7162671 in backtraceLibUnwind(void**, unsigned long, ucontext_t&) /build/obj-x86_64-linux-gnu/../libs/libdaemon/src/BaseDaemon.cpp:202:14
+  */
+std::vector<void *> NO_SANITIZE_ADDRESS backtraceLibUnwind(size_t max_frames, ucontext_t & context)
 {
     std::vector<void *> out_frames;
     out_frames.reserve(max_frames);

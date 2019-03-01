@@ -4,12 +4,14 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <memory>
 #include <queue>
 #include <utility>
 
 namespace DB
 {
-template <size_t MistakeFactor, size_t MaxNumHints>
+template <size_t MaxNumHints>
 class NamePrompter
 {
 public:
@@ -27,36 +29,51 @@ public:
 private:
     static size_t levenshteinDistance(const String & lhs, const String & rhs)
     {
-        size_t n = lhs.size();
-        size_t m = rhs.size();
-        std::vector<std::vector<size_t>> dp(n + 1, std::vector<size_t>(m + 1));
+        size_t m = lhs.size();
+        size_t n = rhs.size();
+
+        static constexpr size_t small_buffer_size = 64;
+        size_t small_buffer[small_buffer_size];
+        std::unique_ptr<size_t[]> alloc_buffer;
+        size_t * row = small_buffer;
+        if (n + 1 > small_buffer_size)
+        {
+            row = new size_t[n + 1];
+            alloc_buffer.reset(row);
+        }
 
         for (size_t i = 1; i <= n; ++i)
-            dp[i][0] = i;
-
-        for (size_t i = 1; i <= m; ++i)
-            dp[0][i] = i;
+            row[i] = i;
 
         for (size_t j = 1; j <= m; ++j)
         {
+            row[0] = j;
+            size_t prev = j - 1;
             for (size_t i = 1; i <= n; ++i)
             {
-                if (std::tolower(lhs[i - 1]) == std::tolower(rhs[j - 1]))
-                    dp[i][j] = dp[i - 1][j - 1];
-                else
-                    dp[i][j] = std::min(dp[i - 1][j] + 1, std::min(dp[i][j - 1] + 1, dp[i - 1][j - 1] + 1));
+                size_t old = row[i];
+                row[i] = std::min(prev + (std::tolower(lhs[j - 1]) != std::tolower(rhs[i - 1])),
+                    std::min(row[i - 1], row[i]) + 1);
+                prev = old;
             }
         }
-
-        return dp[n][m];
+        return row[n];
     }
 
     static void appendToQueue(size_t ind, const String & name, DistanceIndexQueue & queue, const std::vector<String> & prompting_strings)
     {
-        if (prompting_strings[ind].size() <= name.size() + MistakeFactor && prompting_strings[ind].size() + MistakeFactor >= name.size())
+        const String & prompt = prompting_strings[ind];
+
+        /// Clang SimpleTypoCorrector logic
+        const size_t min_possible_edit_distance = std::abs(static_cast<int64_t>(name.size()) - static_cast<int64_t>(prompt.size()));
+        const size_t mistake_factor = (name.size() + 2) / 3;
+        if (min_possible_edit_distance > 0 && name.size() / min_possible_edit_distance < 3)
+            return;
+
+        if (prompt.size() <= name.size() + mistake_factor && prompt.size() + mistake_factor >= name.size())
         {
-            size_t distance = levenshteinDistance(prompting_strings[ind], name);
-            if (distance <= MistakeFactor)
+            size_t distance = levenshteinDistance(prompt, name);
+            if (distance <= mistake_factor)
             {
                 queue.emplace(distance, ind);
                 if (queue.size() > MaxNumHints)

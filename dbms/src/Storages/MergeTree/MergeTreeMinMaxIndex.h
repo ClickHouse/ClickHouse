@@ -13,16 +13,14 @@ namespace DB
 class MergeTreeMinMaxIndex;
 
 
-struct MergeTreeMinMaxGranule : public MergeTreeIndexGranule
+struct MergeTreeMinMaxGranule : public IMergeTreeIndexGranule
 {
     explicit MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
-    String toString() const override;
     bool empty() const override { return parallelogram.empty(); }
-
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     ~MergeTreeMinMaxGranule() override = default;
@@ -32,7 +30,7 @@ struct MergeTreeMinMaxGranule : public MergeTreeIndexGranule
 };
 
 
-class MinMaxCondition : public IndexCondition
+class MinMaxCondition : public IIndexCondition
 {
 public:
     MinMaxCondition(
@@ -51,7 +49,7 @@ private:
 };
 
 
-class MergeTreeMinMaxIndex : public MergeTreeIndex
+class MergeTreeMinMaxIndex : public IMergeTreeIndex
 {
 public:
     MergeTreeMinMaxIndex(
@@ -61,7 +59,7 @@ public:
         const DataTypes & data_types_,
         const Block & header_,
         size_t granularity_)
-        : MergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_) {}
+        : IMergeTreeIndex(name_, expr_, columns_, data_types_, header_, granularity_) {}
 
     ~MergeTreeMinMaxIndex() override = default;
 
@@ -71,8 +69,5 @@ public:
         const SelectQueryInfo & query, const Context & context) const override;
 
 };
-
-std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
-    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
 
 }

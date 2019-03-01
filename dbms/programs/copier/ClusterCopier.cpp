@@ -33,6 +33,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/ThreadStatus.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -67,7 +68,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
-#include <daemon/OwnPatternFormatter.h>
 
 
 namespace DB
@@ -2122,6 +2122,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 void ClusterCopierApp::mainImpl()
 {
     StatusFile status_file(process_path + "/status");
+    ThreadStatus thread_status;
 
     auto log = &logger();
     LOG_INFO(log, "Starting clickhouse-copier ("

@@ -18,10 +18,8 @@ public:
         bool done = false;
     };
 
-    static constexpr const char * label = "JoinToSubqueryTransform";
-
     static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
+    static void visit(ASTPtr & ast, Data & data);
 
 private:
     /// - combines two source TablesInSelectQueryElement into resulting one (Subquery)
@@ -42,7 +40,7 @@ private:
     static void visit(ASTSelectQuery & select, ASTPtr & ast, Data & data);
 
     /// @return combined TablesInSelectQueryElement or nullptr if cannot rewrite
-    static ASTPtr replaceJoin(ASTSelectQuery & select, ASTPtr left, ASTPtr right, const String & subquery_alias);
+    static ASTPtr replaceJoin(ASTPtr left, ASTPtr right);
 };
 
 using JoinToSubqueryTransformVisitor = InDepthNodeVisitor<JoinToSubqueryTransformMatcher, true>;
