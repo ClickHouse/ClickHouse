@@ -46,7 +46,7 @@ private:
         usleep(sleep_useconds);
 
         MutableColumns columns;
-        columns.emplace_back(ColumnUInt64::create(block_size));
+        columns.emplace_back(ColumnUInt64::create());
 
         for (UInt64 i = 0; i < block_size; ++i, current_number += step)
             columns.back()->insert(Field(current_number));
@@ -144,13 +144,13 @@ try
         auto transform2 = std::make_shared<SleepyTransform>(100000);
         auto transform3 = std::make_shared<SleepyTransform>(100000);
 
-        auto limit1 = std::make_shared<LimitTransform>(source1->getPort().getHeader(), 10, 0);
-        auto limit2 = std::make_shared<LimitTransform>(source2->getPort().getHeader(), 10, 0);
-        auto limit3 = std::make_shared<LimitTransform>(source3->getPort().getHeader(), 10, 0);
+        auto limit1 = std::make_shared<LimitTransform>(source1->getPort().getHeader(), 20, 0);
+        auto limit2 = std::make_shared<LimitTransform>(source2->getPort().getHeader(), 20, 0);
+        auto limit3 = std::make_shared<LimitTransform>(source3->getPort().getHeader(), 20, 0);
 
         SortDescription description = {{0, 1, 1}};
         auto merge = std::make_shared<MergingSortedTransform>(source1->getPort().getHeader(), 3, description, 2);
-        auto limit_fin = std::make_shared<LimitTransform>(source1->getPort().getHeader(), 27, 0);
+        auto limit_fin = std::make_shared<LimitTransform>(source1->getPort().getHeader(), 54, 0);
         auto sink = std::make_shared<PrintSink>("");
 
         connect(source1->getPort(), transform1->getInputPort());

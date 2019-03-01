@@ -80,10 +80,7 @@ IProcessor::Status MergingSortedTransform::prepare()
 
     /// Push if has data.
     if (merged_data.mergedRows())
-    {
         output.push(merged_data.pull());
-        return Status::PortFull;
-    }
 
     if (!is_initialized)
     {
@@ -185,7 +182,7 @@ void MergingSortedTransform::merge(std::priority_queue<TSortCursor> & queue)
             return false;
         }
 
-        if (merged_data.totalMergedRows() >= max_block_size)
+        if (merged_data.mergedRows() >= max_block_size)
         {
             //std::cerr << "max_block_size reached\n";
             return false;
@@ -251,7 +248,7 @@ void MergingSortedTransform::merge(std::priority_queue<TSortCursor> & queue)
                 need_data = true;
                 next_input_to_read = current.impl->order;
 
-                if (merged_data.totalMergedRows() >= limit)
+                if (limit && merged_data.totalMergedRows() >= limit)
                     is_finished = true;
 
                 return;
