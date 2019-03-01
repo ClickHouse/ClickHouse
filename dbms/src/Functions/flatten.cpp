@@ -37,7 +37,7 @@ public:
         /** We create an array column with array elements as the most deep elements of nested arrays,
           * and construct offsets by selecting elements of most deep offsets by values of ancestor offsets.
           *
-Examples 1:
+Example 1:
 
 Source column: Array(Array(UInt8)):
 Row 1: [[1, 2, 3], [4, 5]], Row 2: [[6], [7, 8]]
