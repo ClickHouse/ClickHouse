@@ -19,10 +19,14 @@ namespace ErrorCodes
 CreatingSetsBlockInputStream::CreatingSetsBlockInputStream(
     const BlockInputStreamPtr & input,
     const SubqueriesForSets & subqueries_for_sets_,
-    const SizeLimits & network_transfer_limits)
-    : subqueries_for_sets(subqueries_for_sets_),
-    network_transfer_limits(network_transfer_limits)
+    const Context & context_)
+    : subqueries_for_sets(subqueries_for_sets_)
+    , context(context_)
 {
+    const Settings & settings = context.getSettingsRef();
+    network_transfer_limits = SizeLimits(
+        settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+
     for (auto & elem : subqueries_for_sets)
     {
         if (elem.second.source)
@@ -92,7 +96,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
     BlockOutputStreamPtr table_out;
     if (subquery.table)
-        table_out = subquery.table->write({}, {});
+        table_out = subquery.table->write({}, context);
 
     bool done_with_set = !subquery.set;
     bool done_with_join = !subquery.join;
