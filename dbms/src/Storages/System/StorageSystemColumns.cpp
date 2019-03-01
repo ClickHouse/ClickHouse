@@ -65,7 +65,7 @@ public:
         String query_id_)
         : columns_mask(columns_mask), header(header), max_block_size(max_block_size)
         , databases(databases), tables(tables), storages(std::move(storages))
-        , query_id(std::move(query_id_)),  total_tables(tables->size())
+        , query_id(std::move(query_id_)), total_tables(tables->size())
     {
     }
 
