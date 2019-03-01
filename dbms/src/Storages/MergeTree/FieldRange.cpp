@@ -65,7 +65,8 @@ namespace DB
         {
             return;
         }
-        std::sort(data.begin(), data.end(), [](const Range& lhs, const Range& rhs) {
+        std::sort(data.begin(), data.end(), [](const Range& lhs, const Range& rhs)
+        {
             return !lhs.left_bounded ||
             (rhs.left_bounded && (Range::less(lhs.left, rhs.left)
             || (lhs.left_included && !rhs.left_included && Range::equals(lhs.left, rhs.right))
@@ -128,7 +129,8 @@ namespace DB
 
     bool RangeSet::intersectsRange(const Range &rhs) const
     {
-        auto left_it = std::lower_bound(data.begin(), data.end(), rhs, [](const Range& element, const Range& value) {
+        auto left_it = std::lower_bound(data.begin(), data.end(), rhs, [](const Range& element, const Range& value)
+        {
             if (!value.left_bounded)
             {
                 return false;
@@ -139,7 +141,8 @@ namespace DB
             }
             return false;
         });
-        auto right_it = std::lower_bound(data.begin(), data.end(), rhs, [](const Range& element, const Range& value) {
+        auto right_it = std::lower_bound(data.begin(), data.end(), rhs, [](const Range& element, const Range& value)
+        {
             if (!value.right_bounded)
             {
                 return true;
@@ -169,7 +172,8 @@ namespace DB
     {
         DataTypePtr new_type;
         std::vector<Range> result;
-        for (auto range : data) {
+        for (auto range : data)
+        {
             IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
                     *arg_type.get(), range.left, range.right);
             std::cerr << arg_type->getName() << "\n";
@@ -178,7 +182,8 @@ namespace DB
             {
                 return {};
             }
-            if (!range.left.isNull()) {
+            if (!range.left.isNull())
+            {
                 applyFunction(func, arg_type, range.left, new_type, range.left);
             }
             if (!new_type)

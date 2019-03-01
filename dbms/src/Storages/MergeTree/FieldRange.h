@@ -67,26 +67,32 @@ class Range
           */
         void shrinkToIncludedIfPossible()
         {
-            if (left_bounded && !left_included) {
+            if (left_bounded && !left_included)
+            {
                 if (left.getType() == Field::Types::UInt64 &&
-                    left.get<UInt64>() != std::numeric_limits<UInt64>::max()) {
+                    left.get<UInt64>() != std::numeric_limits<UInt64>::max())
+                {
                     ++left.get<UInt64 &>();
                     left_included = true;
                 }
                 if (left.getType() == Field::Types::Int64 &&
-                    left.get<Int64>() != std::numeric_limits<Int64>::max()) {
+                    left.get<Int64>() != std::numeric_limits<Int64>::max())
+                {
                     ++left.get<Int64 &>();
                     left_included = true;
                 }
             }
-            if (right_bounded && !right_included) {
+            if (right_bounded && !right_included)
+            {
                 if (right.getType() == Field::Types::UInt64 &&
-                    right.get<UInt64>() != std::numeric_limits<UInt64>::min()) {
+                    right.get<UInt64>() != std::numeric_limits<UInt64>::min())
+                {
                     --right.get<UInt64 &>();
                     right_included = true;
                 }
                 if (right.getType() == Field::Types::Int64 &&
-                    right.get<Int64>() != std::numeric_limits<Int64>::min()) {
+                    right.get<Int64>() != std::numeric_limits<Int64>::min())
+                {
                     --right.get<Int64 &>();
                     right_included = true;
                 }

@@ -13,7 +13,7 @@ namespace DB
     class FunctionZCurve : public IFunction
     {
     public:
-        static constexpr auto name = "ZCurve";
+        static constexpr auto name = "zCurve";
         static FunctionPtr create(const Context & context)
         {
             return std::make_shared<FunctionZCurve>(context);
@@ -65,7 +65,8 @@ namespace DB
             return true;
         }
 
-        bool invertRange(const Range& value_range, size_t arg_index, const DataTypes& arg_types, RangeSet & result) const override {
+        bool invertRange(const Range& value_range, size_t arg_index, const DataTypes& arg_types, RangeSet & result) const override
+        {
             Range copy = value_range;
             copy.shrinkToIncludedIfPossible(); // always possible if not unbounded, since the result type is UInt64
             ResultType left, right;
@@ -107,7 +108,8 @@ namespace DB
             {
                 result = RangeSet(Range::createRightBounded((*res)[1], true));
             }
-            else {
+            else
+            {
                 result = RangeSet(Range());
             }
             return true;
@@ -154,12 +156,14 @@ namespace DB
             bool is_left_best = static_cast<bool>(left_block_max & first_plus_one);
             if (left_block_max < right_block_max)
             {
-                if (!is_left_best) {
+                if (!is_left_best)
+                {
                     left_max += first_plus_one;
                     left_max &= ~(first_plus_one - 1);
                 }
                 ResultType tmp;
-                if (is_left_best || (!__builtin_add_overflow(left_block_max, first_plus_one, &tmp) && tmp < right_block_max)) {
+                if (is_left_best || (!__builtin_add_overflow(left_block_max, first_plus_one, &tmp) && tmp < right_block_max))
+                {
                     right_max |= first_plus_one - 1;
                 }
             }
@@ -170,12 +174,14 @@ namespace DB
             bool is_right_worse = static_cast<bool>(right_block_min & first_plus_one);
             if (left_block_min < right_block_min)
             {
-                if (is_right_worse) {
+                if (is_right_worse)
+                {
                     right_min -= first_plus_one;
                     right_min |= (first_plus_one - 1);
                 }
                 ResultType tmp;
-                if (!is_right_worse || (!__builtin_add_overflow(left_block_min, first_plus_one, &tmp) && tmp < right_block_min)) {
+                if (!is_right_worse || (!__builtin_add_overflow(left_block_min, first_plus_one, &tmp) && tmp < right_block_min))
+                {
                     left_min &= ~(first_plus_one - 1);
                 }
             }
@@ -205,7 +211,8 @@ namespace DB
                             right_max |= plus_one - 1;
                         }
                     }
-                    else {
+                    else
+                    {
                         left_max |= get_block;
                         left_max ^= get_block;
                         left_max |= right_block_max;
@@ -227,7 +234,8 @@ namespace DB
                             left_min &= ~(plus_one - 1);
                         }
                     }
-                    else {
+                    else
+                    {
                         right_min |= get_block;
                         right_min ^= get_block;
                         right_min |= left_block_min;

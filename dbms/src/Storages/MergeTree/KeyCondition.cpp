@@ -441,16 +441,8 @@ bool KeyCondition::tryPrepareSetIndex(
         if (isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(
                 node, context, index_mapping.key_index, waste, data_type, index_mapping.functions, invertible_functions, argument_stack))
         {
-            std::cerr << "HAHA\n";
             indexes_mapping.push_back(index_mapping);
             data_types.push_back(data_type);
-            DUMP(index_mapping.key_index);
-            DUMP(out_key_column_num);
-            std::cerr << "FUNCTIONS\n";
-            for (const auto& func : index_mapping.functions) {
-                std::cerr << func->getName() << "\n";
-            }
-            std::cerr << "END FUNCTIONS\n";
             if (out_key_column_num < index_mapping.key_index)
                 out_key_column_num = index_mapping.key_index;
         }
@@ -469,23 +461,15 @@ bool KeyCondition::tryPrepareSetIndex(
     if (indexes_mapping.empty())
         return false;
 
-    std::cerr << "CONTINUED\n";
-    std::cerr << "sz: " << indexes_mapping.size() << "\n";
-    std::cerr << "key index: " << indexes_mapping[0].key_index << "\n";
-
     const ASTPtr & right_arg = args[1];
 
     PreparedSetKey set_key;
     if (typeid_cast<const ASTSubquery *>(right_arg.get()) || typeid_cast<const ASTIdentifier *>(right_arg.get()))
     {
-        std::cerr << "if\n";
-        DUMP(right_arg->getAliasOrColumnName());
         set_key = PreparedSetKey::forSubquery(*right_arg);
     }
     else
     {
-        std::cerr << "else\n";
-        DUMP(right_arg->getAliasOrColumnName());
         set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
     }
 
@@ -493,8 +477,6 @@ bool KeyCondition::tryPrepareSetIndex(
 
     if (set_it == prepared_sets.end())
         return false;
-
-    std::cerr << "CONT2\n";
 
     const SetPtr & prepared_set = set_it->second;
 
@@ -717,7 +699,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             return false;
 
         DataTypePtr key_expr_type;    /// Type of expression containing key column
-        DataTypePtr func_expr_type;
+        DataTypePtr expr_type;
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
         FunctionsChain monotonic_chain;
@@ -729,12 +711,11 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         if (functionIsInOrGlobalInOperator(func->name)
             && tryPrepareSetIndex(args, context, out, key_column_num))
         {
-            std::cerr << "HERE\n";
             key_arg_pos = 0;
             is_set_const = true;
         }
         else if (getConstant(args[1], block_with_constants, const_value, const_type)
-            && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[0], context, key_column_num, key_expr_type, func_expr_type, monotonic_chain, invertible_chain, argument_stack))
+            && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[0], context, key_column_num, expr_type, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
         {
             key_arg_pos = 0;
         }
@@ -745,7 +726,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             is_constant_transformed = true;
         }
         else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[1], context, key_column_num, key_expr_type, func_expr_type, monotonic_chain, invertible_chain, argument_stack))
+            && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[1], context, key_column_num, expr_type, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
         {
             key_arg_pos = 1;
         }
@@ -797,7 +778,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         out.monotonic_functions_chain = std::move(monotonic_chain);
         out.invertible_functions_chain = std::move(invertible_chain);
         out.function_argument_stack = std::move(argument_stack);
-        out.data_type = key_expr_type;
+        out.data_type = expr_type;
 
         const auto atom_it = atom_map.find(func_name);
         if (atom_it == std::end(atom_map))
