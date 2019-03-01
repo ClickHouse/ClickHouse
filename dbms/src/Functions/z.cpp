@@ -38,6 +38,7 @@ namespace DB
 
         void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
         {
+            (void) context;
             size_t number_of_elements = arguments.size();
 
             using return_type = ResultType;

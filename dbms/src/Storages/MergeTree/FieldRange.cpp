@@ -3,7 +3,8 @@
 #include <iostream>
 
 
-namespace DB {
+namespace DB
+{
 
     class IFunction;
     using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
@@ -26,7 +27,8 @@ namespace DB {
         block.safeGetByPosition(1).column->get(0, res_value);
     }
 
-    String Range::toString() const {
+    String Range::toString() const
+    {
         std::stringstream str;
 
         if (!left_bounded)
@@ -105,7 +107,7 @@ namespace DB {
     }
 
     RangeSet & RangeSet::operator |= (const RangeSet & rhs)
-            {
+    {
         if (this != &rhs)
         {
             for (const auto &range : rhs.data)
@@ -117,13 +119,15 @@ namespace DB {
         return *this;
     }
 
-    RangeSet RangeSet::operator | (const RangeSet & rhs) const {
+    RangeSet RangeSet::operator | (const RangeSet & rhs) const
+    {
         RangeSet tmp = *this;
         tmp |= rhs;
         return tmp;
     }
 
-    bool RangeSet::intersectsRange(const Range &rhs) const {
+    bool RangeSet::intersectsRange(const Range &rhs) const
+    {
         auto left_it = std::lower_bound(data.begin(), data.end(), rhs, [](const Range& element, const Range& value) {
             if (!value.left_bounded)
             {
@@ -163,13 +167,12 @@ namespace DB {
             DataTypePtr & arg_type,
             DataTypePtr & res_type)
     {
-        std::cerr << "APPLYING MONOTONIC FUNCTIONS\n";
         DataTypePtr new_type;
         std::vector<Range> result;
         for (auto range : data) {
-            std::cerr << range.toString() << "\n";
             IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
                     *arg_type.get(), range.left, range.right);
+            std::cerr << arg_type->getName() << "\n";
 
             if (!monotonicity.is_monotonic)
             {
@@ -178,23 +181,25 @@ namespace DB {
             if (!range.left.isNull()) {
                 applyFunction(func, arg_type, range.left, new_type, range.left);
             }
-            if (!new_type) {
+            if (!new_type)
+            {
                 return {};
             }
-            if (!range.right.isNull()) {
+            if (!range.right.isNull())
+            {
                 applyFunction(func, arg_type, range.right, new_type, range.right);
             }
-            if (!new_type) {
+            if (!new_type)
+            {
                 return {};
             }
-            if (!monotonicity.is_positive) {
+            if (!monotonicity.is_positive)
+            {
                 range.swapLeftAndRight();
             }
-            std::cerr << range.toString() << "\n";
             result.push_back(range);
         }
         res_type.swap(new_type);
-        std::cerr << "BEFORE NORMALIZE\n";
         return RangeSet(result);
     }
 
@@ -203,7 +208,8 @@ namespace DB {
             size_t arg_index)
     {
         RangeSet result;
-        for (const auto& range : data) {
+        for (const auto& range : data)
+        {
             RangeSet tmp;
             bool inverted = func->invertRange(range, arg_index, func->getArgumentTypes(), tmp);
             if (inverted)

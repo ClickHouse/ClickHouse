@@ -5,11 +5,13 @@
 #include <Common/FieldVisitors.h>
 #include <Functions/IFunction.h>
 
-namespace DB {
+namespace DB
+{
 /** Range with open or closed ends; possibly unbounded.
   */
 
-    class Range {
+class Range
+{
     public:
         static bool equals(const Field &lhs, const Field &rhs);
 
@@ -34,11 +36,13 @@ namespace DB {
         Range(const Field &left_, bool left_included_, const Field &right_, bool right_included_)
                 : left(left_), right(right_),
                   left_bounded(true), right_bounded(true),
-                  left_included(left_included_), right_included(right_included_) {
+                  left_included(left_included_), right_included(right_included_)
+        {
             shrinkToIncludedIfPossible();
         }
 
-        static Range createRightBounded(const Field &right_point, bool right_included) {
+        static Range createRightBounded(const Field &right_point, bool right_included)
+        {
             Range r;
             r.right = right_point;
             r.right_bounded = true;
@@ -47,7 +51,8 @@ namespace DB {
             return r;
         }
 
-        static Range createLeftBounded(const Field &left_point, bool left_included) {
+        static Range createLeftBounded(const Field &left_point, bool left_included)
+        {
             Range r;
             r.left = left_point;
             r.left_bounded = true;
@@ -60,7 +65,8 @@ namespace DB {
           * - then convert it to closed, narrowing by one.
           * That is, for example, turn (0,2) into [1].
           */
-        void shrinkToIncludedIfPossible() {
+        void shrinkToIncludedIfPossible()
+        {
             if (left_bounded && !left_included) {
                 if (left.getType() == Field::Types::UInt64 &&
                     left.get<UInt64>() != std::numeric_limits<UInt64>::max()) {
@@ -87,32 +93,37 @@ namespace DB {
             }
         }
 
-        bool empty() const {
+        bool empty() const
+        {
             return left_bounded && right_bounded
                    && (less(right, left)
                        || ((!left_included || !right_included) && !less(left, right)));
         }
 
         /// x contained in the range
-        bool contains(const Field &x) const {
+        bool contains(const Field &x) const
+        {
             return !leftThan(x) && !rightThan(x);
         }
 
         /// x is to the left
-        bool rightThan(const Field &x) const {
+        bool rightThan(const Field &x) const
+        {
             return (left_bounded
                     ? !(less(left, x) || (left_included && equals(x, left)))
                     : false);
         }
 
         /// x is to the right
-        bool leftThan(const Field &x) const {
+        bool leftThan(const Field &x) const
+        {
             return (right_bounded
                     ? !(less(x, right) || (right_included && equals(x, right)))
                     : false);
         }
 
-        bool intersectsRange(const Range &r) const {
+        bool intersectsRange(const Range &r) const
+        {
             /// r to the left of me.
             if (r.right_bounded
                 && left_bounded
@@ -132,7 +143,8 @@ namespace DB {
             return true;
         }
 
-        bool containsRange(const Range &r) const {
+        bool containsRange(const Range &r) const
+        {
             /// r starts to the left of me.
             if (left_bounded
                 && (!r.left_bounded
@@ -154,16 +166,18 @@ namespace DB {
             return true;
         }
 
-        void swapLeftAndRight() {
+        void swapLeftAndRight()
+        {
             std::swap(left, right);
             std::swap(left_bounded, right_bounded);
             std::swap(left_included, right_included);
         }
 
         String toString() const;
-    };
+};
 
-    class RangeSet {
+class RangeSet
+{
     public:
         std::vector<Range> data;
         void normalize();
@@ -179,12 +193,10 @@ namespace DB {
         std::optional<RangeSet> applyMonotonicFunction(const FunctionBasePtr & func, DataTypePtr & arg_type, DataTypePtr & res_type);
         std::optional<RangeSet> applyInvertibleFunction(const FunctionBasePtr & func, size_t arg_index);
 
-    };
+};
 
-    void applyFunction(
-            const FunctionBasePtr & func,
-            const DataTypePtr & arg_type, const Field & arg_value,
-            DataTypePtr & res_type, Field & res_value);
+void applyFunction(const FunctionBasePtr & func, const DataTypePtr & arg_type, const Field & arg_value, DataTypePtr & res_type, Field & res_value);
+
 }
 
 

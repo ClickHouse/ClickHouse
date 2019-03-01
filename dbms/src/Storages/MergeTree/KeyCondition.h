@@ -220,6 +220,7 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         FunctionsChain & out_monotonic_functions_chain,
+        DataTypePtr & current_type,
         FunctionsChain & out_invertible_functions_chain,
         FunctionArgumentStack & out_function_argument_stack);
 

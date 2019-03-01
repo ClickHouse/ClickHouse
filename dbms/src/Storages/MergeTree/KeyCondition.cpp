@@ -494,6 +494,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(
     FunctionArgumentStack & out_function_argument_stack)
 {
     DataTypePtr key_column_type;
+    DataTypePtr current_type_tmp;
     FunctionsChain monotonic_chain;
 
     if (!isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
@@ -502,6 +503,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(
             out_key_column_num,
             key_column_type,
             monotonic_chain,
+            current_type_tmp,
             out_invertible_functions_chain,
             out_function_argument_stack))
     {
@@ -544,7 +546,8 @@ bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExprImpl(
     const auto & sample_block = key_expr->getSampleBlock();
     bool found_type = false;
     DataTypePtr type;
-    if (sample_block.has(expr_name)) {
+    if (sample_block.has(expr_name))
+    {
         type = sample_block.getByName(expr_name).type;
         found_type = true;
     }
@@ -594,6 +597,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     FunctionsChain & out_monotonic_functions_chain,
+    DataTypePtr & current_type,
     FunctionsChain & out_invertible_functions_chain,
     FunctionArgumentStack & out_function_argument_stack)
 {
@@ -607,12 +611,13 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
     if (key_columns.end() != it)
     {
         out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByName(it->first).type;
+        current_type = out_key_column_type = sample_block.getByName(it->first).type;
         return true;
     }
 
     if (isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExpr(name, out_key_column_num, out_key_column_type, out_invertible_functions_chain, out_function_argument_stack))
     {
+        current_type = out_key_column_type;
         return true;
     }
 
@@ -629,15 +634,17 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
                 out_key_column_num,
                 out_key_column_type,
                 out_monotonic_functions_chain,
+                current_type,
                 out_invertible_functions_chain,
                 out_function_argument_stack))
         {
             auto func_builder = FunctionFactory::instance().tryGet(func_ptr->name, context);
-            ColumnsWithTypeAndName arguments{{nullptr, out_key_column_type, ""}};
+            ColumnsWithTypeAndName arguments{{nullptr, current_type, ""}};
             auto func = func_builder->build(arguments);
 
-            if (func && func->hasInformationAboutMonotonicity()) {
-                out_key_column_type = func->getReturnType();
+            if (func && func->hasInformationAboutMonotonicity())
+            {
+                current_type = func->getReturnType();
                 out_monotonic_functions_chain.push_back(func);
                 return true;
             }
@@ -1039,7 +1046,8 @@ std::optional<RangeSet> KeyCondition::applyMonotonicFunctionsChainToRangeSet(
     {
         DataTypePtr new_type;
         auto new_range_set = key_range_set.applyMonotonicFunction(func, current_type, new_type);
-        if (!new_range_set || !new_type) {
+        if (!new_range_set || !new_type)
+        {
             return {};
         }
         current_type.swap(new_type);
@@ -1090,7 +1098,8 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             RangeSet transformed_range_set = *key_range;
-            if (!element.invertible_functions_chain.empty()) {
+            if (!element.invertible_functions_chain.empty())
+            {
                 auto new_range_set = applyInvertibleFunctionsChainToRange(
                     transformed_range_set,
                     element.invertible_functions_chain,
@@ -1195,7 +1204,8 @@ String KeyCondition::RPNElement::toString() const
         {
             ss << (*it)->getName() << "(";
         }
-        if (monotonic_functions_chain.empty()) {
+        if (monotonic_functions_chain.empty())
+        {
             ss << "(";
         }
         for (size_t i = 0; i < invertible_functions_chain.size(); ++i)
@@ -1203,7 +1213,8 @@ String KeyCondition::RPNElement::toString() const
             ss << "arg #" << function_argument_stack[i] << " of function " << invertible_functions_chain[i]->getName() << ", which is ";
         }
         ss << "column " << key_column;
-        if (monotonic_functions_chain.empty()) {
+        if (monotonic_functions_chain.empty())
+        {
             ss << ")";
         }
         for (auto it = monotonic_functions_chain.rbegin(); it != monotonic_functions_chain.rend(); ++it)
