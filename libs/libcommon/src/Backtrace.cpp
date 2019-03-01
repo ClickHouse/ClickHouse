@@ -1,4 +1,5 @@
 #include <common/Backtrace.h>
+#include <Core/Defines.h>
 
 #include <sstream>
 #include <cstring>

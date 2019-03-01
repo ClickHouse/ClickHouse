@@ -116,7 +116,9 @@ target_link_libraries (common
         PRIVATE
     ${MALLOC_LIBRARIES}
     Threads::Threads
-    ${MEMCPY_LIBRARIES})
+    ${MEMCPY_LIBRARIES}
+    clickhouse_common_io
+)
 
 if (RT_LIBRARY)
     target_link_libraries (common PRIVATE ${RT_LIBRARY})
