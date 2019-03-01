@@ -337,8 +337,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -366,8 +366,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -396,8 +396,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -426,8 +426,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();

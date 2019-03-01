@@ -194,7 +194,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     if (storage)
-        table_lock = storage->lockStructure(false);
+        table_lock = storage->lockStructure(false, context.getCurrentQueryId());
 
     syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
@@ -1474,12 +1474,9 @@ void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline, SubqueriesForSets & subqueries_for_sets)
 {
-    const Settings & settings = context.getSettingsRef();
-
     executeUnion(pipeline);
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
-        pipeline.firstStream(), subqueries_for_sets,
-        SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
+        pipeline.firstStream(), subqueries_for_sets, context);
 }
 
 void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline)

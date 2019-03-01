@@ -597,6 +597,8 @@ See also [Format Schema](#formatschema).
 
 Protobuf - is a [Protocol Buffers](https://developers.google.com/protocol-buffers/) format.
 
+ClickHouse supports both `proto2` and `proto3`. Repeated/optional/required fields are supported.
+
 This format requires an external format schema. The schema is cached between queries.
 Usage examples:
 
@@ -642,7 +644,7 @@ message MessageType {
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
 Nested messages are suitable to input or output a [nested data structures](../data_types/nested_data_structures/nested/).
 
-Default values defined in the protobuf schema like this
+Default values defined in a `proto2` protobuf schema like this
 
 ```
 message MessageType {
