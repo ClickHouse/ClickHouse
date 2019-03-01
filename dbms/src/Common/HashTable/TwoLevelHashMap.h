@@ -29,9 +29,9 @@ public:
         this->emplace(x, it, inserted);
 
         if (inserted)
-            new(&it->second) mapped_type();
+            new(&it->getSecond()) mapped_type();
 
-        return it->second;
+        return it->getSecond();
     }
 };
 
