@@ -210,6 +210,7 @@ private:
         const Context & context,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
+        DataTypePtr & out_func_expr_type,
         FunctionsChain & out_monotonic_functions_chain,
         FunctionsChain & out_invertible_functions_chain,
         FunctionArgumentStack & out_function_argument_stack);
