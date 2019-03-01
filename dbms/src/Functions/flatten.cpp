@@ -13,9 +13,10 @@ class FunctionFlatten : public IFunction
 public:
     static constexpr auto name = "flatten";
 
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionFlatten>(context); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFlatten>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -33,43 +34,81 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto * arg_col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
-        const IColumn & arg_data = arg_col->getData();
-        const IColumn::Offsets & arg_offsets = arg_col->getOffsets();
+        /** We create an array column with array elements as the most deep elements of nested arrays,
+          * and construct offsets by selecting elements of most deep offsets by values of ancestor offsets.
+          *
+Examples 1:
 
-        const DataTypePtr & result_type = block.getByPosition(result).type;
-        const DataTypePtr & result_nested_type = dynamic_cast<const DataTypeArray &>(*result_type).getNestedType();
-        auto result_col = ColumnArray::create(result_nested_type->createColumn());
-        IColumn & result_data = result_col->getData();
-        IColumn::Offsets & result_offsets = result_col->getOffsets();
+Source column: Array(Array(UInt8)):
+Row 1: [[1, 2, 3], [4, 5]], Row 2: [[6], [7, 8]]
+data: [1, 2, 3], [4, 5], [6], [7, 8]
+offsets: 2, 4
+data.data: 1 2 3 4 5 6 7 8
+data.offsets: 3 5 6 8
 
-        // todo
-        // result_data.reserve();
-        // result_offsets.resize();
+Result column: Array(UInt8):
+Row 1: [1, 2, 3, 4, 5], Row 2: [6, 7, 8]
+data: 1 2 3 4 5 6 7 8
+offsets: 5 8
 
-        IColumn::Offset current_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+Result offsets are selected from the most deep (data.offsets) by previous deep (offsets) (and values are decremented by one):
+3 5 6 8
+  ^   ^
+
+Example 2:
+
+Source column: Array(Array(Array(UInt8))):
+Row 1: [[], [[1], [], [2, 3]]], Row 2: [[[4]]]
+
+most deep data: 1 2 3 4
+
+offsets1: 2 3
+offsets2: 0 3 4
+-           ^ ^ - select by prev offsets
+offsets3: 1 1 3 4
+-             ^ ^ - select by prev offsets
+
+result offsets: 3, 4
+result: Row 1: [1, 2, 3], Row2: [4]
+          */
+
+        const ColumnArray * src_col = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+
+        if (!src_col)
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " in argument of function 'flatten'",
+                ErrorCodes::ILLEGAL_COLUMN);
+
+        const IColumn::Offsets & src_offsets = src_col->getOffsets();
+
+        ColumnArray::ColumnOffsets::MutablePtr result_offsets_column;
+        const IColumn::Offsets * prev_offsets = &src_offsets;
+        const IColumn * prev_data = &src_col->getData();
+
+        while (const ColumnArray * next_col = checkAndGetColumn<ColumnArray>(prev_data))
         {
-            const auto & flatten_data = flatten(arg_data, current_offset, arg_offsets[i]);
-            result_data.insertRangeFrom(flatten_data, 0, flatten_data.size());
-            current_offset += flatten_data.size();
-            result_offsets[i] = current_offset;
+            if (!result_offsets_column)
+                result_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+
+            IColumn::Offsets & result_offsets = result_offsets_column->getData();
+
+            const IColumn::Offsets * next_offsets = &next_col->getOffsets();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+                result_offsets[i] = (*next_offsets)[(*prev_offsets)[i] - 1];
+
+            prev_offsets = &result_offsets;
+            prev_data = &next_col->getData();
         }
 
-        block.getByPosition(result).column = std::move(result_col);
+        block.getByPosition(result).column = ColumnArray::create(
+            prev_data->getPtr(),
+            result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());
     }
 
 private:
     String getName() const override
     {
         return name;
-    }
-
-    bool addField(DataTypePtr type_res, const Field & f, Array & arr) const;
-
-    const ColumnArray & flatten(const IColumn & /*data*/, size_t /*from*/, size_t /*to*/) const
-    {
-        // todo
     }
 };
 
