@@ -33,6 +33,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+template <typename> class QuantileTiming;
+
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -82,6 +84,14 @@ public:
     {
         if (!returns_many && levels.size() > 1)
             throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
+        {
+            /// QuantileTiming only supports integers (it works only for unsigned integers but signed are also accepted for convenience).
+            if (!isInteger(argument_type))
+                throw Exception("Argument for function " + std::string(Name::name) + " must be integer, but it has type "
+                    + argument_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
     }
 
     String getName() const override { return Name::name; }
