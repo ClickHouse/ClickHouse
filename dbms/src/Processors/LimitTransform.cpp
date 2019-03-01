@@ -29,7 +29,7 @@ LimitTransform::Status LimitTransform::prepare()
     }
 
     /// Push block if can.
-    if (block_processed)
+    if (has_block && block_processed)
     {
         output.push(std::move(current_chunk));
         has_block = false;

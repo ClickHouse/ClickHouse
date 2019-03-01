@@ -11,7 +11,7 @@ class ISink : public IProcessor
 protected:
     InputPort & input;
     Chunk current_chunk;
-    bool has_input;
+    bool has_input = false;
 
     virtual void consume(Chunk block) = 0;
 

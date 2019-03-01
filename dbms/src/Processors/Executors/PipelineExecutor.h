@@ -26,6 +26,7 @@ private:
 
     enum class ExecStatus
     {
+        New,
         Idle,
         Preparing,
         Executing,
@@ -39,7 +40,7 @@ private:
         Edges directEdges;
         Edges backEdges;
 
-        ExecStatus status = ExecStatus::Idle;
+        ExecStatus status = ExecStatus::New;
         IProcessor::Status last_processor_status;
     };
 

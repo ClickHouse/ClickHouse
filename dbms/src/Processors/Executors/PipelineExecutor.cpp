@@ -119,14 +119,15 @@ void PipelineExecutor::processFinishedExecutionQueueSafe()
 
 bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge)
 {
+    auto & node = graph[edge.to];
+
     /// Don't add processor if nothing was read from port.
-    if (edge.version == edge.prev_version)
+    if (node.status != ExecStatus::New && edge.version == edge.prev_version)
         return false;
 
     edge.prev_version = edge.version;
 
-    auto & node = graph[edge.to];
-    if (node.status == ExecStatus::Idle)
+    if (node.status == ExecStatus::Idle || node.status == ExecStatus::New)
     {
         prepare_queue.push(edge.to);
         node.status = ExecStatus::Preparing;
