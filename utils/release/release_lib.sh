@@ -6,6 +6,9 @@ function gen_version_string {
     else
         VERSION_STRING="$VERSION_MAJOR.$VERSION_MINOR.$VERSION_PATCH"
     fi
+    if [ ! -z "$VERSION_TWEAK" ]; then
+        VERSION_STRING="$VERSION_STRING.$VERSION_TWEAK"
+    fi
 }
 
 function get_version {
@@ -101,35 +104,39 @@ function gen_revision_author {
             gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
             gen_dockerfiles "$VERSION_STRING"
             dbms/src/Storages/System/StorageSystemContributors.sh ||:
-            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile dbms/src/Storages/System/StorageSystemContributors.generated.cpp
-            if [ -z $NO_PUSH ]; then
-                git push
+            if [ -z $NO_COMMIT ]; then
+                git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile dbms/src/Storages/System/StorageSystemContributors.generated.cpp
+                if [ -z $NO_PUSH ]; then
+                    git push
+                fi
             fi
 
             echo "Generated version: ${VERSION_STRING}, revision: ${VERSION_REVISION}."
 
-            # Second tag for correct version information in version.cmake inside tag
-            if git tag --force -a "$tag" -m "$tag"
-            then
-                if [ -z $NO_PUSH ]; then
-                    echo -e "\nTrying to push tag to origin: $tag"
-                    git push origin "$tag"
-                    if [ $? -ne 0 ]
-                    then
-                        git tag -d "$tag"
-                        echo "Fail to create tag"
-                        exit 1
+            if [ -z $NO_TAG]; then
+                # Second tag for correct version information in version.cmake inside tag
+                if git tag --force -a "$tag" -m "$tag"
+                then
+                    if [ -z $NO_PUSH ]; then
+                        echo -e "\nTrying to push tag to origin: $tag"
+                        git push origin "$tag"
+                        if [ $? -ne 0 ]
+                        then
+                            git tag -d "$tag"
+                            echo "Fail to create tag"
+                            exit 1
+                        fi
                     fi
                 fi
-            fi
 
 
-            # Reset testing branch to current commit.
-            git checkout testing
-            git reset --hard "$tag"
+                # Reset testing branch to current commit.
+                git checkout testing
+                git reset --hard "$tag"
 
-            if [ -z $NO_PUSH ]; then
-                git push
+                if [ -z $NO_PUSH ]; then
+                    git push
+                fi
             fi
 
         else
