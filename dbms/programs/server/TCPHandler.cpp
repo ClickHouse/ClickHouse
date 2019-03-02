@@ -164,10 +164,10 @@ void TCPHandler::runImpl()
 
             /// Should we send internal logs to client?
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && query_context.getSettingsRef().send_logs_level.value != "none")
+                && query_context.getSettingsRef().send_logs_level.value != LogsLevel::none)
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
-                state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context.getSettingsRef().send_logs_level.value);
+                state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context.getSettingsRef().send_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
             }
 
@@ -724,7 +724,7 @@ bool TCPHandler::receiveData()
                 query_context.addExternalTable(external_table_name, storage);
             }
             /// The data will be written directly to the table.
-            state.io.out = storage->write(ASTPtr(), query_context.getSettingsRef());
+            state.io.out = storage->write(ASTPtr(), query_context);
         }
         if (block)
             state.io.out->write(block);

@@ -36,7 +36,7 @@ namespace ErrorCodes
 
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
+    const ASTPtr & query_ptr_, Context & context_, bool allow_materialized_)
     : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
 {
 }
@@ -96,7 +96,7 @@ BlockIO InterpreterInsertQuery::execute()
     checkAccess(query);
     StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructure(true);
+    auto table_lock = table->lockStructure(true, context.getCurrentQueryId());
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;

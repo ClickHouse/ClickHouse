@@ -39,7 +39,8 @@ void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
 void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
 {
     parallelogram.clear();
-    Field min_val, max_val;
+    Field min_val;
+    Field max_val;
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const DataTypePtr & type = index.data_types[i];
@@ -50,7 +51,7 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
     }
 }
 
-void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, UInt64 limit)
+void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -59,7 +60,8 @@ void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, UInt64 li
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
-    Field field_min, field_max;
+    Field field_min;
+    Field field_max;
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & column = block.getByName(index.columns[i]).column;
@@ -98,7 +100,6 @@ bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     if (!granule)
         throw Exception(
             "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
-
     return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
 }
 

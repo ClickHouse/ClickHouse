@@ -59,17 +59,17 @@ bool PredicateExpressionsOptimizer::optimize()
         is_rewrite_subqueries |= optimizeImpl(ast_select->where_expression, all_subquery_projection_columns, OptimizeKind::PUSH_TO_WHERE);
         is_rewrite_subqueries |= optimizeImpl(ast_select->prewhere_expression, all_subquery_projection_columns, OptimizeKind::PUSH_TO_PREWHERE);
     }
+
     return is_rewrite_subqueries;
 }
 
 bool PredicateExpressionsOptimizer::optimizeImpl(
-    ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind expression_kind)
+    ASTPtr & outer_expression, const SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind expression_kind)
 {
     /// split predicate with `and`
     std::vector<ASTPtr> outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
 
-    std::vector<DatabaseAndTableWithAlias> database_and_table_with_aliases =
-        getDatabaseAndTables(*ast_select, context.getCurrentDatabase());
+    std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(*ast_select, context);
 
     bool is_rewrite_subquery = false;
     for (auto & outer_predicate : outer_predicate_expressions)
@@ -77,7 +77,7 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
         if (isArrayJoinFunction(outer_predicate))
             continue;
 
-        auto outer_predicate_dependencies = getDependenciesAndQualifiers(outer_predicate, database_and_table_with_aliases);
+        auto outer_predicate_dependencies = getDependenciesAndQualifiers(outer_predicate, tables_with_columns);
 
         /// TODO: remove origin expression
         for (const auto & [subquery, projection_columns] : subqueries_projection_columns)
@@ -92,7 +92,7 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
                 cleanExpressionAlias(inner_predicate); /// clears the alias name contained in the outer predicate
 
                 std::vector<IdentifierWithQualifier> inner_predicate_dependencies =
-                    getDependenciesAndQualifiers(inner_predicate, database_and_table_with_aliases);
+                    getDependenciesAndQualifiers(inner_predicate, tables_with_columns);
 
                 setNewAliasesForInnerPredicate(projection_columns, inner_predicate_dependencies);
 
@@ -119,8 +119,10 @@ bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquer
 
         for (const auto & subquery_function : extract_data.functions)
         {
-            const auto & function = FunctionFactory::instance().get(subquery_function->name, context);
-            if (function->isStateful())
+            const auto & function = FunctionFactory::instance().tryGet(subquery_function->name, context);
+
+            /// Skip lambda、tuple and other special functions
+            if (function && function->isStateful())
                 return false;
         }
 
@@ -167,7 +169,7 @@ std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(AST
 }
 
 std::vector<PredicateExpressionsOptimizer::IdentifierWithQualifier>
-PredicateExpressionsOptimizer::getDependenciesAndQualifiers(ASTPtr & expression, std::vector<DatabaseAndTableWithAlias> & tables)
+PredicateExpressionsOptimizer::getDependenciesAndQualifiers(ASTPtr & expression, std::vector<TableWithColumnNames> & tables)
 {
     FindIdentifierBestTableVisitor::Data find_data(tables);
     FindIdentifierBestTableVisitor(find_data).visit(expression);

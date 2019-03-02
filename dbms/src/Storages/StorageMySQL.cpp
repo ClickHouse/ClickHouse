@@ -4,7 +4,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Dictionaries/MySQLBlockInputStream.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/Context.h>
@@ -52,7 +52,7 @@ BlockInputStreams StorageMySQL::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    UInt64 max_block_size,
+    size_t max_block_size,
     unsigned)
 {
     check(column_names);
@@ -179,9 +179,9 @@ private:
 
 
 BlockOutputStreamPtr StorageMySQL::write(
-    const ASTPtr & /*query*/, const Settings & settings)
+    const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), settings.mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)

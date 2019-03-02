@@ -47,6 +47,15 @@ bool IdentifierSemantic::canBeAlias(const ASTIdentifier & identifier)
     return identifier.semantic->can_be_alias;
 }
 
+void IdentifierSemantic::setMembership(ASTIdentifier & identifier, size_t table_no)
+{
+    identifier.semantic->membership = table_no;
+}
+
+size_t IdentifierSemantic::getMembership(const ASTIdentifier & identifier)
+{
+    return identifier.semantic->membership;
+}
 
 std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
@@ -117,15 +126,18 @@ void IdentifierSemantic::setColumnNormalName(ASTIdentifier & identifier, const D
         identifier.semantic->can_be_alias = false;
 
     if (identifier.semantic->need_long_name)
+        setColumnLongName(identifier, db_and_table);
+}
+
+void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
+{
+    String prefix = db_and_table.getQualifiedNamePrefix();
+    if (!prefix.empty())
     {
-        String prefix = db_and_table.getQualifiedNamePrefix();
-        if (!prefix.empty())
-        {
-            String short_name = identifier.shortName();
-            identifier.name = prefix + short_name;
-            prefix.resize(prefix.size() - 1); /// crop dot
-            identifier.name_parts = {prefix, short_name};
-        }
+        String short_name = identifier.shortName();
+        identifier.name = prefix + short_name;
+        prefix.resize(prefix.size() - 1); /// crop dot
+        identifier.name_parts = {prefix, short_name};
     }
 }
 
@@ -134,6 +146,11 @@ String IdentifierSemantic::columnNormalName(const ASTIdentifier & identifier, co
     ASTPtr copy = identifier.clone();
     setColumnNormalName(typeid_cast<ASTIdentifier &>(*copy), db_and_table);
     return copy->getAliasOrColumnName();
+}
+
+String IdentifierSemantic::columnLongName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
+{
+    return db_and_table.getQualifiedNamePrefix() + identifier.shortName();
 }
 
 }
