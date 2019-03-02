@@ -121,12 +121,6 @@ public:
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
 
-    /// For proper polling.
-    //inline const auto & getTimeouts() const
-    //{
-    //    return timeouts;
-    //}
-
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
         const ConnectionTimeouts & timeouts,
@@ -221,7 +215,6 @@ private:
       */
     ThrottlerPtr throttler;
 
-    //ConnectionTimeouts timeouts;
     Poco::Timespan sync_request_timeout;
 
     /// From where to read query execution result.

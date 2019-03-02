@@ -361,6 +361,8 @@ void Connection::sendQuery(
     if (!connected)
         connect(timeouts);
 
+    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
+
     if (settings)
     {
         std::optional<int> level;
