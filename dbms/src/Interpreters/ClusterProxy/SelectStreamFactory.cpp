@@ -185,7 +185,9 @@ void SelectStreamFactory::createForShard(
             -> BlockInputStreamPtr
         {
             auto current_settings = context.getSettingsRef();
-            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+            auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(
+                current_settings).getSaturated(
+                    current_settings.max_execution_time);
             std::vector<ConnectionPoolWithFailover::TryResult> try_results;
             try
             {
