@@ -60,19 +60,19 @@ private:
 
     StoragePtr storage;
     /// Order is important.
-    RWLockImpl::LockHandler data_lock;
-    RWLockImpl::LockHandler structure_lock;
+    RWLockImpl::LockHolder data_lock;
+    RWLockImpl::LockHolder structure_lock;
 
 public:
-    TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data);
+    TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data, const String & query_id);
 };
 
 
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
-using TableStructureWriteLock = RWLockImpl::LockHandler;
-using TableDataWriteLock = RWLockImpl::LockHandler;
+using TableStructureWriteLock = RWLockImpl::LockHolder;
+using TableDataWriteLock = RWLockImpl::LockHolder;
 using TableFullWriteLock = std::pair<TableDataWriteLock, TableStructureWriteLock>;
 
 
@@ -118,9 +118,9 @@ public:
       * WARNING: You need to call methods from ITableDeclaration under such a lock. Without it, they are not thread safe.
       * WARNING: To avoid deadlocks, this method must not be called under lock of Context.
       */
-    TableStructureReadLockPtr lockStructure(bool will_modify_data)
+    TableStructureReadLockPtr lockStructure(bool will_modify_data, const String & query_id)
     {
-        TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data);
+        TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data, query_id);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -128,11 +128,11 @@ public:
 
     /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP, TRUNCATE.
       */
-    TableFullWriteLock lockForAlter()
+    TableFullWriteLock lockForAlter(const String & query_id)
     {
         /// The calculation order is important.
-        auto res_data_lock = lockDataForAlter();
-        auto res_structure_lock = lockStructureForAlter();
+        auto res_data_lock = lockDataForAlter(query_id);
+        auto res_structure_lock = lockStructureForAlter(query_id);
 
         return {std::move(res_data_lock), std::move(res_structure_lock)};
     }
@@ -141,17 +141,17 @@ public:
       * It is taken during write temporary data in ALTER MODIFY.
       * Under this lock, you can take lockStructureForAlter() to change the structure of the table.
       */
-    TableDataWriteLock lockDataForAlter()
+    TableDataWriteLock lockDataForAlter(const String & query_id)
     {
-        auto res = data_lock->getLock(RWLockImpl::Write);
+        auto res = data_lock->getLock(RWLockImpl::Write, query_id);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
     }
 
-    TableStructureWriteLock lockStructureForAlter()
+    TableStructureWriteLock lockStructureForAlter(const String & query_id)
     {
-        auto res = structure_lock->getLock(RWLockImpl::Write);
+        auto res = structure_lock->getLock(RWLockImpl::Write, query_id);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -185,7 +185,7 @@ public:
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
-        UInt64 /*max_block_size*/,
+        size_t /*max_block_size*/,
         unsigned /*num_streams*/)
     {
         throw Exception("Method read is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -199,7 +199,7 @@ public:
       */
     virtual BlockOutputStreamPtr write(
         const ASTPtr & /*query*/,
-        const Settings & /*settings*/)
+        const Context & /*context*/)
     {
         throw Exception("Method write is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -293,7 +293,7 @@ public:
     virtual bool supportsIndexForIn() const { return false; }
 
     /// Provides a hint that the storage engine may evaluate the IN-condition by using an index.
-    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */) const { return false; }
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */, const Context & /* query_context */) const { return false; }
 
     /// Checks validity of the data
     virtual bool checkData() const { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }

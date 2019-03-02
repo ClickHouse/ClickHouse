@@ -117,3 +117,9 @@
     #define NO_SANITIZE_UNDEFINED
     #define NO_SANITIZE_ADDRESS
 #endif
+
+#if defined __GNUC__ && !defined __clang__
+    #define OPTIMIZE(x) __attribute__((__optimize__(x)))
+#else
+    #define OPTIMIZE(x)
+#endif

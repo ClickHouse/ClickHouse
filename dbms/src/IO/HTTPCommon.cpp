@@ -47,7 +47,7 @@ namespace
 {
     void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
-#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
+#if defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
 #else
         session.setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
@@ -83,7 +83,7 @@ namespace
         session->setPort(port);
 
         /// doesn't work properly without patch
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
         session->setKeepAlive(keep_alive);
 #else
         (void)keep_alive; // Avoid warning: unused parameter

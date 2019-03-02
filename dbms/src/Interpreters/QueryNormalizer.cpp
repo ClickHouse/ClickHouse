@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_AST;
     extern const int CYCLIC_ALIASES;
 }
@@ -130,26 +129,38 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 }
 
 /// mark table identifiers as 'not columns'
-void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data &)
+void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
+    /// mark table Identifiers as 'not a column'
     if (node.table_expression)
     {
         auto & expr = static_cast<ASTTableExpression &>(*node.table_expression);
         setIdentifierSpecial(expr.database_and_table_name);
     }
+
+    /// normalize JOIN ON section
+    if (node.table_join)
+    {
+        auto & join = static_cast<ASTTableJoin &>(*node.table_join);
+        if (join.on_expression)
+            visit(join.on_expression, data);
+    }
+}
+
+static bool needVisitChild(const ASTPtr & child)
+{
+    if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
+        typeid_cast<const ASTTableExpression *>(child.get()))
+        return false;
+    return true;
 }
 
 /// special visitChildren() for ASTSelectQuery
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & data)
 {
     for (auto & child : ast->children)
-    {
-        if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
-            typeid_cast<const ASTTableExpression *>(child.get()))
-            continue;
-
-        visit(child, data);
-    }
+        if (needVisitChild(child))
+            visit(child, data);
 
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
     /// but also in where_expression and having_expression.
@@ -167,31 +178,28 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & 
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
 void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
 {
-    ASTFunction * func_node = typeid_cast<ASTFunction *>(node.get());
-    if (func_node && func_node->name == "lambda")
+    if (ASTFunction * func_node = typeid_cast<ASTFunction *>(node.get()))
     {
         /// We skip the first argument. We also assume that the lambda function can not have parameters.
-        for (size_t i = 1, size = func_node->arguments->children.size(); i < size; ++i)
+        size_t first_pos = 0;
+        if (func_node->name == "lambda")
+            first_pos = 1;
+
+        auto & func_children = func_node->arguments->children;
+
+        for (size_t i = first_pos; i < func_children.size(); ++i)
         {
-            auto & child = func_node->arguments->children[i];
+            auto & child = func_children[i];
 
-            if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
-                typeid_cast<const ASTTableExpression *>(child.get()))
-                continue;
-
-            visit(child, data);
+            if (needVisitChild(child))
+                visit(child, data);
         }
     }
     else if (!typeid_cast<ASTSelectQuery *>(node.get()))
     {
         for (auto & child : node->children)
-        {
-            if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
-                typeid_cast<const ASTTableExpression *>(child.get()))
-                continue;
-
-            visit(child, data);
-        }
+            if (needVisitChild(child))
+                visit(child, data);
     }
 }
 

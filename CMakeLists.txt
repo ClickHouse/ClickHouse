@@ -224,6 +224,7 @@ endif ()
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include(GNUInstallDirs)
+include (cmake/find_contrib_lib.cmake)
 
 include (cmake/find_ssl.cmake)
 include (cmake/lib_name.cmake)
@@ -255,19 +256,18 @@ include (cmake/find_libxml2.cmake)
 include (cmake/find_brotli.cmake)
 include (cmake/find_protobuf.cmake)
 include (cmake/find_pdqsort.cmake)
-include (cmake/find_hdfs3.cmake)
+include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
-if (ENABLE_TESTS)
-    include (cmake/find_gtest.cmake)
-endif ()
-
-include (cmake/find_contrib_lib.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
 find_contrib_lib(double-conversion)
+include (cmake/find_parquet.cmake)
+if (ENABLE_TESTS)
+    include (cmake/find_gtest.cmake)
+endif ()
 
 # Need to process before "contrib" dir:
 include (libs/libcommon/cmake/find_gperftools.cmake)

@@ -23,11 +23,12 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [PrettyCompactMonoBlock](#prettycompactmonoblock) | ✗ | ✔ |
 | [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
+| [Protobuf](#protobuf) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
-| [CapnProto](#capnproto) | ✔ | ✔ |
+| [CapnProto](#capnproto) | ✔ | ✗ |
 
 ## TabSeparated {#tabseparated}
 
@@ -575,9 +576,8 @@ Cap'n Proto is a binary message format similar to Protocol Buffers and Thrift, b
 
 Cap'n Proto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
 
-``` sql
-SELECT SearchPhrase, count() AS c FROM test.hits
-       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
+```bash
+cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
 Where `schema.capnp` looks like this:
@@ -589,8 +589,84 @@ struct Message {
 }
 ```
 
-Schema files are in the file that is located in the directory specified in [ format_schema_path](../operations/server_settings/settings.md) in the server configuration.
-
 Deserialization is effective and usually doesn't increase the system load.
+
+See also [Format Schema](#formatschema).
+
+## Protobuf {#protobuf}
+
+Protobuf - is a [Protocol Buffers](https://developers.google.com/protocol-buffers/) format.
+
+ClickHouse supports both `proto2` and `proto3`. Repeated/optional/required fields are supported.
+
+This format requires an external format schema. The schema is cached between queries.
+Usage examples:
+
+```sql
+SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+```bash
+cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
+```
+
+Where the file `schemafile.proto` looks like this:
+
+```
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+};
+```
+
+To find the correspondence between table columns and fields of Protocol Buffers' message type ClickHouse compares their names.
+This comparison is case-insensitive and the characters `_` (underscore) and `.` (dot) are considered as equal.
+If types of a column and a field of Protocol Buffers' message are different the necessary conversion is applied.
+
+Nested messages are supported. For example, for the field `z` in the following message type
+
+```
+message MessageType {
+  message XType {
+    message YType {
+      int32 z;
+    };
+    repeated YType y;
+  };
+  XType x;
+};
+```
+
+ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
+Nested messages are suitable to input or output a [nested data structures](../data_types/nested_data_structures/nested/).
+
+Default values defined in a `proto2` protobuf schema like this
+
+```
+message MessageType {
+  optional int32 result_per_page = 3 [default = 10];
+}
+```
+
+are not applied; the [table defaults](../query_language/create.md#create-default-values) are used instead of them.
+
+## Format Schema {#formatschema}
+
+The file name containing the format schema is set by the setting `format_schema`.
+It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
+The format schema is a combination of a file name and the name of a message type in this file, delimited by colon,
+e.g. `schemafile.proto:MessageType`.
+If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
+it can be omitted and in this case the format schema looks like `schemafile:MessageType`.
+
+If you input or output data via the [client](../interfaces/cli/) the file name specified in the format schema
+can contain an absolute path or a path relative to the current directory on the client.
+If you input or output data via the [HTTP interface](../interfaces/http/) the file name specified in the format schema
+should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md)
+in the server configuration.
 
 [Original article](https://clickhouse.yandex/docs/en/interfaces/formats/) <!--hide-->

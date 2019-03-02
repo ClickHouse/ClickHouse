@@ -80,9 +80,9 @@ public:
         scale(scale_)
     {
         if (unlikely(precision < 1 || precision > maxPrecision()))
-            throw Exception("Precision is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Precision " + std::to_string(precision) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         if (unlikely(scale < 0 || static_cast<UInt32>(scale) > maxPrecision()))
-            throw Exception("Scale is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+            throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
     const char * getFamilyName() const override { return "Decimal"; }
@@ -94,13 +94,14 @@ public:
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double avg_value_size_hint) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
 
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     Field getDefault() const override;
     bool canBePromoted() const override { return true; }

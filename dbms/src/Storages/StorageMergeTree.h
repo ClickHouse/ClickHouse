@@ -38,7 +38,10 @@ public:
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & /* query_context */) const override
+    {
+        return data.mayBenefitFromIndexForIn(left_in_operand);
+    }
 
     const ColumnsDescription & getColumns() const override { return data.getColumns(); }
     void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
@@ -54,10 +57,10 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        UInt64 max_block_size,
+        size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     /** Perform the next step in combining the parts.
       */

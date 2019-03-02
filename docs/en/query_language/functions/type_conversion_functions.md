@@ -105,7 +105,7 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
-## CAST(x, t)
+## CAST(x, t) {#type_conversion_function-cast}
 
 Converts 'x' to the 't' data type. The syntax CAST(x AS t) is also supported.
 

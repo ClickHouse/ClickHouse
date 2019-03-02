@@ -5,7 +5,7 @@
 namespace DB
 {
 
-FindIdentifierBestTableData::FindIdentifierBestTableData(const std::vector<DatabaseAndTableWithAlias> & tables_)
+FindIdentifierBestTableData::FindIdentifierBestTableData(const std::vector<TableWithColumnNames> & tables_)
     : tables(tables_)
 {
 }
@@ -16,13 +16,21 @@ void FindIdentifierBestTableData::visit(ASTIdentifier & identifier, ASTPtr &)
 
     if (!identifier.compound())
     {
-        if (!tables.empty())
-            best_table = &tables[0];
+        for (const auto & [table, names] : tables)
+        {
+            if (std::find(names.begin(), names.end(), identifier.name) != names.end())
+            {
+                // TODO: make sure no collision ever happens
+                if (!best_table)
+                    best_table = &table;
+            }
+        }
     }
     else
     {
+        // FIXME: make a better matcher using `names`?
         size_t best_match = 0;
-        for (const DatabaseAndTableWithAlias & table : tables)
+        for (const auto & [table, names] : tables)
         {
             if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, table))
                 if (match > best_match)

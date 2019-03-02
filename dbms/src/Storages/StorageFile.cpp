@@ -187,7 +187,7 @@ BlockInputStreams StorageFile::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    UInt64 max_block_size,
+    size_t max_block_size,
     unsigned /*num_streams*/)
 {
     BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
@@ -252,7 +252,7 @@ private:
 
 BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
-    const Settings & /*settings*/)
+    const Context & /*context*/)
 {
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }

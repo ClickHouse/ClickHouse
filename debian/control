@@ -3,13 +3,14 @@ Section: database
 Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
-               cmake3 | cmake,
+               cmake | cmake3,
                ninja-build,
-               gcc-7 [amd64 i386] | gcc-8 [amd64 i386], g++-7 [amd64 i386] | g++-8 [amd64 i386],
-               clang-6.0 [arm64 armhf] | clang-5.0 [arm64 armhf] | clang-7 [arm64 armhf],
+               gcc-7 [amd64 i386] | gcc-8 [amd64 i386] | gcc-9 [amd64 i386], g++-7 [amd64 i386] | g++-8 [amd64 i386] | g++-9 [amd64 i386],
+               clang-8 [arm64 armhf] | clang-7 [arm64 armhf] | clang-6.0 [arm64 armhf],
                libc6-dev,
                libicu-dev,
-               libreadline-dev
+               libreadline-dev,
+               tzdata
 Standards-Version: 3.9.8
 
 Package: clickhouse-client
