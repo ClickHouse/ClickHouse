@@ -28,7 +28,7 @@ private:
         rb = roaring_bitmap_create();
 
         for (const auto & x : small)
-            roaring_bitmap_add(rb, x);
+            roaring_bitmap_add(rb, x.getValue());
     }
 
 public:
@@ -75,7 +75,7 @@ public:
         else
         {
             for (const auto & x : r1.small)
-                add(x);
+                add(x.getValue());
         }
     }
 
@@ -121,7 +121,7 @@ public:
     {
         roaring_bitmap_t * smallRb = roaring_bitmap_create();
         for (const auto & x : small)
-            roaring_bitmap_add(smallRb, x);
+            roaring_bitmap_add(smallRb, x.getValue());
         return smallRb;
     }
 
@@ -134,9 +134,9 @@ public:
         if (isSmall() && r1.isSmall())
         {
             // intersect
-            for (const auto & value : this->small)
-                if (r1.small.find(value) != r1.small.end())
-                    buffer.push_back(value);
+            for (const auto & x : this->small)
+                if (r1.small.find(x.getValue()) != r1.small.end())
+                    buffer.push_back(x.getValue());
 
             // Clear out the original values
             this->small.clear();
@@ -148,9 +148,9 @@ public:
         }
         else if (isSmall() && r1.isLarge())
         {
-            for (const auto & value : this->small)
-                if (roaring_bitmap_contains(r1.rb, value))
-                    buffer.push_back(value);
+            for (const auto & x : this->small)
+                if (roaring_bitmap_contains(r1.rb, x.getValue()))
+                    buffer.push_back(x.getValue());
 
             // Clear out the original values
             this->small.clear();
@@ -196,9 +196,9 @@ public:
         if (isSmall() && r1.isSmall())
         {
             // subtract
-            for (const auto & value : this->small)
-                if (r1.small.find(value) == r1.small.end())
-                    buffer.push_back(value);
+            for (const auto & x : this->small)
+                if (r1.small.find(x.getValue()) == r1.small.end())
+                    buffer.push_back(x.getValue());
 
             // Clear out the original values
             this->small.clear();
@@ -210,9 +210,9 @@ public:
         }
         else if (isSmall() && r1.isLarge())
         {
-            for (const auto & value : this->small)
-                if (!roaring_bitmap_contains(r1.rb, value))
-                    buffer.push_back(value);
+            for (const auto & x : this->small)
+                if (!roaring_bitmap_contains(r1.rb, x.getValue()))
+                    buffer.push_back(x.getValue());
 
             // Clear out the original values
             this->small.clear();
@@ -239,14 +239,14 @@ public:
         UInt64 retSize = 0;
         if (isSmall() && r1.isSmall())
         {
-            for (const auto & value : this->small)
-                if (r1.small.find(value) != r1.small.end())
+            for (const auto & x : this->small)
+                if (r1.small.find(x.getValue()) != r1.small.end())
                     retSize++;
         }
         else if (isSmall() && r1.isLarge())
         {
-            for (const auto & value : this->small)
-                if (roaring_bitmap_contains(r1.rb, value))
+            for (const auto & x : this->small)
+                if (roaring_bitmap_contains(r1.rb, x.getValue()))
                     retSize++;
         }
         else
@@ -363,7 +363,7 @@ public:
         {
             for (const auto & x : small)
             {
-                res_data.emplace_back(x);
+                res_data.emplace_back(x.getValue());
                 count++;
             }
         }
