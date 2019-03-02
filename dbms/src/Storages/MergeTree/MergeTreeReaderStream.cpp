@@ -29,6 +29,8 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     size_t max_mark_range_bytes = 0;
     size_t sum_mark_range_bytes = 0;
 
+    /// Care should be taken to not load marks when the part is empty (marks_count == 0).
+
     for (const auto & mark_range : all_mark_ranges)
     {
         size_t left_mark = mark_range.begin;
@@ -54,7 +56,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
             || (right_mark + 1 == marks_count
                 && getMark(right_mark).offset_in_compressed_file == getMark(mark_range.end).offset_in_compressed_file))
         {
-            mark_range_bytes = file_size - getMark(left_mark).offset_in_compressed_file;
+            mark_range_bytes = file_size - (left_mark < marks_count ? getMark(left_mark).offset_in_compressed_file : 0);
         }
         else
         {
@@ -119,8 +121,8 @@ void MergeTreeReaderStream::loadMarks()
         size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
-                    "bad size of marks file `" + mrk_path + "':" + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
-                    ErrorCodes::CORRUPTED_DATA);
+                "Bad size of marks file '" + mrk_path + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
+                ErrorCodes::CORRUPTED_DATA);
 
         auto res = std::make_shared<MarksInCompressedFile>(marks_count);
 
