@@ -13,22 +13,25 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
 
-#include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/IStorage.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/IStorage.h>
+#include <Common/typeid_cast.h>
 
 #include <functional>
+
 
 namespace DB
 {
@@ -106,7 +109,6 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 }
-
 
 bool hasArrayJoin(const ASTPtr & ast)
 {
@@ -591,7 +593,29 @@ Names qualifyOccupiedNames(NamesAndTypesList & columns, const NameSet & source_c
     return originals;
 }
 
+void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
+{
+    if (!join || !join->table_expression)
+        return;
+
+    auto & table_expr = static_cast<ASTTableExpression &>(*join->table_expression.get());
+    if (table_expr.database_and_table_name)
+    {
+        auto & table_id = typeid_cast<ASTIdentifier &>(*table_expr.database_and_table_name.get());
+        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
+
+        // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
+        //        we can't replace aliased tables.
+        // FIXME: long table names include database name, which we can't save within alias.
+        if (table_id.alias.empty() && table_id.isShort())
+        {
+            ParserTableExpression parser;
+            table_expr = static_cast<ASTTableExpression &>(*parseQuery(parser, expr, 0));
+        }
+    }
 }
+
+} // namespace
 
 
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
@@ -628,6 +652,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     {
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
+            replaceJoinedTable(node);
+
             const auto & joined_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
             DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
 
