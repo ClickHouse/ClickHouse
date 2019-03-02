@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -58,6 +59,8 @@ struct MergeTreeDataPart
     ColumnSize getColumnSize(const String & name, const IDataType & type) const;
 
     ColumnSize getTotalColumnsSize() const;
+
+    size_t getFileSizeOrZero(const String & file_name) const;
 
     /// Returns full path to part dir
     String getFullPath() const;

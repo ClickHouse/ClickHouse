@@ -67,12 +67,6 @@ struct ExpressionAnalyzerData
     /// Columns will be added to block by join.
     JoinedColumnsList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
 
-    /// Actions which need to be calculated on joined block.
-    ExpressionActionsPtr joined_block_actions;
-
-    /// Columns which will be used in query from joined table. Duplicate names are qualified.
-    NameSet required_columns_from_joined_table;
-
 protected:
     ExpressionAnalyzerData(const NamesAndTypesList & source_columns_,
                            const NameSet & required_result_columns_,

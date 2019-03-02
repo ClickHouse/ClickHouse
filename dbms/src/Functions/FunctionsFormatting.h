@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
+#include <type_traits>
 
 
 namespace DB
@@ -73,16 +74,19 @@ private:
     template <typename T>
     inline static void writeBitmask(T x, WriteBuffer & out)
     {
+        using UnsignedT = std::make_unsigned_t<T>;
+        UnsignedT u_x = x;
+
         bool first = true;
-        while (x)
+        while (u_x)
         {
-            T y = (x & (x - 1));
-            T bit = x ^ y;
-            x = y;
+            UnsignedT y = u_x & (u_x - 1);
+            UnsignedT bit = u_x ^ y;
+            u_x = y;
             if (!first)
-                out.write(",", 1);
+                writeChar(',', out);
             first = false;
-            writeIntText(bit, out);
+            writeIntText(T(bit), out);
         }
     }
 

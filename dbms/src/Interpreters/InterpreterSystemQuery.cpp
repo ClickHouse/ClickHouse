@@ -239,7 +239,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter();
+        auto table_lock = table->lockForAlter(context.getCurrentQueryId());
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);
@@ -252,7 +252,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         create.attach = true;
 
         std::string data_path = database->getDataPath();
-        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns, system_context);
+        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,

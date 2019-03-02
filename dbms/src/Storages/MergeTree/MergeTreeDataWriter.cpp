@@ -48,7 +48,7 @@ void buildScatterSelector(
         if (inserted)
         {
             partition_num_to_first_row.push_back(i);
-            it->second = partitions_count;
+            it->getSecond() = partitions_count;
 
             ++partitions_count;
 
@@ -61,7 +61,7 @@ void buildScatterSelector(
         }
 
         if (partitions_count > 1)
-            selector[i] = it->second;
+            selector[i] = it->getSecond();
     }
 }
 
@@ -180,8 +180,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     dir.createDirectories();
 
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey())
-        data.sorting_key_expr->execute(block);
+    if (data.hasSortingKey() || data.hasSkipIndices())
+        data.sorting_key_and_skip_indices_expr->execute(block);
 
     Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;

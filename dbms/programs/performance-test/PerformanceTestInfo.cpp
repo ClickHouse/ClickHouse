@@ -36,42 +36,6 @@ void extractSettings(
     }
 }
 
-void checkMetricsInput(const Strings & metrics, ExecutionType exec_type)
-{
-    Strings loop_metrics = {
-        "min_time", "quantiles", "total_time",
-        "queries_per_second", "rows_per_second",
-        "bytes_per_second"};
-
-    Strings non_loop_metrics = {
-        "max_rows_per_second", "max_bytes_per_second",
-        "avg_rows_per_second", "avg_bytes_per_second"};
-
-    if (exec_type == ExecutionType::Loop)
-    {
-        for (const std::string & metric : metrics)
-        {
-            auto non_loop_pos =
-                std::find(non_loop_metrics.begin(), non_loop_metrics.end(), metric);
-
-            if (non_loop_pos != non_loop_metrics.end())
-               throw Exception("Wrong type of metric for loop execution type (" + metric + ")",
-                   ErrorCodes::BAD_ARGUMENTS);
-        }
-    }
-    else
-    {
-        for (const std::string & metric : metrics)
-        {
-            auto loop_pos = std::find(loop_metrics.begin(), loop_metrics.end(), metric);
-            if (loop_pos != loop_metrics.end())
-                throw Exception(
-                    "Wrong type of metric for non-loop execution type (" + metric + ")",
-                    ErrorCodes::BAD_ARGUMENTS);
-        }
-    }
-}
-
 }
 
 
@@ -79,17 +43,26 @@ namespace fs = boost::filesystem;
 
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,
-    const std::string & profiles_file_)
+    const std::string & profiles_file_,
+    const Settings & global_settings_)
     : profiles_file(profiles_file_)
+    , settings(global_settings_)
 {
     test_name = config->getString("name");
     path = config->getString("path");
+    if (config->has("main_metric"))
+    {
+        Strings main_metrics;
+        config->keys("main_metric", main_metrics);
+        if (main_metrics.size())
+            main_metric = main_metrics[0];
+    }
+
     applySettings(config);
     extractQueries(config);
     processSubstitutions(config);
     getExecutionType(config);
     getStopConditions(config);
-    getMetrics(config);
     extractAuxiliaryQueries(config);
 }
 
@@ -237,37 +210,6 @@ void PerformanceTestInfo::getStopConditions(XMLConfigurationPtr config)
     for (size_t i = 0; i < times_to_run * queries.size(); ++i)
         stop_conditions_by_run.push_back(stop_conditions_template);
 
-}
-
-
-void PerformanceTestInfo::getMetrics(XMLConfigurationPtr config)
-{
-    ConfigurationPtr metrics_view(config->createView("metrics"));
-    metrics_view->keys(metrics);
-
-    if (config->has("main_metric"))
-    {
-        Strings main_metrics;
-        config->keys("main_metric", main_metrics);
-        if (main_metrics.size())
-            main_metric = main_metrics[0];
-    }
-
-    if (!main_metric.empty())
-    {
-        if (std::find(metrics.begin(), metrics.end(), main_metric) == metrics.end())
-            metrics.push_back(main_metric);
-    }
-    else
-    {
-        if (metrics.empty())
-            throw Exception("You shoud specify at least one metric",
-                ErrorCodes::BAD_ARGUMENTS);
-        main_metric = metrics[0];
-    }
-
-    if (metrics.size() > 0)
-        checkMetricsInput(metrics, exec_type);
 }
 
 void PerformanceTestInfo::extractAuxiliaryQueries(XMLConfigurationPtr config)

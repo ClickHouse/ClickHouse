@@ -8,6 +8,13 @@
 namespace DB
 {
 
+ASTPtr ASTIdentifier::clone() const
+{
+    auto ret = std::make_shared<ASTIdentifier>(*this);
+    ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    return ret;
+}
+
 std::shared_ptr<ASTIdentifier> ASTIdentifier::createSpecial(const String & name, std::vector<String> && name_parts)
 {
     auto ret = std::make_shared<ASTIdentifier>(name, std::move(name_parts));
@@ -20,6 +27,16 @@ ASTIdentifier::ASTIdentifier(const String & name_, std::vector<String> && name_p
     , name_parts(name_parts_)
     , semantic(std::make_shared<IdentifierSemanticImpl>())
 {
+}
+
+void ASTIdentifier::setShortName(const String & new_name)
+{
+    name = new_name;
+    name_parts.clear();
+
+    bool special = semantic->special;
+    *semantic = IdentifierSemanticImpl();
+    semantic->special = special;
 }
 
 void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const

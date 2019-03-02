@@ -61,7 +61,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 База данных по умолчанию.
 
-Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases).
+Перечень баз данных можно получить запросом [SHOW DATABASES](../../query_language/misc.md#show-databases).
 
 **Пример**
 
@@ -627,7 +627,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## uncompressed_cache_size
+## uncompressed_cache_size  {#server-settings-uncompressed_cache_size}
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
+#include <optional>
 #include <Storages/IStorage.h>
 
 
@@ -36,12 +37,11 @@ public:
 private:
     const std::string name;
     bool multithreaded;
-    size_t limit;
-    size_t offset;
+    std::optional<UInt64> limit;
+    UInt64 offset;
 
 protected:
-    /// limit: 0 means unlimited.
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0, size_t offset_ = 0);
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0);
 };
 
 }

@@ -4,6 +4,7 @@
 #include "TestStopConditions.h"
 #include <Common/InterruptListener.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Settings.h>
 #include <Client/Connection.h>
 
 namespace DB
@@ -14,5 +15,6 @@ void executeQuery(
     TestStats & statistics,
     TestStopConditions & stop_conditions,
     InterruptListener & interrupt_listener,
-    Context & context);
+    Context & context,
+    const Settings & settings);
 }

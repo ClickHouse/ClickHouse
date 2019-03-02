@@ -1,4 +1,4 @@
-clickhouse (@VERSION_STRING@) unstable; urgency=low
+clickhouse (2:@VERSION_STRING@) unstable; urgency=low
 
   * Modified source code
 

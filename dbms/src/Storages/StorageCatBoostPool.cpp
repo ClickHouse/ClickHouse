@@ -30,7 +30,7 @@ class CatBoostDatasetBlockInputStream : public IBlockInputStream
 public:
 
     CatBoostDatasetBlockInputStream(const std::string & file_name, const std::string & format_name,
-                                    const Block & sample_block, const Context & context, size_t max_block_size)
+                                    const Block & sample_block, const Context & context, UInt64 max_block_size)
             : file_name(file_name), format_name(format_name)
     {
         read_buf = std::make_unique<ReadBufferFromFile>(file_name);
@@ -258,12 +258,13 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
     setColumns(columns);
 }
 
-BlockInputStreams StorageCatBoostPool::read(const Names & column_names,
-                       const SelectQueryInfo & /*query_info*/,
-                       const Context & context,
-                       QueryProcessingStage::Enum /*processed_stage*/,
-                       size_t max_block_size,
-                       unsigned /*threads*/)
+BlockInputStreams StorageCatBoostPool::read(
+    const Names & column_names,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    unsigned /*threads*/)
 {
     auto stream = std::make_shared<CatBoostDatasetBlockInputStream>(
             data_description_file_name, "TSV", sample_block, context, max_block_size);

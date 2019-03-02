@@ -1,8 +1,8 @@
 #pragma once
 
-#if defined(__linux__)
-
 #include <boost/noncopyable.hpp>
+
+#if defined(__linux__)
 
 /// https://stackoverflow.com/questions/20759750/resolving-redefinition-of-timespec-in-time-h
 #define timespec linux_timespec
@@ -34,6 +34,40 @@ int io_getevents(aio_context_t ctx, long min_nr, long max_nr, io_event * events,
 struct AIOContext : private boost::noncopyable
 {
     aio_context_t ctx;
+
+    AIOContext(unsigned int nr_events = 128);
+    ~AIOContext();
+};
+
+#elif defined(__FreeBSD__)
+
+#include <aio.h>
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
+
+typedef struct kevent io_event;
+typedef int aio_context_t;
+
+struct iocb
+{
+    struct aiocb aio;
+    long aio_data;
+};
+
+int io_setup(void);
+
+int io_destroy(void);
+
+/// last argument is an array of pointers technically speaking
+int io_submit(int ctx, long nr, struct iocb * iocbpp[]);
+
+int io_getevents(int ctx, long min_nr, long max_nr, struct kevent * events, struct timespec * timeout);
+
+
+struct AIOContext : private boost::noncopyable
+{
+    int ctx;
 
     AIOContext(unsigned int nr_events = 128);
     ~AIOContext();

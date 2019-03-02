@@ -1,4 +1,5 @@
 #include "AsynchronousBlockInputStream.h"
+#include <Common/setThreadName.h>
 #include <Common/CurrentThread.h>
 
 

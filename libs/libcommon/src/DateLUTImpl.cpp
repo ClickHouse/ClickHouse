@@ -1,13 +1,13 @@
 #if __has_include(<cctz/civil_time.h>)
 #include <cctz/civil_time.h> // bundled, debian
 #else
-#include <civil_time.h> // freebsd
+#include <civil_time.h> // Y_IGNORE // freebsd
 #endif
 
 #if __has_include(<cctz/time_zone.h>)
 #include <cctz/time_zone.h>
 #else
-#include <time_zone.h>
+#include <time_zone.h> // Y_IGNORE
 #endif
 
 #include <common/DateLUTImpl.h>

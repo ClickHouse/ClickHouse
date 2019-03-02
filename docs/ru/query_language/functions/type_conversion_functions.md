@@ -94,7 +94,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ## reinterpretAsString
 Функция принимает число или дату или дату-с-временем и возвращает строку, содержащую байты, представляющие соответствующее значение в host order (little endian). При этом, отбрасываются нулевые байты с конца. Например, значение 255 типа UInt32 будет строкой длины 1 байт.
 
-## CAST(x, t)
+## CAST(x, t) {#type_conversion_function-cast}
 Преобразует x в тип данных t.
 Поддерживается также синтаксис CAST(x AS t).
 

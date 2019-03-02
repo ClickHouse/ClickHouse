@@ -1,11 +1,10 @@
-#include <Common/FieldVisitors.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -232,7 +231,8 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception("Support for more than one JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("Multiple JOIN disabled or does not support the query. "
+                                "'set allow_experimental_multiple_joins_emulation' to enable.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
