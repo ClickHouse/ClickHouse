@@ -1142,6 +1142,25 @@ public:
         const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
         const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
+
+        /// The case when arguments are the same (tautological comparison). Return constant.
+        if (col_left_untyped == col_right_untyped)
+        {
+            /// Always true: =, <=, >=
+            if constexpr (std::is_same_v<Op<int, int>, EqualsOp<int, int>>
+                || std::is_same_v<Op<int, int>, LessOrEqualsOp<int, int>>
+                || std::is_same_v<Op<int, int>, GreaterOrEqualsOp<int, int>>)
+            {
+                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
+                return;
+            }
+            else
+            {
+                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+                return;
+            }
+        }
+
         const DataTypePtr & left_type = col_with_type_and_name_left.type;
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
