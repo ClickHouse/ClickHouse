@@ -36,34 +36,14 @@ and stores mini-batch
 class IGradientComputer
 {
 public:
-    IGradientComputer(UInt32 sz) { std::ignore = sz;//    : batch_gradient(sz, 0) {
-    }
+    IGradientComputer()
+    {}
 
     virtual ~IGradientComputer() = default;
 
     /// Adds to batch_gradient computed gradient in point (weigts, bias) using corresponding loss function
     virtual void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
                          Float64 learning_rate, Float64 target, const IColumn **columns, size_t row_num) = 0;
-
-//    void reset()
-//    {
-//        batch_gradient.assign(batch_gradient.size(), 0);
-//    }
-
-//    void write(WriteBuffer &buf) const
-//    {
-//        writeBinary(batch_gradient, buf);
-//    }
-//
-//    void read(ReadBuffer &buf)
-//    {
-//        readBinary(batch_gradient, buf);
-//    }
-
-//    const std::vector<Float64> &get() const
-//    {
-//        return batch_gradient;
-//    }
 
     virtual Float64 predict(const std::vector<Float64> &predict_feature,
                             const std::vector<Float64> &weights,
@@ -74,18 +54,14 @@ public:
                                  Block &block, const ColumnNumbers &arguments,
                                  const std::vector<Float64> &weights,
                                  Float64 bias) const = 0;
-
-//protected:
-//    std::vector<Float64> batch_gradient;  // gradient for bias lies in batch_gradient[batch_gradient.size() - 1]
 };
 
 
 class LinearRegression : public IGradientComputer
 {
 public:
-    LinearRegression(UInt32 sz)
-            : IGradientComputer(sz) {
-    }
+    LinearRegression()
+    {}
 
     void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
                  Float64 learning_rate, Float64 target, const IColumn **columns, size_t row_num) override
@@ -155,8 +131,7 @@ public:
 class LogisticRegression : public IGradientComputer
 {
 public:
-    LogisticRegression(UInt32 sz)
-    : IGradientComputer(sz)
+    LogisticRegression()
     {}
 
     void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
@@ -253,10 +228,6 @@ public:
 
     virtual void read(ReadBuffer &)
     {}
-//    virtual std::vector<Float64> get_update(UInt32 sz, UInt32)
-//    {
-//        return std::vector<Float64>(sz, 0.0);
-//    }
 };
 
 
@@ -273,8 +244,6 @@ public:
             weights[i] += batch_gradient[i] / batch_size;
         }
         bias += batch_gradient[weights.size()] / batch_size;
-
-//        batch_gradient->assign(batch_gradient->size(), Float64{0.0});
     }
 };
 
@@ -402,21 +371,6 @@ public:
     {
         readBinary(accumulated_gradient, buf);
     }
-//    virtual std::vector<Float64> get_update(UInt32 sz, UInt32 batch_size) override
-//    {
-//        if (accumulated_gradient.size() == 0)
-//        {
-//            accumulated_gradient.resize(sz, Float64{0.0});
-//            return accumulated_gradient;
-//        }
-//        std::vector<Float64> delta(accumulated_gradient.size());
-//        // std::cout<<"\n\nHK\n\n";
-//        for (size_t i = 0; i < delta.size(); ++i)
-//        {
-//            delta[i] = accumulated_gradient[i] * alpha_ / batch_size;
-//        }
-//        return delta;
-//    }
 
 private:
     Float64 alpha_{0.1};
@@ -505,11 +459,11 @@ public:
                     UInt32 batch_capacity,
                     std::shared_ptr<IGradientComputer> gc,
                     std::shared_ptr<IWeightsUpdater> wu)
-            : learning_rate(learning_rate),
-              batch_capacity(batch_capacity),
-              batch_size(0),
-              gradient_computer(std::move(gc)),
-              weights_updater(std::move(wu))
+    : learning_rate(learning_rate),
+      batch_capacity(batch_capacity),
+      batch_size(0),
+      gradient_computer(std::move(gc)),
+      weights_updater(std::move(wu))
     {
         weights.resize(param_num, Float64{0.0});
         gradient_batch.resize(param_num + 1, Float64{0.0});
@@ -520,33 +474,9 @@ public:
         /// first column stores target; features start from (columns + 1)
         const auto &target = static_cast<const ColumnVector<Float64> &>(*columns[0]).getData()[row_num];
 
-//        auto delta = weights_updater->get_update(weights.size() + 1, batch_capacity);
-//        Float64 delta_bias = bias + delta[weights.size()];
-//        delta.resize(weights.size());
-//        for (size_t i = 0; i < weights.size(); ++i)
-//        {
-//            delta[i] += weights[i];
-//        }
-
-//        gradient_computer->compute(delta, delta_bias, learning_rate, target, columns + 1, row_num);
-//         gradient_computer->compute(weights, bias, learning_rate, target, columns + 1, row_num);
-        std::cout << "\nBATCH BEFORE\n";
-        for (auto i : gradient_batch)
-            std::cout << i << " ";
-        std::cout << "\nhello\n";
-
-
+        /// Here we have columns + 1 as first column corresponds to target value, and others - to features
         weights_updater->add_to_batch(&gradient_batch, gradient_computer,
-                                      weights, bias, learning_rate, target, columns, row_num);
-
-
-        std::cout << "BATCH AFTER\n";
-        for (auto i : gradient_batch)
-            std::cout << i << " ";
-        std::cout << "\nhello\n\n";
-
-        if (iter_num == 10)
-            exit(1);
+                                      weights, bias, learning_rate, target, columns + 1, row_num);
 
         ++batch_size;
         if (batch_size == batch_capacity)
@@ -585,7 +515,6 @@ public:
         writeBinary(gradient_batch, buf);
         writeBinary(batch_size, buf);
         weights_updater->write(buf);
-//        gradient_computer->write(buf);
     }
 
     void read(ReadBuffer &buf)
@@ -596,7 +525,6 @@ public:
         readBinary(gradient_batch, buf);
         readBinary(batch_size, buf);
         weights_updater->read(buf);
-//        gradient_computer->read(buf);
     }
 
     Float64 predict(const std::vector<Float64> &predict_feature) const
@@ -608,23 +536,11 @@ public:
 //            update_weights();
 //        }
 
-        std::cout << "\n\nWEIGHTS: ";
-        for (size_t i = 0; i != weights.size(); ++i) {
-            std::cout << weights[i] << " ";
-        }
-        std::cout << "\n\n";
-
         return gradient_computer->predict(predict_feature, weights, bias);
     }
 
     void predict_for_all(ColumnVector<Float64>::Container &container, Block &block, const ColumnNumbers &arguments) const
     {
-        std::cout << "\n\nWEIGHTS: ";
-        for (size_t i = 0; i != weights.size(); ++i) {
-            std::cout << weights[i] << " ";
-        }
-        std::cout << "\n\n";
-
         gradient_computer->predict_for_all(container, block, arguments, weights, bias);
     }
 
@@ -650,9 +566,6 @@ private:
         if (batch_size == 0)
             return;
 
-//        weights_updater->update(batch_size, weights, bias, gradient_batch);
-
-     //   /// use pointer to gradient_batch, because some methods (e.g. simple stochastic descent) require to reset it
         weights_updater->update(batch_size, weights, bias, gradient_batch);
         batch_size = 0;
         ++iter_num;

@@ -44,10 +44,10 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
 
     if (std::is_same<Method, FuncLinearRegression>::value)
     {
-       gc = std::make_shared<LinearRegression>(argument_types.size());
+       gc = std::make_shared<LinearRegression>();
     } else if (std::is_same<Method, FuncLogisticRegression>::value)
     {
-       gc = std::make_shared<LogisticRegression>(argument_types.size());
+       gc = std::make_shared<LogisticRegression>();
     } else
     {
         throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
