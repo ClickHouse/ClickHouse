@@ -196,9 +196,26 @@ inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t siz
 }
 
 template <typename Char>
+inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
+{
+    return a_size == b_size && 0 == memcmp(a, b, a_size);
+}
+
+template <typename Char>
 inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 {
     return memcmp(a, b, size);
+}
+
+template <typename Char>
+inline int memcmp16(const Char * a, const Char * b)
+{
+    return memcmp(a, b, 16);
+}
+
+inline bool memequal16(const void * a, const void * b)
+{
+    return 0 == memcmp(a, b, 16);
 }
 
 inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
