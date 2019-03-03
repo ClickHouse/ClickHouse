@@ -49,6 +49,7 @@
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
+#include "Formats/FormatSchemaLoader.h"
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
@@ -474,6 +475,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
 
     /// Set path for format schema files
+    global_context->getFormatSchemaLoader().setDirectory(config().getString("format_schema_path", path + "format_schemas/"));
+
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();

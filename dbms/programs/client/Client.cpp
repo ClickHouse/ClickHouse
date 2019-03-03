@@ -64,6 +64,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Common/Config/configReadClient.h>
 #include <Storages/ColumnsDescription.h>
+#include <Formats/FormatSchemaLoader.h>
 
 #if USE_READLINE
 #include "Suggest.h" // Y_IGNORE
@@ -470,6 +471,17 @@ private:
             if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
                 throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 #endif
+
+            /// Setup format schema loader.
+            context.getFormatSchemaLoader().setConnectionParameters(
+                connection_parameters.host, connection_parameters.port, connection_parameters.user, connection_parameters.password);
+            context.getFormatSchemaLoader().setDirectory("./", true, true);
+
+            Strings all_paths = context.getFormatSchemaLoader().getAllPaths();
+            for (const String & path : all_paths)
+                std::cout << "client: all_paths: " << path << std::endl;
+            std::cout << "client: schema folder/c.txt: " << context.getFormatSchemaLoader().getSchema("folder/c.txt") << std::endl;
+            std::cout << "client: schema table_dictionary.xml: " << context.getFormatSchemaLoader().getSchema("table_dictionary.xml") << std::endl;
 
             loop();
 

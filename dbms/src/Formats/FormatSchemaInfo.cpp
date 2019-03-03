@@ -1,7 +1,9 @@
 #include <Formats/FormatSchemaInfo.h>
+#include <Formats/FormatSchemaLoader.h>
 #include <Poco/Path.h>
 #include <Interpreters/Context.h>
 #include <Common/Exception.h>
+#include <iostream>
 
 
 namespace DB
@@ -53,6 +55,13 @@ FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & schem
 
     if (path.getExtension().empty() && !schema_file_extension.empty())
         path.setExtension(schema_file_extension);
+
+    /////
+    auto & format_schema_loader = context.getFormatSchemaLoader();
+    String s = format_schema_loader.getSchema(path.toString());
+    std::cout << "FormatSchemaLoader returned " << s << std::endl;
+
+    /////
 
     if (path.isAbsolute())
     {

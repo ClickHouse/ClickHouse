@@ -79,6 +79,7 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
+class FormatSchemaLoader;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -435,8 +436,11 @@ public:
     String getSystemProfileName() const;
 
     /// Base path for format schemas
-    String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);
+    String getFormatSchemaPath() const;
+
+    /// Loads format schemas.
+    FormatSchemaLoader & getFormatSchemaLoader() const;
 
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;

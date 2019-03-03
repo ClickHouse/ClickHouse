@@ -14,6 +14,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatSchemaLoader.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
@@ -149,6 +150,7 @@ struct ContextShared
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
+    std::optional<FormatSchemaLoader> format_schema_loader;
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
     std::optional<SystemLogs> system_logs;                              /// Used to log queries and operations on parts
 
@@ -1775,6 +1777,13 @@ String Context::getFormatSchemaPath() const
 void Context::setFormatSchemaPath(const String & path)
 {
     shared->format_schema_path = path;
+}
+
+FormatSchemaLoader & Context::getFormatSchemaLoader() const
+{
+    if (!shared->format_schema_loader)
+        shared->format_schema_loader.emplace(*this);
+    return *shared->format_schema_loader;
 }
 
 Context::SampleBlockCache & Context::getSampleBlockCache() const

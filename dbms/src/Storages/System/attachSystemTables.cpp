@@ -12,6 +12,7 @@
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/System/StorageSystemEvents.h>
 #include <Storages/System/StorageSystemFormats.h>
+#include <Storages/System/StorageSystemFormatSchemas.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Storages/System/StorageSystemGraphite.h>
 #include <Storages/System/StorageSystemMacros.h>
@@ -76,6 +77,7 @@ void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
     system_database.attachTable("clusters", StorageSystemClusters::create("clusters"));
     system_database.attachTable("graphite_retentions", StorageSystemGraphite::create("graphite_retentions"));
     system_database.attachTable("macros", StorageSystemMacros::create("macros"));
+    system_database.attachTable("format_schemas", StorageSystemFormatSchemas::create("format_schemas"));
 
     if (has_zookeeper)
         system_database.attachTable("zookeeper", StorageSystemZooKeeper::create("zookeeper"));
