@@ -33,9 +33,8 @@ template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
 {
     size_t min_size = std::min(a_size, b_size);
-    size_t size_to_compare_sse = (min_size + 15) / 16 * 16;
 
-    for (size_t offset = 0; offset < size_to_compare_sse; offset += 16)
+    for (size_t offset = 0; offset < min_size; offset += 16)
     {
         uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
@@ -62,9 +61,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t size)
 {
-    size_t size_to_compare_sse = (size + 15) / 16 * 16;
-
-    for (size_t offset = 0; offset < size_to_compare_sse; offset += 16)
+    for (size_t offset = 0; offset < size; offset += 16)
     {
         uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
@@ -93,9 +90,7 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
     if (a_size != b_size)
         return false;
 
-    size_t size_to_compare_sse = (a_size + 15) / 16 * 16;
-
-    for (size_t offset = 0; offset < size_to_compare_sse; offset += 16)
+    for (size_t offset = 0; offset < a_size; offset += 16)
     {
         uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
