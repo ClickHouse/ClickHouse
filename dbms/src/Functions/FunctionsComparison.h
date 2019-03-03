@@ -1143,8 +1143,13 @@ public:
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
         const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
 
+        const DataTypePtr & left_type = col_with_type_and_name_left.type;
+        const DataTypePtr & right_type = col_with_type_and_name_right.type;
+
         /// The case when arguments are the same (tautological comparison). Return constant.
-        if (col_left_untyped == col_right_untyped)
+        /// NOTE: Nullable types are special case. (BTW, this function use default implementation for Nullable, so Nullable types cannot be here. Check just in case.)
+        /// NOTE: We consider NaN comparison to be implementation specific (and in our implementation NaNs are equal).
+        if (left_type->equals(right_type) && !left_type->isNullable() && col_left_untyped == col_right_untyped)
         {
             /// Always true: =, <=, >=
             if constexpr (std::is_same_v<Op<int, int>, EqualsOp<int, int>>
@@ -1160,9 +1165,6 @@ public:
                 return;
             }
         }
-
-        const DataTypePtr & left_type = col_with_type_and_name_left.type;
-        const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
         WhichDataType which_left{left_type};
         WhichDataType which_right{right_type};
