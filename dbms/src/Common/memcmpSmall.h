@@ -166,7 +166,7 @@ inline bool memequal16(const void * a, const void * b)
 /** Compare memory region to zero */
 inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 {
-    __m128 zero16 = _mm_setzero_ps();
+    const __m128 zero16 = _mm_setzero_si128();
 
     for (size_t offset = 0; offset < size; offset += 16)
     {
