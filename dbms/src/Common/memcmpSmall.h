@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string.h>
+#include <cstdint>
 #include <algorithm>
 
 #ifdef __SSE2__
@@ -37,7 +37,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char 
 
     for (size_t offset = 0; offset < size_to_compare_sse; offset += 16)
     {
-        auto mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
+        uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(b + offset))));
 
@@ -66,7 +66,7 @@ inline int memcmpSmallAllowOverflow15(const Char * a, const Char * b, size_t siz
 
     for (size_t offset = 0; offset < size_to_compare_sse; offset += 16)
     {
-        auto mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
+        uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(b + offset))));
 
@@ -97,7 +97,7 @@ inline bool memequalSmallAllowOverflow15(const Char * a, size_t a_size, const Ch
 
     for (size_t offset = 0; offset < size_to_compare_sse; offset += 16)
     {
-        auto mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
+        uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(b + offset))));
 
@@ -119,7 +119,7 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 {
     for (size_t offset = 0; offset < size; offset += 16)
     {
-        auto mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
+        uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(a + offset)),
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(b + offset))));
 
@@ -139,7 +139,7 @@ inline int memcmpSmallMultipleOf16(const Char * a, const Char * b, size_t size)
 template <typename Char>
 inline int memcmp16(const Char * a, const Char * b)
 {
-    auto mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
+    uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(a)),
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(b))));
 
@@ -170,7 +170,7 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 
     for (size_t offset = 0; offset < size; offset += 16)
     {
-        auto mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(zero16,
+        uint16_t mask = ~_mm_movemask_epi8(_mm_cmpeq_epi8(zero16,
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(reinterpret_cast<const char *>(data) + offset))));
 
         if (mask)
@@ -185,6 +185,8 @@ inline bool memoryIsZeroSmallAllowOverflow15(const void * data, size_t size)
 
 
 #else
+
+#include <cstring>
 
 template <typename Char>
 inline int memcmpSmallAllowOverflow15(const Char * a, size_t a_size, const Char * b, size_t b_size)
