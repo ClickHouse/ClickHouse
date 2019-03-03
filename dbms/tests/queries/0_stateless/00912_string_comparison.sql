@@ -15,4 +15,4 @@ WITH arrayJoin(['aaa', 'zzz']) AS a, 'aaa\0bbb' AS b SELECT a = b, a < b, a > b,
 WITH arrayJoin(['aaa', 'bbb']) AS a, materialize('aaa\0bbb') AS b SELECT a = b, a < b, a > b, a <= b, a >= b;
 WITH arrayJoin(['aaa', 'zzz']) AS a, materialize('aaa\0bbb') AS b SELECT a = b, a < b, a > b, a <= b, a >= b;
 
-SELECT empty(toFixedString('', randConstant() % 100));
+SELECT empty(toFixedString('', 1 + randConstant() % 100));
