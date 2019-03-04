@@ -75,7 +75,7 @@ struct Settings
     M(SettingFloat, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.") \
     \
     M(SettingBool, compile, false, "Whether query compilation is enabled.") \
-    M(SettingBool, compile_expressions, true, "Compile some scalar functions and operators to native code.") \
+    M(SettingBool, compile_expressions, false, "Compile some scalar functions and operators to native code.") \
     M(SettingUInt64, min_count_to_compile, 3, "The number of structurally identical queries before they are compiled.") \
     M(SettingUInt64, min_count_to_compile_expression, 3, "The number of identical expressions before they are JIT-compiled") \
     M(SettingUInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.") \
