@@ -611,7 +611,7 @@ Port for communicating with clients over the TCP protocol.
 
 ## tcp_port_secure {#server_settings-tcp_port_secure}
 
-Port for communicating with clients over the secure connection by TCP protocol. Use it with [OpenSSL](#server_settings-openssl) settings.
+Port for communicating with the clients over the secure connection by TCP protocol. Use it with [OpenSSL](#server_settings-openssl) settings.
 
 **Possible values**
 
