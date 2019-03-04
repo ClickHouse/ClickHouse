@@ -161,30 +161,40 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
         for (auto & loadable_object : loadable_objects)
         {
-            /// If the loadable objects failed to load or even failed to initialize from the config.
-            if (!loadable_object.second.loadable)
-                continue;
+            try
+            {
+                /// If the loadable objects failed to load or even failed to initialize from the config.
+                if (!loadable_object.second.loadable)
+                    continue;
 
-            const LoadablePtr & current = loadable_object.second.loadable;
-            const auto & lifetime = current->getLifetime();
+                const LoadablePtr & current = loadable_object.second.loadable;
+                const auto & lifetime = current->getLifetime();
 
-            /// do not update loadable objects with zero as lifetime
-            if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
-                continue;
+                /// do not update loadable objects with zero as lifetime
+                if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
+                    continue;
 
-            if (!current->supportUpdates())
-                continue;
+                if (!current->supportUpdates())
+                    continue;
 
-            auto update_time = update_times[current->getName()];
+                auto update_time = update_times[current->getName()];
 
-            /// check that timeout has passed
-            if (std::chrono::system_clock::now() < update_time)
-                continue;
+                /// check that timeout has passed
+                if (std::chrono::system_clock::now() < update_time)
+                    continue;
 
-            if (!current->isModified())
-                continue;
+                if (!current->isModified())
+                    continue;
 
-            objects_to_update.emplace_back(loadable_object.first, current);
+                objects_to_update.emplace_back(loadable_object.first, current);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot check if the '" + loadable_object.first + "' " + object_name + " need to be updated");
+
+                if (throw_on_error)
+                    throw;
+            }
         }
     }
 
