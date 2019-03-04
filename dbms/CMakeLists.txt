@@ -199,6 +199,8 @@ target_link_libraries (clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PUBLIC
+    roaring	
 )
 
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
