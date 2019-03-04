@@ -1,10 +1,17 @@
 #include <common/Backtrace.h>
-#include <Core/Defines.h>
 
 #include <sstream>
 #include <cstring>
 #include <cxxabi.h>
 #include <execinfo.h>
+
+/// XXX: dbms depends on libcommon so we cannot add #include <Core/Defines.h> here
+/// TODO: remove after libcommon and dbms merge
+#if defined(__clang__)
+    #define NO_SANITIZE_ADDRESS __attribute__((__no_sanitize__("address")))
+#else
+    #define NO_SANITIZE_ADDRESS
+#endif
 
 #if USE_UNWIND
 /** We suppress the following ASan report. Also shown by Valgrind.

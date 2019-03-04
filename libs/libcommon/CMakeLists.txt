@@ -117,7 +117,6 @@ target_link_libraries (common
     ${MALLOC_LIBRARIES}
     Threads::Threads
     ${MEMCPY_LIBRARIES}
-    clickhouse_common_io
 )
 
 if (RT_LIBRARY)
