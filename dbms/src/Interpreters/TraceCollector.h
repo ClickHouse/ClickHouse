@@ -6,7 +6,6 @@
 #include <common/Pipe.h>
 #include <ext/singleton.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/TraceLog.h>
 
 namespace DB
 {
@@ -20,7 +19,7 @@ namespace DB
         std::future<void> stop_future;
 
     public:
-        explicit TraceCollector(TraceLog * trace_log, std::future<void>&& stop_future);
+        TraceCollector(TraceLog * trace_log, std::future<void>&& stop_future);
 
         void run() override;
     };

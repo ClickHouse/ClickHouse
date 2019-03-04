@@ -5,6 +5,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <Common/Exception.h>
+#include <Common/QueryProfiler.h>
+#include <Interpreters/TraceLog.h>
 
 
 namespace DB
@@ -26,12 +28,14 @@ namespace DB
         {
             ucontext_t context;
             std::string query_id;
+            TimerType timer_type;
 
             try {
                 DB::readPODBinary(context, in);
                 DB::readStringBinary(query_id, in);
+                DB::readIntBinary(timer_type, in);
             }
-            catch (Exception)
+            catch (Exception&)
             {
                 /// Pipe was closed - looks like server is about to shutdown
                 /// Let us wait for stop_future
@@ -46,7 +50,7 @@ namespace DB
                 for (void * frame : frames)
                     trace.push_back(reinterpret_cast<uintptr_t>(frame));
 
-                TraceLogElement element{std::time(nullptr), query_id, trace};
+                TraceLogElement element{std::time(nullptr), timer_type, query_id, trace};
 
                 trace_log->add(element);
             }

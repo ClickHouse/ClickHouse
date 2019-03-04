@@ -2,11 +2,12 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/QueryProfiler.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TraceCollector.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
+#include <Interpreters/TraceLog.h>
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 
@@ -131,51 +132,22 @@ void ThreadStatus::finalizePerformanceCounters()
     }
 }
 
-namespace
-{
-    void queryProfilerTimerHandler(int /* sig */, siginfo_t * /* info */, void * context)
-    {
-        DB::WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1]);
-
-        const std::string & query_id = CurrentThread::getQueryId();
-
-        DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
-        DB::writeStringBinary(query_id, out);
-        out.next();
-    }
-}
-
 void ThreadStatus::initQueryProfiler()
 {
     if (!query_context)
         return;
 
-    struct sigevent sev;
-    sev.sigev_notify = SIGEV_THREAD_ID;
-    sev.sigev_signo = pause_signal;
-    sev._sigev_un._tid = os_thread_id;
-    // TODO(laplab): get clock type from settings
-    if (timer_create(CLOCK_REALTIME, &sev, &query_profiler_timer_id))
-        throw Poco::Exception("Failed to create query profiler timer");
+    auto & settings = query_context->getSettingsRef();
 
-    // TODO(laplab): get period from settings
-    struct timespec period{.tv_sec = 0, .tv_nsec = 200000000};
-    struct itimerspec timer_spec = {.it_interval = period, .it_value = period};
-    if (timer_settime(query_profiler_timer_id, 0, &timer_spec, nullptr))
-        throw Poco::Exception("Failed to set query profiler timer");
+    query_profiler_real = std::make_unique<QueryProfilerReal>(
+        /* thread_id */ os_thread_id,
+        /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period)
+    );
 
-    struct sigaction sa{};
-    sa.sa_sigaction = queryProfilerTimerHandler;
-    sa.sa_flags = SA_SIGINFO;
-
-    if (sigemptyset(&sa.sa_mask))
-        throw Poco::Exception("Failed to clean signal mask for query profiler");
-
-    if (sigaddset(&sa.sa_mask, pause_signal))
-        throw Poco::Exception("Failed to add signal to mask for query profiler");
-
-    if (sigaction(pause_signal, &sa, previous_handler))
-        throw Poco::Exception("Failed to setup signal handler for query profiler");
+    query_profiler_cpu = std::make_unique<QueryProfilerCpu>(
+        /* thread_id */ os_thread_id,
+        /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period)
+    );
 
     has_query_profiler = true;
 }
@@ -185,11 +157,8 @@ void ThreadStatus::finalizeQueryProfiler()
     if (!has_query_profiler)
         return;
 
-    if (timer_delete(query_profiler_timer_id))
-        throw Poco::Exception("Failed to delete query profiler timer");
-
-    if (sigaction(pause_signal, previous_handler, nullptr))
-        throw Poco::Exception("Failed to restore signal handler after query profiler");
+    query_profiler_real.reset(nullptr);
+    query_profiler_cpu.reset(nullptr);
 
     has_query_profiler = false;
 }
