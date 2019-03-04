@@ -52,7 +52,7 @@ def run_image_with_env(image_name, output, env_variables, ch_root):
 
     subprocess.check_call(cmd, shell=True)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author):
     result = []
     if package_type == "deb":
         result.append("DEB_CC={}".format(compiler))
@@ -81,6 +81,12 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     if split_binary:
         result.append('CMAKE_FLAGS="-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1 $CMAKE_FLAGS"')
 
+    if version:
+        result.append("VERSION_STRING='{}'".format(version))
+
+    if author:
+        result.append("AUTHOR='{}'".format(author))
+
     return result
 
 if __name__ == "__main__":
@@ -97,6 +103,8 @@ if __name__ == "__main__":
     parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
     parser.add_argument("--distcc-hosts", nargs="+")
     parser.add_argument("--force-build-image", action="store_true")
+    parser.add_argument("--version")
+    parser.add_argument("--author", default="clickhouse")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -113,6 +121,9 @@ if __name__ == "__main__":
     if not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_name) or args.force_build_image:
             build_image(image_name, dockerfile)
-    env_prepared = parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type, args.cache, args.distcc_hosts, args.unbundled, args.split_binary)
+    env_prepared = parse_env_variables(
+        args.build_type, args.compiler, args.sanitizer, args.package_type,
+        args.cache, args.distcc_hosts, args.unbundled, args.split_binary,
+        args.version, args.author)
     run_image_with_env(image_name, args.output_dir, env_prepared, ch_root)
     logging.info("Output placed into {}".format(args.output_dir))

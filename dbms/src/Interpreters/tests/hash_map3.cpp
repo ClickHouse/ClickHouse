@@ -38,7 +38,7 @@ public:
             if (this->buf[i].isZero(*this))
                 std::cerr << "[    ]";
             else
-                std::cerr << '[' << this->buf[i].getValue().first.data << ", " << this->buf[i].getValue().second << ']';
+                std::cerr << '[' << this->buf[i].getValue().getFirst().data << ", " << this->buf[i].getValue().getSecond() << ']';
         }
         std::cerr << std::endl;
     }
@@ -85,7 +85,7 @@ int main(int, char **)
     std::cerr << "Collisions: " << map.getCollisions() << std::endl;
 
     for (auto x : map)
-        std::cerr << x.first.toString() << " -> " << x.second << std::endl;
+        std::cerr << x.getFirst().toString() << " -> " << x.getSecond() << std::endl;
 
     return 0;
 }

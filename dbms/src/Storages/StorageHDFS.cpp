@@ -146,7 +146,7 @@ BlockInputStreams StorageHDFS::read(
 
 void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<HDFSBlockOutputStream>(uri, format_name, getSampleBlock(), context);
 }

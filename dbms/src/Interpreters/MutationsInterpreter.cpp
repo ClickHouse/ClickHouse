@@ -394,11 +394,7 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(BlockInputStr
 
         const SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
         if (!subqueries_for_sets.empty())
-        {
-            const auto & settings = context.getSettingsRef();
-            in = std::make_shared<CreatingSetsBlockInputStream>(in, subqueries_for_sets,
-                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
-        }
+            in = std::make_shared<CreatingSetsBlockInputStream>(in, subqueries_for_sets, context);
     }
 
     in = std::make_shared<MaterializingBlockInputStream>(in);
