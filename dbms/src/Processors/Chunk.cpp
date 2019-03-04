@@ -126,6 +126,15 @@ void Chunk::erase(size_t position)
     columns.erase(columns.begin() + position);
 }
 
+UInt64 Chunk::bytes() const
+{
+    UInt64 res = 0;
+    for (const auto & column : columns)
+        res += column->byteSize();
+
+    return res;
+}
+
 UInt64 Chunk::allocatedBytes() const
 {
     UInt64 res = 0;
