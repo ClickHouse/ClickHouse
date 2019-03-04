@@ -714,8 +714,8 @@ private:
         }
         else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
         {
-            const ColumnString * item_const_string = checkAndGetColumn<ColumnString>(item_arg_const);
-            const ColumnFixedString * item_const_fixedstring = checkAndGetColumn<ColumnFixedString>(item_arg_const);
+            const ColumnString * item_const_string = checkAndGetColumn<ColumnString>(&item_arg_const->getDataColumn());
+            const ColumnFixedString * item_const_fixedstring = checkAndGetColumn<ColumnFixedString>(&item_arg_const->getDataColumn());
 
             if (item_const_string)
                 ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(), col_nested->getOffsets(),
