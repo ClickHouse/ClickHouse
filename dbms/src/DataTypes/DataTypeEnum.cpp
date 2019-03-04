@@ -74,7 +74,7 @@ void DataTypeEnum<Type>::fillMaps()
 
         if (!name_to_value_pair.second)
             throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(name_to_value_pair.first->second),
+                    + " and '" + name_to_value_pair.first->getFirst().toString() + "' = " + toString(name_to_value_pair.first->getSecond()),
                 ErrorCodes::SYNTAX_ERROR};
 
         const auto value_to_name_pair = value_to_name_map.insert(
