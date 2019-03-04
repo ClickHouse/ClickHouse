@@ -2,6 +2,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <IO/WriteBufferFromString.h>
 
+
 namespace DB
 {
 
@@ -32,16 +33,13 @@ std::string readInvalidateQuery(IBlockInputStream & block_input_stream)
 
     WriteBufferFromOwnString out;
     auto & column_type = block.getByPosition(0);
-    column_type.type->serializeAsText(*column_type.column, 0, out, FormatSettings());
+    column_type.type->serializeAsTextQuoted(*column_type.column->convertToFullColumnIfConst(), 0, out, FormatSettings());
 
     while ((block = block_input_stream.read()))
-    {
         if (block.rows() > 0)
             throw Exception("Expected single row in resultset, got at least " + std::to_string(rows + 1), ErrorCodes::TOO_MANY_ROWS);
-    }
 
     block_input_stream.readSuffix();
-
     return out.str();
 }
 
