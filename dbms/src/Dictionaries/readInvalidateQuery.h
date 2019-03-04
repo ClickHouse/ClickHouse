@@ -5,8 +5,8 @@ class IProfilingBlockInputStream;
 
 namespace DB
 {
-// Using in MySQLDictionarySource and XDBCDictionarySource after processing invalidate_query
-std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream);
 
+/// Using in MySQLDictionarySource and XDBCDictionarySource after processing invalidate_query.
+std::string readInvalidateQuery(IBlockInputStream & block_input_stream);
 
 }
