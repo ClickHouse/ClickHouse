@@ -333,8 +333,8 @@ void IBlockInputStream::progressImpl(const Progress & value)
             last_profile_events_update_time = total_elapsed_microseconds;
         }
 
-        if ((limits.min_execution_speed || limits.max_execution_speed || limits.min_execution_bytes_speed ||
-             limits.max_execution_bytes_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0)) &&
+        if ((limits.min_execution_speed || limits.max_execution_speed || limits.min_execution_speed_bytes ||
+             limits.max_execution_speed_bytes || (total_rows && limits.timeout_before_checking_execution_speed != 0)) &&
             (static_cast<Int64>(total_elapsed_microseconds) > limits.timeout_before_checking_execution_speed.totalMicroseconds()))
         {
             /// Do not count sleeps in throttlers
@@ -349,9 +349,9 @@ void IBlockInputStream::progressImpl(const Progress & value)
                         + " rows/sec., minimum: " + toString(limits.min_execution_speed),
                         ErrorCodes::TOO_SLOW);
 
-                if (limits.min_execution_bytes_speed && progress.bytes / elapsed_seconds < limits.min_execution_bytes_speed)
+                if (limits.min_execution_speed_bytes && progress.bytes / elapsed_seconds < limits.min_execution_speed_bytes)
                     throw Exception("Query is executing too slow: " + toString(progress.bytes / elapsed_seconds)
-                        + " bytes/sec., minimum: " + toString(limits.min_execution_bytes_speed),
+                        + " bytes/sec., minimum: " + toString(limits.min_execution_speed_bytes),
                         ErrorCodes::TOO_SLOW);
 
                 /// If the predicted execution time is longer than `max_execution_time`.
@@ -369,8 +369,8 @@ void IBlockInputStream::progressImpl(const Progress & value)
                 if (limits.max_execution_speed && progress.rows / elapsed_seconds >= limits.max_execution_speed)
                     limitProgressingSpeed(progress.rows, limits.max_execution_speed, total_elapsed_microseconds);
 
-                if (limits.max_execution_bytes_speed && progress.bytes / elapsed_seconds >= limits.max_execution_bytes_speed)
-                    limitProgressingSpeed(progress.bytes, limits.max_execution_bytes_speed, total_elapsed_microseconds);
+                if (limits.max_execution_speed_bytes && progress.bytes / elapsed_seconds >= limits.max_execution_speed_bytes)
+                    limitProgressingSpeed(progress.bytes, limits.max_execution_speed_bytes, total_elapsed_microseconds);
             }
         }
 

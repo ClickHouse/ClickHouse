@@ -1040,8 +1040,8 @@ void InterpreterSelectQuery::executeFetchColumns(
             {
                 limits.min_execution_speed = settings.min_execution_speed;
                 limits.max_execution_speed = settings.max_execution_speed;
-                limits.min_execution_bytes_speed = settings.min_execution_bytes_speed;
-                limits.max_execution_bytes_speed = settings.max_execution_bytes_speed;
+                limits.min_execution_speed_bytes = settings.min_execution_speed_bytes;
+                limits.max_execution_speed_bytes = settings.max_execution_speed_bytes;
                 limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
             }
 
