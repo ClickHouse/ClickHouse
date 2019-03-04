@@ -54,7 +54,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## Сворачивание (удаление) строк {table_engine-collapsingmergetree-collapsing}
+## Сворачивание (удаление) строк {#table_engine-collapsingmergetree-collapsing}
 
 ### Данные
 
