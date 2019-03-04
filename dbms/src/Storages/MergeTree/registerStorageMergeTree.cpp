@@ -165,6 +165,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
         throw Exception("No '" + config_element + "' element in configuration file",
             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+    params.config_name = config_element;
     params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
     params.time_column_name = config.getString(config_element + ".time_column_name", "Time");
     params.value_column_name = config.getString(config_element + ".value_column_name", "Value");

@@ -124,6 +124,7 @@ namespace Graphite
 
     struct Params
     {
+        String config_name;
         String path_column_name;
         String time_column_name;
         String value_column_name;
