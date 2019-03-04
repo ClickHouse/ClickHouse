@@ -22,12 +22,17 @@ endif()
 configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
 
 
-macro(clickhouse_program_link_split_binary name)
+
+macro(clickhouse_target_link_split_lib target name)
     if(NOT CLICKHOUSE_ONE_SHARED)
-        target_link_libraries(clickhouse-${name} PRIVATE clickhouse-${name}-lib)
+        target_link_libraries(${target} PRIVATE clickhouse-${name}-lib)
     else()
-        target_link_libraries(clickhouse-${name} PRIVATE clickhouse-lib)
+        target_link_libraries(${target} PRIVATE clickhouse-lib)
     endif()
+endmacro()
+
+macro(clickhouse_program_link_split_binary name)
+    clickhouse_target_link_split_lib(clickhouse-${name} ${name})
 endmacro()
 
 macro(clickhouse_program_add_library name)
