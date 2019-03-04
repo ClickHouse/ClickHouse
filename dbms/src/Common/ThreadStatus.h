@@ -26,6 +26,8 @@ namespace DB
 class Context;
 class QueryStatus;
 class ThreadStatus;
+class QueryProfilerReal;
+class QueryProfilerCpu;
 class QueryThreadLog;
 struct TasksStatsCounters;
 struct RUsageCounters;
@@ -163,12 +165,6 @@ protected:
     /// Use it only from current thread
     Context * query_context = nullptr;
 
-    // Previous signal handler to restore after query profiler exits
-    struct sigaction * previous_handler = nullptr;
-
-    // Pause signal to interrupt threads to get traces
-    const int pause_signal = SIGALRM;
-
     String query_id;
 
     /// A logs queue used by TCPHandler to pass logs to a client
@@ -179,8 +175,10 @@ protected:
     time_t query_start_time = 0;
     size_t queries_started = 0;
 
+    // CPU and Real time query profilers
     bool has_query_profiler = false;
-    timer_t query_profiler_timer_id = nullptr;
+    std::unique_ptr<QueryProfilerReal> query_profiler_real;
+    std::unique_ptr<QueryProfilerCpu> query_profiler_cpu;
 
     Poco::Logger * log = nullptr;
 

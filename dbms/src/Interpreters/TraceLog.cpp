@@ -5,8 +5,14 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
-namespace DB
-{
+using namespace DB;
+
+using TimerDataType = TraceLogElement::TimerDataType;
+
+const TimerDataType::Values TraceLogElement::timer_values = {
+    {"Real", static_cast<UInt8>(TimerType::Real)},
+    {"CPU",  static_cast<UInt8>(TimerType::Cpu)}
+};
 
 Block TraceLogElement::createBlock()
 {
@@ -14,6 +20,7 @@ Block TraceLogElement::createBlock()
     {
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
+        {std::make_shared<TimerDataType>(timer_values),                       "timer_type"},
         {std::make_shared<DataTypeString>(),                                  "query_id"},
         {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "trace"}
     };
@@ -27,6 +34,7 @@ void TraceLogElement::appendToBlock(Block &block) const
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(static_cast<UInt8>(timer_type));
     columns[i++]->insertData(query_id.data(), query_id.size());
     {
         Array trace_array;
@@ -37,6 +45,4 @@ void TraceLogElement::appendToBlock(Block &block) const
     }
 
     block.setColumns(std::move(columns));
-}
-
 }

@@ -263,7 +263,9 @@ std::string backtraceFramesToString(const std::vector<void *> & frames, const st
                 backtrace << demangled_name << name_end;
             }
             else
-                backtrace << symbols[i] << delimiter;
+                backtrace << symbols[i];
+
+            backtrace << delimiter;
         }
     }
 
