@@ -212,6 +212,9 @@ public:
 
         /// in rows per second
         size_t min_execution_speed = 0;
+        size_t max_execution_speed = 0;
+        size_t min_execution_speed_bytes = 0;
+        size_t max_execution_speed_bytes = 0;
         /// Verify that the speed is not too low after the specified time has elapsed.
         Poco::Timespan timeout_before_checking_execution_speed = 0;
     };

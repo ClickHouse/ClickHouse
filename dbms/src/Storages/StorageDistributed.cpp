@@ -307,9 +307,10 @@ BlockInputStreams StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Settings & settings)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & context)
 {
     auto cluster = getCluster();
+    const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
     if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
@@ -337,7 +338,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Settings & 
 
 void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & current_table_name, const Context & context)
 {
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(context.getCurrentQueryId());
 
     auto new_columns = getColumns();
     auto new_indices = getIndicesDescription();
