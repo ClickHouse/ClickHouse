@@ -134,29 +134,29 @@ public:
         if (isSmall() && r1.isSmall())
         {
             // intersect
-            for (const auto & x : this->small)
+            for (const auto & x : small)
                 if (r1.small.find(x.getValue()) != r1.small.end())
                     buffer.push_back(x.getValue());
 
             // Clear out the original values
-            this->small.clear();
+            small.clear();
 
             for (const auto & value : buffer)
-                this->small.insert(value);
+                small.insert(value);
 
             buffer.clear();
         }
         else if (isSmall() && r1.isLarge())
         {
-            for (const auto & x : this->small)
+            for (const auto & x : small)
                 if (roaring_bitmap_contains(r1.rb, x.getValue()))
                     buffer.push_back(x.getValue());
 
             // Clear out the original values
-            this->small.clear();
+            small.clear();
 
             for (const auto & value : buffer)
-                this->small.insert(value);
+                small.insert(value);
 
             buffer.clear();
         }
@@ -172,14 +172,14 @@ public:
     /**
      * Computes the union between two bitmaps.
      */
-    void rb_or(const RoaringBitmapWithSmallSet & r1) { this->merge(r1); }
+    void rb_or(const RoaringBitmapWithSmallSet & r1) { merge(r1); }
 
     /**
      * Computes the symmetric difference (xor) between two bitmaps.
      */
     void rb_xor(const RoaringBitmapWithSmallSet & r1)
     {
-        if (this->isSmall())
+        if (isSmall())
             toLarge();
         roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
         roaring_bitmap_xor_inplace(rb, rb1);
@@ -196,29 +196,29 @@ public:
         if (isSmall() && r1.isSmall())
         {
             // subtract
-            for (const auto & x : this->small)
+            for (const auto & x : small)
                 if (r1.small.find(x.getValue()) == r1.small.end())
                     buffer.push_back(x.getValue());
 
             // Clear out the original values
-            this->small.clear();
+            small.clear();
 
             for (const auto & value : buffer)
-                this->small.insert(value);
+                small.insert(value);
 
             buffer.clear();
         }
         else if (isSmall() && r1.isLarge())
         {
-            for (const auto & x : this->small)
+            for (const auto & x : small)
                 if (!roaring_bitmap_contains(r1.rb, x.getValue()))
                     buffer.push_back(x.getValue());
 
             // Clear out the original values
-            this->small.clear();
+            small.clear();
 
             for (const auto & value : buffer)
-                this->small.insert(value);
+                small.insert(value);
 
             buffer.clear();
         }
@@ -239,13 +239,13 @@ public:
         UInt64 retSize = 0;
         if (isSmall() && r1.isSmall())
         {
-            for (const auto & x : this->small)
+            for (const auto & x : small)
                 if (r1.small.find(x.getValue()) != r1.small.end())
                     retSize++;
         }
         else if (isSmall() && r1.isLarge())
         {
-            for (const auto & x : this->small)
+            for (const auto & x : small)
                 if (roaring_bitmap_contains(r1.rb, x.getValue()))
                     retSize++;
         }
@@ -264,9 +264,9 @@ public:
     */
     UInt64 rb_or_cardinality(const RoaringBitmapWithSmallSet & r1) const
     {
-        UInt64 c1 = this->size();
+        UInt64 c1 = size();
         UInt64 c2 = r1.size();
-        UInt64 inter = this->rb_and_cardinality(r1);
+        UInt64 inter = rb_and_cardinality(r1);
         return c1 + c2 - inter;
     }
 
@@ -275,9 +275,9 @@ public:
     */
     UInt64 rb_xor_cardinality(const RoaringBitmapWithSmallSet & r1) const
     {
-        UInt64 c1 = this->size();
+        UInt64 c1 = size();
         UInt64 c2 = r1.size();
-        UInt64 inter = this->rb_and_cardinality(r1);
+        UInt64 inter = rb_and_cardinality(r1);
         return c1 + c2 - 2 * inter;
     }
 
@@ -286,8 +286,8 @@ public:
      */
     UInt64 rb_andnot_cardinality(const RoaringBitmapWithSmallSet & r1) const
     {
-        UInt64 c1 = this->size();
-        UInt64 inter = this->rb_and_cardinality(r1);
+        UInt64 c1 = size();
+        UInt64 inter = rb_and_cardinality(r1);
         return c1 - inter;
     }
 
@@ -296,7 +296,7 @@ public:
      */
     UInt8 rb_equals(const RoaringBitmapWithSmallSet & r1)
     {
-        if (this->isSmall())
+        if (isSmall())
             toLarge();
         roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
         UInt8 is_true = roaring_bitmap_equals(rb, rb1);
@@ -310,7 +310,7 @@ public:
      */
     UInt8 rb_intersect(const RoaringBitmapWithSmallSet & r1)
     {
-        if (this->isSmall())
+        if (isSmall())
             toLarge();
         roaring_bitmap_t * rb1 = r1.isSmall() ? r1.getNewRbFromSmall() : r1.getRb();
         UInt8 is_true = roaring_bitmap_intersect(rb, rb1);
@@ -324,7 +324,7 @@ public:
      */
     void rb_remove(UInt64 offsetid)
     {
-        if (this->isSmall())
+        if (isSmall())
             toLarge();
         roaring_bitmap_remove(rb, offsetid);
     }
@@ -337,7 +337,7 @@ public:
      */
     void rb_flip(UInt64 offsetstart, UInt64 offsetend)
     {
-        if (this->isSmall())
+        if (isSmall())
             toLarge();
         roaring_bitmap_flip_inplace(rb, offsetstart, offsetend);
     }
@@ -347,7 +347,7 @@ public:
      */
     UInt64 rb_rank(UInt64 offsetid)
     {
-        if (this->isSmall())
+        if (isSmall())
             toLarge();
         return roaring_bitmap_rank(rb, offsetid);
     }
@@ -359,7 +359,7 @@ public:
     UInt64 rb_to_array(PaddedPODArray<Element> & res_data) const
     {
         UInt64 count = 0;
-        if (this->isSmall())
+        if (isSmall())
         {
             for (const auto & x : small)
             {
