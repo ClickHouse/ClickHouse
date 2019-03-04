@@ -175,20 +175,6 @@ Any positive integer.
 
 **Default value**: 1048576.
 
-## min_merge_bytes_to_use_direct_io {#settings-min_merge_bytes_to_use_direct_io}
-
-The minimum data volume for merge operation required for using of the direct I/O interface of the storage disk.
-
-ClickHouse uses this setting when merging data parts of the [MergeTree](../table_engines/mergetree.md)-family tables. During the merge, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, than ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk.
-
-**Possible values**
-
-Positive integer.
-
-0 — The direct I/O is disabled.
-
-**Default value**: `10 * 1024 * 1024 * 1024` bytes.
-
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
 
 The minimum data volume to be read from storage required for using of the direct I/O interface of the storage disk.
