@@ -235,8 +235,8 @@ struct Settings
     \
     M(SettingUInt64, min_execution_speed, 0, "Minimum number of execution rows per second.") \
     M(SettingUInt64, max_execution_speed, 0, "Maximum number of execution rows per second.") \
-    M(SettingUInt64, min_execution_bytes_speed, 0, "Minimum number of execution bytes per second.") \
-    M(SettingUInt64, max_execution_bytes_speed, 0, "Maximum number of execution bytes per second.") \
+    M(SettingUInt64, min_execution_speed_bytes, 0, "Minimum number of execution bytes per second.") \
+    M(SettingUInt64, max_execution_speed_bytes, 0, "Maximum number of execution bytes per second.") \
     M(SettingSeconds, timeout_before_checking_execution_speed, 0, "Check that the speed is not too low after the specified time has elapsed.") \
     \
     M(SettingUInt64, max_columns_to_read, 0, "") \
