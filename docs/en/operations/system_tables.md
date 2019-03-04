@@ -6,7 +6,7 @@ System tables don't have files with data on the disk or files with metadata. The
 System tables are read-only.
 They are located in the 'system' database.
 
-## system.asynchronous_metrics
+## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
 Contain metrics used for profiling and monitoring.
 They usually reflect the number of events currently in the system, or the total resources consumed by the system.
@@ -70,7 +70,7 @@ Columns:
 
 Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
 
-## system.events
+## system.events {#system_tables-events}
 
 Contains information about the number of events that have occurred in the system. This is used for profiling and monitoring purposes.
 Example: The number of processed SELECT queries.
@@ -87,7 +87,7 @@ Columns:
 
 ## system.merges
 
-Contains information about merges currently in process for tables in the MergeTree family.
+Contains information about merges and part mutations currently in process for tables in the MergeTree family.
 
 Columns:
 
@@ -97,6 +97,7 @@ Columns:
 - `progress Float64` — The percentage of completed work from 0 to 1.
 - `num_parts UInt64` — The number of pieces to be merged.
 - `result_part_name String` — The name of the part that will be formed as the result of merging.
+- `is_mutation UInt8` - 1 if this process is a part mutation.
 - `total_size_bytes_compressed UInt64` — The total size of the compressed data in the merged chunks.
 - `total_size_marks UInt64` — The total number of marks in the merged partss.
 - `bytes_read_uncompressed UInt64` — Number of bytes read, uncompressed.
@@ -104,7 +105,7 @@ Columns:
 - `bytes_written_uncompressed UInt64` — Number of bytes written, uncompressed.
 - `rows_written UInt64` — Number of lines rows written.
 
-## system.metrics
+## system.metrics {#system_tables-metrics}
 
 ## system.numbers
 
@@ -123,7 +124,7 @@ This table contains a single row with a single 'dummy' UInt8 column containing t
 This table is used if a SELECT query doesn't specify the FROM clause.
 This is similar to the DUAL table found in other DBMSs.
 
-## system.parts
+## system.parts {#system_tables-parts}
 
 Contains information about parts of [MergeTree](table_engines/mergetree.md) tables.
 
@@ -200,7 +201,7 @@ query String             - The query text. For INSERT, it doesn't include the da
 query_id String          - Query ID, if defined.
 ```
 
-## system.replicas
+## system.replicas {#system_tables-replicas}
 
 Contains information and status for replicated tables residing on the local server.
 This table can be used for monitoring. The table contains a row for every Replicated\* table.
@@ -432,5 +433,31 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
+
+## system.mutations {#system_tables-mutations}
+
+The table contains information about [mutations](../query_language/alter.md#alter-mutations) of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:
+
+**database**, **table** - The name of the database and table to which the mutation was applied.
+
+**mutation_id** - The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For unreplicated tables the IDs correspond to file names in the data directory of the table.
+
+**command** - The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
+
+**create_time** - When this mutation command was submitted for execution.
+
+**block_numbers.partition_id**, **block_numbers.number** - A Nested column. For mutations of replicated tables contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). Because in non-replicated tables blocks numbers in all partitions form a single sequence, for mutatations of non-replicated tables the column will contain one record with a single block number acquired by the mutation.
+
+**parts_to_do** - The number of data parts that need to be mutated for the mutation to finish.
+
+**is_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
+
+If there were problems with mutating some parts the following columns contain additional information:
+
+**latest_failed_part** - The name of the most recent part that could not be mutated.
+
+**latest_fail_time** - The time of the most recent part mutation failure.
+
+**latest_fail_reason** - The exception message that caused the most recent part mutation failure.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/system_tables/) <!--hide-->

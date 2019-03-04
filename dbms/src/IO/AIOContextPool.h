@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <ext/singleton.h>
 #include <condition_variable>
@@ -8,6 +8,7 @@
 #include <mutex>
 #include <map>
 #include <IO/AIO.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -32,7 +33,7 @@ class AIOContextPool : public ext::singleton<AIOContextPool>
     std::map<ID, std::promise<BytesRead>> promises;
 
     std::atomic<bool> cancelled{false};
-    std::thread io_completion_monitor{&AIOContextPool::doMonitor, this};
+    ThreadFromGlobalPool io_completion_monitor{&AIOContextPool::doMonitor, this};
 
     ~AIOContextPool();
 

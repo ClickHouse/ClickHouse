@@ -3,8 +3,7 @@
 #include <optional>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
-#include <optional>
-
+#include <Storages/IndicesDescription.h>
 
 
 namespace DB
@@ -23,6 +22,8 @@ struct AlterCommand
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
+        ADD_INDEX,
+        DROP_INDEX,
         UKNOWN_TYPE,
     };
 
@@ -52,6 +53,13 @@ struct AlterCommand
     /// For MODIFY_ORDER_BY
     ASTPtr order_by;
 
+    /// For ADD INDEX
+    ASTPtr index_decl;
+    String after_index_name;
+
+    /// For ADD/DROP INDEX
+    String index_name;
+
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
 
@@ -70,7 +78,8 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
+            ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
     /// Checks that not only metadata touched by that command
     bool is_mutable() const;
 };
@@ -81,7 +90,8 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
+            ASTPtr & primary_key_ast) const;
 
     /// For storages that don't support MODIFY_ORDER_BY.
     void apply(ColumnsDescription & columns_description) const;

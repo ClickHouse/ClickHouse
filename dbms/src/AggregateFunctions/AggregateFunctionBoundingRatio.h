@@ -111,6 +111,7 @@ public:
     }
 
     AggregateFunctionBoundingRatio(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<AggregateFunctionBoundingRatioData, AggregateFunctionBoundingRatio>(arguments, {})
     {
         const auto x_arg = arguments.at(0).get();
         const auto y_arg = arguments.at(0).get();

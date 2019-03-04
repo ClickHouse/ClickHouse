@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -100,7 +101,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 
 namespace
 {
-    void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit)
+    void serializeArraySizesPositionIndependent(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
     {
         const ColumnArray & column_array = typeid_cast<const ColumnArray &>(column);
         const ColumnArray::Offsets & offset_values = column_array.getOffsets();
@@ -122,7 +123,7 @@ namespace
         }
     }
 
-    void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & istr, size_t limit)
+    void deserializeArraySizesPositionIndependent(IColumn & column, ReadBuffer & istr, UInt64 limit)
     {
         ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
         ColumnArray::Offsets & offset_values = column_array.getOffsets();
@@ -350,7 +351,7 @@ void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteB
     serializeTextImpl(column, row_num, ostr,
         [&](const IColumn & nested_column, size_t i)
         {
-            nested->serializeTextQuoted(nested_column, i, ostr, settings);
+            nested->serializeAsTextQuoted(nested_column, i, ostr, settings);
         });
 }
 
@@ -360,7 +361,7 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr, const F
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            nested->deserializeTextQuoted(nested_column, istr, settings);
+            nested->deserializeAsTextQuoted(nested_column, istr, settings);
         });
 }
 
@@ -379,7 +380,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     {
         if (i != offset)
             writeChar(',', ostr);
-        nested->serializeTextJSON(nested_column, i, ostr, settings);
+        nested->serializeAsTextJSON(nested_column, i, ostr, settings);
     }
     writeChar(']', ostr);
 }
@@ -387,7 +388,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 
 void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr, settings); });
+    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeAsTextJSON(nested_column, istr, settings); });
 }
 
 
@@ -405,7 +406,7 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
     for (size_t i = offset; i < next_offset; ++i)
     {
         writeCString("<elem>", ostr);
-        nested->serializeTextXML(nested_column, i, ostr, settings);
+        nested->serializeAsTextXML(nested_column, i, ostr, settings);
         writeCString("</elem>", ostr);
     }
     writeCString("</array>", ostr);
@@ -427,6 +428,55 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     readCSV(s, istr, settings.csv);
     ReadBufferFromString rb(s);
     deserializeText(column, rb, settings);
+}
+
+
+void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+    size_t offset = offsets[row_num - 1] + value_index;
+    size_t next_offset = offsets[row_num];
+    const IColumn & nested_column = column_array.getData();
+    size_t i;
+    for (i = offset; i < next_offset; ++i)
+    {
+        size_t element_stored = 0;
+        nested->serializeProtobuf(nested_column, i, protobuf, element_stored);
+        if (!element_stored)
+            break;
+    }
+    value_index += i - offset;
+}
+
+
+void DataTypeArray::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    ColumnArray & column_array = static_cast<ColumnArray &>(column);
+    IColumn & nested_column = column_array.getData();
+    ColumnArray::Offsets & offsets = column_array.getOffsets();
+    size_t old_size = offsets.size();
+    try
+    {
+        bool nested_row_added;
+        do
+            nested->deserializeProtobuf(nested_column, protobuf, true, nested_row_added);
+        while (nested_row_added && protobuf.maybeCanReadValue());
+        if (allow_add_row)
+        {
+            offsets.emplace_back(nested_column.size());
+            row_added = true;
+        }
+        else
+            offsets.back() = nested_column.size();
+    }
+    catch (...)
+    {
+        offsets.resize_assume_reserved(old_size);
+        nested_column.popBack(nested_column.size() - offsets.back());
+        throw;
+    }
 }
 
 

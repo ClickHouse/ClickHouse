@@ -23,11 +23,12 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [PrettyCompactMonoBlock](#prettycompactmonoblock) | ✗ | ✔ |
 | [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
+| [Protobuf](#protobuf) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
-| [CapnProto](#capnproto) | ✔ | ✔ |
+| [CapnProto](#capnproto) | ✔ | ✗ |
 
 ## TabSeparated {#tabseparated}
 
@@ -323,7 +324,7 @@ Outputs data as separate JSON objects for each row (newline delimited JSON).
 
 Unlike the JSON format, there is no substitution of invalid UTF-8 sequences. Any set of bytes can be output in the rows. This is necessary so that data can be formatted without losing any information. Values are escaped in the same way as for JSON.
 
-For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults. Whitespace between elements is ignored. If a comma is placed after the objects, it is ignored. Objects don't necessarily have to be separated by new lines.
+For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults, but it can be turned on by option `insert_sample_with_metadata=1`. Whitespace between elements is ignored. If a comma is placed after the objects, it is ignored. Objects don't necessarily have to be separated by new lines.
 
 ## Native {#native}
 
@@ -448,6 +449,13 @@ Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.
 
 For [NULL](../query_language/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../data_types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
+## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
+
+Similar to [RowBinary](#rowbinary), but with added header:
+* [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+* N `String`s specifying column names
+* N `String`s specifying column types
+
 ## Values
 
 Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md) is represented as `NULL`.
@@ -568,9 +576,8 @@ Cap'n Proto is a binary message format similar to Protocol Buffers and Thrift, b
 
 Cap'n Proto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
 
-``` sql
-SELECT SearchPhrase, count() AS c FROM test.hits
-       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
+```bash
+cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
 Where `schema.capnp` looks like this:
@@ -582,8 +589,84 @@ struct Message {
 }
 ```
 
-Schema files are in the file that is located in the directory specified in [ format_schema_path](../operations/server_settings/settings.md) in the server configuration.
-
 Deserialization is effective and usually doesn't increase the system load.
+
+See also [Format Schema](#formatschema).
+
+## Protobuf {#protobuf}
+
+Protobuf - is a [Protocol Buffers](https://developers.google.com/protocol-buffers/) format.
+
+ClickHouse supports both `proto2` and `proto3`. Repeated/optional/required fields are supported.
+
+This format requires an external format schema. The schema is cached between queries.
+Usage examples:
+
+```sql
+SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+```bash
+cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
+```
+
+Where the file `schemafile.proto` looks like this:
+
+```
+syntax = "proto3";
+
+message MessageType {
+  string name = 1;
+  string surname = 2;
+  uint32 birthDate = 3;
+  repeated string phoneNumbers = 4;
+};
+```
+
+To find the correspondence between table columns and fields of Protocol Buffers' message type ClickHouse compares their names.
+This comparison is case-insensitive and the characters `_` (underscore) and `.` (dot) are considered as equal.
+If types of a column and a field of Protocol Buffers' message are different the necessary conversion is applied.
+
+Nested messages are supported. For example, for the field `z` in the following message type
+
+```
+message MessageType {
+  message XType {
+    message YType {
+      int32 z;
+    };
+    repeated YType y;
+  };
+  XType x;
+};
+```
+
+ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
+Nested messages are suitable to input or output a [nested data structures](../data_types/nested_data_structures/nested/).
+
+Default values defined in a `proto2` protobuf schema like this
+
+```
+message MessageType {
+  optional int32 result_per_page = 3 [default = 10];
+}
+```
+
+are not applied; the [table defaults](../query_language/create.md#create-default-values) are used instead of them.
+
+## Format Schema {#formatschema}
+
+The file name containing the format schema is set by the setting `format_schema`.
+It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
+The format schema is a combination of a file name and the name of a message type in this file, delimited by colon,
+e.g. `schemafile.proto:MessageType`.
+If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
+it can be omitted and in this case the format schema looks like `schemafile:MessageType`.
+
+If you input or output data via the [client](../interfaces/cli/) the file name specified in the format schema
+can contain an absolute path or a path relative to the current directory on the client.
+If you input or output data via the [HTTP interface](../interfaces/http/) the file name specified in the format schema
+should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md)
+in the server configuration.
 
 [Original article](https://clickhouse.yandex/docs/en/interfaces/formats/) <!--hide-->

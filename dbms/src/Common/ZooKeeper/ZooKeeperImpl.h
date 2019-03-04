@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
 #include <IO/ReadBuffer.h>
@@ -41,7 +42,7 @@
   * - extremely creepy code for implementation of "chroot" feature.
   *
   * As of 2018, there are no active maintainers of libzookeeper:
-  * - bugs in JIRA are fixed only occasionaly with ad-hoc patches by library users.
+  * - bugs in JIRA are fixed only occasionally with ad-hoc patches by library users.
   *
   * libzookeeper is a classical example of bad code written in C.
   *
@@ -209,8 +210,8 @@ private:
     Watches watches;
     std::mutex watches_mutex;
 
-    std::thread send_thread;
-    std::thread receive_thread;
+    ThreadFromGlobalPool send_thread;
+    ThreadFromGlobalPool receive_thread;
 
     void connect(
         const Addresses & addresses,

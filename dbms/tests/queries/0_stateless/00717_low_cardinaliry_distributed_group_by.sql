@@ -1,4 +1,3 @@
-SET allow_experimental_low_cardinality_type = 1;
 DROP TABLE IF EXISTS test.test_low_null_float;
 DROP TABLE IF EXISTS test.dist;
 

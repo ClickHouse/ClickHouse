@@ -94,6 +94,8 @@ private:
     {
     }
 
+    String getTypeString() const;
+
 public:
     ~ColumnAggregateFunction() override;
 

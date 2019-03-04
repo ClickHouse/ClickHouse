@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/IRowInputStream.h>
 
@@ -14,14 +14,14 @@ namespace DB
   *
   * Also controls over parsing errors and prints diagnostic information about them.
   */
-class BlockInputStreamFromRowInputStream : public IProfilingBlockInputStream
+class BlockInputStreamFromRowInputStream : public IBlockInputStream
 {
 public:
     /** sample_ - block with zero rows, that structure describes how to interpret values */
     BlockInputStreamFromRowInputStream(
         const RowInputStreamPtr & row_input_,
         const Block & sample_,
-        size_t max_block_size_,
+        UInt64 max_block_size_,
         const FormatSettings & settings);
 
     void readPrefix() override { row_input->readPrefix(); }
@@ -41,7 +41,7 @@ protected:
 private:
     RowInputStreamPtr row_input;
     Block sample;
-    size_t max_block_size;
+    UInt64 max_block_size;
     BlockMissingValues block_missing_values;
 
     UInt64 allow_errors_num;

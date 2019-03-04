@@ -469,4 +469,64 @@ If you want to get a list of unique items in an array, you can use arrayReduce('
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
 
+## arrayDifference(arr)
+
+Takes an array, returns an array with the difference between all pairs of neighboring elements. For example:
+
+```sql
+SELECT arrayDifference([1, 2, 3, 4])
+```
+
+```
+┌─arrayDifference([1, 2, 3, 4])─┐
+│ [0,1,1,1]                     │
+└───────────────────────────────┘
+```
+
+## arrayDistinct(arr)
+
+Takes an array, returns an array containing the different elements in all the arrays. For example:
+
+```sql
+SELECT arrayDistinct([1, 2, 2, 3, 1])
+```
+
+```
+┌─arrayDistinct([1, 2, 2, 3, 1])─┐
+│ [1,2,3]                        │
+└────────────────────────────────┘
+```
+
+## arrayEnumerateDense(arr)
+
+Returns an array of the same size as the source array, indicating where each element first appears in the source array. For example: arrayEnumerateDense([10,20,10,30]) = [1,2,1,4].
+
+## arrayIntersect(arr)
+
+Takes an array, returns the intersection of all array elements. For example:
+
+```sql
+SELECT
+    arrayIntersect([1, 2], [1, 3], [2, 3]) AS no_intersect,
+    arrayIntersect([1, 2], [1, 3], [1, 4]) AS intersect
+```
+
+```
+┌─no_intersect─┬─intersect─┐
+│ []           │ [1]       │
+└──────────────┴───────────┘
+```
+
+## arrayReduce(agg_func, arr1, ...)
+
+Applies an aggregate function to array and returns its result.If aggregate function has multiple arguments, then this function can be applied to multiple arrays of the same size.
+
+arrayReduce('agg_func', arr1, ...) - apply the aggregate function `agg_func` to arrays `arr1...`. If multiple arrays passed, then elements on corresponding positions are passed as multiple arguments to the aggregate function. For example: SELECT arrayReduce('max', [1,2,3]) = 3
+
+## arrayReverse(arr)
+
+Returns an array of the same size as the source array, containing the result of inverting all elements of the source array.
+
+
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->

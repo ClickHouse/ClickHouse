@@ -51,10 +51,13 @@ add_executable (hashing_read_buffer hashing_read_buffer.cpp)
 target_link_libraries (hashing_read_buffer PRIVATE clickhouse_common_io)
 add_check (hashing_read_buffer)
 
-add_executable (io_operators operators.cpp)
+add_executable (io_operators io_operators.cpp)
 target_link_libraries (io_operators PRIVATE clickhouse_common_io)
 
-if (OS_LINUX)
+add_executable (write_int write_int.cpp)
+target_link_libraries (write_int PRIVATE clickhouse_common_io)
+
+if (OS_LINUX OR OS_FREEBSD)
     add_executable(write_buffer_aio write_buffer_aio.cpp)
     target_link_libraries (write_buffer_aio PRIVATE clickhouse_common_io ${Boost_FILESYSTEM_LIBRARY})
 

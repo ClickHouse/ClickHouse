@@ -64,7 +64,7 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
 
 
 
-std::string DataTypeTuple::getName() const
+std::string DataTypeTuple::doGetName() const
 {
     size_t size = elems.size();
     WriteBufferFromOwnString s;
@@ -160,7 +160,7 @@ void DataTypeTuple::serializeText(const IColumn & column, size_t row_num, WriteB
     {
         if (i != 0)
             writeChar(',', ostr);
-        elems[i]->serializeTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
+        elems[i]->serializeAsTextQuoted(extractElementColumn(column, i), row_num, ostr, settings);
     }
     writeChar(')', ostr);
 }
@@ -180,7 +180,7 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr, const F
                 assertChar(',', istr);
                 skipWhitespaceIfAny(istr);
             }
-            elems[i]->deserializeTextQuoted(extractElementColumn(column, i), istr, settings);
+            elems[i]->deserializeAsTextQuoted(extractElementColumn(column, i), istr, settings);
         }
     });
 
@@ -195,7 +195,7 @@ void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     {
         if (i != 0)
             writeChar(',', ostr);
-        elems[i]->serializeTextJSON(extractElementColumn(column, i), row_num, ostr, settings);
+        elems[i]->serializeAsTextJSON(extractElementColumn(column, i), row_num, ostr, settings);
     }
     writeChar(']', ostr);
 }
@@ -215,7 +215,7 @@ void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, con
                 assertChar(',', istr);
                 skipWhitespaceIfAny(istr);
             }
-            elems[i]->deserializeTextJSON(extractElementColumn(column, i), istr, settings);
+            elems[i]->deserializeAsTextJSON(extractElementColumn(column, i), istr, settings);
         }
     });
 
@@ -229,7 +229,7 @@ void DataTypeTuple::serializeTextXML(const IColumn & column, size_t row_num, Wri
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         writeCString("<elem>", ostr);
-        elems[i]->serializeTextXML(extractElementColumn(column, i), row_num, ostr, settings);
+        elems[i]->serializeAsTextXML(extractElementColumn(column, i), row_num, ostr, settings);
         writeCString("</elem>", ostr);
     }
     writeCString("</tuple>", ostr);
@@ -241,7 +241,7 @@ void DataTypeTuple::serializeTextCSV(const IColumn & column, size_t row_num, Wri
     {
         if (i != 0)
             writeChar(',', ostr);
-        elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
+        elems[i]->serializeAsTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
     }
 }
 
@@ -258,7 +258,7 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
                 assertChar(settings.csv.delimiter, istr);
                 skipWhitespaceIfAny(istr);
             }
-            elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, settings);
+            elems[i]->deserializeAsTextCSV(extractElementColumn(column, i), istr, settings);
         }
     });
 }
@@ -405,6 +405,33 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
         elems[i]->deserializeBinaryBulkWithMultipleStreams(element_col, limit, settings, tuple_state->states[i]);
     }
     settings.path.pop_back();
+}
+
+void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    for (; value_index < elems.size(); ++value_index)
+    {
+        size_t stored = 0;
+        elems[value_index]->serializeProtobuf(extractElementColumn(column, value_index), row_num, protobuf, stored);
+        if (!stored)
+            break;
+    }
+}
+
+void DataTypeTuple::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    bool all_elements_get_row = true;
+    addElementSafe(elems, column, [&]
+    {
+        for (const auto & i : ext::range(0, ext::size(elems)))
+        {
+            bool element_row_added;
+            elems[i]->deserializeProtobuf(extractElementColumn(column, i), protobuf, allow_add_row, element_row_added);
+            all_elements_get_row &= element_row_added;
+        }
+    });
+    row_added = all_elements_get_row;
 }
 
 MutableColumnPtr DataTypeTuple::createColumn() const

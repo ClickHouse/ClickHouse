@@ -23,7 +23,7 @@ using namespace Poco::XML;
 namespace DB
 {
 
-/// For cutting prerpocessed path to this base
+/// For cutting preprocessed path to this base
 static std::string main_config_path;
 
 /// Extracts from a string the first encountered number consisting of at least two digits.

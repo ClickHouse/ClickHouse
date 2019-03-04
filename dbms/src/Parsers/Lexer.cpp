@@ -132,7 +132,7 @@ Token Lexer::nextTokenImpl()
                         ++pos;
                 }
 
-                /// exponentation (base 10 or base 2)
+                /// exponentiation (base 10 or base 2)
                 if (pos + 1 < end && (hex ? (*pos == 'p' || *pos == 'P') : (*pos == 'e' || *pos == 'E')))
                 {
                     ++pos;
@@ -195,7 +195,7 @@ Token Lexer::nextTokenImpl()
             while (pos < end && isNumericASCII(*pos))
                 ++pos;
 
-            /// exponentation
+            /// exponentiation
             if (pos + 1 < end && (*pos == 'e' || *pos == 'E'))
             {
                 ++pos;

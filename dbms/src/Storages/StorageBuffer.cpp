@@ -6,7 +6,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <DataStreams/AddingMissedBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
@@ -80,7 +80,7 @@ StorageBuffer::~StorageBuffer()
 
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferBlockInputStream : public IProfilingBlockInputStream
+class BufferBlockInputStream : public IBlockInputStream
 {
 public:
     BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage_)
@@ -150,7 +150,7 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructure(false);
+        auto destination_lock = destination->lockStructure(false, context.getCurrentQueryId());
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
@@ -392,13 +392,13 @@ private:
 };
 
 
-BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<BufferBlockOutputStream>(*this);
 }
 
 
-bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
+bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const
 {
     if (no_destination)
         return false;
@@ -408,7 +408,7 @@ bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     if (destination.get() == this)
         throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-    return destination->mayBenefitFromIndexForIn(left_in_operand);
+    return destination->mayBenefitFromIndexForIn(left_in_operand, query_context);
 }
 
 
@@ -420,7 +420,7 @@ void StorageBuffer::startup()
             << " Set apropriate system_profile to fix this.");
     }
 
-    flush_thread = std::thread(&StorageBuffer::flushThread, this);
+    flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);
 }
 
 
@@ -679,14 +679,15 @@ void StorageBuffer::flushThread()
 
 void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(context.getCurrentQueryId());
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    ColumnsDescription new_columns = getColumns();
+    auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 

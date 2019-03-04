@@ -1,14 +1,21 @@
 
 # OnTime
 
+This dataset can be obtained in two ways:
+
+- import from raw data
+- download of prepared partitions
+
+## Import From Raw Data
+
 Downloading data:
 
 ```bash
-for s in `seq 1987 2017`
+for s in `seq 1987 2018`
 do
 for m in `seq 1 12`
 do
-wget http://transtats.bts.gov/PREZIP/On_Time_On_Time_Performance_${s}_${m}.zip
+wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_${s}_${m}.zip
 done
 done
 ```
@@ -137,7 +144,21 @@ Loading data:
 for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-Queries:
+## Dowload of Prepared Partitions
+
+```bash
+curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+# check permissions of unpacked data, fix if required
+sudo service clickhouse-server restart
+clickhouse-client --query "select count(*) from datasets.ontime"
+```
+
+!!!info
+    If you will run queries described below, you have to use full table name,
+    `datasets.ontime`.
+
+## Queries
 
 Q0.
 

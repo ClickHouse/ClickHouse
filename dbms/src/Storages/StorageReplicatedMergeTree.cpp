@@ -38,14 +38,13 @@
 #include <Common/Macros.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/formatReadable.h>
-#include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/DirectoryIterator.h>
 
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -200,6 +199,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool attach,
     const String & path_, const String & database_name_, const String & name_,
     const ColumnsDescription & columns_,
+    const IndicesDescription & indices_,
     Context & context_,
     const String & date_column_name,
     const ASTPtr & partition_by_ast_,
@@ -215,10 +215,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name, table_name)),
     replica_name(global_context.getMacros()->expand(replica_name_, database_name, table_name)),
     data(database_name, table_name,
-        full_path, columns_,
+        full_path, columns_, indices_,
         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-        sample_by_ast_, merging_params_,
-        settings_, true, attach,
+        sample_by_ast_, merging_params_, settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()), queue(*this),
     fetcher(data),
@@ -417,27 +416,34 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 {
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     ASTPtr new_order_by_ast = data.order_by_ast;
+    auto new_indices = data.getIndicesDescription();
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
     {
-        ParserNotEmptyExpressionList parser(false);
-        auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
-
-        if (new_sorting_key_expr_list->children.size() == 1)
-            new_order_by_ast = new_sorting_key_expr_list->children[0];
-        else
+        if (metadata_diff.sorting_key_changed)
         {
-            auto tuple = makeASTFunction("tuple");
-            tuple->arguments->children = new_sorting_key_expr_list->children;
-            new_order_by_ast = tuple;
+            ParserNotEmptyExpressionList parser(false);
+            auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
+
+            if (new_sorting_key_expr_list->children.size() == 1)
+                new_order_by_ast = new_sorting_key_expr_list->children[0];
+            else
+            {
+                auto tuple = makeASTFunction("tuple");
+                tuple->arguments->children = new_sorting_key_expr_list->children;
+                new_order_by_ast = tuple;
+            }
+
+            if (!data.primary_key_ast)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                new_primary_key_ast = data.order_by_ast->clone();
+            }
         }
 
-        if (!data.primary_key_ast)
-        {
-            /// Primary and sorting key become independent after this ALTER so we have to
-            /// save the old ORDER BY expression as the new primary key.
-            new_primary_key_ast = data.order_by_ast->clone();
-        }
+        if (metadata_diff.skip_indices_changed)
+            new_indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
 
         storage_modifier = [&](IAST & ast)
         {
@@ -455,11 +461,11 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         };
     }
 
-    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, storage_modifier);
+    global_context.getDatabase(database_name)->alterTable(global_context, table_name, new_columns, new_indices, storage_modifier);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
+    data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
 }
 
 
@@ -986,6 +992,7 @@ void StorageReplicatedMergeTree::writePartLog(
 
         part_log_elem.database_name = database_name;
         part_log_elem.table_name = table_name;
+        part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, data.format_version).partition_id;
         part_log_elem.part_name = new_part_name;
 
         if (result_part)
@@ -1000,7 +1007,7 @@ void StorageReplicatedMergeTree::writePartLog(
 
         if (merge_entry)
         {
-            part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
+            part_log_elem.rows_read = (*merge_entry)->rows_read;
             part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
 
             part_log_elem.rows = (*merge_entry)->rows_written;
@@ -1082,16 +1089,16 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// Can throw an exception.
     DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
 
-    auto table_lock = lockStructure(false);
+    auto table_lock = lockStructure(false, RWLockImpl::NO_QUERY);
 
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
-
-    MergeTreeDataMergerMutator::FuturePart future_merged_part(parts);
+    FutureMergedMutatedPart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
     {
         throw Exception("Future merged part name `" + future_merged_part.name + "` differs from part name in log entry: `"
                         + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
     }
+
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_merged_part);
 
     MergeTreeData::Transaction transaction(data);
     MergeTreeData::MutableDataPartPtr part;
@@ -1212,15 +1219,18 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     /// Can throw an exception.
     DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_result);
 
-    auto table_lock = lockStructure(false);
+    auto table_lock = lockStructure(false, RWLockImpl::NO_QUERY);
 
     MergeTreeData::MutableDataPartPtr new_part;
     MergeTreeData::Transaction transaction(data);
 
-    MergeTreeDataMergerMutator::FuturePart future_mutated_part;
+    FutureMergedMutatedPart future_mutated_part;
     future_mutated_part.parts.push_back(source_part);
     future_mutated_part.part_info = new_part_info;
     future_mutated_part.name = entry.new_part_name;
+
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
+        database_name, table_name, future_mutated_part);
 
     Stopwatch stopwatch;
 
@@ -1228,12 +1238,12 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     {
         writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, new_part, future_mutated_part.parts, nullptr);
+            entry.new_part_name, new_part, future_mutated_part.parts, merge_entry.get());
     };
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context);
         data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -1518,7 +1528,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     /// We don't change table structure, only data in some parts
     /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
     /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
-    auto lock_read_structure = lockStructure(false);
+    auto lock_read_structure = lockStructure(false, RWLockImpl::NO_QUERY);
 
     auto zookeeper = getZooKeeper();
 
@@ -1527,9 +1537,10 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     alter_command.column_name = entry.column_name;
 
     auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
-    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast);
+    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast);
 
     size_t modified_parts = 0;
     auto parts = data.getDataParts();
@@ -1549,7 +1560,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = data.alterDataPart(part, columns_for_parts, false);
+        auto transaction = data.alterDataPart(part, columns_for_parts, new_indices.indices, false);
         if (!transaction)
             continue;
 
@@ -1592,7 +1603,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         MergeTreePartInfo new_part_info;
         String checksum_hex;
 
-        /// Part which will be comitted
+        /// Part which will be committed
         MergeTreeData::MutableDataPartPtr res_part;
 
         /// We could find a covering part
@@ -1613,7 +1624,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     PartDescriptions parts_to_add;
     MergeTreeData::DataPartsVector parts_to_remove;
 
-    auto structure_lock_dst_table = lockStructure(false);
+    auto structure_lock_dst_table = lockStructure(false, RWLockImpl::NO_QUERY);
 
     for (size_t i = 0; i < entry_replace.new_part_names.size(); ++i)
     {
@@ -1624,7 +1635,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             data.format_version));
     }
 
-    /// What parts we should add? Or we have already added all required parts (we an replica-intializer)
+    /// What parts we should add? Or we have already added all required parts (we an replica-initializer)
     {
         auto data_parts_lock = data.lockParts();
 
@@ -1675,7 +1686,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             return 0;
         }
 
-        structure_lock_src_table = source_table->lockStructure(false);
+        structure_lock_src_table = source_table->lockStructure(false, RWLockImpl::NO_QUERY);
 
         MergeTreeData::DataPartStates valid_states{MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed,
                                                    MergeTreeDataPartState::Outdated};
@@ -2025,6 +2036,9 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     if (source_replica.empty())
         throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
 
+    /// Clear obsolete queue that we no longer need.
+    zookeeper->removeChildren(replica_path + "/queue");
+
     /// Will do repair from the selected replica.
     cloneReplica(source_replica, source_is_lost_stat, zookeeper);
     /// If repair fails to whatever reason, the exception is thrown, is_lost will remain "1" and the replica will be repaired later.
@@ -2202,7 +2216,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
             if (max_source_parts_size > 0)
             {
-                MergeTreeDataMergerMutator::FuturePart future_merged_part;
+                FutureMergedMutatedPart future_merged_part;
                 if (merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size, merge_pred))
                 {
                     success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
@@ -2707,7 +2721,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     TableStructureReadLockPtr table_lock;
     if (!to_detached)
-        table_lock = lockStructure(true);
+        table_lock = lockStructure(true, RWLockImpl::NO_QUERY);
 
     /// Logging
     Stopwatch stopwatch;
@@ -2978,10 +2992,11 @@ void StorageReplicatedMergeTree::assertNotReadonly() const
 }
 
 
-BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Settings & settings)
+BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
     assertNotReadonly();
 
+    const Settings & settings = context.getSettingsRef();
     bool deduplicate = data.settings.replicated_deduplication_window != 0 && settings.insert_deduplicate;
 
     return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this,
@@ -3027,7 +3042,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             for (const String & partition_id : partition_ids)
             {
-                MergeTreeDataMergerMutator::FuturePart future_merged_part;
+                FutureMergedMutatedPart future_merged_part;
                 bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
                 if (selected &&
@@ -3037,7 +3052,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
         else
         {
-            MergeTreeDataMergerMutator::FuturePart future_merged_part;
+            FutureMergedMutatedPart future_merged_part;
             String disable_reason;
             bool selected = false;
             if (!partition)
@@ -3109,17 +3124,18 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
     {
         /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructure(false);
+        auto table_lock = lockStructure(false, query_context.getCurrentQueryId());
 
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        data.checkAlter(params);
+        data.checkAlter(params, query_context);
 
         ColumnsDescription new_columns = data.getColumns();
+        IndicesDescription new_indices = data.getIndicesDescription();
         ASTPtr new_order_by_ast = data.order_by_ast;
         ASTPtr new_primary_key_ast = data.primary_key_ast;
-        params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
+        params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != data.getColumns().toString())
@@ -3128,6 +3144,10 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         ReplicatedMergeTreeTableMetadata new_metadata(data);
         if (new_order_by_ast.get() != data.order_by_ast.get())
             new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(new_order_by_ast));
+
+        String new_indices_str = new_indices.toString();
+        if (new_indices_str != data.getIndicesDescription().toString())
+            new_metadata.skip_indices = new_indices_str;
 
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(data).toString())
@@ -3362,7 +3382,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockStructure(false);
+                auto lock = lockStructure(false, query_context.getCurrentQueryId());
                 data.freezePartition(command.partition, command.with_name, query_context);
             }
             break;
@@ -3373,7 +3393,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructure(false);
+                auto lock = lockStructure(false, query_context.getCurrentQueryId());
                 data.freezeAll(command.with_name, query_context);
             }
             break;
@@ -3427,7 +3447,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 
     --right;
 
-    /// Artificial high level is choosen, to make this part "covering" all parts inside.
+    /// Artificial high level is chosen, to make this part "covering" all parts inside.
     part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
     return true;
 }
@@ -3692,7 +3712,7 @@ std::optional<EphemeralLockInZooKeeper>
 StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id, zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_block_id_path)
 {
-    /// Lets check for duplicates in advance, to avoid superflous block numbers allocation
+    /// Lets check for duplicates in advance, to avoid superfluous block numbers allocation
     Coordination::Requests deduplication_check_ops;
     if (!zookeeper_block_id_path.empty())
     {
@@ -3888,6 +3908,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
     auto zookeeper = tryGetZooKeeper();
 
     res.is_leader = is_leader;
+    res.can_become_leader = data.settings.replicated_can_become_leader;
     res.is_readonly = is_readonly;
     res.is_session_expired = !zookeeper || zookeeper->expired();
 
@@ -4397,12 +4418,37 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     return queue.getMutationsStatus();
 }
 
+CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutation_id)
+{
+    assertNotReadonly();
+
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+
+    LOG_TRACE(log, "Killing mutation " << mutation_id);
+
+    auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
+    if (!mutation_entry)
+        return CancellationCode::NotFound;
+
+    /// After this point no new part mutations will start and part mutations that still exist
+    /// in the queue will be skipped.
+
+    /// Cancel already running part mutations.
+    for (const auto & pair : mutation_entry->block_numbers)
+    {
+        const String & partition_id = pair.first;
+        Int64 block_number = pair.second;
+        global_context.getMergeList().cancelPartMutations(partition_id, block_number);
+    }
+    return CancellationCode::CancelSent;
+}
+
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
     /// Critical section is not required (since grabOldParts() returns unique part set on each call)
 
-    auto table_lock = lockStructure(false);
+    auto table_lock = lockStructure(false, RWLockImpl::NO_QUERY);
     auto zookeeper = getZooKeeper();
 
     MergeTreeData::DataPartsVector parts = data.grabOldParts();
@@ -4694,8 +4740,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace,
                                                       const Context & context)
 {
-    auto lock1 = lockStructure(false);
-    auto lock2 = source_table->lockStructure(false);
+    auto lock1 = lockStructure(false, context.getCurrentQueryId());
+    auto lock2 = source_table->lockStructure(false, context.getCurrentQueryId());
 
     Stopwatch watch;
     MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);
@@ -4742,7 +4788,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     for (size_t i = 0; i < src_all_parts.size(); ++i)
     {
         /// We also make some kind of deduplication to avoid duplicated parts in case of ATTACH PARTITION
-        /// Assume that merges in the partiton are quite rare
+        /// Assume that merges in the partition are quite rare
         /// Save deduplication block ids with special prefix replace_partition
 
         auto & src_part = src_all_parts[i];

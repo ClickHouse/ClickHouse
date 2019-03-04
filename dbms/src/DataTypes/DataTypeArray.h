@@ -20,7 +20,7 @@ public:
 
     TypeIndex getTypeId() const override { return TypeIndex::Array; }
 
-    std::string getName() const override
+    std::string doGetName() const override
     {
         return "Array(" + nested->getName() + ")";
     }
@@ -83,6 +83,15 @@ public:
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
+
+    void serializeProtobuf(const IColumn & column,
+                           size_t row_num,
+                           ProtobufWriter & protobuf,
+                           size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column,
+                             ProtobufReader & protobuf,
+                             bool allow_add_row,
+                             bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
