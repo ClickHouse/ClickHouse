@@ -28,47 +28,60 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-template <typename IntType>
-String SettingInt<IntType>::toString() const
+template <typename T>
+String SettingNumber<T>::toString() const
 {
     return DB::toString(value);
 }
 
-template <typename IntType>
-void SettingInt<IntType>::set(IntType x)
+template <typename T>
+void SettingNumber<T>::set(T x)
 {
     value = x;
     changed = true;
 }
 
-template <typename IntType>
-void SettingInt<IntType>::set(const Field & x)
+template <typename T>
+void SettingNumber<T>::set(const Field & x)
 {
-    set(applyVisitor(FieldVisitorConvertToNumber<IntType>(), x));
+    set(applyVisitor(FieldVisitorConvertToNumber<T>(), x));
 }
 
-template <typename IntType>
-void SettingInt<IntType>::set(const String & x)
+template <typename T>
+void SettingNumber<T>::set(const String & x)
 {
-    set(parse<IntType>(x));
+    set(parse<T>(x));
 }
 
-template <typename IntType>
-void SettingInt<IntType>::set(ReadBuffer & buf)
+template <typename T>
+void SettingNumber<T>::set(ReadBuffer & buf)
 {
-    IntType x = 0;
-    readVarT(x, buf);
-    set(x);
+    if constexpr (std::is_integral_v<T>)
+    {
+        T x = 0;
+        readVarT(x, buf);
+        set(x);
+    }
+    else
+    {
+        String x;
+        readBinary(x, buf);
+        set(x);
+    }
 }
 
-template <typename IntType>
-void SettingInt<IntType>::write(WriteBuffer & buf) const
+template <typename T>
+void SettingNumber<T>::write(WriteBuffer & buf) const
 {
-    writeVarT(value, buf);
+    if constexpr (std::is_integral_v<T>)
+        writeVarT(value, buf);
+    else
+        writeBinary(toString(), buf);
 }
 
-template struct SettingInt<UInt64>;
-template struct SettingInt<Int64>;
+template struct SettingNumber<UInt64>;
+template struct SettingNumber<Int64>;
+template struct SettingNumber<float>;
 
 
 String SettingMaxThreads::toString() const
@@ -206,40 +219,6 @@ void SettingMilliseconds::set(ReadBuffer & buf)
 void SettingMilliseconds::write(WriteBuffer & buf) const
 {
     writeVarUInt(value.totalMilliseconds(), buf);
-}
-
-
-String SettingFloat::toString() const
-{
-    return DB::toString(value);
-}
-
-void SettingFloat::set(float x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingFloat::set(const Field & x)
-{
-    set(applyVisitor(FieldVisitorConvertToNumber<float>(), x));
-}
-
-void SettingFloat::set(const String & x)
-{
-    set(parse<float>(x));
-}
-
-void SettingFloat::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingFloat::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
 }
 
 

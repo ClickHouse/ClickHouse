@@ -22,16 +22,16 @@ class WriteBuffer;
   *  and the remote server will use its default value.
   */
 
-template <typename IntType>
-struct SettingInt
+template <typename T>
+struct SettingNumber
 {
-    IntType value;
+    T value;
     bool changed = false;
 
-    SettingInt(IntType x = 0) : value(x) {}
+    SettingNumber(T x = 0) : value(x) {}
 
-    operator IntType() const { return value; }
-    SettingInt & operator= (IntType x) { set(x); return *this; }
+    operator T() const { return value; }
+    SettingNumber & operator= (T x) { set(x); return *this; }
 
     /// Serialize to a test string.
     String toString() const;
@@ -39,7 +39,7 @@ struct SettingInt
     /// Serialize to binary stream suitable for transfer over network.
     void write(WriteBuffer & buf) const;
 
-    void set(IntType x);
+    void set(T x);
 
     /// Read from SQL literal.
     void set(const Field & x);
@@ -51,9 +51,10 @@ struct SettingInt
     void set(ReadBuffer & buf);
 };
 
-using SettingUInt64 = SettingInt<UInt64>;
-using SettingInt64 = SettingInt<Int64>;
+using SettingUInt64 = SettingNumber<UInt64>;
+using SettingInt64 = SettingNumber<Int64>;
 using SettingBool = SettingUInt64;
+using SettingFloat = SettingNumber<float>;
 
 
 /** Unlike SettingUInt64, supports the value of 'auto' - the number of processor cores without taking into account SMT.
@@ -132,27 +133,6 @@ struct SettingMilliseconds
     void set(const Field & x);
     void set(const String & x);
     void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
-};
-
-
-struct SettingFloat
-{
-    float value;
-    bool changed = false;
-
-    SettingFloat(float x = 0) : value(x) {}
-
-    operator float() const { return value; }
-    SettingFloat & operator= (float x) { set(x); return *this; }
-
-    String toString() const;
-
-    void set(float x);
-    void set(const Field & x);
-    void set(const String & x);
-    void set(ReadBuffer & buf);
-
     void write(WriteBuffer & buf) const;
 };
 
