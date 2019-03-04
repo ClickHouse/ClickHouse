@@ -62,11 +62,11 @@ bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_t
     return database == db_table.database && table == db_table.table;
 }
 
-String DatabaseAndTableWithAlias::getQualifiedNamePrefix() const
+String DatabaseAndTableWithAlias::getQualifiedNamePrefix(bool with_dot) const
 {
     if (alias.empty() && table.empty())
         return "";
-    return (!alias.empty() ? alias : table) + '.';
+    return (!alias.empty() ? alias : table) + (with_dot ? "." : "");
 }
 
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query)
