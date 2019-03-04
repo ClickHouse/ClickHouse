@@ -1,12 +1,12 @@
 #include <Common/config.h>
 #if USE_CAPNP
 
-#include <Common/escapeForFileName.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Formats/CapnProtoRowInputStream.h> // Y_IGNORE
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Formats/FormatSchemaInfo.h>
 #include <capnp/serialize.h> // Y_IGNORE
 #include <capnp/dynamic.h> // Y_IGNORE
 #include <capnp/common.h> // Y_IGNORE
@@ -24,11 +24,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
     extern const int LOGICAL_ERROR;
-}
-
-static String getSchemaPath(const String & schema_dir, const String & schema_file)
-{
-    return schema_dir + escapeForFileName(schema_file) + ".capnp";
 }
 
 CapnProtoRowInputStream::NestedField split(const Block & header, size_t i)
@@ -168,7 +163,7 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sorted_field
         auto node = getFieldOrThrow(cur_reader, field.tokens[parents.size()]);
         if (node.getType().isList() && actions.size() > 0 && actions.back().field == node)
         {
-            // The field list here flattens Nested elements into multiple arrays
+            // The field list here flattens Nested elements into multiple arrays
             // In order to map Nested types in Cap'nProto back, they need to be collected
             // Since the field names are sorted, the order of field positions must be preserved
             // For example, if the fields are { b @0 :Text, a @1 :Text }, the `a` would come first
@@ -184,17 +179,17 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sorted_field
     }
 }
 
-CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const String & schema_dir, const String & schema_file, const String & root_object)
+CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSchemaInfo& info)
     : istr(istr_), header(header_), parser(std::make_shared<SchemaParser>())
 {
     // Parse the schema and fetch the root object
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-    auto schema = parser->impl.parseDiskFile(schema_file, getSchemaPath(schema_dir, schema_file), {});
+    auto schema = parser->impl.parseDiskFile(info.schemaPath(), info.absoluteSchemaPath(), {});
 #pragma GCC diagnostic pop
 
-    root = schema.getNested(root_object).asStruct();
+    root = schema.getNested(info.messageName()).asStruct();
 
     /**
      * The schema typically consists of fields in various nested structures.
@@ -298,26 +293,16 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 
 void registerInputFormatCapnProto(FormatFactory & factory)
 {
-    factory.registerInputFormat("CapnProto", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        const Context & context,
-        size_t max_block_size,
-        const FormatSettings & settings)
-    {
-        std::vector<String> tokens;
-        auto schema_and_root = context.getSettingsRef().format_schema.toString();
-        boost::split(tokens, schema_and_root, boost::is_any_of(":"));
-        if (tokens.size() != 2)
-            throw Exception("Format CapnProto requires 'format_schema' setting to have a schema_file:root_object format, e.g. 'schema.capnp:Message'",
-                ErrorCodes::BAD_ARGUMENTS);
-
-        const String & schema_dir = context.getFormatSchemaPath();
-
-        return std::make_shared<BlockInputStreamFromRowInputStream>(
-            std::make_shared<CapnProtoRowInputStream>(buf, sample, schema_dir, tokens[0], tokens[1]),
-            sample, max_block_size, settings);
-    });
+    factory.registerInputFormat(
+        "CapnProto",
+        [](ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size, const FormatSettings & settings)
+        {
+            return std::make_shared<BlockInputStreamFromRowInputStream>(
+                std::make_shared<CapnProtoRowInputStream>(buf, sample, FormatSchemaInfo(context, "capnp")),
+                sample,
+                max_block_size,
+                settings);
+        });
 }
 
 }

@@ -1,8 +1,10 @@
 #pragma once
 
+#include <map>
+
 #include <Core/Names.h>
 #include <Parsers/IAST.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/Aliases.h>
 
 namespace DB
 {
@@ -17,11 +19,11 @@ inline bool functionIsInOrGlobalInOperator(const String & name)
     return functionIsInOperator(name) || name == "globalIn" || name == "globalNotIn";
 }
 
-
+class ASTSelectQuery;
 class ASTFunction;
 class ASTIdentifier;
-class ASTExpressionList;
 struct ASTTablesInSelectQueryElement;
+class Context;
 
 
 class QueryNormalizer
@@ -42,9 +44,6 @@ class QueryNormalizer
     };
 
 public:
-    using Aliases = std::unordered_map<String, ASTPtr>;
-    using TableWithColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
-
     struct Data
     {
         using SetOfASTs = std::set<const IAST *>;
@@ -52,7 +51,6 @@ public:
 
         const Aliases & aliases;
         const ExtractedSettings settings;
-        const std::vector<TableWithColumnNames> tables_with_columns;
 
         /// tmp data
         size_t level;
@@ -60,14 +58,11 @@ public:
         SetOfASTs current_asts;     /// vertices in the current call stack of this method
         std::string current_alias;  /// the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
 
-        Data(const Aliases & aliases_, ExtractedSettings && settings_, std::vector<TableWithColumnNames> && tables_with_columns_ = {})
+        Data(const Aliases & aliases_, ExtractedSettings && settings_)
             : aliases(aliases_)
             , settings(settings_)
-            , tables_with_columns(tables_with_columns_)
             , level(0)
         {}
-
-        bool processAsterisks() const { return !tables_with_columns.empty(); }
     };
 
     QueryNormalizer(Data & data)
@@ -86,7 +81,6 @@ private:
 
     static void visit(ASTIdentifier &, ASTPtr &, Data &);
     static void visit(ASTFunction &, const ASTPtr &, Data &);
-    static void visit(ASTExpressionList &, const ASTPtr &, Data &);
     static void visit(ASTTablesInSelectQueryElement &, const ASTPtr &, Data &);
     static void visit(ASTSelectQuery &, const ASTPtr &, Data &);
 

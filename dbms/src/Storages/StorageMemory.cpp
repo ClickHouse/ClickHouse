@@ -1,6 +1,6 @@
 #include <Common/Exception.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageFactory.h>
@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-class MemoryBlockInputStream : public IProfilingBlockInputStream
+class MemoryBlockInputStream : public IBlockInputStream
 {
 public:
     MemoryBlockInputStream(const Names & column_names_, BlocksList::iterator begin_, BlocksList::iterator end_, const StorageMemory & storage_)
@@ -115,7 +115,7 @@ BlockInputStreams StorageMemory::read(
 
 
 BlockOutputStreamPtr StorageMemory::write(
-    const ASTPtr & /*query*/, const Settings & /*settings*/)
+    const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<MemoryBlockOutputStream>(*this);
 }

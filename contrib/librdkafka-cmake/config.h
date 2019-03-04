@@ -51,6 +51,8 @@
 //#define WITH_PLUGINS 1
 // zlib
 #define WITH_ZLIB 1
+// zstd
+#define WITH_ZSTD 1
 // WITH_SNAPPY
 #define WITH_SNAPPY 1
 // WITH_SOCKEM
@@ -60,7 +62,9 @@
 // WITH_SASL_SCRAM
 //#define WITH_SASL_SCRAM 1
 // crc32chw
+#if !defined(__PPC__)
 #define WITH_CRC32C_HW 1
+#endif
 // regex
 #define HAVE_REGEX 1
 // strndup

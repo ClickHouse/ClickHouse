@@ -1,3 +1,2 @@
 SELECT sleep(1) FROM system.numbers LIMIT 4
 SELECT sleep(1) FROM system.numbers LIMIT 5
-0

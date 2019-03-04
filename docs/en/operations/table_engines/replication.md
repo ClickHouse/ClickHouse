@@ -68,7 +68,7 @@ You can have any number of replicas of the same data. Yandex.Metrica uses double
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
 
-## Creating Replicated Tables
+## Creating Replicated Tables {#creating-replicated-tables}
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 

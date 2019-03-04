@@ -109,7 +109,6 @@ public:
     std::shared_ptr<const Join> join;
     Names join_key_names_left;
     NamesAndTypesList columns_added_by_join;
-    NameSet columns_added_by_join_from_right_keys;
 
     /// For PROJECT.
     NamesWithAliases projection;
@@ -126,7 +125,7 @@ public:
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
-        const NamesAndTypesList & columns_added_by_join_, const NameSet & columns_added_by_join_from_right_keys_);
+                                         const NamesAndTypesList & columns_added_by_join_);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -239,7 +238,7 @@ public:
 
     static std::string getSmallestColumn(const NamesAndTypesList & columns);
 
-    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const;
 
     const Settings & getSettings() const { return settings; }
 

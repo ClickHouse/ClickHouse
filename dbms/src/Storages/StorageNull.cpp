@@ -32,11 +32,12 @@ void registerStorageNull(StorageFactory & factory)
 
 void StorageNull::alter(const AlterCommands & params, const String & current_database_name, const String & current_table_name, const Context & context)
 {
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(context.getCurrentQueryId());
 
     ColumnsDescription new_columns = getColumns();
+    IndicesDescription new_indices = getIndicesDescription();
     params.apply(new_columns);
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, {});
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 

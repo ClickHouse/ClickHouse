@@ -5,8 +5,6 @@
 
 #include <ext/bit_cast.h>
 
-#include <AggregateFunctions/UniquesHashSet.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -14,13 +12,14 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/AggregationCommon.h>
+
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/MemoryTracker.h>
-
 #include <Common/typeid_cast.h>
 
+#include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
@@ -210,6 +209,9 @@ template <typename T, typename Data>
 class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
 {
 public:
+    AggregateFunctionUniq(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types_, {}) {}
+
     String getName() const override { return Data::getName(); }
 
     DataTypePtr getReturnType() const override
@@ -258,6 +260,7 @@ private:
 
 public:
     AggregateFunctionUniqVariadic(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>(arguments, {})
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();

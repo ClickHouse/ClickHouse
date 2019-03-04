@@ -676,10 +676,12 @@ template <typename Data>
 class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
-    DataTypePtr type;
+    DataTypePtr & type;
 
 public:
-    AggregateFunctionsSingleValue(const DataTypePtr & type) : type(type)
+    AggregateFunctionsSingleValue(const DataTypePtr & type)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>({type}, {})
+        , type(this->argument_types[0])
     {
         if (StringRef(Data::name()) == StringRef("min")
             || StringRef(Data::name()) == StringRef("max"))

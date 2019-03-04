@@ -3,16 +3,16 @@
 #if USE_HDFS
 
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageHDFS.h>
+#include <Storages/StorageHDFS.h> // Y_IGNORE
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/ReadBufferFromHDFS.h>
-#include <IO/WriteBufferFromHDFS.h>
+#include <IO/ReadBufferFromHDFS.h> // Y_IGNORE
+#include <IO/WriteBufferFromHDFS.h> // Y_IGNORE
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 
 
@@ -41,14 +41,14 @@ StorageHDFS::StorageHDFS(const String & uri_,
 namespace
 {
 
-class HDFSBlockInputStream : public IProfilingBlockInputStream
+class HDFSBlockInputStream : public IBlockInputStream
 {
 public:
     HDFSBlockInputStream(const String & uri,
         const String & format,
         const Block & sample_block,
         const Context & context,
-        size_t max_block_size)
+        UInt64 max_block_size)
     {
         std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uri);
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
@@ -146,7 +146,7 @@ BlockInputStreams StorageHDFS::read(
 
 void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<HDFSBlockOutputStream>(uri, format_name, getSampleBlock(), context);
 }

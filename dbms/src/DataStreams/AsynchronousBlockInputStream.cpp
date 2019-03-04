@@ -1,4 +1,5 @@
 #include "AsynchronousBlockInputStream.h"
+#include <Common/setThreadName.h>
 #include <Common/CurrentThread.h>
 
 
@@ -35,7 +36,7 @@ void AsynchronousBlockInputStream::next()
 {
     ready.reset();
 
-    pool.schedule([this, thread_group=CurrentThread::getGroup()] ()
+    pool.schedule([this, thread_group = CurrentThread::getGroup()] ()
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 

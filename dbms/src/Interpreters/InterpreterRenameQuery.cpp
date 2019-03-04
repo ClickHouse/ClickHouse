@@ -77,7 +77,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     std::set<UniqueTableName> unique_tables_from;
 
-    /// Don't allow to drop tables (that we are renaming); do't allow to create tables in places where tables will be renamed.
+    /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
 
     for (const auto & elem : rename.elements)
@@ -101,7 +101,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     for (const auto & names : unique_tables_from)
         if (auto table = context.tryGetTable(names.database_name, names.table_name))
-            locks.emplace_back(table->lockForAlter());
+            locks.emplace_back(table->lockForAlter(context.getCurrentQueryId()));
 
     /** All tables are locked. If there are more than one rename in chain,
       *  we need to hold global lock while doing all renames. Order matters to avoid deadlocks.
