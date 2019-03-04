@@ -35,16 +35,23 @@ IAccumulatingTransform::Status IAccumulatingTransform::prepare()
         return Status::Finished;
     }
 
+    /// Generate output block.
+    if (input.isFinished())
+    {
+        finished_input = true;
+        return Status::Ready;
+    }
+
+    /// Close input if flag was set manually.
+    if (finished_input)
+    {
+        input.close();
+        return Status::Ready;
+    }
+
     /// Check can input.
     if (!has_input)
     {
-        /// Generate output block.
-        if (input.isFinished())
-        {
-            finished_input = true;
-            return Status::Ready;
-        }
-
         input.setNeeded();
         if (!input.hasData())
             return Status::NeedData;

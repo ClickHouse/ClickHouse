@@ -48,6 +48,7 @@ public:
     void clear();
     void erase(size_t position);
 
+    UInt64 bytes() const;
     UInt64 allocatedBytes() const;
 
 private:
