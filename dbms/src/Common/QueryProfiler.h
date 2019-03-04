@@ -6,8 +6,8 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <Interpreters/TraceCollector.h>
 
-#include <time.h>
 #include <signal.h>
+#include <time.h>
 
 namespace Poco
 {
