@@ -29,12 +29,30 @@ struct AggregatingTransformParams
     Block getHeader() const { return aggregator.getHeader(final); }
 };
 
+struct ManyAggregatedData
+{
+    ManyAggregatedDataVariants variants;
+    std::atomic<UInt32> num_finished = 0;
+
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
+    {
+        for (auto & elem : variants)
+            elem = std::make_shared<AggregatedDataVariants>();
+    }
+};
+
 using AggregatingTransformParamsPtr = std::unique_ptr<AggregatingTransformParams>;
+using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
 class AggregatingTransform : public IAccumulatingTransform
 {
 public:
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
+
+    /// For Parallel aggregating.
+    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_,
+                         ManyAggregatedDataPtr many_data, size_t current_variant,
+                         size_t temporary_data_merge_threads, size_t max_threads);
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
@@ -51,7 +69,7 @@ private:
         CompressedReadBuffer compressed_in;
         BlockInputStreamPtr block_in;
 
-        TemporaryFileStream(const std::string & path);
+        explicit TemporaryFileStream(const std::string & path);
     };
 
     AggregatingTransformParamsPtr params;
@@ -62,7 +80,10 @@ private:
     Aggregator::AggregateColumns aggregate_columns;
     bool no_more_keys = false;
 
-    AggregatedDataVariantsPtr data_variants;
+    ManyAggregatedDataPtr many_data;
+    AggregatedDataVariants & variants;
+    size_t max_threads = 1;
+    size_t temporary_data_merge_threads = 1;
 
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
     std::unique_ptr<IBlockInputStream> impl;
