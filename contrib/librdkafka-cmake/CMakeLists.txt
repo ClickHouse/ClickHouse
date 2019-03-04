@@ -51,10 +51,6 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/snappy.c
   ${RDKAFKA_SOURCE_DIR}/tinycthread.c
   ${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c
-  #${RDKAFKA_SOURCE_DIR}/xxhash.c
-  #${RDKAFKA_SOURCE_DIR}/lz4.c
-  #${RDKAFKA_SOURCE_DIR}/lz4frame.c
-  #${RDKAFKA_SOURCE_DIR}/lz4hc.c
   ${RDKAFKA_SOURCE_DIR}/rdgz.c
 )
 

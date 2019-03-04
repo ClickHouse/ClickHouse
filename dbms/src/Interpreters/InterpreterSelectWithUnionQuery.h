@@ -22,7 +22,8 @@ public:
         const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        bool only_analyze = false);
+        bool only_analyze = false,
+        bool modify_inplace = false);
 
     ~InterpreterSelectWithUnionQuery() override;
 
@@ -38,6 +39,8 @@ public:
         const Context & context_);
 
     void ignoreWithTotals();
+
+    ASTPtr getQuery() const { return query_ptr; }
 
 private:
     ASTPtr query_ptr;

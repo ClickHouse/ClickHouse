@@ -14,7 +14,7 @@
 
 #include <Common/config.h>
 #if USE_XXHASH
-    #include <xxhash.h>
+    #include <xxhash.h> // Y_IGNORE
 #endif
 
 #include <Poco/ByteOrder.h>
