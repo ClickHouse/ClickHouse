@@ -241,8 +241,8 @@ struct ColumnString::less
     bool operator()(size_t lhs, size_t rhs) const
     {
         int res = memcmpSmallAllowOverflow15(
-            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs),
-            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs));
+            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
+            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
 
         return positive ? (res < 0) : (res > 0);
     }
