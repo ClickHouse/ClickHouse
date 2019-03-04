@@ -7,6 +7,13 @@
 namespace DB
 {
 
+class AggregatedChunkInfo : public ChunkInfo
+{
+public:
+    bool is_overflows = false;
+    Int32 bucket_num = -1;
+};
+
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
@@ -48,7 +55,7 @@ private:
     };
 
     AggregatingTransformParamsPtr params;
-    Logger * log = &Logger::get("AggregatingBlockInputStream");
+    Logger * log = &Logger::get("AggregatingTransform");
 
     StringRefs key;
     ColumnRawPtrs key_columns;

@@ -2069,10 +2069,21 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
         bucket_to_blocks[block.info.bucket_num].emplace_back(std::move(block));
     }
 
-    LOG_TRACE(log, "Read " << total_input_blocks << " blocks of partially aggregated data, total " << total_input_rows << " rows.");
+    LOG_TRACE(log, "Read " << total_input_blocks << " blocks of partially aggregated data, total " << total_input_rows
+                           << " rows.");
 
+    mergeBlocks(bucket_to_blocks, result, max_threads);
+}
+
+void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVariants & result, size_t max_threads)
+{
     if (bucket_to_blocks.empty())
         return;
+
+    UInt64 total_input_blocks = 0;
+    for (auto & bucket : bucket_to_blocks)
+        for (auto & block : bucket.second)
+            total_input_blocks += block.rows();
 
     /** `minus one` means the absence of information about the bucket
       * - in the case of single-level aggregation, as well as for blocks with "overflowing" values.
