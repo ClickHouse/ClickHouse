@@ -12,8 +12,9 @@ namespace DB
 
 /** Calculate similarity metrics:
   *
-  * trigramDistance(haystack, needle) --- calculate so called 3-gram distance between haystack and needle.
+  * ngramDistance(haystack, needle) --- calculate n-gram distance between haystack and needle.
   * Returns float number from 0 to 1 - the closer to zero, the more strings are similar to each other.
+  * Also support CaseInsensitive and UTF8 formats.
   */
 
 namespace ErrorCodes
