@@ -28,20 +28,20 @@ left join s on s.a = t.a
 left join y on y.b = s.b format PrettyCompactNoEscapes;
 
 select t.a, t.a, t.b as t_b from t
+left join s on t.a = s.a
+left join y on y.b = s.b format PrettyCompactNoEscapes;
+
+select s.a, s.a, s.b as s_b, s.b from t
+left join s on s.a = t.a
+left join y on s.b = y.b format PrettyCompactNoEscapes;
+
+select y.a, y.a, y.b as y_b, y.b from t
 left join s on s.a = t.a
 left join y on y.b = s.b format PrettyCompactNoEscapes;
 
-select s.a, s.a from t
-left join s on s.a = t.a
+select t.a, t.a as t_a, s.a, s.a as s_a, y.a, y.a as y_a from t
+left join s on t.a = s.a
 left join y on y.b = s.b format PrettyCompactNoEscapes;
-
---select t.a, t.a, t.b as t_b, t.b from t
---left join s on s.a = t.a
---left join y on y.b = s.b format PrettyCompactNoEscapes;
-
---select t.a, t.a, s.b as s_b, s.b from t
---left join s on s.a = t.a
---left join y on y.b = s.b format PrettyCompactNoEscapes;
 
 drop table t;
 drop table s;
