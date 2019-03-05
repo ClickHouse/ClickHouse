@@ -26,7 +26,7 @@ public:
                           size_t max_bytes_before_remerge_,
                           size_t max_bytes_before_external_sort_, const std::string & tmp_path_);
 
-    ~MergeSortingTransform();
+    ~MergeSortingTransform() override;
 
     String getName() const override { return "MergeSortingTransform"; }
 
