@@ -196,10 +196,24 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
     Block result = granule->getElementsBlock();
     actions->execute(result);
 
-    const auto & column = result.getByName(expression_ast->getColumnName()).column;
+    auto column = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfLowCardinality();
+    auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
+
+    const NullMap * null_map = nullptr;
+
+    if (auto * col_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
+        null_map = &col_nullable->getNullMapData();
+    }
+
+    if (!col_uint8)
+        throw Exception("ColumnUInt8 expected as Set index condition result.", ErrorCodes::LOGICAL_ERROR);
+
+    auto & condition = col_uint8->getData();
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getInt(i) & 1)
+        if ((!null_map || (*null_map)[i] == 0) && condition[i] & 1)
             return true;
 
     return false;
