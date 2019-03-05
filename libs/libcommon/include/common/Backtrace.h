@@ -4,11 +4,6 @@
 #include <vector>
 #include <signal.h>
 
-#if USE_UNWIND
-#define UNW_LOCAL_ONLY
-    #include <libunwind.h>
-#endif
-
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
 #define _XOPEN_SOURCE
