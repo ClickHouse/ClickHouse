@@ -1662,7 +1662,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     }
 
     StoragePtr source_table;
-    TableStructureReadLockPtr structure_lock_src_table;
+    TableStructureLockHolder structure_lock_src_table;
     String source_table_name = entry_replace.from_database + "." + entry_replace.from_table;
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
@@ -2719,7 +2719,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     LOG_DEBUG(log, "Fetching part " << part_name << " from " << source_replica_path);
 
-    TableStructureReadLockPtr table_lock;
+    TableStructureLockHolder table_lock;
     if (!to_detached)
         table_lock = lockStructure(true, RWLockImpl::NO_QUERY);
 
@@ -3087,8 +3087,9 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 }
 
 
-void StorageReplicatedMergeTree::alter(const AlterCommands & params,
-    const String & /*database_name*/, const String & /*table_name*/, const Context & query_context)
+void StorageReplicatedMergeTree::alter(
+    const AlterCommands & params, const String & /*database_name*/, const String & /*table_name*/,
+    const Context & query_context, TableStructureLockHolder & structure_lock)
 {
     assertNotReadonly();
 
@@ -3165,6 +3166,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     }
 
     LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
+
+    structure_lock.release();
 
     /// Wait until all replicas will apply ALTER.
 

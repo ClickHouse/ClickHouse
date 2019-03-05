@@ -587,7 +587,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String as_table_name = create.as_table;
 
     StoragePtr as_storage;
-    TableStructureReadLockPtr as_storage_lock;
+    TableStructureLockHolder as_storage_lock;
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);

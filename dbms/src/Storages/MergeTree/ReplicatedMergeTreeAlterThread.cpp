@@ -108,7 +108,8 @@ void ReplicatedMergeTreeAlterThread::run()
 
             LOG_INFO(log, "Version of metadata nodes in ZooKeeper changed. Waiting for structure write lock.");
 
-            auto table_lock = storage.lockStructureForAlter(RWLockImpl::NO_QUERY);
+            // TODO
+            auto table_lock = storage.lockExclusively(RWLockImpl::NO_QUERY);
 
             if (columns_in_zk == storage.getColumns() && metadata_diff.empty())
             {

@@ -224,7 +224,7 @@ BlockInputStreams StorageMerge::read(
         current_streams = std::max(size_t(1), current_streams);
 
         StoragePtr storage = it->first;
-        TableStructureReadLockPtr struct_lock = it->second;
+        TableStructureLockHolder struct_lock = it->second;
 
         BlockInputStreams source_streams;
 
@@ -262,7 +262,7 @@ BlockInputStreams StorageMerge::read(
 
 BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
                                                     const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
-                                                    const TableStructureReadLockPtr & struct_lock, Names & real_column_names,
+                                                    const TableStructureLockHolder & struct_lock, Names & real_column_names,
                                                     Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                                     bool concat_streams)
 {
@@ -375,7 +375,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
             if (storage.get() != this)
             {
                 virtual_column->insert(storage->getTableName());
-                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false, query_id) : TableStructureReadLockPtr{});
+                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false, query_id) : TableStructureLockHolder{});
             }
         }
 
@@ -395,9 +395,11 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
     return selected_tables;
 }
 
-void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageMerge::alter(
+    const AlterCommands & params, const String & database_name, const String & table_name,
+    const Context & context, TableStructureLockHolder & structure_lock)
 {
-    auto lock = lockStructureForAlter(context.getCurrentQueryId());
+    lockStructureForAlter(structure_lock, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
     auto new_indices = getIndicesDescription();

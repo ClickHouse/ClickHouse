@@ -100,7 +100,7 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableStructureReadLockPtr table_lock;
+                TableStructureLockHolder table_lock;
 
                 try
                 {

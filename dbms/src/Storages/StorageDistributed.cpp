@@ -336,9 +336,11 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 }
 
 
-void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & current_table_name, const Context & context)
+void StorageDistributed::alter(
+    const AlterCommands & params, const String & database_name, const String & current_table_name,
+    const Context & context, TableStructureLockHolder & structure_lock)
 {
-    auto lock = lockStructureForAlter(context.getCurrentQueryId());
+    lockStructureForAlter(structure_lock, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
     auto new_indices = getIndicesDescription();
