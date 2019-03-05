@@ -52,6 +52,9 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
         current_chunk = input.pull();
         has_input = true;
+
+        if (set_input_not_needed_after_read)
+            input.setNotNeeded();
     }
 
     /// Now transform.
