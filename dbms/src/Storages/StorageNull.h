@@ -41,7 +41,9 @@ public:
         table_name = new_table_name;
     }
 
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    void alter(
+        const AlterCommands & params, const String & database_name, const String & table_name,
+        const Context & context, TableStructureLockHolder & structure_lock) override;
 
 private:
     String table_name;

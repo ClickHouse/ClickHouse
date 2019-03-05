@@ -195,11 +195,12 @@ void StorageMergeTree::alter(
     const AlterCommands & params,
     const String & current_database_name,
     const String & current_table_name,
-    const Context & context)
+    const Context & context,
+    TableStructureLockHolder & structure_lock)
 {
     if (!params.is_mutable())
     {
-        auto table_soft_lock = lockStructureForAlter(context.getCurrentQueryId());
+        lockStructureForAlter(structure_lock, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndicesDescription();
         params.apply(new_columns);
@@ -211,7 +212,7 @@ void StorageMergeTree::alter(
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
     auto merge_blocker = merger_mutator.actions_blocker.cancel();
 
-    auto table_soft_lock = lockDataForAlter(context.getCurrentQueryId());
+    lockDataForAlter(structure_lock, context.getCurrentQueryId());
 
     data.checkAlter(params, context);
 
@@ -230,7 +231,7 @@ void StorageMergeTree::alter(
             transactions.push_back(std::move(transaction));
     }
 
-    auto table_hard_lock = lockStructureForAlter(context.getCurrentQueryId());
+    lockStructureForAlter(structure_lock, context.getCurrentQueryId());
 
     IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
     {
@@ -908,7 +909,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = merger_mutator.actions_blocker.cancel();
         /// Waits for completion of merge and does not start new ones.
-        auto lock = lockForAlter(context.getCurrentQueryId());
+        // TODO
+        auto lock = lockExclusively(context.getCurrentQueryId());
 
         String partition_id = data.getPartitionIDFromQuery(partition, context);
 
