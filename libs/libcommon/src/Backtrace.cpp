@@ -14,6 +14,9 @@
 #endif
 
 #if USE_UNWIND
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+
 /** We suppress the following ASan report. Also shown by Valgrind.
 ==124==ERROR: AddressSanitizer: stack-use-after-scope on address 0x7f054be57000 at pc 0x0000068b0649 bp 0x7f060eeac590 sp 0x7f060eeabd40
 READ of size 1 at 0x7f054be57000 thread T3
