@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 #include <Common/Arena.h>
+#include <Common/memcmpSmall.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -239,15 +240,11 @@ struct ColumnString::less
     explicit less(const ColumnString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        size_t left_len = parent.sizeAt(lhs);
-        size_t right_len = parent.sizeAt(rhs);
+        int res = memcmpSmallAllowOverflow15(
+            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
+            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
 
-        int res = memcmp(&parent.chars[parent.offsetAt(lhs)], &parent.chars[parent.offsetAt(rhs)], std::min(left_len, right_len));
-
-        if (res != 0)
-            return positive ? (res < 0) : (res > 0);
-        else
-            return positive ? (left_len < right_len) : (left_len > right_len);
+        return positive ? (res < 0) : (res > 0);
     }
 };
 
