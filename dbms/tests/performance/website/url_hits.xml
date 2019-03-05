@@ -78,11 +78,5 @@
 <query>SELECT URLHash, EventDate, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh AND TraficSourceID IN (-1, 6) AND RefererHash = halfMD5('http://example.ru/') GROUP BY URLHash, EventDate ORDER BY PageViews DESC LIMIT 100</query>
 <query>SELECT WindowClientWidth, WindowClientHeight, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-31' AND NOT Refresh AND NOT DontCountHits AND URLHash = halfMD5('http://example.ru/') GROUP BY WindowClientWidth, WindowClientHeight ORDER BY PageViews DESC LIMIT 10000</query>
 <query>SELECT toStartOfMinute(EventTime) AS Minute, count() AS PageViews FROM {table} WHERE CounterID = 34 AND EventDate >= '2013-07-01' AND EventDate &lt;= '2013-07-02' AND NOT Refresh AND NOT DontCountHits GROUP BY Minute ORDER BY Minute</query>
-<query>SELECT count(multiSearch(URL, ['yandex', 'google', 'rambler'])) from {table};</query>
-<query>SELECT count(match(URL, 'google|yandex|rambler')) from hits_100m_single;</query>
-<query>SELECT count(match(URL, 'google')), count(match(URL, 'yandex')), count(match(URL, 'rambler')) from {table}</query>
-<query>SELECT DISTINCT Title, ngramDistance(Title, 'what is love') AS distance FROM {table} ORDER BY distance ASC LIMIT 50</query>
-<query>SELECT DISTINCT Title, ngramDistanceUTF8(Title, 'метрика') AS distance FROM {table} ORDER BY distance ASC LIMIT 50</query>
-
 
 </test>
