@@ -12,6 +12,47 @@
 #include <Common/HashTable/ClearableHashMap.h>
 
 
+/** The function will enumerate distinct values of the passed multidimensional arrays looking inside at the specified depths.
+  * This is very unusual function made as a special order for Yandex.Metrica.
+  *
+  * arrayEnumerateUniqRanked(['hello', 'world', 'hello']) = [1, 1, 2]
+  * - it returns similar structured array containing number of occurence of the corresponding value.
+  *
+  * arrayEnumerateUniqRanked([['hello', 'world'], ['hello'], ['hello']], 1) = [1, 1, 2]
+  * - look at the depth 1 by default. Elements are ['hello', 'world'], ['hello'], ['hello'].
+  *
+  * arrayEnumerateUniqRanked([['hello', 'world'], ['hello'], ['hello']]) = [[1,1],[2],[3]]
+  * - look at the depth 2. Return similar structured array.
+  * arrayEnumerateUniqRanked([['hello', 'world'], ['hello'], ['hello']], 2) = [[1,1],[2],[3]]
+  * - look at the maximum depth by default.
+  *
+  * We may pass multiple array arguments. Their elements will be processed as zipped to tuple.
+  *
+  * arrayEnumerateUniqRanked(['hello', 'hello', 'world', 'world'], ['a', 'b', 'b', 'b']) = [1, 1, 1, 2]
+  *
+  * We may provide arrays of different depths to look at different arguments.
+  *
+  * arrayEnumerateUniqRanked([['hello', 'world'], ['hello'], ['world'], ['world']], ['a', 'b', 'b', 'b']) = [[1,1],[1],[1],[2]]
+  * arrayEnumerateUniqRanked([['hello', 'world'], ['hello'], ['world'], ['world']], 1, ['a', 'b', 'b', 'b'], 1) = [1, 1, 1, 2]
+  *
+  * When depths are different, we process less deep arrays as promoted to deeper arrays of similar structure by duplicating elements.
+  *
+  * arrayEnumerateUniqRanked(
+  *     [['hello', 'world'], ['hello'], ['world'], ['world']],
+  *     ['a', 'b', 'b', 'b'])
+  * = arrayEnumerateUniqRanked(
+  *     [['hello', 'world'], ['hello'], ['world'], ['world']],
+  *     [['a', 'a'], ['b'], ['b'], ['b']])
+  *
+  * Finally, we can provide extra first argument named "clear_depth" (it can be considered as 1 by default).
+  * Array elements at the clear_depth will be enumerated as separate elements (enumeration counter is reset for each new element).
+  *
+  * SELECT arrayEnumerateUniqRanked(1, [['hello', 'world'], ['hello'], ['world'], ['world']]) = [[1,1],[2],[2],[3]]
+  * SELECT arrayEnumerateUniqRanked(2, [['hello', 'world'], ['hello'], ['world'], ['world']]) = [[1,1],[1],[1],[1]]
+  * SELECT arrayEnumerateUniqRanked(1, [['hello', 'world', 'hello'], ['hello'], ['world'], ['world']]) = [[1,1,2],[3],[2],[3]]
+  * SELECT arrayEnumerateUniqRanked(2, [['hello', 'world', 'hello'], ['hello'], ['world'], ['world']]) = [[1,1,2],[1],[1],[1]]
+  */
+
 namespace DB
 {
 namespace ErrorCodes
@@ -27,10 +68,18 @@ class FunctionArrayEnumerateDenseRanked;
 
 using DepthType = uint32_t;
 using DepthTypes = std::vector<DepthType>;
+
 struct ArraysDepths
 {
+    /// Enumerate elements at the specified level separately.
     DepthType clear_depth;
+
+    /// Effective depth is the array depth by default or lower value, specified as a constant argument following the array.
+    /// f([[1, 2], [3]]) - effective depth is 2.
+    /// f([[1, 2], [3]], 1) - effective depth is 1.
     DepthTypes depths;
+
+    /// Maximum effective depth.
     DepthType max_array_depth;
 };
 
@@ -57,6 +106,8 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const ArraysDepths arrays_depths = getArraysDepths(arguments);
+
+        /// Return type is the array of the depth as the maximum effective depth of arguments, containing UInt32.
 
         DataTypePtr type = std::make_shared<DataTypeUInt32>();
         for (DepthType i = 0; i < arrays_depths.max_array_depth; ++i)
@@ -112,7 +163,7 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
     for (size_t i = 0; i < arguments.size(); ++i)
         args.emplace_back(block.getByPosition(arguments[i]));
 
-    const auto & arrays_depths = getArraysDepths(args);
+    const ArraysDepths arrays_depths = getArraysDepths(args);
 
     auto get_array_column = [&](const auto & column) -> const DB::ColumnArray *
     {
