@@ -12,6 +12,7 @@ add_library(clickhouse_functions ${LINK_MODE} ${clickhouse_functions_sources})
 target_link_libraries(clickhouse_functions
     PUBLIC
         dbms
+        ${CITYHASH_LIBRARIES}
     PRIVATE
         clickhouse_dictionaries
         ${CONSISTENT_HASHING_LIBRARY}
