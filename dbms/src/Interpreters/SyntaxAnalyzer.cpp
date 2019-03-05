@@ -652,7 +652,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     {
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
-            replaceJoinedTable(node);
+            if (settings.enable_optimize_predicate_expression)
+                replaceJoinedTable(node);
 
             const auto & joined_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
             DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
