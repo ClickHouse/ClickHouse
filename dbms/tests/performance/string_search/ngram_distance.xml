@@ -28,13 +28,13 @@
     <query>SELECT DISTINCT Title, ngramDistanceCaseInsensitive(Title, 'wHAt Is lovE') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
     <query>SELECT DISTINCT Title, ngramDistanceCaseInsensitive(Title, 'BABY DonT hUrT me') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
     <query>SELECT DISTINCT Title, ngramDistanceCaseInsensitive(Title, 'nO MOrE') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
-    <query>SELECT DISTINCT Title, ngramDistanceUTF8(Title, 'метрика') AS distance FROM {table} ORDER BY distance ASC LIMIT 50</query>
-    <query>SELECT DISTINCT URL, ngramDistanceUTF8(URL, 'как дела') AS distance FROM {table} ORDER BY distance ASC LIMIT 50</query>
-    <query>SELECT DISTINCT URL, ngramDistanceUTF8(URL, 'как дела') AS distance FROM {table} ORDER BY distance ASC LIMIT 50</query>
+    <query>SELECT DISTINCT Title, ngramDistanceUTF8(Title, 'метрика') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
+    <query>SELECT DISTINCT URL, ngramDistanceUTF8(URL, 'как дела') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
+    <query>SELECT DISTINCT URL, ngramDistanceUTF8(URL, 'как дела') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
 
-    <query>SELECT DISTINCT Title, ngramDistanceUTF8CaseInsensitive(Title, 'Метрика') AS distance FROM {table} ORDER BY distance ASC LIMIT 50</query>
-    <query>SELECT DISTINCT URL, ngramDistanceUTF8CaseInsensitive(URL, 'как дЕлА') AS distance FROM {table} ORDER BY distance ASC LIMIT 50</query>
-    <query>SELECT DISTINCT URL, ngramDistanceUTF8CaseInsensitive(URL, 'Чем зАнимаешЬся') AS distance FROM {table} ORDER BY distance ASC LIMIT 50</query>
+    <query>SELECT DISTINCT Title, ngramDistanceCaseInsensitiveUTF8(Title, 'Метрика') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
+    <query>SELECT DISTINCT URL, ngramDistanceCaseInsensitiveUTF8(URL, 'как дЕлА') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
+    <query>SELECT DISTINCT URL, ngramDistanceCaseInsensitiveUTF8(URL, 'Чем зАнимаешЬся') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
 
     <main_metric>
         <min_time/>
