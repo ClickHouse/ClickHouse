@@ -47,7 +47,16 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & type = index.data_types[i];
-        type->serializeBinaryBulk(*columns[i], ostr, 0, size());
+
+        IDataType::SerializeBinaryBulkSettings settings;
+        settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
+        settings.position_independent_encoding = false;
+        settings.low_cardinality_max_dictionary_size = 0;
+
+        IDataType::SerializeBinaryBulkStatePtr state;
+        type->serializeBinaryBulkStatePrefix(settings, state);
+        type->serializeBinaryBulkWithMultipleStreams(*columns[i], 0, size(), settings, state);
+        type->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
@@ -66,11 +75,21 @@ void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
     size_type->deserializeBinary(field_rows, istr);
     size_t rows_to_read = field_rows.get<size_t>();
 
+    if (rows_to_read == 0)
+        return;
+
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & type = index.data_types[i];
         auto new_column = type->createColumn();
-        type->deserializeBinaryBulk(*new_column, istr, rows_to_read, 0);
+
+        IDataType::DeserializeBinaryBulkSettings settings;
+        settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
+        settings.position_independent_encoding = false;
+
+        IDataType::DeserializeBinaryBulkStatePtr state;
+        type->deserializeBinaryBulkStatePrefix(settings, state);
+        type->deserializeBinaryBulkWithMultipleStreams(*new_column, rows_to_read, settings, state);
 
         block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, index.columns[i]));
     }
