@@ -218,7 +218,6 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         {
             DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
-            bool first_table = true;
             for (const auto & [table, table_columns] : tables_with_columns)
             {
                 if (ident_db_and_name.satisfies(table, true))
@@ -230,8 +229,6 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     }
                     break;
                 }
-
-                first_table = false;
             }
         }
         else
