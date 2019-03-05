@@ -52,9 +52,8 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
         settings.ostr << (settings.hilite ? hilite_none : "");
     };
 
-    /// A simple or compound identifier?
-
-    if (name_parts.size() > 1)
+    /// It could be compound but short
+    if (!isShort())
     {
         for (size_t i = 0, size = name_parts.size(); i < size; ++i)
         {
