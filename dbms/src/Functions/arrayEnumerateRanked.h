@@ -33,6 +33,7 @@ struct ArraysDepths
     DepthTypes depths;
     DepthType max_array_depth;
 };
+
 /// Return depth info about passed arrays
 ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments);
 
@@ -55,7 +56,7 @@ public:
                     + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        const auto & arrays_depths = getArraysDepths(arguments);
+        const ArraysDepths arrays_depths = getArraysDepths(arguments);
 
         DataTypePtr type = std::make_shared<DataTypeUInt32>();
         for (DepthType i = 0; i < arrays_depths.max_array_depth; ++i)
@@ -113,7 +114,8 @@ void FunctionArrayEnumerateRankedExtended<Derived>::executeImpl(
 
     const auto & arrays_depths = getArraysDepths(args);
 
-    auto get_array_column = [&](const auto & column) -> const DB::ColumnArray * {
+    auto get_array_column = [&](const auto & column) -> const DB::ColumnArray *
+    {
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(column);
         if (!array)
         {
