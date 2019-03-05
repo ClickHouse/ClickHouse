@@ -233,6 +233,8 @@ target_link_libraries (dbms
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
     Threads::Threads
+        PRIVATE
+    rt
 )
 
 
