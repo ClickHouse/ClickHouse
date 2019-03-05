@@ -46,14 +46,23 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 ### SAMPLE Clause {#select-sample-clause}
 
-The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by the tables in the `MergeTree` family, and only if the sampling expression was specified during table creation (see the section [MergeTree engine](../operations/table_engines/mergetree.md)).
+The `SAMPLE` clause allows for approximated query processing. Approximated query processing is only supported by the tables in the `MergeTree` family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../operations/table_engines/mergetree.md)).
 
-`SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
+The features of data sampling are listed below:
 
-In the first case, the query will be executed on 'k' percent of data. For example, `SAMPLE 0.1` runs the query on 10% of data.
-In the second case, the query will be executed on a sample of no more than 'n' rows. For example, `SAMPLE 10000000` runs the query on a maximum of 10,000,000 rows.
+- Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
+- Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the `IN` clause, as well as for manually correlating results of different queries with samples.
+- Sampling allows reading less data from a disk. Note that for this you must specify the sampling key correctly. For more details see [Creating a MergeTree Table](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table).
 
-Example:
+The `SAMPLE` clause can be specified in several ways:
+
+- `SAMPLE k`, where `k` is a decimal number from 0 to 1. The query is executed on `k` percent of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#select-sample-k)
+- `SAMPLE n`, where `n` is a sufficiently large integer. The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#select-sample-n)
+- `SAMPLE k OFFSET m` where `k` and `m` are numbers from 0 to 1. The query is executed on a sample of `k` percent of the data. The data used for the sample is offset by `m` percent. [Read more](#select-sample-offset)
+
+#### SAMPLE k {#select-sample-k}
+
+In a `SAMPLE k` clause, `k` is a percent amount of data that the sample is taken from. The example is shown below:
 
 ``` sql
 SELECT
@@ -63,26 +72,47 @@ FROM hits_distributed
 SAMPLE 0.1
 WHERE
     CounterID = 34
-    AND toDate(EventDate) >= toDate('2013-01-29')
-    AND toDate(EventDate) <= toDate('2013-02-04')
-    AND NOT DontCountHits
-    AND NOT Refresh
-    AND Title != ''
 GROUP BY Title
 ORDER BY PageViews DESC LIMIT 1000
 ```
 
 In this example, the query is executed on a sample from 0.1 (10%) of data. Values of aggregate functions are not corrected automatically, so to get an approximate result, the value 'count()' is manually multiplied by 10.
 
-When using something like `SAMPLE 10000000`, there isn't any information about which relative percent of data was processed or what the aggregate functions should be multiplied by, so this method of writing is not always appropriate to the situation.
+#### SAMPLE n {#select-sample-n}
 
-A sample with a relative coefficient is "consistent": if we look at all possible data that could be in the table, a sample (when using a single sampling expression specified during table creation) with the same coefficient always selects the same subset of possible data. In other words, a sample from different tables on different servers at different times is made the same way.
+In this case, the query is executed on a sample of at least `n` rows, where `n` is a sufficiently large integer. For example, `SAMPLE 10000000`.
 
-For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
+Since the minimum unit for data reading is one granule (its size is set by the `index_granularity` setting), it makes sense to set a sample that is much larger than the size of the granule.
 
-**SAMPLE OFFSET**
+When using the `SAMPLE n` clause, the relative coefficient is calculated dynamically. Since you do not know which relative percent of data was processed, you do not know the coefficient the aggregate functions should be multiplied by (for example, you do not know if the `SAMPLE 1000000` was taken from a set of 10,000,000 rows or from a set of 1,000,000,000 rows). In this case, use the `_sample_factor` column to get the approximate result.
 
-You can specify the `SAMPLE k OFFSET n` clause, where `k` and `n` are numbers from 0 to 1. Examples are shown below.
+The `_sample_factor` is a virtual column that ClickHouse stores relative coefficients in. This column is created automatically when you create a table with the specified sampling key. The usage example is shown below:
+
+``` sql
+SELECT sum(Duration * _sample_factor)
+FROM visits
+SAMPLE 10000000
+```   
+
+If you need to get the approximate count of rows in a `SELECT .. SAMPLE n` query, get the sum() of `_sample_factor` column instead of counting `count(column * _sample_factor)` value. For example:
+
+``` sql
+SELECT sum(_sample_factor)
+FROM visits
+SAMPLE 10000000
+```  
+
+Note that to calculate the average in a `SELECT .. SAMPLE n` query, you do not need to use `_sample_factor` column:
+
+``` sql
+SELECT avg(Duration)
+FROM visits
+SAMPLE 10000000
+```  
+ 
+#### SAMPLE k OFFSET m {#select-sample-offset}
+
+You can specify the `SAMPLE k OFFSET m` clause, where `k` and `m` are numbers from 0 to 1. Examples are shown below.
 
 Example 1.
 
@@ -718,10 +748,10 @@ DISTINCT is not supported if SELECT has at least one array column.
 
 ### LIMIT Clause
 
-LIMIT m allows you to select the first 'm' rows from the result.
-LIMIT n, m allows you to select the first 'm' rows from the result after skipping the first 'n' rows.
+`LIMIT m` allows you to select the first `m` rows from the result.
+`LIMIT n`, m allows you to select the first `m` rows from the result after skipping the first `n` rows.
 
-'n' and 'm' must be non-negative integers.
+`n` and `m` must be non-negative integers.
 
 If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
 
