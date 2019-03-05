@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 /// 0b11 -- can be true and false at the same time
-const Field UNKNOWN_FIELD(3);
+const Field UNKNOWN_FIELD(3u);
 
 
 MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index)
