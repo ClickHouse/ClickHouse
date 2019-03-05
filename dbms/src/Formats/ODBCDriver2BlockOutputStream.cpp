@@ -5,7 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
-
 namespace DB
 {
 ODBCDriver2BlockOutputStream::ODBCDriver2BlockOutputStream(

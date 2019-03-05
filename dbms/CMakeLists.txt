@@ -58,10 +58,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
-
-        if (WEVERYTHING)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-        endif ()
     endif ()
 endif ()
 
@@ -141,12 +137,10 @@ endif ()
 add_subdirectory(src/Common/ZooKeeper)
 add_subdirectory(src/Common/Config)
 
-if (MAKE_STATIC_LIBRARIES)
+if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
 else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
-    set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR}.${VERSION_MINOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
-    install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
@@ -205,9 +199,10 @@ target_link_libraries (clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PUBLIC
+    roaring	
 )
 
-target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 
@@ -239,6 +234,7 @@ target_link_libraries (dbms
     Threads::Threads
 )
 
+target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
@@ -296,6 +292,13 @@ endif ()
 
 if (USE_RDKAFKA)
     target_link_libraries (dbms PRIVATE clickhouse_storage_kafka)
+endif ()
+
+if (USE_PARQUET)
+    target_link_libraries(dbms PRIVATE ${PARQUET_LIBRARY})
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
+    endif ()
 endif ()
 
 target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)

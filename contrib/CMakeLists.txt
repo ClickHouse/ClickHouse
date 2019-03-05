@@ -46,6 +46,7 @@ if (USE_INTERNAL_METROHASH_LIBRARY)
 endif ()
 
 add_subdirectory (murmurhash)
+add_subdirectory (croaring)
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
@@ -149,6 +150,66 @@ if (USE_INTERNAL_CAPNP_LIBRARY)
     set (CMAKE_CXX_EXTENSIONS ${_save})
     target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
 endif ()
+
+if (USE_INTERNAL_PARQUET_LIBRARY)
+if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+    # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
+    # But this mode can be used for updating auto-generated parquet files:
+    # cmake -DUSE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE=1 -DUSE_STATIC_LIBRARIES=0
+    # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> /contrib/arrow-cmake/cpp/src/parquet/
+
+    # Also useful parquet reader:
+    # cd contrib/arrow/cpp/build && mkdir -p build && cmake .. -DPARQUET_BUILD_EXECUTABLES=1 && make -j8
+    # contrib/arrow/cpp/build/debug/parquet-reader some_file.parquet
+
+    set (ARROW_COMPUTE ON CACHE INTERNAL "")
+    set (ARROW_PARQUET ON CACHE INTERNAL "")
+    set (ARROW_VERBOSE_THIRDPARTY_BUILD ON CACHE INTERNAL "")
+    set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
+    set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
+    #set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
+    set (Boost_FOUND 1 CACHE INTERNAL "")
+    #set (ZLIB_HOME ${ZLIB_INCLUDE_DIR})
+    #set (ZLIB_FOUND 1)
+    if (MAKE_STATIC_LIBRARIES)
+        set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
+        set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")
+        set (ARROW_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
+    else()
+        set (PARQUET_ARROW_LINKAGE "shared" CACHE INTERNAL "")
+        set (ARROW_TEST_LINKAGE "shared" CACHE INTERNAL "")
+    endif()
+
+    if(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
+        set(_save_build_type ${CMAKE_BUILD_TYPE})
+        set(CMAKE_BUILD_TYPE RELEASE)
+    endif()
+
+    # Because Arrow uses CMAKE_SOURCE_DIR as a project path
+    # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
+    set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
+    add_subdirectory (arrow/cpp)
+
+    if(_save_build_type)
+        set(CMAKE_BUILD_TYPE ${_save_build_type})
+    endif()
+
+else()
+
+    if(USE_INTERNAL_SNAPPY_LIBRARY)
+        set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
+        if (NOT MAKE_STATIC_LIBRARIES)
+            set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
+        endif()
+        add_subdirectory(snappy)
+        if(SANITIZE STREQUAL "undefined")
+            target_compile_options(${SNAPPY_LIBRARY} PRIVATE -fno-sanitize=undefined)
+        endif()
+    endif()
+
+    add_subdirectory(arrow-cmake)
+endif()
+endif()
 
 if (USE_INTERNAL_POCO_LIBRARY)
     set (POCO_VERBOSE_MESSAGES 0 CACHE INTERNAL "")

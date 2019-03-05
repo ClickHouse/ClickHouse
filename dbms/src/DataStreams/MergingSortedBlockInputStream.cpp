@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
-    UInt64 max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
+    size_t max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
     : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
     , source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {

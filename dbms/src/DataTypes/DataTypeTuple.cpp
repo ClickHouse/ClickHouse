@@ -372,7 +372,7 @@ void DataTypeTuple::deserializeBinaryBulkStatePrefix(
 void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
-    UInt64 limit,
+    size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -390,7 +390,7 @@ void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
 
 void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    UInt64 limit,
+    size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -407,10 +407,31 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    for (const auto i : ext::range(0, ext::size(elems)))
-        elems[i]->serializeProtobuf(extractElementColumn(column, i), row_num, protobuf);
+    for (; value_index < elems.size(); ++value_index)
+    {
+        size_t stored = 0;
+        elems[value_index]->serializeProtobuf(extractElementColumn(column, value_index), row_num, protobuf, stored);
+        if (!stored)
+            break;
+    }
+}
+
+void DataTypeTuple::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    bool all_elements_get_row = true;
+    addElementSafe(elems, column, [&]
+    {
+        for (const auto & i : ext::range(0, ext::size(elems)))
+        {
+            bool element_row_added;
+            elems[i]->deserializeProtobuf(extractElementColumn(column, i), protobuf, allow_add_row, element_row_added);
+            all_elements_get_row &= element_row_added;
+        }
+    });
+    row_added = all_elements_get_row;
 }
 
 MutableColumnPtr DataTypeTuple::createColumn() const

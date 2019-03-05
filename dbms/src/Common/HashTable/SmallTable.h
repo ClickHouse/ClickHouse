@@ -148,8 +148,8 @@ public:
             return *this;
         }
 
-        value_type & operator* () const { return ptr->getValue(); }
-        value_type * operator->() const { return &ptr->getValue(); }
+        Cell & operator* () const { return *ptr; }
+        Cell * operator->() const { return ptr; }
 
         Cell * getPtr() const { return ptr; }
     };
@@ -176,8 +176,8 @@ public:
             return *this;
         }
 
-        const value_type & operator* () const { return ptr->getValue(); }
-        const value_type * operator->() const { return &ptr->getValue(); }
+        const Cell & operator* () const { return *ptr; }
+        const Cell * operator->() const { return ptr; }
 
         const Cell * getPtr() const { return ptr; }
     };
@@ -399,8 +399,8 @@ public:
         typename SmallMapTable::iterator it;
         bool inserted;
         this->emplace(x, it, inserted);
-        new(&it->second) mapped_type();
-        return it->second;
+        new(&it->getSecond()) mapped_type();
+        return it->getSecond();
     }
 };
 

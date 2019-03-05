@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Formats/FormatSettings.h>
 #include <Formats/TabSeparatedRowOutputStream.h>
-
 
 namespace DB
 {
+struct FormatSettings;
 
 /** A stream for outputting data in tsv format, but without escaping individual values.
   * (That is, the output is irreversible.)

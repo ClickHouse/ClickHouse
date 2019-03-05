@@ -23,6 +23,7 @@ using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
+class ProtobufReader;
 class ProtobufWriter;
 
 
@@ -173,7 +174,7 @@ public:
     virtual void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
         size_t offset,
-        UInt64 limit,
+        size_t limit,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & /*state*/) const
     {
@@ -184,7 +185,7 @@ public:
     /// Read no more than limit values and append them into column.
     virtual void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
-        UInt64 limit,
+        size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & /*state*/) const
     {
@@ -194,8 +195,8 @@ public:
 
     /** Override these methods for data types that require just single stream (most of data types).
       */
-    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const;
-    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double avg_value_size_hint) const;
+    virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
+    virtual void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const;
 
     /** Serialization/deserialization of individual values.
       *
@@ -253,7 +254,8 @@ public:
     virtual void serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
     /** Serialize to a protobuf. */
-    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const = 0;
+    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const = 0;
+    virtual void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const = 0;
 
 protected:
     virtual String doGetName() const;

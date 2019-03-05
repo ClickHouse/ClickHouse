@@ -1,5 +1,6 @@
 #include <Core/Defines.h>
 #include <Common/Arena.h>
+#include <Common/memcmpSmall.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -111,7 +112,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
 }
 
 
-ColumnPtr ColumnString::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = offsets.size();
 
@@ -191,13 +192,13 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 }
 
 
-ColumnPtr ColumnString::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename Type>
-ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
+ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
     if (limit == 0)
         return ColumnString::create();
@@ -239,19 +240,15 @@ struct ColumnString::less
     explicit less(const ColumnString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        size_t left_len = parent.sizeAt(lhs);
-        size_t right_len = parent.sizeAt(rhs);
+        int res = memcmpSmallAllowOverflow15(
+            parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
+            parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
 
-        int res = memcmp(&parent.chars[parent.offsetAt(lhs)], &parent.chars[parent.offsetAt(rhs)], std::min(left_len, right_len));
-
-        if (res != 0)
-            return positive ? (res < 0) : (res > 0);
-        else
-            return positive ? (left_len < right_len) : (left_len > right_len);
+        return positive ? (res < 0) : (res > 0);
     }
 };
 
-void ColumnString::getPermutation(bool reverse, UInt64 limit, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);
@@ -389,7 +386,7 @@ struct ColumnString::lessWithCollation
     }
 };
 
-void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, UInt64 limit, Permutation & res) const
+void ColumnString::getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const
 {
     size_t s = offsets.size();
     res.resize(s);

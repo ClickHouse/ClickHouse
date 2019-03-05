@@ -300,7 +300,7 @@ void Join::setSampleBlock(const Block & block)
         if (column.get() != column_no_lc.get())
         {
             materialized_columns.emplace_back(std::move(column_no_lc));
-            key_columns[i] = materialized_columns[i].get();
+            key_columns[i] = materialized_columns.back().get();
         }
 
         /// We will join only keys, where all components are not NULL.
@@ -1317,10 +1317,10 @@ private:
 
         for (; it != end; ++it)
         {
-            if (it->second.getUsed())
+            if (it->getSecond().getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, columns_left, columns_keys_and_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->getSecond(), rows_added, columns_left, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
             {

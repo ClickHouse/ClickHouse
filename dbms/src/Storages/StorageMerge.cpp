@@ -122,15 +122,15 @@ bool StorageMerge::isRemote() const
 }
 
 
-bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
+bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const
 {
     /// It's beneficial if it is true for at least one table.
-    StorageListWithLocks selected_tables = getSelectedTables();
+    StorageListWithLocks selected_tables = getSelectedTables(query_context.getCurrentQueryId());
 
     size_t i = 0;
     for (const auto & table : selected_tables)
     {
-        if (table.first->mayBenefitFromIndexForIn(left_in_operand))
+        if (table.first->mayBenefitFromIndexForIn(left_in_operand, query_context))
             return true;
 
         ++i;
@@ -177,7 +177,7 @@ BlockInputStreams StorageMerge::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
-    const UInt64 max_block_size,
+    const size_t max_block_size,
     const unsigned num_streams)
 {
     BlockInputStreams res;
@@ -206,7 +206,8 @@ BlockInputStreams StorageMerge::read(
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
-    StorageListWithLocks selected_tables = getSelectedTables(query_info.query, has_table_virtual_column, true);
+    StorageListWithLocks selected_tables = getSelectedTables(
+        query_info.query, has_table_virtual_column, true, context.getCurrentQueryId());
 
     if (selected_tables.empty())
         return createSourceStreams(
@@ -332,7 +333,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     return source_streams;
 }
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id) const
 {
     StorageListWithLocks selected_tables;
     auto database = global_context.getDatabase(source_database);
@@ -344,7 +345,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
         {
             auto & table = iterator->table();
             if (table.get() != this)
-                selected_tables.emplace_back(table, table->lockStructure(false));
+                selected_tables.emplace_back(table, table->lockStructure(false, query_id));
         }
 
         iterator->next();
@@ -354,7 +355,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
 }
 
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const
 {
     StorageListWithLocks selected_tables;
     DatabasePtr database = global_context.getDatabase(source_database);
@@ -374,7 +375,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
             if (storage.get() != this)
             {
                 virtual_column->insert(storage->getTableName());
-                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false) : TableStructureReadLockPtr{});
+                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false, query_id) : TableStructureReadLockPtr{});
             }
         }
 
@@ -396,7 +397,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
 void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
-    auto lock = lockStructureForAlter();
+    auto lock = lockStructureForAlter(context.getCurrentQueryId());
 
     auto new_columns = getColumns();
     auto new_indices = getIndicesDescription();

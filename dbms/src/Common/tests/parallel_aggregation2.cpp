@@ -51,9 +51,9 @@ struct AggregateIndependent
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
-                        creator(place->second);
+                        creator(place->getSecond());
                     else
-                        updater(place->second);
+                        updater(place->getSecond());
                 }
             });
         }
@@ -93,7 +93,7 @@ struct AggregateIndependentWithSequentialKeysOptimization
                 {
                     if (it != begin && *it == prev_key)
                     {
-                        updater(place->second);
+                        updater(place->getSecond());
                         continue;
                     }
                     prev_key = *it;
@@ -102,9 +102,9 @@ struct AggregateIndependentWithSequentialKeysOptimization
                     map.emplace(*it, place, inserted);
 
                     if (inserted)
-                        creator(place->second);
+                        creator(place->getSecond());
                     else
-                        updater(place->second);
+                        updater(place->getSecond());
                 }
             });
         }
@@ -131,7 +131,7 @@ struct MergeSequential
             auto begin = source_maps[i]->begin();
             auto end = source_maps[i]->end();
             for (auto it = begin; it != end; ++it)
-                merger((*source_maps[0])[it->first], it->second);
+                merger((*source_maps[0])[it->getFirst()], it->getSecond());
         }
 
         result_map = source_maps[0];
@@ -161,7 +161,7 @@ struct MergeSequentialTransposed    /// In practice not better than usual.
                     continue;
 
                 finish = false;
-                merger((*result_map)[iterators[i]->first], iterators[i]->second);
+                merger((*result_map)[iterators[i]->getFirst()], iterators[i]->getSecond());
                 ++iterators[i];
             }
 
