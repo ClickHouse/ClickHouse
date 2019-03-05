@@ -90,7 +90,7 @@ struct NgramDistanceImpl
         ///              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         /// Doing unaligned read of 16 bytes and copy them like above
         /// 16 is also chosen to do two `movups`.
-        /// Such copying allow us to have 3 codepoints from the previous read to produce the n-gram with them.
+        /// Such copying allow us to have 3 codepoints from the previous read to produce the 4-grams with them.
         memcpy(code_points + (N - 1), pos, default_padding * sizeof(CodePoint));
 
         if constexpr (CaseInsensitive)
