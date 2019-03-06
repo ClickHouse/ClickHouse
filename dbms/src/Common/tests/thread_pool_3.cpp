@@ -1,4 +1,4 @@
-#include <atomic>
+#include <mutex>
 #include <iostream>
 #include <Common/ThreadPool.h>
 
@@ -10,8 +10,9 @@ void test()
 {
     Pool pool(10, 2, 10);
 
+    std::mutex mutex;
     for (size_t i = 0; i < 10; ++i)
-        pool.schedule([]{ std::cerr << '.'; });
+        pool.schedule([&]{ std::lock_guard lock(mutex); std::cerr << '.'; });
     pool.wait();
 }
 
