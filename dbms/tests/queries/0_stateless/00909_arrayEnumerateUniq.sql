@@ -172,3 +172,7 @@ SELECT arrayEnumerateUniqRanked([1,2], 1, 3, [4], 5); -- { serverError 36 }
 SELECT arrayEnumerateDenseRanked([[[[[[[[[[42]]]]]]]]]]);
 SELECT arrayEnumerateUniqRanked('wat', [1,2]); -- { serverError 48 }
 SELECT arrayEnumerateUniqRanked(1, [1,2], 'boom'); -- { serverError 48 }
+SELECT arrayEnumerateDenseRanked(['\0'], -8363126); -- { serverError 36 }
+SELECT arrayEnumerateDenseRanked(-10, ['\0'], -8363126); -- { serverError 36 }
+SELECT arrayEnumerateDenseRanked(1, ['\0'], -8363126); -- { serverError 36 }
+SELECT arrayEnumerateDenseRanked(-101, ['\0']); -- { serverError 36 }
