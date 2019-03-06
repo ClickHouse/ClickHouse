@@ -142,8 +142,10 @@ public:
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]
         {
-            DB::ThreadStatus thread_status;
-            std::apply(func, args);
+            {
+                DB::ThreadStatus thread_status;
+                std::apply(func, args);
+            }
             state->set();
         });
     }
