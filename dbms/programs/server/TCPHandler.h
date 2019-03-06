@@ -109,7 +109,7 @@ private:
     UInt64 client_revision = 0;
 
     Context connection_context;
-    Context query_context;
+    std::optional<Context> query_context;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
