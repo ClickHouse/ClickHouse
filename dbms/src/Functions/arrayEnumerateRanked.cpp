@@ -47,7 +47,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
                 UInt64 value = static_cast<const ColumnConst &>(*depth_column).getValue<UInt64>();
                 if (!value)
                     throw Exception("Incorrect arguments for function arrayEnumerateUniqRanked or arrayEnumerateDenseRanked: depth ("
-                        + std::to_string(value) + ") cannot be 0.",
+                        + std::to_string(value) + ") cannot be less or equal 0.",
                         ErrorCodes::BAD_ARGUMENTS);
 
                 if (i == 0)
@@ -59,6 +59,11 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
                     if (depths.size() >= array_num)
                         throw Exception("Incorrect arguments for function arrayEnumerateUniqRanked or arrayEnumerateDenseRanked: depth ("
                             + std::to_string(value) + ") for missing array.",
+                            ErrorCodes::BAD_ARGUMENTS);
+                    if (value > prev_array_depth)
+                        throw Exception(
+                            "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: depth="
+                                + std::to_string(value) + " for array with depth=" + std::to_string(prev_array_depth) + ".",
                             ErrorCodes::BAD_ARGUMENTS);
 
                     depths.emplace_back(value);
