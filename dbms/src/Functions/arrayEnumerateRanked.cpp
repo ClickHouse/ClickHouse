@@ -71,16 +71,21 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
                                 + std::to_string(value) + ") for missing array.",
                             ErrorCodes::BAD_ARGUMENTS);
                     }
+                    if (value > last_array_depth)
+                        throw Exception(
+                            "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: depth="
+                                + std::to_string(value) + " for array with depth=" + std::to_string(last_array_depth) + ".",
+                            ErrorCodes::BAD_ARGUMENTS);
                     depths.emplace_back(value);
                 }
             }
         }
     }
+
     if (depths.size() < array_num)
     {
         depths.emplace_back(last_array_depth);
     }
-
 
     for (auto & depth : depths)
     {

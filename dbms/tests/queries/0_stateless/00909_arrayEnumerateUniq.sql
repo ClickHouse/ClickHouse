@@ -145,11 +145,11 @@ SELECT arrayEnumerateUniqRanked(); -- { serverError 42 }
 SELECT arrayEnumerateUniqRanked([]);
 SELECT arrayEnumerateUniqRanked(1); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(2,[]); -- { serverError 36 }
-SELECT arrayEnumerateUniqRanked(2,[],2); -- { serverError 190 }
+SELECT arrayEnumerateUniqRanked(2,[],2); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(2,[],[]); -- { serverError 36 }
-SELECT arrayEnumerateUniqRanked(2,[],[],3); -- { serverError 190 }
-SELECT arrayEnumerateUniqRanked([],2); -- { serverError 190 }
-SELECT arrayEnumerateUniqRanked([],2,[]); -- { serverError 190 }
+SELECT arrayEnumerateUniqRanked(2,[],[],3); -- { serverError 36 }
+SELECT arrayEnumerateUniqRanked([],2); -- { serverError 36 }
+SELECT arrayEnumerateUniqRanked([],2,[]); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(0,[],0); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(0,0,0); -- { serverError 36 }
 SELECT arrayEnumerateUniqRanked(1,1,1); -- { serverError 36 }
@@ -176,3 +176,7 @@ SELECT arrayEnumerateDenseRanked(['\0'], -8363126); -- { serverError 36 }
 SELECT arrayEnumerateDenseRanked(-10, ['\0'], -8363126); -- { serverError 36 }
 SELECT arrayEnumerateDenseRanked(1, ['\0'], -8363126); -- { serverError 36 }
 SELECT arrayEnumerateDenseRanked(-101, ['\0']); -- { serverError 36 }
+SELECT arrayEnumerateDenseRanked(1.1, [10,20,10,30]);
+SELECT arrayEnumerateDenseRanked([10,20,10,30], 0.4); -- { serverError 36 }
+SELECT arrayEnumerateDenseRanked([10,20,10,30], 1.8);
+SELECT arrayEnumerateUniqRanked(1, [], 1000000000); -- { serverError 36 }
