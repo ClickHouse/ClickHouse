@@ -75,7 +75,7 @@ struct Settings
     M(SettingFloat, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.") \
     \
     M(SettingBool, compile, false, "Whether query compilation is enabled.") \
-    M(SettingBool, compile_expressions, true, "Compile some scalar functions and operators to native code.") \
+    M(SettingBool, compile_expressions, false, "Compile some scalar functions and operators to native code.") \
     M(SettingUInt64, min_count_to_compile, 3, "The number of structurally identical queries before they are compiled.") \
     M(SettingUInt64, min_count_to_compile_expression, 3, "The number of identical expressions before they are JIT-compiled") \
     M(SettingUInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.") \
@@ -233,7 +233,10 @@ struct Settings
     M(SettingSeconds, max_execution_time, 0, "") \
     M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
-    M(SettingUInt64, min_execution_speed, 0, "In rows per second.") \
+    M(SettingUInt64, min_execution_speed, 0, "Minimum number of execution rows per second.") \
+    M(SettingUInt64, max_execution_speed, 0, "Maximum number of execution rows per second.") \
+    M(SettingUInt64, min_execution_speed_bytes, 0, "Minimum number of execution bytes per second.") \
+    M(SettingUInt64, max_execution_speed_bytes, 0, "Maximum number of execution bytes per second.") \
     M(SettingSeconds, timeout_before_checking_execution_speed, 0, "Check that the speed is not too low after the specified time has elapsed.") \
     \
     M(SettingUInt64, max_columns_to_read, 0, "") \

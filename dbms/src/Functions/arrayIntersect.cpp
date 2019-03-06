@@ -425,15 +425,15 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
 
         for (const auto & pair : map)
         {
-            if (pair.second == args)
+            if (pair.getSecond() == args)
             {
                 ++result_offset;
                 if constexpr (is_numeric_column)
-                    result_data.insertValue(pair.first);
+                    result_data.insertValue(pair.getFirst());
                 else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
-                    result_data.insertData(pair.first.data, pair.first.size);
+                    result_data.insertData(pair.getFirst().data, pair.getFirst().size);
                 else
-                    result_data.deserializeAndInsertFromArena(pair.first.data);
+                    result_data.deserializeAndInsertFromArena(pair.getFirst().data);
 
                 if (all_nullable)
                     null_map.push_back(0);

@@ -12,8 +12,8 @@
 namespace DB
 {
 
-ProtobufRowInputStream::ProtobufRowInputStream(ReadBuffer & in_, const Block & header, const FormatSchemaInfo & info)
-    : data_types(header.getDataTypes()), reader(in_, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info), header.getNames())
+ProtobufRowInputStream::ProtobufRowInputStream(ReadBuffer & in_, const Block & header, const FormatSchemaInfo & format_schema)
+    : data_types(header.getDataTypes()), reader(in_, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames())
 {
 }
 
@@ -87,7 +87,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProtobuf(FormatFactory & factory) {}
+void registerInputFormatProtobuf(FormatFactory &) {}
 }
 
 #endif
