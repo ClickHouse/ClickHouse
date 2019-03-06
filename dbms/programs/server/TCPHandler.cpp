@@ -120,7 +120,7 @@ void TCPHandler::runImpl()
 
     connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
-    /// Restore context of request.
+    /// Set context of request.
     query_context = connection_context;
 
     while (1)
