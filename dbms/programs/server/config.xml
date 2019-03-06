@@ -318,10 +318,10 @@
     -->
 
     <!-- Path to file with region hierarchy. -->
-    <path_to_regions_hierarchy_file>../../../../geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>
+    <!-- <path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file> -->
 
     <!-- Path to directory with files containing names of regions -->
-    <path_to_regions_names_files>../../../../geo/</path_to_regions_names_files>
+    <!-- <path_to_regions_names_files>/opt/geo/</path_to_regions_names_files> -->
 
 
     <!-- Configuration of external dictionaries. See:
