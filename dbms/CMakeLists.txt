@@ -201,6 +201,8 @@ target_link_libraries (clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PRIVATE
+    rt
 )
 
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
@@ -233,8 +235,6 @@ target_link_libraries (dbms
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
     Threads::Threads
-        PRIVATE
-    rt
 )
 
 
