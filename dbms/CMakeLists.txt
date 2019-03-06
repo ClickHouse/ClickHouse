@@ -59,6 +59,14 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
     endif ()
+
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
+
+        if (WEVERYTHING)
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ctad-maybe-unsupported")
+        endif ()
+    endif ()
 endif ()
 
 if (USE_DEBUG_HELPERS)
@@ -200,7 +208,7 @@ target_link_libraries (clickhouse_common_io
         PRIVATE
     ${CMAKE_DL_LIBS}
         PUBLIC
-    roaring	
+    roaring
 )
 
 
