@@ -22,6 +22,7 @@ public:
     String name;
 
     ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {});
+    ASTIdentifier(std::vector<String> && name_parts_);
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name); }

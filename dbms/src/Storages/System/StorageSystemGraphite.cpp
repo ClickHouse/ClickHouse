@@ -148,13 +148,26 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context
         const auto patterns = readPatterns(config, section);
         for (const auto & pattern : patterns)
         {
-            for (const auto & ret : pattern.retentions)
+            if (!pattern.retentions.empty())
+            {
+                for (const auto & ret : pattern.retentions)
+                {
+                    res_columns[0]->insert(section);
+                    res_columns[1]->insert(pattern.regexp);
+                    res_columns[2]->insert(pattern.function);
+                    res_columns[3]->insert(ret.age);
+                    res_columns[4]->insert(ret.precision);
+                    res_columns[5]->insert(pattern.priority);
+                    res_columns[6]->insert(pattern.is_default);
+                }
+            }
+            else
             {
                 res_columns[0]->insert(section);
                 res_columns[1]->insert(pattern.regexp);
                 res_columns[2]->insert(pattern.function);
-                res_columns[3]->insert(ret.age);
-                res_columns[4]->insert(ret.precision);
+                res_columns[3]->insert(0);
+                res_columns[4]->insert(0);
                 res_columns[5]->insert(pattern.priority);
                 res_columns[6]->insert(pattern.is_default);
             }
