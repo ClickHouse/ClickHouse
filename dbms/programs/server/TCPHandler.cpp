@@ -120,10 +120,11 @@ void TCPHandler::runImpl()
 
     connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
+    /// Restore context of request.
+    query_context = connection_context;
+
     while (1)
     {
-        /// Restore context of request.
-        query_context = connection_context;
 
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
         while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
@@ -185,6 +186,8 @@ void TCPHandler::runImpl()
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
             });
 
+            customizeContext(query_context);
+
             bool may_have_embedded_data = client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
@@ -206,6 +209,9 @@ void TCPHandler::runImpl()
 
             sendLogs();
             sendEndOfStream();
+
+            /// Restore context of request.
+            query_context = connection_context;
 
             query_scope.reset();
             state.reset();
