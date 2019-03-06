@@ -129,7 +129,10 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE lower(s) 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE lower(s) = 'column-oriented' OR s = 'column-oriented' ORDER BY k FORMAT JSON" | grep "rows_read"
 
 # LIKE
-# not supported (fullscan is used t)
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE lower(s) LIKE '%(dbms)%' ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE lower(s) LIKE '%(dbms)%' ORDER BY k FORMAT JSON" | grep "rows_read"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s LIKE 'column-%' AND s LIKE '%-oriented' ORDER BY k"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s LIKE 'column-%' AND s LIKE '%-oriented' ORDER BY k FORMAT JSON" | grep "rows_read"
 
 # IN
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.bloom_filter_idx3 WHERE s IN ('some string', 'abc') ORDER BY k"
