@@ -242,6 +242,10 @@ public:
     void enableExtremes() { enabled_extremes = true; }
 
 protected:
+    /// Order is important: `table_locks` must be destroyed after `children` so that tables from
+    /// which child streams read are protected by the locks during the lifetime of the child streams.
+    TableStructureReadLocks table_locks;
+
     BlockInputStreams children;
     std::shared_mutex children_mutex;
 
@@ -268,8 +272,6 @@ protected:
     }
 
 private:
-    TableStructureReadLocks table_locks;
-
     bool enabled_extremes = false;
 
     /// The limit on the number of rows/bytes has been exceeded, and you need to stop execution on the next `read` call, as if the thread has run out.
