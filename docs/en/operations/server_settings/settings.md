@@ -694,4 +694,32 @@ For more information, see the section "[Replication](../../operations/table_engi
 </zookeeper>
 ```
 
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+
+Mode of the data parts headers storage in ZooKeeper.
+
+This setting can be specified:
+
+- Globally, for all the `MergeTree`-family tables on the server in the `config.xml`.
+
+    You can change the setting at any time. Existing tables change their behavior with the setting change.
+
+- For each separate table with the [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table) when creating a `MergeTree`-family table.
+
+    Ones creating a table with the engine setting you can't change its behavior even with the global setting.
+
+If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_engines/replication.md) tables store the headers of the data parts compactly using single `znode`. If the table contains many columns, this way of storage significantly reduces the volume of the data stored in Zookeeper.
+
+!!! attention
+    Ones applying the `use_minimalistic_part_header_in_zookeeper = 1` you can't degrade the ClickHouse server to the version that doesn't support this setting. Be careful when upgrading ClickHouse on servers of a cluster. Don't upgrade all the servers at ones. It is safer to test the new versions of ClickHouse in a test environment, or at least at some servers of a cluster.
+
+    The data parts headers already stored with this setting also can't be restored to previous (non-compact) representation.
+
+**Possible values**
+
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
+
+**Default value:** 0.
+
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->
