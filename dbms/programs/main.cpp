@@ -38,7 +38,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_BENCHMARK || !defined(ENABLE_CLICKHOUSE_BENCHMARK)
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE || !defined(ENABLE_CLICKHOUSE_PERFORMANCE)
+#if ENABLE_CLICKHOUSE_PERFORMANCE_TEST || !defined(ENABLE_CLICKHOUSE_PERFORMANCE_TEST)
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
@@ -84,7 +84,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
     {"server", mainEntryClickHouseServer},
 #endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE || !defined(ENABLE_CLICKHOUSE_PERFORMANCE)
+#if ENABLE_CLICKHOUSE_PERFORMANCE_TEST || !defined(ENABLE_CLICKHOUSE_PERFORMANCE_TEST)
     {"performance-test", mainEntryClickHousePerformanceTest},
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)

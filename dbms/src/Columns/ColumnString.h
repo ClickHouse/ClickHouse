@@ -6,6 +6,7 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
+#include <Common/memcmpSmall.h>
 
 
 class Collator;
@@ -210,16 +211,7 @@ public:
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
-
-        const size_t size = sizeAt(n);
-        const size_t rhs_size = rhs.sizeAt(m);
-
-        int cmp = memcmp(&chars[offsetAt(n)], &rhs.chars[rhs.offsetAt(m)], std::min(size, rhs_size));
-
-        if (cmp != 0)
-            return cmp;
-        else
-            return size > rhs_size ? 1 : (size < rhs_size ? -1 : 0);
+        return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
     }
 
     /// Variant of compareAt for string comparison with respect of collation.
