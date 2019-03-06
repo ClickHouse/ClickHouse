@@ -10,6 +10,7 @@
 #include <optional>
 #include <ext/singleton.h>
 
+#include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
 
 
@@ -133,7 +134,7 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
-        : state(std::make_shared<SharedState>(true))
+        : state(std::make_shared<Poco::Event>())
     {
         /// NOTE: If this will throw an exception, the descructor won't be called.
         GlobalThreadPool::instance().scheduleOrThrow([
@@ -143,7 +144,7 @@ public:
         {
             DB::ThreadStatus thread_status;
             std::apply(func, args);
-            state->finish();
+            state->set();
         });
     }
 
@@ -189,33 +190,7 @@ public:
 
 private:
     /// The state used in this object and inside the thread job.
-    class SharedState
-    {
-    private:
-        bool active;
-        std::mutex mutex;
-        std::condition_variable done_event;
-
-    public:
-        SharedState(bool active) : active(active) {}
-
-        void finish()
-        {
-            {
-                std::lock_guard lock(mutex);
-                active = false;
-            }
-            done_event.notify_one();
-        }
-
-        void wait()
-        {
-            std::unique_lock lock(mutex);
-            done_event.wait(lock, [this]{ return !active; });
-        }
-    };
-
-    std::shared_ptr<SharedState> state;
+    std::shared_ptr<Poco::Event> state;
 };
 
 
