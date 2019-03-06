@@ -51,11 +51,11 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
 
             if (depth_column && depth_column->isColumnConst())
             {
-                auto value = depth_column->getUInt(0);
-                if (!value)
+                auto value = depth_column->getInt(0);
+                if (value <= 0)
                     throw Exception(
                         "Arguments for function arrayEnumerateUniqRanked/arrayEnumerateDenseRanked incorrect: depth ("
-                            + std::to_string(value) + ") cant be 0.",
+                            + std::to_string(value) + ") cant be less or equal 0.",
                         ErrorCodes::BAD_ARGUMENTS);
 
                 if (i == 0)
