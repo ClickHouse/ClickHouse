@@ -59,6 +59,12 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
     endif ()
+
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+        if (WEVERYTHING)
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ctad-maybe-unsupported")
+        endif ()
+    endif ()
 endif ()
 
 if (USE_DEBUG_HELPERS)
@@ -137,12 +143,10 @@ endif ()
 add_subdirectory(src/Common/ZooKeeper)
 add_subdirectory(src/Common/Config)
 
-if (MAKE_STATIC_LIBRARIES)
+if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
 else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
-    set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR}.${VERSION_MINOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
-    install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
@@ -203,9 +207,10 @@ target_link_libraries (clickhouse_common_io
     ${CMAKE_DL_LIBS}
         PRIVATE
     rt
+        PUBLIC
+    roaring
 )
 
-target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 
@@ -237,6 +242,7 @@ target_link_libraries (dbms
     Threads::Threads
 )
 
+target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})

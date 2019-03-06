@@ -60,6 +60,8 @@ struct MergeTreeDataPart
 
     ColumnSize getTotalColumnsSize() const;
 
+    size_t getFileSizeOrZero(const String & file_name) const;
+
     /// Returns full path to part dir
     String getFullPath() const;
 
