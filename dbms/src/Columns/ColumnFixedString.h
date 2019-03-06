@@ -1,8 +1,7 @@
 #pragma once
 
-#include <string.h> // memcmp
-
 #include <Common/PODArray.h>
+#include <Common/memcmpSmall.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 
@@ -98,7 +97,7 @@ public:
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
-        return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
+        return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;

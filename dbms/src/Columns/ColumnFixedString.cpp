@@ -4,6 +4,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
+#include <Common/memcmpSmall.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -106,8 +107,7 @@ struct ColumnFixedString::less
     explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        /// TODO: memcmp slows down.
-        int res = memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
+        int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
         return positive ? (res < 0) : (res > 0);
     }
 };

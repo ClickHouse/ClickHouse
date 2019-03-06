@@ -11,11 +11,11 @@ add_library(clickhouse_functions ${LINK_MODE} ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        dbms
-    PRIVATE
         clickhouse_dictionaries
+        dbms
         ${CONSISTENT_HASHING_LIBRARY}
         consistent-hashing-sumbur
+        ${CITYHASH_LIBRARIES}
         ${FARMHASH_LIBRARIES}
         ${METROHASH_LIBRARIES}
         murmurhash
