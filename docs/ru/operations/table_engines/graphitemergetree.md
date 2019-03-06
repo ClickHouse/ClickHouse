@@ -72,12 +72,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## Конфигурация rollup
 
-Настройки для прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
+Настройки для прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup). Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
 
 Структура конфигурации rollup:
 
 ```
 required-columns
+pattern
+    regexp
+    function
+pattern
+    regexp
+    age + precision
+    ...
 pattern
     regexp
     function
@@ -91,15 +98,19 @@ default
     ...
 ```
 
-При обработке строки ClickHouse проверяет правила в разделе `pattern`. Если имя метрики соответствует шаблону `regexp`, то  применяются правила из раздела `pattern`, в противном случае из раздела `default`.
+**Важно**: порядок разделов `pattern` должен быть следующим:
 
-Правила определяются с помощью полей `function` и `age + precision`.
+1. Разделы *без* параметра `function` *или* `retention`.
+1. Разделы *с* параметрами `function` *и* `retention`.
+1. Раздел `default`.
 
-Поля для разделов `pattenrn` и `default`:
+При обработке строки ClickHouse проверяет правила в разделах `pattern`. Каждый из разделов `pattern` (включая `default`) может содержать параметр `function` для аггрегации, правила `retention` для прореживания или оба эти параметра. Если имя метрики соответствует шаблону `regexp`, то применяются правила из раздела (или разделов) `pattern`, в противном случае из раздела `default`.
+
+Поля для разделов `pattern` и `default`:
 
 - `regexp` – шаблон имени метрики.
 - `age` – минимальный возраст данных в секундах.
-- `precision` – точность определения возраста данных в секундах.
+- `precision` – точность определения возраста данных в секундах. Должен быть делителем для 86400 (количество секунд в дне).
 - `function` – имя агрегирующей функции, которую следует применить к данным, чей возраст оказался в интервале `[age, age + precision]`.
 
 `required-columns`:
@@ -117,6 +128,10 @@ default
     <time_column_name>Time</time_column_name>
     <value_column_name>Value</value_column_name>
     <version_column_name>Version</version_column_name>
+    <pattern>
+        <regexp>\.count$</regexp>
+        <function>sum</function>
+    </pattern>
     <pattern>
         <regexp>click_cost</regexp>
         <function>any</function>
