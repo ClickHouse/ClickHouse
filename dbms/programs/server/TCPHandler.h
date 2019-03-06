@@ -95,6 +95,9 @@ public:
 
     void run();
 
+    /// This method is called right before the query execution.
+    virtual void customizeContext(DB::Context & /*context*/) {}
+
 private:
     IServer & server;
     Poco::Logger * log;
