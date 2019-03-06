@@ -94,7 +94,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
         {
             PaddedPODArray<std::pair<T, size_t>> pairs(s);
             for (size_t i = 0; i < s; ++i)
-                pairs.data()[i] = {data[i], i};
+                pairs[i] = {data[i], i};
 
             radixSort(pairs.data(), s);
 
@@ -338,6 +338,10 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
 template class ColumnVector<UInt32>;
@@ -350,4 +354,7 @@ template class ColumnVector<Int64>;
 template class ColumnVector<Int128>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
+#pragma GCC diagnostic pop
+#endif
 }

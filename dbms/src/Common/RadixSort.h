@@ -95,7 +95,7 @@ struct RadixSortFloatTraits
 };
 
 template <typename Float>
-struct RadixSortFloatPTraits
+struct RadixSortPairFloatKeyTraits
 {
     using Element = std::pair<Float, size_t>;
     using Key = Float;
@@ -178,7 +178,7 @@ struct RadixSortIntTraits
 };
 
 template <typename Int>
-struct RadixSortIntPTraits
+struct RadixSortPairIntKeyTraits
 {
     using Element = std::pair<Int, size_t>;
     using Key = Int;
