@@ -198,7 +198,7 @@ list(APPEND PARQUET_SRCS
 add_library(${PARQUET_LIBRARY} ${LINK_MODE} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake) # makes config.h
-target_link_libraries(${PARQUET_LIBRARY} PRIVATE ${ARROW_LIBRARY} ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})
+target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})
 target_include_directories(${PARQUET_LIBRARY} PRIVATE ${Boost_INCLUDE_DIRS})
 
 if(SANITIZE STREQUAL "undefined")

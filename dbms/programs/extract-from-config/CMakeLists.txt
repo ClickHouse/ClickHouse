@@ -1,8 +1,5 @@
-add_library (clickhouse-extract-from-config-lib ${LINK_MODE} ExtractFromConfig.cpp)
-target_link_libraries (clickhouse-extract-from-config-lib PRIVATE clickhouse_common_config clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+set(CLICKHOUSE_EXTRACT_FROM_CONFIG_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ExtractFromConfig.cpp)
+set(CLICKHOUSE_EXTRACT_FROM_CONFIG_LINK PRIVATE clickhouse_common_config clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
+#set(CLICKHOUSE_EXTRACT_FROM_CONFIG_INCLUDE SYSTEM PRIVATE ...)
 
-if (CLICKHOUSE_SPLIT_BINARY)
-    add_executable (clickhouse-extract-from-config clickhouse-extract-from-config.cpp)
-    target_link_libraries (clickhouse-extract-from-config PRIVATE clickhouse-extract-from-config-lib)
-    install (TARGETS clickhouse-extract-from-config ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-endif ()
+clickhouse_program_add(extract-from-config)

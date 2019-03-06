@@ -591,7 +591,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
-        as_storage_lock = as_storage->lockStructure(false);
+        as_storage_lock = as_storage->lockStructure(false, context.getCurrentQueryId());
     }
 
     /// Set and retrieve list of columns.

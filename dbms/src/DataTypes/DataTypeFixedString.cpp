@@ -209,10 +209,12 @@ void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr
 }
 
 
-void DataTypeFixedString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeFixedString::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
+    if (value_index)
+        return;
     const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    protobuf.writeString(StringRef(pos, n));
+    value_index = static_cast<bool>(protobuf.writeString(StringRef(pos, n)));
 }
 
 

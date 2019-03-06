@@ -190,6 +190,15 @@ MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
 }
 
 
+size_t MergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
+{
+    auto checksum = checksums.files.find(file_name);
+    if (checksum == checksums.files.end())
+        return 0;
+    return checksum->second.file_size;
+}
+
+
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
   * If no checksums are present returns the name of the first physically existing column.
   */
