@@ -417,7 +417,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree {#server_settings-merge_tree}
 
-Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md).
+Fine tuning for tables in the [MergeTree](../../operations/table_engines/mergetree.md).
 
 For more information, see the MergeTreeSettings.h header file.
 
