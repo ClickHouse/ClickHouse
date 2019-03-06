@@ -30,7 +30,7 @@
     <query>SELECT DISTINCT Title, ngramDistanceCaseInsensitive(Title, 'nO MOrE') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
     <query>SELECT DISTINCT Title, ngramDistanceUTF8(Title, 'метрика') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
     <query>SELECT DISTINCT URL, ngramDistanceUTF8(URL, 'как дела') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
-    <query>SELECT DISTINCT URL, ngramDistanceUTF8(URL, 'как дела') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
+    <query>SELECT DISTINCT URL, ngramDistanceUTF8(URL, 'чем занимаешься') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
 
     <query>SELECT DISTINCT Title, ngramDistanceCaseInsensitiveUTF8(Title, 'Метрика') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
     <query>SELECT DISTINCT URL, ngramDistanceCaseInsensitiveUTF8(URL, 'как дЕлА') AS distance FROM hits_100m_single ORDER BY distance ASC LIMIT 50</query>
