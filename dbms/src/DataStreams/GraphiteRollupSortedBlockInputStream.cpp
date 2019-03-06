@@ -49,54 +49,53 @@ Graphite::RollupRule GraphiteRollupSortedBlockInputStream::selectPatternForPath(
     const Graphite::Pattern * first_match = &undef_pattern;
 
     for (const auto & pattern : params.patterns)
-        if (!pattern.regexp || pattern.regexp->match(path.data, path.size))
+    {
+        if (!pattern.regexp)
         {
-            if (!pattern.regexp)
+            /// Default pattern
+            if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
             {
-                /// Default pattern
-                if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
-                {
-                    /// There is only default pattern for both retention and aggregation
-                    return std::pair(&pattern, &pattern);
-                }
-                if (pattern.type != first_match->type)
-                {
-                    if (first_match->type == first_match->TypeRetention)
-                    {
-                        return std::pair(first_match, &pattern);
-                    }
-                    if (first_match->type == first_match->TypeAggregation)
-                    {
-                        return std::pair(&pattern, first_match);
-                    }
-                }
+                /// There is only default pattern for both retention and aggregation
+                return std::pair(&pattern, &pattern);
             }
-            else
+            if (pattern.type != first_match->type)
             {
-                /// General pattern with matched path
-                if (pattern.type == pattern.TypeAll)
+                if (first_match->type == first_match->TypeRetention)
                 {
-                   /// Only for not default patterns with both function and retention parameters
-                   return std::pair(&pattern, &pattern);
+                    return std::pair(first_match, &pattern);
                 }
-                if (first_match->type == first_match->TypeUndef)
+                if (first_match->type == first_match->TypeAggregation)
                 {
-                    first_match = &pattern;
-                    continue;
-                }
-                if (pattern.type != first_match->type)
-                {
-                    if (first_match->type == first_match->TypeRetention)
-                    {
-                        return std::pair(first_match, &pattern);
-                    }
-                    if (first_match->type == first_match->TypeAggregation)
-                    {
-                        return std::pair(&pattern, first_match);
-                    }
+                    return std::pair(&pattern, first_match);
                 }
             }
         }
+        else if (pattern.regexp->match(path.data, path.size))
+        {
+            /// General pattern with matched path
+            if (pattern.type == pattern.TypeAll)
+            {
+               /// Only for not default patterns with both function and retention parameters
+               return std::pair(&pattern, &pattern);
+            }
+            if (first_match->type == first_match->TypeUndef)
+            {
+                first_match = &pattern;
+                continue;
+            }
+            if (pattern.type != first_match->type)
+            {
+                if (first_match->type == first_match->TypeRetention)
+                {
+                    return std::pair(first_match, &pattern);
+                }
+                if (first_match->type == first_match->TypeAggregation)
+                {
+                    return std::pair(&pattern, first_match);
+                }
+            }
+        }
+    }
 
     return {nullptr, nullptr};
 }
