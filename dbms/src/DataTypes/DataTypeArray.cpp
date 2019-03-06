@@ -498,6 +498,15 @@ bool DataTypeArray::equals(const IDataType & rhs) const
 }
 
 
+size_t DataTypeArray::getNumberOfDimensions() const
+{
+    const DataTypeArray * nested_array = typeid_cast<const DataTypeArray *>(nested.get());
+    if (!nested_array)
+        return 1;
+    return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
+}
+
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
