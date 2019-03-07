@@ -33,7 +33,7 @@ static Block getBlockWithConstants(
 }
 
 
-// Builds reverse polish notation
+/// Builds reverse polish notation
 template <typename RPNElement>
 class RPNBuilder
 {
@@ -75,7 +75,7 @@ public:
         }
     }
 
-    void extractRPN(RPN & out) { std::swap(out, rpn); }
+    void extractRPN(RPN & out) { out = std::move(rpn); }
 
 private:
     void traverseAST(const ASTPtr & node)
