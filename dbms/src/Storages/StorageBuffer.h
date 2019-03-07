@@ -83,7 +83,7 @@ public:
     /// The structure of the subordinate table is not checked and does not change.
     void alter(
         const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureLockHolder & structure_locks) override;
+        const Context & context, TableStructureWriteLockHolder & structure_lock) override;
 
 private:
     String name;

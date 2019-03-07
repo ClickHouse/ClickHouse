@@ -83,7 +83,7 @@ public:
     /// the structure of the sub-table is not checked
     void alter(
         const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureLockHolder & structure_lock) override;
+        const Context & context, TableStructureWriteLockHolder & structure_lock) override;
 
     void startup() override;
     void shutdown() override;

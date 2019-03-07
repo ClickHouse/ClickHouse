@@ -69,7 +69,6 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         {
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            // TODO
             auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Drop table from memory, don't touch data and metadata
             database_and_table.first->detachTable(database_and_table.second->getTableName());
