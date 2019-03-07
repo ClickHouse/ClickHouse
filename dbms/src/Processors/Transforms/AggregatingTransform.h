@@ -41,10 +41,10 @@ struct ManyAggregatedData
     }
 };
 
-using AggregatingTransformParamsPtr = std::unique_ptr<AggregatingTransformParams>;
+using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
-class AggregatingTransform : public IAccumulatingTransform
+class AggregatingTransform : public IProcessor
 {
 public:
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
@@ -56,21 +56,16 @@ public:
     ~AggregatingTransform() override;
 
     String getName() const override { return "AggregatingTransform"; }
+    Status prepare() override;
+    void work() override;
+    Processors expandPipeline() override;
 
 protected:
-    void consume(Chunk chunk) override;
-    Chunk generate() override;
+    void consume(Chunk chunk);
 
 private:
     /// To read the data that was flushed into the temporary data file.
-    struct TemporaryFileStream
-    {
-        ReadBufferFromFile file_in;
-        CompressedReadBuffer compressed_in;
-        BlockInputStreamPtr block_in;
-
-        explicit TemporaryFileStream(const std::string & path);
-    };
+    Processors processors;
 
     AggregatingTransformParamsPtr params;
     Logger * log = &Logger::get("AggregatingTransform");
@@ -85,9 +80,6 @@ private:
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
 
-    std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;
-    std::unique_ptr<IBlockInputStream> impl;
-
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
 
@@ -95,6 +87,11 @@ private:
     UInt64 src_bytes = 0;
 
     bool is_generate_initialized = false;
+    bool is_consume_finished = false;
+    bool is_pipeline_created = false;
+
+    Chunk current_chunk;
+    bool read_current_chunk = false;
 
     void initGenerate();
 };
