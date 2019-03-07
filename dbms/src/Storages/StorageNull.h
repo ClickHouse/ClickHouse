@@ -43,7 +43,7 @@ public:
 
     void alter(
         const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & structure_lock) override;
+        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
 private:
     String table_name;

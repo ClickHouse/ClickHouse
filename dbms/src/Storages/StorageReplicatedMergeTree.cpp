@@ -1624,7 +1624,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     PartDescriptions parts_to_add;
     MergeTreeData::DataPartsVector parts_to_remove;
 
-    auto structure_lock_dst_table = lockStructureForShare(false, RWLockImpl::NO_QUERY);
+    auto table_lock_holder_dst_table = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
     for (size_t i = 0; i < entry_replace.new_part_names.size(); ++i)
     {
@@ -1662,7 +1662,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     }
 
     StoragePtr source_table;
-    TableStructureReadLockHolder structure_lock_src_table;
+    TableStructureReadLockHolder table_lock_holder_src_table;
     String source_table_name = entry_replace.from_database + "." + entry_replace.from_table;
 
     auto clone_data_parts_from_source_table = [&] () -> size_t
@@ -1686,7 +1686,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             return 0;
         }
 
-        structure_lock_src_table = source_table->lockStructureForShare(false, RWLockImpl::NO_QUERY);
+        table_lock_holder_src_table = source_table->lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
         MergeTreeData::DataPartStates valid_states{MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed,
                                                    MergeTreeDataPartState::Outdated};
@@ -2719,9 +2719,9 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     LOG_DEBUG(log, "Fetching part " << part_name << " from " << source_replica_path);
 
-    TableStructureReadLockHolder table_lock;
+    TableStructureReadLockHolder table_lock_holder;
     if (!to_detached)
-        table_lock = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+        table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     /// Logging
     Stopwatch stopwatch;
@@ -3089,7 +3089,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
 void StorageReplicatedMergeTree::alter(
     const AlterCommands & params, const String & /*database_name*/, const String & /*table_name*/,
-    const Context & query_context, TableStructureWriteLockHolder & structure_lock)
+    const Context & query_context, TableStructureWriteLockHolder & table_lock_holder)
 {
     assertNotReadonly();
 
@@ -3167,7 +3167,7 @@ void StorageReplicatedMergeTree::alter(
 
     LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
 
-    structure_lock.release();
+    table_lock_holder.release();
 
     /// Wait until all replicas will apply ALTER.
 
