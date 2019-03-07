@@ -60,8 +60,7 @@ StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context &
                 {
                     Config new_config =
                     {
-                        /// FIXME Do we own a table? (possible dangling reference)
-                        &table_data->merging_params.graphite_params,
+                        table_data->merging_params.graphite_params,
                         { table_data->getDatabaseName() },
                         { table_data->getTableName() },
                     };
@@ -86,7 +85,7 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context
     for (const auto & config : graphite_configs)
     {
         UInt16 priority = 0;
-        for (const auto & pattern : config.second.graphite_params->patterns)
+        for (const auto & pattern : config.second.graphite_params.patterns)
         {
             bool is_default = pattern.regexp == nullptr;
             String regexp;
@@ -99,8 +98,7 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context
             else
             {
                 priority++;
-                /// FIXME Null pointer dereference for trivial patterns.
-                regexp = pattern.regexp->getRE2()->pattern();
+                regexp = pattern.regexp_str;
             }
 
             if (pattern.function)
