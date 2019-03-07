@@ -10,6 +10,7 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
@@ -165,25 +166,12 @@ BloomFilterCondition::BloomFilterCondition(
     const Context & context,
     const MergeTreeBloomFilterIndex & index_) : index(index_), prepared_sets(query_info.sets)
 {
-    /// Do preparation similar to KeyCondition.
-    Block block_with_constants = KeyCondition::getBlockWithConstants(
-            query_info.query, query_info.syntax_analyzer_result, context);
-
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
-    if (select.where_expression)
-    {
-        traverseAST(select.where_expression, block_with_constants);
-
-        if (select.prewhere_expression)
+    RPNBuilder<RPNElement>(
+        query_info, context,
+        [this] (const ASTPtr & node, const Context & /* context */, Block & block_with_constants, RPNElement & out) -> bool
         {
-            traverseAST(select.prewhere_expression, block_with_constants);
-            rpn.emplace_back(RPNElement::FUNCTION_AND);
-        }
-    }
-    else if (select.prewhere_expression)
-        traverseAST(select.prewhere_expression, block_with_constants);
-    else
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
+            return this->atomFromAST(node, block_with_constants, out);
+        }).extractRPN(rpn);
 }
 
 bool BloomFilterCondition::alwaysUnknownOrTrue() const
@@ -322,37 +310,6 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
     return rpn_stack[0].can_be_true;
 }
 
-void BloomFilterCondition::traverseAST(
-    const ASTPtr & node, Block & block_with_constants)
-{
-    /// The same as in KeyCondition.
-    RPNElement element;
-
-    if (auto * func = typeid_cast<ASTFunction *>(&*node))
-    {
-        if (operatorFromAST(func, element))
-        {
-            auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
-            for (size_t i = 0, size = args.size(); i < size; ++i)
-            {
-                traverseAST(args[i], block_with_constants);
-
-                if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
-                    rpn.emplace_back(std::move(element));
-            }
-
-            return;
-        }
-    }
-
-    if (!atomFromAST(node, block_with_constants, element))
-    {
-        element.function = RPNElement::FUNCTION_UNKNOWN;
-    }
-
-    rpn.emplace_back(std::move(element));
-}
-
 bool BloomFilterCondition::getKey(const ASTPtr & node, size_t & key_column_num)
 {
     auto it = std::find(index.columns.begin(), index.columns.end(), node->getColumnName());
@@ -427,32 +384,6 @@ bool BloomFilterCondition::atomFromAST(
     }
 
     return false;
-}
-
-bool BloomFilterCondition::operatorFromAST(
-    const ASTFunction * func, RPNElement & out)
-{
-    /// The same as in KeyCondition.
-    const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
-
-    if (func->name == "not")
-    {
-        if (args.size() != 1)
-            return false;
-
-        out.function = RPNElement::FUNCTION_NOT;
-    }
-    else
-    {
-        if (func->name == "and" || func->name == "indexHint")
-            out.function = RPNElement::FUNCTION_AND;
-        else if (func->name == "or")
-            out.function = RPNElement::FUNCTION_OR;
-        else
-            return false;
-    }
-
-    return true;
 }
 
 bool BloomFilterCondition::tryPrepareSetBloomFilter(
