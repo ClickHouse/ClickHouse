@@ -20,7 +20,7 @@ public:
 
     struct Config
     {
-        const Graphite::Params * graphite_params;
+        Graphite::Params graphite_params;
         Array databases;
         Array tables;
     };
