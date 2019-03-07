@@ -83,7 +83,25 @@ If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception
 
 ## insert_sample_with_metadata
 
-For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
+Turns on the extended data exchange between a ClickHouse client and a ClickHouse server for `INSERT` queries.
+
+When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure sample from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+
+When the extended data exchange is enabled, the server sends the additional metadata along with the table structure sample. The composition of the metadata depends on the operation.
+
+!!! note "Note"
+    The functionality of the extended data exchange consumes additional computing resources on the server and can reduce the performance.
+
+Tasks where you may need the extended data exchange enabled:
+
+1. Inserting the data of the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+
+**Possible values**
+
+- 0 — Functionality is disabled.
+- 1 — Functionality is enabled.
+
+**Default value:** 0.
 
 ## join_default_strictness {#settings-join_default_strictness}
 
