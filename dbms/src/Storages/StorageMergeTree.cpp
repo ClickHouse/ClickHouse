@@ -196,11 +196,11 @@ void StorageMergeTree::alter(
     const String & current_database_name,
     const String & current_table_name,
     const Context & context,
-    TableStructureWriteLockHolder & structure_lock)
+    TableStructureWriteLockHolder & table_lock_holder)
 {
     if (!params.is_mutable())
     {
-        lockStructureExclusively(structure_lock, context.getCurrentQueryId());
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndicesDescription();
         params.apply(new_columns);
@@ -212,7 +212,7 @@ void StorageMergeTree::alter(
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
     auto merge_blocker = merger_mutator.actions_blocker.cancel();
 
-    lockNewDataStructureExclusively(structure_lock, context.getCurrentQueryId());
+    lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     data.checkAlter(params, context);
 
@@ -231,7 +231,7 @@ void StorageMergeTree::alter(
             transactions.push_back(std::move(transaction));
     }
 
-    lockStructureExclusively(structure_lock, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
     {
@@ -453,7 +453,7 @@ bool StorageMergeTree::merge(
     bool deduplicate,
     String * out_disable_reason)
 {
-    auto structure_lock = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     FutureMergedMutatedPart future_part;
 
@@ -563,7 +563,7 @@ bool StorageMergeTree::merge(
 
 bool StorageMergeTree::tryMutatePart()
 {
-    auto structure_lock = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     FutureMergedMutatedPart future_part;
     MutationCommands commands;
