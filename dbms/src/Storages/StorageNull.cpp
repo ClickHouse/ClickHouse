@@ -32,9 +32,9 @@ void registerStorageNull(StorageFactory & factory)
 
 void StorageNull::alter(
     const AlterCommands & params, const String & current_database_name, const String & current_table_name,
-    const Context & context, TableStructureLockHolder & structure_lock)
+    const Context & context, TableStructureWriteLockHolder & structure_lock)
 {
-    lockStructureForAlter(structure_lock, context.getCurrentQueryId());
+    lockStructureExclusively(structure_lock, context.getCurrentQueryId());
 
     ColumnsDescription new_columns = getColumns();
     IndicesDescription new_indices = getIndicesDescription();

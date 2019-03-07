@@ -118,7 +118,7 @@ public:
 
     void alter(
         const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & query_context, TableStructureLockHolder & structure_lock) override;
+        const Context & query_context, TableStructureWriteLockHolder & structure_lock) override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 

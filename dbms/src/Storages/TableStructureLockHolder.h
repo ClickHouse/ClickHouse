@@ -5,19 +5,30 @@
 namespace DB
 {
 
-struct TableStructureLockHolder
+struct TableStructureWriteLockHolder
 {
+    void release()
+    {
+        *this = TableStructureWriteLockHolder();
+    }
+
+private:
+    friend class IStorage;
+
     /// Order is important.
     RWLockImpl::LockHolder alter_intention_lock;
     RWLockImpl::LockHolder new_data_structure_lock;
     RWLockImpl::LockHolder structure_lock;
+};
 
-    void release()
-    {
-        structure_lock.reset();
-        new_data_structure_lock.reset();
-        alter_intention_lock.reset();
-    }
+struct TableStructureReadLockHolder
+{
+private:
+    friend class IStorage;
+
+    /// Order is important.
+    RWLockImpl::LockHolder new_data_structure_lock;
+    RWLockImpl::LockHolder structure_lock;
 };
 
 }

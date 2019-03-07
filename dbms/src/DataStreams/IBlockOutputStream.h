@@ -58,10 +58,10 @@ public:
 
     /** Don't let to alter table while instance of stream is alive.
       */
-    void addTableLock(const TableStructureLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
 
 private:
-    std::vector<TableStructureLockHolder> table_locks;
+    std::vector<TableStructureReadLockHolder> table_locks;
 };
 
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;

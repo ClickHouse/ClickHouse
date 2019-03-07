@@ -84,9 +84,9 @@ public:
     virtual bool supportsDeduplication() const { return false; }
 
 
-    TableStructureLockHolder lockStructure(bool will_add_new_data, const String & query_id)
+    TableStructureReadLockHolder lockStructureForShare(bool will_add_new_data, const String & query_id)
     {
-        TableStructureLockHolder result;
+        TableStructureReadLockHolder result;
         if (will_add_new_data)
             result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Read, query_id);
         result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
@@ -96,9 +96,9 @@ public:
         return result;
     }
 
-    TableStructureLockHolder lockIntentionForAlter(const String & query_id)
+    TableStructureWriteLockHolder lockAlterIntention(const String & query_id)
     {
-        TableStructureLockHolder result;
+        TableStructureWriteLockHolder result;
         result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
 
         if (is_dropped)
@@ -106,19 +106,16 @@ public:
         return result;
     }
 
-    void lockDataForAlter(TableStructureLockHolder & lock_holder, const String & query_id)
+    void lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
     {
         if (!lock_holder.alter_intention_lock)
             throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.",
                 ErrorCodes::LOGICAL_ERROR);
 
         lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-
-        if (is_dropped)
-            throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
     }
 
-    void lockStructureForAlter(TableStructureLockHolder & lock_holder, const String & query_id)
+    void lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
     {
         if (!lock_holder.alter_intention_lock)
             throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.",
@@ -127,20 +124,18 @@ public:
         if (!lock_holder.new_data_structure_lock)
             lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
         lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
-
-        if (is_dropped)
-            throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
     }
 
-    TableStructureLockHolder lockExclusively(const String & query_id)
+    TableStructureWriteLockHolder lockExclusively(const String & query_id)
     {
-        TableStructureLockHolder result;
+        TableStructureWriteLockHolder result;
         result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
-        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-        result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
 
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
+
+        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
+        result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
 
         return result;
     }
@@ -221,7 +216,7 @@ public:
       * This method must fully execute the ALTER query, taking care of the locks itself.
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
-    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context, TableStructureLockHolder & structure_lock);
+    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context, TableStructureWriteLockHolder & structure_lock);
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.

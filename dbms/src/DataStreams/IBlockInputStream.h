@@ -115,7 +115,7 @@ public:
     size_t checkDepth(size_t max_depth) const { return checkDepthImpl(max_depth, max_depth); }
 
     /// Do not allow to change the table while the blocks stream and its children are alive.
-    void addTableLock(const TableStructureLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
 
     /// Get information about execution speed.
     const BlockStreamProfileInfo & getProfileInfo() const { return info; }
@@ -242,7 +242,7 @@ public:
 protected:
     /// Order is important: `table_locks` must be destroyed after `children` so that tables from
     /// which child streams read are protected by the locks during the lifetime of the child streams.
-    std::vector<TableStructureLockHolder> table_locks;
+    std::vector<TableStructureReadLockHolder> table_locks;
 
     BlockInputStreams children;
     std::shared_mutex children_mutex;

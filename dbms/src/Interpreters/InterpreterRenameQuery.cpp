@@ -96,7 +96,7 @@ BlockIO InterpreterRenameQuery::execute()
             table_guards.emplace(to, context.getDDLGuard(to.database_name, to.table_name));
     }
 
-    std::vector<TableStructureLockHolder> locks;
+    std::vector<TableStructureWriteLockHolder> locks;
     locks.reserve(unique_tables_from.size());
 
     for (const auto & names : unique_tables_from)
