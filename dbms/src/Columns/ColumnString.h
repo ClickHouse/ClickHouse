@@ -71,21 +71,25 @@ public:
 
     Field operator[](size_t n) const override
     {
+        assert(n < size());
         return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     void get(size_t n, Field & res) const override
     {
+        assert(n < size());
         res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     StringRef getDataAt(size_t n) const override
     {
+        assert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     StringRef getDataAtWithTerminatingZero(size_t n) const override
     {
+        assert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
@@ -103,7 +107,7 @@ public:
         const size_t new_size = old_size + size_to_append;
 
         chars.resize(new_size);
-        memcpy(&chars[old_size], s.c_str(), size_to_append);
+        memcpy(chars.data() + old_size, s.c_str(), size_to_append);
         offsets.push_back(new_size);
     }
 
@@ -132,7 +136,7 @@ public:
                 const size_t new_size = old_size + size_to_append;
 
                 chars.resize(new_size);
-                memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[offset], size_to_append);
+                memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[offset], size_to_append);
                 offsets.push_back(new_size);
             }
         }
@@ -143,7 +147,7 @@ public:
             const size_t new_size = old_size + size_to_append;
 
             chars.resize(new_size);
-            memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[0], size_to_append);
+            memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[0], size_to_append);
             offsets.push_back(new_size);
         }
     }
@@ -155,7 +159,7 @@ public:
 
         chars.resize(new_size);
         if (length)
-            memcpy(&chars[old_size], pos, length);
+            memcpy(chars.data() + old_size, pos, length);
         chars[old_size + length] = 0;
         offsets.push_back(new_size);
     }
@@ -167,7 +171,7 @@ public:
         const size_t new_size = old_size + length;
 
         chars.resize(new_size);
-        memcpy(&chars[old_size], pos, length);
+        memcpy(chars.data() + old_size, pos, length);
         offsets.push_back(new_size);
     }
 
