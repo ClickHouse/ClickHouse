@@ -41,11 +41,11 @@ StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context &
 
             if (const StorageMergeTree * merge_tree = dynamic_cast<StorageMergeTree *>(table.get()))
             {
-                table_data = & merge_tree->getData();
+                table_data = &merge_tree->getData();
             }
             else if (const StorageReplicatedMergeTree * replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
             {
-                table_data = & replicated_merge_tree->getData();
+                table_data = &replicated_merge_tree->getData();
             }
             else
             {
@@ -54,16 +54,18 @@ StorageSystemGraphite::Configs StorageSystemGraphite::getConfigs(const Context &
 
             if (table_data->merging_params.mode == MergeTreeData::MergingParams::Graphite)
             {
-                const String config_name = table_data->merging_params.graphite_params.config_name;
+                const String & config_name = table_data->merging_params.graphite_params.config_name;
 
-                if (graphite_configs.find(config_name) == graphite_configs.end())
+                if (!graphite_configs.count(config_name))
                 {
-                  Config new_config = {
-                      & table_data->merging_params.graphite_params,
-                      { table_data->getDatabaseName() },
-                      { table_data->getTableName() },
-                  };
-                  graphite_configs.insert(std::make_pair(config_name, new_config));
+                    Config new_config =
+                    {
+                        /// FIXME Do we own a table? (possible dangling reference)
+                        &table_data->merging_params.graphite_params,
+                        { table_data->getDatabaseName() },
+                        { table_data->getTableName() },
+                    };
+                    graphite_configs.emplace(config_name, new_config);
                 }
                 else
                 {
@@ -87,8 +89,8 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context
         for (const auto & pattern : config.second.graphite_params->patterns)
         {
             bool is_default = pattern.regexp == nullptr;
-            String regexp = "";
-            String function = "";
+            String regexp;
+            String function;
 
             if (is_default)
             {
@@ -97,6 +99,7 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context
             else
             {
                 priority++;
+                /// FIXME Null pointer dereference for trivial patterns.
                 regexp = pattern.regexp->getRE2()->pattern();
             }
 
