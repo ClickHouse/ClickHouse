@@ -46,7 +46,7 @@ public:
     /// the structure of sub-tables is not checked
     void alter(
         const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureLockHolder & structure_lock) override;
+        const Context & context, TableStructureWriteLockHolder & structure_lock) override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
@@ -56,7 +56,7 @@ private:
     OptimizedRegularExpression table_name_regexp;
     Context global_context;
 
-    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureLockHolder>>;
+    using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockHolder>>;
 
     StorageListWithLocks getSelectedTables(const String & query_id) const;
 
@@ -78,7 +78,7 @@ protected:
 
     BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
                                           const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
-                                          const TableStructureLockHolder & struct_lock, Names & real_column_names,
+                                          const TableStructureReadLockHolder & struct_lock, Names & real_column_names,
                                           Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                           bool concat_streams = false);
 
