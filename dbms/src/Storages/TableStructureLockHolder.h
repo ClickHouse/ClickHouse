@@ -5,6 +5,9 @@
 namespace DB
 {
 
+/// Structs that hold table structure (columns, their types, default values etc.) locks when executing queries.
+/// See IStorage::lock* methods for comments.
+
 struct TableStructureWriteLockHolder
 {
     void release()
