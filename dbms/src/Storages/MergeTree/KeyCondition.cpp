@@ -281,9 +281,9 @@ KeyCondition::KeyCondition(
 
     RPNBuilder<RPNElement>(
         query_info, context,
-        [this] (const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out) -> bool
+        [this] (const ASTPtr & node, const Context & atom_context, Block & block_with_constants, RPNElement & out) -> bool
         {
-            return this->atomFromAST(node, context, block_with_constants, out);
+            return this->atomFromAST(node, atom_context, block_with_constants, out);
         }).extractRPN(rpn);
 }
 
