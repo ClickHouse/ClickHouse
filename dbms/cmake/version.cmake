@@ -1,5 +1,5 @@
 # This strings autochanged from release_lib.sh:
-set(VERSION_REVISION 54412) # changed manually for tests
+set(VERSION_REVISION 54412)
 set(VERSION_MAJOR 18)
 set(VERSION_MINOR 16)
 set(VERSION_PATCH 1)
