@@ -36,9 +36,10 @@ struct ColumnAliasesMatcher
     {
         const std::vector<DatabaseAndTableWithAlias> tables;
         bool public_names;
-        AsteriskSemantic::RevertedAliases rev_aliases;
-        std::unordered_map<String, String> aliases;
+        AsteriskSemantic::RevertedAliases rev_aliases;  /// long_name -> aliases
+        std::unordered_map<String, String> aliases;     /// alias -> long_name
         std::vector<std::pair<ASTIdentifier *, bool>> compound_identifiers;
+        std::set<String> allowed_long_names;            /// original names allowed as aliases '--t.x as t.x' (select expressions only).
 
         Data(std::vector<DatabaseAndTableWithAlias> && tables_)
             : tables(tables_)
@@ -51,29 +52,37 @@ struct ColumnAliasesMatcher
 
             for (auto & [identifier, is_public] : compound_identifiers)
             {
-                auto it = rev_aliases.find(identifier->name);
+                String long_name = identifier->name;
+
+                auto it = rev_aliases.find(long_name);
                 if (it == rev_aliases.end())
                 {
                     bool last_table = IdentifierSemantic::canReferColumnToTable(*identifier, tables.back());
                     if (!last_table)
                     {
-                        String long_name = identifier->name;
                         String alias = hide_prefix + long_name;
                         aliases[alias] = long_name;
                         rev_aliases[long_name].push_back(alias);
 
                         identifier->setShortName(alias);
                         if (is_public)
+                        {
                             identifier->setAlias(long_name);
+                            allowed_long_names.insert(long_name);
+                        }
                     }
                     else if (is_public)
-                        identifier->setAlias(identifier->name); /// prevent crop long to short name
+                        identifier->setAlias(long_name); /// prevent crop long to short name
                 }
                 else
                 {
                     if (it->second.empty())
-                        throw Exception("No alias for '" + identifier->name + "'", ErrorCodes::LOGICAL_ERROR);
-                    identifier->setShortName(it->second[0]);
+                        throw Exception("No alias for '" + long_name + "'", ErrorCodes::LOGICAL_ERROR);
+
+                    if (is_public && allowed_long_names.count(long_name))
+                        ; /// leave original name unchanged for correct output
+                    else
+                        identifier->setShortName(it->second[0]);
                 }
             }
         }
@@ -131,7 +140,7 @@ struct ColumnAliasesMatcher
                 node.setAlias("");
             }
         }
-        else
+        else if (node.compound())
             data.compound_identifiers.emplace_back(&node, data.public_names);
     }
 };

@@ -602,6 +602,8 @@ void HTTPHandler::processQuery(
         });
     }
 
+    customizeContext(context);
+
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response] (const String & content_type) { response.setContentType(content_type); },
         [&response] (const String & current_query_id) { response.add("Query-Id", current_query_id); });
