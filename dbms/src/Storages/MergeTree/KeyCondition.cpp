@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -278,31 +279,12 @@ KeyCondition::KeyCondition(
             key_columns[name] = i;
     }
 
-    /** Evaluation of expressions that depend only on constants.
-      * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
-      */
-    Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
-
-    /// Trasform WHERE section to Reverse Polish notation
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
-    if (select.where_expression)
-    {
-        traverseAST(select.where_expression, context, block_with_constants);
-
-        if (select.prewhere_expression)
+    RPNBuilder<RPNElement>(
+        query_info, context,
+        [this] (const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out) -> bool
         {
-            traverseAST(select.prewhere_expression, context, block_with_constants);
-            rpn.emplace_back(RPNElement::FUNCTION_AND);
-        }
-    }
-    else if (select.prewhere_expression)
-    {
-        traverseAST(select.prewhere_expression, context, block_with_constants);
-    }
-    else
-    {
-        rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
-    }
+            return this->atomFromAST(node, context, block_with_constants, out);
+        }).extractRPN(rpn);
 }
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
@@ -363,39 +345,6 @@ static void applyFunction(
     func->execute(block, {0}, 1, 1);
 
     block.safeGetByPosition(1).column->get(0, res_value);
-}
-
-
-void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
-{
-    RPNElement element;
-
-    if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
-    {
-        if (operatorFromAST(func, element))
-        {
-            auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
-            for (size_t i = 0, size = args.size(); i < size; ++i)
-            {
-                traverseAST(args[i], context, block_with_constants);
-
-                /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
-                  * - in this case `n - 1` elements are added (where `n` is the number of arguments).
-                  */
-                if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
-                    rpn.emplace_back(std::move(element));
-            }
-
-            return;
-        }
-    }
-
-    if (!atomFromAST(node, context, block_with_constants, element))
-    {
-        element.function = RPNElement::FUNCTION_UNKNOWN;
-    }
-
-    rpn.emplace_back(std::move(element));
 }
 
 
@@ -729,34 +678,6 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
     }
 
     return false;
-}
-
-bool KeyCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
-{
-    /// Functions AND, OR, NOT.
-    /** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-      * (or, the same thing - calling the function `and` from one argument).
-      */
-    const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
-
-    if (func->name == "not")
-    {
-        if (args.size() != 1)
-            return false;
-
-        out.function = RPNElement::FUNCTION_NOT;
-    }
-    else
-    {
-        if (func->name == "and" || func->name == "indexHint")
-            out.function = RPNElement::FUNCTION_AND;
-        else if (func->name == "or")
-            out.function = RPNElement::FUNCTION_OR;
-        else
-            return false;
-    }
-
-    return true;
 }
 
 String KeyCondition::toString() const
