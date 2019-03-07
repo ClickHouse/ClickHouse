@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 /// 0b11 -- can be true and false at the same time
-const Field UNKNOWN_FIELD(3);
+const Field UNKNOWN_FIELD(3u);
 
 
 MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index)
@@ -47,7 +47,16 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & type = index.data_types[i];
-        type->serializeBinaryBulk(*columns[i], ostr, 0, size());
+
+        IDataType::SerializeBinaryBulkSettings settings;
+        settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
+        settings.position_independent_encoding = false;
+        settings.low_cardinality_max_dictionary_size = 0;
+
+        IDataType::SerializeBinaryBulkStatePtr state;
+        type->serializeBinaryBulkStatePrefix(settings, state);
+        type->serializeBinaryBulkWithMultipleStreams(*columns[i], 0, size(), settings, state);
+        type->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
@@ -66,11 +75,21 @@ void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
     size_type->deserializeBinary(field_rows, istr);
     size_t rows_to_read = field_rows.get<size_t>();
 
+    if (rows_to_read == 0)
+        return;
+
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & type = index.data_types[i];
         auto new_column = type->createColumn();
-        type->deserializeBinaryBulk(*new_column, istr, rows_to_read, 0);
+
+        IDataType::DeserializeBinaryBulkSettings settings;
+        settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
+        settings.position_independent_encoding = false;
+
+        IDataType::DeserializeBinaryBulkStatePtr state;
+        type->deserializeBinaryBulkStatePrefix(settings, state);
+        type->deserializeBinaryBulkWithMultipleStreams(*new_column, rows_to_read, settings, state);
 
         block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, index.columns[i]));
     }
@@ -177,10 +196,24 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
     Block result = granule->getElementsBlock();
     actions->execute(result);
 
-    const auto & column = result.getByName(expression_ast->getColumnName()).column;
+    auto column = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfLowCardinality();
+    auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
+
+    const NullMap * null_map = nullptr;
+
+    if (auto * col_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
+        null_map = &col_nullable->getNullMapData();
+    }
+
+    if (!col_uint8)
+        throw Exception("ColumnUInt8 expected as Set index condition result.", ErrorCodes::LOGICAL_ERROR);
+
+    auto & condition = col_uint8->getData();
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getInt(i) & 1)
+        if ((!null_map || (*null_map)[i] == 0) && condition[i] & 1)
             return true;
 
     return false;
