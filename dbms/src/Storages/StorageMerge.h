@@ -46,7 +46,7 @@ public:
     /// the structure of sub-tables is not checked
     void alter(
         const AlterCommands & params, const String & database_name, const String & table_name,
-        const Context & context, TableStructureWriteLockHolder & structure_lock) override;
+        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
