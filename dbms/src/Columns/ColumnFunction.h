@@ -97,7 +97,7 @@ public:
         throw Exception("compareAt is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getPermutation(bool, size_t, int, Permutation &) const override
+    void getPermutation(bool, UInt64, int, Permutation &) const override
     {
         throw Exception("getPermutation is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

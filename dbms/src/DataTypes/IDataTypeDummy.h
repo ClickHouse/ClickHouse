@@ -24,8 +24,8 @@ public:
     void deserializeBinary(Field &, ReadBuffer &) const override                            { throwNoSerialization(); }
     void serializeBinary(const IColumn &, size_t, WriteBuffer &) const override             { throwNoSerialization(); }
     void deserializeBinary(IColumn &, ReadBuffer &) const override                          { throwNoSerialization(); }
-    void serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const override { throwNoSerialization(); }
-    void deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const override      { throwNoSerialization(); }
+    void serializeBinaryBulk(const IColumn &, WriteBuffer &, UInt64, UInt64) const override { throwNoSerialization(); }
+    void deserializeBinaryBulk(IColumn &, ReadBuffer &, UInt64, double) const override      { throwNoSerialization(); }
     void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwNoSerialization(); }
     void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &) const override              { throwNoSerialization(); }
     void serializeProtobuf(const IColumn &, size_t, ProtobufWriter &) const override { throwNoSerialization(); }

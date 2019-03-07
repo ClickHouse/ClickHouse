@@ -49,7 +49,7 @@ void MergingSortedBlockInputStream::init(MutableColumns & merged_columns)
                 continue;
 
             if (expected_block_size < rows)
-                expected_block_size = std::min(rows, max_block_size);
+                expected_block_size = std::min<size_t>(rows, max_block_size);
 
             cursors[i] = SortCursorImpl(*shared_block_ptr, description, i);
             shared_block_ptr->all_columns = cursors[i].all_columns;
