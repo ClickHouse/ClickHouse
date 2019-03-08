@@ -45,9 +45,8 @@ struct IMergeTreeIndexAggregator
 {
     virtual ~IMergeTreeIndexAggregator() = default;
 
-    virtual void reset() = 0;
     virtual bool empty() const = 0;
-    virtual MergeTreeIndexGranulePtr getGranule() const = 0;
+    virtual MergeTreeIndexGranulePtr getGranuleAndReset() = 0;
 
     /// Updates the stored info using rows of the specified block.
     /// Reads no more than `limit` rows.
@@ -97,6 +96,7 @@ public:
     String getFileName() const { return INDEX_FILE_PREFIX + name; }
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual IndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
