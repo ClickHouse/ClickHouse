@@ -85,7 +85,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
     if (family_code_and_creator == family_code_with_codec.end())
-        throw Exception("Unknown codec family code : " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
+        throw Exception("Unknown codec family code: " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
 
     return family_code_and_creator->second({}, nullptr);
 }
