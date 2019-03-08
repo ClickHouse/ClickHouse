@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <cstddef>
+#include <cassert>
 #include <algorithm>
 #include <memory>
 
