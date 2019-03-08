@@ -7,6 +7,7 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/AlignedBuffer.h>
 
 
 namespace DB
@@ -38,10 +39,13 @@ private:
     /// Read finished.
     bool finished = false;
 
+    struct SimpleAggregateDescription;
+
     /// Columns with which numbers should be aggregated.
     ColumnNumbers column_numbers_to_aggregate;
     ColumnNumbers column_numbers_not_to_aggregate;
     std::vector<ColumnAggregateFunction *> columns_to_aggregate;
+    std::vector<SimpleAggregateDescription> columns_to_simple_aggregate;
 
     RowRef current_key;        /// The current primary key.
     RowRef next_key;           /// The primary key of the next row.
@@ -54,6 +58,53 @@ private:
     /** Extract all states of aggregate functions and merge them with the current group.
       */
     void addRow(SortCursor & cursor);
+
+    /** Insert all values of current row for simple aggregate functions
+     */
+    void insertSimpleAggregationResult(MutableColumns & merged_columns);
+
+    /// Stores information for aggregation of SimpleAggregateFunction columns
+    struct SimpleAggregateDescription
+    {
+        /// An aggregate function 'anyLast', 'sum'...
+        AggregateFunctionPtr function;
+        IAggregateFunction::AddFunc add_function;
+        size_t column_number;
+        AlignedBuffer state;
+        bool created = false;
+
+        SimpleAggregateDescription(const AggregateFunctionPtr & function_, const size_t column_number_) : function(function_), column_number(column_number_)
+        {
+            add_function = function->getAddressOfAddFunction();
+            state.reset(function->sizeOfData(), function->alignOfData());
+        }
+
+        void createState()
+        {
+            if (created)
+                return;
+            function->create(state.data());
+            created = true;
+        }
+
+        void destroyState()
+        {
+            if (!created)
+                return;
+            function->destroy(state.data());
+            created = false;
+        }
+
+        /// Explicitly destroy aggregation state if the stream is terminated
+        ~SimpleAggregateDescription()
+        {
+            destroyState();
+        }
+
+        SimpleAggregateDescription() = default;
+        SimpleAggregateDescription(SimpleAggregateDescription &&) = default;
+        SimpleAggregateDescription(const SimpleAggregateDescription &) = delete;
+    };
 };
 
 }

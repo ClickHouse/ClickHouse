@@ -28,6 +28,8 @@ class DataTypeFactory final : public ext::singleton<DataTypeFactory>, public IFa
 private:
     using SimpleCreator = std::function<DataTypePtr()>;
     using DataTypesDictionary = std::unordered_map<String, Creator>;
+    using CreatorWithDomain = std::function<std::pair<DataTypePtr,DataTypeDomainPtr>(const ASTPtr & parameters)>;
+    using SimpleCreatorWithDomain = std::function<std::pair<DataTypePtr,DataTypeDomainPtr>()>;
 
 public:
     DataTypePtr get(const String & full_name) const;
@@ -40,11 +42,13 @@ public:
     /// Register a simple data type, that have no parameters.
     void registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
-    // Register a domain - a refinement of existing type.
-    void registerDataTypeDomain(const String & type_name, DataTypeDomainPtr domain, CaseSensitiveness case_sensitiveness = CaseSensitive);
+    /// Register a type family with a dynamic domain
+    void registerDataTypeDomain(const String & family_name, CreatorWithDomain creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
+
+    /// Register a simple data type domain
+    void registerDataTypeDomain(const String & name, SimpleCreatorWithDomain creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
 private:
-    static void setDataTypeDomain(const IDataType & data_type, const IDataTypeDomain & domain);
     const Creator& findCreatorByName(const String & family_name) const;
 
 private:
@@ -52,9 +56,6 @@ private:
 
     /// Case insensitive data types will be additionally added here with lowercased name.
     DataTypesDictionary case_insensitive_data_types;
-
-    // All domains are owned by factory and shared amongst DataType instances.
-    std::vector<DataTypeDomainPtr> all_domains;
 
     DataTypeFactory();
     ~DataTypeFactory() override;

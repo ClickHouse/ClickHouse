@@ -12,7 +12,7 @@ class IColumn;
 
 /** Simple DataTypeDomain that uses serializeText/deserializeText
  * for all serialization and deserialization. */
-class DataTypeDomainWithSimpleSerialization : public IDataTypeDomain
+class DataTypeDomainWithSimpleSerialization : public IDataTypeDomainCustomSerialization
 {
 public:
     virtual ~DataTypeDomainWithSimpleSerialization() override;

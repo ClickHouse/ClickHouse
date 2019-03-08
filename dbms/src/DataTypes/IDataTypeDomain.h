@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <Core/Types.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -10,21 +12,42 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 
-/** Further refinment of the properties of data type.
-  *
-  * Contains methods for serialization/deserialization.
-  * Implementations of this interface represent a data type domain (example: IPv4)
-  *  which is a refinement of the exsitgin type with a name and specific text
-  *  representation.
-  *
-  * IDataTypeDomain is totally immutable object. You can always share them.
+/** Allow to customize an existing data type and set a different name. Derived class IDataTypeDomainCustomSerialization allows
+ * further customization of serialization/deserialization methods. See use in IPv4 and IPv6 data type domains.
+ *
+ * IDataTypeDomain can be chained for further delegation (only for getName for the moment).
   */
 class IDataTypeDomain
 {
+private:
+    mutable DataTypeDomainPtr delegate;
+
 public:
     virtual ~IDataTypeDomain() {}
 
-    virtual const char* getName() const = 0;
+    String getName() const {
+        if (delegate)
+            return delegate->getName();
+        else
+            return doGetName();
+    }
+
+    void appendDomain(DataTypeDomainPtr delegate_) const {
+        if (delegate == nullptr)
+            delegate = std::move(delegate_);
+        else
+            delegate->appendDomain(std::move(delegate_));
+    }
+
+    const IDataTypeDomain * getDomain() const { return delegate.get(); }
+
+protected:
+    virtual String doGetName() const = 0;
+};
+
+class IDataTypeDomainCustomSerialization : public IDataTypeDomain {
+public:
+    virtual ~IDataTypeDomainCustomSerialization() {}
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
