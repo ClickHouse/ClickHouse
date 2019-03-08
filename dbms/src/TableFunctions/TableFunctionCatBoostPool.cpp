@@ -33,7 +33,7 @@ StoragePtr TableFunctionCatBoostPool::executeImpl(const ASTPtr & ast_function, c
 
     auto getStringLiteral = [](const IAST & node, const char * description)
     {
-        auto lit = typeid_cast<const ASTLiteral *>(&node);
+        const auto * lit = node.As<ASTLiteral>();
         if (!lit)
             throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
 

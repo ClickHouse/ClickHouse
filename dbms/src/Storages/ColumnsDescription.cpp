@@ -158,7 +158,7 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
     String column_line;
     readEscapedStringUntilEOL(column_line, buf);
     ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0);
-    if (const ASTColumnDeclaration * col_ast = typeid_cast<const ASTColumnDeclaration *>(ast.get()))
+    if (const auto * col_ast = ast->As<ASTColumnDeclaration>())
     {
         String column_name = col_ast->name;
         auto type = data_type_factory.get(col_ast->type);

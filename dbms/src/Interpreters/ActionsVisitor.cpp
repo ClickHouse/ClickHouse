@@ -84,11 +84,11 @@ SetPtr makeExplicitSet(
 
     auto getTupleTypeFromAst = [&context](const ASTPtr & tuple_ast) -> DataTypePtr
     {
-        auto ast_function = typeid_cast<const ASTFunction *>(tuple_ast.get());
-        if (ast_function && ast_function->name == "tuple" && !ast_function->arguments->children.empty())
+        const auto * func = tuple_ast->As<ASTFunction>();
+        if (func && func->name == "tuple" && !func->arguments->children.empty())
         {
             /// Won't parse all values of outer tuple.
-            auto element = ast_function->arguments->children.at(0);
+            auto element = func->arguments->children.at(0);
             std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(element, context);
             return std::make_shared<DataTypeTuple>(DataTypes({value_raw.second}));
         }
@@ -533,8 +533,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
         for (auto & child : ast->children)
         {
             /// Do not go to FROM, JOIN, UNION.
-            if (!typeid_cast<const ASTTableExpression *>(child.get())
-                && !typeid_cast<const ASTSelectQuery *>(child.get()))
+            if (!child->As<ASTTableExpression>() && !child->As<ASTSelectQuery>())
                 visit(child);
         }
     }
@@ -550,8 +549,8 @@ SetPtr ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bl
     const ASTPtr & arg = args.children.at(1);
 
     /// If the subquery or table name for SELECT.
-    const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(arg.get());
-    if (typeid_cast<const ASTSubquery *>(arg.get()) || identifier)
+    const auto * identifier = arg->As<ASTIdentifier>();
+    if (arg->As<ASTSubquery>() || identifier)
     {
         auto set_key = PreparedSetKey::forSubquery(*arg);
         if (prepared_sets.count(set_key))

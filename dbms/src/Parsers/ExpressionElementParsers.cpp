@@ -1075,7 +1075,7 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!literal_p.parse(pos, literal_node, expected))
             return false;
 
-        arr.push_back(typeid_cast<const ASTLiteral &>(*literal_node).value);
+        arr.push_back(literal_node->As<ASTLiteral>()->value);
     }
 
     expected.add(pos, "closing square bracket");
@@ -1325,4 +1325,3 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 }
 
 }
-

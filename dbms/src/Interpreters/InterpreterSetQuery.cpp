@@ -16,12 +16,12 @@ namespace ErrorCodes
 
 BlockIO InterpreterSetQuery::execute()
 {
-    const ASTSetQuery & ast = typeid_cast<const ASTSetQuery &>(*query_ptr);
+    const auto * ast = query_ptr->As<ASTSetQuery>();
 
-    checkAccess(ast);
+    checkAccess(*ast);
 
     Context & target = context.getSessionContext();
-    for (const auto & change : ast.changes)
+    for (const auto & change : ast->changes)
         target.setSetting(change.name, change.value);
 
     return {};
@@ -61,11 +61,11 @@ void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
 
 void InterpreterSetQuery::executeForCurrentContext()
 {
-    const ASTSetQuery & ast = typeid_cast<const ASTSetQuery &>(*query_ptr);
+    const auto * ast = query_ptr->As<ASTSetQuery>();
 
-    checkAccess(ast);
+    checkAccess(*ast);
 
-    for (const auto & change : ast.changes)
+    for (const auto & change : ast->changes)
         context.setSetting(change.name, change.value);
 }
 

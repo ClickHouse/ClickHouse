@@ -41,7 +41,7 @@ public:
 
             for (auto & child : node.arguments->children)
             {
-                if (auto func = typeid_cast<const ASTFunction *>(child.get()))
+                if (const auto * func = child->As<ASTFunction>())
                 {
                     if (func->name == "and")
                         flat_ands = false;
@@ -92,8 +92,8 @@ private:
         if (node.arguments->children.size() != 2)
             return false;
 
-        auto left = typeid_cast<const ASTIdentifier *>(node.arguments->children[0].get());
-        auto right = typeid_cast<const ASTIdentifier *>(node.arguments->children[1].get());
+        const auto * left = node.arguments->children[0]->As<ASTIdentifier>();
+        const auto * right = node.arguments->children[1]->As<ASTIdentifier>();
         if (!left || !right)
             return false;
 
@@ -146,7 +146,7 @@ static ASTPtr getCrossJoin(ASTSelectQuery & select, std::vector<DatabaseAndTable
     if (!select.tables)
         return {};
 
-    auto tables = typeid_cast<const ASTTablesInSelectQuery *>(select.tables.get());
+    const auto * tables = select.tables->As<ASTTablesInSelectQuery>();
     if (!tables)
         return {};
 
@@ -154,12 +154,12 @@ static ASTPtr getCrossJoin(ASTSelectQuery & select, std::vector<DatabaseAndTable
     if (num_tables != 2)
         return {};
 
-    auto left = typeid_cast<const ASTTablesInSelectQueryElement *>(tables->children[0].get());
-    auto right = typeid_cast<const ASTTablesInSelectQueryElement *>(tables->children[1].get());
+    const auto * left = tables->children[0]->As<ASTTablesInSelectQueryElement>();
+    const auto * right = tables->children[1]->As<ASTTablesInSelectQueryElement>();
     if (!left || !right || !right->table_join)
         return {};
 
-    if (auto join = typeid_cast<const ASTTableJoin *>(right->table_join.get()))
+    if (const auto * join = right->table_join->As<ASTTableJoin>())
     {
         if (join->kind == ASTTableJoin::Kind::Cross ||
             join->kind == ASTTableJoin::Kind::Comma)
@@ -167,12 +167,12 @@ static ASTPtr getCrossJoin(ASTSelectQuery & select, std::vector<DatabaseAndTable
             if (!join->children.empty())
                 throw Exception("Logical error: CROSS JOIN has expressions", ErrorCodes::LOGICAL_ERROR);
 
-            auto & left_expr = typeid_cast<const ASTTableExpression &>(*left->table_expression);
-            auto & right_expr = typeid_cast<const ASTTableExpression &>(*right->table_expression);
+            const auto * left_expr = left->table_expression->As<ASTTableExpression>();
+            const auto * right_expr = right->table_expression->As<ASTTableExpression>();
 
             table_names.reserve(2);
-            if (extractTableName(left_expr, table_names) &&
-                extractTableName(right_expr, table_names))
+            if (extractTableName(*left_expr, table_names) &&
+                extractTableName(*right_expr, table_names))
                 return right->table_join;
         }
     }

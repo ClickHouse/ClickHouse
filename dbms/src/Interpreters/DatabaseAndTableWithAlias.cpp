@@ -27,7 +27,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
 {
-    const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get());
+    const auto * identifier = node->As<ASTIdentifier>();
     if (!identifier)
         throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 

@@ -525,14 +525,14 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_table_name = create.as_table;
 
         ASTPtr as_create_ptr = context.getCreateTableQuery(as_database_name, as_table_name);
-        const auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
+        const auto * as_create = as_create_ptr->As<ASTCreateQuery>();
 
-        if (as_create.is_view)
+        if (as_create->is_view)
             throw Exception(
                 "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
                 ErrorCodes::INCORRECT_QUERY);
 
-        create.set(create.storage, as_create.storage->ptr());
+        create.set(create.storage, as_create->storage->ptr());
     }
 }
 
@@ -565,8 +565,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Table SQL definition is available even if the table is detached
         auto query = context.getCreateTableQuery(database_name, table_name);
-        auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
-        create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
+        create = *query->As<ASTCreateQuery>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
     }
 

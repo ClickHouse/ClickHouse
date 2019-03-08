@@ -39,19 +39,19 @@ Block InterpreterExplainQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
-    const ASTExplainQuery & ast = typeid_cast<const ASTExplainQuery &>(*query);
+    const auto * ast = query->As<ASTExplainQuery>();
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     std::stringstream ss;
 
-    if (ast.getKind() == ASTExplainQuery::ParsedAST)
+    if (ast->getKind() == ASTExplainQuery::ParsedAST)
     {
-        dumpAST(ast, ss);
+        dumpAST(*ast, ss);
     }
-    else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
+    else if (ast->getKind() == ASTExplainQuery::AnalyzedSyntax)
     {
-        InterpreterSelectWithUnionQuery interpreter(ast.children.at(0), context, {}, QueryProcessingStage::FetchColumns, 0, true, true);
+        InterpreterSelectWithUnionQuery interpreter(ast->children.at(0), context, {}, QueryProcessingStage::FetchColumns, 0, true, true);
         interpreter.getQuery()->format(IAST::FormatSettings(ss, false));
     }
 

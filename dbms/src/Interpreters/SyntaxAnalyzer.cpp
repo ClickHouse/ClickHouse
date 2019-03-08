@@ -112,12 +112,12 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
 
 bool hasArrayJoin(const ASTPtr & ast)
 {
-    if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
+    if (const ASTFunction * function = ast->As<ASTFunction>())
         if (function->name == "arrayJoin")
             return true;
 
     for (const auto & child : ast->children)
-        if (!typeid_cast<ASTSelectQuery *>(child.get()) && hasArrayJoin(child))
+        if (!child->As<ASTSelectQuery>() && hasArrayJoin(child))
             return true;
 
     return false;
@@ -213,9 +213,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     if (!select_query->group_expression_list)
         return;
 
-    const auto is_literal = [] (const ASTPtr & ast)
+    const auto is_literal = [] (const ASTPtr & ast) -> bool
     {
-        return typeid_cast<const ASTLiteral *>(ast.get());
+        return ast->As<ASTLiteral>();
     };
 
     auto & group_exprs = select_query->group_expression_list->children;
@@ -244,13 +244,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
 
-                const auto & dict_name = typeid_cast<const ASTLiteral &>(*function->arguments->children[0])
-                        .value.safeGet<String>();
-
+                const auto & dict_name = function->arguments->children[0]->As<ASTLiteral>()->value.safeGet<String>();
                 const auto & dict_ptr = context.getExternalDictionaries().getDictionary(dict_name);
-
-                const auto & attr_name = typeid_cast<const ASTLiteral &>(*function->arguments->children[1])
-                        .value.safeGet<String>();
+                const auto & attr_name = function->arguments->children[1]->As<ASTLiteral>()->value.safeGet<String>();
 
                 if (!dict_ptr->isInjective(attr_name))
                 {
@@ -328,9 +324,9 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
     for (const auto & elem : elems)
     {
         String name = elem->children.front()->getColumnName();
-        const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
+        const auto * order_by_elem = elem->As<ASTOrderByElement>();
 
-        if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
+        if (elems_set.emplace(name, order_by_elem->collation ? order_by_elem->collation->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
     }
 
@@ -454,7 +450,7 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTT
     {
         if (IdentifierSemantic::getColumnName(ast))
         {
-            auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
+            const auto * identifier = ast->As<ASTIdentifier>();
 
             /// It's set in TranslateQualifiedNamesVisitor
             size_t membership = IdentifierSemantic::getMembership(*identifier);
@@ -498,7 +494,7 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTT
     /// For equal expression find out corresponding table for each part, translate qualified names and add asts to join keys.
     auto add_columns_from_equals_expr = [&](const ASTPtr & expr)
     {
-        auto * func_equals = typeid_cast<const ASTFunction *>(expr.get());
+        const auto * func_equals = expr->As<ASTFunction>();
         if (!func_equals || func_equals->name != "equals")
             throwSyntaxException("Expected equals expression, got " + queryToString(expr) + ".");
 
@@ -537,7 +533,7 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTT
         }
     };
 
-    auto * func = typeid_cast<const ASTFunction *>(table_join.on_expression.get());
+    const auto * func = table_join.on_expression->As<ASTFunction>();
     if (func && func->name == "and")
     {
         for (const auto & expr : func->arguments->children)

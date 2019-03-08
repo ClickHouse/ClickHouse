@@ -101,7 +101,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
-        String dictionary_name = typeid_cast<const ASTLiteral &>(*args.engine_args[0]).value.safeGet<String>();
+        String dictionary_name = args.engine_args[0]->As<ASTLiteral>()->value.safeGet<String>();
 
         return StorageDictionary::create(
             args.table_name, args.columns, args.context, args.attach, dictionary_name);

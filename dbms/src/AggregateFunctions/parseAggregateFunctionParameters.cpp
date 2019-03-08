@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const std::string & error_context)
 {
-    const ASTs & parameters = typeid_cast<const ASTExpressionList &>(*expression_list).children;
+    const ASTs & parameters = expression_list->As<ASTExpressionList>()->children;
     if (parameters.empty())
         throw Exception("Parameters list to aggregate functions cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
@@ -23,14 +23,14 @@ Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const 
 
     for (size_t i = 0; i < parameters.size(); ++i)
     {
-        const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(parameters[i].get());
-        if (!lit)
+        const auto * literal = parameters[i]->As<ASTLiteral>();
+        if (!literal)
         {
             throw Exception("Parameters to aggregate functions must be literals" + (error_context.empty() ? "" : " (in " + error_context +")"),
                         ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
         }
 
-        params_row[i] = lit->value;
+        params_row[i] = literal->value;
     }
 
     return params_row;

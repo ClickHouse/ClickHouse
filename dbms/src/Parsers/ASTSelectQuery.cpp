@@ -65,7 +65,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
         s.one_line
             ? with_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*with_expression_list).formatImplMultiline(s, state, frame);
+            : with_expression_list->As<ASTExpressionList>()->formatImplMultiline(s, state, frame);
         s.ostr << s.nl_or_ws;
     }
 
@@ -73,7 +73,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     s.one_line
         ? select_expression_list->formatImpl(s, state, frame)
-        : typeid_cast<const ASTExpressionList &>(*select_expression_list).formatImplMultiline(s, state, frame);
+        : select_expression_list->As<ASTExpressionList>()->formatImplMultiline(s, state, frame);
 
     if (tables)
     {
@@ -98,7 +98,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? group_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*group_expression_list).formatImplMultiline(s, state, frame);
+            : group_expression_list->As<ASTExpressionList>()->formatImplMultiline(s, state, frame);
     }
 
     if (group_by_with_rollup)
@@ -121,7 +121,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? order_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*order_expression_list).formatImplMultiline(s, state, frame);
+            : order_expression_list->As<ASTExpressionList>()->formatImplMultiline(s, state, frame);
     }
 
     if (limit_by_value)
@@ -131,7 +131,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? limit_by_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*limit_by_expression_list).formatImplMultiline(s, state, frame);
+            : limit_by_expression_list->As<ASTExpressionList>()->formatImplMultiline(s, state, frame);
     }
 
     if (limit_length)
@@ -357,4 +357,3 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
 }
 
 }
-

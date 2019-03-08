@@ -409,7 +409,7 @@ void registerStorageKafka(StorageFactory & factory)
         String brokers;
         if (args_count >= 1)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[0].get());
+            const auto * ast = engine_args[0]->As<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 brokers = safeGet<String>(ast->value);
@@ -460,7 +460,7 @@ void registerStorageKafka(StorageFactory & factory)
         {
             engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
 
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[3].get());
+            const auto * ast = engine_args[3]->As<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 format = safeGet<String>(ast->value);
@@ -481,7 +481,7 @@ void registerStorageKafka(StorageFactory & factory)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
 
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[4].get());
+            const auto * ast = engine_args[4]->As<ASTLiteral>();
             String arg;
             if (ast && ast->value.getType() == Field::Types::String)
             {
@@ -515,7 +515,7 @@ void registerStorageKafka(StorageFactory & factory)
         {
             engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
 
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[5].get());
+            const auto * ast = engine_args[5]->As<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 schema = safeGet<String>(ast->value);
@@ -534,7 +534,7 @@ void registerStorageKafka(StorageFactory & factory)
         UInt64 num_consumers = 1;
         if (args_count >= 7)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[6].get());
+            const auto * ast = engine_args[6]->As<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 num_consumers = safeGet<UInt64>(ast->value);
@@ -553,7 +553,7 @@ void registerStorageKafka(StorageFactory & factory)
         UInt64 max_block_size = 0;
         if (args_count >= 8)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[7].get());
+            const auto * ast = engine_args[7]->As<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 max_block_size = static_cast<size_t>(safeGet<UInt64>(ast->value));
@@ -572,7 +572,7 @@ void registerStorageKafka(StorageFactory & factory)
         size_t skip_broken = 0;
         if (args_count >= 9)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[8].get());
+            const auto * ast = engine_args[8]->As<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 skip_broken = static_cast<size_t>(safeGet<UInt64>(ast->value));

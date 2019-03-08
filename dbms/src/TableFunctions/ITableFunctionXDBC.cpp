@@ -29,12 +29,12 @@ namespace ErrorCodes
 
 StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
-    const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
+    const auto * args_func = ast_function->As<ASTFunction>();
 
-    if (!args_func.arguments)
+    if (!args_func->arguments)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
+    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func->arguments).children;
     if (args.size() != 2 && args.size() != 3)
         throw Exception("Table function '" + getName() + "' requires 2 or 3 arguments: " + getName() + "('DSN', table) or " + getName()
                 + "('DSN', schema, table)",

@@ -292,14 +292,14 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
             continue;
 
         /// Don't descend into lambda functions
-        const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
+        const auto * func = child->As<ASTFunction>();
         if (func && func->name == "lambda")
             continue;
 
         makeSetsForIndexImpl(child);
     }
 
-    const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
+    const auto * func = node->As<ASTFunction>();
     if (func && functionIsInOperator(func->name))
     {
         const IAST & args = *func->arguments;
@@ -379,7 +379,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
         return;
     }
 
-    const ASTFunction * node = typeid_cast<const ASTFunction *>(ast.get());
+    const auto * node = ast->As<ASTFunction>();
     if (node && AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
     {
         has_aggregation = true;
@@ -414,8 +414,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
     else
     {
         for (const auto & child : ast->children)
-            if (!typeid_cast<const ASTSubquery *>(child.get())
-                && !typeid_cast<const ASTSelectQuery *>(child.get()))
+            if (!child->As<ASTSubquery>() && !child->As<ASTSelectQuery>())
                 getAggregates(child, actions);
     }
 }
@@ -423,15 +422,14 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
 void ExpressionAnalyzer::assertNoAggregates(const ASTPtr & ast, const char * description)
 {
-    const ASTFunction * node = typeid_cast<const ASTFunction *>(ast.get());
+    const auto * node = ast->As<ASTFunction>();
 
     if (node && AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
         throw Exception("Aggregate function " + node->getColumnName()
             + " is found " + String(description) + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
 
     for (const auto & child : ast->children)
-        if (!typeid_cast<const ASTSubquery *>(child.get())
-            && !typeid_cast<const ASTSelectQuery *>(child.get()))
+        if (!child->As<ASTSubquery>() && !child->As<ASTSelectQuery>())
             assertNoAggregates(child, description);
 }
 
@@ -883,7 +881,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
 
     ASTs asts;
 
-    if (auto node = typeid_cast<const ASTExpressionList *>(query.get()))
+    if (const auto * node = query->As<ASTExpressionList>())
         asts = node->children;
     else
         asts = ASTs(1, query);

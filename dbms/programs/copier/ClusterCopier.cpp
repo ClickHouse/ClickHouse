@@ -483,37 +483,37 @@ String DB::TaskShard::getHostNameExample() const
 
 static bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
-    const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
-    return storage.partition_by || storage.order_by || storage.sample_by;
+    const auto * storage = storage_ast->As<ASTStorage>();
+    return storage->partition_by || storage->order_by || storage->sample_by;
 }
 
 static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 {
     String storage_str = queryToString(storage_ast);
 
-    const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
-    const ASTFunction & engine = typeid_cast<const ASTFunction &>(*storage.engine);
+    const auto * storage = storage_ast->As<ASTStorage>();
+    const auto * engine = storage->engine->As<ASTFunction>();
 
-    if (!endsWith(engine.name, "MergeTree"))
+    if (!endsWith(engine->name, "MergeTree"))
     {
         throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
-    ASTPtr arguments_ast = engine.arguments->clone();
-    ASTs & arguments = typeid_cast<ASTExpressionList &>(*arguments_ast).children;
+    ASTPtr arguments_ast = engine->arguments->clone();
+    ASTs & arguments = arguments_ast->As<ASTExpressionList>()->children; // FIXME: what' the point of casting?
 
     if (isExtendedDefinitionStorage(storage_ast))
     {
-        if (storage.partition_by)
-            return storage.partition_by->clone();
+        if (storage->partition_by)
+            return storage->partition_by->clone();
 
         static const char * all = "all";
         return std::make_shared<ASTLiteral>(Field(all, strlen(all)));
     }
     else
     {
-        bool is_replicated = startsWith(engine.name, "Replicated");
+        bool is_replicated = startsWith(engine->name, "Replicated");
         size_t min_args = is_replicated ? 3 : 1;
 
         if (arguments.size() < min_args)
@@ -1179,16 +1179,16 @@ protected:
     /// Removes MATERIALIZED and ALIAS columns from create table query
     static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
     {
-        const ASTs & column_asts = typeid_cast<ASTCreateQuery &>(*query_ast).columns_list->columns->children;
+        const ASTs & column_asts = query_ast->As<ASTCreateQuery>()->columns_list->columns->children;
         auto new_columns = std::make_shared<ASTExpressionList>();
 
         for (const ASTPtr & column_ast : column_asts)
         {
-            const ASTColumnDeclaration & column = typeid_cast<const ASTColumnDeclaration &>(*column_ast);
+            const auto * column = column_ast->As<ASTColumnDeclaration>();
 
-            if (!column.default_specifier.empty())
+            if (!column->default_specifier.empty())
             {
-                ColumnDefaultKind kind = columnDefaultKindFromString(column.default_specifier);
+                ColumnDefaultKind kind = columnDefaultKindFromString(column->default_specifier);
                 if (kind == ColumnDefaultKind::Materialized || kind == ColumnDefaultKind::Alias)
                     continue;
             }
@@ -1197,14 +1197,13 @@ protected:
         }
 
         ASTPtr new_query_ast = query_ast->clone();
-        ASTCreateQuery & new_query = typeid_cast<ASTCreateQuery &>(*new_query_ast);
+        auto * new_query = new_query_ast->As<ASTCreateQuery>();
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, new_columns);
-        new_columns_list->set(
-                new_columns_list->indices, typeid_cast<ASTCreateQuery &>(*query_ast).columns_list->indices->clone());
+        new_columns_list->set(new_columns_list->indices, query_ast->As<ASTCreateQuery>()->columns_list->indices->clone());
 
-        new_query.replace(new_query.columns_list, new_columns_list);
+        new_query->replace(new_query->columns_list, new_columns_list);
 
         return new_query_ast;
     }

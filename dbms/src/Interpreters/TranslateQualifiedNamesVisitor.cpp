@@ -91,7 +91,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
     String func_name_lowercase = Poco::toLower(node.name);
     if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&
-        typeid_cast<const ASTAsterisk *>(func_arguments->children[0].get()))
+        func_arguments->children[0]->As<ASTAsterisk>())
         func_arguments->children.clear();
 }
 
@@ -173,14 +173,14 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         bool has_asterisk = false;
         for (const auto & child : node.children)
         {
-            if (typeid_cast<const ASTAsterisk *>(child.get()))
+            if (child->As<ASTAsterisk>())
             {
                 if (tables_with_columns.empty())
                     throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
                 has_asterisk = true;
                 break;
             }
-            else if (auto qa = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
+            else if (const auto * qa = child->As<ASTQualifiedAsterisk>())
             {
                 visit(*qa, child, data); /// check if it's OK before rewrite
                 has_asterisk = true;
@@ -197,7 +197,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 
     for (const auto & child : old_children)
     {
-        if (const auto * asterisk = typeid_cast<const ASTAsterisk *>(child.get()))
+        if (const auto * asterisk = child->As<ASTAsterisk>())
         {
             bool first_table = true;
             for (const auto & [table, table_columns] : tables_with_columns)
@@ -214,7 +214,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 first_table = false;
             }
         }
-        else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
+        else if (const auto * qualified_asterisk = child->As<ASTQualifiedAsterisk>())
         {
             DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
@@ -239,15 +239,15 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 /// 'select * from a join b using id' should result one 'id' column
 void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, Data & data)
 {
-    const auto & table_join = typeid_cast<const ASTTableJoin &>(*ast);
+    const auto * table_join = ast->As<ASTTableJoin>();
 
-    if (table_join.using_expression_list)
+    if (table_join->using_expression_list)
     {
-        auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
+        auto & keys = typeid_cast<ASTExpressionList &>(*table_join->using_expression_list);
         for (const auto & key : keys.children)
             if (auto opt_column = getIdentifierName(key))
                 data.join_using_columns.insert(*opt_column);
-            else if (typeid_cast<const ASTLiteral *>(key.get()))
+            else if (key->As<ASTLiteral>())
                 data.join_using_columns.insert(key->getColumnName());
             else
             {

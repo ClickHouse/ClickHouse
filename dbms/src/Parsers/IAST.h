@@ -1,13 +1,14 @@
 #pragma once
 
-#include <set>
-#include <memory>
-#include <ostream>
-#include <algorithm>
-
 #include <Core/Types.h>
-#include <Common/Exception.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
+
+#include <algorithm>
+#include <ostream>
+#include <set>
 
 
 class SipHash;
@@ -26,10 +27,6 @@ namespace ErrorCodes
 
 using IdentifierNameSet = std::set<String>;
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-using ASTs = std::vector<ASTPtr>;
-
 class WriteBuffer;
 
 
@@ -44,6 +41,18 @@ public:
     IAST() = default;
     IAST(const IAST &) = default;
     IAST & operator=(const IAST &) = default;
+
+    template <class Derived>
+    Derived * As()
+    {
+        return typeid_cast<Derived *>(this);
+    }
+
+    template <class Derived>
+    const Derived * As() const
+    {
+        return typeid_cast<const Derived *>(this);
+    }
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;

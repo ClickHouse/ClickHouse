@@ -44,7 +44,7 @@ NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 
 static bool extractPathImpl(const IAST & elem, String & res)
 {
-    const ASTFunction * function = typeid_cast<const ASTFunction *>(&elem);
+    const auto * function = elem.As<ASTFunction>();
     if (!function)
         return false;
 
@@ -59,24 +59,24 @@ static bool extractPathImpl(const IAST & elem, String & res)
 
     if (function->name == "equals")
     {
-        const ASTExpressionList & args = typeid_cast<const ASTExpressionList &>(*function->arguments);
+        const auto * args = function->arguments->As<ASTExpressionList>();
         const IAST * value;
 
-        if (args.children.size() != 2)
+        if (args->children.size() != 2)
             return false;
 
         const ASTIdentifier * ident;
-        if ((ident = typeid_cast<const ASTIdentifier *>(&*args.children.at(0))))
-            value = &*args.children.at(1);
-        else if ((ident = typeid_cast<const ASTIdentifier *>(&*args.children.at(1))))
-            value = &*args.children.at(0);
+        if ((ident = args->children.at(0)->As<ASTIdentifier>()))
+            value = &*args->children.at(1);
+        else if ((ident = args->children.at(1)->As<ASTIdentifier>()))
+            value = &*args->children.at(0);
         else
             return false;
 
         if (ident->name != "path")
             return false;
 
-        const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(value);
+        const auto * literal = value->As<ASTLiteral>();
         if (!literal)
             return false;
 
@@ -95,12 +95,12 @@ static bool extractPathImpl(const IAST & elem, String & res)
   */
 static String extractPath(const ASTPtr & query)
 {
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query);
-    if (!select.where_expression)
+    const auto * select = query->As<ASTSelectQuery>();
+    if (!select->where_expression)
         return "";
 
     String res;
-    return extractPathImpl(*select.where_expression, res) ? res : "";
+    return extractPathImpl(*select->where_expression, res) ? res : "";
 }
 
 

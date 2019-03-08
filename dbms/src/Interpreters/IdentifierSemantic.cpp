@@ -15,7 +15,7 @@ std::optional<String> IdentifierSemantic::getColumnName(const ASTIdentifier & no
 std::optional<String> IdentifierSemantic::getColumnName(const ASTPtr & ast)
 {
     if (ast)
-        if (auto id = typeid_cast<const ASTIdentifier *>(ast.get()))
+        if (const auto * id = ast->As<ASTIdentifier>())
             if (!id->semantic->special)
                 return id->name;
     return {};
@@ -31,7 +31,7 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTIdentifier & nod
 std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
 {
     if (ast)
-        if (auto id = typeid_cast<const ASTIdentifier *>(ast.get()))
+        if (const auto * id = ast->As<ASTIdentifier>())
             if (id->semantic->special)
                 return id->name;
     return {};
