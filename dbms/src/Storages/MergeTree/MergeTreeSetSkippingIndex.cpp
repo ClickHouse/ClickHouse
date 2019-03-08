@@ -22,10 +22,11 @@ const Field UNKNOWN_FIELD(3u);
 
 
 MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index)
-        : IMergeTreeIndexGranule(), index(index), set(new Set(SizeLimits{}, true))
-{
-    set->setHeader(index.header);
-}
+    : IMergeTreeIndexGranule(), index(index), block(index.header.cloneEmpty()) {}
+
+MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(
+    const MergeTreeSetSkippingIndex & index, const Columns & columns)
+    : IMergeTreeIndexGranule(), index(index), block(index.header.cloneWithColumns(columns)) {}
 
 void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
 {
@@ -33,7 +34,6 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
         throw Exception(
                 "Attempt to write empty set index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & columns = set->getSetElements();
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
 
     if (size() > index.max_rows)
@@ -55,21 +55,15 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
 
         IDataType::SerializeBinaryBulkStatePtr state;
         type->serializeBinaryBulkStatePrefix(settings, state);
-        type->serializeBinaryBulkWithMultipleStreams(*columns[i], 0, size(), settings, state);
+        type->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
         type->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
 void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
 {
-    if (!set->empty())
-    {
-        auto new_set = std::make_unique<Set>(SizeLimits{}, true);
-        new_set->setHeader(index.header);
-        set.swap(new_set);
-    }
+    block.clear();
 
-    Block block;
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     size_type->deserializeBinary(field_rows, istr);
@@ -93,11 +87,16 @@ void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
 
         block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, index.columns[i]));
     }
-
-    set->insertFromBlock(block);
 }
 
-void MergeTreeSetIndexGranule::update(const Block & new_block, size_t * pos, size_t limit)
+
+MergeTreeSetIndexAggregator::MergeTreeSetIndexAggregator(const MergeTreeSetSkippingIndex & index)
+    : index(index), set(new Set(SizeLimits{}, true))
+{
+    set->setHeader(index.header);
+}
+
+void MergeTreeSetIndexAggregator::update(const Block & new_block, size_t * pos, size_t limit)
 {
     if (*pos >= new_block.rows())
         throw Exception(
@@ -129,11 +128,15 @@ void MergeTreeSetIndexGranule::update(const Block & new_block, size_t * pos, siz
     *pos += rows_read;
 }
 
-Block MergeTreeSetIndexGranule::getElementsBlock() const
+MergeTreeIndexGranulePtr MergeTreeSetIndexAggregator::getGranuleAndReset()
 {
-    if (size() > index.max_rows)
-        return index.header;
-    return index.header.cloneWithColumns(set->getSetElements());
+    auto granule = std::make_shared<MergeTreeSetIndexGranule>(index, set->getSetElements());
+
+    auto new_set = std::make_unique<Set>(SizeLimits{}, true);
+    new_set->setHeader(index.header);
+    set.swap(new_set);
+
+    return granule;
 }
 
 
@@ -193,7 +196,7 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
     if (useless || !granule->size() || granule->size() > index.max_rows)
         return true;
 
-    Block result = granule->getElementsBlock();
+    Block result = granule->block;
     actions->execute(result);
 
     auto column = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfLowCardinality();
@@ -377,8 +380,13 @@ MergeTreeIndexGranulePtr MergeTreeSetSkippingIndex::createIndexGranule() const
     return std::make_shared<MergeTreeSetIndexGranule>(*this);
 }
 
+MergeTreeIndexAggregatorPtr MergeTreeSetSkippingIndex::createIndexAggregator() const
+{
+    return std::make_shared<MergeTreeSetIndexAggregator>(*this);
+}
+
 IndexConditionPtr MergeTreeSetSkippingIndex::createIndexCondition(
-        const SelectQueryInfo & query, const Context & context) const
+    const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<SetIndexCondition>(query, context, *this);
 };
