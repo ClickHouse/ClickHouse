@@ -34,6 +34,20 @@ struct IMergeTreeIndexGranule
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
     virtual bool empty() const = 0;
+};
+
+using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
+using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
+
+
+/// Aggregates info about a single block of data.
+struct IMergeTreeIndexAggregator
+{
+    virtual ~IMergeTreeIndexAggregator() = default;
+
+    virtual void reset() = 0;
+    virtual bool empty() const = 0;
+    virtual MergeTreeIndexGranulePtr getGranule() const = 0;
 
     /// Updates the stored info using rows of the specified block.
     /// Reads no more than `limit` rows.
@@ -41,8 +55,8 @@ struct IMergeTreeIndexGranule
     virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
 };
 
-using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
-using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
+using MergeTreeIndexAggregatorPtr = std::shared_ptr<IMergeTreeIndexAggregator>;
+using MergeTreeIndexAggregators = std::vector<MergeTreeIndexAggregatorPtr>;
 
 
 /// Condition on the index.
