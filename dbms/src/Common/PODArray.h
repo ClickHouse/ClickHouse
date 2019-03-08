@@ -160,6 +160,7 @@ public:
     size_t size() const { return (c_end - c_start) / ELEMENT_SIZE; }
     size_t capacity() const { return (c_end_of_storage - c_start) / ELEMENT_SIZE; }
 
+    /// This method is safe to use only for information about memory usage.
     size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; }
 
     void clear() { c_end = c_start; }
