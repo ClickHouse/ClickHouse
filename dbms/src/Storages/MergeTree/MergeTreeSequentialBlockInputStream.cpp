@@ -26,7 +26,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     {
         std::stringstream message;
         message << "Reading " << data_part->marks_count << " marks from part " << data_part->name
-            << ", totaly " << data_part->rows_count
+            << ", total " << data_part->rows_count
             << " rows starting from the beginning of the part, columns: ";
         for (size_t i = 0, size = columns_to_read.size(); i < size; ++i)
             message << (i == 0 ? "" : ", ") << columns_to_read[i];
