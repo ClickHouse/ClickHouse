@@ -155,14 +155,6 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
     /// periodic update
     std::vector<std::pair<std::string, LoadablePtr>> objects_to_update;
 
-    auto getNextUpdateTime = [this](const LoadablePtr & current)
-    {
-        /// calculate next update time
-        const auto & lifetime = current->getLifetime();
-        std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
-        return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
-    };
-
     /// Collect objects that needs to be updated under lock. Then create new versions without lock, and assign under lock.
     {
         std::lock_guard lock{map_mutex};
@@ -185,17 +177,11 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
                 if (!current->supportUpdates())
                     continue;
 
-                auto & update_time = update_times[current->getName()];
+                auto update_time = update_times[current->getName()];
 
                 /// check that timeout has passed
                 if (std::chrono::system_clock::now() < update_time)
                     continue;
-
-                if (!current->isModified())
-                {
-                    update_time = getNextUpdateTime(current);
-                    continue;
-                }
 
                 objects_to_update.emplace_back(loadable_object.first, current);
             }
@@ -209,6 +195,14 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
         }
     }
 
+    auto getNextUpdateTime = [this](const LoadablePtr & current)
+    {
+        /// Calculate next update time.
+        const auto & lifetime = current->getLifetime();
+        std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
+        return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+    };
+
     for (auto & [name, current] : objects_to_update)
     {
         LoadablePtr new_version;
@@ -216,9 +210,12 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
         try
         {
-            /// create new version of loadable object
-            new_version = current->clone();
-            exception = new_version->getCreationException();
+            if (current->isModified())
+            {
+                /// Create new version of loadable object.
+                new_version = current->clone();
+                exception = new_version->getCreationException();
+            }
         }
         catch (...)
         {
@@ -235,8 +232,12 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
                 it->second.exception = exception;
                 if (!exception)
                 {
-                    it->second.loadable.reset();
-                    it->second.loadable = std::move(new_version);
+                    /// If the dictionary is not modified - leave old version.
+                    if (new_version)
+                    {
+                        it->second.loadable.reset();
+                        it->second.loadable = std::move(new_version);
+                    }
                 }
                 else
                 {
