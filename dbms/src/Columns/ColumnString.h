@@ -1,6 +1,7 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
+#include <cassert>
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
