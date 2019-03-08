@@ -208,7 +208,7 @@ void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & sta
 
     settings.one_line
         ? expression_list->formatImpl(settings, state, frame)
-        : typeid_cast<const ASTExpressionList &>(*expression_list).formatImplMultiline(settings, state, frame);
+        : expression_list->As<ASTExpressionList>()->formatImplMultiline(settings, state, frame);
 }
 
 

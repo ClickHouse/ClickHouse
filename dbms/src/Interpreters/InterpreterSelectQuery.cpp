@@ -163,8 +163,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     bool is_subquery = false;
     if (table_expression)
     {
-        is_table_func = typeid_cast<const ASTFunction *>(table_expression.get());
-        is_subquery = typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get());
+        is_table_func = table_expression->As<ASTFunction>();
+        is_subquery = table_expression->As<ASTSelectWithUnionQuery>();
     }
 
     if (input)
@@ -1265,13 +1265,13 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
     for (const auto & elem : query.order_expression_list->children)
     {
         String name = elem->children.front()->getColumnName();
-        const ASTOrderByElement & order_by_elem = typeid_cast<const ASTOrderByElement &>(*elem);
+        const auto * order_by_elem = elem->As<ASTOrderByElement>();
 
         std::shared_ptr<Collator> collator;
-        if (order_by_elem.collation)
-            collator = std::make_shared<Collator>(typeid_cast<const ASTLiteral &>(*order_by_elem.collation).value.get<String>());
+        if (order_by_elem->collation)
+            collator = std::make_shared<Collator>(order_by_elem->collation->As<ASTLiteral>()->value.get<String>());
 
-        order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+        order_descr.emplace_back(name, order_by_elem->direction, order_by_elem->nulls_direction, collator);
     }
 
     return order_descr;
@@ -1430,10 +1430,10 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
     if (auto query_table = extractTableExpression(query, 0))
     {
-        if (auto ast_union = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
+        if (const auto * ast_union = query_table->As<ASTSelectWithUnionQuery>())
         {
             for (const auto & elem : ast_union->list_of_selects->children)
-                if (hasWithTotalsInAnySubqueryInFromClause(typeid_cast<const ASTSelectQuery &>(*elem)))
+                if (hasWithTotalsInAnySubqueryInFromClause(*elem->As<ASTSelectQuery>()))
                     return true;
         }
     }

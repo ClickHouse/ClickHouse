@@ -90,7 +90,7 @@ struct ColumnAliasesMatcher
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr &)
     {
-        if (typeid_cast<const ASTQualifiedAsterisk *>(node.get()))
+        if (node->As<ASTQualifiedAsterisk>())
             return false;
         return true;
     }
@@ -196,7 +196,7 @@ bool needRewrite(ASTSelectQuery & select)
     if (!select.tables)
         return false;
 
-    auto tables = typeid_cast<const ASTTablesInSelectQuery *>(select.tables.get());
+    const auto * tables = select.tables->As<ASTTablesInSelectQuery>();
     if (!tables)
         return false;
 
@@ -206,11 +206,11 @@ bool needRewrite(ASTSelectQuery & select)
 
     for (size_t i = 1; i < tables->children.size(); ++i)
     {
-        auto table = typeid_cast<const ASTTablesInSelectQueryElement *>(tables->children[i].get());
+        const auto * table = tables->children[i]->As<ASTTablesInSelectQueryElement>();
         if (!table || !table->table_join)
             throw Exception("Multiple JOIN expects joined tables", ErrorCodes::LOGICAL_ERROR);
 
-        auto join = typeid_cast<const ASTTableJoin *>(table->table_join.get());
+        const auto * join = table->table_join->As<ASTTableJoin>();
         if (join->kind == ASTTableJoin::Kind::Comma)
             throw Exception("Multiple COMMA JOIN is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
@@ -306,8 +306,8 @@ static ASTPtr makeSubqueryTemplate()
 
 ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTPtr ast_left, ASTPtr ast_right)
 {
-    auto left = typeid_cast<const ASTTablesInSelectQueryElement *>(ast_left.get());
-    auto right = typeid_cast<const ASTTablesInSelectQueryElement *>(ast_right.get());
+    const auto * left = ast_left->As<ASTTablesInSelectQueryElement>();
+    const auto * right = ast_right->As<ASTTablesInSelectQueryElement>();
     if (!left || !right)
         throw Exception("Two TablesInSelectQueryElements expected", ErrorCodes::LOGICAL_ERROR);
 

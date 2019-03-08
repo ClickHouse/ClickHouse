@@ -50,7 +50,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     auto getStringLiteral = [](const IAST & node, const char * description)
     {
-        const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(&node);
+        const auto * lit = node.As<ASTLiteral>();
         if (!lit)
             throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
 
@@ -74,7 +74,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
 
-    const auto function = typeid_cast<const ASTFunction *>(args[arg_num].get());
+    const auto * function = args[arg_num]->As<ASTFunction>();
 
     if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
     {

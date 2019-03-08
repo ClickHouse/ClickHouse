@@ -405,7 +405,7 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
     if (!node)
         return std::make_shared<ASTExpressionList>();
 
-    const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(node.get());
+    const auto * expr_func = node->As<ASTFunction>();
 
     if (expr_func && expr_func->name == "tuple")
     {
@@ -2276,15 +2276,15 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context)
 {
-    const auto & partition_ast = typeid_cast<const ASTPartition &>(*ast);
+    const auto * partition_ast = ast->As<ASTPartition>();
 
-    if (!partition_ast.value)
-        return partition_ast.id;
+    if (!partition_ast->value)
+        return partition_ast->id;
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition ID can be passed in the partition value.
-        const auto * partition_lit = typeid_cast<const ASTLiteral *>(partition_ast.value.get());
+        const auto * partition_lit = partition_ast->value->As<ASTLiteral>();
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
@@ -2299,9 +2299,9 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     /// Re-parse partition key fields using the information about expected field types.
 
     size_t fields_count = partition_key_sample.columns();
-    if (partition_ast.fields_count != fields_count)
+    if (partition_ast->fields_count != fields_count)
         throw Exception(
-            "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
+            "Wrong number of fields in the partition expression: " + toString(partition_ast->fields_count) +
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
 
@@ -2311,7 +2311,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     if (fields_count)
     {
         ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data, partition_ast.fields_str.size);
+        ReadBufferFromMemory fields_buf(partition_ast->fields_str.data, partition_ast->fields_str.size);
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
@@ -2321,7 +2321,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         RowReadExtension unused;
         if (!input_stream.read(columns, unused))
             throw Exception(
-                "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
+                "Could not parse partition value: `" + partition_ast->fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
@@ -2502,7 +2502,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
         if (column_name == name)
             return true;
 
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (const auto * func = node->As<ASTFunction>())
         if (func->arguments->children.size() == 1)
             return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
 
@@ -2514,7 +2514,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     /// Make sure that the left side of the IN operator contain part of the key.
     /// If there is a tuple on the left side of the IN operator, at least one item of the tuple
     ///  must be part of the key (probably wrapped by a chain of some acceptable functions).
-    const ASTFunction * left_in_operand_tuple = typeid_cast<const ASTFunction *>(left_in_operand.get());
+    const auto * left_in_operand_tuple = left_in_operand->As<ASTFunction>();
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)

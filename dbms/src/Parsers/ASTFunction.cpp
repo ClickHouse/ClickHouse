@@ -132,7 +132,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         * Instead, add a space.
                         * PS. You can not just ask to add parentheses - see formatImpl for ASTLiteral.
                         */
-                    if (name == "negate" && typeid_cast<const ASTLiteral *>(&*arguments->children[0]))
+                    if (name == "negate" && arguments->children[0]->As<ASTLiteral>())
                         settings.ostr << ' ';
 
                     arguments->formatImpl(settings, state, nested_need_parens);
@@ -203,7 +203,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
             {
                 /// It can be printed in a form of 'x.1' only if right hand side is unsigned integer literal.
-                if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(arguments->children[1].get()))
+                if (const auto * lit = arguments->children[1]->As<ASTLiteral>())
                 {
                     if (lit->value.getType() == Field::Types::UInt64)
                     {
@@ -222,7 +222,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (frame.need_parens)
                     settings.ostr << '(';
 
-                const ASTFunction * first_arg_func = typeid_cast<const ASTFunction *>(arguments->children[0].get());
+                const auto * first_arg_func = arguments->children[0]->As<ASTFunction>();
                 if (first_arg_func
                     && first_arg_func->name == "tuple"
                     && first_arg_func->arguments

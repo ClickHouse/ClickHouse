@@ -940,7 +940,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
     String partition_id;
 
     if (attach_part)
-        partition_id = typeid_cast<const ASTLiteral &>(*partition).value.safeGet<String>();
+        partition_id = partition->As<ASTLiteral>()->value.safeGet<String>();
     else
         partition_id = data.getPartitionIDFromQuery(partition, context);
 

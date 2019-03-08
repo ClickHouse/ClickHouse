@@ -284,20 +284,20 @@ KeyCondition::KeyCondition(
     Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
     /// Trasform WHERE section to Reverse Polish notation
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
-    if (select.where_expression)
+    const auto * select = query_info.query->As<ASTSelectQuery>();
+    if (select->where_expression)
     {
-        traverseAST(select.where_expression, context, block_with_constants);
+        traverseAST(select->where_expression, context, block_with_constants);
 
-        if (select.prewhere_expression)
+        if (select->prewhere_expression)
         {
-            traverseAST(select.prewhere_expression, context, block_with_constants);
+            traverseAST(select->prewhere_expression, context, block_with_constants);
             rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
     }
-    else if (select.prewhere_expression)
+    else if (select->prewhere_expression)
     {
-        traverseAST(select.prewhere_expression, context, block_with_constants);
+        traverseAST(select->prewhere_expression, context, block_with_constants);
     }
     else
     {
@@ -321,7 +321,7 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
 {
     String column_name = expr->getColumnName();
 
-    if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(expr.get()))
+    if (const auto * lit = expr->As<ASTLiteral>())
     {
         /// By default block_with_constants has only one column named "_dummy".
         /// If block contains only constants it's may not be preprocessed by
@@ -486,7 +486,7 @@ bool KeyCondition::tryPrepareSetIndex(
         }
     };
 
-    const ASTFunction * left_arg_tuple = typeid_cast<const ASTFunction *>(left_arg.get());
+    const auto * left_arg_tuple = left_arg->As<ASTFunction>();
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
@@ -502,7 +502,7 @@ bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & right_arg = args[1];
 
     PreparedSetKey set_key;
-    if (typeid_cast<const ASTSubquery *>(right_arg.get()) || typeid_cast<const ASTIdentifier *>(right_arg.get()))
+    if (right_arg->As<ASTSubquery>() || right_arg->As<ASTIdentifier>())
         set_key = PreparedSetKey::forSubquery(*right_arg);
     else
         set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
@@ -574,7 +574,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         return true;
     }
 
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (const auto * func = node->As<ASTFunction>())
     {
         const auto & args = func->arguments->children;
         if (args.size() != 1)
@@ -620,9 +620,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
       */
     Field const_value;
     DataTypePtr const_type;
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (const auto * func = node->As<ASTFunction>())
     {
-        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+        const ASTs & args = func->arguments->As<ASTExpressionList>()->children;
 
         if (args.size() != 2)
             return false;
@@ -737,7 +737,7 @@ bool KeyCondition::operatorFromAST(const ASTFunction * func, RPNElement & out)
     /** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
       * (or, the same thing - calling the function `and` from one argument).
       */
-    const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+    const ASTs & args = func->arguments->children;
 
     if (func->name == "not")
     {

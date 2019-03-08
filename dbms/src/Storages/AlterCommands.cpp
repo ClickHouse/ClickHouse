@@ -39,21 +39,21 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.type = AlterCommand::ADD_COLUMN;
 
-        const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*command_ast->col_decl);
+        const auto * ast_col_decl = command_ast->col_decl->As<ASTColumnDeclaration>();
 
-        command.column_name = ast_col_decl.name;
-        if (ast_col_decl.type)
+        command.column_name = ast_col_decl->name;
+        if (ast_col_decl->type)
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            command.data_type = data_type_factory.get(ast_col_decl->type);
         }
-        if (ast_col_decl.default_expression)
+        if (ast_col_decl->default_expression)
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.default_expression;
+            command.default_kind = columnDefaultKindFromString(ast_col_decl->default_specifier);
+            command.default_expression = ast_col_decl->default_expression;
         }
 
-        if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+        if (ast_col_decl->codec)
+            command.codec = compression_codec_factory.get(ast_col_decl->codec);
 
         if (command_ast->column)
             command.after_column = *getIdentifierName(command_ast->column);
@@ -78,27 +78,27 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.type = AlterCommand::MODIFY_COLUMN;
 
-        const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*command_ast->col_decl);
+        const auto * ast_col_decl = command_ast->col_decl->As<ASTColumnDeclaration>();
 
-        command.column_name = ast_col_decl.name;
-        if (ast_col_decl.type)
+        command.column_name = ast_col_decl->name;
+        if (ast_col_decl->type)
         {
-            command.data_type = data_type_factory.get(ast_col_decl.type);
+            command.data_type = data_type_factory.get(ast_col_decl->type);
         }
 
-        if (ast_col_decl.default_expression)
+        if (ast_col_decl->default_expression)
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.default_expression;
+            command.default_kind = columnDefaultKindFromString(ast_col_decl->default_specifier);
+            command.default_expression = ast_col_decl->default_expression;
         }
 
-        if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+        if (ast_col_decl->codec)
+            command.codec = compression_codec_factory.get(ast_col_decl->codec);
 
-        if (ast_col_decl.comment)
+        if (ast_col_decl->comment)
         {
-            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
-            command.comment = ast_comment.value.get<String>();
+            const auto * ast_comment = ast_col_decl->comment->As<ASTLiteral>();
+            command.comment = ast_comment->value.get<String>();
         }
         command.if_exists = command_ast->if_exists;
 
@@ -127,12 +127,12 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.index_decl = command_ast->index_decl;
         command.type = AlterCommand::ADD_INDEX;
 
-        const auto & ast_index_decl = typeid_cast<const ASTIndexDeclaration &>(*command_ast->index_decl);
+        const auto * ast_index_decl = command_ast->index_decl->As<ASTIndexDeclaration>();
 
-        command.index_name = ast_index_decl.name;
+        command.index_name = ast_index_decl->name;
 
         if (command_ast->index)
-            command.after_index_name = typeid_cast<const ASTIdentifier &>(*command_ast->index).name;
+            command.after_index_name = command_ast->index->As<ASTIdentifier>()->name;
 
         command.if_not_exists = command_ast->if_not_exists;
 
@@ -145,7 +145,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         AlterCommand command;
         command.type = AlterCommand::DROP_INDEX;
-        command.index_name = typeid_cast<const ASTIdentifier &>(*(command_ast->index)).name;
+        command.index_name = command_ast->index->As<ASTIdentifier>()->name;
         command.if_exists = command_ast->if_exists;
 
         return command;
@@ -335,7 +335,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 indices_description.indices.cend(),
                 [this](const ASTPtr & index_ast)
                 {
-                    return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
+                    return index_ast->As<ASTIndexDeclaration>()->name == index_name;
                 }))
         {
             if (if_not_exists)
@@ -354,7 +354,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                     indices_description.indices.end(),
                     [this](const ASTPtr & index_ast)
                     {
-                        return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == after_index_name;
+                        return index_ast->As<ASTIndexDeclaration>()->name == after_index_name;
                     });
 
             if (insert_it == indices_description.indices.end())
@@ -373,7 +373,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 indices_description.indices.end(),
                 [this](const ASTPtr & index_ast)
                 {
-                    return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
+                    return index_ast->As<ASTIndexDeclaration>()->name == index_name;
                 });
 
         if (erase_it == indices_description.indices.end())

@@ -66,7 +66,7 @@ static void collectIdentifiersNoSubqueries(const ASTPtr & ast, NameSet & set)
     if (auto opt_name = getIdentifierName(ast))
         return (void)set.insert(*opt_name);
 
-    if (typeid_cast<const ASTSubquery *>(ast.get()))
+    if (ast->As<ASTSubquery>())
         return;
 
     for (const auto & child : ast->children)
@@ -219,7 +219,7 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
 
 bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
 {
-    const auto function = typeid_cast<const ASTFunction *>(condition.get());
+    const auto * function = condition->As<ASTFunction>();
     if (!function)
         return false;
 
@@ -238,7 +238,7 @@ bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
     if (isIdentifier(left_arg))
     {
         /// condition may be "good" if only right_arg is a constant and its value is outside the threshold
-        if (const auto literal = typeid_cast<const ASTLiteral *>(right_arg))
+        if (const auto * literal = right_arg->As<ASTLiteral>())
         {
             const auto & field = literal->value;
             const auto type = field.getType();
@@ -268,7 +268,7 @@ bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
 
 bool MergeTreeWhereOptimizer::hasPrimaryKeyAtoms(const ASTPtr & ast) const
 {
-    if (const auto func = typeid_cast<const ASTFunction *>(ast.get()))
+    if (const auto * func = ast->As<ASTFunction>())
     {
         const auto & args = func->arguments->children;
 
@@ -288,7 +288,7 @@ bool MergeTreeWhereOptimizer::hasPrimaryKeyAtoms(const ASTPtr & ast) const
 
 bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 {
-    if (const auto func = typeid_cast<const ASTFunction *>(ast.get()))
+    if (const auto * func = ast->As<ASTFunction>())
     {
         if (!KeyCondition::atom_map.count(func->name))
             return false;
@@ -314,7 +314,7 @@ bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 {
     const auto column_name = expr->getColumnName();
 
-    if (typeid_cast<const ASTLiteral *>(expr.get())
+    if (expr->As<ASTLiteral>()
         || (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst()))
         return true;
 
@@ -334,7 +334,7 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers
 
 bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
 {
-    if (const auto function_ptr = typeid_cast<const ASTFunction *>(ptr.get()))
+    if (const auto * function_ptr = ptr->As<ASTFunction>())
     {
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
         if ("arrayJoin" == function_ptr->name)

@@ -239,7 +239,7 @@ void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
             if (alias == qualified_name)
             {
                 String name;
-                if (auto * id = typeid_cast<const ASTIdentifier *>(ast.get()))
+                if (auto * id = ast->As<ASTIdentifier>())
                 {
                     name = id->tryGetAlias();
                     if (name.empty())

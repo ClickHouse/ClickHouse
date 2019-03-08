@@ -87,12 +87,12 @@ DataTypePtr getDataType(const String & mysql_data_type, bool is_nullable, bool i
 
 StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
-    const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
+    const auto * args_func = ast_function->As<ASTFunction>();
 
-    if (!args_func.arguments)
+    if (!args_func->arguments)
         throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
+    ASTs & args = args_func->arguments->children;
 
     if (args.size() < 5 || args.size() > 7)
         throw Exception("Table function 'mysql' requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",

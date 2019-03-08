@@ -42,7 +42,7 @@ static void replaceConstFunction(IAST & node, const Context & context, const Nam
 
 static bool isCompatible(const IAST & node)
 {
-    if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&node))
+    if (const auto * function = node.As<ASTFunction>())
     {
         String name = function->name;
         if (!(name == "and"
@@ -66,7 +66,7 @@ static bool isCompatible(const IAST & node)
         return true;
     }
 
-    if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(&node))
+    if (const auto * literal = node.As<ASTLiteral>())
     {
         /// Foreign databases often have no support for Array and Tuple literals.
         if (literal->value.getType() == Field::Types::Array
@@ -120,7 +120,7 @@ String transformQueryForExternalDatabase(
         {
             select->where_expression = original_where;
         }
-        else if (const ASTFunction * function = typeid_cast<const ASTFunction *>(original_where.get()))
+        else if (const auto * function = original_where->As<ASTFunction>())
         {
             if (function->name == "and")
             {

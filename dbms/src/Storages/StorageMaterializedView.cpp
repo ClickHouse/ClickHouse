@@ -73,14 +73,14 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
     if (!subquery)
         return;
 
-    if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(subquery.get()))
+    if (const auto * ast_select = subquery->As<ASTSelectWithUnionQuery>())
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
         const auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        checkAllowedQueries(typeid_cast<const ASTSelectQuery &>(*inner_query));
+        checkAllowedQueries(*inner_query->As<ASTSelectQuery>());
     }
 }
 

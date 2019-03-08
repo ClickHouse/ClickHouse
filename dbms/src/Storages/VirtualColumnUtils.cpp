@@ -106,7 +106,7 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
 static void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
-    const ASTFunction * function = typeid_cast<const ASTFunction *>(expression.get());
+    const auto * function = expression->As<ASTFunction>();
     if (function && function->name == "and")
     {
         for (size_t i = 0; i < function->arguments->children.size(); ++i)
@@ -136,8 +136,8 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
 
 void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
 {
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery & >(*query);
-    if (!select.where_expression && !select.prewhere_expression)
+    const auto * select = query->As<ASTSelectQuery>();
+    if (!select->where_expression && !select->prewhere_expression)
         return;
 
     NameSet columns;
@@ -146,10 +146,10 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
 
     /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
     std::vector<ASTPtr> functions;
-    if (select.where_expression)
-        extractFunctions(select.where_expression, columns, functions);
-    if (select.prewhere_expression)
-        extractFunctions(select.prewhere_expression, columns, functions);
+    if (select->where_expression)
+        extractFunctions(select->where_expression, columns, functions);
+    if (select->prewhere_expression)
+        extractFunctions(select->prewhere_expression, columns, functions);
 
     ASTPtr expression_ast = buildWhereExpression(functions);
     if (!expression_ast)

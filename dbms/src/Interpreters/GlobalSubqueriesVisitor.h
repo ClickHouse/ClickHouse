@@ -61,7 +61,7 @@ public:
                 table_name = subquery_or_table_name_or_table_expression;
                 subquery_or_table_name = table_name;
             }
-            else if (auto ast_table_expr = typeid_cast<const ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
+            else if (const auto * ast_table_expr = subquery_or_table_name_or_table_expression->As<ASTTableExpression>())
             {
                 if (ast_table_expr->database_and_table_name)
                 {
@@ -74,7 +74,7 @@ public:
                     subquery_or_table_name = subquery;
                 }
             }
-            else if (typeid_cast<const ASTSubquery *>(subquery_or_table_name_or_table_expression.get()))
+            else if (subquery_or_table_name_or_table_expression->As<ASTSubquery>())
             {
                 subquery = subquery_or_table_name_or_table_expression;
                 subquery_or_table_name = subquery;

@@ -86,14 +86,14 @@ ASTPtr createTableIdentifier(const String & database_name, const String & table_
 bool isIdentifier(const IAST * const ast)
 {
     if (ast)
-        return typeid_cast<const ASTIdentifier *>(ast);
+        return ast->As<ASTIdentifier>();
     return false;
 }
 
 std::optional<String> getIdentifierName(const IAST * const ast)
 {
     if (ast)
-        if (auto node = typeid_cast<const ASTIdentifier *>(ast))
+        if (const auto * node = ast->As<ASTIdentifier>())
             return node->name;
     return {};
 }
@@ -101,7 +101,7 @@ std::optional<String> getIdentifierName(const IAST * const ast)
 bool getIdentifierName(const ASTPtr & ast, String & name)
 {
     if (ast)
-        if (auto node = typeid_cast<const ASTIdentifier *>(ast.get()))
+        if (const auto * node = ast->As<ASTIdentifier>())
         {
             name = node->name;
             return true;

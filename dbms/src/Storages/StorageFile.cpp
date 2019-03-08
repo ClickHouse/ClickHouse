@@ -311,7 +311,7 @@ void registerStorageFile(StorageFactory & factory)
                     throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
                                     ErrorCodes::UNKNOWN_IDENTIFIER);
             }
-            else if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
+            else if (const auto * literal = engine_args[1]->As<ASTLiteral>())
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)
