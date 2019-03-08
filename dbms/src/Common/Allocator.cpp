@@ -5,6 +5,7 @@
 #endif
 
 #include <cstdlib>
+#include <algorithm>
 #include <sys/mman.h>
 
 #include <common/mremap.h>
@@ -118,9 +119,11 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
     if (old_size == new_size)
     {
         /// nothing to do.
+        /// BTW, it's not possible to change alignment while doing realloc.
     }
     else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
     {
+        /// Resize malloc'd memory region with no special alignment requirement.
         CurrentMemoryTracker::realloc(old_size, new_size);
 
         void * new_buf = ::realloc(buf, new_size);
@@ -133,6 +136,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
     }
     else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
     {
+        /// Resize mmap'd memory region.
         CurrentMemoryTracker::realloc(old_size, new_size);
 
         // On apple and freebsd self-implemented mremap used (common/mremap.h)
@@ -142,21 +146,12 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
 
         /// No need for zero-fill, because mmap guarantees it.
     }
-    else if (old_size >= MMAP_THRESHOLD && new_size < MMAP_THRESHOLD)
-    {
-        void * new_buf = alloc(new_size, alignment);
-        memcpy(new_buf, buf, new_size);
-        if (0 != munmap(buf, old_size))
-        {
-            ::free(new_buf);
-            DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(old_size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
-        }
-        buf = new_buf;
-    }
     else
     {
+        /// All other cases that requires a copy. MemoryTracker is called inside 'alloc', 'free' methods.
+
         void * new_buf = alloc(new_size, alignment);
-        memcpy(new_buf, buf, old_size);
+        memcpy(new_buf, buf, std::min(old_size, new_size));
         free(buf, old_size);
         buf = new_buf;
     }
