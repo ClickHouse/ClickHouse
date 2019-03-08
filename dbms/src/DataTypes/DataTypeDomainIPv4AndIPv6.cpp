@@ -23,7 +23,7 @@ namespace
 class DataTypeDomainIPv4 : public DataTypeDomainWithSimpleSerialization
 {
 public:
-    const char * getName() const override
+    String doGetName() const override
     {
         return "IPv4";
     }
@@ -33,7 +33,7 @@ public:
         const auto col = checkAndGetColumn<ColumnUInt32>(&column);
         if (!col)
         {
-            throw Exception(String(getName()) + " domain can only serialize columns of type UInt32." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(getName() + " domain can only serialize columns of type UInt32." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
         }
 
         char buffer[IPV4_MAX_TEXT_LENGTH + 1] = {'\0'};
@@ -48,7 +48,7 @@ public:
         ColumnUInt32 * col = typeid_cast<ColumnUInt32 *>(&column);
         if (!col)
         {
-            throw Exception(String(getName()) + " domain can only deserialize columns of type UInt32." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(getName() + " domain can only deserialize columns of type UInt32." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
         }
 
         char buffer[IPV4_MAX_TEXT_LENGTH + 1] = {'\0'};
@@ -66,7 +66,7 @@ public:
 class DataTypeDomainIPv6 : public DataTypeDomainWithSimpleSerialization
 {
 public:
-    const char * getName() const override
+    String doGetName() const override
     {
         return "IPv6";
     }
@@ -76,7 +76,7 @@ public:
         const auto col = checkAndGetColumn<ColumnFixedString>(&column);
         if (!col)
         {
-            throw Exception(String(getName()) + " domain can only serialize columns of type FixedString(16)." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(getName() + " domain can only serialize columns of type FixedString(16)." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
         }
 
         char buffer[IPV6_MAX_TEXT_LENGTH + 1] = {'\0'};
@@ -91,7 +91,7 @@ public:
         ColumnFixedString * col = typeid_cast<ColumnFixedString *>(&column);
         if (!col)
         {
-            throw Exception(String(getName()) + " domain can only deserialize columns of type FixedString(16)." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception(getName() + " domain can only deserialize columns of type FixedString(16)." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
         }
 
         char buffer[IPV6_MAX_TEXT_LENGTH + 1] = {'\0'};
@@ -100,7 +100,7 @@ public:
         std::string ipv6_value(IPV6_BINARY_LENGTH, '\0');
         if (!parseIPv6(buffer, reinterpret_cast<unsigned char *>(ipv6_value.data())))
         {
-            throw Exception(String("Invalid ") + getName() + " value.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+            throw Exception("Invalid " + getName() + " value.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
         }
 
         col->insertString(ipv6_value);
@@ -111,8 +111,8 @@ public:
 
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
 {
-    factory.registerDataTypeDomain("UInt32", std::make_unique<DataTypeDomainIPv4>());
-    factory.registerDataTypeDomain("FixedString(16)", std::make_unique<DataTypeDomainIPv6>());
+    factory.registerDataTypeDomain("IPv4", [] { return std::make_pair(DataTypeFactory::instance().get("UInt32"), std::make_unique<DataTypeDomainIPv4>()); });
+    factory.registerDataTypeDomain("IPv6", [] { return std::make_pair(DataTypeFactory::instance().get("FixedString(16)"), std::make_unique<DataTypeDomainIPv6>()); });
 }
 
 } // namespace DB

@@ -13,6 +13,8 @@ class ReadBuffer;
 class WriteBuffer;
 
 class IDataTypeDomain;
+using DataTypeDomainPtr = std::unique_ptr<const IDataTypeDomain>;
+
 class IDataType;
 struct FormatSettings;
 
@@ -459,18 +461,19 @@ public:
 
 private:
     friend class DataTypeFactory;
-    /** Sets domain on existing DataType, can be considered as second phase
+    /** Sets domain on existing DataType or append it to existing domain, can be considered as second phase
       * of construction explicitly done by DataTypeFactory.
-      * Will throw an exception if domain is already set.
       */
-    void setDomain(const IDataTypeDomain* newDomain) const;
+    void appendDomain(DataTypeDomainPtr new_domain) const;
 
 private:
     /** This is mutable to allow setting domain on `const IDataType` post construction,
      * simplifying creation of domains for all types, without them even knowing
      * of domain existence.
      */
-    mutable IDataTypeDomain const* domain;
+    mutable DataTypeDomainPtr domain;
+public:
+    const IDataTypeDomain * getDomain() const { return domain.get(); }
 };
 
 

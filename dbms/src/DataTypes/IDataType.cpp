@@ -142,9 +142,9 @@ void IDataType::insertDefaultInto(IColumn & column) const
 
 void IDataType::serializeAsTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->serializeTextEscaped(column, row_num, ostr, settings);
+        ser_domain->serializeTextEscaped(column, row_num, ostr, settings);
     }
     else
     {
@@ -154,9 +154,9 @@ void IDataType::serializeAsTextEscaped(const IColumn & column, size_t row_num, W
 
 void IDataType::deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->deserializeTextEscaped(column, istr, settings);
+        ser_domain->deserializeTextEscaped(column, istr, settings);
     }
     else
     {
@@ -166,9 +166,9 @@ void IDataType::deserializeAsTextEscaped(IColumn & column, ReadBuffer & istr, co
 
 void IDataType::serializeAsTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->serializeTextQuoted(column, row_num, ostr, settings);
+        ser_domain->serializeTextQuoted(column, row_num, ostr, settings);
     }
     else
     {
@@ -178,9 +178,9 @@ void IDataType::serializeAsTextQuoted(const IColumn & column, size_t row_num, Wr
 
 void IDataType::deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->deserializeTextQuoted(column, istr, settings);
+        ser_domain->deserializeTextQuoted(column, istr, settings);
     }
     else
     {
@@ -190,9 +190,9 @@ void IDataType::deserializeAsTextQuoted(IColumn & column, ReadBuffer & istr, con
 
 void IDataType::serializeAsTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
-    {
-        domain->serializeTextCSV(column, row_num, ostr, settings);
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
+  {
+      ser_domain->serializeTextCSV(column, row_num, ostr, settings);
     }
     else
     {
@@ -202,9 +202,9 @@ void IDataType::serializeAsTextCSV(const IColumn & column, size_t row_num, Write
 
 void IDataType::deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->deserializeTextCSV(column, istr, settings);
+        ser_domain->deserializeTextCSV(column, istr, settings);
     }
     else
     {
@@ -214,9 +214,9 @@ void IDataType::deserializeAsTextCSV(IColumn & column, ReadBuffer & istr, const 
 
 void IDataType::serializeAsText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->serializeText(column, row_num, ostr, settings);
+        ser_domain->serializeText(column, row_num, ostr, settings);
     }
     else
     {
@@ -226,9 +226,9 @@ void IDataType::serializeAsText(const IColumn & column, size_t row_num, WriteBuf
 
 void IDataType::serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->serializeTextJSON(column, row_num, ostr, settings);
+        ser_domain->serializeTextJSON(column, row_num, ostr, settings);
     }
     else
     {
@@ -238,9 +238,9 @@ void IDataType::serializeAsTextJSON(const IColumn & column, size_t row_num, Writ
 
 void IDataType::deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->deserializeTextJSON(column, istr, settings);
+        ser_domain->deserializeTextJSON(column, istr, settings);
     }
     else
     {
@@ -250,9 +250,9 @@ void IDataType::deserializeAsTextJSON(IColumn & column, ReadBuffer & istr, const
 
 void IDataType::serializeAsTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    if (domain)
+    if (auto ser_domain = dynamic_cast<const IDataTypeDomainCustomSerialization *>(domain.get()))
     {
-        domain->serializeTextXML(column, row_num, ostr, settings);
+        ser_domain->serializeTextXML(column, row_num, ostr, settings);
     }
     else
     {
@@ -260,13 +260,12 @@ void IDataType::serializeAsTextXML(const IColumn & column, size_t row_num, Write
     }
 }
 
-void IDataType::setDomain(const IDataTypeDomain* const new_domain) const
+void IDataType::appendDomain(DataTypeDomainPtr new_domain) const
 {
-    if (domain != nullptr)
-    {
-        throw Exception("Type " + getName() + " already has a domain.", ErrorCodes::LOGICAL_ERROR);
-    }
-    domain = new_domain;
+    if (domain == nullptr)
+        domain = std::move(new_domain);
+    else
+        domain->appendDomain(std::move(new_domain));
 }
 
 }
