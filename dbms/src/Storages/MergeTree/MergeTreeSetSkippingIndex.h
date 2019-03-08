@@ -17,17 +17,30 @@ class MergeTreeSetSkippingIndex;
 struct MergeTreeSetIndexGranule : public IMergeTreeIndexGranule
 {
     explicit MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index);
+    MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index, const Columns & columns);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
-    size_t size() const { return set->getTotalRowCount(); }
+    size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
 
-    void update(const Block & block, size_t * pos, size_t limit) override;
-    Block getElementsBlock() const;
-
     ~MergeTreeSetIndexGranule() override = default;
+
+    const MergeTreeSetSkippingIndex & index;
+    Block block;
+};
+
+
+struct MergeTreeSetIndexAggregator : IMergeTreeIndexAggregator
+{
+    explicit MergeTreeSetIndexAggregator(const MergeTreeSetSkippingIndex & index);
+    ~MergeTreeSetIndexAggregator() override = default;
+
+    size_t size() const { return set->getTotalRowCount(); }
+    bool empty() const override { return !size(); }
+    MergeTreeIndexGranulePtr getGranuleAndReset() override;
+    void update(const Block & block, size_t * pos, size_t limit) override;
 
     const MergeTreeSetSkippingIndex & index;
     std::unique_ptr<Set> set;
@@ -79,6 +92,7 @@ public:
     ~MergeTreeSetSkippingIndex() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     IndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, const Context & context) const override;
