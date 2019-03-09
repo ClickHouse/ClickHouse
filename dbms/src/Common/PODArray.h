@@ -116,6 +116,8 @@ protected:
         if (c_start == null)
             return;
 
+        unprotect();
+
         TAllocator::free(c_start - pad_left, allocated_bytes());
     }
 
@@ -127,6 +129,8 @@ protected:
             alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...);
             return;
         }
+
+        unprotect();
 
         ptrdiff_t end_diff = c_end - c_start;
 
@@ -178,30 +182,11 @@ protected:
             size_t length = right_rounded_down - left_rounded_up;
             if (0 != mprotect(left_rounded_up, length, prot))
                 throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
-
-            protector.parent = this;
         }
     }
 
     /// Restore memory protection in destructor for further reuse by allocator.
-    struct Protector
-    {
-        PODArrayBase * parent = nullptr;
-        void reset()
-        {
-            if (parent)
-            {
-                parent->protectImpl(PROT_WRITE);
-                parent = nullptr;
-            }
-
-        }
-        ~Protector()
-        {
-            reset();
-        }
-    };
-    Protector protector;
+    bool mprotected = false;
 #endif
 
 public:
@@ -252,6 +237,16 @@ public:
     {
 #ifndef NDEBUG
         protectImpl(PROT_READ);
+        mprotected = true;
+#endif
+    }
+
+    void unprotect()
+    {
+#ifndef NDEBUG
+        if (mprotected)
+            protectImpl(PROT_WRITE);
+        mprotected = false;
 #endif
     }
 
@@ -449,8 +444,8 @@ public:
     void swap(PODArray & rhs)
     {
 #ifndef NDEBUG
-        this->protector.reset();
-        rhs.protector.reset();
+        this->unprotect();
+        rhs.unprotect();
 #endif
 
         /// Swap two PODArray objects, arr1 and arr2, that satisfy the following conditions:
