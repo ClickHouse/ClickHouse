@@ -22,11 +22,15 @@ const Field UNKNOWN_FIELD(3u);
 
 
 MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index)
-    : IMergeTreeIndexGranule(), index(index), block(index.header.cloneEmpty()) {}
+    : IMergeTreeIndexGranule()
+    , index(index)
+    , block(index.header.cloneEmpty()) {}
 
 MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(
-    const MergeTreeSetSkippingIndex & index, const Columns & columns)
-    : IMergeTreeIndexGranule(), index(index), block(index.header.cloneWithColumns(columns)) {}
+    const MergeTreeSetSkippingIndex & index, MutableColumns && mutable_columns)
+    : IMergeTreeIndexGranule()
+    , index(index)
+    , block(index.header.cloneWithColumns(std::move(mutable_columns))) {}
 
 void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
 {
@@ -91,19 +95,30 @@ void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
 
 
 MergeTreeSetIndexAggregator::MergeTreeSetIndexAggregator(const MergeTreeSetSkippingIndex & index)
-    : index(index), set(new Set(SizeLimits{}, true))
+    : index(index), columns(index.header.cloneEmptyColumns())
 {
-    set->setHeader(index.header);
+    ColumnRawPtrs column_ptrs;
+    column_ptrs.reserve(index.columns.size());
+    Columns materialized_columns;
+    for (const auto & column : index.header.getColumns())
+    {
+        materialized_columns.emplace_back(column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        column_ptrs.emplace_back(materialized_columns.back().get());
+    }
+
+    data.init(ClearableSetVariants::chooseMethod(column_ptrs, key_sizes));
+
+    columns = index.header.cloneEmptyColumns();
 }
 
-void MergeTreeSetIndexAggregator::update(const Block & new_block, size_t * pos, size_t limit)
+void MergeTreeSetIndexAggregator::update(const Block & block, size_t * pos, size_t limit)
 {
-    if (*pos >= new_block.rows())
+    if (*pos >= block.rows())
         throw Exception(
                 "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(new_block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
-    size_t rows_read = std::min(limit, new_block.rows() - *pos);
+    size_t rows_read = std::min(limit, block.rows() - *pos);
 
     if (size() > index.max_rows)
     {
@@ -111,30 +126,90 @@ void MergeTreeSetIndexAggregator::update(const Block & new_block, size_t * pos, 
         return;
     }
 
-    Block key_block;
-    for (size_t i = 0; i < index.columns.size(); ++i)
+    ColumnRawPtrs index_column_ptrs;
+    index_column_ptrs.reserve(index.columns.size());
+    Columns materialized_columns;
+    for (const auto & column_name : index.columns)
     {
-        const auto & name = index.columns[i];
-        const auto & type = index.data_types[i];
-        key_block.insert(
-                ColumnWithTypeAndName(
-                    new_block.getByName(name).column->cut(*pos, rows_read),
-                    type,
-                    name));
+        materialized_columns.emplace_back(
+                block.getByName(column_name).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        index_column_ptrs.emplace_back(materialized_columns.back().get());
     }
 
-    set->insertFromBlock(key_block);
+    IColumn::Filter filter(block.rows(), 0);
+
+    bool has_new_data = false;
+    switch (data.type)
+    {
+        case ClearableSetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+        case ClearableSetVariants::Type::NAME: \
+            has_new_data = buildFilter(*data.NAME, index_column_ptrs, filter, *pos, rows_read, data); \
+            break;
+        APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
+
+    if (!has_new_data)
+    {
+        *pos += rows_read;
+        return;
+    }
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        auto filtered_column = block.getByName(index.columns[i]).column->filter(filter, block.rows());
+        columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+    }
 
     *pos += rows_read;
 }
 
+template <typename Method>
+bool MergeTreeSetIndexAggregator::buildFilter(
+    Method & method,
+    const ColumnRawPtrs & columns,
+    IColumn::Filter & filter,
+    size_t pos,
+    size_t limit,
+    ClearableSetVariants & variants) const
+{
+    /// Like DistinctSortedBlockInputStream.
+    typename Method::State state(columns, key_sizes, nullptr);
+
+    bool has_new_data = false;
+    for (size_t i = 0; i < limit; ++i)
+    {
+        auto emplace_result = state.emplaceKey(method.data, pos + i, variants.string_pool);
+
+        if (emplace_result.isInserted())
+            has_new_data = true;
+
+        /// Emit the record if there is no such key in the current set yet.
+        /// Skip it otherwise.
+        filter[pos + i] = emplace_result.isInserted();
+    }
+    return has_new_data;
+}
+
 MergeTreeIndexGranulePtr MergeTreeSetIndexAggregator::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeSetIndexGranule>(index, set->getSetElements());
+    auto granule = std::make_shared<MergeTreeSetIndexGranule>(index, std::move(columns));
 
-    auto new_set = std::make_unique<Set>(SizeLimits{}, true);
-    new_set->setHeader(index.header);
-    set.swap(new_set);
+    switch (data.type)
+    {
+        case ClearableSetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+        case ClearableSetVariants::Type::NAME: \
+            data.NAME->data.clear(); \
+            break;
+        APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
+
+    columns = index.header.cloneEmptyColumns();
 
     return granule;
 }
