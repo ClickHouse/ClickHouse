@@ -116,7 +116,7 @@ public:
       */
     size_t checkDepth(size_t max_depth) const { return checkDepthImpl(max_depth, max_depth); }
 
-    /// Do not allow to change the table while the blocks stream is alive.
+    /// Do not allow to change the table while the blocks stream and its children are alive.
     void addTableLock(const TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 
     /// Get information about execution speed.
@@ -212,6 +212,9 @@ public:
 
         /// in rows per second
         size_t min_execution_speed = 0;
+        size_t max_execution_speed = 0;
+        size_t min_execution_speed_bytes = 0;
+        size_t max_execution_speed_bytes = 0;
         /// Verify that the speed is not too low after the specified time has elapsed.
         Poco::Timespan timeout_before_checking_execution_speed = 0;
     };
@@ -239,6 +242,10 @@ public:
     void enableExtremes() { enabled_extremes = true; }
 
 protected:
+    /// Order is important: `table_locks` must be destroyed after `children` so that tables from
+    /// which child streams read are protected by the locks during the lifetime of the child streams.
+    TableStructureReadLocks table_locks;
+
     BlockInputStreams children;
     std::shared_mutex children_mutex;
 
@@ -265,8 +272,6 @@ protected:
     }
 
 private:
-    TableStructureReadLocks table_locks;
-
     bool enabled_extremes = false;
 
     /// The limit on the number of rows/bytes has been exceeded, and you need to stop execution on the next `read` call, as if the thread has run out.

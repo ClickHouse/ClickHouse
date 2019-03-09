@@ -77,7 +77,7 @@ void RegionsNames::reload()
                 throw Poco::Exception("Logical error. Maybe size estimate of " + names_source->getSourceName() + " is wrong.");
 
             new_chars.resize(old_size + name_entry.name.length() + 1);
-            memcpy(&new_chars[old_size], name_entry.name.c_str(), name_entry.name.length() + 1);
+            memcpy(new_chars.data() + old_size, name_entry.name.c_str(), name_entry.name.length() + 1);
 
             if (name_entry.id > max_region_id)
             {
@@ -92,7 +92,7 @@ void RegionsNames::reload()
             while (name_entry.id >= new_names_refs.size())
                 new_names_refs.resize(new_names_refs.size() * 2, StringRef("", 0));
 
-            new_names_refs[name_entry.id] = StringRef(&new_chars[old_size], name_entry.name.length());
+            new_names_refs[name_entry.id] = StringRef(new_chars.data() + old_size, name_entry.name.length());
         }
 
         chars[language_id].swap(new_chars);

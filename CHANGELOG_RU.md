@@ -1,3 +1,11 @@
+## ClickHouse release 19.3.5, 2019-02-21
+
+### Исправления ошибок:
+
+* Исправлена ошибка обработки длинных http-запросов на вставку на стороне сервера. [#4454](https://github.com/yandex/ClickHouse/pull/4454) ([alesapin](https://github.com/alesapin))
+* Исправлена обратная несовместимость со старыми версиями, появившаяся из-за некорректной реализации настройки `send_logs_level`. [#4445](https://github.com/yandex/ClickHouse/pull/4445) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Исправлена обратная несовместимость табличной функции `remote`, появившаяся из-за добавления комментариев колонок. [#4446](https://github.com/yandex/ClickHouse/pull/4446) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
 ## ClickHouse release 19.3.4, 2019-02-16
 
 ### Улучшения:
@@ -124,6 +132,13 @@
 * Добавлена поддержка скалярных подзапросов, возвращающих состояние агрегатной функции. [#4348](https://github.com/yandex/ClickHouse/pull/4348) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Уменьшено время ожидания завершения сервера и завершения запросов `ALTER`. [#4372](https://github.com/yandex/ClickHouse/pull/4372) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Добавлена информация о значении настройки `replicated_can_become_leader` в таблицу `system.replicas`. Добавлено логирование в случае, если реплика не собирается стать лидером. [#4379](https://github.com/yandex/ClickHouse/pull/4379) ([Alex Zatelepin](https://github.com/ztlpn))
+
+## ClickHouse release 19.1.9, 2019-02-21
+
+### Исправления ошибок:
+
+* Исправлена обратная несовместимость со старыми версиями, появившаяся из-за некорректной реализации настройки `send_logs_level`. [#4445](https://github.com/yandex/ClickHouse/pull/4445) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Исправлена обратная несовместимость табличной функции `remote`, появившаяся из-за добавления комментариев колонок. [#4446](https://github.com/yandex/ClickHouse/pull/4446) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ## ClickHouse release 19.1.8, 2019-02-16
 

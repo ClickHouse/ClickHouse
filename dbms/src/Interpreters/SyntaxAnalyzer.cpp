@@ -13,22 +13,25 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserTablesInSelectQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
 
-#include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/IStorage.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/IStorage.h>
+#include <Common/typeid_cast.h>
 
 #include <functional>
+
 
 namespace DB
 {
@@ -106,7 +109,6 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 }
-
 
 bool hasArrayJoin(const ASTPtr & ast)
 {
@@ -576,7 +578,44 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     analyzed_join.calculateAvailableJoinedColumns(make_nullable);
 }
 
+Names qualifyOccupiedNames(NamesAndTypesList & columns, const NameSet & source_columns, const DatabaseAndTableWithAlias& table)
+{
+    Names originals;
+    originals.reserve(columns.size());
+
+    for (auto & column : columns)
+    {
+        originals.push_back(column.name);
+        if (source_columns.count(column.name))
+            column.name = table.getQualifiedNamePrefix() + column.name;
+    }
+
+    return originals;
 }
+
+void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
+{
+    if (!join || !join->table_expression)
+        return;
+
+    auto & table_expr = static_cast<ASTTableExpression &>(*join->table_expression.get());
+    if (table_expr.database_and_table_name)
+    {
+        auto & table_id = typeid_cast<ASTIdentifier &>(*table_expr.database_and_table_name.get());
+        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
+
+        // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
+        //        we can't replace aliased tables.
+        // FIXME: long table names include database name, which we can't save within alias.
+        if (table_id.alias.empty() && table_id.isShort())
+        {
+            ParserTableExpression parser;
+            table_expr = static_cast<ASTTableExpression &>(*parseQuery(parser, expr, 0));
+        }
+    }
+}
+
+} // namespace
 
 
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
@@ -613,11 +652,15 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     {
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
+            if (settings.enable_optimize_predicate_expression)
+                replaceJoinedTable(node);
+
             const auto & joined_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
             DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
 
             NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(joined_expression, context);
-            result.analyzed_join.calculateColumnsFromJoinedTable(source_columns_set, table, joined_columns);
+            Names original_names = qualifyOccupiedNames(joined_columns, source_columns_set, table);
+            result.analyzed_join.calculateColumnsFromJoinedTable(joined_columns, original_names);
         }
 
         translateQualifiedNames(query, *select_query, context,

@@ -75,7 +75,7 @@ struct Settings
     M(SettingFloat, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.") \
     \
     M(SettingBool, compile, false, "Whether query compilation is enabled.") \
-    M(SettingBool, compile_expressions, true, "Compile some scalar functions and operators to native code.") \
+    M(SettingBool, compile_expressions, false, "Compile some scalar functions and operators to native code.") \
     M(SettingUInt64, min_count_to_compile, 3, "The number of structurally identical queries before they are compiled.") \
     M(SettingUInt64, min_count_to_compile_expression, 3, "The number of identical expressions before they are JIT-compiled") \
     M(SettingUInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.") \
@@ -103,7 +103,7 @@ struct Settings
     \
     M(SettingUInt64, optimize_min_equality_disjunction_chain_length, 3, "The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization ") \
     \
-    M(SettingUInt64, min_bytes_to_use_direct_io, 0, "The minimum number of bytes for input/output operations is bypassing the page cache. 0 - disabled.") \
+    M(SettingUInt64, min_bytes_to_use_direct_io, 0, "The minimum number of bytes for reading the data with O_DIRECT option during SELECT queries execution. 0 - disabled.") \
     \
     M(SettingBool, force_index_by_date, 0, "Throw an exception if there is a partition key in a table, and it is not used.") \
     M(SettingBool, force_primary_key, 0, "Throw an exception if there is primary key in a table, and it is not used.") \
@@ -233,7 +233,10 @@ struct Settings
     M(SettingSeconds, max_execution_time, 0, "") \
     M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
-    M(SettingUInt64, min_execution_speed, 0, "In rows per second.") \
+    M(SettingUInt64, min_execution_speed, 0, "Minimum number of execution rows per second.") \
+    M(SettingUInt64, max_execution_speed, 0, "Maximum number of execution rows per second.") \
+    M(SettingUInt64, min_execution_speed_bytes, 0, "Minimum number of execution bytes per second.") \
+    M(SettingUInt64, max_execution_speed_bytes, 0, "Maximum number of execution bytes per second.") \
     M(SettingSeconds, timeout_before_checking_execution_speed, 0, "Check that the speed is not too low after the specified time has elapsed.") \
     \
     M(SettingUInt64, max_columns_to_read, 0, "") \
@@ -298,8 +301,8 @@ struct Settings
     M(SettingBool, enable_debug_queries, false, "Enables debug queries such as AST.") \
     M(SettingBool, enable_unaligned_array_join, false, "Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.") \
     M(SettingBool, low_cardinality_allow_in_native_format, true, "Use LowCardinality type in Native format. Otherwise, convert LowCardinality columns to ordinary for select query, and convert ordinary columns to required LowCardinality for insert query.") \
-    M(SettingBool, allow_experimental_multiple_joins_emulation, false, "Emulate multiple joins using subselects") \
-    M(SettingBool, allow_experimental_cross_to_join_conversion, false, "Convert CROSS JOIN to INNER JOIN if possible") \
+    M(SettingBool, allow_experimental_multiple_joins_emulation, true, "Emulate multiple joins using subselects") \
+    M(SettingBool, allow_experimental_cross_to_join_conversion, true, "Convert CROSS JOIN to INNER JOIN if possible") \
     M(SettingBool, cancel_http_readonly_queries_on_client_close, false, "Cancel HTTP readonly queries when a client closes the connection without waiting for response.") \
     M(SettingBool, external_table_functions_use_nulls, true, "If it is set to true, external table functions will implicitly use Nullable type if needed. Otherwise NULLs will be substituted with default values. Currently supported only for 'mysql' table function.") \
     M(SettingBool, allow_experimental_data_skipping_indices, false, "If it is set to true, data skipping indices can be used in CREATE TABLE/ALTER TABLE queries.")\

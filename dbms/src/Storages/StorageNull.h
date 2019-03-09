@@ -31,7 +31,7 @@ public:
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
     }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const Settings &) override
+    BlockOutputStreamPtr write(const ASTPtr &, const Context &) override
     {
         return std::make_shared<NullBlockOutputStream>(getSampleBlock());
     }

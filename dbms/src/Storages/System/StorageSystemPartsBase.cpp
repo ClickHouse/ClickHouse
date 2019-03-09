@@ -43,7 +43,8 @@ class StoragesInfoStream
 {
 public:
     StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context, bool has_state_column)
-            : has_state_column(has_state_column)
+        : query_id(context.getCurrentQueryId())
+        , has_state_column(has_state_column)
     {
         /// Will apply WHERE to subset of columns and then add more columns.
         /// This is kind of complicated, but we use WHERE to do less work.
@@ -166,7 +167,7 @@ public:
             try
             {
                 /// For table not to be dropped and set of columns to remain constant.
-                info.table_lock = info.storage->lockStructure(false);
+                info.table_lock = info.storage->lockStructure(false, query_id);
             }
             catch (const Exception & e)
             {
@@ -220,6 +221,8 @@ public:
     }
 
 private:
+    String query_id;
+
     bool has_state_column;
 
     ColumnPtr database_column;

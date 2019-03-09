@@ -29,14 +29,8 @@
 #    include <common/DateLUTImpl.h>
 #    include <ext/range.h>
 #    include <arrow/api.h>
-//#    include <arrow/buffer.h>
-//#    include <arrow/io/api.h>
 #    include <parquet/arrow/reader.h>
-//#    include <parquet/arrow/writer.h>
-//#    include <parquet/exception.h>
 #    include <parquet/file_reader.h>
-
-#    include <Core/iostream_debug_helpers.h> // REMOVE ME
 
 namespace DB
 {
@@ -329,7 +323,6 @@ Block ParquetBlockInputStream::readImpl()
         row_group_total = file_reader->num_row_groups();
         row_group_current = 0;
     }
-    //DUMP(row_group_current, row_group_total);
     if (row_group_current >= row_group_total)
         return res;
 

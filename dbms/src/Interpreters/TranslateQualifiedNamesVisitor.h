@@ -20,6 +20,8 @@ class ASTFunction;
 class TranslateQualifiedNamesMatcher
 {
 public:
+    using Visitor = InDepthNodeVisitor<TranslateQualifiedNamesMatcher, true>;
+
     struct Data
     {
         const NameSet & source_columns;
@@ -46,16 +48,14 @@ public:
         bool processAsterisks() const { return !tables.empty() && has_columns; }
     };
 
-    static constexpr const char * label = "TranslateQualifiedNames";
-
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
+    static void visit(ASTPtr & ast, Data & data);
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    static std::vector<ASTPtr *> visit(ASTIdentifier & node, ASTPtr & ast, Data &);
-    static std::vector<ASTPtr *> visit(const ASTQualifiedAsterisk & node, const ASTPtr & ast, Data &);
-    static std::vector<ASTPtr *> visit(ASTTableJoin & node, const ASTPtr & ast, Data &);
-    static std::vector<ASTPtr *> visit(ASTSelectQuery & node, const ASTPtr & ast, Data &);
+    static void visit(ASTIdentifier & node, ASTPtr & ast, Data &);
+    static void visit(const ASTQualifiedAsterisk & node, const ASTPtr & ast, Data &);
+    static void visit(ASTTableJoin & node, const ASTPtr & ast, Data &);
+    static void visit(ASTSelectQuery & node, const ASTPtr & ast, Data &);
     static void visit(ASTExpressionList &, const ASTPtr &, Data &);
     static void visit(ASTFunction &, const ASTPtr &, Data &);
 
@@ -64,6 +64,6 @@ private:
 
 /// Visits AST for names qualification.
 /// It finds columns and translate their names to the normal form. Expand asterisks and qualified asterisks with column names.
-using TranslateQualifiedNamesVisitor = InDepthNodeVisitor<TranslateQualifiedNamesMatcher, true>;
+using TranslateQualifiedNamesVisitor = TranslateQualifiedNamesMatcher::Visitor;
 
 }
