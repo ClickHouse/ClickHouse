@@ -16,9 +16,18 @@
 #include <Common/BitHelpers.h>
 #include <Common/memcpySmall.h>
 
+#ifndef NDEBUG
+    #include <sys/mman.h>
+#endif
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_MPROTECT;
+}
 
 inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
 {
@@ -154,6 +163,39 @@ protected:
             realloc(allocated_bytes() * 2, std::forward<TAllocatorParams>(allocator_params)...);
     }
 
+#ifndef NDEBUG
+    /// Make memory region readonly with mprotect if it is large enough.
+    /// The operation is slow and performed only for debug builds.
+    void protectImpl(int prot)
+    {
+        static constexpr size_t PAGE_SIZE = 4096;
+
+        char * left_rounded_up = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_start) - pad_left + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE);
+        char * right_rounded_down = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_end_of_storage) + pad_right) / PAGE_SIZE * PAGE_SIZE);
+
+        if (right_rounded_down > left_rounded_up)
+        {
+            size_t length = right_rounded_down - left_rounded_up;
+            if (0 != mprotect(left_rounded_up, length, prot))
+                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+
+            protector.parent = this;
+        }
+    }
+
+    /// Restore memory protection in destructor for further reuse by allocator.
+    struct Protector
+    {
+        PODArrayBase * parent = nullptr;
+        ~Protector()
+        {
+            if (parent)
+                parent->protectImpl(PROT_WRITE);
+        }
+    };
+    Protector protector;
+#endif
+
 public:
     bool empty() const { return c_end == c_start; }
     size_t size() const { return (c_end - c_start) / ELEMENT_SIZE; }
@@ -196,6 +238,13 @@ public:
 
         memcpy(c_end, ptr, ELEMENT_SIZE);
         c_end += byte_size(1);
+    }
+
+    void protect()
+    {
+#ifndef NDEBUG
+        protectImpl(PROT_READ);
+#endif
     }
 
     ~PODArrayBase()

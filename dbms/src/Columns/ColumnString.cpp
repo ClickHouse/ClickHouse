@@ -412,4 +412,11 @@ void ColumnString::getPermutationWithCollation(const Collator & collator, bool r
     }
 }
 
+
+void ColumnString::protect()
+{
+    getChars().protect();
+    getOffsets().protect();
+}
+
 }

@@ -67,6 +67,8 @@ public:
         return chars.allocated_bytes() + offsets.allocated_bytes();
     }
 
+    void protect() override;
+
     MutableColumnPtr cloneResized(size_t to_size) const override;
 
     Field operator[](size_t n) const override
