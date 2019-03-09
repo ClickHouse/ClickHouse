@@ -373,9 +373,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     if (use_sampling)
     {
-        if (!data.supportsSampling())
-            throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
-
         if (sample_factor_column_queried && relative_sample_size != RelativeSize(0))
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
