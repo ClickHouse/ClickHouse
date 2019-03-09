@@ -1,9 +1,11 @@
 #include <Databases/IDatabase.h>
 
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
+#include <Common/escapeForFileName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/localBackup.h>
+#include <Common/typeid_cast.h>
+#include <common/ThreadPool.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/PartLog.h>
@@ -12,24 +14,22 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/PartitionCommands.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/PartitionCommands.h>
+#include <Storages/StorageMergeTree.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 
 #include <optional>
 
-
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ABORTED;
@@ -61,15 +61,31 @@ StorageMergeTree::StorageMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
-    global_context(context_), background_pool(context_.getBackgroundPool()),
-    data(database_name, table_name,
-         full_path, columns_,
-         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-         sample_by_ast_, merging_params_,
-         settings_, false, attach),
-    reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
-    log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
+    : path(path_)
+    , database_name(database_name_)
+    , table_name(table_name_)
+    , full_path(path + escapeForFileName(table_name) + '/')
+    , global_context(context_)
+    , background_pool(context_.getBackgroundPool())
+    , data(
+          database_name,
+          table_name,
+          full_path,
+          columns_,
+          context_,
+          date_column_name,
+          partition_by_ast_,
+          order_by_ast_,
+          primary_key_ast_,
+          sample_by_ast_,
+          merging_params_,
+          settings_,
+          false,
+          attach)
+    , reader(data)
+    , writer(data)
+    , merger_mutator(data, global_context.getBackgroundPool())
+    , log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
     if (path_.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
@@ -77,7 +93,10 @@ StorageMergeTree::StorageMergeTree(
     data.loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !data.getDataParts().empty())
-        throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
+        throw Exception(
+            "Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must "
+            "either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.",
+            ErrorCodes::INCORRECT_DATA);
 
     increment.set(data.getMaxBlockNumber());
 
@@ -190,10 +209,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
 
 void StorageMergeTree::alter(
-    const AlterCommands & params,
-    const String & current_database_name,
-    const String & current_table_name,
-    const Context & context)
+    const AlterCommands & params, const String & current_database_name, const String & current_table_name, const Context & context)
 {
     if (!params.is_mutable())
     {
@@ -217,19 +233,33 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
 
-    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+    auto parts
+        = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
-    for (const MergeTreeData::DataPartPtr & part : parts)
+
+
+    ThreadPool thread_pool(2 * getNumberOfPhysicalCPUCores());
+    size_t i = 0;
+    transactions.resize(parts.size());
+    for (const auto & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
-            transactions.push_back(std::move(transaction));
+        thread_pool.schedule([this, i, &part, columns_for_parts, &transactions] {
+            //std::lock_guard<std::mutex> g(m);
+            if (auto transaction = this->data.alterDataPart(part, columns_for_parts, false))
+            {
+                transactions[i] = (std::move(transaction));
+            }
+        });
+
+        ++i;
     }
+    // Wait for concurrent view processing
+    thread_pool.wait();
 
     auto table_hard_lock = lockStructureForAlter();
 
-    IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
-    {
+    IDatabase::ASTModifier storage_modifier = [&](IAST & ast) {
         auto & storage_ast = typeid_cast<ASTStorage &>(ast);
 
         if (new_order_by_ast.get() != data.order_by_ast.get())
@@ -245,7 +275,10 @@ void StorageMergeTree::alter(
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
 
     for (auto & transaction : transactions)
-        transaction->commit();
+    {
+        if (transaction != nullptr)
+            transaction->commit();
+    }
 
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
@@ -324,8 +357,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
 
-        auto versions_it = std::lower_bound(
-            part_data_versions.begin(), part_data_versions.end(), mutation_version);
+        auto versions_it = std::lower_bound(part_data_versions.begin(), part_data_versions.end(), mutation_version);
         Int64 parts_to_do = versions_it - part_data_versions.begin();
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
@@ -333,8 +365,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         {
             std::stringstream ss;
             formatAST(*command.ast, ss, false, true);
-            result.push_back(MergeTreeMutationStatus
-            {
+            result.push_back(MergeTreeMutationStatus{
                 entry.file_name,
                 ss.str(),
                 entry.create_time,
@@ -371,12 +402,7 @@ void StorageMergeTree::loadMutations()
 }
 
 
-bool StorageMergeTree::merge(
-    bool aggressive,
-    const String & partition_id,
-    bool final,
-    bool deduplicate,
-    String * out_disable_reason)
+bool StorageMergeTree::merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason)
 {
     auto structure_lock = lockStructure(true);
 
@@ -388,8 +414,7 @@ bool StorageMergeTree::merge(
     {
         std::lock_guard lock(currently_merging_mutex);
 
-        auto can_merge = [this, &lock] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
-        {
+        auto can_merge = [this, &lock](const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *) {
             return !currently_merging.count(left) && !currently_merging.count(right)
                 && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
         };
@@ -405,7 +430,8 @@ bool StorageMergeTree::merge(
         else
         {
             UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-            selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
+            selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
         if (!selected)
@@ -420,8 +446,7 @@ bool StorageMergeTree::merge(
     Stopwatch stopwatch;
     MergeTreeData::MutableDataPartPtr new_part;
 
-    auto write_part_log = [&] (const ExecutionStatus & execution_status)
-    {
+    auto write_part_log = [&](const ExecutionStatus & execution_status) {
         try
         {
             auto part_log = global_context.getPartLog(database_name);
@@ -465,8 +490,7 @@ bool StorageMergeTree::merge(
     try
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, *merge_entry, time(nullptr),
-            merging_tagger->reserved_space.get(), deduplicate);
+            future_part, *merge_entry, time(nullptr), merging_tagger->reserved_space.get(), deduplicate);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
         write_part_log({});
@@ -532,8 +556,7 @@ bool StorageMergeTree::tryMutatePart()
     Stopwatch stopwatch;
     MergeTreeData::MutableDataPartPtr new_part;
 
-    auto write_part_log = [&] (const ExecutionStatus & execution_status)
-    {
+    auto write_part_log = [&](const ExecutionStatus & execution_status) {
         try
         {
             auto part_log = global_context.getPartLog(database_name);
@@ -628,8 +651,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
 }
 
 Int64 StorageMergeTree::getCurrentMutationVersion(
-    const MergeTreeData::DataPartPtr & part,
-    std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const
+    const MergeTreeData::DataPartPtr & part, std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const
 {
     auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
     if (it == current_mutations_by_version.begin())
@@ -725,8 +747,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
 }
 
 
-bool StorageMergeTree::optimize(
-    const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+bool StorageMergeTree::optimize(const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
     String disable_reason;
     if (!partition && final)
@@ -742,7 +763,8 @@ bool StorageMergeTree::optimize(
             if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
                 if (context.getSettingsRef().optimize_throw_if_noop)
-                    throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                    throw Exception(
+                        disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
                 return false;
             }
         }
@@ -756,7 +778,8 @@ bool StorageMergeTree::optimize(
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
             if (context.getSettingsRef().optimize_throw_if_noop)
-                throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                throw Exception(
+                    disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
             return false;
         }
     }
@@ -837,7 +860,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
             }
         }
 
-        LOG_INFO(log, (detach ? "Detached " : "Removed ") << parts_to_remove.size() << " parts inside partition ID " << partition_id << ".");
+        LOG_INFO(
+            log, (detach ? "Detached " : "Removed ") << parts_to_remove.size() << " parts inside partition ID " << partition_id << ".");
     }
 
     data.clearOldPartsFromFilesystem();
@@ -871,8 +895,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         {
             const String & name = it.name();
             MergeTreePartInfo part_info;
-            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, data.format_version)
-                || part_info.partition_id != partition_id)
+            if (!MergeTreePartInfo::tryParsePartName(name, &part_info, data.format_version) || part_info.partition_id != partition_id)
             {
                 continue;
             }
@@ -900,7 +923,8 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
     context.dropCaches();
 }
 
-void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
+void StorageMergeTree::replacePartitionFrom(
+    const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
 {
     auto lock1 = lockStructure(false);
     auto lock2 = source_table->lockStructure(false);
