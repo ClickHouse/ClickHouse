@@ -245,11 +245,8 @@ void StorageMergeTree::alter(
     for (const auto & part : parts)
     {
         thread_pool.schedule([this, i, &part, columns_for_parts, &transactions] {
-            //std::lock_guard<std::mutex> g(m);
             if (auto transaction = this->data.alterDataPart(part, columns_for_parts, false))
-            {
                 transactions[i] = (std::move(transaction));
-            }
         });
 
         ++i;
