@@ -81,7 +81,7 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
-## insert_sample_with_metadata
+## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
 
 Turns on the extended data exchange between a ClickHouse client and a ClickHouse server for `INSERT` queries.
 
@@ -424,7 +424,7 @@ The results of compilation are saved in the build directory in the form of .so f
 If the value is true, running INSERT skips input data from columns with unknown names. Otherwise, this situation will generate an exception.
 It works for JSONEachRow and TSKV formats.
 
-## output_format_json_quote_64bit_integers
+## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 
