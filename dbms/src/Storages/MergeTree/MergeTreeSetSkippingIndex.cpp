@@ -40,7 +40,7 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
 
-    if (size() > index.max_rows)
+    if (index.max_rows && size() > index.max_rows)
     {
         size_type->serializeBinary(0, ostr);
         return;
@@ -120,7 +120,7 @@ void MergeTreeSetIndexAggregator::update(const Block & block, size_t * pos, size
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
-    if (size() > index.max_rows)
+    if (index.max_rows > 0 && size() > index.max_rows)
     {
         *pos += rows_read;
         return;
@@ -151,16 +151,13 @@ void MergeTreeSetIndexAggregator::update(const Block & block, size_t * pos, size
 #undef M
     }
 
-    if (!has_new_data)
+    if (has_new_data)
     {
-        *pos += rows_read;
-        return;
-    }
-
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        auto filtered_column = block.getByName(index.columns[i]).column->filter(filter, block.rows());
-        columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            auto filtered_column = block.getByName(index.columns[i]).column->filter(filter, block.rows());
+            columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+        }
     }
 
     *pos += rows_read;
@@ -268,7 +265,7 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
         throw Exception(
                 "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
-    if (useless || !granule->size() || granule->size() > index.max_rows)
+    if (useless || !granule->size() || (index.max_rows > 0 && granule->size() > index.max_rows))
         return true;
 
     Block result = granule->block;
