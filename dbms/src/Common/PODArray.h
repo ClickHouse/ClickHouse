@@ -187,10 +187,18 @@ protected:
     struct Protector
     {
         PODArrayBase * parent = nullptr;
-        ~Protector()
+        void reset()
         {
             if (parent)
+            {
                 parent->protectImpl(PROT_WRITE);
+                parent = nullptr;
+            }
+
+        }
+        ~Protector()
+        {
+            reset();
         }
     };
     Protector protector;
@@ -440,6 +448,11 @@ public:
 
     void swap(PODArray & rhs)
     {
+#ifndef NDEBUG
+        this->protector.reset();
+        rhs.protector.reset();
+#endif
+
         /// Swap two PODArray objects, arr1 and arr2, that satisfy the following conditions:
         /// - The elements of arr1 are stored on stack.
         /// - The elements of arr2 are stored on heap.
@@ -488,7 +501,9 @@ public:
         };
 
         if (!this->isInitialized() && !rhs.isInitialized())
+        {
             return;
+        }
         else if (!this->isInitialized() && rhs.isInitialized())
         {
             do_move(rhs, *this);
@@ -532,9 +547,13 @@ public:
             rhs.c_end = rhs.c_start + this->byte_size(lhs_size);
         }
         else if (this->isAllocatedFromStack() && !rhs.isAllocatedFromStack())
+        {
             swap_stack_heap(*this, rhs);
+        }
         else if (!this->isAllocatedFromStack() && rhs.isAllocatedFromStack())
+        {
             swap_stack_heap(rhs, *this);
+        }
         else
         {
             std::swap(this->c_start, rhs.c_start);
