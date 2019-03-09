@@ -3,6 +3,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
+#include <Common/ThreadPool.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/localBackup.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -224,11 +226,29 @@ void StorageMergeTree::alter(
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
-    for (const MergeTreeData::DataPartPtr & part : parts)
+
+    ThreadPool thread_pool(2 * getNumberOfPhysicalCPUCores());
+    size_t i = 0;
+    transactions.resize(parts.size());
+    for (const auto & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_indices.indices, false))
-            transactions.push_back(std::move(transaction));
+        thread_pool.schedule(
+            [this, i, &transactions, &part, columns_for_parts, new_indices = new_indices.indices] {
+                if (auto transaction = this->data.alterDataPart(part, columns_for_parts, new_indices, false))
+                    transactions[i] = (std::move(transaction));
+            }
+        );
+
+        ++i;
     }
+    thread_pool.wait();
+    transactions.erase(
+        std::remove_if(transactions.begin(), transactions.end(),
+                    [](const MergeTreeData::AlterDataPartTransactionPtr& transaction) {
+                        return transaction == nullptr;
+                    }
+        )
+    );
 
     auto table_hard_lock = lockStructureForAlter(context.getCurrentQueryId());
 
