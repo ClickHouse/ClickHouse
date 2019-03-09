@@ -1,3 +1,5 @@
+#include <Core/Defines.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
@@ -189,7 +191,13 @@ String CSVRowInputStream::getDiagnosticInfo()
 }
 
 
-bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
+/** gcc-7 generates wrong code with optimization level greater than 1.
+  * See tests: dbms/src/IO/tests/write_int.cpp
+  *  and dbms/tests/queries/0_stateless/00898_parsing_bad_diagnostic_message.sh
+  * This is compiler bug. The bug does not present in gcc-8 and clang-8.
+  * Nevertheless, we don't need high optimization of this function.
+  */
+bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
     WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
     const char delimiter = format_settings.csv.delimiter;
