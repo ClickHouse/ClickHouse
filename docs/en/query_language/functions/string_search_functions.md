@@ -72,7 +72,7 @@ The same thing as 'like', but negative.
 
 ## ngramDistance(haystack, needle)
 
-Calculate the 4-gram distance between `haystack` and `needle`: count the symmetric difference between two multisets of 4-grams and normalize it by the sum of their cardinalities. Returns float number from 0 to 1 - the closer to zero, the more strings are similar to each other. If the `needle` is more than 32Kb, throw an exception. If some of the `haystack` strings are more than 32Kb, the distance is always one.
+Calculates the 4-gram distance between `haystack` and `needle`: counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns float number from 0 to 1 -- the closer to zero, the more strings are similar to each other. If the `needle` is more than 32Kb, throws an exception. If some of the `haystack` strings are more than 32Kb, the distance is always one.
 
 For case-insensitive search or/and in UTF-8 format use functions `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8`.
 
