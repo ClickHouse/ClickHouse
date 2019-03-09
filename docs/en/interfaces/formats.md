@@ -313,7 +313,7 @@ You can use it both in the `SELECT` and `INSERT` queries. When you select the da
 {"SearchPhrase":"","count":"8267016"}
 ```
 
-### Inserting the data
+### Inserting the Data
 
 ```
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
