@@ -49,7 +49,7 @@ private:
     template <typename Method>
     bool buildFilter(
             Method & method,
-            const ColumnRawPtrs & key_columns,
+            const ColumnRawPtrs & column_ptrs,
             IColumn::Filter & filter,
             size_t pos,
             size_t limit,

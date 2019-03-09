@@ -169,14 +169,14 @@ void MergeTreeSetIndexAggregator::update(const Block & block, size_t * pos, size
 template <typename Method>
 bool MergeTreeSetIndexAggregator::buildFilter(
     Method & method,
-    const ColumnRawPtrs & columns,
+    const ColumnRawPtrs & column_ptrs,
     IColumn::Filter & filter,
     size_t pos,
     size_t limit,
     ClearableSetVariants & variants) const
 {
     /// Like DistinctSortedBlockInputStream.
-    typename Method::State state(columns, key_sizes, nullptr);
+    typename Method::State state(column_ptrs, key_sizes, nullptr);
 
     bool has_new_data = false;
     for (size_t i = 0; i < limit; ++i)
