@@ -120,7 +120,7 @@ void MergeTreeSetIndexAggregator::update(const Block & block, size_t * pos, size
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
-    if (index.max_rows > 0 && size() > index.max_rows)
+    if (index.max_rows && size() > index.max_rows)
     {
         *pos += rows_read;
         return;
@@ -265,7 +265,7 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
         throw Exception(
                 "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
-    if (useless || !granule->size() || (index.max_rows > 0 && granule->size() > index.max_rows))
+    if (useless || !granule->size() || (index.max_rows && granule->size() > index.max_rows))
         return true;
 
     Block result = granule->block;
