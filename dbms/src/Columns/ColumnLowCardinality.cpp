@@ -363,7 +363,6 @@ ColumnPtr ColumnLowCardinality::countKeys() const
 }
 
 
-
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
 ColumnLowCardinality::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))
