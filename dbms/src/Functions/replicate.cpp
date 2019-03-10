@@ -54,7 +54,7 @@ public:
             array_column = checkAndGetColumn<ColumnArray>(temp_column.get());
         }
         block.getByPosition(result).column
-            = ColumnArray::create(first_column->replicate(array_column->getOffsets()), array_column->getOffsetsPtr());
+            = ColumnArray::create(first_column->replicate(array_column->getOffsets())->convertToFullColumnIfConst(), array_column->getOffsetsPtr());
     }
 };
 
