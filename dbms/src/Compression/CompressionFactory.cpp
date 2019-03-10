@@ -19,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_CODEC;
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
 
