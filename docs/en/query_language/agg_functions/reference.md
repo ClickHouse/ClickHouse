@@ -179,6 +179,48 @@ binary     decimal
 01101000 = 104
 ```
 
+
+##groupBitmap
+
+Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```
+groupBitmap(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+Test data:
+
+```
+userid
+1
+1
+2
+3
+```
+
+Query:
+
+```
+SELECT groupBitmap(userid) as num FROM t
+```
+
+Result:
+
+```
+num
+3
+```
+
 ## min(x) {#agg_function-min}
 
 Calculates the minimum.

@@ -192,4 +192,4 @@ private:
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 };
 
- }
+}

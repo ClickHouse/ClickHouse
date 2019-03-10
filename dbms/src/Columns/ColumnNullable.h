@@ -71,6 +71,7 @@ public:
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
+    void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;

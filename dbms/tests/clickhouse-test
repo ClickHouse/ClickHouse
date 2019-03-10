@@ -277,11 +277,12 @@ def main(args):
                                         report_testcase.append(skipped)
                                         print("{0} - no reference file".format(MSG_UNKNOWN))
                                     else:
-                                        result_is_different = subprocess.call(['cmp', '-s', reference_file, stdout_file], stdout = PIPE)
+                                        result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout = PIPE)
 
                                         if result_is_different:
-                                            (diff, _) = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()
+                                            diff = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()[0]
                                             diff = unicode(diff, errors='replace', encoding='utf-8')
+                                            cat = Popen(['cat', '-A'], stdin=PIPE, stdout=PIPE).communicate(input=diff)[0]
 
                                             failure = et.Element("failure", attrib = {"message": "result differs with reference"})
                                             report_testcase.append(failure)
@@ -294,7 +295,7 @@ def main(args):
 
                                             report_testcase.append(stdout_element)
                                             failures += 1
-                                            print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff.encode('utf-8')))
+                                            print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, cat.encode('utf-8')))
                                         else:
                                             passed_total += 1
                                             failures_chain = 0
