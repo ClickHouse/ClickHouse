@@ -33,7 +33,3 @@ endif ()
 add_library (glibc-compatibility ${GLIBC_COMPATIBILITY_SOURCES})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)
-
-if(ENABLE_TESTS)
-    add_subdirectory(tests)
-endif()
