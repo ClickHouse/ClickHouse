@@ -695,7 +695,7 @@ static void checkRequiredInstructions(volatile InstructionFail & fail)
 
 #if __AVX__
     fail = InstructionFail::AVX;
-    __asm__ volatile ("vaddpd %%ymm0, %%ymm0" : : : "ymm0");
+    __asm__ volatile ("vaddpd %%ymm0, %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
 #if __AVX2__
@@ -1045,15 +1045,10 @@ void BaseDaemon::initialize(Application & self)
         /// 1 GiB by default. If more - it writes to disk too long.
         rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
 
-        if (setrlimit(RLIMIT_CORE, &rlim))
+        if (rlim.rlim_cur && setrlimit(RLIMIT_CORE, &rlim))
         {
-            std::string message = "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur);
-        #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(SANITIZER) && !defined(__APPLE__)
-            throw Poco::Exception(message);
-        #else
             /// It doesn't work under address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
-            std::cerr << message << std::endl;
-        #endif
+            std::cerr << "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur) << std::endl;
         }
     }
 

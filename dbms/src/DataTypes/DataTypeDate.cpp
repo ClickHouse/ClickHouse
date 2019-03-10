@@ -74,9 +74,11 @@ void DataTypeDate::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const
     static_cast<ColumnUInt16 &>(column).getData().push_back(value.getDayNum());
 }
 
-void DataTypeDate::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeDate::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    protobuf.writeDate(DayNum(static_cast<const ColumnUInt16 &>(column).getData()[row_num]));
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDate(DayNum(static_cast<const ColumnUInt16 &>(column).getData()[row_num])));
 }
 
 void DataTypeDate::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const

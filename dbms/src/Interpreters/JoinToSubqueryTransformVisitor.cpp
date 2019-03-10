@@ -35,46 +35,58 @@ struct ColumnAliasesMatcher
     struct Data
     {
         const std::vector<DatabaseAndTableWithAlias> tables;
-        AsteriskSemantic::RevertedAliases rev_aliases;
-        std::unordered_map<String, String> aliases;
-        std::vector<ASTIdentifier *> compound_identifiers;
+        bool public_names;
+        AsteriskSemantic::RevertedAliases rev_aliases;  /// long_name -> aliases
+        std::unordered_map<String, String> aliases;     /// alias -> long_name
+        std::vector<std::pair<ASTIdentifier *, bool>> compound_identifiers;
+        std::set<String> allowed_long_names;            /// original names allowed as aliases '--t.x as t.x' (select expressions only).
 
         Data(std::vector<DatabaseAndTableWithAlias> && tables_)
             : tables(tables_)
+            , public_names(false)
         {}
 
         void replaceIdentifiersWithAliases()
         {
             String hide_prefix = "--"; /// @note restriction: user should not use alises like `--table.column`
 
-            for (auto * identifier : compound_identifiers)
+            for (auto & [identifier, is_public] : compound_identifiers)
             {
-                auto it = rev_aliases.find(identifier->name);
+                String long_name = identifier->name;
+
+                auto it = rev_aliases.find(long_name);
                 if (it == rev_aliases.end())
                 {
                     bool last_table = IdentifierSemantic::canReferColumnToTable(*identifier, tables.back());
                     if (!last_table)
                     {
-                        String long_name = identifier->name;
                         String alias = hide_prefix + long_name;
                         aliases[alias] = long_name;
                         rev_aliases[long_name].push_back(alias);
 
                         identifier->setShortName(alias);
-                        //identifier->setAlias(long_name);
+                        if (is_public)
+                        {
+                            identifier->setAlias(long_name);
+                            allowed_long_names.insert(long_name);
+                        }
                     }
+                    else if (is_public)
+                        identifier->setAlias(long_name); /// prevent crop long to short name
                 }
                 else
                 {
                     if (it->second.empty())
-                        throw Exception("No alias for '" + identifier->name + "'", ErrorCodes::LOGICAL_ERROR);
-                    identifier->setShortName(it->second[0]);
+                        throw Exception("No alias for '" + long_name + "'", ErrorCodes::LOGICAL_ERROR);
+
+                    if (is_public && allowed_long_names.count(long_name))
+                        ; /// leave original name unchanged for correct output
+                    else
+                        identifier->setShortName(it->second[0]);
                 }
             }
         }
     };
-
-    static constexpr const char * label = "ColumnAliases";
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr &)
     {
@@ -83,7 +95,7 @@ struct ColumnAliasesMatcher
         return true;
     }
 
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
             visit(*t, ast, data);
@@ -91,7 +103,6 @@ struct ColumnAliasesMatcher
         if (typeid_cast<ASTAsterisk *>(ast.get()) ||
             typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
             throw Exception("Multiple JOIN do not support asterisks yet", ErrorCodes::NOT_IMPLEMENTED);
-        return {};
     }
 
     static void visit(ASTIdentifier & node, ASTPtr &, Data & data)
@@ -129,8 +140,8 @@ struct ColumnAliasesMatcher
                 node.setAlias("");
             }
         }
-        else
-            data.compound_identifiers.push_back(&node);
+        else if (node.compound())
+            data.compound_identifiers.emplace_back(&node, data.public_names);
     }
 };
 
@@ -220,11 +231,10 @@ using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 } /// namelesspace
 
 
-std::vector<ASTPtr *> JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
+void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
         visit(*t, ast, data);
-    return {};
 }
 
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
@@ -236,7 +246,11 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
 
     ColumnAliasesVisitor::Data aliases_data(getDatabaseAndTables(select, ""));
     if (select.select_expression_list)
+    {
+        aliases_data.public_names = true;
         ColumnAliasesVisitor(aliases_data).visit(select.select_expression_list);
+        aliases_data.public_names = false;
+    }
     if (select.where_expression)
         ColumnAliasesVisitor(aliases_data).visit(select.where_expression);
     if (select.prewhere_expression)

@@ -407,10 +407,15 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    for (const auto i : ext::range(0, ext::size(elems)))
-        elems[i]->serializeProtobuf(extractElementColumn(column, i), row_num, protobuf);
+    for (; value_index < elems.size(); ++value_index)
+    {
+        size_t stored = 0;
+        elems[value_index]->serializeProtobuf(extractElementColumn(column, value_index), row_num, protobuf, stored);
+        if (!stored)
+            break;
+    }
 }
 
 void DataTypeTuple::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const

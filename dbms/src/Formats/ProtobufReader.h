@@ -10,6 +10,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <Formats/ProtobufColumnMatcher.h>
+#include <IO/ReadBuffer.h>
 #include <memory>
 
 namespace google
@@ -80,7 +81,7 @@ public:
 
     /// When it returns false there is no more values left and from now on all the read<Type>() functions will return false
     /// until readColumnIndex() is called. When it returns true it's unclear.
-    bool maybeCanReadValue() const { return simple_reader.maybeCanReadValue(); }
+    bool ALWAYS_INLINE maybeCanReadValue() const { return simple_reader.maybeCanReadValue(); }
 
 private:
     class SimpleReader
@@ -96,13 +97,25 @@ private:
         bool readUInt(UInt64 & value);
         template<typename T> bool readFixed(T & value);
         bool readStringInto(PaddedPODArray<UInt8> & str);
-        bool maybeCanReadValue() const { return field_end != REACHED_END; }
+        bool ALWAYS_INLINE maybeCanReadValue() const { return field_end != REACHED_END; }
 
     private:
         void readBinary(void* data, size_t size);
         void ignore(UInt64 num_bytes);
         void moveCursorBackward(UInt64 num_bytes);
-        UInt64 readVarint();
+
+        UInt64 ALWAYS_INLINE readVarint()
+        {
+            char c;
+            in.readStrict(c);
+            UInt64 first_byte = static_cast<UInt8>(c);
+            ++cursor;
+            if (likely(!(c & 0x80)))
+                return first_byte;
+            return continueReadingVarint(first_byte);
+        }
+
+        UInt64 continueReadingVarint(UInt64 first_byte);
         void ignoreVarint();
         void ignoreGroup();
 
@@ -145,9 +158,10 @@ private:
     };
 
     class ConverterBaseImpl;
-    template <int type_id> class ConverterImpl;
     class ConverterFromString;
     template<int field_type_id, typename FromType> class ConverterFromNumber;
+    class ConverterFromBool;
+    class ConverterFromEnum;
 
     struct ColumnMatcherTraits
     {
@@ -164,6 +178,9 @@ private:
     using Field = ProtobufColumnMatcher::Field<ColumnMatcherTraits>;
 
     void setTraitsDataAfterMatchingColumns(Message * message);
+
+    template <int field_type_id>
+    std::unique_ptr<IConverter> createConverter(const google::protobuf::FieldDescriptor * field);
 
     SimpleReader simple_reader;
     std::unique_ptr<Message> root_message;
@@ -189,30 +206,30 @@ class ProtobufReader
 public:
     bool startMessage() { return false; }
     void endMessage() {}
-    bool readColumnIndex(size_t & column_index) { return false; }
-    bool readNumber(Int8 & value) { return false; }
-    bool readNumber(UInt8 & value) { return false; }
-    bool readNumber(Int16 & value) { return false; }
-    bool readNumber(UInt16 & value) { return false; }
-    bool readNumber(Int32 & value) { return false; }
-    bool readNumber(UInt32 & value) { return false; }
-    bool readNumber(Int64 & value) { return false; }
-    bool readNumber(UInt64 & value) { return false; }
-    bool readNumber(UInt128 & value) { return false; }
-    bool readNumber(Float32 & value) { return false; }
-    bool readNumber(Float64 & value) { return false; }
-    bool readStringInto(PaddedPODArray<UInt8> & str) { return false; }
-    void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & name_value_pairs) {}
-    void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & name_value_pairs) {}
-    bool readEnum(Int8 & value) { return false; }
-    bool readEnum(Int16 & value) { return false; }
-    bool readUUID(UUID & uuid) { return false; }
-    bool readDate(DayNum & date) { return false; }
-    bool readDateTime(time_t & tm) { return false; }
-    bool readDecimal(Decimal32 & decimal, UInt32 precision, UInt32 scale) { return false; }
-    bool readDecimal(Decimal64 & decimal, UInt32 precision, UInt32 scale) { return false; }
-    bool readDecimal(Decimal128 & decimal, UInt32 precision, UInt32 scale) { return false; }
-    bool readAggregateFunction(const AggregateFunctionPtr & function, AggregateDataPtr place, Arena & arena) { return false; }
+    bool readColumnIndex(size_t &) { return false; }
+    bool readNumber(Int8 &) { return false; }
+    bool readNumber(UInt8 &) { return false; }
+    bool readNumber(Int16 &) { return false; }
+    bool readNumber(UInt16 &) { return false; }
+    bool readNumber(Int32 &) { return false; }
+    bool readNumber(UInt32 &) { return false; }
+    bool readNumber(Int64 &) { return false; }
+    bool readNumber(UInt64 &) { return false; }
+    bool readNumber(UInt128 &) { return false; }
+    bool readNumber(Float32 &) { return false; }
+    bool readNumber(Float64 &) { return false; }
+    bool readStringInto(PaddedPODArray<UInt8> &) { return false; }
+    void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> &) {}
+    void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> &) {}
+    bool readEnum(Int8 &) { return false; }
+    bool readEnum(Int16 &) { return false; }
+    bool readUUID(UUID &) { return false; }
+    bool readDate(DayNum &) { return false; }
+    bool readDateTime(time_t &) { return false; }
+    bool readDecimal(Decimal32 &, UInt32, UInt32) { return false; }
+    bool readDecimal(Decimal64 &, UInt32, UInt32) { return false; }
+    bool readDecimal(Decimal128 &, UInt32, UInt32) { return false; }
+    bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) { return false; }
     bool maybeCanReadValue() const { return false; }
 };
 

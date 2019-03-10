@@ -49,7 +49,7 @@ void buildScatterSelector(
         if (inserted)
         {
             partition_num_to_first_row.push_back(i);
-            it->second = partitions_count;
+            it->getSecond() = partitions_count;
 
             ++partitions_count;
 
@@ -62,7 +62,7 @@ void buildScatterSelector(
         }
 
         if (partitions_count > 1)
-            selector[i] = it->second;
+            selector[i] = it->getSecond();
     }
 }
 

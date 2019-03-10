@@ -74,7 +74,7 @@ void DataTypeEnum<Type>::fillMaps()
 
         if (!name_to_value_pair.second)
             throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(name_to_value_pair.first->second),
+                    + " and '" + name_to_value_pair.first->getFirst().toString() + "' = " + toString(name_to_value_pair.first->getSecond()),
                 ErrorCodes::SYNTAX_ERROR};
 
         const auto value_to_name_pair = value_to_name_map.insert(
@@ -225,10 +225,12 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf) const
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf, size_t & value_index) const
 {
+    if (value_index)
+        return;
     protobuf.prepareEnumMapping(values);
-    protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]);
+    value_index = static_cast<bool>(protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]));
 }
 
 template<typename Type>

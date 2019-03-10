@@ -26,6 +26,7 @@ RUN apt-get update -y \
             libicu-dev \
             libreadline-dev \
             ninja-build \
-            git
+            git \
+            tzdata
 
 CMD mkdir -p build/build_result && cd build/build_result && cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS && ninja && mv ./dbms/programs/clickhouse* /output

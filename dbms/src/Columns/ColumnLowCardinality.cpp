@@ -33,7 +33,7 @@ namespace
 
         data.resize(hash_map.size());
         for (auto val : hash_map)
-            data[val.second] = val.first;
+            data[val.getSecond()] = val.getFirst();
 
         for (auto & ind : index)
             ind = hash_map[ind];
@@ -361,7 +361,6 @@ ColumnPtr ColumnLowCardinality::countKeys() const
     idx.countKeys(counter->getData());
     return std::move(counter);
 }
-
 
 
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}

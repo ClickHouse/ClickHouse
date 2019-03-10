@@ -2,12 +2,14 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
+
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -71,6 +73,30 @@ bool ColumnsDescription::hasPhysical(const String & column_name) const
 }
 
 
+bool ColumnsDescription::operator==(const ColumnsDescription & other) const
+{
+    if (ordinary != other.ordinary
+        || materialized != other.materialized
+        || aliases != other.aliases
+        || defaults != other.defaults
+        || comments != other.comments)
+    {
+        return false;
+    }
+
+    if (codecs.size() != other.codecs.size())
+        return false;
+
+    for (const auto & [col_name, codec_ptr] : codecs)
+    {
+        if (other.codecs.count(col_name) == 0)
+            return false;
+        if (other.codecs.at(col_name)->getCodecDesc() != codec_ptr->getCodecDesc())
+            return false;
+    }
+    return true;
+}
+
 String ColumnsDescription::toString() const
 {
     WriteBufferFromOwnString buf;
@@ -100,14 +126,11 @@ String ColumnsDescription::toString() const
                 writeChar('\t', buf);
                 writeText(queryToString(defaults_it->second.expression), buf);
             }
-            else if (exist_comment)
-            {
-                writeChar('\t', buf);
-            }
 
             if (exist_comment)
             {
                 writeChar('\t', buf);
+                writeText("COMMENT ", buf);
                 writeText(queryToString(ASTLiteral(Field(comments_it->second))), buf);
             }
 
@@ -135,6 +158,7 @@ String ColumnsDescription::toString() const
     return buf.str();
 }
 
+<<<<<<< HEAD
 std::optional<ColumnDefault> parseDefaultInfo(ReadBufferFromString & buf)
 {
     if (*buf.position() == '\n')
@@ -197,27 +221,24 @@ ASTPtr parseTTLExpression(ReadBufferFromString& buf)
     return parseQuery(expression_parser, ttl_expr_str, "ttl expression", 0);
 }
 
+=======
+>>>>>>> upstream/master
 void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const DataTypeFactory & data_type_factory)
 {
-    String column_name;
-    readBackQuotedStringWithSQLStyle(column_name, buf);
-    assertChar(' ', buf);
-
-    String type_name;
-    readText(type_name, buf);
-    auto type = data_type_factory.get(type_name);
-    if (*buf.position() == '\n')
+    ParserColumnDeclaration column_parser(true);
+    String column_line;
+    readEscapedStringUntilEOL(column_line, buf);
+    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0);
+    if (const ASTColumnDeclaration * col_ast = typeid_cast<const ASTColumnDeclaration *>(ast.get()))
     {
-        assertChar('\n', buf);
-        result.ordinary.emplace_back(column_name, std::move(type));
-        return;
-    }
+        String column_name = col_ast->name;
+        auto type = data_type_factory.get(col_ast->type);
 
-    auto column_default = parseDefaultInfo(buf);
-    if (column_default)
-    {
-        switch (column_default->kind)
+        if (col_ast->default_expression)
         {
+            auto kind = columnDefaultKindFromString(col_ast->default_specifier);
+            switch (kind)
+            {
             case ColumnDefaultKind::Default:
                 result.ordinary.emplace_back(column_name, std::move(type));
                 break;
@@ -226,25 +247,26 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
                 break;
             case ColumnDefaultKind::Alias:
                 result.aliases.emplace_back(column_name, std::move(type));
+                break;
+            }
+
+            result.defaults.emplace(column_name, ColumnDefault{kind, std::move(col_ast->default_expression)});
         }
+        else
+            result.ordinary.emplace_back(column_name, std::move(type));
 
-        result.defaults.emplace(column_name, std::move(*column_default));
+        if (col_ast->comment)
+            if (auto comment_str = typeid_cast<ASTLiteral &>(*col_ast->comment).value.get<String>(); !comment_str.empty())
+                result.comments.emplace(column_name, std::move(comment_str));
+
+        if (col_ast->codec)
+        {
+            auto codec = CompressionCodecFactory::instance().get(col_ast->codec, type);
+            result.codecs.emplace(column_name, std::move(codec));
+        }
     }
-
-    auto comment = parseComment(buf);
-    if (!comment.empty())
-    {
-        result.comments.emplace(column_name, std::move(comment));
-    }
-
-    auto codec = parseCodec(buf);
-    if (codec)
-    {
-        result.codecs.emplace(column_name, std::move(codec));
-    }
-
-
-    assertChar('\n', buf);
+    else
+        throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);
 }
 
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
@@ -272,13 +294,13 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
     readText(count, buf);
     assertString(" columns:\n", buf);
 
-    ParserExpression expr_parser;
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     ColumnsDescription result;
     for (size_t i = 0; i < count; ++i)
     {
         parseColumn(buf, result, data_type_factory);
+        buf.ignore(1); /// ignore new line
     }
 
     assertEOF(buf);

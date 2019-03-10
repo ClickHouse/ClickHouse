@@ -101,7 +101,8 @@ static void appendGraphitePattern(
     {
         if (key == "regexp")
         {
-            pattern.regexp = std::make_shared<OptimizedRegularExpression>(config.getString(config_element + ".regexp"));
+            pattern.regexp_str = config.getString(config_element + ".regexp");
+            pattern.regexp = std::make_shared<OptimizedRegularExpression>(pattern.regexp_str);
         }
         else if (key == "function")
         {
@@ -126,17 +127,32 @@ static void appendGraphitePattern(
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
 
-    if (!pattern.function)
-        throw Exception("Aggregate function is mandatory for retention patterns in GraphiteMergeTree",
+    if (!pattern.function && pattern.retentions.empty())
+        throw Exception("At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree",
             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    if (pattern.function->allocatesMemoryInArena())
-        throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
-                        ErrorCodes::NOT_IMPLEMENTED);
+    if (!pattern.function)
+    {
+        pattern.type = pattern.TypeRetention;
+    }
+    else if (pattern.retentions.empty())
+    {
+        pattern.type = pattern.TypeAggregation;
+    }
+    else
+    {
+        pattern.type = pattern.TypeAll;
+    }
+
+    if (pattern.type & pattern.TypeAggregation) /// TypeAggregation or TypeAll
+        if (pattern.function->allocatesMemoryInArena())
+            throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
+                            ErrorCodes::NOT_IMPLEMENTED);
 
     /// retention should be in descending order of age.
-    std::sort(pattern.retentions.begin(), pattern.retentions.end(),
-        [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
+    if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
+        std::sort(pattern.retentions.begin(), pattern.retentions.end(),
+            [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
 
     patterns.emplace_back(pattern);
 }
@@ -150,6 +166,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
         throw Exception("No '" + config_element + "' element in configuration file",
             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+    params.config_name = config_element;
     params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
     params.time_column_name = config.getString(config_element + ".time_column_name", "Time");
     params.value_column_name = config.getString(config_element + ".value_column_name", "Value");
