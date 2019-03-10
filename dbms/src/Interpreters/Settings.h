@@ -202,8 +202,8 @@ struct Settings
     M(SettingBool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.") \
     M(SettingBool, allow_distributed_ddl, true, "If it is set to true, then a user is allowed to executed distributed DDL queries.") \
     M(SettingUInt64, odbc_max_field_size, 1024, "Max size of filed can be read from ODBC dictionary. Long strings are truncated.") \
-    M(SettingUInt64, query_profiler_real_time_period, 200000000, "Period for real clock timer of query profiler (in nanoseconds).") \
-    M(SettingUInt64, query_profiler_cpu_time_period, 200000000, "Period for CPU clock timer of query profiler (in nanoseconds).") \
+    M(SettingUInt64, query_profiler_real_time_period, 500000000, "Period for real clock timer of query profiler (in nanoseconds).") \
+    M(SettingUInt64, query_profiler_cpu_time_period, 500000000, "Period for CPU clock timer of query profiler (in nanoseconds).") \
     \
     \
     /** Limits during query execution are part of the settings. \
