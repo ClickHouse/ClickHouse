@@ -20,8 +20,6 @@ namespace DB
 {
 
 
-
-
 template <typename T>
 struct AggregateFunctionTopKData
 {
@@ -46,9 +44,9 @@ protected:
     UInt64 reserved;
 
 public:
-    AggregateFunctionTopK(UInt64 threshold, UInt64 loadFactor, const DataTypes & argument_types_, const Array & params)
+    AggregateFunctionTopK(UInt64 threshold, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params)
-        , threshold(threshold), reserved(loadFactor * threshold) {}
+        , threshold(threshold), reserved(load_factor * threshold) {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 
@@ -141,9 +139,9 @@ private:
 
 public:
     AggregateFunctionTopKGeneric(
-        UInt64 threshold, UInt64 loadFactor, const DataTypePtr & input_data_type, const Array & params)
+        UInt64 threshold, UInt64 load_factor, const DataTypePtr & input_data_type, const Array & params)
         : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>({input_data_type}, params)
-        , threshold(threshold), reserved(loadFactor * threshold), input_data_type(this->argument_types[0]) {}
+        , threshold(threshold), reserved(load_factor * threshold), input_data_type(this->argument_types[0]) {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
 
