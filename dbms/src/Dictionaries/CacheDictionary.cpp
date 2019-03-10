@@ -81,11 +81,6 @@ CacheDictionary::CacheDictionary(
     createAttributes();
 }
 
-CacheDictionary::CacheDictionary(const CacheDictionary & other)
-    : CacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
-{
-}
-
 
 void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {
@@ -116,7 +111,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
 
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-    PaddedPODArray<Key> children(out_size);
+    PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
     while (true)

@@ -59,7 +59,6 @@ public:
         String password;
         /// This database is selected when no database is specified for Distributed table
         String default_database;
-        UInt32 replica_num;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
         bool is_local;
         bool user_specified = false;
@@ -79,16 +78,20 @@ public:
 
         static String toString(const String & host_name, UInt16 port);
 
-        static void fromString(const String & host_port_string, String & host_name, UInt16 & port);
+        static std::pair<String, UInt16> fromString(const String & host_port_string);
 
         /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
-        String toStringFull() const;
+        String toFullString() const;
+        static Address fromFullString(const String & address_full_string);
 
         /// Returns initially resolved address
         Poco::Net::SocketAddress getResolvedAddress() const
         {
             return initially_resolved_address;
         }
+
+        auto tuple() const { return std::tie(host_name, port, secure, user, password, default_database); }
+        bool operator==(const Address & other) const { return tuple() == other.tuple(); }
 
     private:
         Poco::Net::SocketAddress initially_resolved_address;

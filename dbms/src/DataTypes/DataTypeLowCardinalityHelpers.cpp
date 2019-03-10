@@ -48,10 +48,24 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
         return column;
 
     if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
-        return ColumnArray::create(recursiveRemoveLowCardinality(column_array->getDataPtr()), column_array->getOffsetsPtr());
+    {
+        auto & data = column_array->getDataPtr();
+        auto data_no_lc = recursiveRemoveLowCardinality(data);
+        if (data.get() == data_no_lc.get())
+            return column;
+
+        return ColumnArray::create(data_no_lc, column_array->getOffsetsPtr());
+    }
 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
-        return ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), column_const->size());
+    {
+        auto & nested = column_const->getDataColumnPtr();
+        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        if (nested.get() == nested_no_lc.get())
+            return column;
+
+        return ColumnConst::create(nested_no_lc, column_const->size());
+    }
 
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
@@ -76,8 +90,14 @@ ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const Data
         return column;
 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
-        return ColumnConst::create(recursiveLowCardinalityConversion(column_const->getDataColumnPtr(), from_type, to_type),
-                                   column_const->size());
+    {
+        auto & nested = column_const->getDataColumnPtr();
+        auto nested_no_lc = recursiveLowCardinalityConversion(nested, from_type, to_type);
+        if (nested.get() == nested_no_lc.get())
+            return column;
+
+        return ColumnConst::create(nested_no_lc, column_const->size());
+    }
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(from_type.get()))
     {
@@ -125,11 +145,23 @@ ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const Data
             Columns columns = column_tuple->getColumns();
             auto & from_elements = from_tuple_type->getElements();
             auto & to_elements = to_tuple_type->getElements();
+
+            bool has_converted = false;
+
             for (size_t i = 0; i < columns.size(); ++i)
             {
                 auto & element = columns[i];
-                element = recursiveLowCardinalityConversion(element, from_elements.at(i), to_elements.at(i));
+                auto element_no_lc = recursiveLowCardinalityConversion(element, from_elements.at(i), to_elements.at(i));
+                if (element.get() != element_no_lc.get())
+                {
+                    element = element_no_lc;
+                    has_converted = true;
+                }
             }
+
+            if (!has_converted)
+                return column;
+
             return ColumnTuple::create(columns);
         }
     }

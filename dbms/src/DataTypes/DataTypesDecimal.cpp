@@ -2,6 +2,8 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readFloatText.h>
@@ -27,7 +29,7 @@ bool decimalCheckArithmeticOverflow(const Context & context) { return context.ge
 //
 
 template <typename T>
-std::string DataTypeDecimal<T>::getName() const
+std::string DataTypeDecimal<T>::doGetName() const
 {
     std::stringstream ss;
     ss << "Decimal(" << precision << ", " << scale << ")";
@@ -134,9 +136,45 @@ void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & is
 
 
 template <typename T>
+void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDecimal(static_cast<const ColumnType &>(column).getData()[row_num], scale));
+}
+
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    T decimal;
+    if (!protobuf.readDecimal(decimal, precision, scale))
+        return;
+
+    auto & container = static_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(decimal);
+        row_added = true;
+    }
+    else
+        container.back() = decimal;
+}
+
+
+template <typename T>
 Field DataTypeDecimal<T>::getDefault() const
 {
     return DecimalField(T(0), scale);
+}
+
+
+template <typename T>
+DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
+{
+    using PromotedType = DataTypeDecimal<Decimal128>;
+    return std::make_shared<PromotedType>(PromotedType::maxPrecision(), scale);
 }
 
 

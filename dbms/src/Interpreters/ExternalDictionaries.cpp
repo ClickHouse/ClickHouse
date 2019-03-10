@@ -36,7 +36,7 @@ ExternalDictionaries::ExternalDictionaries(
                          std::move(config_repository),
                          &Logger::get("ExternalDictionaries"),
                          "external dictionary"),
-          context(context)
+        context(context)
 {
     init(throw_on_error);
 }

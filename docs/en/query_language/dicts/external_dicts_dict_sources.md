@@ -88,7 +88,7 @@ Example of settings:
 </source>
 ```
 
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md) in the server configuration.
+In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md#server_settings-openssl) in the server configuration.
 
 Setting fields:
 

@@ -94,6 +94,8 @@ private:
     {
     }
 
+    String getTypeString() const;
+
 public:
     ~ColumnAggregateFunction() override;
 
@@ -154,6 +156,8 @@ public:
     size_t byteSize() const override;
 
     size_t allocatedBytes() const override;
+
+    void protect() override;
 
     void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 

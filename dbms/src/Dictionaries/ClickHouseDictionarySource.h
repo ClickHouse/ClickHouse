@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <Poco/Logger.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Interpreters/Context.h>
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "IDictionarySource.h"
@@ -65,10 +67,11 @@ private:
     mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
-    Context & context;
+    Context context;
     const bool is_local;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
+    Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");
 };
 
 }

@@ -1,6 +1,7 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>

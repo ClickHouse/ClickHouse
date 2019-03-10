@@ -1,5 +1,7 @@
 # TinyLog
 
+Engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](log_family.md) article.
+
 The simplest table engine, which stores data on a disk.
 Each column is stored in a separate compressed file.
 When writing, data is appended to the end of files.
@@ -16,6 +18,5 @@ The situation when you have a large number of small tables guarantees poor produ
 **Indexes are not supported.**
 
 In Yandex.Metrica, TinyLog tables are used for intermediary data that is processed in small batches.
-
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/tinylog/) <!--hide-->

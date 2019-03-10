@@ -3,6 +3,21 @@ cmake_minimum_required (VERSION 3.3)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 
+option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
+if(ENABLE_IPO)
+    cmake_policy(SET CMP0069 NEW)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_NOT_SUPPORTED)
+    if(IPO_SUPPORTED)
+        message(STATUS "IPO/LTO is supported, enabling")
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    else()
+        message(STATUS "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
+    endif()
+else()
+    message(STATUS "IPO/LTO not enabled.")
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
@@ -81,7 +96,7 @@ option (ENABLE_TESTS "Enables tests" ON)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
-    if (OS_LINUX AND NOT UNBUNDLED)
+    if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
     endif ()
 endif ()
@@ -116,7 +131,9 @@ else()
     message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
 endif()
 
-include (cmake/test_cpu.cmake)
+if(NOT DISABLE_CPU_OPTIMIZE)
+    include(cmake/test_cpu.cmake)
+endif()
 
 if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
     option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
@@ -250,9 +267,10 @@ if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
-message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
+message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include(GNUInstallDirs)
+include (cmake/find_contrib_lib.cmake)
 
 include (cmake/find_ssl.cmake)
 include (cmake/lib_name.cmake)
@@ -275,22 +293,27 @@ include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
-include (cmake/find_cpuid.cmake)
+include (cmake/find_cpuid.cmake) # Freebsd, bundled
+if (NOT USE_CPUID)
+    include (cmake/find_cpuinfo.cmake) # Debian
+endif()
 include (cmake/find_libgsasl.cmake)
 include (cmake/find_libxml2.cmake)
-include (cmake/find_hdfs3.cmake)
+include (cmake/find_brotli.cmake)
+include (cmake/find_protobuf.cmake)
+include (cmake/find_pdqsort.cmake)
+include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
-if (ENABLE_TESTS)
-    include (cmake/find_gtest.cmake)
-endif ()
-
-include (cmake/find_contrib_lib.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
 find_contrib_lib(double-conversion)
+include (cmake/find_parquet.cmake)
+if (ENABLE_TESTS)
+    include (cmake/find_gtest.cmake)
+endif ()
 
 # Need to process before "contrib" dir:
 include (libs/libcommon/cmake/find_gperftools.cmake)

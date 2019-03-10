@@ -19,7 +19,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceCount(const std::string & na
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
     String pattern = params.front().safeGet<std::string>();
-    return std::make_shared<AggregateFunctionSequenceCount>(argument_types, pattern);
+    return std::make_shared<AggregateFunctionSequenceCount>(argument_types, params, pattern);
 }
 
 AggregateFunctionPtr createAggregateFunctionSequenceMatch(const std::string & name, const DataTypes & argument_types, const Array & params)
@@ -29,7 +29,7 @@ AggregateFunctionPtr createAggregateFunctionSequenceMatch(const std::string & na
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
     String pattern = params.front().safeGet<std::string>();
-    return std::make_shared<AggregateFunctionSequenceMatch>(argument_types, pattern);
+    return std::make_shared<AggregateFunctionSequenceMatch>(argument_types, params, pattern);
 }
 
 }
