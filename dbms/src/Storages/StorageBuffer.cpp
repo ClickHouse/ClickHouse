@@ -150,7 +150,7 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructure(false, context.getCurrentQueryId());
+        auto destination_lock = destination->lockStructureForShare(false, context.getCurrentQueryId());
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
@@ -677,9 +677,9 @@ void StorageBuffer::flushThread()
 }
 
 
-void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    auto lock = lockStructureForAlter(context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);

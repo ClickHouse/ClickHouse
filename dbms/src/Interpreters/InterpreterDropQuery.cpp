@@ -69,7 +69,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         {
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockForAlter(context.getCurrentQueryId());
+            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Drop table from memory, don't touch data and metadata
             database_and_table.first->detachTable(database_and_table.second->getTableName());
         }
@@ -78,7 +78,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             database_and_table.second->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockForAlter(context.getCurrentQueryId());
+            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Drop table data, don't touch metadata
             database_and_table.second->truncate(query_ptr, context);
         }
@@ -89,7 +89,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
 
-            auto table_lock = database_and_table.second->lockForAlter(context.getCurrentQueryId());
+            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Delete table metadata and table itself from memory
 
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
@@ -126,7 +126,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockForAlter(context.getCurrentQueryId());
+                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Drop table data, don't touch metadata
                 table->truncate(query_ptr, context);
             }
@@ -135,7 +135,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 context_handle.tryRemoveExternalTable(table_name);
                 table->shutdown();
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockForAlter(context.getCurrentQueryId());
+                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Delete table data
                 table->drop();
                 table->is_dropped = true;
