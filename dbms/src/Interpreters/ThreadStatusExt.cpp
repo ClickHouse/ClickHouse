@@ -42,7 +42,11 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
 
 const std::string & ThreadStatus::getQueryId() const
 {
-    return query_id;
+    static const std::string empty = "";
+    if (query_context)
+        return query_context->getClientInfo().current_query_id;
+
+    return empty;
 }
 
 void CurrentThread::defaultThreadDeleter()

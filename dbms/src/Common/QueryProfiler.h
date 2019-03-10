@@ -27,7 +27,12 @@ namespace
 {
     void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * /* info */, void * context)
     {
-        DB::WriteBufferFromFileDescriptor out(trace_pipe.fds_rw[1]);
+        char buffer[DBMS_DEFAULT_BUFFER_SIZE];
+        DB::WriteBufferFromFileDescriptor out(
+            /* fd */ trace_pipe.fds_rw[1],
+            /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE,
+            /* existing_memory */ buffer
+        );
 
         const std::string & query_id = CurrentThread::getQueryId();
 
@@ -62,7 +67,7 @@ public:
 
         struct sigaction sa{};
         sa.sa_sigaction = ProfilerImpl::signalHandler;
-        sa.sa_flags = SA_SIGINFO;
+        sa.sa_flags = SA_SIGINFO | SA_RESTART;
 
         if (sigemptyset(&sa.sa_mask))
             throw Poco::Exception("Failed to clean signal mask for query profiler");
