@@ -26,6 +26,7 @@ CREATE TABLE test.clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('
 CREATE TABLE test.clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '2', d, d, 8192);
 
 INSERT INTO test.clear_column1 (d) VALUES ('2000-01-01'), ('2000-02-01');
+SYSTEM SYNC REPLICA test.clear_column2;
 
 SET replication_alter_partitions_sync=2;
 ALTER TABLE test.clear_column1 ADD COLUMN s String;
@@ -33,9 +34,10 @@ ALTER TABLE test.clear_column1 CLEAR COLUMN s IN PARTITION '200001';
 
 INSERT INTO test.clear_column1 VALUES ('2000-01-01', 1, 'a'), ('2000-02-01', 2, 'b');
 INSERT INTO test.clear_column1 VALUES ('2000-01-01', 3, 'c'), ('2000-02-01', 4, 'd');
+SYSTEM SYNC REPLICA test.clear_column2;
 
 SELECT 'all';
-SELECT * FROM test.clear_column1 ORDER BY d, i, s;
+SELECT * FROM test.clear_column2 ORDER BY d, i, s;
 
 SELECT 'w/o i 1';
 ALTER TABLE test.clear_column1 CLEAR COLUMN i IN PARTITION '200001';
