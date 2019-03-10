@@ -200,7 +200,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     if (storage)
-        table_lock = storage->lockStructure(false, context.getCurrentQueryId());
+        table_lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
 
     syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
