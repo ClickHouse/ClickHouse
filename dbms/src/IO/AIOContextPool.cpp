@@ -1,4 +1,4 @@
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>
@@ -84,7 +84,11 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
     for (const auto & event : boost::make_iterator_range(events, events + num_events))
     {
         /// get id from event
+#if defined(__FreeBSD__)
+        const auto completed_id = (reinterpret_cast<struct iocb *>(event.udata))->aio_data;
+#else
         const auto completed_id = event.data;
+#endif
 
         /// set value via promise and release it
         const auto it = promises.find(completed_id);
@@ -94,7 +98,11 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
             continue;
         }
 
+#if defined(__FreeBSD__)
+        it->second.set_value(aio_return(reinterpret_cast<struct aiocb *>(event.udata)));
+#else
         it->second.set_value(event.res);
+#endif
         promises.erase(it);
     }
 }

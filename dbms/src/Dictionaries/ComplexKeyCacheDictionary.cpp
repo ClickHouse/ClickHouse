@@ -70,10 +70,6 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
     createAttributes();
 }
 
-ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other)
-    : ComplexKeyCacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
-{
-}
 
 void ComplexKeyCacheDictionary::getString(
     const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
@@ -226,7 +222,7 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
 
     std::vector<size_t> required_rows(outdated_keys.size());
     std::transform(
-        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.second.front(); });
+        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getSecond().front(); });
 
     /// request new values
     update(

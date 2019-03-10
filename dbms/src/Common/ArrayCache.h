@@ -64,7 +64,7 @@ namespace DB
   * During insertion, each key is locked - to avoid parallel initialization of regions for same key.
   *
   * On insertion, we search for free region of at least requested size.
-  * If nothing was found, we evict oldest unused region; if not enogh size, we evict it neighbours; and try again.
+  * If nothing was found, we evict oldest unused region; if not enough size, we evict it neighbours; and try again.
   *
   * Metadata is allocated by usual allocator and its memory usage is not accounted.
   *

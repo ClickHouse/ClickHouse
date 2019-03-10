@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/ColumnDefault.h>
 #include <Interpreters/Context.h>
 
@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Adds defaults to columns using BlockDelayedDefaults bitmask attached to Block by child InputStream.
-class AddingDefaultsBlockInputStream : public IProfilingBlockInputStream
+class AddingDefaultsBlockInputStream : public IBlockInputStream
 {
 public:
     AddingDefaultsBlockInputStream(

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Aggregator.h>
 #include <Core/ColumnNumbers.h>
 
@@ -14,7 +14,7 @@ class ExpressionActions;
 /** Takes blocks after grouping, with non-finalized aggregate functions.
   * Calculates all subsets of columns and aggreagetes over them.
   */
-class CubeBlockInputStream : public IProfilingBlockInputStream
+class CubeBlockInputStream : public IBlockInputStream
 {
 private:
     using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;

@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -45,7 +46,7 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "default_expression";
     block.insert(col);
 
-    col.name = "comment_expression";
+    col.name = "comment";
     block.insert(col);
 
     col.name = "codec_expression";
@@ -83,25 +84,16 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
+            auto identifier = typeid_cast<const ASTIdentifier *>(table_expression->database_and_table_name.get());
+
             String database_name;
             String table_name;
-
-            auto identifier = typeid_cast<const ASTIdentifier *>(table_expression->database_and_table_name.get());
-            if (identifier->name_parts.size() > 2)
-                throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-
-            if (identifier->name_parts.size() > 1)
-            {
-                database_name = identifier->name_parts[0];
-                table_name = identifier->name_parts[1];
-            }
-            else
-                table_name = identifier->name;
+            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(*identifier);
 
             table = context.getTable(database_name, table_name);
         }
 
-        auto table_lock = table->lockStructure(false);
+        auto table_lock = table->lockStructureForShare(false, context.getCurrentQueryId());
         columns = table->getColumns().getAll();
         column_defaults = table->getColumns().defaults;
         column_comments = table->getColumns().comments;

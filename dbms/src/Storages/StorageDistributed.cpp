@@ -307,9 +307,10 @@ BlockInputStreams StorageDistributed::read(
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Settings & settings)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & context)
 {
     auto cluster = getCluster();
+    const auto & settings = context.getSettingsRef();
 
     /// Ban an attempt to make async insert into the table belonging to DatabaseMemory
     if (path.empty() && !owned_cluster && !settings.insert_distributed_sync.value)
@@ -335,13 +336,16 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Settings & 
 }
 
 
-void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & current_table_name, const Context & context)
+void StorageDistributed::alter(
+    const AlterCommands & params, const String & database_name, const String & current_table_name,
+    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    auto lock = lockStructureForAlter();
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    ColumnsDescription new_columns = getColumns();
+    auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, {});
+    context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 

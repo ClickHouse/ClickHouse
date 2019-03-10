@@ -42,6 +42,12 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " VALUES" << (settings.hilite ? hilite_none : "");
         }
     }
+
+    if (settings_ast)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "SETTINGS " << (settings.hilite ? hilite_none : "");
+        settings_ast->formatImpl(settings, state, frame);
+    }
 }
 
 }

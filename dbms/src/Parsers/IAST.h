@@ -7,7 +7,6 @@
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Parsers/StringRange.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 
 
@@ -40,10 +39,6 @@ class IAST : public std::enable_shared_from_this<IAST>
 {
 public:
     ASTs children;
-    StringRange range;
-
-    /// This pointer does not allow it to be deleted while the range refers to it.
-    StringPtr owned_string;
 
     virtual ~IAST() = default;
     IAST() = default;
@@ -81,7 +76,8 @@ public:
       */
     using Hash = std::pair<UInt64, UInt64>;
     Hash getTreeHash() const;
-    void getTreeHashImpl(SipHash & hash_state) const;
+    void updateTreeHash(SipHash & hash_state) const;
+    virtual void updateTreeHashImpl(SipHash & hash_state) const;
 
     void dumpTree(std::ostream & ostr, size_t indent = 0) const
     {
@@ -196,11 +192,7 @@ public:
 
     virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
-        throw Exception("Unknown element in AST: " + getID()
-            + ((range.first && (range.second > range.first))
-                ? " '" + std::string(range.first, range.second - range.first) + "'"
-                : ""),
-            ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+        throw Exception("Unknown element in AST: " + getID(), ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
     }
 
     void cloneChildren();

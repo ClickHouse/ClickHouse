@@ -1,8 +1,7 @@
 #pragma once
 
-#include <string.h> // memcmp
-
 #include <Common/PODArray.h>
+#include <Common/memcmpSmall.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 
@@ -58,6 +57,11 @@ public:
         return chars.allocated_bytes() + sizeof(n);
     }
 
+    void protect() override
+    {
+        chars.protect();
+    }
+
     Field operator[](size_t index) const override
     {
         return String(reinterpret_cast<const char *>(&chars[n * index]), n);
@@ -98,7 +102,7 @@ public:
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
-        return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
+        return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
@@ -138,7 +142,7 @@ public:
     StringRef getRawData() const override { return StringRef(chars.data(), chars.size()); }
 
     /// Specialized part of interface, not from IColumn.
-
+    void insertString(const String & string) { insertData(string.c_str(), string.size()); }
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }
 

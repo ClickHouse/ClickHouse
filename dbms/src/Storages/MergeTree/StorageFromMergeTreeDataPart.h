@@ -32,7 +32,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & /* query_context */) const override
     {
         return part->storage.mayBenefitFromIndexForIn(left_in_operand);
     }
