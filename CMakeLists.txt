@@ -211,7 +211,11 @@ if (OS_LINUX AND NOT UNBUNDLED)
     # The order of linking is important: 'glibc-compatibility' must be before libc but after all other libraries.
     if (GLIBC_COMPATIBILITY)
         message (STATUS "Some symbols from glibc will be replaced for compatibility")
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility.a")
+
+        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+        set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
+
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
     endif ()
 
     # Add Libc. GLIBC is actually a collection of interdependent libraries.
@@ -350,7 +354,15 @@ if (DEFAULT_LIBS)
     add_default_libs(ltdl)
     add_default_libs(zlibstatic)
     add_default_libs(jemalloc)
+    add_default_libs(unwind)
+    add_default_libs(memcpy)
     add_default_libs(Foundation)
     add_default_libs(common)
     add_default_libs(gtest)
+    add_default_libs(lz4)
+    add_default_libs(zstd)
+    add_default_libs(snappy)
+    add_default_libs(arrow)
+    add_default_libs(thrift_static)
+    add_default_libs(boost_regex_internal)
 endif ()
