@@ -255,6 +255,11 @@ size_t ColumnAggregateFunction::allocatedBytes() const
     return res;
 }
 
+void ColumnAggregateFunction::protect()
+{
+    data.protect();
+}
+
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
     return create(func, Arenas(1, std::make_shared<Arena>()));
