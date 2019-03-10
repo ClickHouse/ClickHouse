@@ -193,6 +193,38 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 }
 
 
+std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepare_alter_transactions(
+    const ColumnsDescription& new_columns, const IndicesDescription& new_indices, const size_t thread_pool_size)
+{
+    ThreadPool thread_pool(thread_pool_size);
+
+    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions(parts.size());
+    const auto& columns_for_parts = new_columns.getAllPhysical();
+    size_t i = 0;
+    for (const auto & part : parts)
+    {
+        thread_pool.schedule(
+            [this, i, &transactions, &part, columns_for_parts, new_indices = new_indices.indices]
+            {
+                if (auto transaction = this->data.alterDataPart(part, columns_for_parts, new_indices, false))
+                    transactions[i] = (std::move(transaction));
+            }
+        );
+
+        ++i;
+    }
+    thread_pool.wait();
+    auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
+        [](const MergeTreeData::AlterDataPartTransactionPtr& transaction) {
+            return transaction == nullptr;
+        }
+    );
+    transactions.erase(erase_pos, transactions.end());
+
+    return transactions;
+}
+
 void StorageMergeTree::alter(
     const AlterCommands & params,
     const String & current_database_name,
@@ -223,32 +255,8 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
 
-    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
-    auto columns_for_parts = new_columns.getAllPhysical();
-    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
-
-    ThreadPool thread_pool(2 * getNumberOfPhysicalCPUCores());
-    size_t i = 0;
-    transactions.resize(parts.size());
-    for (const auto & part : parts)
-    {
-        thread_pool.schedule(
-            [this, i, &transactions, &part, columns_for_parts, new_indices = new_indices.indices] {
-                if (auto transaction = this->data.alterDataPart(part, columns_for_parts, new_indices, false))
-                    transactions[i] = (std::move(transaction));
-            }
-        );
-
-        ++i;
-    }
-    thread_pool.wait();
-    transactions.erase(
-        std::remove_if(transactions.begin(), transactions.end(),
-                    [](const MergeTreeData::AlterDataPartTransactionPtr& transaction) {
-                        return transaction == nullptr;
-                    }
-        )
-    );
+    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions = prepare_alter_transactions(new_columns, new_indices,
+                                                                                                2 * getNumberOfPhysicalCPUCores());
 
     auto table_hard_lock = lockStructureForAlter(context.getCurrentQueryId());
 
@@ -269,7 +277,7 @@ void StorageMergeTree::alter(
     data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
 
     for (auto & transaction : transactions)
-        transaction->commit();
+            transaction->commit();
 
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
