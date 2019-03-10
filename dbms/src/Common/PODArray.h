@@ -185,7 +185,7 @@ protected:
         }
     }
 
-    /// Restore memory protection in destructor for further reuse by allocator.
+    /// Restore memory protection in destructor or realloc for further reuse by allocator.
     bool mprotected = false;
 #endif
 
