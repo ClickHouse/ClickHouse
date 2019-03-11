@@ -76,18 +76,18 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
-    if (!select.with_expression_list)
+    auto * select = ast->As<ASTSelectQuery>();
+    if (!select->with_expression_list)
     {
-        select.with_expression_list = std::make_shared<ASTExpressionList>();
-        select.children.insert(select.children.begin(), select.with_expression_list);
+        select->with_expression_list = std::make_shared<ASTExpressionList>();
+        select->children.insert(select->children.begin(), select->with_expression_list);
     }
 
-    ASTExpressionList & with = typeid_cast<ASTExpressionList &>(*select.with_expression_list);
+    auto * with = select->with_expression_list->As<ASTExpressionList>();
     auto literal = std::make_shared<ASTLiteral>(value);
     literal->alias = column_name;
     literal->prefer_alias_to_column_name = true;
-    with.children.push_back(literal);
+    with->children.push_back(literal);
 }
 
 /// Verifying that the function depends only on the specified columns
@@ -126,11 +126,11 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
     if (functions.size() == 1)
         return functions[0];
     ASTPtr new_query = std::make_shared<ASTFunction>();
-    ASTFunction & new_function = typeid_cast<ASTFunction & >(*new_query);
-    new_function.name = "and";
-    new_function.arguments = std::make_shared<ASTExpressionList>();
-    new_function.arguments->children = functions;
-    new_function.children.push_back(new_function.arguments);
+    auto * new_function = new_query->As<ASTFunction>();
+    new_function->name = "and";
+    new_function->arguments = std::make_shared<ASTExpressionList>();
+    new_function->arguments->children = functions;
+    new_function->children.push_back(new_function->arguments);
     return new_query;
 }
 

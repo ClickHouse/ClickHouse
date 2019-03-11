@@ -92,16 +92,16 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
 BlockIO InterpreterInsertQuery::execute()
 {
-    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
-    checkAccess(query);
-    StoragePtr table = getTable(query);
+    const auto * query = query_ptr->As<ASTInsertQuery>();
+    checkAccess(*query);
+    StoragePtr table = getTable(*query);
 
     auto table_lock = table->lockStructure(true, context.getCurrentQueryId());
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
 
-    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
+    out = std::make_shared<PushingToViewsBlockOutputStream>(query->database, query->table, table, context, query_ptr, query->no_destination);
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
@@ -110,7 +110,7 @@ BlockIO InterpreterInsertQuery::execute()
         out = std::make_shared<SquashingBlockOutputStream>(
             out, table->getSampleBlock(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
-    auto query_sample_block = getSampleBlock(query, table);
+    auto query_sample_block = getSampleBlock(*query, table);
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
@@ -125,10 +125,10 @@ BlockIO InterpreterInsertQuery::execute()
     res.out = std::move(out);
 
     /// What type of query: INSERT or INSERT SELECT?
-    if (query.select)
+    if (query->select)
     {
         /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, {}, QueryProcessingStage::Complete, 1};
+        InterpreterSelectWithUnionQuery interpreter_select{query->select, context, {}, QueryProcessingStage::Complete, 1};
 
         res.in = interpreter_select.execute().in;
 
@@ -145,7 +145,7 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
-    else if (query.data && !query.has_tail) /// can execute without additional data
+    else if (query->data && !query->has_tail) /// can execute without additional data
     {
         res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context);
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
@@ -171,8 +171,8 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
 
 std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
 {
-    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
-    return {query.database, query.table};
+    const auto * query = query_ptr->As<ASTInsertQuery>();
+    return {query->database, query->table};
 }
 
 }

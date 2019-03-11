@@ -123,7 +123,7 @@ public:
 
     void add(const ASTPtr & command)
     {
-        commands.push_back(static_cast<ASTAlterCommand *>(command.get()));
+        commands.push_back(command->As<ASTAlterCommand>());
         children.push_back(command);
     }
 

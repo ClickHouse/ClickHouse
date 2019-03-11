@@ -21,10 +21,10 @@ static void replaceConstFunction(IAST & node, const Context & context, const Nam
     for (size_t i = 0; i < node.children.size(); ++i)
     {
         auto child = node.children[i];
-        if (ASTExpressionList * exp_list = typeid_cast<ASTExpressionList *>(&*child))
+        if (auto * exp_list = child->As<ASTExpressionList>())
             replaceConstFunction(*exp_list, context, all_columns);
 
-        if (ASTFunction * function = typeid_cast<ASTFunction *>(&*child))
+        if (auto * function = child->As<ASTFunction>())
         {
             NamesAndTypesList source_columns = all_columns;
             ASTPtr query = function->ptr();
@@ -76,7 +76,7 @@ static bool isCompatible(const IAST & node)
         return true;
     }
 
-    if (isIdentifier(&node))
+    if (node.As<ASTIdentifier>())
         return true;
 
     return false;
@@ -112,7 +112,7 @@ String transformQueryForExternalDatabase(
       * copy only compatible parts of it.
       */
 
-    ASTPtr & original_where = typeid_cast<ASTSelectQuery &>(*clone_query).where_expression;
+    auto & original_where = clone_query->As<ASTSelectQuery>()->where_expression;
     if (original_where)
     {
         replaceConstFunction(*original_where, context, available_columns);

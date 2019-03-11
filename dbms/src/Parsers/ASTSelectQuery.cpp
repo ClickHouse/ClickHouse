@@ -161,15 +161,15 @@ static const ASTTableExpression * getFirstTableExpression(const ASTSelectQuery &
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
-    if (tables_in_select_query.children.empty())
+    const auto * tables_in_select_query = select.tables->As<ASTTablesInSelectQuery>();
+    if (tables_in_select_query->children.empty())
         return {};
 
-    const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
-    if (!tables_element.table_expression)
+    const auto * tables_element = tables_in_select_query->children[0]->As<ASTTablesInSelectQueryElement>();
+    if (!tables_element->table_expression)
         return {};
 
-    return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element->table_expression->As<ASTTableExpression>();
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
@@ -177,15 +177,15 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
     if (!select.tables)
         return {};
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
-    if (tables_in_select_query.children.empty())
+    auto * tables_in_select_query = select.tables->As<ASTTablesInSelectQuery>();
+    if (tables_in_select_query->children.empty())
         return {};
 
-    ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
-    if (!tables_element.table_expression)
+    auto * tables_element = tables_in_select_query->children[0]->As<ASTTablesInSelectQueryElement>();
+    if (!tables_element->table_expression)
         return {};
 
-    return static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element->table_expression->As<ASTTableExpression>();
 }
 
 static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
@@ -193,18 +193,18 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
-    if (tables_in_select_query.children.empty())
+    const auto * tables_in_select_query = select.tables->As<ASTTablesInSelectQuery>();
+    if (tables_in_select_query->children.empty())
         return {};
 
     const ASTArrayJoin * array_join = nullptr;
-    for (const auto & child : tables_in_select_query.children)
+    for (const auto & child : tables_in_select_query->children)
     {
-        const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
-        if (tables_element.array_join)
+        const auto * tables_element = child->As<ASTTablesInSelectQueryElement>();
+        if (tables_element->array_join)
         {
             if (!array_join)
-                array_join = static_cast<const ASTArrayJoin *>(tables_element.array_join.get());
+                array_join = tables_element->array_join->As<ASTArrayJoin>();
             else
                 throw Exception("Support for more than one ARRAY JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
         }
@@ -218,18 +218,18 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
-    if (tables_in_select_query.children.empty())
+    const auto * tables_in_select_query = select.tables->As<ASTTablesInSelectQuery>();
+    if (tables_in_select_query->children.empty())
         return {};
 
     const ASTTablesInSelectQueryElement * joined_table = nullptr;
-    for (const auto & child : tables_in_select_query.children)
+    for (const auto & child : tables_in_select_query->children)
     {
-        const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
-        if (tables_element.table_join)
+        const auto * tables_element = child->As<ASTTablesInSelectQueryElement>();
+        if (tables_element->table_join)
         {
             if (!joined_table)
-                joined_table = &tables_element;
+                joined_table = tables_element;
             else
                 throw Exception("Multiple JOIN disabled or does not support the query. "
                                 "'set allow_experimental_multiple_joins_emulation' to enable.", ErrorCodes::NOT_IMPLEMENTED);

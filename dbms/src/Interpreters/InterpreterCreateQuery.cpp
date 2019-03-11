@@ -196,51 +196,51 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
 
     for (const auto & ast : column_list_ast.children)
     {
-        auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
+        auto * col_decl = ast->As<ASTColumnDeclaration>();
 
         DataTypePtr column_type = nullptr;
-        if (col_decl.type)
+        if (col_decl->type)
         {
-            column_type = DataTypeFactory::instance().get(col_decl.type);
-            columns.emplace_back(col_decl.name, column_type);
+            column_type = DataTypeFactory::instance().get(col_decl->type);
+            columns.emplace_back(col_decl->name, column_type);
         }
         else
             /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-            columns.emplace_back(col_decl.name, std::make_shared<DataTypeUInt8>());
+            columns.emplace_back(col_decl->name, std::make_shared<DataTypeUInt8>());
 
         /// add column to postprocessing if there is a default_expression specified
-        if (col_decl.default_expression)
+        if (col_decl->default_expression)
         {
-            defaulted_columns.emplace_back(&columns.back(), &col_decl);
+            defaulted_columns.emplace_back(&columns.back(), col_decl);
 
             /** for columns with explicitly-specified type create two expressions:
              *    1. default_expression aliased as column name with _tmp suffix
              *    2. conversion of expression (1) to explicitly-specified type alias as column name */
-            if (col_decl.type)
+            if (col_decl->type)
             {
-                const auto & final_column_name = col_decl.name;
+                const auto & final_column_name = col_decl->name;
                 const auto tmp_column_name = final_column_name + "_tmp";
                 const auto data_type_ptr = columns.back().type.get();
 
                 default_expr_list->children.emplace_back(setAlias(
                     makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
                         std::make_shared<ASTLiteral>(data_type_ptr->getName())), final_column_name));
-                default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+                default_expr_list->children.emplace_back(setAlias(col_decl->default_expression->clone(), tmp_column_name));
             }
             else
-                default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+                default_expr_list->children.emplace_back(setAlias(col_decl->default_expression->clone(), col_decl->name));
         }
 
-        if (col_decl.codec)
+        if (col_decl->codec)
         {
-            auto codec = CompressionCodecFactory::instance().get(col_decl.codec, column_type);
-            codecs.emplace(col_decl.name, codec);
+            auto codec = CompressionCodecFactory::instance().get(col_decl->codec, column_type);
+            codecs.emplace(col_decl->name, codec);
         }
 
-        if (col_decl.comment)
+        if (col_decl->comment)
         {
-            if (auto comment_str = typeid_cast<ASTLiteral &>(*col_decl.comment).value.get<String>(); !comment_str.empty())
-                comments.emplace(col_decl.name, comment_str);
+            if (auto comment_str = col_decl->comment->As<ASTLiteral>()->value.get<String>(); !comment_str.empty())
+                comments.emplace(col_decl->name, comment_str);
         }
     }
 
@@ -682,17 +682,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::execute()
 {
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
-    checkAccess(create);
-    ASTQueryWithOutput::resetOutputASTIfExist(create);
+    auto * create = query_ptr->As<ASTCreateQuery>();
+    checkAccess(*create);
+    ASTQueryWithOutput::resetOutputASTIfExist(*create);
 
     /// CREATE|ATTACH DATABASE
-    if (!create.database.empty() && create.table.empty())
+    if (!create->database.empty() && create->table.empty())
     {
-        return createDatabase(create);
+        return createDatabase(*create);
     }
     else
-        return createTable(create);
+        return createTable(*create);
 }
 
 

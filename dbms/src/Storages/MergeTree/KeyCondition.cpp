@@ -370,11 +370,11 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
 {
     RPNElement element;
 
-    if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
+    if (auto * func = node->As<ASTFunction>())
     {
         if (operatorFromAST(func, element))
         {
-            auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+            auto & args = func->arguments->children;
             for (size_t i = 0, size = args.size(); i < size; ++i)
             {
                 traverseAST(args[i], context, block_with_constants);

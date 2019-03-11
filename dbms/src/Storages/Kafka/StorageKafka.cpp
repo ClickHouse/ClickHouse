@@ -429,7 +429,7 @@ void registerStorageKafka(StorageFactory & factory)
         if (args_count >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
-            topic_list = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+            topic_list = engine_args[1]->As<ASTLiteral>()->value.safeGet<String>();
         }
         else if (kafka_settings.kafka_topic_list.changed)
         {
@@ -447,7 +447,7 @@ void registerStorageKafka(StorageFactory & factory)
         if (args_count >= 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
-            group = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
+            group = engine_args[2]->As<ASTLiteral>()->value.safeGet<String>();
         }
         else if (kafka_settings.kafka_group_name.changed)
         {

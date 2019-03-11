@@ -97,11 +97,10 @@ struct ColumnAliasesMatcher
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+        if (auto * t = ast->As<ASTIdentifier>())
             visit(*t, ast, data);
 
-        if (typeid_cast<ASTAsterisk *>(ast.get()) ||
-            typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
+        if (ast->As<ASTAsterisk>() || ast->As<ASTQualifiedAsterisk>())
             throw Exception("Multiple JOIN do not support asterisks yet", ErrorCodes::NOT_IMPLEMENTED);
     }
 
@@ -160,9 +159,9 @@ struct AppendSemanticVisitorData
 
         for (auto & child : select.select_expression_list->children)
         {
-            if (auto * node = typeid_cast<ASTAsterisk *>(child.get()))
+            if (auto * node = child->As<ASTAsterisk>())
                 AsteriskSemantic::setAliases(*node, rev_aliases);
-            if (auto * node = typeid_cast<ASTQualifiedAsterisk *>(child.get()))
+            if (auto * node = child->As<ASTQualifiedAsterisk>())
                 AsteriskSemantic::setAliases(*node, rev_aliases);
         }
 
@@ -233,7 +232,7 @@ using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 
 void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * t = ast->As<ASTSelectQuery>())
         visit(*t, ast, data);
 }
 
@@ -261,10 +260,10 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
     /// JOIN sections
     for (auto & child : select.tables->children)
     {
-        auto table = typeid_cast<ASTTablesInSelectQueryElement *>(child.get());
+        auto * table = child->As<ASTTablesInSelectQueryElement>();
         if (table->table_join)
         {
-            auto * join = typeid_cast<ASTTableJoin *>(table->table_join.get());
+            auto * join = table->table_join->As<ASTTableJoin>();
             ColumnAliasesVisitor(aliases_data).visit(join->on_expression);
         }
     }

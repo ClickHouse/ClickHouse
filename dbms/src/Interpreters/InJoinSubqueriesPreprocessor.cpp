@@ -30,7 +30,7 @@ namespace
 template <typename F>
 void forEachNonGlobalSubquery(IAST * node, F && f)
 {
-    if (ASTFunction * function = typeid_cast<ASTFunction *>(node))
+    if (auto * function = node->As<ASTFunction>())
     {
         if (function->name == "in" || function->name == "notIn")
         {
@@ -40,16 +40,16 @@ void forEachNonGlobalSubquery(IAST * node, F && f)
 
         /// Pass into other functions, as subquery could be in aggregate or in lambda functions.
     }
-    else if (ASTTablesInSelectQueryElement * join = typeid_cast<ASTTablesInSelectQueryElement *>(node))
+    else if (const auto * join = node->As<ASTTablesInSelectQueryElement>())
     {
         if (join->table_join && join->table_expression)
         {
-            auto & table_join = static_cast<ASTTableJoin &>(*join->table_join);
-            if (table_join.locality != ASTTableJoin::Locality::Global)
+            auto * table_join = join->table_join->As<ASTTableJoin>();
+            if (table_join->locality != ASTTableJoin::Locality::Global)
             {
-                auto & subquery = static_cast<ASTTableExpression &>(*join->table_expression).subquery;
+                auto & subquery = join->table_expression->As<ASTTableExpression>()->subquery;
                 if (subquery)
-                    f(subquery.get(), nullptr, &table_join);
+                    f(subquery.get(), nullptr, table_join);
             }
             return;
         }
@@ -59,7 +59,7 @@ void forEachNonGlobalSubquery(IAST * node, F && f)
 
     /// Descent into all children, but not into subqueries of other kind (scalar subqueries), that are irrelevant to us.
     for (auto & child : node->children)
-        if (!typeid_cast<ASTSelectQuery *>(child.get()))
+        if (!child->As<ASTSelectQuery>())
             forEachNonGlobalSubquery(child.get(), f);
 }
 
@@ -69,7 +69,7 @@ void forEachNonGlobalSubquery(IAST * node, F && f)
 template <typename F>
 void forEachTable(IAST * node, F && f)
 {
-    if (auto table_expression = typeid_cast<ASTTableExpression *>(node))
+    if (auto * table_expression = node->As<ASTTableExpression>())
     {
         auto & database_and_table = table_expression->database_and_table_name;
         if (database_and_table)
@@ -103,15 +103,15 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
     if (!query->tables)
         return;
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*query->tables);
-    if (tables_in_select_query.children.empty())
+    const auto * tables_in_select_query = query->tables->As<ASTTablesInSelectQuery>();
+    if (tables_in_select_query->children.empty())
         return;
 
-    ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
-    if (!tables_element.table_expression)
+    const auto * tables_element = tables_in_select_query->children[0]->As<ASTTablesInSelectQueryElement>();
+    if (!tables_element->table_expression)
         return;
 
-    ASTTableExpression * table_expression = static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+    const auto * table_expression = tables_element->table_expression->As<ASTTableExpression>();
 
     /// If not ordinary table, skip it.
     if (!table_expression->database_and_table_name)
@@ -143,7 +143,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
             {
                 if (function)
                 {
-                    ASTFunction * concrete = static_cast<ASTFunction *>(function);
+                    auto * concrete = function->As<ASTFunction>();
 
                     if (concrete->name == "in")
                         concrete->name = "globalIn";
@@ -157,7 +157,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
                         throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
                 }
                 else if (table_join)
-                    static_cast<ASTTableJoin &>(*table_join).locality = ASTTableJoin::Locality::Global;
+                    table_join->As<ASTTableJoin>()->locality = ASTTableJoin::Locality::Global;
                 else
                     throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
             }

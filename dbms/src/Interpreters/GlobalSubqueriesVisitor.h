@@ -56,7 +56,7 @@ public:
             ASTPtr table_name;
             ASTPtr subquery_or_table_name;
 
-            if (isIdentifier(subquery_or_table_name_or_table_expression))
+            if (subquery_or_table_name_or_table_expression->As<ASTIdentifier>())
             {
                 table_name = subquery_or_table_name_or_table_expression;
                 subquery_or_table_name = table_name;
@@ -115,7 +115,7 @@ public:
 
             auto database_and_table_name = createTableIdentifier("", external_table_name);
 
-            if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
+            if (auto * ast_table_expr = subquery_or_table_name_or_table_expression->As<ASTTableExpression>())
             {
                 ast_table_expr->subquery.reset();
                 ast_table_expr->database_and_table_name = database_and_table_name;
@@ -140,16 +140,16 @@ public:
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
+        if (auto * t = ast->As<ASTFunction>())
             visit(*t, ast, data);
-        if (auto * t = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
+        if (auto * t = ast->As<ASTTablesInSelectQueryElement>())
             visit(*t, ast, data);
     }
 
     static bool needChildVisit(ASTPtr &, const ASTPtr & child)
     {
         /// We do not go into subqueries.
-        if (typeid_cast<ASTSelectQuery *>(child.get()))
+        if (child->As<ASTSelectQuery>())
             return false;
         return true;
     }
@@ -168,8 +168,7 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
-        if (table_elem.table_join
-            && static_cast<const ASTTableJoin &>(*table_elem.table_join).locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join && table_elem.table_join->As<ASTTableJoin>()->locality == ASTTableJoin::Locality::Global)
         {
             data.addExternalStorage(table_elem.table_expression);
             data.has_global_subqueries = true;

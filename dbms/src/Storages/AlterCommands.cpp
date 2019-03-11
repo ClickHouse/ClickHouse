@@ -109,8 +109,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.type = COMMENT_COLUMN;
         command.column_name = *getIdentifierName(command_ast->column);
-        const auto & ast_comment = typeid_cast<ASTLiteral &>(*command_ast->comment);
-        command.comment = ast_comment.value.get<String>();
+        const auto * ast_comment = command_ast->comment->As<ASTLiteral>();
+        command.comment = ast_comment->value.get<String>();
         command.if_exists = command_ast->if_exists;
         return command;
     }

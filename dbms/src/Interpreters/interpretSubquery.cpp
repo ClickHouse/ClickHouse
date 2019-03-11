@@ -65,7 +65,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
             auto query_context = const_cast<Context *>(&context.getQueryContext());
             const auto & storage = query_context->executeTableFunction(table_expression);
             columns = storage->getColumns().ordinary;
-            select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression));
+            select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression)); // XXX: const_cast should be avoided!
         }
         else
         {
@@ -94,9 +94,9 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         std::set<std::string> all_column_names;
         std::set<std::string> assigned_column_names;
 
-        if (ASTSelectWithUnionQuery * select_with_union = typeid_cast<ASTSelectWithUnionQuery *>(query.get()))
+        if (const auto * select_with_union = query->As<ASTSelectWithUnionQuery>())
         {
-            if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(select_with_union->list_of_selects->children.at(0).get()))
+            if (const auto * select = select_with_union->list_of_selects->children.at(0)->As<ASTSelectQuery>())
             {
                 for (auto & expr : select->select_expression_list->children)
                     all_column_names.insert(expr->getAliasOrColumnName());

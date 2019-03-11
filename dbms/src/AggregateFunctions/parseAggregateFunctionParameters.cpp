@@ -67,8 +67,7 @@ void getAggregateFunctionNameAndParametersArray(
         parameters_str.data(), parameters_str.data() + parameters_str.size(),
         "parameters of aggregate function in " + error_context, 0);
 
-    ASTExpressionList & args_list = typeid_cast<ASTExpressionList &>(*args_ast);
-    if (args_list.children.empty())
+    if (args_ast->children.empty())
         throw Exception("Incorrect list of parameters to aggregate function "
             + aggregate_function_name, ErrorCodes::BAD_ARGUMENTS);
 

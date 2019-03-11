@@ -41,10 +41,10 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
         auto query_ptr = clone();
-        auto & query = static_cast<ASTRenameQuery &>(*query_ptr);
+        auto * query = query_ptr->As<ASTRenameQuery>();
 
-        query.cluster.clear();
-        for (Element & elem : query.elements)
+        query->cluster.clear();
+        for (Element & elem : query->elements)
         {
             if (elem.from.database.empty())
                 elem.from.database = new_database;

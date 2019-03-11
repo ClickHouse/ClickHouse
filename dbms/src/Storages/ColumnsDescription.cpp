@@ -185,7 +185,7 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
             result.ordinary.emplace_back(column_name, std::move(type));
 
         if (col_ast->comment)
-            if (auto comment_str = typeid_cast<ASTLiteral &>(*col_ast->comment).value.get<String>(); !comment_str.empty())
+            if (auto comment_str = col_ast->comment->As<ASTLiteral>()->value.get<String>(); !comment_str.empty())
                 result.comments.emplace(column_name, std::move(comment_str));
 
         if (col_ast->codec)

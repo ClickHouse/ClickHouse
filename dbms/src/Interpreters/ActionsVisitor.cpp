@@ -122,7 +122,7 @@ SetPtr makeExplicitSet(
     /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_tuple_depth + 1 == right_tuple_depth)
     {
-        ASTFunction * set_func = typeid_cast<ASTFunction *>(right_arg.get());
+        const auto * set_func = right_arg->As<ASTFunction>();
 
         if (!set_func || set_func->name != "tuple")
             throw Exception("Incorrect type of 2nd argument for function " + node->name
@@ -263,11 +263,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
     };
 
     /// If the result of the calculation already exists in the block.
-    if ((typeid_cast<ASTFunction *>(ast.get()) || typeid_cast<ASTLiteral *>(ast.get()))
-        && actions_stack.getSampleBlock().has(getColumnName()))
+    if ((ast->As<ASTFunction>() || ast->As<ASTLiteral>()) && actions_stack.getSampleBlock().has(getColumnName()))
         return;
 
-    if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
+    if (const auto * identifier = ast->As<ASTIdentifier>())
     {
         if (!only_consts && !actions_stack.getSampleBlock().has(getColumnName()))
         {
@@ -288,7 +287,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 actions_stack.addAction(ExpressionAction::addAliases({{identifier->name, identifier->alias}}));
         }
     }
-    else if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
+    else if (const auto * node = ast->As<ASTFunction>())
     {
         if (node->name == "lambda")
             throw Exception("Unexpected lambda expression", ErrorCodes::UNEXPECTED_EXPRESSION);
@@ -383,14 +382,14 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             auto & child = node->arguments->children[arg];
             auto child_column_name = child->getColumnName();
 
-            ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
+            const auto * lambda = child->As<ASTFunction>();
             if (lambda && lambda->name == "lambda")
             {
                 /// If the argument is a lambda expression, just remember its approximate type.
                 if (lambda->arguments->children.size() != 2)
                     throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-                ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(lambda->arguments->children.at(0).get());
+                const auto * lambda_args_tuple = lambda->arguments->children.at(0)->As<ASTFunction>();
 
                 if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
                     throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
@@ -454,12 +453,12 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             {
                 ASTPtr child = node->arguments->children[i];
 
-                ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
+                const auto * lambda = child->As<ASTFunction>();
                 if (lambda && lambda->name == "lambda")
                 {
                     const DataTypeFunction * lambda_type = typeid_cast<const DataTypeFunction *>(argument_types[i].get());
-                    ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(lambda->arguments->children.at(0).get());
-                    ASTs lambda_arg_asts = lambda_args_tuple->arguments->children;
+                    const auto * lambda_args_tuple = lambda->arguments->children.at(0)->As<ASTFunction>();
+                    const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
                     NamesAndTypesList lambda_arguments;
 
                     for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
@@ -517,7 +516,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 ExpressionAction::applyFunction(function_builder, argument_names, getColumnName()));
         }
     }
-    else if (ASTLiteral * literal = typeid_cast<ASTLiteral *>(ast.get()))
+    else if (const auto * literal = ast->As<ASTLiteral>())
     {
         DataTypePtr type = applyVisitor(FieldToDataType(), literal->value);
 

@@ -26,7 +26,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, partition_id, expected))
             return false;
 
-        partition->id = dynamic_cast<const ASTLiteral &>(*partition_id).value.get<String>();
+        partition->id = partition_id->As<ASTLiteral>()->value.get<String>();
     }
     else
     {
@@ -40,7 +40,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         const auto * tuple_ast = value->As<ASTFunction>();
         if (tuple_ast && tuple_ast->name == "tuple")
         {
-            const auto * arguments_ast = dynamic_cast<const ASTExpressionList *>(tuple_ast->arguments.get());
+            const auto * arguments_ast = tuple_ast->arguments->As<ASTExpressionList>();
             if (arguments_ast)
                 fields_count = arguments_ast->children.size();
             else

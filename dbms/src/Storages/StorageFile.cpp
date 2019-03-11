@@ -291,7 +291,7 @@ void registerStorageFile(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String format_name = engine_args[0]->As<ASTLiteral>()->value.safeGet<String>();
 
         int source_fd = -1;
         String source_path;

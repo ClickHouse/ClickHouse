@@ -31,13 +31,11 @@ namespace ErrorCodes
 bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Do not go to FROM, JOIN, subqueries.
-    if (typeid_cast<ASTTableExpression *>(child.get()) ||
-        typeid_cast<ASTSelectWithUnionQuery *>(child.get()))
+    if (child->As<ASTTableExpression>() || child->As<ASTSelectWithUnionQuery>())
         return false;
 
     /// Processed nodes. Do not go into children.
-    if (typeid_cast<ASTQualifiedAsterisk *>(node.get()) ||
-        typeid_cast<ASTTableJoin *>(node.get()))
+    if (node->As<ASTQualifiedAsterisk>() || node->As<ASTTableJoin>())
         return false;
 
     /// ASTSelectQuery + others
@@ -46,15 +44,15 @@ bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
 void TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+    if (auto * t = ast->As<ASTIdentifier>())
         visit(*t, ast, data);
-    if (auto * t = typeid_cast<ASTTableJoin *>(ast.get()))
+    if (auto * t = ast->As<ASTTableJoin>())
         visit(*t, ast, data);
-    if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * t = ast->As<ASTSelectQuery>())
         visit(*t, ast, data);
-    if (auto * node = typeid_cast<ASTExpressionList *>(ast.get()))
+    if (auto * node = ast->As<ASTExpressionList>())
         visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTFunction *>(ast.get()))
+    if (auto * node = ast->As<ASTFunction>())
         visit(*node, ast, data);
 }
 
@@ -243,8 +241,8 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
 
     if (table_join->using_expression_list)
     {
-        auto & keys = typeid_cast<ASTExpressionList &>(*table_join->using_expression_list);
-        for (const auto & key : keys.children)
+        const auto * keys = table_join->using_expression_list->As<ASTExpressionList>();
+        for (const auto & key : keys->children)
             if (auto opt_column = getIdentifierName(key))
                 data.join_using_columns.insert(*opt_column);
             else if (key->As<ASTLiteral>())

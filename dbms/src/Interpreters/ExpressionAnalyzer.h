@@ -211,7 +211,6 @@ public:
 
 private:
     ASTPtr query;
-    ASTSelectQuery * select_query;
     const Context & context;
     const ExtractedSettings settings;
     StoragePtr storage; /// The main table in FROM clause, if exists.

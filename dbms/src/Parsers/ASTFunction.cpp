@@ -62,7 +62,7 @@ ASTPtr ASTFunction::clone() const
   */
 static bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, const IAST::FormatSettings & settings, const char * metacharacters)
 {
-    if (auto literal = dynamic_cast<const ASTLiteral *>(node.get()))
+    if (const auto * literal = node->As<ASTLiteral>())
     {
         if (literal->value.getType() == Field::Types::String)
         {

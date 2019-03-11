@@ -171,7 +171,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        auto * insert_query = dynamic_cast<ASTInsertQuery *>(ast.get());
+        auto * insert_query = ast->As<ASTInsertQuery>();
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;
@@ -506,7 +506,7 @@ void executeQuery(
 
         if (streams.in)
         {
-            const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+            const auto * ast_query_with_output = ast->As<ASTQueryWithOutput>();
 
             WriteBuffer * out_buf = &ostr;
             std::optional<WriteBufferFromFile> out_file_buf;

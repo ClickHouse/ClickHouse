@@ -1174,14 +1174,14 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     /// Remove old indices
     std::set<String> new_indices_set;
     for (const auto & index_decl : new_indices)
-        new_indices_set.emplace(dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get()).name);
+        new_indices_set.emplace(index_decl->As<ASTIndexDeclaration>()->name);
     for (const auto & index_decl : old_indices)
     {
-        const auto & index = dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get());
-        if (!new_indices_set.count(index.name))
+        const auto * index = index_decl->As<ASTIndexDeclaration>();
+        if (!new_indices_set.count(index->name))
         {
-            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
+            out_rename_map["skp_idx_" + index->name + ".idx"] = "";
+            out_rename_map["skp_idx_" + index->name + ".mrk"] = "";
         }
     }
 
@@ -2219,9 +2219,8 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        const auto & partition = dynamic_cast<const ASTPartition &>(*partition_ast);
         /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
-        if (const auto * partition_lit = dynamic_cast<const ASTLiteral *>(partition.value.get()))
+        if (const auto * partition_lit = partition_ast->As<ASTPartition>()->value->As<ASTLiteral>())
             prefix = partition_lit->value.getType() == Field::Types::UInt64
                 ? toString(partition_lit->value.get<UInt64>())
                 : partition_lit->value.safeGet<String>();

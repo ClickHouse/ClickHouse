@@ -82,18 +82,18 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
     ++pos;
 
-    ASTExpressionList & expr_list = typeid_cast<ASTExpressionList &>(*contents_node);
+    const auto * expr_list = contents_node->As<ASTExpressionList>();
 
     /// empty expression in parentheses is not allowed
-    if (expr_list.children.empty())
+    if (expr_list->children.empty())
     {
         expected.add(pos, "non-empty parenthesized list of expressions");
         return false;
     }
 
-    if (expr_list.children.size() == 1)
+    if (expr_list->children.size() == 1)
     {
-        node = expr_list.children.front();
+        node = expr_list->children.front();
     }
     else
     {
@@ -125,7 +125,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     node = std::make_shared<ASTSubquery>();
-    typeid_cast<ASTSubquery &>(*node).children.push_back(select_node);
+    node->children.push_back(select_node);
     return true;
 }
 
@@ -170,8 +170,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     String name;
     std::vector<String> parts;
-    const ASTExpressionList & list = static_cast<const ASTExpressionList &>(*id_list.get());
-    for (const auto & child : list.children)
+    const auto * list = id_list->As<ASTExpressionList>();
+    for (const auto & child : list->children)
     {
         if (!name.empty())
             name += '.';
@@ -1254,7 +1254,7 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ASTPtr alias_node;
     if (ParserAlias(allow_alias_without_as_keyword_now).parse(pos, alias_node, expected))
     {
-        if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
+        if (auto * ast_with_alias = node->As<ASTWithAlias>())
         {
             getIdentifierName(alias_node, ast_with_alias->alias);
             ast_with_alias->prefer_alias_to_column_name = prefer_alias_to_column_name;

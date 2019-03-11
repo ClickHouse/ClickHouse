@@ -83,13 +83,6 @@ ASTPtr createTableIdentifier(const String & database_name, const String & table_
     return database_and_table;
 }
 
-bool isIdentifier(const IAST * const ast)
-{
-    if (ast)
-        return ast->As<ASTIdentifier>();
-    return false;
-}
-
 std::optional<String> getIdentifierName(const IAST * const ast)
 {
     if (ast)
@@ -112,7 +105,7 @@ bool getIdentifierName(const ASTPtr & ast, String & name)
 void setIdentifierSpecial(ASTPtr & ast)
 {
     if (ast)
-        if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(ast.get()))
+        if (auto * id = ast->As<ASTIdentifier>())
             id->semantic->special = true;
 }
 

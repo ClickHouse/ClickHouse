@@ -69,9 +69,6 @@ private:
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
 void setIdentifierSpecial(ASTPtr & ast);
 
-bool isIdentifier(const IAST * const ast);
-inline bool isIdentifier(const ASTPtr & ast) { return isIdentifier(ast.get()); }
-
 std::optional<String> getIdentifierName(const IAST * const ast);
 inline std::optional<String> getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
 bool getIdentifierName(const ASTPtr & ast, String & name);
