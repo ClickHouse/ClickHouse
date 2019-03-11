@@ -42,11 +42,14 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
             continue;
         }
 
-        if (auto simple_aggr = findSimpleAggregateFunction(column.type)) {
+        if (auto simple_aggr = findSimpleAggregateFunction(column.type))
+        {
             // simple aggregate function
             SimpleAggregateDescription desc{simple_aggr->getFunction(), i};
             columns_to_simple_aggregate.emplace_back(std::move(desc));
-        } else {
+        }
+        else
+        {
             // standard aggregate function
             column_numbers_to_aggregate.push_back(i);
         }
@@ -99,7 +102,8 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
             key_differs = next_key != current_key;
 
         /// if there are enough rows accumulated and the last one is calculated completely
-        if (key_differs && merged_rows >= max_block_size) {
+        if (key_differs && merged_rows >= max_block_size)
+        {
             /// Write the simple aggregation result for the previous group.
             insertSimpleAggregationResult(merged_columns);
             return;

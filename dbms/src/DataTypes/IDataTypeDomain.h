@@ -25,14 +25,16 @@ private:
 public:
     virtual ~IDataTypeDomain() {}
 
-    String getName() const {
+    String getName() const
+    {
         if (delegate)
             return delegate->getName();
         else
             return doGetName();
     }
 
-    void appendDomain(DataTypeDomainPtr delegate_) const {
+    void appendDomain(DataTypeDomainPtr delegate_) const
+    {
         if (delegate == nullptr)
             delegate = std::move(delegate_);
         else
@@ -45,7 +47,8 @@ protected:
     virtual String doGetName() const = 0;
 };
 
-class IDataTypeDomainCustomSerialization : public IDataTypeDomain {
+class IDataTypeDomainCustomSerialization : public IDataTypeDomain
+{
 public:
     virtual ~IDataTypeDomainCustomSerialization() {}
 
