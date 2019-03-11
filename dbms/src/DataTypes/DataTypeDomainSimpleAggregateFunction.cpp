@@ -118,7 +118,7 @@ static std::pair<DataTypePtr, DataTypeDomainPtr> create(const ASTPtr & arguments
     }
 
     DataTypePtr storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
-    DataTypeDomainPtr domain = std::make_unique<DataTypeDomainSimpleAggregateFunction>(storage_type, function, argument_types, params_row);
+    DataTypeDomainPtr domain = std::make_unique<DataTypeDomainSimpleAggregateFunction>(function, argument_types, params_row);
 
     if (!function->getReturnType()->equals(*removeLowCardinality(storage_type)))
     {

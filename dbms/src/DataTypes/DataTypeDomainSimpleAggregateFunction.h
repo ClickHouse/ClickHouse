@@ -27,14 +27,13 @@ namespace DB
 class DataTypeDomainSimpleAggregateFunction : public IDataTypeDomain
 {
 private:
-    const DataTypePtr storage_type;
     const AggregateFunctionPtr function;
     const DataTypes argument_types;
     const Array parameters;
 
 public:
-    DataTypeDomainSimpleAggregateFunction(const DataTypePtr storage_type_, const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
-            : storage_type(storage_type_), function(function_), argument_types(argument_types_), parameters(parameters_) {}
+    DataTypeDomainSimpleAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
+            : function(function_), argument_types(argument_types_), parameters(parameters_) {}
 
     const AggregateFunctionPtr getFunction() const { return function; }
     String doGetName() const override;
