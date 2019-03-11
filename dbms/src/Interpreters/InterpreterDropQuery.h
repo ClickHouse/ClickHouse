@@ -1,16 +1,14 @@
 #pragma once
 
+#include <Databases/IDatabase.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Databases/IDatabase.h>
-
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 class Context;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
 /** Allow to either drop table with all its data (DROP),

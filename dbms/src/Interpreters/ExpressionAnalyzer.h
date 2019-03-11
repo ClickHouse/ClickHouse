@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Settings.h>
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Parsers/IAST_fwd.h>
+
 
 namespace DB
 {
@@ -15,9 +17,6 @@ struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-using ASTs = std::vector<ASTPtr>;
 struct ASTTableJoin;
 
 class IBlockInputStream;
