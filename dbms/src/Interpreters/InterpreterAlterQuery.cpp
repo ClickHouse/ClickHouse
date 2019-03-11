@@ -74,8 +74,9 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!alter_commands.empty())
     {
+        auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
         alter_commands.validate(*table, context);
-        table->alter(alter_commands, database_name, table_name, context);
+        table->alter(alter_commands, database_name, table_name, context, table_lock_holder);
     }
 
     return {};

@@ -69,7 +69,7 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr)
     data.resize(old_size + n);
     try
     {
-        istr.readStrict(reinterpret_cast<char *>(&data[old_size]), n);
+        istr.readStrict(reinterpret_cast<char *>(data.data() + old_size), n);
     }
     catch (...)
     {

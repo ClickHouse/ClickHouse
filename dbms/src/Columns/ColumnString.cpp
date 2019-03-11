@@ -185,7 +185,7 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size;
     chars.resize(new_size);
-    memcpy(&chars[old_size], pos, string_size);
+    memcpy(chars.data() + old_size, pos, string_size);
 
     offsets.push_back(new_size);
     return pos + string_size;
@@ -410,6 +410,13 @@ void ColumnString::getPermutationWithCollation(const Collator & collator, bool r
         else
             std::sort(res.begin(), res.end(), lessWithCollation<true>(*this, collator));
     }
+}
+
+
+void ColumnString::protect()
+{
+    getChars().protect();
+    getOffsets().protect();
 }
 
 }
