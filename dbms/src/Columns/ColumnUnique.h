@@ -80,6 +80,7 @@ public:
     bool isNumeric() const override { return column_holder->isNumeric(); }
 
     size_t byteSize() const override { return column_holder->byteSize(); }
+    void protect() override { column_holder->assumeMutableRef().protect(); }
     size_t allocatedBytes() const override
     {
         return column_holder->allocatedBytes()

@@ -152,7 +152,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 
         size_t old_size = data.size();
         data.resize(old_size + length);
-        memcpy(&data[old_size], &from_concrete.data[start], length * sizeof(data[0]));
+        memcpy(data.data() + old_size, &from_concrete.data[start], length * sizeof(data[0]));
     }
 }
 
@@ -253,6 +253,11 @@ size_t ColumnAggregateFunction::allocatedBytes() const
         res += arena->size();
 
     return res;
+}
+
+void ColumnAggregateFunction::protect()
+{
+    data.protect();
 }
 
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
