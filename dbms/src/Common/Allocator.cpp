@@ -5,6 +5,7 @@
 #endif
 
 #include <cstdlib>
+#include <algorithm>
 #include <sys/mman.h>
 
 #include <common/mremap.h>
@@ -42,9 +43,28 @@ namespace ErrorCodes
   *
   * PS. This is also required, because tcmalloc can not allocate a chunk of memory greater than 16 GB.
   */
-static constexpr size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
+#ifdef NDEBUG
+    static constexpr size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
+#else
+    /// In debug build, use small mmap threshold to reproduce more memory stomping bugs.
+    /// Along with ASLR it will hopefully detect more issues than ASan.
+    /// The program may fail due to the limit on number of memory mappings.
+    static constexpr size_t MMAP_THRESHOLD = 4096;
+#endif
+
 static constexpr size_t MMAP_MIN_ALIGNMENT = 4096;
 static constexpr size_t MALLOC_MIN_ALIGNMENT = 8;
+
+
+template <bool clear_memory_>
+void * Allocator<clear_memory_>::mmap_hint()
+{
+#if ALLOCATOR_ASLR
+    return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(rng));
+#else
+    return nullptr;
+#endif
+}
 
 
 template <bool clear_memory_>
@@ -60,7 +80,7 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
             throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
                 + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
 
-        buf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        buf = mmap(mmap_hint(), size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == buf)
             DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
@@ -118,9 +138,11 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
     if (old_size == new_size)
     {
         /// nothing to do.
+        /// BTW, it's not possible to change alignment while doing realloc.
     }
     else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
     {
+        /// Resize malloc'd memory region with no special alignment requirement.
         CurrentMemoryTracker::realloc(old_size, new_size);
 
         void * new_buf = ::realloc(buf, new_size);
@@ -133,6 +155,7 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
     }
     else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
     {
+        /// Resize mmap'd memory region.
         CurrentMemoryTracker::realloc(old_size, new_size);
 
         // On apple and freebsd self-implemented mremap used (common/mremap.h)
@@ -142,21 +165,12 @@ void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new
 
         /// No need for zero-fill, because mmap guarantees it.
     }
-    else if (old_size >= MMAP_THRESHOLD && new_size < MMAP_THRESHOLD)
-    {
-        void * new_buf = alloc(new_size, alignment);
-        memcpy(new_buf, buf, new_size);
-        if (0 != munmap(buf, old_size))
-        {
-            ::free(new_buf);
-            DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(old_size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
-        }
-        buf = new_buf;
-    }
     else
     {
+        /// All other cases that requires a copy. MemoryTracker is called inside 'alloc', 'free' methods.
+
         void * new_buf = alloc(new_size, alignment);
-        memcpy(new_buf, buf, old_size);
+        memcpy(new_buf, buf, std::min(old_size, new_size));
         free(buf, old_size);
         buf = new_buf;
     }
