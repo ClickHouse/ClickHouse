@@ -208,7 +208,7 @@ private:
 
     void reloadPeriodically();
 
-    bool checkLoadableObjectToUpdate(LoadableInfo & object);
+    bool checkLoadableObjectToUpdate(LoadableInfo & object, const std::string & name, bool throw_on_error = false);
 
     TimePoint getNextUpdateTime(const LoadablePtr & loadable);
 
