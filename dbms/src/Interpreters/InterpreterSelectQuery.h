@@ -248,7 +248,7 @@ private:
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
-    TableStructureReadLockPtr table_lock;
+    TableStructureReadLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;

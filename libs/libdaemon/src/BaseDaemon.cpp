@@ -700,12 +700,12 @@ static void checkRequiredInstructions(volatile InstructionFail & fail)
 
 #if __AVX2__
     fail = InstructionFail::AVX2;
-    __asm__ volatile ("vpabsw %%ymm0, %%ymm0, %%ymm0" : : : "ymm0");
+    __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
 #if __AVX512__
     fail = InstructionFail::AVX512;
-    __asm__ volatile ("vpabsw %%zmm0, %%zmm0, %%zmm0" : : : "zmm0");
+    __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
 #endif
 
     fail = InstructionFail::NONE;
