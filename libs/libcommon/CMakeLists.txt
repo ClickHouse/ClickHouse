@@ -18,9 +18,8 @@ add_library (common ${LINK_MODE}
     src/mremap.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
-    src/ThreadPool.cpp
     src/demangle.cpp
-    src/SetTerminalEcho.cpp
+    src/setTerminalEcho.cpp
 
     include/common/Types.h
     include/common/DayNum.h
@@ -34,14 +33,13 @@ add_library (common ${LINK_MODE}
     include/common/mremap.h
     include/common/likely.h
     include/common/logger_useful.h
-    include/common/MultiVersion.h
     include/common/strong_typedef.h
     include/common/JSON.h
     include/common/getMemoryAmount.h
-    include/common/ThreadPool.h
     include/common/demangle.h
-    include/common/SetTerminalEcho.h
+    include/common/setTerminalEcho.h
     include/common/find_symbols.h
+    include/common/constexpr_helpers.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -96,19 +94,6 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
 endif ()
 
 
-
-
-if (USE_LIBCXX)
-    if (MAKE_STATIC_LIBRARIES)
-        execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a
-            OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
-        set (DEFAULT_LIBS -nodefaultlibs
-            -Wl,-Bstatic -stdlib=libc++ ${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY} gcc_eh ${BUILTINS_LIB_PATH} rt
-            -Wl,-Bdynamic dl pthread m c)
-    endif ()
-endif()
-
-
 target_link_libraries (common
         PRIVATE
     pocoext
@@ -123,9 +108,8 @@ target_link_libraries (common
         PRIVATE
     ${DEFAULT_LIBS}
     ${MALLOC_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${MEMCPY_LIBRARIES}
-)
+    Threads::Threads
+    ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)
     target_link_libraries (common PRIVATE ${RT_LIBRARY})

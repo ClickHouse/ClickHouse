@@ -2,7 +2,7 @@
 
 Array of `T`-type items.
 
-`T` can be anything, including an array. Use multi-dimensional arrays with caution. ClickHouse has limited support for multi-dimensional arrays. For example, they can't be stored in `MergeTree` tables.
+`T` can be anything, including an array.
 
 ## Creating an array
 

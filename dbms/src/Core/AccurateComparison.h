@@ -263,7 +263,8 @@ inline bool_if_not_safe_conversion<A, B> equalsOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> equalsOp(A a, B b)
 {
-    return a == b;
+    using LargestType = std::conditional_t<sizeof(A) >= sizeof(B), A, B>;
+    return static_cast<LargestType>(a) == static_cast<LargestType>(b);
 }
 
 template <>

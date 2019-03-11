@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/setThreadName.h>
@@ -27,7 +28,7 @@ ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicated
     , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeAlterThread)")
     , log(&Logger::get(log_name))
 {
-    task = storage_.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage_.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeAlterThread::run()
@@ -107,7 +108,7 @@ void ReplicatedMergeTreeAlterThread::run()
 
             LOG_INFO(log, "Version of metadata nodes in ZooKeeper changed. Waiting for structure write lock.");
 
-            auto table_lock = storage.lockStructureForAlter();
+            auto table_lock = storage.lockExclusively(RWLockImpl::NO_QUERY);
 
             if (columns_in_zk == storage.getColumns() && metadata_diff.empty())
             {
@@ -133,7 +134,7 @@ void ReplicatedMergeTreeAlterThread::run()
         /// Update parts.
         if (changed_columns_version || force_recheck_parts)
         {
-            auto table_lock = storage.lockStructure(false);
+            auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
             if (changed_columns_version)
                 LOG_INFO(log, "ALTER-ing parts");
@@ -144,43 +145,20 @@ void ReplicatedMergeTreeAlterThread::run()
                 parts = storage.data.getDataParts();
 
             const auto columns_for_parts = storage.getColumns().getAllPhysical();
+            const auto indices_for_parts = storage.getIndicesDescription();
 
             for (const MergeTreeData::DataPartPtr & part : parts)
             {
                 /// Update the part and write result to temporary files.
                 /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                 /// node /flags/force_alter.
-                auto transaction = storage.data.alterDataPart(part, columns_for_parts, false);
-
+                auto transaction = storage.data.alterDataPart(part, columns_for_parts, indices_for_parts.indices, false);
                 if (!transaction)
                     continue;
 
+                storage.updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);
+
                 ++changed_parts;
-
-                /// Update part metadata in ZooKeeper.
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeSetRequest(
-                    storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-                ops.emplace_back(zkutil::makeSetRequest(
-                    storage.replica_path + "/parts/" + part->name + "/checksums",
-                    storage.getChecksumsForZooKeeper(transaction->getNewChecksums()),
-                    -1));
-
-                try
-                {
-                    zookeeper->multi(ops);
-                }
-                catch (const Coordination::Exception & e)
-                {
-                    /// The part does not exist in ZK. We will add to queue for verification - maybe the part is superfluous, and it must be removed locally.
-                    if (e.code == Coordination::ZNONODE)
-                        storage.enqueuePartForCheck(part->name);
-
-                    throw;
-                }
-
-                /// Apply file changes.
-                transaction->commit();
             }
 
             /// Columns sizes could be quietly changed in case of MODIFY/ADD COLUMN

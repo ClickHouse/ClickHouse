@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
   * Unlike UnionBlockInputStream, it does this sequentially.
   * Blocks of different sources are not interleaved with each other.
   */
-class ConcatBlockInputStream : public IProfilingBlockInputStream
+class ConcatBlockInputStream : public IBlockInputStream
 {
 public:
     ConcatBlockInputStream(BlockInputStreams inputs_)
@@ -23,6 +23,9 @@ public:
     String getName() const override { return "Concat"; }
 
     Block getHeader() const override { return children.at(0)->getHeader(); }
+
+    /// We call readSuffix prematurely by ourself. Suppress default behaviour.
+    void readSuffix() override {}
 
 protected:
     Block readImpl() override

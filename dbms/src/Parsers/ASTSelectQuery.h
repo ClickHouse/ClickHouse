@@ -23,7 +23,7 @@ public:
     bool distinct = false;
     ASTPtr with_expression_list;
     ASTPtr select_expression_list;
-    ASTPtr tables;
+    ASTPtr tables; // pointer to TablesInSelectQuery
     ASTPtr prewhere_expression;
     ASTPtr where_expression;
     ASTPtr group_expression_list;
@@ -51,8 +51,5 @@ public:
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
-
-
-ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name);
 
 }

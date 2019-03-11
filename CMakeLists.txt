@@ -3,6 +3,21 @@ cmake_minimum_required (VERSION 3.3)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 
+option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
+if(ENABLE_IPO)
+    cmake_policy(SET CMP0069 NEW)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_NOT_SUPPORTED)
+    if(IPO_SUPPORTED)
+        message(STATUS "IPO/LTO is supported, enabling")
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    else()
+        message(STATUS "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
+    endif()
+else()
+    message(STATUS "IPO/LTO not enabled.")
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
@@ -35,6 +50,7 @@ string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+set (CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
@@ -81,16 +97,14 @@ option (ENABLE_TESTS "Enables tests" ON)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
-    if (OS_LINUX)
+    if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-    endif()
+    endif ()
 endif ()
 
 if (GLIBC_COMPATIBILITY)
     set (USE_INTERNAL_MEMCPY ON)
 endif ()
-
-set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
@@ -108,12 +122,19 @@ if (LINKER_NAME)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 endif ()
 
-option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
-if (PIPE)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pipe")
-endif ()
+cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
+if(NOT AVAILABLE_PHYSICAL_MEMORY OR AVAILABLE_PHYSICAL_MEMORY GREATER 8000)
+    option(COMPILER_PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
+endif()
+if(COMPILER_PIPE)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -pipe")
+else()
+    message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
+endif()
 
-include (cmake/test_cpu.cmake)
+if(NOT DISABLE_CPU_OPTIMIZE)
+    include(cmake/test_cpu.cmake)
+endif()
 
 if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
     option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
@@ -190,6 +211,60 @@ if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
 endif ()
 
 
+
+# Set standard, system and compiler libraries explicitly.
+# This is intended for more control of what we are linking.
+
+set (DEFAULT_LIBS "")
+if (OS_LINUX AND NOT UNBUNDLED)
+    # Note: this probably has no effict, but I'm not an expert in CMake.
+    set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
+    set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
+
+    # Disable default linked libraries.
+    set (DEFAULT_LIBS "-nodefaultlibs")
+
+    # Add C++ libraries.
+    #
+    # This consist of:
+    # - C++ standard library (like implementation of std::string);
+    # - C++ ABI implementation (functions for exceptions like __cxa_throw, RTTI, etc);
+    # - functions for internal implementation of exception handling (stack unwinding based on DWARF info; TODO replace with bundled libunwind);
+    # - compiler builtins (example: functions for implementation of __int128 operations);
+    #
+    # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
+    if (USE_LIBCXX)
+        set (BUILTINS_LIB_PATH "")
+            if (COMPILER_CLANG)
+            execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif ()
+
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY} -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+    else ()
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc -Wl,-Bdynamic")
+    endif ()
+
+    # Linking with GLIBC prevents portability of binaries to older systems.
+    # We overcome this behaviour by statically linking with our own implementation of all new symbols (that don't exist in older Libc or have infamous "symbol versioning").
+    # The order of linking is important: 'glibc-compatibility' must be before libc but after all other libraries.
+    if (GLIBC_COMPATIBILITY)
+        message (STATUS "Some symbols from glibc will be replaced for compatibility")
+
+        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+        set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
+
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
+    endif ()
+
+    # Add Libc. GLIBC is actually a collection of interdependent libraries.
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lrt -ldl -lpthread -lm -lc")
+
+    # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
+
+    message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+endif ()
+
+
 if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
@@ -213,8 +288,8 @@ endif (TEST_COVERAGE)
 
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
-    enable_testing()
 endif ()
+enable_testing() # Enable for tests without binary
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
@@ -234,9 +309,10 @@ if (UNBUNDLED OR NOT (OS_LINUX OR APPLE) OR ARCH_32)
     option (NO_WERROR "Disable -Werror compiler option" ON)
 endif ()
 
-message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
+message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ; USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES} MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES} SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES} UNBUNDLED=${UNBUNDLED} CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include(GNUInstallDirs)
+include (cmake/find_contrib_lib.cmake)
 
 include (cmake/find_ssl.cmake)
 include (cmake/lib_name.cmake)
@@ -259,24 +335,33 @@ include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
-include (cmake/find_cpuid.cmake)
+include (cmake/find_cpuid.cmake) # Freebsd, bundled
+if (NOT USE_CPUID)
+    include (cmake/find_cpuinfo.cmake) # Debian
+endif()
 include (cmake/find_libgsasl.cmake)
 include (cmake/find_libxml2.cmake)
-include (cmake/find_hdfs3.cmake)
+include (cmake/find_brotli.cmake)
+include (cmake/find_protobuf.cmake)
+include (cmake/find_pdqsort.cmake)
+include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 include (cmake/find_cxxabi.cmake)
 include (cmake/find_cxx.cmake)
-if (ENABLE_TESTS)
-    include (cmake/find_gtest.cmake)
-endif ()
+include (cmake/find_parquet.cmake)
 
 include (cmake/find_contrib_lib.cmake)
+
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
 find_contrib_lib(double-conversion)
+
+if (ENABLE_TESTS)
+    include (cmake/find_gtest.cmake)
+endif ()
 
 if (USE_INTERNAL_LIBCXX_LIBRARY)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
@@ -291,9 +376,41 @@ include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
 
-add_subdirectory (contrib)
+add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
+
+
+if (DEFAULT_LIBS)
+    # Add default libs to all targets as the last dependency.
+    # I have found no better way to specify default libs in CMake that will appear single time in specific order at the end of linker arguments.
+
+    function(add_default_libs target_name)
+        if (TARGET ${target_name})
+            # message(STATUS "Has target ${target_name}")
+            set_property(TARGET ${target_name} APPEND PROPERTY LINK_LIBRARIES "${DEFAULT_LIBS}")
+            set_property(TARGET ${target_name} APPEND PROPERTY INTERFACE_LINK_LIBRARIES "${DEFAULT_LIBS}")
+            if (GLIBC_COMPATIBILITY)
+                add_dependencies(${target_name} glibc-compatibility)
+            endif ()
+        endif ()
+    endfunction ()
+
+    add_default_libs(ltdl)
+    add_default_libs(zlibstatic)
+    add_default_libs(jemalloc)
+    add_default_libs(unwind)
+    add_default_libs(memcpy)
+    add_default_libs(Foundation)
+    add_default_libs(common)
+    add_default_libs(gtest)
+    add_default_libs(lz4)
+    add_default_libs(zstd)
+    add_default_libs(snappy)
+    add_default_libs(arrow)
+    add_default_libs(thrift_static)
+    add_default_libs(boost_regex_internal)
+endif ()

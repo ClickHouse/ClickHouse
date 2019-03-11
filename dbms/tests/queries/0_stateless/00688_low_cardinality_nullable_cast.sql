@@ -1,5 +1,3 @@
-set allow_experimental_low_cardinality_type = 1;
-
 SELECT CAST(NULL, 'LowCardinality(Nullable(Int8))');
 
 drop table if exists test.lc_null_int8_defnull;

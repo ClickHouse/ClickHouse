@@ -16,7 +16,7 @@
 #include <ext/bit_cast.h>
 #include <algorithm>
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
     #include <smmintrin.h>
 #endif
 
@@ -62,7 +62,7 @@ enum class ScaleMode
 
 enum class RoundingMode
 {
-#if __SSE4_1__
+#ifdef __SSE4_1__
     Round   = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC,
     Floor   = _MM_FROUND_TO_NEG_INF | _MM_FROUND_NO_EXC,
     Ceil    = _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC,
@@ -118,8 +118,6 @@ struct IntegerRoundingComputation
                     x = -x;
                 return x;
             }
-            default:
-                __builtin_unreachable();
         }
     }
 
@@ -133,8 +131,6 @@ struct IntegerRoundingComputation
                 return x;
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
-            default:
-                __builtin_unreachable();
         }
     }
 
@@ -149,7 +145,7 @@ struct IntegerRoundingComputation
 };
 
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
 
 template <typename T>
 class BaseFloatRoundingComputation;
@@ -208,9 +204,9 @@ inline float roundWithMode(float x, RoundingMode mode)
         case RoundingMode::Floor: return floorf(x);
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
-        default:
-            throw Exception("Logical error: unexpected 'mode' parameter passed to function roundWithMode", ErrorCodes::LOGICAL_ERROR);
     }
+
+    __builtin_unreachable();
 }
 
 inline double roundWithMode(double x, RoundingMode mode)
@@ -221,9 +217,9 @@ inline double roundWithMode(double x, RoundingMode mode)
         case RoundingMode::Floor: return floor(x);
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
-        default:
-            throw Exception("Logical error: unexpected 'mode' parameter passed to function roundWithMode", ErrorCodes::LOGICAL_ERROR);
     }
+
+    __builtin_unreachable();
 }
 
 template <typename T>

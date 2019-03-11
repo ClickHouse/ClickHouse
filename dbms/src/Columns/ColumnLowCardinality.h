@@ -133,7 +133,7 @@ public:
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
-    bool isFixedAndContiguous() const override { return getDictionary().isFixedAndContiguous(); }
+    bool isFixedAndContiguous() const override { return false; }
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
@@ -180,7 +180,7 @@ public:
         ColumnPtr indexes;
     };
 
-    DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const;
+    DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const;
 
     ColumnPtr countKeys() const;
 
@@ -196,7 +196,7 @@ public:
         ColumnPtr & getPositionsPtr() { return positions; }
         size_t getPositionAt(size_t row) const;
         void insertPosition(UInt64 position);
-        void insertPositionsRange(const IColumn & column, size_t offset, size_t limit);
+        void insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit);
 
         void popBack(size_t n) { positions->assumeMutableRef().popBack(n); }
         void reserve(size_t n) { positions->assumeMutableRef().reserve(n); }

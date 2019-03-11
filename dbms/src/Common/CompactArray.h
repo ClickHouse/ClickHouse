@@ -22,7 +22,7 @@ namespace ErrorCodes
   * simulates an array of `content_width`-bit values.
   */
 template <typename BucketIndex, UInt8 content_width, size_t bucket_count>
-class __attribute__ ((packed)) CompactArray final
+class CompactArray final
 {
 public:
     class Reader;
@@ -53,6 +53,28 @@ public:
             locus.content_r = &bitset[locus.index_r];
 
         return locus;
+    }
+
+    /// Used only in arcadia/metrika
+    void readText(ReadBuffer & in)
+    {
+        for (size_t i = 0; i < BITSET_SIZE; ++i)
+        {
+            if (i != 0)
+                assertChar(',', in);
+            readIntText(bitset[i], in);
+        }
+    }
+
+    /// Used only in arcadia/metrika
+    void writeText(WriteBuffer & out) const
+    {
+        for (size_t i = 0; i < BITSET_SIZE; ++i)
+        {
+            if (i != 0)
+                writeCString(",", out);
+            writeIntText(bitset[i], out);
+        }
     }
 
 private:

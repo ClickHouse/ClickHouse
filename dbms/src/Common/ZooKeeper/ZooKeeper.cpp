@@ -17,7 +17,6 @@
 
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
-#define ZOOKEEPER_OPERATION_TIMEOUT_MS 10000
 
 
 namespace DB
@@ -524,6 +523,22 @@ int32_t ZooKeeper::tryMulti(const Coordination::Requests & requests, Coordinatio
 }
 
 
+void ZooKeeper::removeChildren(const std::string & path)
+{
+    Strings children = getChildren(path);
+    while (!children.empty())
+    {
+        Coordination::Requests ops;
+        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
+        {
+            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+            children.pop_back();
+        }
+        multi(ops);
+    }
+}
+
+
 void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
     Strings children = getChildren(path);
@@ -840,7 +855,7 @@ int32_t ZooKeeper::tryMultiNoThrow(const Coordination::Requests & requests, Coor
 }
 
 
-size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Coordination::Responses & responses)
+size_t KeeperMultiException::getFailedOpIndex(int32_t exception_code, const Coordination::Responses & responses)
 {
     if (responses.empty())
         throw DB::Exception("Responses for multi transaction is empty", DB::ErrorCodes::LOGICAL_ERROR);
@@ -849,17 +864,17 @@ size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Coordination::
         if (responses[index]->error)
             return index;
 
-    if (!Coordination::isUserError(code))
-        throw DB::Exception("There are no failed OPs because '" + ZooKeeper::error2string(code) + "' is not valid response code for that",
+    if (!Coordination::isUserError(exception_code))
+        throw DB::Exception("There are no failed OPs because '" + ZooKeeper::error2string(exception_code) + "' is not valid response code for that",
             DB::ErrorCodes::LOGICAL_ERROR);
 
     throw DB::Exception("There is no failed OpResult", DB::ErrorCodes::LOGICAL_ERROR);
 }
 
 
-KeeperMultiException::KeeperMultiException(int32_t code, const Coordination::Requests & requests, const Coordination::Responses & responses)
-    : KeeperException("Transaction failed", code),
-    requests(requests), responses(responses), failed_op_index(getFailedOpIndex(code, responses))
+KeeperMultiException::KeeperMultiException(int32_t exception_code, const Coordination::Requests & requests, const Coordination::Responses & responses)
+    : KeeperException("Transaction failed", exception_code),
+    requests(requests), responses(responses), failed_op_index(getFailedOpIndex(exception_code, responses))
 {
     addMessage("Op #" + std::to_string(failed_op_index) + ", path: " + getPathForFirstFailedOp());
 }
@@ -870,15 +885,15 @@ std::string KeeperMultiException::getPathForFirstFailedOp() const
     return requests[failed_op_index]->getPath();
 }
 
-void KeeperMultiException::check(int32_t code, const Coordination::Requests & requests, const Coordination::Responses & responses)
+void KeeperMultiException::check(int32_t exception_code, const Coordination::Requests & requests, const Coordination::Responses & responses)
 {
-    if (!code)
+    if (!exception_code)
         return;
 
-    if (Coordination::isUserError(code))
-        throw KeeperMultiException(code, requests, responses);
+    if (Coordination::isUserError(exception_code))
+        throw KeeperMultiException(exception_code, requests, responses);
     else
-        throw KeeperException(code);
+        throw KeeperException(exception_code);
 }
 
 

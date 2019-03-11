@@ -12,8 +12,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -60,7 +59,7 @@ inline void intrusive_ptr_release(detail::SharedBlock * ptr)
 
 /** Merges several sorted streams into one sorted stream.
   */
-class MergingSortedBlockInputStream : public IProfilingBlockInputStream
+class MergingSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /** limit - if isn't 0, then we can produce only first limit rows in sorted order.
@@ -69,7 +68,7 @@ public:
       */
     MergingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-        size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
+        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -134,8 +133,8 @@ protected:
 
     const SortDescription description;
     const size_t max_block_size;
-    size_t limit;
-    size_t total_merged_rows = 0;
+    UInt64 limit;
+    UInt64 total_merged_rows = 0;
 
     bool first = true;
     bool has_collation = false;
@@ -157,7 +156,7 @@ protected:
     using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
     QueueWithCollation queue_with_collation;
 
-    /// Used in Vertical merge algorithm to gather non-PK columns (on next step)
+    /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf;
 

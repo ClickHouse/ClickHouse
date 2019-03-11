@@ -3,7 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <Common/ConcurrentBoundedQueue.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ParallelInputsProcessor.h>
 
 
@@ -26,7 +26,7 @@ namespace ErrorCodes
   * - the completed blocks are added to a limited queue of finished blocks;
   * - the main thread takes out completed blocks from the queue of finished blocks;
   */
-class UnionBlockInputStream final : public IProfilingBlockInputStream
+class UnionBlockInputStream final : public IBlockInputStream
 {
 private:
     /// A block or an exception.

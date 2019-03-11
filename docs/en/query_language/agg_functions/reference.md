@@ -1,7 +1,7 @@
 
 # Function reference
 
-## count()
+## count() {#agg_function-count}
 
 Counts the number of rows. Accepts zero arguments and returns UInt64.
 The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate function exists for this purpose.
@@ -179,15 +179,57 @@ binary     decimal
 01101000 = 104
 ```
 
-## min(x)
+
+##groupBitmap
+
+Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```
+groupBitmap(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+Test data:
+
+```
+userid
+1
+1
+2
+3
+```
+
+Query:
+
+```
+SELECT groupBitmap(userid) as num FROM t
+```
+
+Result:
+
+```
+num
+3
+```
+
+## min(x) {#agg_function-min}
 
 Calculates the minimum.
 
-## max(x)
+## max(x) {#agg_function-max}
 
 Calculates the maximum.
 
-## argMin(arg, val)
+## argMin(arg, val) {#agg_function-argMin}
 
 Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
 
@@ -206,7 +248,7 @@ SELECT argMin(user, salary) FROM salary
 └──────────────────────┘
 ```
 
-## argMax(arg, val)
+## argMax(arg, val) {#agg_function-argMax}
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
@@ -223,7 +265,7 @@ Computes the sum of the numbers, using the same data type for the result as for 
 Only works for numbers.
 
 
-## sumMap(key, value)
+## sumMap(key, value) {#agg_functions-summap}
 
 Totals the 'value' array according to the keys specified in the 'key' array.
 The number of elements in 'key' and 'value' must be the same for each row that is totaled.
@@ -259,7 +301,7 @@ GROUP BY timeslot
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## avg(x)
+## avg(x) {#agg_function-avg}
 
 Calculates the average.
 Only works for numbers.
@@ -421,7 +463,7 @@ Returns `Float64`. When `n <= 1`, returns `+∞`.
 
 ## varPop(x)
 
-Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
+Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
 
 In other words, dispersion for a set of values. Returns `Float64`.
 

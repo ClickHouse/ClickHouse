@@ -22,7 +22,7 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
 {
     std::unordered_set<std::string> invalidated_paths;
     {
-        std::lock_guard<std::mutex> lock(context->mutex);
+        std::lock_guard lock(context->mutex);
 
         if (context->all_paths_invalidated)
         {
@@ -57,7 +57,7 @@ ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coor
 
         bool changed = false;
         {
-            std::lock_guard<std::mutex> lock(owned_context->mutex);
+            std::lock_guard lock(owned_context->mutex);
 
             if (response.type != Coordination::SESSION)
                 changed = owned_context->invalidated_paths.emplace(response.path).second;

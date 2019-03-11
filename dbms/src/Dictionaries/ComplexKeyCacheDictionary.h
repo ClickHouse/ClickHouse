@@ -47,8 +47,6 @@ public:
         const DictionaryLifetime dict_lifetime,
         const size_t size);
 
-    ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other);
-
     std::string getKeyDescription() const { return key_description; }
 
     std::exception_ptr getCreationException() const override { return {}; }
@@ -76,7 +74,10 @@ public:
 
     bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<ComplexKeyCacheDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override
+    {
+        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -341,7 +342,7 @@ private:
 
         std::vector<size_t> required_rows(outdated_keys.size());
         std::transform(
-            std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.second.front(); });
+            std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getSecond().front(); });
 
         /// request new values
         update(
@@ -467,7 +468,7 @@ private:
             std::vector<size_t> required_rows(outdated_keys.size());
             std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair)
             {
-                return pair.second.front();
+                return pair.getSecond().front();
             });
 
             update(
@@ -499,7 +500,7 @@ private:
         {
             const StringRef key = keys_array[row];
             const auto it = map.find(key);
-            const auto string_ref = it != std::end(map) ? it->second : get_default(row);
+            const auto string_ref = it != std::end(map) ? it->getSecond() : get_default(row);
             out->insertData(string_ref.data, string_ref.size);
         }
     }
@@ -606,7 +607,7 @@ private:
         /// Check which ids have not been found and require setting null_value
         for (const auto & key_found_pair : remaining_keys)
         {
-            if (key_found_pair.second)
+            if (key_found_pair.getSecond())
             {
                 ++found_num;
                 continue;
@@ -614,7 +615,7 @@ private:
 
             ++not_found_num;
 
-            auto key = key_found_pair.first;
+            auto key = key_found_pair.getFirst();
             const auto hash = StringRefHash{}(key);
             const auto find_result = findCellIdx(key, now, hash);
             const auto & cell_idx = find_result.cell_idx;

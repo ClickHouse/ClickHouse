@@ -355,10 +355,9 @@ String SettingTotalsMode::toString() const
         case TotalsMode::AFTER_HAVING_EXCLUSIVE: return "after_having_exclusive";
         case TotalsMode::AFTER_HAVING_INCLUSIVE: return "after_having_inclusive";
         case TotalsMode::AFTER_HAVING_AUTO:      return "after_having_auto";
-
-        default:
-            throw Exception("Unknown TotalsMode enum value", ErrorCodes::UNKNOWN_TOTALS_MODE);
     }
+
+    __builtin_unreachable();
 }
 
 void SettingTotalsMode::set(TotalsMode x)
@@ -624,39 +623,39 @@ void SettingDateTimeInputFormat::write(WriteBuffer & buf) const
 }
 
 
-const std::vector<String> SettingLogsLevel::log_levels =
+SettingLogsLevel::Value SettingLogsLevel::getValue(const String & s)
 {
-        "none",
-        "trace",
-        "debug",
-        "information",
-        "warning",
-        "error"
-};
+    if (s == "none") return Value::none;
+    if (s == "error") return Value::error;
+    if (s == "warning") return Value::warning;
+    if (s == "information") return Value::information;
+    if (s == "debug") return Value::debug;
+    if (s == "trace") return Value::trace;
 
-
-SettingLogsLevel::SettingLogsLevel(const String & level)
-{
-    set(level);
+    throw Exception("Unknown logs level: '" + s + "', must be one of: none, error, warning, information, debug, trace", ErrorCodes::BAD_ARGUMENTS);
 }
 
-
-void SettingLogsLevel::set(const String & level)
+String SettingLogsLevel::toString() const
 {
-    auto it = std::find(log_levels.begin(), log_levels.end(), level);
-    if (it == log_levels.end())
-        throw Exception("Log level '" + level + "' not allowed.", ErrorCodes::UNKNOWN_LOG_LEVEL);
+    const char * strings[] = {"none", "error", "warning", "information", "debug", "trace"};
+    return strings[static_cast<size_t>(value)];
+}
 
-    value = *it;
+void SettingLogsLevel::set(Value x)
+{
+    value = x;
     changed = true;
 }
 
-
-void SettingLogsLevel::set(const Field & level)
+void SettingLogsLevel::set(const Field & x)
 {
-    set(safeGet<String>(level));
+    set(safeGet<const String &>(x));
 }
 
+void SettingLogsLevel::set(const String & x)
+{
+    set(getValue(x));
+}
 
 void SettingLogsLevel::set(ReadBuffer & buf)
 {
@@ -664,13 +663,6 @@ void SettingLogsLevel::set(ReadBuffer & buf)
     readBinary(x, buf);
     set(x);
 }
-
-
-String SettingLogsLevel::toString() const
-{
-    return value;
-}
-
 
 void SettingLogsLevel::write(WriteBuffer & buf) const
 {

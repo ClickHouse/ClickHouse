@@ -1,11 +1,10 @@
-#include <Common/FieldVisitors.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -15,19 +14,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name)
-{
-    if (database_name.empty())
-        return ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database = ASTIdentifier::createSpecial(database_name);
-    ASTPtr table = ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
-    database_and_table->children = {database, table};
-    return database_and_table;
 }
 
 
@@ -64,8 +50,6 @@ ASTPtr ASTSelectQuery::clone() const
 
 #undef CLONE
 
-    if (semantic)
-        res->semantic = semantic->clone();
     return res;
 }
 
@@ -247,7 +231,8 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception("Support for more than one JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("Multiple JOIN disabled or does not support the query. "
+                                "'set allow_experimental_multiple_joins_emulation' to enable.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -308,6 +293,17 @@ const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
     return getFirstTableJoin(*this);
 }
 
+static String getTableExpressionAlias(const ASTTableExpression * table_expression)
+{
+    if (table_expression->subquery)
+        return table_expression->subquery->tryGetAlias();
+    else if (table_expression->table_function)
+        return table_expression->table_function->tryGetAlias();
+    else if (table_expression->database_and_table_name)
+        return table_expression->database_and_table_name->tryGetAlias();
+
+    return String();
+}
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
@@ -326,7 +322,11 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         table_expression = table_expr.get();
     }
 
-    table_expression->database_and_table_name = createDatabaseAndTableNode(database_name, table_name);
+    String table_alias = getTableExpressionAlias(table_expression);
+    table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
+
+    if (!table_alias.empty())
+        table_expression->database_and_table_name->setAlias(table_alias);
 }
 
 
@@ -347,8 +347,13 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
         table_expression = table_expr.get();
     }
 
-    table_expression->table_function = table_function_ptr;
+    String table_alias = getTableExpressionAlias(table_expression);
+    /// Maybe need to modify the alias, so we should clone new table_function node
+    table_expression->table_function = table_function_ptr->clone();
     table_expression->database_and_table_name = nullptr;
+
+    if (table_alias.empty())
+        table_expression->table_function->setAlias(table_alias);
 }
 
 }

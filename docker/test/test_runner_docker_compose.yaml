@@ -1,0 +1,30 @@
+version: "2"
+
+services:
+  clickhouse-server:
+    image: ${CLICKHOUSE_SERVER_IMAGE}
+    expose:
+      - "8123"
+      - "9000"
+      - "9009"
+    restart: "no"
+
+  test-runner:
+    image: yandex/clickhouse-statelest-test-runner:local
+
+    restart: "no"
+    depends_on:
+      - clickhouse-server
+    environment:
+      # these are used by clickhouse-test to point clickhouse-client to the right server
+      - CLICKHOUSE_HOST=clickhouse-server
+      - CLICKHOUSE_PORT=8123
+
+    entrypoint:
+      - wait-for-it
+      - clickhouse-server:8123
+      - -- 
+      - clickhouse-test
+      # - -c
+      # - `which clickhouse-client`
+      - ${CLICKHOUSE_TEST_ARGS}

@@ -12,7 +12,20 @@ SELECT sumMapMerge(s) FROM (SELECT sumMapState(statusMap.status, statusMap.reque
 SELECT timeslot, sumMap(statusMap.status, statusMap.requests) FROM test.sum_map GROUP BY timeslot ORDER BY timeslot;
 SELECT timeslot, sumMap(statusMap.status, statusMap.requests).1, sumMap(statusMap.status, statusMap.requests).2 FROM test.sum_map GROUP BY timeslot ORDER BY timeslot;
 
+SELECT sumMapFiltered([1])(statusMap.status, statusMap.requests) FROM test.sum_map;
+SELECT sumMapFiltered([1, 4, 8])(statusMap.status, statusMap.requests) FROM test.sum_map;
+
 DROP TABLE test.sum_map;
+
+DROP TABLE IF EXISTS test.sum_map_overflow;
+CREATE TABLE test.sum_map_overflow(events Array(UInt8), counts Array(UInt8)) ENGINE = Log;
+
+INSERT INTO test.sum_map_overflow VALUES ([1], [255]), ([1], [2]);
+
+SELECT sumMap(events, counts) FROM test.sum_map_overflow;
+SELECT sumMapWithOverflow(events, counts) FROM test.sum_map_overflow;
+
+DROP TABLE test.sum_map_overflow;
 
 select sumMap(val, cnt) from ( SELECT [ CAST(1, 'UInt64') ] as val, [1] as cnt );
 select sumMap(val, cnt) from ( SELECT [ CAST(1, 'Float64') ] as val, [1] as cnt );

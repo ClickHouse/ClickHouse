@@ -30,12 +30,13 @@ namespace ErrorCodes
 namespace
 {
 
-/** To read and checksum single stream (a pair of .bin, .mrk files) for a single column.
+/** To read and checksum single stream (a pair of .bin, .mrk files) for a single column or secondary index.
   */
 class Stream
 {
 public:
     String base_name;
+    String bin_file_ext;
     String bin_file_path;
     String mrk_file_path;
 private:
@@ -50,10 +51,11 @@ private:
 public:
     HashingReadBuffer mrk_hashing_buf;
 
-    Stream(const String & path, const String & base_name)
+    Stream(const String & path, const String & base_name, const String & bin_file_ext = ".bin")
         :
         base_name(base_name),
-        bin_file_path(path + base_name + ".bin"),
+        bin_file_ext(bin_file_ext),
+        bin_file_path(path + base_name + bin_file_ext),
         mrk_file_path(path + base_name + ".mrk"),
         file_buf(bin_file_path),
         compressed_hashing_buf(file_buf),
@@ -118,7 +120,7 @@ public:
 
     void saveChecksums(MergeTreeData::DataPart::Checksums & checksums)
     {
-        checksums.files[base_name + ".bin"] = MergeTreeData::DataPart::Checksums::Checksum(
+        checksums.files[base_name + bin_file_ext] = MergeTreeData::DataPart::Checksums::Checksum(
             compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
             uncompressed_hashing_buf.count(), uncompressed_hashing_buf.getHash());
 
@@ -135,6 +137,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     size_t index_granularity,
     bool require_checksums,
     const DataTypes & primary_key_data_types,
+    const MergeTreeIndices & indices,
     std::function<bool()> is_cancelled)
 {
     Logger * log = &Logger::get("checkDataPart");
@@ -237,6 +240,48 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         readText(count, buf);
         assertEOF(buf);
         rows = count;
+    }
+
+    /// Read and check skip indices.
+    for (const auto & index : indices)
+    {
+        Stream stream(path, index->getFileName(), ".idx");
+        size_t mark_num = 0;
+
+        while (!stream.uncompressed_hashing_buf.eof())
+        {
+            if (stream.mrk_hashing_buf.eof())
+                throw Exception("Unexpected end of mrk file while reading index " + index->name,
+                                ErrorCodes::CORRUPTED_DATA);
+            try
+            {
+                stream.assertMark();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("Cannot read mark " + toString(mark_num)
+                             + " in file " + stream.mrk_file_path
+                             + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+                throw;
+            }
+            try
+            {
+                index->createIndexGranule()->deserializeBinary(stream.uncompressed_hashing_buf);
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("Cannot read granule " + toString(mark_num)
+                          + " in file " + stream.bin_file_path
+                          + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+                throw;
+            }
+            ++mark_num;
+            if (is_cancelled())
+                return {};
+        }
+
+        stream.assertEnd();
+        stream.saveChecksums(checksums_data);
     }
 
     /// Read all columns, calculate checksums and validate marks.

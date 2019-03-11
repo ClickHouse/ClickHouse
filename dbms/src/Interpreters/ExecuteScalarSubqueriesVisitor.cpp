@@ -1,6 +1,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 
@@ -37,7 +38,7 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
     return res;
 }
 
-bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
+bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Processed
     if (typeid_cast<ASTSubquery *>(node.get()) ||
@@ -48,16 +49,23 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
     if (typeid_cast<ASTTableExpression *>(node.get()))
         return false;
 
+    if (typeid_cast<ASTSelectQuery *>(node.get()))
+    {
+        /// Do not go to FROM, JOIN, UNION.
+        if (typeid_cast<ASTTableExpression *>(child.get()) ||
+            typeid_cast<ASTSelectQuery *>(child.get()))
+            return false;
+    }
+
     return true;
 }
 
-std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
+void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTSubquery *>(ast.get()))
         visit(*t, ast, data);
     if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
-        return visit(*t, ast, data);
-    return {};
+        visit(*t, ast, data);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
@@ -100,11 +108,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     size_t columns = block.columns();
     if (columns == 1)
     {
-        if (typeid_cast<const DataTypeAggregateFunction*>(block.safeGetByPosition(0).type.get()))
-        {
-            throw Exception("Scalar subquery can't return an aggregate function state", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-        }
-
         auto lit = std::make_unique<ASTLiteral>((*block.safeGetByPosition(0).column)[0]);
         lit->alias = subquery.alias;
         lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
@@ -123,11 +126,6 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         exp_list->children.resize(columns);
         for (size_t i = 0; i < columns; ++i)
         {
-            if (typeid_cast<const DataTypeAggregateFunction*>(block.safeGetByPosition(i).type.get()))
-            {
-                throw Exception("Scalar subquery can't return an aggregate function state", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-            }
-
             exp_list->children[i] = addTypeConversion(
                 std::make_unique<ASTLiteral>((*block.safeGetByPosition(i).column)[0]),
                 block.safeGetByPosition(i).type->getName());
@@ -135,7 +133,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     }
 }
 
-std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
+void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
     /// Don't descend into subqueries in arguments of IN operator.
     /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
@@ -157,7 +155,8 @@ std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & 
         for (auto & child : ast->children)
             out.push_back(&child);
 
-    return out;
+    for (ASTPtr * add_node : out)
+        Visitor(data).visit(*add_node);
 }
 
 }

@@ -3,7 +3,6 @@ set -e -x
 
 source default-config
 
-# TODO Non debian systems
 ./install-os-packages.sh svn
 ./install-os-packages.sh cmake
 

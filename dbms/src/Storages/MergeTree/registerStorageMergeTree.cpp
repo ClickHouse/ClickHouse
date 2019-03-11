@@ -1,6 +1,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
+#include <Storages/MergeTree/MergeTreeSetSkippingIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -42,13 +45,13 @@ static Names extractColumnNames(const ASTPtr & node)
         Names res;
         res.reserve(elements.size());
         for (const auto & elem : elements)
-            res.push_back(typeid_cast<const ASTIdentifier &>(*elem).name);
+            res.push_back(*getIdentifierName(elem));
 
         return res;
     }
     else
     {
-        return { typeid_cast<const ASTIdentifier &>(*node).name };
+        return { *getIdentifierName(node) };
     }
 }
 
@@ -98,7 +101,8 @@ static void appendGraphitePattern(
     {
         if (key == "regexp")
         {
-            pattern.regexp = std::make_shared<OptimizedRegularExpression>(config.getString(config_element + ".regexp"));
+            pattern.regexp_str = config.getString(config_element + ".regexp");
+            pattern.regexp = std::make_shared<OptimizedRegularExpression>(pattern.regexp_str);
         }
         else if (key == "function")
         {
@@ -123,17 +127,32 @@ static void appendGraphitePattern(
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
 
-    if (!pattern.function)
-        throw Exception("Aggregate function is mandatory for retention patterns in GraphiteMergeTree",
+    if (!pattern.function && pattern.retentions.empty())
+        throw Exception("At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree",
             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    if (pattern.function->allocatesMemoryInArena())
-        throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
-                        ErrorCodes::NOT_IMPLEMENTED);
+    if (!pattern.function)
+    {
+        pattern.type = pattern.TypeRetention;
+    }
+    else if (pattern.retentions.empty())
+    {
+        pattern.type = pattern.TypeAggregation;
+    }
+    else
+    {
+        pattern.type = pattern.TypeAll;
+    }
+
+    if (pattern.type & pattern.TypeAggregation) /// TypeAggregation or TypeAll
+        if (pattern.function->allocatesMemoryInArena())
+            throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
+                            ErrorCodes::NOT_IMPLEMENTED);
 
     /// retention should be in descending order of age.
-    std::sort(pattern.retentions.begin(), pattern.retentions.end(),
-        [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
+    if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
+        std::sort(pattern.retentions.begin(), pattern.retentions.end(),
+            [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
 
     patterns.emplace_back(pattern);
 }
@@ -147,6 +166,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
         throw Exception("No '" + config_element + "' element in configuration file",
             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+    params.config_name = config_element;
     params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
     params.time_column_name = config.getString(config_element + ".time_column_name", "Time");
     params.value_column_name = config.getString(config_element + ".value_column_name", "Value");
@@ -336,7 +356,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         */
 
     bool is_extended_storage_def =
-        args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by || args.storage_def->sample_by || args.storage_def->settings;
+        args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by
+        || args.storage_def->sample_by || (args.query.columns_list->indices && !args.query.columns_list->indices->children.empty()) || args.storage_def->settings;
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
@@ -481,9 +502,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
-        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
-            merging_params.sign_column = ast->name;
-        else
+        if (!getIdentifierName(engine_args.back(), merging_params.sign_column))
             throw Exception(
                 "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
@@ -495,9 +514,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (!engine_args.empty() && !typeid_cast<const ASTLiteral *>(engine_args.back().get()))
         {
-            if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
-                merging_params.version_column = ast->name;
-            else
+            if (!getIdentifierName(engine_args.back(), merging_params.version_column))
                 throw Exception(
                     "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
@@ -535,18 +552,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
-        if (auto ast = typeid_cast<ASTIdentifier *>(engine_args.back().get()))
-            merging_params.version_column = ast->name;
-        else
+        if (!getIdentifierName(engine_args.back(), merging_params.version_column))
             throw Exception(
                     "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
 
         engine_args.pop_back();
 
-        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
-            merging_params.sign_column = ast->name;
-        else
+        if (!getIdentifierName(engine_args.back(), merging_params.sign_column))
             throw Exception(
                     "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
@@ -559,6 +572,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
+    IndicesDescription indices_description;
     MergeTreeSettings storage_settings = args.context.getMergeTreeSettings();
 
     if (is_extended_storage_def)
@@ -579,6 +593,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             sample_by_ast = args.storage_def->sample_by->ptr();
 
+        if (args.query.columns_list && args.query.columns_list->indices)
+            for (const auto & index : args.query.columns_list->indices->children)
+                indices_description.indices.push_back(
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+
         storage_settings.loadFromQuery(*args.storage_def);
     }
     else
@@ -592,9 +611,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Now only three parameters remain - date (or partitioning expression), primary_key, index_granularity.
 
-        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args[0].get()))
-            date_column_name = ast->name;
-        else
+        if (!getIdentifierName(engine_args[0], date_column_name))
             throw Exception(
                 "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
@@ -610,19 +627,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
+    if (!args.attach && !indices_description.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
+        throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
+                        "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
+
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
-            args.columns,
+            args.columns, indices_description,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, merging_params, storage_settings,
-            args.has_force_restore_data_flag);
+            sample_by_ast, merging_params, storage_settings, args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
-            args.data_path, args.database_name, args.table_name, args.columns, args.attach,
-            args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, merging_params, storage_settings,
-            args.has_force_restore_data_flag);
+            args.data_path, args.database_name, args.table_name, args.columns, indices_description,
+            args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
+            primary_key_ast, sample_by_ast, merging_params, storage_settings, args.has_force_restore_data_flag);
 }
 
 

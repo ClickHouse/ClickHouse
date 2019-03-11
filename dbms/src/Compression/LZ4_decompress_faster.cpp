@@ -10,15 +10,15 @@
 #include <common/Types.h>
 #include <common/unaligned.h>
 
-#if __SSE2__
+#ifdef __SSE2__
 #include <emmintrin.h>
 #endif
 
-#if __SSSE3__
+#ifdef __SSSE3__
 #include <tmmintrin.h>
 #endif
 
-#if __aarch64__
+#ifdef __aarch64__
 #include <arm_neon.h>
 #endif
 
@@ -70,7 +70,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__PPC__)
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -213,7 +213,7 @@ template <> void inline copyOverlap<8, true>(UInt8 * op, const UInt8 *& match, c
 
 inline void copy16(UInt8 * dst, const UInt8 * src)
 {
-#if __SSE2__
+#ifdef __SSE2__
     _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
 #else
@@ -260,7 +260,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#ifdef __x86_64__
+#if defined(__x86_64__) || defined(__PPC__)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
@@ -351,8 +351,8 @@ void NO_INLINE decompressImpl(
      char * const dest,
      size_t dest_size)
 {
-    const UInt8 * ip = (UInt8 *)source;
-    UInt8 * op = (UInt8 *)dest;
+    const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
+    UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
 
     while (1)
@@ -528,8 +528,8 @@ void statistics(
     size_t dest_size,
     StreamStatistics & stat)
 {
-    const UInt8 * ip = (UInt8 *)source;
-    UInt8 * op = (UInt8 *)dest;
+    const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
+    UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
 
     while (1)

@@ -41,7 +41,7 @@ public:
         {
             try
             {
-                std::lock_guard<std::mutex> lock(DiskSpaceMonitor::mutex);
+                std::lock_guard lock(DiskSpaceMonitor::mutex);
                 if (DiskSpaceMonitor::reserved_bytes < size)
                 {
                     DiskSpaceMonitor::reserved_bytes = 0;
@@ -70,7 +70,7 @@ public:
         /// Change amount of reserved space. When new_size is greater than before, availability of free space is not checked.
         void update(UInt64 new_size)
         {
-            std::lock_guard<std::mutex> lock(DiskSpaceMonitor::mutex);
+            std::lock_guard lock(DiskSpaceMonitor::mutex);
             DiskSpaceMonitor::reserved_bytes -= size;
             size = new_size;
             DiskSpaceMonitor::reserved_bytes += size;
@@ -84,7 +84,7 @@ public:
         Reservation(UInt64 size_)
             : size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size)
         {
-            std::lock_guard<std::mutex> lock(DiskSpaceMonitor::mutex);
+            std::lock_guard lock(DiskSpaceMonitor::mutex);
             DiskSpaceMonitor::reserved_bytes += size;
             ++DiskSpaceMonitor::reservation_count;
         }
@@ -108,7 +108,7 @@ public:
         /// Heuristic by Michael Kolupaev: reserve 30 MB more, because statvfs shows few megabytes more space than df.
         res -= std::min(res, static_cast<UInt64>(30 * (1ul << 20)));
 
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         if (reserved_bytes > res)
             res = 0;
@@ -120,13 +120,13 @@ public:
 
     static UInt64 getReservedSpace()
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         return reserved_bytes;
     }
 
     static UInt64 getReservationCount()
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         return reservation_count;
     }
 

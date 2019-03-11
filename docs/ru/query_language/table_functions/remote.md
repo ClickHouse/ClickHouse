@@ -1,5 +1,5 @@
 
-# remote
+# remote, remoteSecure
 
 Позволяет обратиться к удалённым серверам без создания таблицы типа `Distributed`.
 
@@ -71,5 +71,7 @@ example01-{01..02}-{1|2}
 
 Если пользователь не задан,то используется `default`.
 Если пароль не задан, то используется пустой пароль.
+
+`remoteSecure` - аналогично функции `remote`, но с соединением по шифрованому каналу. Порт по умолчанию - `tcp_port_secure` из конфига или 9440.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/remote/) <!--hide-->

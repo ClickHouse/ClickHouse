@@ -60,10 +60,10 @@ public:
             Impl::vector(col->getChars(), col->getOffsets(), col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column.get()))
+        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            auto col_res = ColumnFixedString::create(col->getN());
-            Impl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
+            auto col_res = ColumnFixedString::create(col_fixed->getN());
+            Impl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
             block.getByPosition(result).column = std::move(col_res);
         }
         else

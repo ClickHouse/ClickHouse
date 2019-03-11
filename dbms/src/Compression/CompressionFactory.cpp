@@ -10,7 +10,6 @@
 #include <Parsers/queryToString.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecLZ4.h>
-#include <Compression/CompressionCodecNone.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -20,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_CODEC;
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
 
@@ -56,7 +54,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const std::vector<CodecNameWith
     return std::make_shared<CompressionCodecMultiple>(result);
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
+CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr column_type) const
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast.get()))
     {
@@ -65,9 +63,9 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
         for (const auto & inner_codec_ast : func->arguments->children)
         {
             if (const auto * family_name = typeid_cast<const ASTIdentifier *>(inner_codec_ast.get()))
-                codecs.emplace_back(getImpl(family_name->name, {}));
+                codecs.emplace_back(getImpl(family_name->name, {}, column_type));
             else if (const auto * ast_func = typeid_cast<const ASTFunction *>(inner_codec_ast.get()))
-                codecs.emplace_back(getImpl(ast_func->name, ast_func->arguments));
+                codecs.emplace_back(getImpl(ast_func->name, ast_func->arguments, column_type));
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
         }
@@ -86,12 +84,13 @@ CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
     if (family_code_and_creator == family_code_with_codec.end())
-        throw Exception("Unknown codec family code : " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
+        throw Exception("Unknown codec family code: " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
 
-    return family_code_and_creator->second({});
+    return family_code_and_creator->second({}, nullptr);
 }
 
-CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments) const
+
+CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, DataTypePtr column_type) const
 {
     if (family_name == "Multiple")
         throw Exception("Codec MULTIPLE cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
@@ -101,10 +100,13 @@ CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name,
     if (family_and_creator == family_name_with_codec.end())
         throw Exception("Unknown codec family: " + family_name, ErrorCodes::UNKNOWN_CODEC);
 
-    return family_and_creator->second(arguments);
+    return family_and_creator->second(arguments, column_type);
 }
 
-void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, Creator creator)
+void CompressionCodecFactory::registerCompressionCodecWithType(
+    const String & family_name,
+    std::optional<UInt8> byte_code,
+    CreatorWithType creator)
 {
     if (creator == nullptr)
         throw Exception("CompressionCodecFactory: the codec family " + family_name + " has been provided a null constructor",
@@ -118,8 +120,18 @@ void CompressionCodecFactory::registerCompressionCodec(const String & family_nam
             throw Exception("CompressionCodecFactory: the codec family name '" + family_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
-void CompressionCodecFactory::registerSimpleCompressionCodec(const String & family_name, std::optional<UInt8> byte_code,
-                                                                 std::function<CompressionCodecPtr()> creator)
+void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, Creator creator)
+{
+    registerCompressionCodecWithType(family_name, byte_code, [family_name, creator](const ASTPtr & ast, DataTypePtr /* data_type */)
+    {
+        return creator(ast);
+    });
+}
+
+void CompressionCodecFactory::registerSimpleCompressionCodec(
+    const String & family_name,
+    std::optional<UInt8> byte_code,
+    SimpleCreator creator)
 {
     registerCompressionCodec(family_name, byte_code, [family_name, creator](const ASTPtr & ast)
     {
@@ -135,7 +147,7 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
-//void registerCodecDelta(CompressionCodecFactory & factory);
+void registerCodecDelta(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -145,7 +157,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecZSTD(*this);
     registerCodecMultiple(*this);
     registerCodecLZ4HC(*this);
-//    registerCodecDelta(*this);
+    registerCodecDelta(*this);
 }
 
 }

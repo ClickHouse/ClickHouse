@@ -32,11 +32,10 @@ StackTrace::StackTrace()
 std::string StackTrace::toStringImpl(const Frames & frames, size_t frames_size)
 {
     char ** symbols = backtrace_symbols(frames.data(), frames_size);
-    std::stringstream res;
-
     if (!symbols)
         return "Cannot get symbols for stack trace.\n";
 
+    std::stringstream res;
     try
     {
         for (size_t i = 0, size = frames_size; i < size; ++i)

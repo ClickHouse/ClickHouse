@@ -1,5 +1,5 @@
 #pragma once
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -19,7 +19,7 @@ public:
     MergeTreeSelectBlockInputStream(
         const MergeTreeData & storage,
         const MergeTreeData::DataPartPtr & owned_data_part,
-        size_t max_block_size_rows,
+        UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
         Names column_names,

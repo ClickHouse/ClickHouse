@@ -30,7 +30,7 @@ namespace ErrorCodes
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
     auto db_and_table = getDatabaseAndTable(query, 0);
-    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    ASTPtr subquery = extractTableExpression(query, 0);
 
     if (!db_and_table && !subquery)
         return;
@@ -69,7 +69,7 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
     if (query.prewhere_expression || query.final() || query.sample_size())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    ASTPtr subquery = extractTableExpression(query, 0);
     if (!subquery)
         return;
 
@@ -139,7 +139,11 @@ StorageMaterializedView::StorageMaterializedView(
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
         manual_create_query->database = target_database_name;
         manual_create_query->table = target_table_name;
-        manual_create_query->set(manual_create_query->columns, query.columns->ptr());
+
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+
+        manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());
 
         /// Execute the query.
@@ -186,18 +190,18 @@ BlockInputStreams StorageMaterializedView::read(
     const unsigned num_streams)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructure(false);
+    auto lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
     auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     for (auto & stream : streams)
         stream->addTableLock(lock);
     return streams;
 }
 
-BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Context & context)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructure(true);
-    auto stream = storage->write(query, settings);
+    auto lock = storage->lockStructureForShare(true, context.getCurrentQueryId());
+    auto stream = storage->write(query, context);
     stream->addTableLock(lock);
     return stream;
 }
