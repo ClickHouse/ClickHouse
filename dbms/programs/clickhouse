@@ -3,4 +3,4 @@
 set -e
 CMD=$1
 shift
-clickhouse-$CMD $* 
+clickhouse-$CMD $*
