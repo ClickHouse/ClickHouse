@@ -56,9 +56,7 @@ MergeTreeBloomFilterIndexGranule::MergeTreeBloomFilterIndexGranule(const MergeTr
     , index(index)
     , bloom_filters(
             index.columns.size(), StringBloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
-    , has_elems(false)
-{
-}
+    , has_elems(false) {}
 
 void MergeTreeBloomFilterIndexGranule::serializeBinary(WriteBuffer & ostr) const
 {
@@ -79,7 +77,18 @@ void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
     has_elems = true;
 }
 
-void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos, size_t limit)
+
+MergeTreeBloomFilterIndexAggregator::MergeTreeBloomFilterIndexAggregator(const MergeTreeBloomFilterIndex & index)
+    : index(index), granule(std::move(std::make_shared<MergeTreeBloomFilterIndexGranule>(index))) {}
+
+MergeTreeIndexGranulePtr MergeTreeBloomFilterIndexAggregator::getGranuleAndReset()
+{
+    auto new_granule = std::make_shared<MergeTreeBloomFilterIndexGranule>(index);
+    new_granule.swap(granule);
+    return new_granule;
+}
+
+void MergeTreeBloomFilterIndexAggregator::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -94,10 +103,10 @@ void MergeTreeBloomFilterIndexGranule::update(const Block & block, size_t * pos,
         for (size_t i = 0; i < rows_read; ++i)
         {
             auto ref = column->getDataAt(*pos + i);
-            stringToBloomFilter(ref.data, ref.size, index.token_extractor_func, bloom_filters[col]);
+            stringToBloomFilter(ref.data, ref.size, index.token_extractor_func, granule->bloom_filters[col]);
         }
     }
-    has_elems = true;
+    granule->has_elems = true;
     *pos += rows_read;
 }
 
@@ -470,6 +479,11 @@ bool BloomFilterCondition::tryPrepareSetBloomFilter(
 MergeTreeIndexGranulePtr MergeTreeBloomFilterIndex::createIndexGranule() const
 {
     return std::make_shared<MergeTreeBloomFilterIndexGranule>(*this);
+}
+
+MergeTreeIndexAggregatorPtr MergeTreeBloomFilterIndex::createIndexAggregator() const
+{
+    return std::make_shared<MergeTreeBloomFilterIndexAggregator>(*this);
 }
 
 IndexConditionPtr MergeTreeBloomFilterIndex::createIndexCondition(
