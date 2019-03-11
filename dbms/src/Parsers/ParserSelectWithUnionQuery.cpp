@@ -11,7 +11,7 @@ namespace DB
 
 static void getSelectsFromUnionListNode(ASTPtr & ast_select, ASTs & selects)
 {
-    if (auto * inner_union = ast_select->As<ASTSelectWithUnionQuery>())
+    if (auto * inner_union = ast_select->as<ASTSelectWithUnionQuery>())
     {
         for (auto & child : inner_union->list_of_selects->children)
             getSelectsFromUnionListNode(child, selects);

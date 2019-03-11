@@ -171,7 +171,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        auto * insert_query = ast->As<ASTInsertQuery>();
+        auto * insert_query = ast->as<ASTInsertQuery>();
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;
@@ -226,7 +226,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         ProcessList::EntryPtr process_list_entry;
-        if (!internal && !ast->As<ASTShowProcesslistQuery>())
+        if (!internal && !ast->as<ASTShowProcesslistQuery>())
         {
             process_list_entry = context.getProcessList().insert(query, ast.get(), context);
             context.setProcessListElement(&process_list_entry->get());
@@ -506,7 +506,7 @@ void executeQuery(
 
         if (streams.in)
         {
-            const auto * ast_query_with_output = ast->As<ASTQueryWithOutput>();
+            const auto * ast_query_with_output = ast->as<ASTQueryWithOutput>();
 
             WriteBuffer * out_buf = &ostr;
             std::optional<WriteBufferFromFile> out_file_buf;
@@ -515,7 +515,7 @@ void executeQuery(
                 if (!allow_into_outfile)
                     throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
 
-                const auto & out_file = ast_query_with_output->out_file->As<ASTLiteral>()->value.safeGet<std::string>();
+                const auto & out_file = ast_query_with_output->out_file->as<ASTLiteral>()->value.safeGet<std::string>();
                 out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
                 out_buf = &*out_file_buf;
             }

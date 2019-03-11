@@ -225,7 +225,7 @@ SetIndexCondition::SetIndexCondition(
             key_columns.insert(name);
     }
 
-    const auto * select = query.query->As<ASTSelectQuery>();
+    const auto * select = query.query->as<ASTSelectQuery>();
 
     /// Replace logical functions with bit functions.
     /// Working with UInt8: last bit = can be true, previous = can be false.
@@ -298,7 +298,7 @@ void SetIndexCondition::traverseAST(ASTPtr & node) const
 {
     if (operatorFromAST(node))
     {
-        auto & args = node->As<ASTFunction>()->arguments->children;
+        auto & args = node->as<ASTFunction>()->arguments->children;
 
         for (auto & arg : args)
             traverseAST(arg);
@@ -313,13 +313,13 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
 {
     /// Function, literal or column
 
-    if (node->As<ASTLiteral>())
+    if (node->as<ASTLiteral>())
         return true;
 
-    if (const auto * identifier = node->As<ASTIdentifier>())
+    if (const auto * identifier = node->as<ASTIdentifier>())
         return key_columns.count(identifier->getColumnName()) != 0;
 
-    if (auto * func = node->As<ASTFunction>())
+    if (auto * func = node->as<ASTFunction>())
     {
         if (key_columns.count(func->getColumnName()))
         {
@@ -343,7 +343,7 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
 bool SetIndexCondition::operatorFromAST(ASTPtr & node) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
-    auto * func = node->As<ASTFunction>();
+    auto * func = node->as<ASTFunction>();
     if (!func)
         return false;
 
@@ -418,7 +418,7 @@ static bool checkAtomName(const String & name)
 
 bool SetIndexCondition::checkASTUseless(const ASTPtr &node, bool atomic) const
 {
-    if (const auto * func = node->As<ASTFunction>())
+    if (const auto * func = node->as<ASTFunction>())
     {
         if (key_columns.count(func->getColumnName()))
             return false;
@@ -437,9 +437,9 @@ bool SetIndexCondition::checkASTUseless(const ASTPtr &node, bool atomic) const
             return std::any_of(args.begin(), args.end(),
                     [this, &atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
     }
-    else if (const auto * literal = node->As<ASTLiteral>())
+    else if (const auto * literal = node->as<ASTLiteral>())
         return !atomic && literal->value.get<bool>();
-    else if (const auto * identifier = node->As<ASTIdentifier>())
+    else if (const auto * identifier = node->as<ASTIdentifier>())
         return key_columns.find(identifier->getColumnName()) == key_columns.end();
     else
         return true;
@@ -475,7 +475,7 @@ std::unique_ptr<IMergeTreeIndex> setIndexCreator(
     if (!node->type->arguments || node->type->arguments->children.size() != 1)
         throw Exception("Set index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
     else if (node->type->arguments->children.size() == 1)
-        max_rows = node->type->arguments->children[0]->As<ASTLiteral>()->value.get<size_t>();
+        max_rows = node->type->arguments->children[0]->as<ASTLiteral>()->value.get<size_t>();
 
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());

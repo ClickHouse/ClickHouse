@@ -196,7 +196,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
 
     for (const auto & ast : column_list_ast.children)
     {
-        auto * col_decl = ast->As<ASTColumnDeclaration>();
+        auto * col_decl = ast->as<ASTColumnDeclaration>();
 
         DataTypePtr column_type = nullptr;
         if (col_decl->type)
@@ -239,7 +239,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
 
         if (col_decl->comment)
         {
-            if (auto comment_str = col_decl->comment->As<ASTLiteral>()->value.get<String>(); !comment_str.empty())
+            if (auto comment_str = col_decl->comment->as<ASTLiteral>()->value.get<String>(); !comment_str.empty())
                 comments.emplace(col_decl->name, comment_str);
         }
     }
@@ -525,7 +525,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_table_name = create.as_table;
 
         ASTPtr as_create_ptr = context.getCreateTableQuery(as_database_name, as_table_name);
-        const auto * as_create = as_create_ptr->As<ASTCreateQuery>();
+        const auto * as_create = as_create_ptr->as<ASTCreateQuery>();
 
         if (as_create->is_view)
             throw Exception(
@@ -565,7 +565,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Table SQL definition is available even if the table is detached
         auto query = context.getCreateTableQuery(database_name, table_name);
-        create = *query->As<ASTCreateQuery>(); // Copy the saved create query, but use ATTACH instead of CREATE
+        create = *query->as<ASTCreateQuery>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
     }
 
@@ -682,7 +682,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::execute()
 {
-    auto * create = query_ptr->As<ASTCreateQuery>();
+    auto * create = query_ptr->as<ASTCreateQuery>();
     checkAccess(*create);
     ASTQueryWithOutput::resetOutputASTIfExist(*create);
 

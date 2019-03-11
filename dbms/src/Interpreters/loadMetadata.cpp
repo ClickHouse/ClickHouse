@@ -39,7 +39,7 @@ static void executeCreateQuery(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0);
 
-    auto * ast_create_query = ast->As<ASTCreateQuery>();
+    auto * ast_create_query = ast->as<ASTCreateQuery>();
     ast_create_query->attach = true;
     ast_create_query->database = database;
 

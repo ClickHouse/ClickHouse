@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
-    const auto * args_func = ast_function->As<ASTFunction>();
+    const auto * args_func = ast_function->as<ASTFunction>();
 
     if (!args_func->arguments)
         throw Exception("Table function '" + getName() + "' must have arguments.", ErrorCodes::LOGICAL_ERROR);
@@ -49,14 +49,14 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
 
     if (args.size() == 3)
     {
-        connection_string = args[0]->As<ASTLiteral>()->value.safeGet<String>();
-        schema_name = args[1]->As<ASTLiteral>()->value.safeGet<String>();
-        table_name = args[2]->As<ASTLiteral>()->value.safeGet<String>();
+        connection_string = args[0]->as<ASTLiteral>()->value.safeGet<String>();
+        schema_name = args[1]->as<ASTLiteral>()->value.safeGet<String>();
+        table_name = args[2]->as<ASTLiteral>()->value.safeGet<String>();
     }
     else if (args.size() == 2)
     {
-        connection_string = args[0]->As<ASTLiteral>()->value.safeGet<String>();
-        table_name = args[1]->As<ASTLiteral>()->value.safeGet<String>();
+        connection_string = args[0]->as<ASTLiteral>()->value.safeGet<String>();
+        table_name = args[1]->as<ASTLiteral>()->value.safeGet<String>();
     }
 
     /* Infer external table structure */

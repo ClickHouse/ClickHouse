@@ -22,7 +22,7 @@ public:
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        if (const auto * t = ast->As<ASTIdentifier>())
+        if (const auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
     }
 

@@ -26,7 +26,7 @@ namespace ErrorCodes
 String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 {
     ASTPtr query_clone = query->clone();
-    auto * create = query_clone->As<ASTCreateQuery>();
+    auto * create = query_clone->as<ASTCreateQuery>();
 
     /// We remove everything that is not needed for ATTACH from the query.
     create->attach = true;
@@ -61,7 +61,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message, 0);
 
-    auto * ast_create_query = ast->As<ASTCreateQuery>();
+    auto * ast_create_query = ast->as<ASTCreateQuery>();
     ast_create_query->attach = true;
     ast_create_query->database = database_name;
 

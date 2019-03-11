@@ -704,7 +704,7 @@ private:
                     return true;
                 }
 
-                auto * insert = ast->As<ASTInsertQuery>();
+                auto * insert = ast->as<ASTInsertQuery>();
 
                 if (insert && insert->data)
                 {
@@ -802,7 +802,7 @@ private:
         connection->forceConnected();
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-        const auto * insert_query = parsed_query->As<ASTInsertQuery>();
+        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
         if (insert_query && !insert_query->select)
             processInsertQuery();
         else
@@ -811,7 +811,7 @@ private:
         /// Do not change context (current DB, settings) in case of an exception.
         if (!got_exception)
         {
-            if (const auto * set_query = parsed_query->As<ASTSetQuery>())
+            if (const auto * set_query = parsed_query->as<ASTSetQuery>())
             {
                 /// Save all changes in settings to avoid losing them if the connection is lost.
                 for (const auto & change : set_query->changes)
@@ -823,7 +823,7 @@ private:
                 }
             }
 
-            if (const auto * use_query = parsed_query->As<ASTUseQuery>())
+            if (const auto * use_query = parsed_query->as<ASTUseQuery>())
             {
                 const String & new_database = use_query->database;
                 /// If the client initiates the reconnection, it takes the settings from the config.
@@ -855,7 +855,7 @@ private:
     /// Convert external tables to ExternalTableData and send them using the connection.
     void sendExternalTables()
     {
-        const auto * select = parsed_query->As<ASTSelectWithUnionQuery>();
+        const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
         if (!select && !external_tables.empty())
             throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
@@ -880,7 +880,7 @@ private:
     void processInsertQuery()
     {
         /// Send part of query without data, because data will be sent separately.
-        const auto * insert_query = parsed_query->As<ASTInsertQuery>();
+        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
         String query_without_data = insert_query->data
             ? query.substr(0, insert_query->data - query.data())
             : query;
@@ -937,7 +937,7 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
-        const auto * insert_query = parsed_query->As<ASTInsertQuery>();
+        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
         if (!insert_query)
             return;
 
@@ -962,7 +962,7 @@ private:
         String current_format = insert_format;
 
         /// Data format can be specified in the INSERT query.
-        if (const auto * insert = parsed_query->As<ASTInsertQuery>())
+        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {
             if (!insert->format.empty())
                 current_format = insert->format;
@@ -1228,11 +1228,11 @@ private:
             String current_format = format;
 
             /// The query can specify output format or output file.
-            if (const auto * query_with_output = parsed_query->As<ASTQueryWithOutput>())
+            if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>())
             {
                 if (query_with_output->out_file)
                 {
-                    const auto * out_file_node = query_with_output->out_file->As<ASTLiteral>();
+                    const auto * out_file_node = query_with_output->out_file->as<ASTLiteral>();
                     const auto & out_file = out_file_node->value.safeGet<std::string>();
 
                     out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
@@ -1246,7 +1246,7 @@ private:
                 {
                     if (has_vertical_output_suffix)
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-                    const auto * id = query_with_output->format->As<ASTIdentifier>();
+                    const auto * id = query_with_output->format->as<ASTIdentifier>();
                     current_format = id->name;
                 }
                 if (query_with_output->settings_ast)

@@ -172,7 +172,7 @@ public:
 
 BlockIO InterpreterKillQueryQuery::execute()
 {
-    const auto * query = query_ptr->As<ASTKillQueryQuery>();
+    const auto * query = query_ptr->as<ASTKillQueryQuery>();
 
     if (!query->cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {"system"});
@@ -261,7 +261,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const String & table)
 {
     String select_query = "SELECT " + columns + " FROM " + table;
-    auto & where_expression = query_ptr->As<ASTKillQueryQuery>()->where_expression;
+    auto & where_expression = query_ptr->as<ASTKillQueryQuery>()->where_expression;
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 

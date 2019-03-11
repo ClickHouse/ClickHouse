@@ -151,7 +151,7 @@ std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(AST
         {
             const auto expression = predicate_expressions.at(idx);
 
-            if (const auto * function = expression->As<ASTFunction>())
+            if (const auto * function = expression->as<ASTFunction>())
             {
                 if (function->name == and_function_name)
                 {
@@ -239,7 +239,7 @@ void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
             if (alias == qualified_name)
             {
                 String name;
-                if (auto * id = ast->As<ASTIdentifier>())
+                if (auto * id = ast->as<ASTIdentifier>())
                 {
                     name = id->tryGetAlias();
                     if (name.empty())
@@ -260,7 +260,7 @@ void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
 
 bool PredicateExpressionsOptimizer::isArrayJoinFunction(const ASTPtr & node)
 {
-    if (const auto * function = node->As<ASTFunction>())
+    if (const auto * function = node->as<ASTFunction>())
     {
         if (function->name == "arrayJoin")
             return true;
@@ -309,7 +309,7 @@ void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(const ASTPtr & 
     const ASTPtr & subselect = subquery->children[0];
 
     ASTs select_with_union_projections;
-    const auto * select_with_union_query = subselect->As<ASTSelectWithUnionQuery>();
+    const auto * select_with_union_query = subselect->as<ASTSelectWithUnionQuery>();
 
     for (auto & select : select_with_union_query->list_of_selects->children)
     {
@@ -325,7 +325,7 @@ void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(const ASTPtr & 
                 subquery_projections.emplace_back(std::pair(select_projection_columns[i],
                                                             qualified_name_prefix + select_with_union_projections[i]->getAliasOrColumnName()));
 
-            projection_columns.insert(std::pair(select->As<ASTSelectQuery>(), subquery_projections));
+            projection_columns.insert(std::pair(select->as<ASTSelectQuery>(), subquery_projections));
         }
     }
 }
@@ -333,7 +333,7 @@ void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(const ASTPtr & 
 ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast)
 {
     ASTs projection_columns;
-    auto * select_query = ast->As<ASTSelectQuery>();
+    auto * select_query = ast->as<ASTSelectQuery>();
 
     /// first should normalize query tree.
     std::unordered_map<String, ASTPtr> aliases;
@@ -352,7 +352,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     for (const auto & projection_column : select_query->select_expression_list->children)
     {
-        if (projection_column->As<ASTAsterisk>() || projection_column->As<ASTQualifiedAsterisk>())
+        if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>())
         {
             ASTs evaluated_columns = evaluateAsterisk(select_query, projection_column);
 
@@ -375,7 +375,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
 
     std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
 
-    if (const auto * qualified_asterisk = asterisk->As<ASTQualifiedAsterisk>())
+    if (const auto * qualified_asterisk = asterisk->as<ASTQualifiedAsterisk>())
     {
         if (qualified_asterisk->children.size() != 1)
             throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
@@ -399,8 +399,8 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
     {
         if (table_expression->subquery)
         {
-            const auto * subquery = table_expression->subquery->As<ASTSubquery>();
-            const auto * select_with_union_query = subquery->children[0]->As<ASTSelectWithUnionQuery>();
+            const auto * subquery = table_expression->subquery->as<ASTSubquery>();
+            const auto * select_with_union_query = subquery->children[0]->as<ASTSelectWithUnionQuery>();
             const auto subquery_projections = getSelectQueryProjectionColumns(select_with_union_query->list_of_selects->children[0]);
             projection_columns.insert(projection_columns.end(), subquery_projections.begin(), subquery_projections.end());
         }
@@ -415,7 +415,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
             }
             else if (table_expression->database_and_table_name)
             {
-                const auto * database_and_table_ast = table_expression->database_and_table_name->As<ASTIdentifier>();
+                const auto * database_and_table_ast = table_expression->database_and_table_name->as<ASTIdentifier>();
                 DatabaseAndTableWithAlias database_and_table_name(*database_and_table_ast);
                 storage = context.getTable(database_and_table_name.database, database_and_table_name.table);
             }

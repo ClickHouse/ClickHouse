@@ -17,7 +17,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
-    const auto * ast = query_ptr->As<ASTOptimizeQuery>();
+    const auto * ast = query_ptr->as<ASTOptimizeQuery>();
 
     if (!ast->cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {ast->database});

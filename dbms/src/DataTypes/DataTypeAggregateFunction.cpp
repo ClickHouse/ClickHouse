@@ -340,18 +340,18 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Data type AggregateFunction requires parameters: "
             "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (const auto * parametric = arguments->children[0]->As<ASTFunction>())
+    if (const auto * parametric = arguments->children[0]->as<ASTFunction>())
     {
         if (parametric->parameters)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
         function_name = parametric->name;
 
-        const ASTs & parameters = parametric->arguments->As<ASTExpressionList>()->children;
+        const ASTs & parameters = parametric->arguments->as<ASTExpressionList>()->children;
         params_row.resize(parameters.size());
 
         for (size_t i = 0; i < parameters.size(); ++i)
         {
-            const auto * literal = parameters[i]->As<ASTLiteral>();
+            const auto * literal = parameters[i]->as<ASTLiteral>();
             if (!literal)
                 throw Exception("Parameters to aggregate functions must be literals",
                     ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
@@ -363,7 +363,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     {
         function_name = *opt_name;
     }
-    else if (arguments->children[0]->As<ASTLiteral>())
+    else if (arguments->children[0]->as<ASTLiteral>())
     {
         throw Exception("Aggregate function name for data type AggregateFunction must be passed as identifier (without quotes) or function",
             ErrorCodes::BAD_ARGUMENTS);

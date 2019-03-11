@@ -39,7 +39,7 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         if (shard_info.isLocal())
         {
-            const auto * table_function = table_func_ptr->As<ASTFunction>();
+            const auto * table_function = table_func_ptr->as<ASTFunction>();
             return TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context)->getColumns();
         }
 

@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 BlockIO InterpreterSetQuery::execute()
 {
-    const auto * ast = query_ptr->As<ASTSetQuery>();
+    const auto * ast = query_ptr->as<ASTSetQuery>();
 
     checkAccess(*ast);
 
@@ -61,7 +61,7 @@ void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
 
 void InterpreterSetQuery::executeForCurrentContext()
 {
-    const auto * ast = query_ptr->As<ASTSetQuery>();
+    const auto * ast = query_ptr->as<ASTSetQuery>();
 
     checkAccess(*ast);
 

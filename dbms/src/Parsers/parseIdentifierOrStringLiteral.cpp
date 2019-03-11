@@ -17,7 +17,7 @@ bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, Str
         if (!ParserStringLiteral().parse(pos, res, expected))
             return false;
 
-        result = res->As<ASTLiteral>()->value.safeGet<String>();
+        result = res->as<ASTLiteral>()->value.safeGet<String>();
     }
     else
         result = *getIdentifierName(res);

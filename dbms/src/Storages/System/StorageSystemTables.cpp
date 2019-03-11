@@ -240,7 +240,7 @@ protected:
 
                         if (ast)
                         {
-                            const auto * ast_create = ast->As<ASTCreateQuery>();
+                            const auto * ast_create = ast->as<ASTCreateQuery>();
                             if (ast_create->storage)
                             {
                                 engine_full = queryToString(*ast_create->storage);

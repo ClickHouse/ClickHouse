@@ -75,9 +75,9 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 {
     auto modified_query_ast = query->clone();
     if (table_function_ptr)
-        modified_query_ast->As<ASTSelectQuery>()->addTableFunction(table_function_ptr);
+        modified_query_ast->as<ASTSelectQuery>()->addTableFunction(table_function_ptr);
     else
-        modified_query_ast->As<ASTSelectQuery>()->replaceDatabaseAndTable(database, table);
+        modified_query_ast->as<ASTSelectQuery>()->replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
@@ -468,7 +468,7 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 /// using constraints from "WHERE" condition, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
 {
-    const auto * select = query_info.query->As<ASTSelectQuery>();
+    const auto * select = query_info.query->as<ASTSelectQuery>();
 
     if (!select->where_expression)
     {
@@ -528,8 +528,8 @@ void registerStorageDistributed(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
 
-        String remote_database = engine_args[1]->As<ASTLiteral>()->value.safeGet<String>();
-        String remote_table = engine_args[2]->As<ASTLiteral>()->value.safeGet<String>();
+        String remote_database = engine_args[1]->as<ASTLiteral>()->value.safeGet<String>();
+        String remote_table = engine_args[2]->as<ASTLiteral>()->value.safeGet<String>();
 
         const auto & sharding_key = engine_args.size() == 4 ? engine_args[3] : nullptr;
 

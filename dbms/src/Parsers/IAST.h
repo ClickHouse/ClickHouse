@@ -43,13 +43,13 @@ public:
     IAST & operator=(const IAST &) = default;
 
     template <class Derived>
-    Derived * As()
+    Derived * as()
     {
         return typeid_cast<Derived *>(this);
     }
 
     template <class Derived>
-    const Derived * As() const
+    const Derived * as() const
     {
         return typeid_cast<const Derived *>(this);
     }

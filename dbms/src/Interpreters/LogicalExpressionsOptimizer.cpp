@@ -111,23 +111,23 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
         bool found_chain = false;
 
-        auto * function = to_node->As<ASTFunction>();
+        auto * function = to_node->as<ASTFunction>();
         if (function && function->name == "or" && function->children.size() == 1)
         {
-            const auto * expression_list = function->children[0]->As<ASTExpressionList>();
+            const auto * expression_list = function->children[0]->as<ASTExpressionList>();
             if (expression_list)
             {
                 /// The chain of elements of the OR expression.
                 for (auto & child : expression_list->children)
                 {
-                    auto * equals = child->As<ASTFunction>();
+                    auto * equals = child->as<ASTFunction>();
                     if (equals && equals->name == "equals" && equals->children.size() == 1)
                     {
-                        const auto * equals_expression_list = equals->children[0]->As<ASTExpressionList>();
+                        const auto * equals_expression_list = equals->children[0]->as<ASTExpressionList>();
                         if (equals_expression_list && equals_expression_list->children.size() == 2)
                         {
                             /// Equality expr = xN.
-                            const auto * literal = equals_expression_list->children[1]->As<ASTLiteral>();
+                            const auto * literal = equals_expression_list->children[1]->as<ASTLiteral>();
                             if (literal)
                             {
                                 auto expr_lhs = equals_expression_list->children[0]->getTreeHash();
@@ -157,7 +157,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
         {
             for (auto & child : to_node->children)
             {
-                if (!child->As<ASTSelectQuery>())
+                if (!child->as<ASTSelectQuery>())
                 {
                     if (!visited_nodes.count(child.get()))
                         to_visit.push_back(Edge(to_node, &*child));
@@ -205,11 +205,11 @@ bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const Disj
 
     /// We check that the right-hand sides of all equalities have the same type.
     auto & first_operands = getFunctionOperands(equality_functions[0]);
-    const auto * first_literal = first_operands[1]->As<ASTLiteral>();
+    const auto * first_literal = first_operands[1]->as<ASTLiteral>();
     for (size_t i = 1; i < equality_functions.size(); ++i)
     {
         auto & operands = getFunctionOperands(equality_functions[i]);
-        const auto * literal = operands[1]->As<ASTLiteral>();
+        const auto * literal = operands[1]->as<ASTLiteral>();
 
         if (literal->value.getType() != first_literal->value.getType())
             return false;
@@ -237,8 +237,8 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
     /// Otherwise, they would be specified in the order of the ASTLiteral addresses, which is nondeterministic.
     std::sort(value_list->children.begin(), value_list->children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
     {
-        const auto * val_lhs = lhs->As<ASTLiteral>();
-        const auto * val_rhs = rhs->As<ASTLiteral>();
+        const auto * val_lhs = lhs->as<ASTLiteral>();
+        const auto * val_rhs = rhs->as<ASTLiteral>();
         return val_lhs->value < val_rhs->value;
     });
 

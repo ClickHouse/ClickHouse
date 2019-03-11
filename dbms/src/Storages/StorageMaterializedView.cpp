@@ -48,14 +48,14 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
         else
             select_database_name = db_and_table->database;
     }
-    else if (auto * ast_select = subquery->As<ASTSelectWithUnionQuery>())
+    else if (auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
         auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        extractDependentTable(*inner_query->As<ASTSelectQuery>(), select_database_name, select_table_name);
+        extractDependentTable(*inner_query->as<ASTSelectQuery>(), select_database_name, select_table_name);
     }
     else
         throw Exception("Logical error while creating StorageMaterializedView."
@@ -73,14 +73,14 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
     if (!subquery)
         return;
 
-    if (const auto * ast_select = subquery->As<ASTSelectWithUnionQuery>())
+    if (const auto * ast_select = subquery->as<ASTSelectWithUnionQuery>())
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
         const auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        checkAllowedQueries(*inner_query->As<ASTSelectQuery>());
+        checkAllowedQueries(*inner_query->as<ASTSelectQuery>());
     }
 }
 
@@ -110,7 +110,7 @@ StorageMaterializedView::StorageMaterializedView(
 
     inner_query = query.select->list_of_selects->children.at(0);
 
-    auto * select_query = inner_query->As<ASTSelectQuery>();
+    auto * select_query = inner_query->as<ASTSelectQuery>();
     extractDependentTable(*select_query, select_database_name, select_table_name);
     checkAllowedQueries(*select_query);
 

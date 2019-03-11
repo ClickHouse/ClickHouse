@@ -98,7 +98,7 @@ void SelectStreamFactory::createForShard(
 
         if (table_func_ptr)
         {
-            const auto * table_function = table_func_ptr->As<ASTFunction>();
+            const auto * table_function = table_func_ptr->as<ASTFunction>();
             main_table_storage = TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context);
         }
         else

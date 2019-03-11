@@ -128,7 +128,7 @@ void ExpressionAnalyzer::analyzeAggregation()
      * Everything below (compiling temporary ExpressionActions) - only for the purpose of query analysis (type output).
      */
 
-    auto * select_query = query->As<ASTSelectQuery>();
+    auto * select_query = query->as<ASTSelectQuery>();
 
     if (select_query && (select_query->group_expression_list || select_query->having_expression))
         has_aggregation = true;
@@ -149,7 +149,7 @@ void ExpressionAnalyzer::analyzeAggregation()
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
         {
-            const auto * table_join = join->table_join->As<ASTTableJoin>();
+            const auto * table_join = join->table_join->as<ASTTableJoin>();
             if (table_join->using_expression_list)
                 getRootActions(table_join->using_expression_list, true, temp_actions);
             if (table_join->on_expression)
@@ -250,7 +250,7 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 
 void ExpressionAnalyzer::makeSetsForIndex()
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     if (storage && select_query && storage->supportsIndexForIn())
     {
@@ -290,18 +290,18 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
     for (auto & child : node->children)
     {
         /// Don't descend into subqueries.
-        if (child->As<ASTSubquery>())
+        if (child->as<ASTSubquery>())
             continue;
 
         /// Don't descend into lambda functions
-        const auto * func = child->As<ASTFunction>();
+        const auto * func = child->as<ASTFunction>();
         if (func && func->name == "lambda")
             continue;
 
         makeSetsForIndexImpl(child);
     }
 
-    const auto * func = node->As<ASTFunction>();
+    const auto * func = node->as<ASTFunction>();
     if (func && functionIsInOperator(func->name))
     {
         const IAST & args = *func->arguments;
@@ -309,7 +309,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
         if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0), context))
         {
             const ASTPtr & arg = args.children.at(1);
-            if (arg->As<ASTSubquery>() || arg->As<ASTIdentifier>())
+            if (arg->as<ASTSubquery>() || arg->as<ASTIdentifier>())
             {
                 if (settings.use_index_for_in_with_subqueries)
                     tryMakeSetForIndexFromSubquery(arg);
@@ -367,7 +367,7 @@ void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join,
 
 void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
     if (select_query && (ast.get() == select_query->where_expression.get() || ast.get() == select_query->prewhere_expression.get()))
@@ -383,7 +383,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
         return;
     }
 
-    const auto * node = ast->As<ASTFunction>();
+    const auto * node = ast->as<ASTFunction>();
     if (node && AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
     {
         has_aggregation = true;
@@ -418,7 +418,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
     else
     {
         for (const auto & child : ast->children)
-            if (!child->As<ASTSubquery>() && !child->As<ASTSelectQuery>())
+            if (!child->as<ASTSubquery>() && !child->as<ASTSelectQuery>())
                 getAggregates(child, actions);
     }
 }
@@ -426,21 +426,21 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
 void ExpressionAnalyzer::assertNoAggregates(const ASTPtr & ast, const char * description)
 {
-    const auto * node = ast->As<ASTFunction>();
+    const auto * node = ast->as<ASTFunction>();
 
     if (node && AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
         throw Exception("Aggregate function " + node->getColumnName()
             + " is found " + String(description) + " in query", ErrorCodes::ILLEGAL_AGGREGATION);
 
     for (const auto & child : ast->children)
-        if (!child->As<ASTSubquery>() && !child->As<ASTSelectQuery>())
+        if (!child->as<ASTSubquery>() && !child->as<ASTSelectQuery>())
             assertNoAggregates(child, description);
 }
 
 
 void ExpressionAnalyzer::assertSelect() const
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     if (!select_query)
         throw Exception("Not a select query", ErrorCodes::LOGICAL_ERROR);
@@ -479,7 +479,7 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertSelect();
 
@@ -526,7 +526,7 @@ static void appendRequiredColumns(NameSet & required_columns, const Block & samp
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertSelect();
 
@@ -536,8 +536,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     initChain(chain, source_columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-    const auto * join_element = select_query->join()->As<ASTTablesInSelectQueryElement>();
-    auto * join_params = join_element->table_join->As<ASTTableJoin>();
+    const auto * join_element = select_query->join()->as<ASTTablesInSelectQueryElement>();
+    auto * join_params = join_element->table_join->as<ASTTableJoin>();
 
     if (join_params->strictness == ASTTableJoin::Strictness::Unspecified && join_params->kind != ASTTableJoin::Kind::Cross)
     {
@@ -549,7 +549,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
     }
 
-    const auto * table_to_join = join_element->table_expression->As<ASTTableExpression>();
+    const auto * table_to_join = join_element->table_expression->as<ASTTableExpression>();
 
     getActionsFromJoinKeys(*join_params, only_types, step.actions);
 
@@ -632,7 +632,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 bool ExpressionAnalyzer::appendPrewhere(
     ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertSelect();
 
@@ -707,7 +707,7 @@ bool ExpressionAnalyzer::appendPrewhere(
 
 bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertSelect();
 
@@ -727,7 +727,7 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_t
 
 bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertAggregation();
 
@@ -749,7 +749,7 @@ bool ExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain, bool only
 
 void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertAggregation();
 
@@ -775,7 +775,7 @@ void ExpressionAnalyzer::appendAggregateFunctionsArguments(ExpressionActionsChai
 
 bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertAggregation();
 
@@ -793,7 +793,7 @@ bool ExpressionAnalyzer::appendHaving(ExpressionActionsChain & chain, bool only_
 
 void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertSelect();
 
@@ -808,7 +808,7 @@ void ExpressionAnalyzer::appendSelect(ExpressionActionsChain & chain, bool only_
 
 bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertSelect();
 
@@ -823,7 +823,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
     ASTs asts = select_query->order_expression_list->children;
     for (size_t i = 0; i < asts.size(); ++i)
     {
-        const auto * ast = asts[i]->As<ASTOrderByElement>();
+        const auto * ast = asts[i]->as<ASTOrderByElement>();
         if (!ast || ast->children.size() < 1)
             throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
         ASTPtr order_expression = ast->children.at(0);
@@ -835,7 +835,7 @@ bool ExpressionAnalyzer::appendOrderBy(ExpressionActionsChain & chain, bool only
 
 bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertSelect();
 
@@ -855,7 +855,7 @@ bool ExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only
 
 void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) const
 {
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     assertSelect();
 
@@ -890,7 +890,7 @@ void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const 
 
 void ExpressionAnalyzer::getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries)
 {
-    const auto * node = ast->As<ASTFunction>();
+    const auto * node = ast->as<ASTFunction>();
 
     if (node && AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
         for (auto & argument : node->arguments->children)
@@ -909,7 +909,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
 
     ASTs asts;
 
-    if (const auto * node = query->As<ASTExpressionList>())
+    if (const auto * node = query->as<ASTExpressionList>())
         asts = node->children;
     else
         asts = ASTs(1, query);
@@ -1025,7 +1025,7 @@ void ExpressionAnalyzer::collectUsedColumns()
                 required.insert(column_name_type.name);
     }
 
-    const auto * select_query = query->As<ASTSelectQuery>();
+    const auto * select_query = query->as<ASTSelectQuery>();
 
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())

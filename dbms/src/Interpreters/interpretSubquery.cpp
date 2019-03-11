@@ -19,9 +19,9 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     const ASTPtr & table_expression, const Context & context, size_t subquery_depth, const Names & required_source_columns)
 {
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
-    const auto * subquery = table_expression->As<ASTSubquery>();
-    const auto * function = table_expression->As<ASTFunction>();
-    const auto * table = table_expression->As<ASTIdentifier>();
+    const auto * subquery = table_expression->as<ASTSubquery>();
+    const auto * function = table_expression->as<ASTFunction>();
+    const auto * table = table_expression->as<ASTIdentifier>();
 
     if (!subquery && !table && !function)
         throw Exception("Table expression is undefined, Method: ExpressionAnalyzer::interpretSubquery." , ErrorCodes::LOGICAL_ERROR);
@@ -94,9 +94,9 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         std::set<std::string> all_column_names;
         std::set<std::string> assigned_column_names;
 
-        if (const auto * select_with_union = query->As<ASTSelectWithUnionQuery>())
+        if (const auto * select_with_union = query->as<ASTSelectWithUnionQuery>())
         {
-            if (const auto * select = select_with_union->list_of_selects->children.at(0)->As<ASTSelectQuery>())
+            if (const auto * select = select_with_union->list_of_selects->children.at(0)->as<ASTSelectQuery>())
             {
                 for (auto & expr : select->select_expression_list->children)
                     all_column_names.insert(expr->getAliasOrColumnName());

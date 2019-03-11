@@ -54,7 +54,7 @@ BlockInputStreams StorageView::read(
     {
         auto new_inner_query = inner_query->clone();
         auto new_outer_query = query_info.query->clone();
-        auto * new_outer_select = new_outer_query->As<ASTSelectQuery>();
+        auto * new_outer_select = new_outer_query->as<ASTSelectQuery>();
 
         replaceTableNameWithSubquery(new_outer_select, new_inner_query);
 
@@ -74,12 +74,12 @@ BlockInputStreams StorageView::read(
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
 {
-    auto * select_element = select_query->tables->children[0]->As<ASTTablesInSelectQueryElement>();
+    auto * select_element = select_query->tables->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
-    auto * table_expression = select_element->table_expression->As<ASTTableExpression>();
+    auto * table_expression = select_element->table_expression->as<ASTTableExpression>();
 
     if (!table_expression->database_and_table_name)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);

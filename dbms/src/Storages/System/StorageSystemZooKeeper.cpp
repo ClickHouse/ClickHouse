@@ -44,7 +44,7 @@ NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 
 static bool extractPathImpl(const IAST & elem, String & res)
 {
-    const auto * function = elem.As<ASTFunction>();
+    const auto * function = elem.as<ASTFunction>();
     if (!function)
         return false;
 
@@ -59,16 +59,16 @@ static bool extractPathImpl(const IAST & elem, String & res)
 
     if (function->name == "equals")
     {
-        const auto * args = function->arguments->As<ASTExpressionList>();
+        const auto * args = function->arguments->as<ASTExpressionList>();
         const IAST * value;
 
         if (args->children.size() != 2)
             return false;
 
         const ASTIdentifier * ident;
-        if ((ident = args->children.at(0)->As<ASTIdentifier>()))
+        if ((ident = args->children.at(0)->as<ASTIdentifier>()))
             value = &*args->children.at(1);
-        else if ((ident = args->children.at(1)->As<ASTIdentifier>()))
+        else if ((ident = args->children.at(1)->as<ASTIdentifier>()))
             value = &*args->children.at(0);
         else
             return false;
@@ -76,7 +76,7 @@ static bool extractPathImpl(const IAST & elem, String & res)
         if (ident->name != "path")
             return false;
 
-        const auto * literal = value->As<ASTLiteral>();
+        const auto * literal = value->as<ASTLiteral>();
         if (!literal)
             return false;
 
@@ -95,7 +95,7 @@ static bool extractPathImpl(const IAST & elem, String & res)
   */
 static String extractPath(const ASTPtr & query)
 {
-    const auto * select = query->As<ASTSelectQuery>();
+    const auto * select = query->as<ASTSelectQuery>();
     if (!select->where_expression)
         return "";
 

@@ -34,7 +34,7 @@ bool ParserDropQuery::parseDetachQuery(Pos & pos, ASTPtr & node, Expected & expe
 {
     if (parseDropQuery(pos, node, expected))
     {
-        auto * drop_query = node->As<ASTDropQuery>();
+        auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Detach;
         return true;
     }
@@ -45,7 +45,7 @@ bool ParserDropQuery::parseTruncateQuery(Pos & pos, ASTPtr & node, Expected & ex
 {
     if (parseDropQuery(pos, node, expected))
     {
-        auto * drop_query = node->As<ASTDropQuery>();
+        auto * drop_query = node->as<ASTDropQuery>();
         drop_query->kind = ASTDropQuery::Kind::Truncate;
         return true;
     }

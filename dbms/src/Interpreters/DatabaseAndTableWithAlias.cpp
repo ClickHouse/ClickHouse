@@ -27,7 +27,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
 {
-    const auto * identifier = node->As<ASTIdentifier>();
+    const auto * identifier = node->as<ASTIdentifier>();
     if (!identifier)
         throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -78,10 +78,10 @@ std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelec
 
     for (const auto & child : select_query.tables->children)
     {
-        const auto * tables_element = child->As<ASTTablesInSelectQueryElement>();
+        const auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
 
         if (tables_element->table_expression)
-            tables_expression.emplace_back(tables_element->table_expression->As<ASTTableExpression>());
+            tables_expression.emplace_back(tables_element->table_expression->as<ASTTableExpression>());
     }
 
     return tables_expression;
@@ -92,16 +92,16 @@ static const ASTTableExpression * getTableExpression(const ASTSelectQuery & sele
     if (!select.tables)
         return {};
 
-    const auto * tables_in_select_query = select.tables->As<ASTTablesInSelectQuery>();
+    const auto * tables_in_select_query = select.tables->as<ASTTablesInSelectQuery>();
     if (tables_in_select_query->children.size() <= table_number)
         return {};
 
-    const auto * tables_element = tables_in_select_query->children[table_number]->As<ASTTablesInSelectQueryElement>();
+    const auto * tables_element = tables_in_select_query->children[table_number]->as<ASTTablesInSelectQueryElement>();
 
     if (!tables_element->table_expression)
         return {};
 
-    return tables_element->table_expression->As<ASTTableExpression>();
+    return tables_element->table_expression->as<ASTTableExpression>();
 }
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database)
@@ -124,7 +124,7 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
         return {};
 
     ASTPtr database_and_table_name = table_expression->database_and_table_name;
-    if (!database_and_table_name || !database_and_table_name->As<ASTIdentifier>())
+    if (!database_and_table_name || !database_and_table_name->as<ASTIdentifier>())
         return {};
 
     return DatabaseAndTableWithAlias(database_and_table_name);
