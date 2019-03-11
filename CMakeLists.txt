@@ -218,6 +218,9 @@ endif ()
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
 
+string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
+
 set (DEFAULT_LIBS "")
 if (OS_LINUX AND NOT UNBUNDLED)
     # Note: this probably has no effict, but I'm not an expert in CMake.
@@ -242,7 +245,11 @@ if (OS_LINUX AND NOT UNBUNDLED)
             execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
         endif ()
 
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic ${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY} -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        if (USE_INTERNAL_LIBCXX_LIBRARY)
+            set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic lib/libc++${${CMAKE_POSTFIX_VARIABLE}}.a lib/libc++abi${${CMAKE_POSTFIX_VARIABLE}}.a -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        else ()
+            set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ lc++abi -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        endif ()
     else ()
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc -Wl,-Bdynamic")
     endif ()
@@ -252,10 +259,6 @@ if (OS_LINUX AND NOT UNBUNDLED)
     # The order of linking is important: 'glibc-compatibility' must be before libc but after all other libraries.
     if (GLIBC_COMPATIBILITY)
         message (STATUS "Some symbols from glibc will be replaced for compatibility")
-
-        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
-        set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
         set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
     endif ()
 
@@ -394,6 +397,9 @@ if (DEFAULT_LIBS)
             set_property(TARGET ${target_name} APPEND PROPERTY INTERFACE_LINK_LIBRARIES "${DEFAULT_LIBS}")
             if (GLIBC_COMPATIBILITY)
                 add_dependencies(${target_name} glibc-compatibility)
+            endif ()
+            if (USE_INTERNAL_LIBCXX_LIBRARY)
+                add_dependencies(${target_name} cxx_static cxxabi_static)
             endif ()
         endif ()
     endfunction ()
