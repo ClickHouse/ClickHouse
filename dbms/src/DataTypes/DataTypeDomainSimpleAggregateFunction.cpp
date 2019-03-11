@@ -18,7 +18,8 @@
 
 #include <boost/algorithm/string/join.hpp>
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -33,13 +34,16 @@ const std::vector<String> supported_functions = std::vector<String>(
         {"any", "anyLast", "min", "max", "sum"});
 
 
-String DataTypeDomainSimpleAggregateFunction::doGetName() const {
+String DataTypeDomainSimpleAggregateFunction::doGetName() const
+{
     std::stringstream stream;
     stream << "SimpleAggregateFunction(" << function->getName();
 
-    if (!parameters.empty()) {
+    if (!parameters.empty())
+    {
         stream << "(";
-        for (size_t i = 0; i < parameters.size(); ++i) {
+        for (size_t i = 0; i < parameters.size(); ++i)
+        {
             if (i)
                 stream << ", ";
             stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
@@ -107,7 +111,8 @@ static std::pair<DataTypePtr, DataTypeDomainPtr> create(const ASTPtr & arguments
     function = AggregateFunctionFactory::instance().get(function_name, argument_types, params_row);
 
     // check function
-    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions)) {
+    if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
+    {
         throw Exception("Unsupported aggregate function " + function->getName() + ", supported functions are " + boost::algorithm::join(supported_functions, ","),
                         ErrorCodes::BAD_ARGUMENTS);
     }
@@ -115,7 +120,8 @@ static std::pair<DataTypePtr, DataTypeDomainPtr> create(const ASTPtr & arguments
     DataTypePtr storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
     DataTypeDomainPtr domain = std::make_unique<DataTypeDomainSimpleAggregateFunction>(storage_type, function, argument_types, params_row);
 
-    if (!function->getReturnType()->equals(*removeLowCardinality(storage_type))) {
+    if (!function->getReturnType()->equals(*removeLowCardinality(storage_type)))
+    {
         throw Exception("Incompatible data types between aggregate function '" + function->getName() + "' which returns " + function->getReturnType()->getName() + " and column storage type " + storage_type->getName(),
                         ErrorCodes::BAD_ARGUMENTS);
     }
@@ -123,7 +129,8 @@ static std::pair<DataTypePtr, DataTypeDomainPtr> create(const ASTPtr & arguments
     return std::make_pair(storage_type, std::move(domain));
 }
 
-static const DataTypeDomainSimpleAggregateFunction * findSimpleAggregateFunction(const IDataTypeDomain * domain) {
+static const DataTypeDomainSimpleAggregateFunction * findSimpleAggregateFunction(const IDataTypeDomain * domain)
+{
     if (domain == nullptr)
         return nullptr;
 
@@ -136,7 +143,8 @@ static const DataTypeDomainSimpleAggregateFunction * findSimpleAggregateFunction
     return nullptr;
 }
 
-const DataTypeDomainSimpleAggregateFunction * findSimpleAggregateFunction(DataTypePtr dataType) {
+const DataTypeDomainSimpleAggregateFunction * findSimpleAggregateFunction(DataTypePtr dataType)
+{
     return findSimpleAggregateFunction(dataType->getDomain());
 }
 

@@ -24,7 +24,8 @@ namespace DB
  * Technically, a standard IDataType is instanciated and a DataTypeDomainSimpleAggregateFunction is added as domain.
   */
 
-class DataTypeDomainSimpleAggregateFunction : public IDataTypeDomain {
+class DataTypeDomainSimpleAggregateFunction : public IDataTypeDomain
+{
 private:
     const DataTypePtr storage_type;
     const AggregateFunctionPtr function;
