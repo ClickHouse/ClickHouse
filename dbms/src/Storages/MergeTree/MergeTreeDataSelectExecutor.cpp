@@ -129,7 +129,7 @@ static RelativeSize convertAbsoluteSampleSizeToRelative(const ASTPtr & node, siz
     if (approx_total_rows == 0)
         return 1;
 
-    const auto * node_sample = node->As<ASTSampleRatio>();
+    const auto * node_sample = node->as<ASTSampleRatio>();
 
     auto absolute_sample_size = node_sample->ratio.numerator / node_sample->ratio.denominator;
     return std::min(RelativeSize(1), RelativeSize(absolute_sample_size) / RelativeSize(approx_total_rows));
@@ -287,7 +287,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    const auto * select = query_info.query->As<ASTSelectQuery>();
+    const auto * select = query_info.query->as<ASTSelectQuery>();
 
     auto select_sample_size = select->sample_size();
     auto select_sample_offset = select->sample_offset();
@@ -295,8 +295,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     if (select_sample_size)
     {
         relative_sample_size.assign(
-            select_sample_size->As<ASTSampleRatio>()->ratio.numerator,
-            select_sample_size->As<ASTSampleRatio>()->ratio.denominator);
+            select_sample_size->as<ASTSampleRatio>()->ratio.numerator,
+            select_sample_size->as<ASTSampleRatio>()->ratio.denominator);
 
         if (relative_sample_size < 0)
             throw Exception("Negative sample size", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -304,8 +304,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         relative_sample_offset = 0;
         if (select_sample_offset)
             relative_sample_offset.assign(
-                select_sample_offset->As<ASTSampleRatio>()->ratio.numerator,
-                select_sample_offset->As<ASTSampleRatio>()->ratio.denominator);
+                select_sample_offset->as<ASTSampleRatio>()->ratio.numerator,
+                select_sample_offset->as<ASTSampleRatio>()->ratio.denominator);
 
         if (relative_sample_offset < 0)
             throw Exception("Negative sample offset", ErrorCodes::ARGUMENT_OUT_OF_BOUND);

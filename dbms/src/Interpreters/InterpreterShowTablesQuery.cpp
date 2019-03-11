@@ -25,7 +25,7 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
 {
-    const auto * query = query_ptr->As<ASTShowTablesQuery>();
+    const auto * query = query_ptr->as<ASTShowTablesQuery>();
 
     /// SHOW DATABASES
     if (query->databases)

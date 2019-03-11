@@ -405,7 +405,7 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
     if (!node)
         return std::make_shared<ASTExpressionList>();
 
-    const auto * expr_func = node->As<ASTFunction>();
+    const auto * expr_func = node->as<ASTFunction>();
 
     if (expr_func && expr_func->name == "tuple")
     {
@@ -1174,10 +1174,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     /// Remove old indices
     std::set<String> new_indices_set;
     for (const auto & index_decl : new_indices)
-        new_indices_set.emplace(index_decl->As<ASTIndexDeclaration>()->name);
+        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration>()->name);
     for (const auto & index_decl : old_indices)
     {
-        const auto * index = index_decl->As<ASTIndexDeclaration>();
+        const auto * index = index_decl->as<ASTIndexDeclaration>();
         if (!new_indices_set.count(index->name))
         {
             out_rename_map["skp_idx_" + index->name + ".idx"] = "";
@@ -2220,7 +2220,7 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
-        if (const auto * partition_lit = partition_ast->As<ASTPartition>()->value->As<ASTLiteral>())
+        if (const auto * partition_lit = partition_ast->as<ASTPartition>()->value->as<ASTLiteral>())
             prefix = partition_lit->value.getType() == Field::Types::UInt64
                 ? toString(partition_lit->value.get<UInt64>())
                 : partition_lit->value.safeGet<String>();
@@ -2275,7 +2275,7 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context)
 {
-    const auto * partition_ast = ast->As<ASTPartition>();
+    const auto * partition_ast = ast->as<ASTPartition>();
 
     if (!partition_ast->value)
         return partition_ast->id;
@@ -2283,7 +2283,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition ID can be passed in the partition value.
-        const auto * partition_lit = partition_ast->value->As<ASTLiteral>();
+        const auto * partition_lit = partition_ast->value->as<ASTLiteral>();
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
@@ -2501,7 +2501,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
         if (column_name == name)
             return true;
 
-    if (const auto * func = node->As<ASTFunction>())
+    if (const auto * func = node->as<ASTFunction>())
         if (func->arguments->children.size() == 1)
             return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
 
@@ -2513,7 +2513,7 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     /// Make sure that the left side of the IN operator contain part of the key.
     /// If there is a tuple on the left side of the IN operator, at least one item of the tuple
     ///  must be part of the key (probably wrapped by a chain of some acceptable functions).
-    const auto * left_in_operand_tuple = left_in_operand->As<ASTFunction>();
+    const auto * left_in_operand_tuple = left_in_operand->as<ASTFunction>();
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)

@@ -13,7 +13,7 @@ bool ParserUnionQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (!ParserSubquery().parse(pos, node, expected) && !ParserSelectQuery().parse(pos, node, expected))
         return false;
 
-    if (const auto * ast_subquery = node->As<ASTSubquery>())
+    if (const auto * ast_subquery = node->as<ASTSubquery>())
         node = ast_subquery->children.at(0);
 
     return true;

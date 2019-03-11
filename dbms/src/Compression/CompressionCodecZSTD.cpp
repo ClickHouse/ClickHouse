@@ -73,7 +73,7 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
                 throw Exception("ZSTD codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
             const auto children = arguments->children;
-            const auto * literal = children[0]->As<ASTLiteral>();
+            const auto * literal = children[0]->as<ASTLiteral>();
             level = literal->value.safeGet<UInt64>();
             if (level > ZSTD_maxCLevel())
                 throw Exception("ZSTD codec can't have level more that " + toString(ZSTD_maxCLevel()) + ", given " + toString(level), ErrorCodes::ILLEGAL_CODEC_PARAMETER);

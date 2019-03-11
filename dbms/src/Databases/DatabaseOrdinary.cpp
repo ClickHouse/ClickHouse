@@ -370,7 +370,7 @@ static ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const Str
 
     if (ast)
     {
-        auto * ast_create_query = ast->As<ASTCreateQuery>();
+        auto * ast_create_query = ast->as<ASTCreateQuery>();
         ast_create_query->attach = false;
         ast_create_query->database = database;
     }
@@ -415,7 +415,7 @@ void DatabaseOrdinary::renameTable(
     ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path, table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + table_name, ErrorCodes::FILE_DOESNT_EXIST);
-    ast->As<ASTCreateQuery>()->table = to_table_name;
+    ast->as<ASTCreateQuery>()->table = to_table_name;
 
     /// NOTE Non-atomic.
     to_database_concrete->createTable(context, to_table_name, table, ast);
@@ -533,7 +533,7 @@ void DatabaseOrdinary::alterTable(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
 
-    const auto * ast_create_query = ast->As<ASTCreateQuery>();
+    const auto * ast_create_query = ast->as<ASTCreateQuery>();
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);

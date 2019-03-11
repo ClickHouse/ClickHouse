@@ -158,7 +158,7 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
     String column_line;
     readEscapedStringUntilEOL(column_line, buf);
     ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0);
-    if (const auto * col_ast = ast->As<ASTColumnDeclaration>())
+    if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
     {
         String column_name = col_ast->name;
         auto type = data_type_factory.get(col_ast->type);
@@ -185,7 +185,7 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
             result.ordinary.emplace_back(column_name, std::move(type));
 
         if (col_ast->comment)
-            if (auto comment_str = col_ast->comment->As<ASTLiteral>()->value.get<String>(); !comment_str.empty())
+            if (auto comment_str = col_ast->comment->as<ASTLiteral>()->value.get<String>(); !comment_str.empty())
                 result.comments.emplace(column_name, std::move(comment_str));
 
         if (col_ast->codec)

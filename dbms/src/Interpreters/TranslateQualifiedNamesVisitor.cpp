@@ -31,11 +31,11 @@ namespace ErrorCodes
 bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Do not go to FROM, JOIN, subqueries.
-    if (child->As<ASTTableExpression>() || child->As<ASTSelectWithUnionQuery>())
+    if (child->as<ASTTableExpression>() || child->as<ASTSelectWithUnionQuery>())
         return false;
 
     /// Processed nodes. Do not go into children.
-    if (node->As<ASTQualifiedAsterisk>() || node->As<ASTTableJoin>())
+    if (node->as<ASTQualifiedAsterisk>() || node->as<ASTTableJoin>())
         return false;
 
     /// ASTSelectQuery + others
@@ -44,15 +44,15 @@ bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
 void TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = ast->As<ASTIdentifier>())
+    if (auto * t = ast->as<ASTIdentifier>())
         visit(*t, ast, data);
-    if (auto * t = ast->As<ASTTableJoin>())
+    if (auto * t = ast->as<ASTTableJoin>())
         visit(*t, ast, data);
-    if (auto * t = ast->As<ASTSelectQuery>())
+    if (auto * t = ast->as<ASTSelectQuery>())
         visit(*t, ast, data);
-    if (auto * node = ast->As<ASTExpressionList>())
+    if (auto * node = ast->as<ASTExpressionList>())
         visit(*node, ast, data);
-    if (auto * node = ast->As<ASTFunction>())
+    if (auto * node = ast->as<ASTFunction>())
         visit(*node, ast, data);
 }
 
@@ -89,7 +89,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
     String func_name_lowercase = Poco::toLower(node.name);
     if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&
-        func_arguments->children[0]->As<ASTAsterisk>())
+        func_arguments->children[0]->as<ASTAsterisk>())
         func_arguments->children.clear();
 }
 
@@ -171,14 +171,14 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         bool has_asterisk = false;
         for (const auto & child : node.children)
         {
-            if (child->As<ASTAsterisk>())
+            if (child->as<ASTAsterisk>())
             {
                 if (tables_with_columns.empty())
                     throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
                 has_asterisk = true;
                 break;
             }
-            else if (const auto * qa = child->As<ASTQualifiedAsterisk>())
+            else if (const auto * qa = child->as<ASTQualifiedAsterisk>())
             {
                 visit(*qa, child, data); /// check if it's OK before rewrite
                 has_asterisk = true;
@@ -195,7 +195,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 
     for (const auto & child : old_children)
     {
-        if (const auto * asterisk = child->As<ASTAsterisk>())
+        if (const auto * asterisk = child->as<ASTAsterisk>())
         {
             bool first_table = true;
             for (const auto & [table, table_columns] : tables_with_columns)
@@ -212,7 +212,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                 first_table = false;
             }
         }
-        else if (const auto * qualified_asterisk = child->As<ASTQualifiedAsterisk>())
+        else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
         {
             DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
@@ -237,15 +237,15 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 /// 'select * from a join b using id' should result one 'id' column
 void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, Data & data)
 {
-    const auto * table_join = ast->As<ASTTableJoin>();
+    const auto * table_join = ast->as<ASTTableJoin>();
 
     if (table_join->using_expression_list)
     {
-        const auto * keys = table_join->using_expression_list->As<ASTExpressionList>();
+        const auto * keys = table_join->using_expression_list->as<ASTExpressionList>();
         for (const auto & key : keys->children)
             if (auto opt_column = getIdentifierName(key))
                 data.join_using_columns.insert(*opt_column);
-            else if (key->As<ASTLiteral>())
+            else if (key->as<ASTLiteral>())
                 data.join_using_columns.insert(key->getColumnName());
             else
             {

@@ -3,7 +3,8 @@
 #include <memory>
 #include <vector>
 
-namespace DB {
+namespace DB
+{
 
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;

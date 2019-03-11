@@ -613,7 +613,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
             String rewritten_query = queryToString(rewritten_ast);
             LOG_DEBUG(log, "Executing query: " << rewritten_query);
 
-            if (const auto * ast_alter = rewritten_ast->As<ASTAlterQuery>())
+            if (const auto * ast_alter = rewritten_ast->as<ASTAlterQuery>())
             {
                 processTaskAlter(task, ast_alter, rewritten_query, task.entry_path, zookeeper);
             }
@@ -1222,7 +1222,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     if (!context.getSettingsRef().allow_distributed_ddl)
         throw Exception("Distributed DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
-    if (const auto * query_alter = query_ptr->As<ASTAlterQuery>())
+    if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
     {
         for (const auto & command : query_alter->command_list->commands)
         {

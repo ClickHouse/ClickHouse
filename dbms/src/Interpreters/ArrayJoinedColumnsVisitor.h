@@ -40,10 +40,10 @@ public:
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child)
     {
-        if (node->As<ASTTablesInSelectQuery>())
+        if (node->as<ASTTablesInSelectQuery>())
             return false;
 
-        if (child->As<ASTSubquery>() || child->As<ASTSelectQuery>())
+        if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
             return false;
 
         return true;
@@ -51,9 +51,9 @@ public:
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        if (const auto * t = ast->As<ASTIdentifier>())
+        if (const auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
-        if (const auto * t = ast->As<ASTSelectQuery>())
+        if (const auto * t = ast->as<ASTSelectQuery>())
             visit(*t, ast, data);
     }
 
@@ -72,7 +72,7 @@ private:
             const String nested_table_name = ast->getColumnName();
             const String nested_table_alias = ast->getAliasOrColumnName();
 
-            if (nested_table_alias == nested_table_name && !ast->As<ASTIdentifier>())
+            if (nested_table_alias == nested_table_name && !ast->as<ASTIdentifier>())
                 throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
             if (data.array_join_alias_to_name.count(nested_table_alias) || data.aliases.count(nested_table_alias))

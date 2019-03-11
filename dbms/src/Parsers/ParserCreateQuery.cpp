@@ -126,8 +126,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     auto index = std::make_shared<ASTIndexDeclaration>();
-    index->name = name->As<ASTIdentifier>()->name;
-    index->granularity = granularity->As<ASTLiteral>()->value.get<UInt64>();
+    index->name = name->as<ASTIdentifier>()->name;
+    index->granularity = granularity->as<ASTLiteral>()->value.get<UInt64>();
     index->set(index->expr, expr);
     index->set(index->type, type);
     node = index;
@@ -179,9 +179,9 @@ bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, 
 
     for (const auto & elem : list->children)
     {
-        if (elem->As<ASTColumnDeclaration>())
+        if (elem->as<ASTColumnDeclaration>())
             columns->children.push_back(elem);
-        else if (elem->As<ASTIndexDeclaration>())
+        else if (elem->as<ASTIndexDeclaration>())
             indices->children.push_back(elem);
         else
             return false;

@@ -46,7 +46,7 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 {
     if (query.table_function)
     {
-        const auto * table_function = query.table_function->As<ASTFunction>();
+        const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
         return factory.get(table_function->name, context)->execute(query.table_function, context);
     }
@@ -92,7 +92,7 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
 BlockIO InterpreterInsertQuery::execute()
 {
-    const auto * query = query_ptr->As<ASTInsertQuery>();
+    const auto * query = query_ptr->as<ASTInsertQuery>();
     checkAccess(*query);
     StoragePtr table = getTable(*query);
 
@@ -171,7 +171,7 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
 
 std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
 {
-    const auto * query = query_ptr->As<ASTInsertQuery>();
+    const auto * query = query_ptr->as<ASTInsertQuery>();
     return {query->database, query->table};
 }
 

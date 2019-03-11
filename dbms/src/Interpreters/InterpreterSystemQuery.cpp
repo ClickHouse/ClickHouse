@@ -117,7 +117,7 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterSystemQuery::execute()
 {
-    auto * query = query_ptr->As<ASTSystemQuery>();
+    auto * query = query_ptr->as<ASTSystemQuery>();
 
     using Type = ASTSystemQuery::Type;
 
@@ -248,7 +248,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
     /// Attach actions
     {
         /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-        auto * create = create_ast->As<ASTCreateQuery>();
+        auto * create = create_ast->as<ASTCreateQuery>();
         create->attach = true;
 
         std::string data_path = database->getDataPath();

@@ -39,7 +39,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.type = AlterCommand::ADD_COLUMN;
 
-        const auto * ast_col_decl = command_ast->col_decl->As<ASTColumnDeclaration>();
+        const auto * ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration>();
 
         command.column_name = ast_col_decl->name;
         if (ast_col_decl->type)
@@ -78,7 +78,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.type = AlterCommand::MODIFY_COLUMN;
 
-        const auto * ast_col_decl = command_ast->col_decl->As<ASTColumnDeclaration>();
+        const auto * ast_col_decl = command_ast->col_decl->as<ASTColumnDeclaration>();
 
         command.column_name = ast_col_decl->name;
         if (ast_col_decl->type)
@@ -97,7 +97,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl->comment)
         {
-            const auto * ast_comment = ast_col_decl->comment->As<ASTLiteral>();
+            const auto * ast_comment = ast_col_decl->comment->as<ASTLiteral>();
             command.comment = ast_comment->value.get<String>();
         }
         command.if_exists = command_ast->if_exists;
@@ -109,7 +109,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.type = COMMENT_COLUMN;
         command.column_name = *getIdentifierName(command_ast->column);
-        const auto * ast_comment = command_ast->comment->As<ASTLiteral>();
+        const auto * ast_comment = command_ast->comment->as<ASTLiteral>();
         command.comment = ast_comment->value.get<String>();
         command.if_exists = command_ast->if_exists;
         return command;
@@ -127,12 +127,12 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.index_decl = command_ast->index_decl;
         command.type = AlterCommand::ADD_INDEX;
 
-        const auto * ast_index_decl = command_ast->index_decl->As<ASTIndexDeclaration>();
+        const auto * ast_index_decl = command_ast->index_decl->as<ASTIndexDeclaration>();
 
         command.index_name = ast_index_decl->name;
 
         if (command_ast->index)
-            command.after_index_name = command_ast->index->As<ASTIdentifier>()->name;
+            command.after_index_name = command_ast->index->as<ASTIdentifier>()->name;
 
         command.if_not_exists = command_ast->if_not_exists;
 
@@ -145,7 +145,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         AlterCommand command;
         command.type = AlterCommand::DROP_INDEX;
-        command.index_name = command_ast->index->As<ASTIdentifier>()->name;
+        command.index_name = command_ast->index->as<ASTIdentifier>()->name;
         command.if_exists = command_ast->if_exists;
 
         return command;
@@ -335,7 +335,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 indices_description.indices.cend(),
                 [this](const ASTPtr & index_ast)
                 {
-                    return index_ast->As<ASTIndexDeclaration>()->name == index_name;
+                    return index_ast->as<ASTIndexDeclaration>()->name == index_name;
                 }))
         {
             if (if_not_exists)
@@ -354,7 +354,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                     indices_description.indices.end(),
                     [this](const ASTPtr & index_ast)
                     {
-                        return index_ast->As<ASTIndexDeclaration>()->name == after_index_name;
+                        return index_ast->as<ASTIndexDeclaration>()->name == after_index_name;
                     });
 
             if (insert_it == indices_description.indices.end())
@@ -373,7 +373,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 indices_description.indices.end(),
                 [this](const ASTPtr & index_ast)
                 {
-                    return index_ast->As<ASTIndexDeclaration>()->name == index_name;
+                    return index_ast->as<ASTIndexDeclaration>()->name == index_name;
                 });
 
         if (erase_it == indices_description.indices.end())

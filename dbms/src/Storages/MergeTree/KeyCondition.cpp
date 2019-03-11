@@ -284,7 +284,7 @@ KeyCondition::KeyCondition(
     Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
     /// Trasform WHERE section to Reverse Polish notation
-    const auto * select = query_info.query->As<ASTSelectQuery>();
+    const auto * select = query_info.query->as<ASTSelectQuery>();
     if (select->where_expression)
     {
         traverseAST(select->where_expression, context, block_with_constants);
@@ -321,7 +321,7 @@ static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field
 {
     String column_name = expr->getColumnName();
 
-    if (const auto * lit = expr->As<ASTLiteral>())
+    if (const auto * lit = expr->as<ASTLiteral>())
     {
         /// By default block_with_constants has only one column named "_dummy".
         /// If block contains only constants it's may not be preprocessed by
@@ -370,7 +370,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
 {
     RPNElement element;
 
-    if (auto * func = node->As<ASTFunction>())
+    if (auto * func = node->as<ASTFunction>())
     {
         if (operatorFromAST(func, element))
         {
@@ -486,7 +486,7 @@ bool KeyCondition::tryPrepareSetIndex(
         }
     };
 
-    const auto * left_arg_tuple = left_arg->As<ASTFunction>();
+    const auto * left_arg_tuple = left_arg->as<ASTFunction>();
     if (left_arg_tuple && left_arg_tuple->name == "tuple")
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
@@ -502,7 +502,7 @@ bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & right_arg = args[1];
 
     PreparedSetKey set_key;
-    if (right_arg->As<ASTSubquery>() || right_arg->As<ASTIdentifier>())
+    if (right_arg->as<ASTSubquery>() || right_arg->as<ASTIdentifier>())
         set_key = PreparedSetKey::forSubquery(*right_arg);
     else
         set_key = PreparedSetKey::forLiteral(*right_arg, data_types);
@@ -574,7 +574,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         return true;
     }
 
-    if (const auto * func = node->As<ASTFunction>())
+    if (const auto * func = node->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
         if (args.size() != 1)
@@ -620,9 +620,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
       */
     Field const_value;
     DataTypePtr const_type;
-    if (const auto * func = node->As<ASTFunction>())
+    if (const auto * func = node->as<ASTFunction>())
     {
-        const ASTs & args = func->arguments->As<ASTExpressionList>()->children;
+        const ASTs & args = func->arguments->as<ASTExpressionList>()->children;
 
         if (args.size() != 2)
             return false;

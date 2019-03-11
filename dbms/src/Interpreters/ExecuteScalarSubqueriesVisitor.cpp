@@ -41,17 +41,17 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
 bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Processed
-    if (node->As<ASTSubquery>() || node->As<ASTFunction>())
+    if (node->as<ASTSubquery>() || node->as<ASTFunction>())
         return false;
 
     /// Don't descend into subqueries in FROM section
-    if (node->As<ASTTableExpression>())
+    if (node->as<ASTTableExpression>())
         return false;
 
-    if (node->As<ASTSelectQuery>())
+    if (node->as<ASTSelectQuery>())
     {
         /// Do not go to FROM, JOIN, UNION.
-        if (child->As<ASTTableExpression>() || child->As<ASTSelectQuery>())
+        if (child->as<ASTTableExpression>() || child->as<ASTSelectQuery>())
             return false;
     }
 
@@ -60,9 +60,9 @@ bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
 void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (const auto * t = ast->As<ASTSubquery>())
+    if (const auto * t = ast->as<ASTSubquery>())
         visit(*t, ast, data);
-    if (const auto * t = ast->As<ASTFunction>())
+    if (const auto * t = ast->as<ASTFunction>())
         visit(*t, ast, data);
 }
 
@@ -145,7 +145,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & as
                 out.push_back(&child);
             else
                 for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
-                    if (i != 1 || !func.arguments->children[i]->As<ASTSubquery>())
+                    if (i != 1 || !func.arguments->children[i]->as<ASTSubquery>())
                         out.push_back(&func.arguments->children[i]);
         }
     }

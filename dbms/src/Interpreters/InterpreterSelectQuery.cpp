@@ -156,14 +156,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     max_streams = settings.max_threads;
 
-    ASTPtr table_expression = extractTableExpression(*query_ptr->As<ASTSelectQuery>(), 0);
+    ASTPtr table_expression = extractTableExpression(*query_ptr->as<ASTSelectQuery>(), 0);
 
     bool is_table_func = false;
     bool is_subquery = false;
     if (table_expression)
     {
-        is_table_func = table_expression->As<ASTFunction>();
-        is_subquery = table_expression->As<ASTSelectWithUnionQuery>();
+        is_table_func = table_expression->as<ASTFunction>();
+        is_subquery = table_expression->as<ASTSelectWithUnionQuery>();
     }
 
     if (input)
@@ -209,7 +209,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (!only_analyze)
     {
-        const auto * query = query_ptr->As<ASTSelectQuery>();
+        const auto * query = query_ptr->as<ASTSelectQuery>();
 
         if (query->sample_size() && (input || !storage || !storage->supportsSampling()))
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
@@ -266,7 +266,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
-    if (auto db_and_table = getDatabaseAndTable(*query_ptr->As<ASTSelectQuery>(), 0))
+    if (auto db_and_table = getDatabaseAndTable(*query_ptr->as<ASTSelectQuery>(), 0))
     {
         table_name = db_and_table->table;
         database_name = db_and_table->database;
@@ -367,7 +367,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         ExpressionActionsChain chain(context);
 
         Names additional_required_columns_after_prewhere;
-        const auto * query = query_ptr->As<ASTSelectQuery>();
+        const auto * query = query_ptr->as<ASTSelectQuery>();
 
         if (storage && query->sample_size())
         {
@@ -508,7 +508,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             query_info.syntax_analyzer_result = syntax_analyzer_result;
             query_info.sets = query_analyzer->getPreparedSets();
 
-            const auto * query = query_ptr->As<ASTSelectQuery>();
+            const auto * query = query_ptr->as<ASTSelectQuery>();
 
             /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
             if (settings.optimize_move_to_prewhere && query->where_expression && !query->prewhere_expression && !query->final())
@@ -553,7 +553,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     if (to_stage > QueryProcessingStage::FetchColumns)
     {
         /// Now we will compose block streams that perform the necessary actions.
-        const auto * query = query_ptr->As<ASTSelectQuery>();
+        const auto * query = query_ptr->as<ASTSelectQuery>();
 
         /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
         bool aggregate_overflow_row =
@@ -573,7 +573,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         {
             if (expressions.hasJoin())
             {
-                const auto * join = query->join()->table_join->As<ASTTableJoin>();
+                const auto * join = query->join()->table_join->as<ASTTableJoin>();
                 if (join->kind == ASTTableJoin::Kind::Full || join->kind == ASTTableJoin::Kind::Right)
                     pipeline.stream_with_non_joined_data = expressions.before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
                         pipeline.firstStream()->getHeader(), settings.max_block_size);
@@ -943,7 +943,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     }
 
     UInt64 max_block_size = settings.max_block_size;
-    const auto * query = query_ptr->As<ASTSelectQuery>();
+    const auto * query = query_ptr->as<ASTSelectQuery>();
 
     auto [limit_length, limit_offset] = getLimitLengthAndOffset(*query, context);
 
@@ -1080,7 +1080,7 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 {
     pipeline.transform([&](auto & stream) {
         stream = std::make_shared<FilterBlockInputStream>(
-            stream, expression, query_ptr->As<ASTSelectQuery>()->where_expression->getColumnName(), remove_fiter);
+            stream, expression, query_ptr->as<ASTSelectQuery>()->where_expression->getColumnName(), remove_fiter);
     });
 }
 
@@ -1208,7 +1208,7 @@ void InterpreterSelectQuery::executeHaving(Pipeline & pipeline, const Expression
 {
     pipeline.transform([&](auto & stream) {
         stream = std::make_shared<FilterBlockInputStream>(
-            stream, expression, query_ptr->As<ASTSelectQuery>()->having_expression->getColumnName());
+            stream, expression, query_ptr->as<ASTSelectQuery>()->having_expression->getColumnName());
     });
 }
 
@@ -1223,7 +1223,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
         pipeline.firstStream(),
         overflow_row,
         expression,
-        has_having ? query_ptr->As<ASTSelectQuery>()->having_expression->getColumnName() : "",
+        has_having ? query_ptr->as<ASTSelectQuery>()->having_expression->getColumnName() : "",
         settings.totals_mode,
         settings.totals_auto_threshold,
         final);
@@ -1276,11 +1276,11 @@ static SortDescription getSortDescription(const ASTSelectQuery & query)
     for (const auto & elem : query.order_expression_list->children)
     {
         String name = elem->children.front()->getColumnName();
-        const auto * order_by_elem = elem->As<ASTOrderByElement>();
+        const auto * order_by_elem = elem->as<ASTOrderByElement>();
 
         std::shared_ptr<Collator> collator;
         if (order_by_elem->collation)
-            collator = std::make_shared<Collator>(order_by_elem->collation->As<ASTLiteral>()->value.get<String>());
+            collator = std::make_shared<Collator>(order_by_elem->collation->as<ASTLiteral>()->value.get<String>());
 
         order_descr.emplace_back(name, order_by_elem->direction, order_by_elem->nulls_direction, collator);
     }
@@ -1291,7 +1291,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->As<ASTSelectQuery>();
+    const auto * query = query_ptr->as<ASTSelectQuery>();
 
     SortDescription order_descr = getSortDescription(*query);
     UInt64 limit = getLimitForSorting(*query, context);
@@ -1324,7 +1324,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->As<ASTSelectQuery>();
+    const auto * query = query_ptr->as<ASTSelectQuery>();
 
     SortDescription order_descr = getSortDescription(*query);
     UInt64 limit = getLimitForSorting(*query, context);
@@ -1362,7 +1362,7 @@ void InterpreterSelectQuery::executeProjection(Pipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_order, Names columns)
 {
-    const auto * query = query_ptr->As<ASTSelectQuery>();
+    const auto * query = query_ptr->as<ASTSelectQuery>();
 
     if (query->distinct)
     {
@@ -1406,7 +1406,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
 void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->As<ASTSelectQuery>();
+    const auto * query = query_ptr->as<ASTSelectQuery>();
 
     /// If there is LIMIT
     if (query->limit_length)
@@ -1422,7 +1422,7 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->As<ASTSelectQuery>();
+    const auto * query = query_ptr->as<ASTSelectQuery>();
 
     if (!query->limit_by_value || !query->limit_by_expression_list)
         return;
@@ -1451,10 +1451,10 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
     if (auto query_table = extractTableExpression(query, 0))
     {
-        if (const auto * ast_union = query_table->As<ASTSelectWithUnionQuery>())
+        if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
             for (const auto & elem : ast_union->list_of_selects->children)
-                if (hasWithTotalsInAnySubqueryInFromClause(*elem->As<ASTSelectQuery>()))
+                if (hasWithTotalsInAnySubqueryInFromClause(*elem->as<ASTSelectQuery>()))
                     return true;
         }
     }
@@ -1465,7 +1465,7 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->As<ASTSelectQuery>();
+    const auto * query = query_ptr->as<ASTSelectQuery>();
 
     /// If there is LIMIT
     if (query->limit_length)
@@ -1538,13 +1538,13 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline)
 
 void InterpreterSelectQuery::ignoreWithTotals()
 {
-    query_ptr->As<ASTSelectQuery>()->group_by_with_totals = false;
+    query_ptr->as<ASTSelectQuery>()->group_by_with_totals = false;
 }
 
 
 void InterpreterSelectQuery::initSettings()
 {
-    if (auto settings = query_ptr->As<ASTSelectQuery>()->settings)
+    if (auto settings = query_ptr->as<ASTSelectQuery>()->settings)
         InterpreterSetQuery(settings, context).executeForCurrentContext();
 }
 

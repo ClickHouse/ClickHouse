@@ -112,12 +112,12 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
 
 bool hasArrayJoin(const ASTPtr & ast)
 {
-    if (const ASTFunction * function = ast->As<ASTFunction>())
+    if (const ASTFunction * function = ast->as<ASTFunction>())
         if (function->name == "arrayJoin")
             return true;
 
     for (const auto & child : ast->children)
-        if (!child->As<ASTSelectQuery>() && hasArrayJoin(child))
+        if (!child->as<ASTSelectQuery>() && hasArrayJoin(child))
             return true;
 
     return false;
@@ -215,7 +215,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
     {
-        return ast->As<ASTLiteral>();
+        return ast->as<ASTLiteral>();
     };
 
     auto & group_exprs = select_query->group_expression_list->children;
@@ -232,7 +232,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     /// iterate over each GROUP BY expression, eliminate injective function calls and literals
     for (size_t i = 0; i < group_exprs.size();)
     {
-        if (const auto * function = group_exprs[i]->As<ASTFunction>())
+        if (const auto * function = group_exprs[i]->as<ASTFunction>())
         {
             /// assert function is injective
             if (possibly_injective_function_names.count(function->name))
@@ -244,9 +244,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
 
-                const auto & dict_name = function->arguments->children[0]->As<ASTLiteral>()->value.safeGet<String>();
+                const auto & dict_name = function->arguments->children[0]->as<ASTLiteral>()->value.safeGet<String>();
                 const auto & dict_ptr = context.getExternalDictionaries().getDictionary(dict_name);
-                const auto & attr_name = function->arguments->children[1]->As<ASTLiteral>()->value.safeGet<String>();
+                const auto & attr_name = function->arguments->children[1]->as<ASTLiteral>()->value.safeGet<String>();
 
                 if (!dict_ptr->isInjective(attr_name))
                 {
@@ -324,7 +324,7 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
     for (const auto & elem : elems)
     {
         String name = elem->children.front()->getColumnName();
-        const auto * order_by_elem = elem->As<ASTOrderByElement>();
+        const auto * order_by_elem = elem->as<ASTOrderByElement>();
 
         if (elems_set.emplace(name, order_by_elem->collation ? order_by_elem->collation->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
@@ -359,11 +359,11 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
-    const auto * node = select_query->join()->As<ASTTablesInSelectQueryElement>();
+    const auto * node = select_query->join()->as<ASTTablesInSelectQueryElement>();
     if (!node)
         return;
 
-    const auto * table_join = node->table_join->As<ASTTableJoin>();
+    const auto * table_join = node->table_join->as<ASTTableJoin>();
     if (!(table_join && table_join->using_expression_list))
         return;
 
@@ -406,7 +406,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
             String result_name = expr->getAliasOrColumnName();
 
             /// This is an array.
-            if (!expr->As<ASTIdentifier>() || source_columns_set.count(source_name))
+            if (!expr->as<ASTIdentifier>() || source_columns_set.count(source_name))
             {
                 result.array_join_result_to_source[result_name] = source_name;
             }
@@ -450,7 +450,7 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTT
     {
         if (IdentifierSemantic::getColumnName(ast))
         {
-            const auto * identifier = ast->As<ASTIdentifier>();
+            const auto * identifier = ast->as<ASTIdentifier>();
 
             /// It's set in TranslateQualifiedNamesVisitor
             size_t membership = IdentifierSemantic::getMembership(*identifier);
@@ -494,7 +494,7 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTT
     /// For equal expression find out corresponding table for each part, translate qualified names and add asts to join keys.
     auto add_columns_from_equals_expr = [&](const ASTPtr & expr)
     {
-        const auto * func_equals = expr->As<ASTFunction>();
+        const auto * func_equals = expr->as<ASTFunction>();
         if (!func_equals || func_equals->name != "equals")
             throwSyntaxException("Expected equals expression, got " + queryToString(expr) + ".");
 
@@ -533,7 +533,7 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTT
         }
     };
 
-    const auto * func = table_join.on_expression->As<ASTFunction>();
+    const auto * func = table_join.on_expression->as<ASTFunction>();
     if (func && func->name == "and")
     {
         for (const auto & expr : func->arguments->children)
@@ -552,13 +552,13 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     if (!node)
         return;
 
-    const auto * table_join = node->table_join->As<ASTTableJoin>();
-    const auto * table_expression = node->table_expression->As<ASTTableExpression>();
+    const auto * table_join = node->table_join->as<ASTTableJoin>();
+    const auto * table_expression = node->table_expression->as<ASTTableExpression>();
     DatabaseAndTableWithAlias joined_table_name(*table_expression, current_database);
 
     if (table_join->using_expression_list)
     {
-        const auto * keys = table_join->using_expression_list->As<ASTExpressionList>();
+        const auto * keys = table_join->using_expression_list->as<ASTExpressionList>();
         for (const auto & key : keys->children)
             analyzed_join.addUsingKey(key);
 
@@ -594,10 +594,10 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
     if (!join || !join->table_expression)
         return;
 
-    const auto * table_expr = join->table_expression->As<ASTTableExpression>();
+    const auto * table_expr = join->table_expression->as<ASTTableExpression>();
     if (table_expr->database_and_table_name)
     {
-        const auto * table_id = table_expr->database_and_table_name->As<ASTIdentifier>();
+        const auto * table_id = table_expr->database_and_table_name->as<ASTIdentifier>();
         String expr = "(select * from " + table_id->name + ") as " + table_id->shortName();
 
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
@@ -606,7 +606,7 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
         if (table_id->alias.empty() && table_id->isShort())
         {
             ParserTableExpression parser;
-            table_expr = parseQuery(parser, expr, 0)->As<ASTTableExpression>();
+            table_expr = parseQuery(parser, expr, 0)->as<ASTTableExpression>();
         }
     }
 }
@@ -620,7 +620,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     const Names & required_result_columns,
     StoragePtr storage) const
 {
-    auto * select_query = query->As<ASTSelectQuery>();
+    auto * select_query = query->as<ASTSelectQuery>();
     if (!storage && select_query)
     {
         if (auto db_and_table = getDatabaseAndTable(*select_query, 0))
@@ -651,7 +651,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
             if (settings.enable_optimize_predicate_expression)
                 replaceJoinedTable(node);
 
-            const auto * joined_expression = node->table_expression->As<ASTTableExpression>();
+            const auto * joined_expression = node->table_expression->as<ASTTableExpression>();
             DatabaseAndTableWithAlias table(*joined_expression, context.getCurrentDatabase());
 
             NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(*joined_expression, context);

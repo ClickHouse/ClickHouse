@@ -87,7 +87,7 @@ DataTypePtr getDataType(const String & mysql_data_type, bool is_nullable, bool i
 
 StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
-    const auto * args_func = ast_function->As<ASTFunction>();
+    const auto * args_func = ast_function->as<ASTFunction>();
 
     if (!args_func->arguments)
         throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
@@ -101,18 +101,18 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     for (size_t i = 0; i < args.size(); ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    std::string host_port = args[0]->As<ASTLiteral>()->value.safeGet<String>();
-    std::string database_name = args[1]->As<ASTLiteral>()->value.safeGet<String>();
-    std::string table_name = args[2]->As<ASTLiteral>()->value.safeGet<String>();
-    std::string user_name = args[3]->As<ASTLiteral>()->value.safeGet<String>();
-    std::string password = args[4]->As<ASTLiteral>()->value.safeGet<String>();
+    std::string host_port = args[0]->as<ASTLiteral>()->value.safeGet<String>();
+    std::string database_name = args[1]->as<ASTLiteral>()->value.safeGet<String>();
+    std::string table_name = args[2]->as<ASTLiteral>()->value.safeGet<String>();
+    std::string user_name = args[3]->as<ASTLiteral>()->value.safeGet<String>();
+    std::string password = args[4]->as<ASTLiteral>()->value.safeGet<String>();
 
     bool replace_query = false;
     std::string on_duplicate_clause;
     if (args.size() >= 6)
-        replace_query = args[5]->As<ASTLiteral>()->value.safeGet<UInt64>() > 0;
+        replace_query = args[5]->as<ASTLiteral>()->value.safeGet<UInt64>() > 0;
     if (args.size() == 7)
-        on_duplicate_clause = args[6]->As<ASTLiteral>()->value.safeGet<String>();
+        on_duplicate_clause = args[6]->as<ASTLiteral>()->value.safeGet<String>();
 
     if (replace_query && !on_duplicate_clause.empty())
         throw Exception(

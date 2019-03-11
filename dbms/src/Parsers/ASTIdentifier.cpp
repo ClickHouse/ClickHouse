@@ -86,7 +86,7 @@ ASTPtr createTableIdentifier(const String & database_name, const String & table_
 std::optional<String> getIdentifierName(const IAST * const ast)
 {
     if (ast)
-        if (const auto * node = ast->As<ASTIdentifier>())
+        if (const auto * node = ast->as<ASTIdentifier>())
             return node->name;
     return {};
 }
@@ -94,7 +94,7 @@ std::optional<String> getIdentifierName(const IAST * const ast)
 bool getIdentifierName(const ASTPtr & ast, String & name)
 {
     if (ast)
-        if (const auto * node = ast->As<ASTIdentifier>())
+        if (const auto * node = ast->as<ASTIdentifier>())
         {
             name = node->name;
             return true;
@@ -105,7 +105,7 @@ bool getIdentifierName(const ASTPtr & ast, String & name)
 void setIdentifierSpecial(ASTPtr & ast)
 {
     if (ast)
-        if (auto * id = ast->As<ASTIdentifier>())
+        if (auto * id = ast->as<ASTIdentifier>())
             id->semantic->special = true;
 }
 

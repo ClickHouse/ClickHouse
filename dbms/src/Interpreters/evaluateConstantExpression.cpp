@@ -60,11 +60,11 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
 {
     /// Branch with string in query.
-    if (node->As<ASTLiteral>())
+    if (node->as<ASTLiteral>())
         return node;
 
     /// Branch with TableFunction in query.
-    if (const auto * table_func_ptr = node->As<ASTFunction>())
+    if (const auto * table_func_ptr = node->as<ASTFunction>())
         if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
             return node;
 
@@ -73,7 +73,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
-    if (const auto * id = node->As<ASTIdentifier>())
+    if (const auto * id = node->as<ASTIdentifier>())
         return std::make_shared<ASTLiteral>(id->name);
 
     return evaluateConstantExpressionAsLiteral(node, context);
@@ -145,8 +145,8 @@ namespace
         {
             const auto * left = fn->arguments->children.front().get();
             const auto * right = fn->arguments->children.back().get();
-            const auto * identifier = left->As<ASTIdentifier>() ? left->As<ASTIdentifier>() : right->As<ASTIdentifier>();
-            const auto * literal = left->As<ASTLiteral>() ? left->As<ASTLiteral>() : right->As<ASTLiteral>();
+            const auto * identifier = left->as<ASTIdentifier>() ? left->as<ASTIdentifier>() : right->as<ASTIdentifier>();
+            const auto * literal = left->as<ASTLiteral>() ? left->as<ASTLiteral>() : right->as<ASTLiteral>();
 
             return analyzeEquals(identifier, literal, expr);
         }
@@ -154,15 +154,15 @@ namespace
         {
             const auto * left = fn->arguments->children.front().get();
             const auto * right = fn->arguments->children.back().get();
-            const auto * identifier = left->As<ASTIdentifier>();
-            const auto * inner_fn = right->As<ASTFunction>();
+            const auto * identifier = left->as<ASTIdentifier>();
+            const auto * inner_fn = right->as<ASTFunction>();
 
             if (!inner_fn)
             {
                 return {};
             }
 
-            const auto * tuple = inner_fn->children.front()->As<ASTExpressionList>();
+            const auto * tuple = inner_fn->children.front()->as<ASTExpressionList>();
 
             if (!tuple)
             {
@@ -173,7 +173,7 @@ namespace
 
             for (const auto & child : tuple->children)
             {
-                const auto * literal = child->As<ASTLiteral>();
+                const auto * literal = child->as<ASTLiteral>();
                 const auto dnf = analyzeEquals(identifier, literal, expr);
 
                 if (dnf.empty())
@@ -188,7 +188,7 @@ namespace
         }
         else if (fn->name == "or")
         {
-            const auto * args = fn->children.front()->As<ASTExpressionList>();
+            const auto * args = fn->children.front()->as<ASTExpressionList>();
 
             if (!args)
             {
@@ -199,7 +199,7 @@ namespace
 
             for (const auto & arg : args->children)
             {
-                const auto dnf = analyzeFunction(arg->As<ASTFunction>(), expr);
+                const auto dnf = analyzeFunction(arg->as<ASTFunction>(), expr);
 
                 if (dnf.empty())
                 {
@@ -213,7 +213,7 @@ namespace
         }
         else if (fn->name == "and")
         {
-            const auto * args = fn->children.front()->As<ASTExpressionList>();
+            const auto * args = fn->children.front()->as<ASTExpressionList>();
 
             if (!args)
             {
@@ -224,7 +224,7 @@ namespace
 
             for (const auto & arg : args->children)
             {
-                const auto dnf = analyzeFunction(arg->As<ASTFunction>(), expr);
+                const auto dnf = analyzeFunction(arg->as<ASTFunction>(), expr);
 
                 if (dnf.empty())
                 {
@@ -247,7 +247,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 
     // TODO: `node` may be always-false literal.
 
-    if (const auto * fn = node->As<ASTFunction>())
+    if (const auto * fn = node->as<ASTFunction>())
     {
         const auto dnf = analyzeFunction(fn, target_expr);
 

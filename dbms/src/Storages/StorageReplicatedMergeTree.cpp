@@ -447,7 +447,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
         storage_modifier = [&](IAST & ast)
         {
-            auto * storage_ast = ast.As<ASTStorage>();
+            auto * storage_ast = ast.as<ASTStorage>();
 
             if (!storage_ast->order_by)
                 throw Exception(
@@ -3558,7 +3558,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     String partition_id;
 
     if (attach_part)
-        partition_id = partition->As<ASTLiteral>()->value.safeGet<String>();
+        partition_id = partition->as<ASTLiteral>()->value.safeGet<String>();
     else
         partition_id = data.getPartitionIDFromQuery(partition, query_context);
 
@@ -3977,17 +3977,17 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// TODO: add setters and getters interface for database and table fields of AST
     auto new_query = query->clone();
-    if (auto * alter = new_query->As<ASTAlterQuery>())
+    if (auto * alter = new_query->as<ASTAlterQuery>())
     {
         alter->database = leader_address.database;
         alter->table = leader_address.table;
     }
-    else if (auto * optimize = new_query->As<ASTOptimizeQuery>())
+    else if (auto * optimize = new_query->as<ASTOptimizeQuery>())
     {
         optimize->database = leader_address.database;
         optimize->table = leader_address.table;
     }
-    else if (auto * drop = new_query->As<ASTDropQuery>(); drop->kind == ASTDropQuery::Kind::Truncate)
+    else if (auto * drop = new_query->as<ASTDropQuery>(); drop->kind == ASTDropQuery::Kind::Truncate)
     {
         drop->database = leader_address.database;
         drop->table    = leader_address.table;

@@ -36,9 +36,9 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     for (size_t i = 0; i < 3; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    std::string filename = args[0]->As<ASTLiteral>()->value.safeGet<String>();
-    std::string format = args[1]->As<ASTLiteral>()->value.safeGet<String>();
-    std::string structure = args[2]->As<ASTLiteral>()->value.safeGet<String>();
+    std::string filename = args[0]->as<ASTLiteral>()->value.safeGet<String>();
+    std::string format = args[1]->as<ASTLiteral>()->value.safeGet<String>();
+    std::string structure = args[2]->as<ASTLiteral>()->value.safeGet<String>();
 
     // Create sample block
     std::vector<std::string> structure_vals;

@@ -207,11 +207,11 @@ bool Set::insertFromBlock(const Block & block)
 
 static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, const Context & context)
 {
-    if (const auto * lit = node->As<ASTLiteral>())
+    if (const auto * lit = node->as<ASTLiteral>())
     {
         return convertFieldToType(lit->value, type);
     }
-    else if (node->As<ASTFunction>())
+    else if (node->as<ASTFunction>())
     {
         std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
         return convertFieldToType(value_raw.first, type, value_raw.second.get());
@@ -235,7 +235,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     DataTypePtr tuple_type;
     Row tuple_values;
-    const auto * list = node->As<ASTExpressionList>();
+    const auto * list = node->as<ASTExpressionList>();
     for (auto & elem : list->children)
     {
         if (num_columns == 1)
@@ -245,7 +245,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
             if (!value.isNull())
                 columns[0]->insert(value);
         }
-        else if (const auto * func = elem->As<ASTFunction>())
+        else if (const auto * func = elem->as<ASTFunction>())
         {
             Field function_result;
             const TupleBackend * tuple = nullptr;
