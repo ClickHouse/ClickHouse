@@ -45,7 +45,7 @@ In all cases, if `IF NOT EXISTS` is specified, the query won't return an error i
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../operations/table_engines/index.md#table_engines).
 
-### Default Values
+### Default Values {#create-default-values}
 
 The column description can specify an expression for a default value, in one of the following ways:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Example: `URLDomain String DEFAULT domain(URL)`.

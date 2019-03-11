@@ -152,7 +152,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 
         size_t old_size = data.size();
         data.resize(old_size + length);
-        memcpy(&data[old_size], &from_concrete.data[start], length * sizeof(data[0]));
+        memcpy(data.data() + old_size, &from_concrete.data[start], length * sizeof(data[0]));
     }
 }
 
@@ -184,7 +184,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
 }
 
 
-ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = data.size();
 
@@ -205,13 +205,13 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, UInt64 limi
     return res;
 }
 
-ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename Type>
-ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
+ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
     auto res = createView();
 
@@ -253,6 +253,11 @@ size_t ColumnAggregateFunction::allocatedBytes() const
         res += arena->size();
 
     return res;
+}
+
+void ColumnAggregateFunction::protect()
+{
+    data.protect();
 }
 
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const

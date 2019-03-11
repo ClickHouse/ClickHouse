@@ -58,9 +58,11 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
+    endif ()
 
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
         if (WEVERYTHING)
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ctad-maybe-unsupported")
         endif ()
     endif ()
 endif ()
@@ -128,7 +130,9 @@ list (APPEND dbms_headers
     src/AggregateFunctions/parseAggregateFunctionParameters.h)
 
 list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
-list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
+list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctions/TableFunctionFactory.h)
+list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
+list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
 
 add_library(clickhouse_common_io ${LINK_MODE} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
@@ -139,12 +143,10 @@ endif ()
 add_subdirectory(src/Common/ZooKeeper)
 add_subdirectory(src/Common/Config)
 
-if (MAKE_STATIC_LIBRARIES)
+if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
 else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
-    set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR}.${VERSION_MINOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
-    install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
@@ -203,9 +205,10 @@ target_link_libraries (clickhouse_common_io
     Threads::Threads
         PRIVATE
     ${CMAKE_DL_LIBS}
+        PUBLIC
+    roaring
 )
 
-target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 
@@ -225,7 +228,6 @@ target_link_libraries (dbms
         PUBLIC
     clickhouse_common_io
         PRIVATE
-    clickhouse_dictionaries
     clickhouse_dictionaries_embedded
         PUBLIC
     pocoext
@@ -238,6 +240,7 @@ target_link_libraries (dbms
     Threads::Threads
 )
 
+target_include_directories(dbms SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
@@ -295,6 +298,13 @@ endif ()
 
 if (USE_RDKAFKA)
     target_link_libraries (dbms PRIVATE clickhouse_storage_kafka)
+endif ()
+
+if (USE_PARQUET)
+    target_link_libraries(dbms PRIVATE ${PARQUET_LIBRARY})
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
+    endif ()
 endif ()
 
 target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)

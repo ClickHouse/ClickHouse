@@ -10,6 +10,7 @@
 #include <optional>
 #include <ext/singleton.h>
 
+#include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
 
 
@@ -133,17 +134,19 @@ public:
 
     template <typename Function, typename... Args>
     explicit ThreadFromGlobalPool(Function && func, Args &&... args)
+        : state(std::make_shared<Poco::Event>())
     {
-        mutex = std::make_unique<std::mutex>();
-
-        /// The function object must be copyable, so we wrap lock_guard in shared_ptr.
+        /// NOTE: If this will throw an exception, the descructor won't be called.
         GlobalThreadPool::instance().scheduleOrThrow([
-            lock = std::make_shared<std::lock_guard<std::mutex>>(*mutex),
+            state = state,
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]
         {
-            DB::ThreadStatus thread_status;
-            std::apply(func, args);
+            {
+                DB::ThreadStatus thread_status;
+                std::apply(func, args);
+            }
+            state->set();
         });
     }
 
@@ -154,33 +157,42 @@ public:
 
     ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
     {
-        if (mutex)
+        if (joinable())
             std::terminate();
-        mutex = std::move(rhs.mutex);
+        state = std::move(rhs.state);
         return *this;
     }
 
     ~ThreadFromGlobalPool()
     {
-        if (mutex)
+        if (joinable())
             std::terminate();
     }
 
     void join()
     {
-        {
-            std::lock_guard lock(*mutex);
-        }
-        mutex.reset();
+        if (!joinable())
+            std::terminate();
+
+        state->wait();
+        state.reset();
+    }
+
+    void detach()
+    {
+        if (!joinable())
+            std::terminate();
+        state.reset();
     }
 
     bool joinable() const
     {
-        return static_cast<bool>(mutex);
+        return state != nullptr;
     }
 
 private:
-    std::unique_ptr<std::mutex> mutex;  /// Object must be moveable.
+    /// The state used in this object and inside the thread job.
+    std::shared_ptr<Poco::Event> state;
 };
 
 

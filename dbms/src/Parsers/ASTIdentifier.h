@@ -22,11 +22,12 @@ public:
     String name;
 
     ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {});
+    ASTIdentifier(std::vector<String> && name_parts_);
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name); }
 
-    ASTPtr clone() const override { return std::make_shared<ASTIdentifier>(*this); }
+    ASTPtr clone() const override;
 
     void collectIdentifierNames(IdentifierNameSet & set) const override
     {

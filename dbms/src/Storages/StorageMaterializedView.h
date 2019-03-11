@@ -26,9 +26,12 @@ public:
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
+    {
+        return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand, query_context);
+    }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
     void drop() override;
 
     void truncate(const ASTPtr &, const Context &) override;
@@ -54,7 +57,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        UInt64 max_block_size,
+        size_t max_block_size,
         unsigned num_streams) override;
 
     String getDataPath() const override;

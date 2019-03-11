@@ -2,6 +2,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -94,7 +95,7 @@ void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num,
 }
 
 template <typename T>
-void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
+void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const typename ColumnType::Container & x = typeid_cast<const ColumnType &>(column).getData();
 
@@ -124,7 +125,7 @@ void DataTypeDecimal<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 }
 
 template <typename T>
-void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double) const
+void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
 {
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     size_t initial_size = x.size();
@@ -135,9 +136,30 @@ void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & is
 
 
 template <typename T>
-void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    protobuf.writeDecimal(static_cast<const ColumnType &>(column).getData()[row_num], scale);
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDecimal(static_cast<const ColumnType &>(column).getData()[row_num], scale));
+}
+
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    T decimal;
+    if (!protobuf.readDecimal(decimal, precision, scale))
+        return;
+
+    auto & container = static_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(decimal);
+        row_added = true;
+    }
+    else
+        container.back() = decimal;
 }
 
 

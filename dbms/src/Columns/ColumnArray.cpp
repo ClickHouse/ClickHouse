@@ -311,6 +311,13 @@ size_t ColumnArray::allocatedBytes() const
 }
 
 
+void ColumnArray::protect()
+{
+    getData().protect();
+    getOffsets().protect();
+}
+
+
 bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 {
     if (offsets == other.offsets)
@@ -364,7 +371,7 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     const ColumnArray & src_concrete = static_cast<const ColumnArray &>(src);
 
     if (start + length > src_concrete.getOffsets().size())
-        throw Exception("Parameter out of bound in ColumnArray::insertRangeFrom method.",
+        throw Exception("Parameter out of bound in ColumnArray::insertRangeFrom method. [start(" + std::to_string(start) + ") + length(" + std::to_string(length) + ") > offsets.size(" + std::to_string(src_concrete.getOffsets().size()) + ")]",
             ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     size_t nested_offset = src_concrete.offsetAt(start);
@@ -589,7 +596,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
 }
 
 
-ColumnPtr ColumnArray::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = getOffsets().size();
 
@@ -626,13 +633,13 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, UInt64 limit) const
     return res;
 }
 
-ColumnPtr ColumnArray::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename T>
-ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, UInt64 limit) const
+ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
     if (limit == 0)
         return ColumnArray::create(data);
@@ -664,7 +671,7 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, UInt64 limit
 
 INSTANTIATE_INDEX_IMPL(ColumnArray)
 
-void ColumnArray::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const
+void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     size_t s = size();
     if (limit >= s)
