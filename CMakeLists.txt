@@ -215,6 +215,9 @@ endif ()
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
 
+include (cmake/find_cxxabi.cmake)
+include (cmake/find_cxx.cmake)
+
 set (DEFAULT_LIBS "")
 if (OS_LINUX AND NOT UNBUNDLED)
     # Note: this probably has no effict, but I'm not an expert in CMake.
@@ -347,11 +350,7 @@ include (cmake/find_pdqsort.cmake)
 include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
-include (cmake/find_cxxabi.cmake)
-include (cmake/find_cxx.cmake)
 include (cmake/find_parquet.cmake)
-
-include (cmake/find_contrib_lib.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
