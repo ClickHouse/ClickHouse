@@ -15,20 +15,37 @@ class MergeTreeBloomFilterIndex;
 
 struct MergeTreeBloomFilterIndexGranule : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeBloomFilterIndexGranule(const MergeTreeBloomFilterIndex & index);
+    explicit MergeTreeBloomFilterIndexGranule(
+            const MergeTreeBloomFilterIndex & index);
 
     ~MergeTreeBloomFilterIndexGranule() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-
     void deserializeBinary(ReadBuffer & istr) override;
 
     bool empty() const override { return !has_elems; }
-    void update(const Block & block, size_t * pos, size_t limit) override;
 
     const MergeTreeBloomFilterIndex & index;
     std::vector<StringBloomFilter> bloom_filters;
     bool has_elems;
+};
+
+using MergeTreeBloomFilterIndexGranulePtr = std::shared_ptr<MergeTreeBloomFilterIndexGranule>;
+
+
+struct MergeTreeBloomFilterIndexAggregator : IMergeTreeIndexAggregator
+{
+    explicit MergeTreeBloomFilterIndexAggregator(const MergeTreeBloomFilterIndex & index);
+
+    ~MergeTreeBloomFilterIndexAggregator() override = default;
+
+    bool empty() const override { return !granule || granule->empty(); }
+    MergeTreeIndexGranulePtr getGranuleAndReset() override;
+
+    void update(const Block & block, size_t * pos, size_t limit) override;
+
+    const MergeTreeBloomFilterIndex & index;
+    MergeTreeBloomFilterIndexGranulePtr granule;
 };
 
 
@@ -170,6 +187,7 @@ public:
     ~MergeTreeBloomFilterIndex() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     IndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, const Context & context) const override;
