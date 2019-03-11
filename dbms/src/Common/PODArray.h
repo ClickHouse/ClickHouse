@@ -173,10 +173,10 @@ protected:
     /// The operation is slow and performed only for debug builds.
     void protectImpl(int prot)
     {
-        static constexpr size_t PAGE_SIZE = 4096;
+        static constexpr size_t PROTECT_PAGE_SIZE = 4096;
 
-        char * left_rounded_up = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_start) - pad_left + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE);
-        char * right_rounded_down = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_end_of_storage) + pad_right) / PAGE_SIZE * PAGE_SIZE);
+        char * left_rounded_up = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_start) - pad_left + PROTECT_PAGE_SIZE - 1) / PROTECT_PAGE_SIZE * PROTECT_PAGE_SIZE);
+        char * right_rounded_down = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_end_of_storage) + pad_right) / PROTECT_PAGE_SIZE * PROTECT_PAGE_SIZE);
 
         if (right_rounded_down > left_rounded_up)
         {
