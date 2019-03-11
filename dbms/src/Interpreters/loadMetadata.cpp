@@ -39,9 +39,9 @@ static void executeCreateQuery(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0);
 
-    ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
-    ast_create_query.attach = true;
-    ast_create_query.database = database;
+    auto * ast_create_query = ast->As<ASTCreateQuery>();
+    ast_create_query->attach = true;
+    ast_create_query->database = database;
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);

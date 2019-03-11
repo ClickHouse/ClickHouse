@@ -218,7 +218,7 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
     {
         if (table_join)
         {
-            static_cast<const ASTTableJoin &>(*table_join).formatImplBeforeTable(settings, state, frame);
+            table_join->As<ASTTableJoin>()->formatImplBeforeTable(settings, state, frame);
             settings.ostr << " ";
         }
 
@@ -226,7 +226,7 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
         settings.ostr << " ";
 
         if (table_join)
-            static_cast<const ASTTableJoin &>(*table_join).formatImplAfterTable(settings, state, frame);
+            table_join->As<ASTTableJoin>()->formatImplAfterTable(settings, state, frame);
     }
     else if (array_join)
     {

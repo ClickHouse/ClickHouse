@@ -78,10 +78,10 @@ std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelec
 
     for (const auto & child : select_query.tables->children)
     {
-        ASTTablesInSelectQueryElement * tables_element = static_cast<ASTTablesInSelectQueryElement *>(child.get());
+        const auto * tables_element = child->As<ASTTablesInSelectQueryElement>();
 
         if (tables_element->table_expression)
-            tables_expression.emplace_back(static_cast<const ASTTableExpression *>(tables_element->table_expression.get()));
+            tables_expression.emplace_back(tables_element->table_expression->As<ASTTableExpression>());
     }
 
     return tables_expression;
@@ -92,17 +92,16 @@ static const ASTTableExpression * getTableExpression(const ASTSelectQuery & sele
     if (!select.tables)
         return {};
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
-    if (tables_in_select_query.children.size() <= table_number)
+    const auto * tables_in_select_query = select.tables->As<ASTTablesInSelectQuery>();
+    if (tables_in_select_query->children.size() <= table_number)
         return {};
 
-    ASTTablesInSelectQueryElement & tables_element =
-        static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[table_number]);
+    const auto * tables_element = tables_in_select_query->children[table_number]->As<ASTTablesInSelectQueryElement>();
 
-    if (!tables_element.table_expression)
+    if (!tables_element->table_expression)
         return {};
 
-    return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element->table_expression->As<ASTTableExpression>();
 }
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database)
@@ -125,7 +124,7 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
         return {};
 
     ASTPtr database_and_table_name = table_expression->database_and_table_name;
-    if (!database_and_table_name || !isIdentifier(database_and_table_name))
+    if (!database_and_table_name || !database_and_table_name->As<ASTIdentifier>())
         return {};
 
     return DatabaseAndTableWithAlias(database_and_table_name);
@@ -142,7 +141,7 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
             return table_expression->table_function;
 
         if (table_expression->subquery)
-            return static_cast<const ASTSubquery *>(table_expression->subquery.get())->children[0];
+            return table_expression->subquery->children[0];
     }
 
     return nullptr;

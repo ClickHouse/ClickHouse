@@ -31,17 +31,17 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & 
 
 BlockIO InterpreterDropQuery::execute()
 {
-    ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
+    auto * drop = query_ptr->As<ASTDropQuery>();
 
-    checkAccess(drop);
+    checkAccess(*drop);
 
-    if (!drop.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
+    if (!drop->cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {drop->database});
 
-    if (!drop.table.empty())
-        return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary);
-    else if (!drop.database.empty())
-        return executeToDatabase(drop.database, drop.kind, drop.if_exists);
+    if (!drop->table.empty())
+        return executeToTable(drop->database, drop->table, drop->kind, drop->if_exists, drop->temporary);
+    else if (!drop->database.empty())
+        return executeToDatabase(drop->database, drop->kind, drop->if_exists);
     else
         throw Exception("Database and table names is empty.", ErrorCodes::LOGICAL_ERROR);
 }

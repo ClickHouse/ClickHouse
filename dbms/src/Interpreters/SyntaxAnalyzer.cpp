@@ -63,7 +63,7 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
 
 /// Add columns from storage to source_columns list.
-void collectSourceColumns(ASTSelectQuery * select_query, StoragePtr storage, NamesAndTypesList & source_columns)
+void collectSourceColumns(const ASTSelectQuery * select_query, StoragePtr storage, NamesAndTypesList & source_columns)
 {
     if (storage)
     {
@@ -232,7 +232,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     /// iterate over each GROUP BY expression, eliminate injective function calls and literals
     for (size_t i = 0; i < group_exprs.size();)
     {
-        if (const auto function = typeid_cast<ASTFunction *>(group_exprs[i].get()))
+        if (const auto * function = group_exprs[i]->As<ASTFunction>())
         {
             /// assert function is injective
             if (possibly_injective_function_names.count(function->name))
@@ -359,11 +359,11 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
-    auto node = const_cast<ASTTablesInSelectQueryElement *>(select_query->join());
+    const auto * node = select_query->join()->As<ASTTablesInSelectQueryElement>();
     if (!node)
         return;
 
-    auto table_join = static_cast<ASTTableJoin *>(&*node->table_join);
+    const auto * table_join = node->table_join->As<ASTTableJoin>();
     if (!(table_join && table_join->using_expression_list))
         return;
 
@@ -406,7 +406,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
             String result_name = expr->getAliasOrColumnName();
 
             /// This is an array.
-            if (!isIdentifier(expr) || source_columns_set.count(source_name))
+            if (!expr->As<ASTIdentifier>() || source_columns_set.count(source_name))
             {
                 result.array_join_result_to_source[result_name] = source_name;
             }
@@ -552,24 +552,24 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     if (!node)
         return;
 
-    const auto & table_join = static_cast<const ASTTableJoin &>(*node->table_join);
-    const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
-    DatabaseAndTableWithAlias joined_table_name(table_expression, current_database);
+    const auto * table_join = node->table_join->As<ASTTableJoin>();
+    const auto * table_expression = node->table_expression->As<ASTTableExpression>();
+    DatabaseAndTableWithAlias joined_table_name(*table_expression, current_database);
 
-    if (table_join.using_expression_list)
+    if (table_join->using_expression_list)
     {
-        auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
-        for (const auto & key : keys.children)
+        const auto * keys = table_join->using_expression_list->As<ASTExpressionList>();
+        for (const auto & key : keys->children)
             analyzed_join.addUsingKey(key);
 
         for (auto & name : analyzed_join.key_names_right)
             if (source_columns.count(name))
                 name = joined_table_name.getQualifiedNamePrefix() + name;
     }
-    else if (table_join.on_expression)
-        collectJoinedColumnsFromJoinOnExpr(analyzed_join, table_join);
+    else if (table_join->on_expression)
+        collectJoinedColumnsFromJoinOnExpr(analyzed_join, *table_join);
 
-    bool make_nullable = join_use_nulls && (table_join.kind == ASTTableJoin::Kind::Left || table_join.kind == ASTTableJoin::Kind::Full);
+    bool make_nullable = join_use_nulls && (table_join->kind == ASTTableJoin::Kind::Left || table_join->kind == ASTTableJoin::Kind::Full);
 
     analyzed_join.calculateAvailableJoinedColumns(make_nullable);
 }
@@ -594,19 +594,19 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
     if (!join || !join->table_expression)
         return;
 
-    auto & table_expr = static_cast<ASTTableExpression &>(*join->table_expression.get());
-    if (table_expr.database_and_table_name)
+    const auto * table_expr = join->table_expression->As<ASTTableExpression>();
+    if (table_expr->database_and_table_name)
     {
-        auto & table_id = typeid_cast<ASTIdentifier &>(*table_expr.database_and_table_name.get());
-        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
+        const auto * table_id = table_expr->database_and_table_name->As<ASTIdentifier>();
+        String expr = "(select * from " + table_id->name + ") as " + table_id->shortName();
 
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
         //        we can't replace aliased tables.
         // FIXME: long table names include database name, which we can't save within alias.
-        if (table_id.alias.empty() && table_id.isShort())
+        if (table_id->alias.empty() && table_id->isShort())
         {
             ParserTableExpression parser;
-            table_expr = static_cast<ASTTableExpression &>(*parseQuery(parser, expr, 0));
+            table_expr = parseQuery(parser, expr, 0)->As<ASTTableExpression>();
         }
     }
 }
@@ -620,7 +620,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     const Names & required_result_columns,
     StoragePtr storage) const
 {
-    auto * select_query = typeid_cast<ASTSelectQuery *>(query.get());
+    auto * select_query = query->As<ASTSelectQuery>();
     if (!storage && select_query)
     {
         if (auto db_and_table = getDatabaseAndTable(*select_query, 0))
@@ -651,10 +651,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
             if (settings.enable_optimize_predicate_expression)
                 replaceJoinedTable(node);
 
-            const auto & joined_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
-            DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
+            const auto * joined_expression = node->table_expression->As<ASTTableExpression>();
+            DatabaseAndTableWithAlias table(*joined_expression, context.getCurrentDatabase());
 
-            NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(joined_expression, context);
+            NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(*joined_expression, context);
             Names original_names = qualifyOccupiedNames(joined_columns, source_columns_set, table);
             result.analyzed_join.calculateColumnsFromJoinedTable(joined_columns, original_names);
         }

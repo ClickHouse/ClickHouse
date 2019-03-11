@@ -223,8 +223,7 @@ void SetIndexCondition::traverseAST(ASTPtr & node) const
 {
     if (operatorFromAST(node))
     {
-        auto * func = typeid_cast<ASTFunction *>(&*node);
-        auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+        auto & args = node->As<ASTFunction>()->arguments->children;
 
         for (auto & arg : args)
             traverseAST(arg);
@@ -245,7 +244,7 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
     if (const auto * identifier = node->As<ASTIdentifier>())
         return key_columns.count(identifier->getColumnName()) != 0;
 
-    if (auto * func = typeid_cast<ASTFunction *>(node.get()))
+    if (auto * func = node->As<ASTFunction>())
     {
         if (key_columns.count(func->getColumnName()))
         {
@@ -254,7 +253,7 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
             return true;
         }
 
-        ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+        auto & args = func->arguments->children;
 
         for (auto & arg : args)
             if (!atomFromAST(arg))
@@ -269,11 +268,11 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
 bool SetIndexCondition::operatorFromAST(ASTPtr & node) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
-    auto * func = typeid_cast<ASTFunction *>(&*node);
+    auto * func = node->As<ASTFunction>();
     if (!func)
         return false;
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+    auto & args = func->arguments->children;
 
     if (func->name == "not")
     {

@@ -287,10 +287,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
+    const auto * select = query_info.query->As<ASTSelectQuery>();
 
-    auto select_sample_size = select.sample_size();
-    auto select_sample_offset = select.sample_offset();
+    auto select_sample_size = select->sample_size();
+    auto select_sample_offset = select->sample_offset();
 
     if (select_sample_size)
     {
@@ -515,8 +515,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     /// PREWHERE
     String prewhere_column;
-    if (select.prewhere_expression)
-        prewhere_column = select.prewhere_expression->getColumnName();
+    if (select->prewhere_expression)
+        prewhere_column = select->prewhere_expression->getColumnName();
 
     RangesInDataParts parts_with_ranges;
 
@@ -566,7 +566,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     BlockInputStreams res;
 
-    if (select.final())
+    if (select->final())
     {
         /// Add columns needed to calculate the sorting expression and the sign.
         std::vector<String> add_columns = data.sorting_key_expr->getRequiredColumns();

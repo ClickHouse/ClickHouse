@@ -44,9 +44,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         first_primary_key_column = data.primary_key_columns[0];
 
     calculateColumnSizes(data, queried_columns);
-    auto & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
-    determineArrayJoinedNames(select);
-    optimize(select);
+    determineArrayJoinedNames(*query_info.query->As<ASTSelectQuery>());
+    optimize(*query_info.query->As<ASTSelectQuery>());
 }
 
 
@@ -75,7 +74,7 @@ static void collectIdentifiersNoSubqueries(const ASTPtr & ast, NameSet & set)
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node) const
 {
-    if (const auto func_and = typeid_cast<ASTFunction *>(node.get()); func_and && func_and->name == "and")
+    if (const auto * func_and = node->As<ASTFunction>(); func_and && func_and->name == "and")
     {
         for (const auto & elem : func_and->arguments->children)
             analyzeImpl(res, elem);
@@ -232,10 +231,10 @@ bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
     auto right_arg = function->arguments->children.back().get();
 
     /// try to ensure left_arg points to ASTIdentifier
-    if (!isIdentifier(left_arg) && isIdentifier(right_arg))
+    if (!left_arg->As<ASTIdentifier>() && right_arg->As<ASTIdentifier>())
         std::swap(left_arg, right_arg);
 
-    if (isIdentifier(left_arg))
+    if (left_arg->As<ASTIdentifier>())
     {
         /// condition may be "good" if only right_arg is a constant and its value is outside the threshold
         if (const auto * literal = right_arg->As<ASTLiteral>())

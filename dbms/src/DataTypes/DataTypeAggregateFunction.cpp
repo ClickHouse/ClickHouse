@@ -363,7 +363,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     {
         function_name = *opt_name;
     }
-    else if (typeid_cast<ASTLiteral *>(arguments->children[0].get()))
+    else if (arguments->children[0]->As<ASTLiteral>())
     {
         throw Exception("Aggregate function name for data type AggregateFunction must be passed as identifier (without quotes) or function",
             ErrorCodes::BAD_ARGUMENTS);

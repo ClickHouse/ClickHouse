@@ -1211,17 +1211,17 @@ protected:
     /// Replaces ENGINE and table name in a create query
     std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
     {
-        ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*create_query_ast);
-        auto res = std::make_shared<ASTCreateQuery>(create);
+        const auto * create = create_query_ast->As<ASTCreateQuery>();
+        auto res = std::make_shared<ASTCreateQuery>(*create);
 
-        if (create.storage == nullptr || new_storage_ast == nullptr)
+        if (create->storage == nullptr || new_storage_ast == nullptr)
             throw Exception("Storage is not specified", ErrorCodes::LOGICAL_ERROR);
 
         res->database = new_table.first;
         res->table = new_table.second;
 
         res->children.clear();
-        res->set(res->columns_list, create.columns_list->clone());
+        res->set(res->columns_list, create->columns_list->clone());
         res->set(res->storage, new_storage_ast->clone());
 
         return res;
@@ -1645,7 +1645,7 @@ protected:
         /// Try create table (if not exists) on each shard
         {
             auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query, task_table.table_push, task_table.engine_push_ast);
-            typeid_cast<ASTCreateQuery &>(*create_query_push_ast).if_not_exists = true;
+            create_query_push_ast->As<ASTCreateQuery>()->if_not_exists = true;
             String query = queryToString(create_query_push_ast);
 
             LOG_DEBUG(log, "Create destination tables. Query: " << query);
@@ -1778,8 +1778,8 @@ protected:
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast)
     {
-        auto & create = typeid_cast<ASTCreateQuery &>(*create_ast);
-        dropLocalTableIfExists({create.database, create.table});
+        const auto * create = create_ast->As<ASTCreateQuery>();
+        dropLocalTableIfExists({create->database, create->table});
 
         InterpreterCreateQuery interpreter(create_ast, context);
         interpreter.execute();

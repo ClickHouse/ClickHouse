@@ -704,7 +704,7 @@ private:
                     return true;
                 }
 
-                const auto * insert = ast->As<ASTInsertQuery>();
+                auto * insert = ast->As<ASTInsertQuery>();
 
                 if (insert && insert->data)
                 {
@@ -1228,7 +1228,7 @@ private:
             String current_format = format;
 
             /// The query can specify output format or output file.
-            if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
+            if (const auto * query_with_output = parsed_query->As<ASTQueryWithOutput>())
             {
                 if (query_with_output->out_file)
                 {

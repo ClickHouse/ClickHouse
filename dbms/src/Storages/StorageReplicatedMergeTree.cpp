@@ -447,17 +447,17 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
         storage_modifier = [&](IAST & ast)
         {
-            auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+            auto * storage_ast = ast.As<ASTStorage>();
 
-            if (!storage_ast.order_by)
+            if (!storage_ast->order_by)
                 throw Exception(
                     "ALTER MODIFY ORDER BY of default-partitioned tables is not supported",
                     ErrorCodes::LOGICAL_ERROR);
 
             if (new_primary_key_ast.get() != data.primary_key_ast.get())
-                storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
+                storage_ast->set(storage_ast->primary_key, new_primary_key_ast);
 
-            storage_ast.set(storage_ast.order_by, new_order_by_ast);
+            storage_ast->set(storage_ast->order_by, new_order_by_ast);
         };
     }
 
@@ -3974,17 +3974,17 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// TODO: add setters and getters interface for database and table fields of AST
     auto new_query = query->clone();
-    if (auto * alter = typeid_cast<ASTAlterQuery *>(new_query.get()))
+    if (auto * alter = new_query->As<ASTAlterQuery>())
     {
         alter->database = leader_address.database;
         alter->table = leader_address.table;
     }
-    else if (auto * optimize = typeid_cast<ASTOptimizeQuery *>(new_query.get()))
+    else if (auto * optimize = new_query->As<ASTOptimizeQuery>())
     {
         optimize->database = leader_address.database;
         optimize->table = leader_address.table;
     }
-    else if (auto * drop = typeid_cast<ASTDropQuery *>(new_query.get()); drop->kind == ASTDropQuery::Kind::Truncate)
+    else if (auto * drop = new_query->As<ASTDropQuery>(); drop->kind == ASTDropQuery::Kind::Truncate)
     {
         drop->database = leader_address.database;
         drop->table    = leader_address.table;

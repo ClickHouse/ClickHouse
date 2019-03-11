@@ -234,13 +234,13 @@ void StorageMergeTree::alter(
 
     IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
     {
-        auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+        auto * storage_ast = ast.As<ASTStorage>();
 
         if (new_order_by_ast.get() != data.order_by_ast.get())
-            storage_ast.set(storage_ast.order_by, new_order_by_ast);
+            storage_ast->set(storage_ast->order_by, new_order_by_ast);
 
         if (new_primary_key_ast.get() != data.primary_key_ast.get())
-            storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
+            storage_ast->set(storage_ast->primary_key, new_primary_key_ast);
     };
 
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);

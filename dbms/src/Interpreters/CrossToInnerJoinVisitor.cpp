@@ -183,7 +183,7 @@ static ASTPtr getCrossJoin(ASTSelectQuery & select, std::vector<DatabaseAndTable
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * t = ast->As<ASTSelectQuery>())
         visit(*t, ast, data);
 }
 
@@ -205,19 +205,19 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data 
 
     if (visitor_data.matchAny())
     {
-        auto & join = typeid_cast<ASTTableJoin &>(*ast_join);
-        join.kind = ASTTableJoin::Kind::Inner;
-        join.strictness = ASTTableJoin::Strictness::All;
+        auto * join = ast_join->As<ASTTableJoin>();
+        join->kind = ASTTableJoin::Kind::Inner;
+        join->strictness = ASTTableJoin::Strictness::All;
 
         if (visitor_data.canReuseWhere())
-            join.on_expression.swap(select.where_expression);
+            join->on_expression.swap(select.where_expression);
         else
-            join.on_expression = visitor_data.makeOnExpression();
+            join->on_expression = visitor_data.makeOnExpression();
 
         if (visitor_data.matchAll())
             select.where_expression.reset();
 
-        join.children.push_back(join.on_expression);
+        join->children.push_back(join->on_expression);
 
         ast = ast->clone(); /// rewrite AST in right manner
         data.done = true;

@@ -62,16 +62,16 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parsed)
         return false;
 
-    auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);
+    auto * query_with_output = query->As<ASTQueryWithOutput>();
 
     ParserKeyword s_into_outfile("INTO OUTFILE");
     if (s_into_outfile.ignore(pos, expected))
     {
         ParserStringLiteral out_file_p;
-        if (!out_file_p.parse(pos, query_with_output.out_file, expected))
+        if (!out_file_p.parse(pos, query_with_output->out_file, expected))
             return false;
 
-        query_with_output.children.push_back(query_with_output.out_file);
+        query_with_output->children.push_back(query_with_output->out_file);
     }
 
     ParserKeyword s_format("FORMAT");
@@ -80,11 +80,11 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         ParserIdentifier format_p;
 
-        if (!format_p.parse(pos, query_with_output.format, expected))
+        if (!format_p.parse(pos, query_with_output->format, expected))
             return false;
-        setIdentifierSpecial(query_with_output.format);
+        setIdentifierSpecial(query_with_output->format);
 
-        query_with_output.children.push_back(query_with_output.format);
+        query_with_output->children.push_back(query_with_output->format);
     }
 
     // SETTINGS key1 = value1, key2 = value2, ...
@@ -92,9 +92,9 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (s_settings.ignore(pos, expected))
     {
         ParserSetQuery parser_settings(true);
-        if (!parser_settings.parse(pos, query_with_output.settings_ast, expected))
+        if (!parser_settings.parse(pos, query_with_output->settings_ast, expected))
             return false;
-        query_with_output.children.push_back(query_with_output.settings_ast);
+        query_with_output->children.push_back(query_with_output->settings_ast);
     }
 
     if (explain_ast)

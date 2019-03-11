@@ -134,16 +134,16 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
     /// mark table Identifiers as 'not a column'
     if (node.table_expression)
     {
-        auto & expr = static_cast<ASTTableExpression &>(*node.table_expression);
-        setIdentifierSpecial(expr.database_and_table_name);
+        auto * expr = node.table_expression->As<ASTTableExpression>();
+        setIdentifierSpecial(expr->database_and_table_name);
     }
 
     /// normalize JOIN ON section
     if (node.table_join)
     {
-        auto & join = static_cast<ASTTableJoin &>(*node.table_join);
-        if (join.on_expression)
-            visit(join.on_expression, data);
+        auto * join = node.table_join->As<ASTTableJoin>();
+        if (join->on_expression)
+            visit(join->on_expression, data);
     }
 }
 
@@ -177,7 +177,7 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & 
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
 void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
 {
-    if (ASTFunction * func_node = typeid_cast<ASTFunction *>(node.get()))
+    if (const auto * func_node = node->As<ASTFunction>())
     {
         /// We skip the first argument. We also assume that the lambda function can not have parameters.
         size_t first_pos = 0;
@@ -194,7 +194,7 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
                 visit(child, data);
         }
     }
-    else if (!typeid_cast<ASTSelectQuery *>(node.get()))
+    else if (!node->As<ASTSelectQuery>())
     {
         for (auto & child : node->children)
             if (needVisitChild(child))
@@ -225,13 +225,13 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
             data.current_alias = my_alias;
     }
 
-    if (auto * node = typeid_cast<ASTFunction *>(ast.get()))
+    if (auto * node = ast->As<ASTFunction>())
         visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTIdentifier *>(ast.get()))
+    if (auto * node = ast->As<ASTIdentifier>())
         visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
+    if (auto * node = ast->As<ASTTablesInSelectQueryElement>())
         visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * node = ast->As<ASTSelectQuery>())
         visit(*node, ast, data);
 
     /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.

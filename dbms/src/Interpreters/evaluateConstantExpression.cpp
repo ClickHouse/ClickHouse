@@ -64,7 +64,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
         return node;
 
     /// Branch with TableFunction in query.
-    if (auto table_func_ptr = typeid_cast<ASTFunction *>(node.get()))
+    if (const auto * table_func_ptr = node->As<ASTFunction>())
         if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
             return node;
 
