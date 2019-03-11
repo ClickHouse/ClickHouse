@@ -36,9 +36,9 @@ Keywords are not reserved (they are just parsed as keywords in the corresponding
 
 Identifiers are:
 
-- Cluster, database, table, partition and column names;
-- Functions;
-- Data types;
+- Cluster, database, table, partition and column names.
+- Functions.
+- Data types.
 - [Expression aliases](#syntax-expression_aliases).
 
 Identifiers can be quoted or non-quoted. It is recommended to use non-quoted identifiers.
@@ -69,7 +69,7 @@ Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-
 
 ### String
 
-Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. This means that you can use the sequences `\'`and`\\`. The value will have the String type.
+Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. This means that you can use the sequences `\'`and`\\`. The value will have the [String](../data_types/string.md) type.
 
 The minimum set of characters that you need to escape in string literals: `'` and `\`. Single quote can be escaped with the single quote, literals `'It\'s'` and `'It''s'` are equal.
 
@@ -109,35 +109,35 @@ Data types and table engines in the `CREATE` query are written the same way as i
 
 ## Expression Aliases {#syntax-expression_aliases}
 
-Alias is a user defined name for an expression in a query.
+An alias is a user-defined name for an expression in a query.
 
 ```
 expr AS alias
 ```
 
-- `AS` — Keyword for defining aliases. You can define alias for a table name or a column name in the `SELECT` clause skipping `AS` keyword.
+- `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.
 
     For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-    In the [CAST function](functions/type_conversion_functions.md), the `AS` keyword has another meaning. See the description of the function.
+    In the [CAST](functions/type_conversion_functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
 
 - `expr` — Any expression supported by ClickHouse.
 
-    For example `SELECT column_name * 2 AS double FROM some_table`.
+    For example, `SELECT column_name * 2 AS double FROM some_table`.
 
 - `alias` — Name for `expr`. Aliases should comply with the [identifiers](#syntax-identifiers) syntax.
 
     For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
-### Peculiarities of Use
+### Notes on Usage
 
-Aliases are global for a query or subquery and you can define alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
+Aliases are global for a query or subquery and you can define an alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
 
-Aliases are not visible in subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates the exception `Unknown identifier: num`.
+Aliases are not visible in subqueries and between subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates the exception `Unknown identifier: num`.
 
-If an alias is defined for result columns in `SELECT` clause in a subquery, these columns are visible in outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+If an alias is defined for the result columns in the `SELECT` clause of a subquery, these columns are visible in the outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
-Be careful with aliases the same as column or table names. Let's consider the following example:
+Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
 ```
 CREATE TABLE t

@@ -85,9 +85,9 @@ If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception
 
 For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
 
-## join_default_strictness
+## join_default_strictness {#settings-join_default_strictness}
 
-Sets default strictness for [JOIN clauses](../../query_language/select.md).
+Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
 **Possible values**
 
@@ -96,6 +96,18 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md).
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 **Default value**: `ALL`
+
+
+## join_use_nulls {#settings-join_use_nulls}
+
+Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables the empty cells may appear. ClickHouse fills them differently based on setting.
+
+**Possible values**
+
+- 0 — The empty cells are filled with the default value of the corresponding field type.
+- 1 — `JOIN` behaves like in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+
+**Default value**: 0.
 
 
 ## max_block_size
@@ -162,6 +174,20 @@ If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in o
 Any positive integer.
 
 **Default value**: 1048576.
+
+## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
+
+The minimum data volume to be read from storage required for using of the direct I/O access to the storage disk.
+
+ClickHouse uses this setting when selecting the data from tables. If summary storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with `O_DIRECT` option.
+
+**Possible values**
+
+Positive integer.
+
+0 — The direct I/O is disabled.
+
+**Default value**: 0.
 
 ## log_queries
 
@@ -387,12 +413,6 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 ## format_csv_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
-
-## join_use_nulls
-
-Affects the behavior of [JOIN](../../query_language/select.md).
-
-With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
 ## insert_quorum {#settings-insert_quorum}
 

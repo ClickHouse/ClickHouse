@@ -180,8 +180,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 }
 
 
-TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure)
-    : name{name_}, secure{secure}
+TableFunctionRemote::TableFunctionRemote(const std::string & name, bool secure)
+    : name{name}, secure{secure}
 {
     is_cluster_function = name == "cluster";
 

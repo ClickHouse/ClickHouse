@@ -170,7 +170,7 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -181,7 +181,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, UInt64 limit) const
     return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -261,7 +261,7 @@ struct ColumnTuple::Less
     }
 };
 
-void ColumnTuple::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const
+void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     size_t rows = size();
     res.resize(rows);
@@ -313,6 +313,12 @@ size_t ColumnTuple::allocatedBytes() const
     for (const auto & column : columns)
         res += column->allocatedBytes();
     return res;
+}
+
+void ColumnTuple::protect()
+{
+    for (auto & column : columns)
+        column->assumeMutableRef().protect();
 }
 
 void ColumnTuple::getExtremes(Field & min, Field & max) const

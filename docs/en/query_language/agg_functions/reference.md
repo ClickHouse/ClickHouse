@@ -179,6 +179,48 @@ binary     decimal
 01101000 = 104
 ```
 
+
+##groupBitmap
+
+Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../functions/bitmap_functions.md).
+
+```
+groupBitmap(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt64` type.
+
+**Example**
+
+Test data:
+
+```
+userid
+1
+1
+2
+3
+```
+
+Query:
+
+```
+SELECT groupBitmap(userid) as num FROM t
+```
+
+Result:
+
+```
+num
+3
+```
+
 ## min(x) {#agg_function-min}
 
 Calculates the minimum.
@@ -421,7 +463,7 @@ Returns `Float64`. When `n <= 1`, returns `+∞`.
 
 ## varPop(x)
 
-Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
+Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
 
 In other words, dispersion for a set of values. Returns `Float64`.
 
