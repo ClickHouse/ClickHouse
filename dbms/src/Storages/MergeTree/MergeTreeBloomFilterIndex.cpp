@@ -79,7 +79,7 @@ void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
 
 
 MergeTreeBloomFilterIndexAggregator::MergeTreeBloomFilterIndexAggregator(const MergeTreeBloomFilterIndex & index)
-    : index(index), granule(std::move(std::make_shared<MergeTreeBloomFilterIndexGranule>(index))) {}
+    : index(index), granule(std::make_shared<MergeTreeBloomFilterIndexGranule>(index)) {}
 
 MergeTreeIndexGranulePtr MergeTreeBloomFilterIndexAggregator::getGranuleAndReset()
 {
