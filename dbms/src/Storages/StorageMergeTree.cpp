@@ -200,7 +200,9 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions(parts.size());
+
     const auto& columns_for_parts = new_columns.getAllPhysical();
+
     size_t i = 0;
     for (const auto & part : parts)
     {
@@ -215,6 +217,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
         ++i;
     }
     thread_pool.wait();
+
     auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
         [](const MergeTreeData::AlterDataPartTransactionPtr& transaction) {
             return transaction == nullptr;
@@ -255,8 +258,7 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
 
-    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions = prepare_alter_transactions(new_columns, new_indices,
-                                                                                                2 * getNumberOfPhysicalCPUCores());
+    auto transactions = prepare_alter_transactions(new_columns, new_indices, 2 * getNumberOfPhysicalCPUCores());
 
     auto table_hard_lock = lockStructureForAlter(context.getCurrentQueryId());
 
