@@ -1078,7 +1078,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
 void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter)
 {
-    pipeline.transform([&](auto & stream) {
+    pipeline.transform([&](auto & stream)
+    {
         stream = std::make_shared<FilterBlockInputStream>(
             stream, expression, query_ptr->as<ASTSelectQuery>()->where_expression->getColumnName(), remove_fiter);
     });
@@ -1206,7 +1207,8 @@ void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool ov
 
 void InterpreterSelectQuery::executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression)
 {
-    pipeline.transform([&](auto & stream) {
+    pipeline.transform([&](auto & stream)
+    {
         stream = std::make_shared<FilterBlockInputStream>(
             stream, expression, query_ptr->as<ASTSelectQuery>()->having_expression->getColumnName());
     });
