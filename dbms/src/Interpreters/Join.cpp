@@ -300,7 +300,7 @@ void Join::setSampleBlock(const Block & block)
         if (column.get() != column_no_lc.get())
         {
             materialized_columns.emplace_back(std::move(column_no_lc));
-            key_columns[i] = materialized_columns[i].get();
+            key_columns[i] = materialized_columns.back().get();
         }
 
         /// We will join only keys, where all components are not NULL.
@@ -1106,7 +1106,7 @@ class NonJoinedBlockInputStream : public IBlockInputStream
 {
 public:
     NonJoinedBlockInputStream(const Join & parent_, const Block & left_sample_block, const Names & key_names_left,
-                              const NamesAndTypesList & columns_added_by_join, size_t max_block_size_)
+                              const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size_)
         : parent(parent_), max_block_size(max_block_size_)
     {
         /** left_sample_block contains keys and "left" columns.
@@ -1183,7 +1183,7 @@ protected:
 
 private:
     const Join & parent;
-    size_t max_block_size;
+    UInt64 max_block_size;
 
     Block result_sample_block;
     /// Indices of columns in result_sample_block that come from the left-side table (except key columns).
@@ -1207,7 +1207,8 @@ private:
         for (size_t i = 0; i < right_sample_block.columns(); ++i)
         {
             const ColumnWithTypeAndName & src_column = right_sample_block.getByPosition(i);
-            result_sample_block.insert(src_column.cloneEmpty());
+            if (!result_sample_block.has(src_column.name))
+                result_sample_block.insert(src_column.cloneEmpty());
         }
 
         const auto & key_names_right = parent.key_names_right;
@@ -1316,10 +1317,10 @@ private:
 
         for (; it != end; ++it)
         {
-            if (it->second.getUsed())
+            if (it->getSecond().getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, columns_left, columns_keys_and_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->getSecond(), rows_added, columns_left, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
             {
@@ -1334,7 +1335,7 @@ private:
 
 
 BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
-                                                        const NamesAndTypesList & columns_added_by_join, size_t max_block_size) const
+                                                        const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const
 {
     return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, key_names_left, columns_added_by_join, max_block_size);
 }

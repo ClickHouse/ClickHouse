@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
@@ -10,10 +11,12 @@ namespace DB
 struct FindIdentifierBestTableData
 {
     using TypeToVisit = ASTIdentifier;
-    const std::vector<DatabaseAndTableWithAlias> & tables;
-    std::vector<std::pair<ASTIdentifier *, const DatabaseAndTableWithAlias *>> identifier_table;
+    using IdentifierWithTable = std::pair<ASTIdentifier *, const DatabaseAndTableWithAlias *>;
 
-    FindIdentifierBestTableData(const std::vector<DatabaseAndTableWithAlias> & tables_);
+    const std::vector<TableWithColumnNames> & tables;
+    std::vector<IdentifierWithTable> identifier_table;
+
+    FindIdentifierBestTableData(const std::vector<TableWithColumnNames> & tables_);
 
     void visit(ASTIdentifier & identifier, ASTPtr &);
 };

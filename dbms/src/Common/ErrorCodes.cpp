@@ -410,22 +410,28 @@ namespace ErrorCodes
     extern const int ILLEGAL_CODEC_PARAMETER = 433;
     extern const int CANNOT_PARSE_PROTOBUF_SCHEMA = 434;
     extern const int NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD = 435;
-    extern const int CANNOT_CONVERT_TO_PROTOBUF_TYPE = 436;
+    extern const int PROTOBUF_BAD_CAST = 436;
     extern const int PROTOBUF_FIELD_NOT_REPEATED = 437;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED = 438;
     extern const int CANNOT_SCHEDULE_TASK = 439;
-    extern const int DICTIONARY_ALREADY_EXISTS = 440;
-    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 441;
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 442;
-    extern const int UNKNOWN_DICTIONARY = 443;
-    extern const int STORAGE_IS_NOT_READY = 444;
-    extern const int EXTERNAL_LOADABLE_IS_MISSING = 445;
-    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING = 446;
+    extern const int INVALID_LIMIT_EXPRESSION = 440;
+    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING = 441;
+    extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE = 442;
+    extern const int NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA = 443;
+    extern const int UNKNOWN_PROTOBUF_FORMAT = 444;
+    extern const int CANNOT_MPROTECT = 445;
+    extern const int DICTIONARY_ALREADY_EXISTS = 446;
+    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 447;
+    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 448;
+    extern const int UNKNOWN_DICTIONARY = 449;
+    extern const int STORAGE_IS_NOT_READY = 450;
+    extern const int EXTERNAL_LOADABLE_IS_MISSING = 451;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
     extern const int UNKNOWN_EXCEPTION = 1002;
+    extern const int METRIKA_OTHER_ERROR = 1003;
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;

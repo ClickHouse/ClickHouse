@@ -1,4 +1,3 @@
-#include <Common/typeid_cast.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -7,6 +6,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
+#include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 
 
@@ -228,9 +228,10 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
 bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// For the expression (subject BETWEEN left AND right)
+    /// For the expression (subject [NOT] BETWEEN left AND right)
     ///  create an AST the same as for (subject> = left AND subject <= right).
 
+    ParserKeyword s_not("NOT");
     ParserKeyword s_between("BETWEEN");
     ParserKeyword s_and("AND");
 
@@ -241,8 +242,16 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (!elem_parser.parse(pos, subject, expected))
         return false;
 
+    bool negative = s_not.ignore(pos, expected);
+
     if (!s_between.ignore(pos, expected))
+    {
+        if (negative)
+            --pos;
+
+        /// No operator was parsed, just return element.
         node = subject;
+    }
     else
     {
         if (!elem_parser.parse(pos, left, expected))
@@ -254,40 +263,50 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (!elem_parser.parse(pos, right, expected))
             return false;
 
-        /// AND function
-        auto f_and = std::make_shared<ASTFunction>();
-        auto args_and = std::make_shared<ASTExpressionList>();
+        auto f_combined_expression = std::make_shared<ASTFunction>();
+        auto args_combined_expression = std::make_shared<ASTExpressionList>();
 
-        /// >=
-        auto f_ge = std::make_shared<ASTFunction>();
-        auto args_ge = std::make_shared<ASTExpressionList>();
+        /// [NOT] BETWEEN left AND right
+        auto f_left_expr = std::make_shared<ASTFunction>();
+        auto args_left_expr = std::make_shared<ASTExpressionList>();
 
-        /// <=
-        auto f_le = std::make_shared<ASTFunction>();
-        auto args_le = std::make_shared<ASTExpressionList>();
+        auto f_right_expr = std::make_shared<ASTFunction>();
+        auto args_right_expr = std::make_shared<ASTExpressionList>();
 
-        args_ge->children.emplace_back(subject);
-        args_ge->children.emplace_back(left);
+        args_left_expr->children.emplace_back(subject);
+        args_left_expr->children.emplace_back(left);
 
-        args_le->children.emplace_back(subject);
-        args_le->children.emplace_back(right);
+        args_right_expr->children.emplace_back(subject);
+        args_right_expr->children.emplace_back(right);
 
-        f_ge->name = "greaterOrEquals";
-        f_ge->arguments = args_ge;
-        f_ge->children.emplace_back(f_ge->arguments);
+        if (negative)
+        {
+            /// NOT BETWEEN
+            f_left_expr->name = "less";
+            f_right_expr->name = "greater";
+            f_combined_expression->name = "or";
+        }
+        else
+        {
+            /// BETWEEN
+            f_left_expr->name = "greaterOrEquals";
+            f_right_expr->name = "lessOrEquals";
+            f_combined_expression->name = "and";
+        }
 
-        f_le->name = "lessOrEquals";
-        f_le->arguments = args_le;
-        f_le->children.emplace_back(f_le->arguments);
+        f_left_expr->arguments = args_left_expr;
+        f_left_expr->children.emplace_back(f_left_expr->arguments);
 
-        args_and->children.emplace_back(f_ge);
-        args_and->children.emplace_back(f_le);
+        f_right_expr->arguments = args_right_expr;
+        f_right_expr->children.emplace_back(f_right_expr->arguments);
 
-        f_and->name = "and";
-        f_and->arguments = args_and;
-        f_and->children.emplace_back(f_and->arguments);
+        args_combined_expression->children.emplace_back(f_left_expr);
+        args_combined_expression->children.emplace_back(f_right_expr);
 
-        node = f_and;
+        f_combined_expression->arguments = args_combined_expression;
+        f_combined_expression->children.emplace_back(f_combined_expression->arguments);
+
+        node = f_combined_expression;
     }
 
     return true;

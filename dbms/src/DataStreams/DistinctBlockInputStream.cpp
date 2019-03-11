@@ -8,7 +8,7 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, size_t limit_hint_, const Names & columns)
+DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, UInt64 limit_hint_, const Names & columns)
     : columns_names(columns)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits)

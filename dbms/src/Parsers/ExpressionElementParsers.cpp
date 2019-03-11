@@ -1130,6 +1130,9 @@ const char * ParserAlias::restricted_keywords[] =
     "FORMAT",
     "UNION",
     "INTO",
+    "NOT",
+    "BETWEEN",
+    "LIKE",
     nullptr
 };
 

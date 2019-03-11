@@ -14,6 +14,11 @@
 #include <array>
 
 
+/// ZooKeeper has 1 MB node size and serialization limit by default,
+/// but it can be raised up, so we have a slightly larger limit on our side.
+#define MAX_STRING_OR_ARRAY_SIZE (1 << 28)  /// 256 MiB
+
+
 namespace ProfileEvents
 {
     extern const Event ZooKeeperInit;
@@ -322,7 +327,6 @@ void read(bool & x, ReadBuffer & in)
 
 void read(String & s, ReadBuffer & in)
 {
-    static constexpr int32_t max_string_size = 1 << 20;
     int32_t size = 0;
     read(size, in);
 
@@ -336,7 +340,7 @@ void read(String & s, ReadBuffer & in)
     if (size < 0)
         throw Exception("Negative size while reading string from ZooKeeper", ZMARSHALLINGERROR);
 
-    if (size > max_string_size)
+    if (size > MAX_STRING_OR_ARRAY_SIZE)
         throw Exception("Too large string size while reading from ZooKeeper", ZMARSHALLINGERROR);
 
     s.resize(size);
@@ -369,12 +373,11 @@ void read(Stat & stat, ReadBuffer & in)
 
 template <typename T> void read(std::vector<T> & arr, ReadBuffer & in)
 {
-    static constexpr int32_t max_array_size = 1 << 20;
     int32_t size = 0;
     read(size, in);
     if (size < 0)
         throw Exception("Negative size while reading array from ZooKeeper", ZMARSHALLINGERROR);
-    if (size > max_array_size)
+    if (size > MAX_STRING_OR_ARRAY_SIZE)
         throw Exception("Too large array size while reading from ZooKeeper", ZMARSHALLINGERROR);
     arr.resize(size);
     for (auto & elem : arr)

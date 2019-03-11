@@ -181,17 +181,19 @@ static ASTPtr getCrossJoin(ASTSelectQuery & select, std::vector<DatabaseAndTable
 }
 
 
-std::vector<ASTPtr *> CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
+void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
         visit(*t, ast, data);
-    return {};
 }
 
 void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     using CheckExpressionMatcher = OneTypeMatcher<CheckExpressionVisitorData, false>;
     using CheckExpressionVisitor = InDepthNodeVisitor<CheckExpressionMatcher, true>;
+
+    if (!select.where_expression)
+        return;
 
     std::vector<DatabaseAndTableWithAlias> table_names;
     ASTPtr ast_join = getCrossJoin(select, table_names);
@@ -216,10 +218,10 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data 
             select.where_expression.reset();
 
         join.children.push_back(join.on_expression);
-    }
 
-    ast = ast->clone(); /// rewrite AST in right manner
-    data.done = true;
+        ast = ast->clone(); /// rewrite AST in right manner
+        data.done = true;
+    }
 }
 
 }

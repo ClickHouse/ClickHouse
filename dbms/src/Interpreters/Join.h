@@ -10,6 +10,7 @@
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/FixedHashMap.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -120,7 +121,7 @@ public:
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
     BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left,
-                                                      const NamesAndTypesList & columns_added_by_join, size_t max_block_size) const;
+                                                      const NamesAndTypesList & columns_added_by_join, UInt64 max_block_size) const;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const;
@@ -218,8 +219,8 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        std::unique_ptr<HashMap<UInt8, Mapped, TrivialHash, HashTableFixedGrower<8>>>   key8;
-        std::unique_ptr<HashMap<UInt16, Mapped, TrivialHash, HashTableFixedGrower<16>>> key16;
+        std::unique_ptr<FixedHashMap<UInt8, Mapped>>   key8;
+        std::unique_ptr<FixedHashMap<UInt16, Mapped>> key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>                     key32;
         std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>                     key64;
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;

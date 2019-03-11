@@ -115,6 +115,7 @@ nav:
     - 'Working with Arrays': 'query_language/functions/array_functions.md'
     - 'Splitting and Merging Strings and Arrays': 'query_language/functions/splitting_merging_functions.md'
     - 'Bit': 'query_language/functions/bit_functions.md'
+    - 'Bitmap functions': 'query_language/functions/bitmap_functions.md'    
     - 'Hash': 'query_language/functions/hash_functions.md'
     - 'Generating Pseudo-Random Numbers': 'query_language/functions/random_functions.md'
     - 'Encoding': 'query_language/functions/encoding_functions.md'
@@ -192,6 +193,7 @@ nav:
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
   - 'How to Write C++ code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
+  - 'Third-Party Libraries Used': 'development/contrib.md'
 
 - 'What''s New':
   - 'Roadmap': 'roadmap.md'

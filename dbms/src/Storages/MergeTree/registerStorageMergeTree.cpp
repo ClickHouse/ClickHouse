@@ -3,7 +3,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
-#include <Storages/MergeTree/MergeTreeUniqueIndex.h>
+#include <Storages/MergeTree/MergeTreeSetSkippingIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -101,7 +101,8 @@ static void appendGraphitePattern(
     {
         if (key == "regexp")
         {
-            pattern.regexp = std::make_shared<OptimizedRegularExpression>(config.getString(config_element + ".regexp"));
+            pattern.regexp_str = config.getString(config_element + ".regexp");
+            pattern.regexp = std::make_shared<OptimizedRegularExpression>(pattern.regexp_str);
         }
         else if (key == "function")
         {
@@ -126,17 +127,32 @@ static void appendGraphitePattern(
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
 
-    if (!pattern.function)
-        throw Exception("Aggregate function is mandatory for retention patterns in GraphiteMergeTree",
+    if (!pattern.function && pattern.retentions.empty())
+        throw Exception("At least one of an aggregate function or retention rules is mandatory for rollup patterns in GraphiteMergeTree",
             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    if (pattern.function->allocatesMemoryInArena())
-        throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
-                        ErrorCodes::NOT_IMPLEMENTED);
+    if (!pattern.function)
+    {
+        pattern.type = pattern.TypeRetention;
+    }
+    else if (pattern.retentions.empty())
+    {
+        pattern.type = pattern.TypeAggregation;
+    }
+    else
+    {
+        pattern.type = pattern.TypeAll;
+    }
+
+    if (pattern.type & pattern.TypeAggregation) /// TypeAggregation or TypeAll
+        if (pattern.function->allocatesMemoryInArena())
+            throw Exception("Aggregate function " + pattern.function->getName() + " isn't supported in GraphiteMergeTree",
+                            ErrorCodes::NOT_IMPLEMENTED);
 
     /// retention should be in descending order of age.
-    std::sort(pattern.retentions.begin(), pattern.retentions.end(),
-        [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
+    if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
+        std::sort(pattern.retentions.begin(), pattern.retentions.end(),
+            [] (const Graphite::Retention & a, const Graphite::Retention & b) { return a.age > b.age; });
 
     patterns.emplace_back(pattern);
 }
@@ -150,6 +166,7 @@ static void setGraphitePatternsFromConfig(const Context & context,
         throw Exception("No '" + config_element + "' element in configuration file",
             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
+    params.config_name = config_element;
     params.path_column_name = config.getString(config_element + ".path_column_name", "Path");
     params.time_column_name = config.getString(config_element + ".time_column_name", "Time");
     params.value_column_name = config.getString(config_element + ".value_column_name", "Value");
@@ -579,7 +596,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->indices)
             for (const auto & index : args.query.columns_list->indices->children)
                 indices_description.indices.push_back(
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->ptr()));
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
 
         storage_settings.loadFromQuery(*args.storage_def);
     }
@@ -610,6 +627,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS);
     }
 
+    if (!args.attach && !indices_description.empty() && !args.local_context.getSettingsRef().allow_experimental_data_skipping_indices)
+        throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
+                        "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
+
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
@@ -621,14 +642,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             args.data_path, args.database_name, args.table_name, args.columns, indices_description,
             args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
             primary_key_ast, sample_by_ast, merging_params, storage_settings, args.has_force_restore_data_flag);
-}
-
-
-static void registerMergeTreeSkipIndices()
-{
-    auto & factory = MergeTreeIndexFactory::instance();
-    factory.registerIndex("minmax", MergeTreeMinMaxIndexCreator);
-    factory.registerIndex("unique", MergeTreeUniqueIndexCreator);
 }
 
 
@@ -649,8 +662,6 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create);
-
-    registerMergeTreeSkipIndices();
 }
 
 }

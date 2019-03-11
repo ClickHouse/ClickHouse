@@ -202,30 +202,39 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
 
 /// This function should be called under map_mutex
-bool ExternalLoader::checkLoadableObjectToUpdate(LoadableInfo & object)
+bool ExternalLoader::checkLoadableObjectToUpdate(LoadableInfo & object, const std::string & name, bool throw_on_error)
 {
-    /// If the loadable object failed to load or even failed to initialize.
-    if (!object.loadable)
-        return false;
+    try
+    {
+        /// If the loadable object failed to load or even failed to initialize.
+        if (!object.loadable)
+            return false;
 
-    const LoadablePtr & current = object.loadable;
-    const auto & lifetime = current->getLifetime();
+        const LoadablePtr & current = object.loadable;
+        const auto & lifetime = current->getLifetime();
 
-    /// do not update loadable object with zero as lifetime
-    if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
-        return false;
+        /// do not update loadable object with zero as lifetime
+        if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
+            return false;
 
-    if (!current->supportUpdates())
-        return false;
+        if (!current->supportUpdates())
+            return false;
 
-    auto update_time = update_times[current->getName()];
-    if (std::chrono::system_clock::now() < update_time)
-        return false;
+        auto update_time = update_times[current->getName()];
+        if (std::chrono::system_clock::now() < update_time)
+            return false;
 
-    if (!current->isModified())
-        return false;
+        return true;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Cannot check if the '" + name + "' " + loader_name + " need to be updated");
 
-    return true;
+        if (throw_on_error)
+            throw;
+    }
+
+    return false;
 }
 
 
@@ -241,7 +250,7 @@ void ExternalLoader::updateObjects(
         std::lock_guard lock{mutex};
         for (auto & [name, object] : loadable_objects)
         {
-            if (checkLoadableObjectToUpdate(object))
+            if (checkLoadableObjectToUpdate(object, name, throw_on_error))
                 objects_to_update.emplace_back(name, object.loadable);
         }
     }
@@ -253,8 +262,12 @@ void ExternalLoader::updateObjects(
 
         try
         {
-            new_version = current->clone();
-            exception = new_version->getCreationException();
+            if (current->isModified())
+            {
+                /// Create new version of loadable object.
+                new_version = current->clone();
+                exception = new_version->getCreationException();
+            }
         }
         catch (...)
         {
@@ -270,8 +283,11 @@ void ExternalLoader::updateObjects(
         it->second.exception = exception;
         if (!exception)
         {
-            it->second.loadable.reset();
-            it->second.loadable = std::move(new_version);
+            if (new_version)
+            {
+                it->second.loadable.reset();
+                it->second.loadable = std::move(new_version);
+            }
         }
         else
         {

@@ -194,7 +194,7 @@ size_t rawSize(const StringRef & t)
 class JoinBlockInputStream : public IBlockInputStream
 {
 public:
-    JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block && sample_block_)
+    JoinBlockInputStream(const Join & parent_, UInt64 max_block_size_, Block && sample_block_)
         : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block_))
     {
         columns.resize(sample_block.columns());
@@ -239,7 +239,7 @@ protected:
 private:
     const Join & parent;
     std::shared_lock<std::shared_mutex> lock;
-    size_t max_block_size;
+    UInt64 max_block_size;
     Block sample_block;
 
     ColumnNumbers column_indices;
@@ -327,18 +327,18 @@ private:
             {
                 for (size_t j = 0; j < columns.size(); ++j)
                     if (j == key_pos)
-                        columns[j]->insertData(rawData(it->first), rawSize(it->first));
+                        columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
                     else
-                        columns[j]->insertFrom(*it->second.block->getByPosition(column_indices[j]).column.get(), it->second.row_num);
+                        columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
                 ++rows_added;
             }
             else
-                for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->second); current != nullptr;
+                for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->getSecond()); current != nullptr;
                      current = current->next)
                 {
                     for (size_t j = 0; j < columns.size(); ++j)
                         if (j == key_pos)
-                            columns[j]->insertData(rawData(it->first), rawSize(it->first));
+                            columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
                         else
                             columns[j]->insertFrom(*current->block->getByPosition(column_indices[j]).column.get(), current->row_num);
                     ++rows_added;

@@ -44,6 +44,9 @@ private:
     using State = AggregateFunctionGroupUniqArrayData<T>;
 
 public:
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type)
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>({argument_type}, {}) {}
+
     String getName() const override { return "groupUniqArray"; }
 
     DataTypePtr getReturnType() const override
@@ -91,7 +94,7 @@ public:
 
         size_t i = 0;
         for (auto it = set.begin(); it != set.end(); ++it, ++i)
-            data_to[old_size + i] = *it;
+            data_to[old_size + i] = it->getValue();
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -115,7 +118,7 @@ template <bool is_plain_column = false>
 class AggreagteFunctionGroupUniqArrayGeneric
     : public IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>
 {
-    DataTypePtr input_data_type;
+    DataTypePtr & input_data_type;
 
     using State = AggreagteFunctionGroupUniqArrayGenericData;
 
@@ -125,7 +128,8 @@ class AggreagteFunctionGroupUniqArrayGeneric
 
 public:
     AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type)
-        : input_data_type(input_data_type) {}
+        : IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>({input_data_type}, {})
+        , input_data_type(this->argument_types[0]) {}
 
     String getName() const override { return "groupUniqArray"; }
 
@@ -146,7 +150,7 @@ public:
 
         for (const auto & elem : set)
         {
-            writeStringBinary(elem, buf);
+            writeStringBinary(elem.getValue(), buf);
         }
     }
 
@@ -181,7 +185,7 @@ public:
         else
         {
             if (inserted)
-                it->data = arena->insert(str_serialized.data, str_serialized.size);
+                it->getValueMutable().data = arena->insert(str_serialized.data, str_serialized.size);
         }
     }
 
@@ -194,9 +198,9 @@ public:
         State::Set::iterator it;
         for (auto & rhs_elem : rhs_set)
         {
-            cur_set.emplace(rhs_elem, it, inserted);
-            if (inserted && it->size)
-                it->data = arena->insert(it->data, it->size);
+            cur_set.emplace(rhs_elem.getValue(), it, inserted);
+            if (inserted && it->getValue().size)
+                it->getValueMutable().data = arena->insert(it->getValue().data, it->getValue().size);
         }
     }
 
@@ -211,7 +215,7 @@ public:
 
         for (auto & elem : set)
         {
-            deserializeAndInsert(elem, data_to);
+            deserializeAndInsert(elem.getValue(), data_to);
         }
     }
 

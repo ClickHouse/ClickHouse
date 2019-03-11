@@ -132,7 +132,7 @@ public:
                 std::string msg;
                 {
                     WriteBufferFromString buffer(msg);
-                    buffer << "Column " << i << "should be numeric to make float feature.";
+                    buffer << "Column " << i << " should be numeric to make float feature.";
                 }
                 throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
             }
@@ -150,7 +150,7 @@ public:
                 std::string msg;
                 {
                     WriteBufferFromString buffer(msg);
-                    buffer << "Column " << i << "should be numeric or string.";
+                    buffer << "Column " << i << " should be numeric or string.";
                 }
                 throw Exception(msg, ErrorCodes::BAD_ARGUMENTS);
             }

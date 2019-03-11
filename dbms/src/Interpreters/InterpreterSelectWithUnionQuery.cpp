@@ -10,6 +10,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTExpressionList.h>
 
 
 namespace DB
@@ -28,7 +29,8 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const Names & required_result_column_names,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
-    bool only_analyze)
+    bool only_analyze,
+    bool modify_inplace)
     : query_ptr(query_ptr_),
     context(context_),
     to_stage(to_stage_),
@@ -81,12 +83,17 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     for (size_t query_num = 0; query_num < num_selects; ++query_num)
     {
-        const Names & current_required_result_column_names = query_num == 0
-            ? required_result_column_names
-            : required_result_column_names_for_other_selects[query_num];
+        const Names & current_required_result_column_names
+            = query_num == 0 ? required_result_column_names : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(
-            ast.list_of_selects->children.at(query_num), context, current_required_result_column_names, to_stage, subquery_depth, only_analyze));
+            ast.list_of_selects->children.at(query_num),
+            context,
+            current_required_result_column_names,
+            to_stage,
+            subquery_depth,
+            only_analyze,
+            modify_inplace));
     }
 
     /// Determine structure of the result.

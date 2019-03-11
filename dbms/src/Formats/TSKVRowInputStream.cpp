@@ -128,7 +128,7 @@ bool TSKVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
                 }
                 else
                 {
-                    index = it->second;
+                    index = it->getSecond();
 
                     if (read_columns[index])
                         throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
@@ -197,7 +197,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const Context &,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(

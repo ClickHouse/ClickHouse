@@ -28,7 +28,7 @@ ClickHouse can be directly used by all sorts of either analysts and engineers, s
 * Try to avoid slang, use the most common and specific terms for everythings. If some terms are used as synonyms, state this explicitly.
 * All functionality descriptions should be accompanied by examples. At least very basic ones, but real world examples are welcome too.
 * Debatable topics like politics, religion, racial and so on are strictly prohibited in either documentation, examples, comments and code.
-* People tend to get temporary stuck with some specific words or phrases, usually auxiliary, for a shord period of time. So they get repeated over and over in small part of content, which looks weird when reading. It is easy to fix this by reading your text again before publishing, also you can use this opportunity to fix mistypes and lost punctuation.
+* People tend to get temporary stuck with some specific words or phrases, usually auxiliary, for a short period of time. So they get repeated over and over in small part of content, which looks weird when reading. It is easy to fix this by reading your text again before publishing, also you can use this opportunity to fix mistypes and lost punctuation.
 * Try to avoid naming the reader in text, it is not strictly prohibited though.
 
 # How to start translation to new language
