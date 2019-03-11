@@ -17,12 +17,6 @@
 #include <gperftools/malloc_extension.h> // Y_IGNORE
 #endif
 
-#if ENABLE_CLICKHOUSE_SERVER
-#include "server/Server.h"
-#endif
-#if ENABLE_CLICKHOUSE_LOCAL
-#include "local/LocalServer.h"
-#endif
 #include <Common/StringUtils/StringUtils.h>
 
 /// Universal executable for various clickhouse applications
