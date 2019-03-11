@@ -178,6 +178,9 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package (Threads)
 
+include (cmake/find_cxxabi.cmake)
+include (cmake/find_cxx.cmake)
+
 include (cmake/test_compiler.cmake)
 include (cmake/arch.cmake)
 
@@ -214,9 +217,6 @@ endif ()
 
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
-
-include (cmake/find_cxxabi.cmake)
-include (cmake/find_cxx.cmake)
 
 set (DEFAULT_LIBS "")
 if (OS_LINUX AND NOT UNBUNDLED)
