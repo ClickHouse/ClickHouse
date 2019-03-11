@@ -324,7 +324,7 @@ ClickHouse allows:
 - Any order of key-value pairs for the object.
 - The omission of some values.
 
-ClickHouse ignores spaces between elements and commas after the objects. Objects shouldn't be separated by "new line" symbols necessarily.
+ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects to a line. You do not have to separate them with line breaks.
 
 **Processing of omitted values**
 
@@ -368,7 +368,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
 !!! note "Note"
-    Any set of bytes can be output in the strings. Use the `JSONEachRow` if you are sure that the data is formatted without of losing any information.
+    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted into JSON without of losing any information.
 
 ## Native {#native}
 

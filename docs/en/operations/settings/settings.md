@@ -83,18 +83,20 @@ If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception
 
 ## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
 
-Turns on the extended data exchange between a ClickHouse client and a ClickHouse server for `INSERT` queries.
+Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. The setting is applies for `INSERT` queries.
 
-When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure sample from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
 
-When the extended data exchange is enabled, the server sends the additional metadata along with the table structure sample. The composition of the metadata depends on the operation.
+When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
+
+Operations where you may need the extended data exchange enabled:
+
+- Inserting the data of the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+
+For all other operations ClickHouse doesn't apply the setting.
 
 !!! note "Note"
     The functionality of the extended data exchange consumes additional computing resources on the server and can reduce the performance.
-
-Tasks where you may need the extended data exchange enabled:
-
-1. Inserting the data of the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
 
 **Possible values**
 
