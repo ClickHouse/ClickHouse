@@ -2,7 +2,7 @@
 #include <thread>
 #include <future>
 
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
@@ -22,6 +22,7 @@
 #include <Common/escapeForFileName.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB

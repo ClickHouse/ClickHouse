@@ -39,5 +39,20 @@ add_library(base64 ${LINK_MODE}
         ${LIBRARY_DIR}/lib/codecs.h
         ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
-target_compile_options(base64 PRIVATE ${base64_SSSE3_opt} ${base64_SSE41_opt} ${base64_SSE42_opt} ${base64_AVX_opt} ${base64_AVX2_opt})
+if(HAVE_AVX)
+    set_source_files_properties(${LIBRARY_DIR}/lib/arch/avx/codec.c PROPERTIES COMPILE_FLAGS -mavx)
+endif()
+if(HAVE_AVX2)
+    set_source_files_properties(${LIBRARY_DIR}/lib/arch/avx2/codec.c PROPERTIES COMPILE_FLAGS -mavx2)
+endif()
+if(HAVE_SSE41)
+    set_source_files_properties(${LIBRARY_DIR}/lib/arch/sse41/codec.c PROPERTIES COMPILE_FLAGS -msse4.1)
+endif()
+if(HAVE_SSE42)
+    set_source_files_properties(${LIBRARY_DIR}/lib/arch/sse42/codec.c PROPERTIES COMPILE_FLAGS -msse4.2)
+endif()
+if(HAVE_SSSE3)
+    set_source_files_properties(${LIBRARY_DIR}/lib/arch/ssse3/codec.c PROPERTIES COMPILE_FLAGS -mssse3)
+endif()
+
 target_include_directories(base64 PRIVATE ${LIBRARY_DIR}/include ${CMAKE_CURRENT_BINARY_DIR})

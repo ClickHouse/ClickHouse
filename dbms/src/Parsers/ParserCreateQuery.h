@@ -8,7 +8,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
-#include <Common/typeid_cast.h>
 #include <Poco/String.h>
 
 
@@ -74,7 +73,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
         && type_parser.parse(pos, type, expected))
     {
         auto name_type_pair = std::make_shared<ASTNameTypePair>();
-        name_type_pair->name = typeid_cast<const ASTIdentifier &>(*name).name;
+        getIdentifierName(name, name_type_pair->name);
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
         node = name_type_pair;
@@ -181,7 +180,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
-    column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
+    getIdentifierName(name, column_declaration->name);
 
     if (type)
     {
@@ -219,7 +218,45 @@ protected:
 };
 
 
-/** ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...] */
+/** name BY expr TYPE typename(arg1, arg2, ...) GRANULARITY value */
+class ParserIndexDeclaration : public IParserBase
+{
+public:
+    ParserIndexDeclaration() {}
+
+protected:
+    const char * getName() const override { return "index declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserColumnAndIndexDeclaraion : public IParserBase
+{
+protected:
+    const char * getName() const override { return "column or index declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserIndexDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "index declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserColumnsOrIndicesDeclarationList : public IParserBase
+{
+    protected:
+    const char * getName() const override { return "columns or indices declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+/**
+  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
+  */
 class ParserStorage : public IParserBase
 {
 protected:
@@ -233,6 +270,8 @@ protected:
   * (
   *     name1 type1,
   *     name2 type2,
+  *     ...
+  *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
   *     ...
   * ) ENGINE = engine
   *

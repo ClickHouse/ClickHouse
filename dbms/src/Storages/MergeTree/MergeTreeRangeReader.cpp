@@ -5,7 +5,7 @@
 #include <ext/range.h>
 #include <DataTypes/DataTypeNothing.h>
 
-#if __SSE2__
+#ifdef __SSE2__
 #include <emmintrin.h>
 #endif
 
@@ -254,12 +254,12 @@ void MergeTreeRangeReader::ReadResult::optimize()
     }
 }
 
-size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & filter, NumRows & zero_tails) const
+size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & filter_vec, NumRows & zero_tails) const
 {
     zero_tails.resize(0);
     zero_tails.reserve(rows_per_granule.size());
 
-    auto filter_data = filter.data();
+    auto filter_data = filter_vec.data();
 
     size_t total_zero_rows_in_tails = 0;
 
@@ -274,11 +274,11 @@ size_t MergeTreeRangeReader::ReadResult::countZeroTails(const IColumn::Filter & 
     return total_zero_rows_in_tails;
 }
 
-void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter & filter, IColumn::Filter & new_filter,
+void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter & filter_vec, IColumn::Filter & new_filter_vec,
                                                          const NumRows & zero_tails)
 {
-    auto filter_data = filter.data();
-    auto new_filter_data = new_filter.data();
+    auto filter_data = filter_vec.data();
+    auto new_filter_data = new_filter_vec.data();
 
     for (auto i : ext::range(0, rows_per_granule.size()))
     {
@@ -294,14 +294,14 @@ void MergeTreeRangeReader::ReadResult::collapseZeroTails(const IColumn::Filter &
         filter_data += filtered_rows_num_at_granule_end;
     }
 
-    new_filter.resize(new_filter_data - new_filter.data());
+    new_filter_vec.resize(new_filter_data - new_filter_vec.data());
 }
 
 size_t MergeTreeRangeReader::ReadResult::numZerosInTail(const UInt8 * begin, const UInt8 * end)
 {
     size_t count = 0;
 
-#if __SSE2__ && __POPCNT__
+#if defined(__SSE2__) && defined(__POPCNT__)
     const __m128i zero16 = _mm_setzero_si128();
     while (end - begin >= 64)
     {

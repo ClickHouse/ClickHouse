@@ -3,11 +3,11 @@ FROM
 (
     SELECT UserID, SearchPhrase
     FROM test.hits
-    WHERE CounterID = 731962 AND UserID IN
+    WHERE CounterID = 1704509 AND UserID IN
     (
         SELECT UserID
         FROM test.hits
-        WHERE notEmpty(SearchPhrase) AND CounterID = 731962
+        WHERE notEmpty(SearchPhrase) AND CounterID = 1704509
         GROUP BY UserID
         HAVING count() > 1
     )

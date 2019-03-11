@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -45,7 +46,7 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "default_expression";
     block.insert(col);
 
-    col.name = "comment_expression";
+    col.name = "comment";
     block.insert(col);
 
     col.name = "codec_expression";
@@ -83,30 +84,16 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
+            auto identifier = typeid_cast<const ASTIdentifier *>(table_expression->database_and_table_name.get());
+
             String database_name;
             String table_name;
-
-            auto identifier = table_expression->database_and_table_name;
-            if (identifier->children.size() > 2)
-                throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-
-            if (identifier->children.size() > 1)
-            {
-                auto database_ptr = identifier->children[0];
-                auto table_ptr = identifier->children[1];
-
-                if (database_ptr)
-                    database_name = typeid_cast<ASTIdentifier &>(*database_ptr).name;
-                if (table_ptr)
-                    table_name = typeid_cast<ASTIdentifier &>(*table_ptr).name;
-            }
-            else
-                table_name = typeid_cast<ASTIdentifier &>(*identifier).name;
+            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(*identifier);
 
             table = context.getTable(database_name, table_name);
         }
 
-        auto table_lock = table->lockStructure(false);
+        auto table_lock = table->lockStructureForShare(false, context.getCurrentQueryId());
         columns = table->getColumns().getAll();
         column_defaults = table->getColumns().defaults;
         column_comments = table->getColumns().comments;

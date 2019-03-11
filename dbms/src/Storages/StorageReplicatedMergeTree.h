@@ -112,17 +112,19 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
 
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & query_context) override;
+    void alter(
+        const AlterCommands & params, const String & database_name, const String & table_name,
+        const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
-
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+    CancellationCode killMutation(const String & mutation_id) override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
@@ -133,7 +135,10 @@ public:
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & /* query_context */) const override
+    {
+        return data.mayBenefitFromIndexForIn(left_in_operand);
+    }
 
     void checkTableCanBeDropped() const override;
 
@@ -153,6 +158,7 @@ public:
     struct Status
     {
         bool is_leader;
+        bool can_become_leader;
         bool is_readonly;
         bool is_session_expired;
         ReplicatedMergeTreeQueue::Status queue;
@@ -218,7 +224,7 @@ private:
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
-    Context & context;
+    Context global_context;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
     std::mutex current_zookeeper_mutex;            /// To recreate the session in the background thread.
@@ -372,8 +378,14 @@ private:
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id_path = "") const;
 
+    /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
+    void updatePartHeaderInZooKeeperAndCommit(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        MergeTreeData::AlterDataPartTransaction & transaction);
+
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops);
+    /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
+    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
@@ -397,7 +409,7 @@ private:
         const String & new_part_name,
         const MergeTreeData::DataPartPtr & result_part,
         const MergeTreeData::DataPartsVector & source_parts,
-        const MergeListEntry * merge_entry) const;
+        const MergeListEntry * merge_entry);
 
     void executeDropRange(const LogEntry & entry);
 
@@ -546,6 +558,7 @@ protected:
         bool attach,
         const String & path_, const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
+        const IndicesDescription & indices_,
         Context & context_,
         const String & date_column_name,
         const ASTPtr & partition_by_ast_,

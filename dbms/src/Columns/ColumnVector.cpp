@@ -12,11 +12,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
+#include <pdqsort.h>
 
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
-#include <Columns/ColumnsCommon.h>
-
 #endif
 
 
@@ -90,9 +89,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     else
     {
         if (reverse)
-            std::sort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+            pdqsort(res.begin(), res.end(), greater(*this, nan_direction_hint));
         else
-            std::sort(res.begin(), res.end(), less(*this, nan_direction_hint));
+            pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
     }
 }
 
@@ -142,7 +141,7 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    memcpy(&data[old_size], &src_vec.data[start], length * sizeof(data[0]));
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
 template <typename T>
@@ -162,7 +161,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const UInt8 * filt_end = filt_pos + size;
     const T * data_pos = data.data();
 
-#if __SSE2__
+#ifdef __SSE2__
     /** A slightly more optimized version.
         * Based on the assumption that often pieces of consecutive values
         *  completely pass or do not pass the filter.

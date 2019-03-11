@@ -10,8 +10,9 @@
 #include <optional>
 
 #include <Common/config.h>
-#include <common/MultiVersion.h>
+#include <Common/MultiVersion.h>
 #include <Common/LRUCache.h>
+#include <Common/ThreadPool.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Block.h>
@@ -74,8 +75,6 @@ class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
-struct SystemLogs;
-using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
@@ -100,6 +99,15 @@ using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(Context &)>;
 
+/// An empty interface for an arbitrary object that may be attached by a shared pointer
+/// to query context, when using ClickHouse as a library.
+struct IHostContext
+{
+    virtual ~IHostContext() = default;
+};
+
+using IHostContextPtr = std::shared_ptr<IHostContext>;
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -111,8 +119,6 @@ class Context
 private:
     using Shared = std::shared_ptr<ContextShared>;
     Shared shared;
-
-    std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -132,7 +138,6 @@ private:
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
-    SystemLogsPtr system_logs;              /// Used to log queries and operations on parts
 
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
@@ -143,15 +148,22 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
+    IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
+                                   /// when using ClickHouse as a library in some project. For example, it may contain host
+                                   /// logger, some query identification information, profiling guards, etc. This field is
+                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
+                                   /// methods.
+
     /// Use copy constructor or createGlobal() instead
     Context();
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
+    static Context createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
     Context(const Context &) = default;
+    Context & operator=(const Context &) = default;
     ~Context();
 
     String getPath() const;
@@ -234,6 +246,8 @@ public:
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
 
+    void killCurrentQuery();
+
     void setInsertionTable(std::pair<String, String> && db_and_table) { insertion_table = db_and_table; }
     const std::pair<String, String> & getInsertionTable() const { return insertion_table; }
 
@@ -263,7 +277,7 @@ public:
     void tryCreateExternalModels() const;
 
     /// I/O formats.
-    BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const;
+    BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
@@ -328,10 +342,10 @@ public:
 
 
     void setProgressCallback(ProgressCallback callback);
-    /// Used in InterpreterSelectQuery to pass it to the IProfilingBlockInputStream.
+    /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
     ProgressCallback getProgressCallback() const;
 
-    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IProfilingBlockInputStream,
+    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.
       */
     void setProcessListElement(QueryStatus * elem);
@@ -372,7 +386,7 @@ public:
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundSchedulePool & getSchedulePool();
 
-    void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+    void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 
     Clusters & getClusters() const;
@@ -400,11 +414,11 @@ public:
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
-    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size);
+    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const;
 
     /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxPartitionSizeToDrop(size_t max_size);
-    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size);
+    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -453,6 +467,9 @@ public:
     /// Add started bridge command. It will be killed after context destruction
     void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd);
 
+    IHostContextPtr & getHostContext();
+    const IHostContextPtr & getHostContext() const;
+
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
@@ -471,7 +488,7 @@ private:
     /// Session will be closed after specified timeout.
     void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
 
-    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop);
+    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
 };
 
 
@@ -520,7 +537,7 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     std::atomic<bool> quit{false};
-    std::thread thread{&SessionCleaner::run, this};
+    ThreadFromGlobalPool thread{&SessionCleaner::run, this};
 };
 
 }

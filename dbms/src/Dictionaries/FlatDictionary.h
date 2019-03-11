@@ -28,8 +28,6 @@ public:
         bool require_nonempty,
         BlockPtr saved_block = nullptr);
 
-    FlatDictionary(const FlatDictionary & other);
-
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
     std::string getName() const override { return name; }
@@ -48,7 +46,10 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<FlatDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override
+    {
+        return std::make_unique<FlatDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

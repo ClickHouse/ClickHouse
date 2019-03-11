@@ -154,7 +154,8 @@ Normally we release and run all tests on a single variant of ClickHouse build. B
 - build on FreeBSD;
 - build on Debian with libraries from system packages;
 - build with shared linking of libraries;
-- build on AArch64 platform.
+- build on AArch64 platform;
+- build on PowerPc platform.
 
 For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
 

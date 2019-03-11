@@ -233,7 +233,10 @@ void ColumnArray::insertFrom(const IColumn & src_, size_t n)
 
 void ColumnArray::insertDefault()
 {
-    getOffsets().push_back(getOffsets().back());
+    /// NOTE 1: We can use back() even if the array is empty (due to zero -1th element in PODArray).
+    /// NOTE 2: We cannot use reference in push_back, because reference get invalidated if array is reallocated.
+    auto last_offset = getOffsets().back();
+    getOffsets().push_back(last_offset);
 }
 
 
@@ -308,6 +311,13 @@ size_t ColumnArray::allocatedBytes() const
 }
 
 
+void ColumnArray::protect()
+{
+    getData().protect();
+    getOffsets().protect();
+}
+
+
 bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 {
     if (offsets == other.offsets)
@@ -361,7 +371,7 @@ void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t leng
     const ColumnArray & src_concrete = static_cast<const ColumnArray &>(src);
 
     if (start + length > src_concrete.getOffsets().size())
-        throw Exception("Parameter out of bound in ColumnArray::insertRangeFrom method.",
+        throw Exception("Parameter out of bound in ColumnArray::insertRangeFrom method. [start(" + std::to_string(start) + ") + length(" + std::to_string(length) + ") > offsets.size(" + std::to_string(src_concrete.getOffsets().size()) + ")]",
             ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     size_t nested_offset = src_concrete.offsetAt(start);

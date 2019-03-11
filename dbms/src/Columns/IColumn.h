@@ -43,7 +43,7 @@ public:
     virtual const char * getFamilyName() const = 0;
 
     /** If column isn't constant, returns nullptr (or itself).
-      * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
+      * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
       */
     virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
 
@@ -149,7 +149,7 @@ public:
     virtual void insertDefault() = 0;
 
     /** Removes last n elements.
-      * Is used to support exeption-safety of several operations.
+      * Is used to support exception-safety of several operations.
       *  For example, sometimes insertion should be reverted if we catch an exception during operation processing.
       * If column has less than n elements or n == 0 - undefined behavior.
       */
@@ -234,8 +234,8 @@ public:
     virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
 
     /** Computes minimum and maximum element of the column.
-      * In addition to numeric types, the funtion is completely implemented for Date and DateTime.
-      * For strings and arrays function should retrurn default value.
+      * In addition to numeric types, the function is completely implemented for Date and DateTime.
+      * For strings and arrays function should return default value.
       *  (except for constant columns; they should return value of the constant).
       * If column is empty function should return default value.
       */
@@ -252,6 +252,10 @@ public:
     /// This is greater or equals to byteSize due to memory reservation in containers.
     /// Zero, if could be determined.
     virtual size_t allocatedBytes() const = 0;
+
+    /// Make memory region readonly with mprotect if it is large enough.
+    /// The operation is slow and performed only for debug builds.
+    virtual void protect() {}
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
@@ -330,7 +334,9 @@ public:
     virtual bool lowCardinality() const { return false; }
 
 
-    virtual ~IColumn() {}
+    virtual ~IColumn() = default;
+    IColumn() = default;
+    IColumn(const IColumn &) = default;
 
     /** Print column name, size, and recursively print all subcolumns.
       */

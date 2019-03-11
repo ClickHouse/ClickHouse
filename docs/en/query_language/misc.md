@@ -31,13 +31,13 @@ The query response contains the `result` column with a single row. The row has a
 
 - 0 - The data in the table is corrupted.
 - 1 - The data maintains integrity.
- 
+
 The `CHECK TABLE` query is only supported for the following table engines:
 
 - [Log](../operations/table_engines/log.md)
 - [TinyLog](../operations/table_engines/tinylog.md)
-- StripeLog
- 
+- [StripeLog](../operations/table_engines/stripelog.md)
+
 These engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
 To avoid data loss use the [MergeTree](../operations/table_engines/mergetree.md) family tables.
@@ -135,9 +135,34 @@ The response contains the `kill_status` column, which can take the following val
 
 A test query (`TEST`) only checks the user's rights and displays a list of queries to stop.
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/misc/) <!--hide-->
+## KILL MUTATION {#kill-mutation}
 
-## OPTIMIZE
+```sql
+KILL MUTATION [ON CLUSTER cluster]
+  WHERE <where expression to SELECT FROM system.mutations query>
+  [TEST]
+  [FORMAT format]
+```
+
+Tries to cancel and remove [mutations](alter.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../operations/system_tables.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
+
+A test query (`TEST`) only checks the user's rights and displays a list of queries to stop.
+
+Examples:
+
+```sql
+-- Cancel and remove all mutations of the single table:
+KILL MUTATION WHERE database = 'default' AND table = 'table'
+
+-- Cancel the specific mutation:
+KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = 'mutation_3.txt'
+```
+
+The query is useful when a mutation is stuck and cannot finish (e.g. if some function in the mutation query throws an exception when applied to the data contained in the table).
+
+Changes already made by the mutation are not rolled back.
+
+## OPTIMIZE {#misc_operations-optimize}
 
 ``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
@@ -182,7 +207,7 @@ SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
 
-## SHOW DATABASES
+## SHOW DATABASES {#show-databases}
 
 ``` sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
@@ -217,7 +242,7 @@ Prints a table containing the columns:
 
 **query_id** – The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
 
-This query is identical to: `SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format]`.
+This query is nearly identical to: `SELECT * FROM system.processes`. The difference is that the `SHOW PROCESSLIST` query does not show itself in a list, when the `SELECT .. FROM system.processes` query does.
 
 Tip (execute in the console):
 
@@ -259,3 +284,5 @@ USE db
 Lets you set the current database for the session.
 The current database is used for searching for tables if the database is not explicitly defined in the query with a dot before the table name.
 This query can't be made when using the HTTP protocol, since there is no concept of a session.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/misc/) <!--hide-->

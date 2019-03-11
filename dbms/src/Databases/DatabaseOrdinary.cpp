@@ -7,10 +7,11 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -273,7 +274,7 @@ void DatabaseOrdinary::createTable(
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         if (tables.find(table_name) != tables.end())
             throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     }
@@ -298,7 +299,7 @@ void DatabaseOrdinary::createTable(
     {
         /// Add a table to the map of known tables.
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             if (!tables.emplace(table_name, table).second)
                 throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
         }
@@ -336,14 +337,19 @@ void DatabaseOrdinary::removeTable(
 
 static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true)
 {
-    if (!Poco::File(metadata_path).exists())
-        return nullptr;
-
     String query;
 
+    try
     {
         ReadBufferFromFile in(metadata_path, 4096);
         readStringUntilEOF(query, in);
+    }
+    catch (const Exception & e)
+    {
+        if (!throw_on_error && e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            return nullptr;
+        else
+            throw;
     }
 
     ParserCreateQuery parser;
@@ -492,7 +498,7 @@ void DatabaseOrdinary::shutdown()
 
     Tables tables_snapshot;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         tables_snapshot = tables;
     }
 
@@ -501,19 +507,20 @@ void DatabaseOrdinary::shutdown()
         kv.second->shutdown();
     }
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     tables.clear();
 }
 
 void DatabaseOrdinary::alterTable(
     const Context & context,
-    const String & name,
+    const String & table_name,
     const ColumnsDescription & columns,
+    const IndicesDescription & indices,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
 
-    String table_name_escaped = escapeForFileName(name);
+    String table_name_escaped = escapeForFileName(table_name);
     String table_metadata_tmp_path = metadata_path + "/" + table_name_escaped + ".sql.tmp";
     String table_metadata_path = metadata_path + "/" + table_name_escaped + ".sql";
     String statement;
@@ -530,7 +537,14 @@ void DatabaseOrdinary::alterTable(
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
-    ast_create_query.replace(ast_create_query.columns, new_columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
+
+    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+
+    if (ast_create_query.columns_list->indices)
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
+    else
+        ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);

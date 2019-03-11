@@ -25,7 +25,7 @@ void BlockInfo::write(WriteBuffer & out) const
     writeVarUInt(FIELD_NUM, out); \
     writeBinary(NAME, out);
 
-    APPLY_FOR_BLOCK_INFO_FIELDS(WRITE_FIELD);
+    APPLY_FOR_BLOCK_INFO_FIELDS(WRITE_FIELD)
 
 #undef WRITE_FIELD
     writeVarUInt(0, out);
@@ -49,7 +49,7 @@ void BlockInfo::read(ReadBuffer & in)
                 readBinary(NAME, in); \
                 break;
 
-            APPLY_FOR_BLOCK_INFO_FIELDS(READ_FIELD);
+            APPLY_FOR_BLOCK_INFO_FIELDS(READ_FIELD)
 
         #undef READ_FIELD
             default:

@@ -8,22 +8,22 @@
 # Short-Description: Yandex clickhouse-server daemon
 ### END INIT INFO
 
-
 CLICKHOUSE_USER=clickhouse
 CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 SHELL=/bin/bash
 PROGRAM=clickhouse-server
-GENERIC_PROGRAM=clickhouse
+CLICKHOUSE_GENERIC_PROGRAM=clickhouse
 CLICKHOUSE_PROGRAM_ENV=""
-EXTRACT_FROM_CONFIG=${GENERIC_PROGRAM}-extract-from-config
-SYSCONFDIR=/etc/$PROGRAM
+EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
+CLICKHOUSE_CONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
 CLICKHOUSE_DATADIR_OLD=/opt/clickhouse
+CLICKHOUSE_DATADIR=/var/lib/clickhouse
 LOCALSTATEDIR=/var/lock
-BINDIR=/usr/bin
+CLICKHOUSE_BINDIR=/usr/bin
 CLICKHOUSE_CRONFILE=/etc/cron.d/clickhouse-server
-CLICKHOUSE_CONFIG=$SYSCONFDIR/config.xml
+CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 LOCKFILE=$LOCALSTATEDIR/$PROGRAM
 RETVAL=0
 
@@ -92,22 +92,22 @@ die()
 # Check that configuration file is Ok.
 check_config()
 {
-    if [ -x "$BINDIR/$EXTRACT_FROM_CONFIG" ]; then
-        su -s $SHELL ${CLICKHOUSE_USER} -c "$BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path" >/dev/null || die "Configuration file ${CLICKHOUSE_CONFIG} doesn't parse successfully. Won't restart server. You may use forcerestart if you are sure.";
+    if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ]; then
+        su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path" >/dev/null || die "Configuration file ${CLICKHOUSE_CONFIG} doesn't parse successfully. Won't restart server. You may use forcerestart if you are sure.";
     fi
 }
 
 
 initdb()
 {
-    if [ -x "$BINDIR/$EXTRACT_FROM_CONFIG" ]; then
-        CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
+    if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ]; then
+        CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
         if [ "(" "$?" -ne "0" ")" -o "(" -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ")" ]; then
             die "Cannot obtain value of path from config file: ${CLICKHOUSE_CONFIG}";
         fi
         echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
     else
-        CLICKHOUSE_DATADIR_FROM_CONFIG="/var/lib/clickhouse"
+        CLICKHOUSE_DATADIR_FROM_CONFIG=$CLICKHOUSE_DATADIR
     fi
 
     if ! getent group ${CLICKHOUSE_USER} >/dev/null; then
@@ -148,7 +148,7 @@ initdb()
 
 start()
 {
-    [ -x $BINDIR/$PROGRAM ] || exit 0
+    [ -x $CLICKHOUSE_BINDIR/$PROGRAM ] || exit 0
     local EXIT_STATUS
     EXIT_STATUS=0
 
@@ -165,7 +165,7 @@ start()
         if ! is_running; then
             # Lock should not be held while running child process, so we release the lock. Note: obviously, there is race condition.
             # But clickhouse-server has protection from simultaneous runs with same data directory.
-            su -s $SHELL ${CLICKHOUSE_USER} -c "$FLOCK -u 9; $CLICKHOUSE_PROGRAM_ENV exec -a \"$PROGRAM\" \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
+            su -s $SHELL ${CLICKHOUSE_USER} -c "$FLOCK -u 9; $CLICKHOUSE_PROGRAM_ENV exec -a \"$PROGRAM\" \"$CLICKHOUSE_BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
             EXIT_STATUS=$?
             if [ $EXIT_STATUS -ne 0 ]; then
                 break
@@ -174,7 +174,16 @@ start()
     fi
 
     if [ $EXIT_STATUS -eq 0 ]; then
-        echo "DONE"
+        attempts=0
+        while ! is_running && [ $attempts -le 10 ]; do
+            attempts=$(($attempts + 1))
+            sleep 1
+        done
+        if is_running; then
+            echo "DONE"
+        else
+            echo "UNKNOWN"
+        fi
     else
         echo "FAILED"
     fi

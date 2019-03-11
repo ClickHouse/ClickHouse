@@ -13,6 +13,7 @@
 #include <Core/Types.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -132,6 +133,9 @@ private:
     bool is_initialized = false;
 
     /// Protects only objects map.
+    /** Reading and assignment of "loadable" should be done under mutex.
+      * Creating new versions of "loadable" should not be done under mutex.
+      */
     mutable std::mutex map_mutex;
 
     /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
@@ -157,7 +161,7 @@ private:
 
     std::unique_ptr<IExternalLoaderConfigRepository> config_repository;
 
-    std::thread reloading_thread;
+    ThreadFromGlobalPool reloading_thread;
     Poco::Event destroy;
 
     Logger * log;

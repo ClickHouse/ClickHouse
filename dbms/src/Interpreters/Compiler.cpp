@@ -87,7 +87,7 @@ SharedLibraryPtr Compiler::getOrCount(
 {
     HashedKey hashed_key = getHash(key);
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     UInt32 count = ++counts[hashed_key];
 
@@ -142,40 +142,37 @@ SharedLibraryPtr Compiler::getOrCount(
     {
         /// The min_count_to_compile value of zero indicates the need for synchronous compilation.
 
-        /// Are there any free threads?
-        if (min_count_to_compile == 0 || pool.active() < pool.size())
+        /// Indicates that the library is in the process of compiling.
+        libraries[hashed_key] = nullptr;
+
+        LOG_INFO(log, "Compiling code " << file_name << ", key: " << key);
+
+        if (min_count_to_compile == 0)
         {
-            /// Indicates that the library is in the process of compiling.
-            libraries[hashed_key] = nullptr;
-
-            LOG_INFO(log, "Compiling code " << file_name << ", key: " << key);
-
-            if (min_count_to_compile == 0)
             {
-                {
-                    ext::unlock_guard<std::mutex> unlock(mutex);
-                    compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
-                }
+                ext::unlock_guard<std::mutex> unlock(mutex);
+                compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
+            }
 
-                return libraries[hashed_key];
-            }
-            else
-            {
-                pool.schedule([=]
-                {
-                    try
-                    {
-                        compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("Compiler");
-                    }
-                });
-            }
+            return libraries[hashed_key];
         }
         else
-            LOG_INFO(log, "All threads are busy.");
+        {
+            bool res = pool.trySchedule([=]
+            {
+                try
+                {
+                    compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("Compiler");
+                }
+            });
+
+            if (!res)
+                LOG_INFO(log, "All threads are busy.");
+        }
     }
 
     return nullptr;
@@ -186,10 +183,10 @@ SharedLibraryPtr Compiler::getOrCount(
 static void addCodeToAssertHeadersMatch(WriteBuffer & out)
 {
     out <<
-        "#define STRING2(x) #x\n"
-        "#define STRING(x) STRING2(x)\n"
         "#include <Common/config_version.h>\n"
         "#if VERSION_REVISION != " << ClickHouseRevision::get() << "\n"
+        "#define STRING2(x) #x\n"
+        "#define STRING(x) STRING2(x)\n"
         "#pragma message \"ClickHouse headers revision = \" STRING(VERSION_REVISION) \n"
         "#error \"ClickHouse headers revision doesn't match runtime revision of the server (" << ClickHouseRevision::get() << ").\"\n"
         "#endif\n\n";
@@ -273,7 +270,7 @@ void Compiler::compile(
             << " 2>&1"
         ") || echo Return code: $?";
 
-#if !NDEBUG
+#ifndef NDEBUG
     LOG_TRACE(log, "Compile command: " << command.str());
 #endif
 
@@ -306,7 +303,7 @@ void Compiler::compile(
     SharedLibraryPtr lib(new SharedLibrary(so_file_path));
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         libraries[hashed_key] = lib;
     }
 

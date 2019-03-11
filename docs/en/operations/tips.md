@@ -1,27 +1,11 @@
 # Usage Recommendations
 
-## CPU
-
-The SSE 4.2 instruction set must be supported. Modern processors (since 2008) support it.
-
-When choosing a processor, prefer a large number of cores and slightly slower clock rate over fewer cores and a higher clock rate.
-For example, 16 cores with 2600 MHz is better than 8 cores with 3600 MHz.
-
-## Hyper-threading
-
-Don't disable hyper-threading. It helps for some queries, but not for others.
-
-## Turbo Boost
-
-Turbo Boost is highly recommended. It significantly improves performance with a typical load.
-You can use `turbostat` to view the CPU's actual clock rate under a load.
-
 ## CPU Scaling Governor
 
 Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
-sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## CPU Limitations
@@ -31,18 +15,14 @@ The restriction can also be set externally at the datacenter level. You can use 
 
 ## RAM
 
-For small amounts of data (up to \~200 GB compressed), it is best to use as much memory as the volume of data.
+For small amounts of data (up to ~200 GB compressed), it is best to use as much memory as the volume of data.
 For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
-Even for data volumes of \~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
+Even for data volumes of ~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
 
 Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
 ```
 echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
-
-## Swap File
-
-Always disable the swap file. The only reason for not doing this is if you are using ClickHouse on your personal laptop.
 
 ## Huge Pages
 

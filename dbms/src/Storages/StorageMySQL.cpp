@@ -4,7 +4,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Dictionaries/MySQLBlockInputStream.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/Context.h>
@@ -42,7 +42,7 @@ StorageMySQL::StorageMySQL(const std::string & name,
     , replace_query{replace_query}
     , on_duplicate_clause{on_duplicate_clause}
     , pool(std::move(pool))
-    , context(context)
+    , global_context(context)
 {
 }
 
@@ -60,9 +60,9 @@ BlockInputStreams StorageMySQL::read(
         *query_info.query, getColumns().ordinary, IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
 
     Block sample_block;
-    for (const String & name : column_names)
+    for (const String & column_name : column_names)
     {
-        auto column_data = getColumn(name);
+        auto column_data = getColumn(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -114,7 +114,7 @@ public:
         sqlbuf << backQuoteIfNeed(remote_database_name) << "." << backQuoteIfNeed(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.context);
+        auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.global_context);
         writer->write(block);
 
         if (!storage.on_duplicate_clause.empty())
@@ -141,7 +141,7 @@ public:
         const size_t columns = block.columns();
         const size_t rows = block.rows();
         size_t offsets = 0;
-        size_t limits = max_batch_rows;
+        UInt64 limits = max_batch_rows;
         for (size_t idx = 0; idx < splited_block_size; ++idx)
         {
             /// For last batch, limits should be the remain size
@@ -179,9 +179,9 @@ private:
 
 
 BlockOutputStreamPtr StorageMySQL::write(
-    const ASTPtr & /*query*/, const Settings & settings)
+    const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), settings.mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)

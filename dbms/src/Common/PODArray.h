@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <cstddef>
+#include <cassert>
 #include <algorithm>
 #include <memory>
 
@@ -16,9 +17,18 @@
 #include <Common/BitHelpers.h>
 #include <Common/memcpySmall.h>
 
+#ifndef NDEBUG
+    #include <sys/mman.h>
+#endif
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_MPROTECT;
+}
 
 inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
 {
@@ -107,6 +117,8 @@ protected:
         if (c_start == null)
             return;
 
+        unprotect();
+
         TAllocator::free(c_start - pad_left, allocated_bytes());
     }
 
@@ -119,6 +131,8 @@ protected:
             return;
         }
 
+        unprotect();
+
         ptrdiff_t end_diff = c_end - c_start;
 
         c_start = reinterpret_cast<char *>(
@@ -127,9 +141,6 @@ protected:
 
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
-
-        if (pad_left)
-            memset(c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
     }
 
     bool isInitialized() const
@@ -157,11 +168,34 @@ protected:
             realloc(allocated_bytes() * 2, std::forward<TAllocatorParams>(allocator_params)...);
     }
 
+#ifndef NDEBUG
+    /// Make memory region readonly with mprotect if it is large enough.
+    /// The operation is slow and performed only for debug builds.
+    void protectImpl(int prot)
+    {
+        static constexpr size_t PAGE_SIZE = 4096;
+
+        char * left_rounded_up = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_start) - pad_left + PAGE_SIZE - 1) / PAGE_SIZE * PAGE_SIZE);
+        char * right_rounded_down = reinterpret_cast<char *>((reinterpret_cast<intptr_t>(c_end_of_storage) + pad_right) / PAGE_SIZE * PAGE_SIZE);
+
+        if (right_rounded_down > left_rounded_up)
+        {
+            size_t length = right_rounded_down - left_rounded_up;
+            if (0 != mprotect(left_rounded_up, length, prot))
+                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+        }
+    }
+
+    /// Restore memory protection in destructor or realloc for further reuse by allocator.
+    bool mprotected = false;
+#endif
+
 public:
     bool empty() const { return c_end == c_start; }
     size_t size() const { return (c_end - c_start) / ELEMENT_SIZE; }
     size_t capacity() const { return (c_end_of_storage - c_start) / ELEMENT_SIZE; }
 
+    /// This method is safe to use only for information about memory usage.
     size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; }
 
     void clear() { c_end = c_start; }
@@ -198,6 +232,23 @@ public:
 
         memcpy(c_end, ptr, ELEMENT_SIZE);
         c_end += byte_size(1);
+    }
+
+    void protect()
+    {
+#ifndef NDEBUG
+        protectImpl(PROT_READ);
+        mprotected = true;
+#endif
+    }
+
+    void unprotect()
+    {
+#ifndef NDEBUG
+        if (mprotected)
+            protectImpl(PROT_WRITE);
+        mprotected = false;
+#endif
     }
 
     ~PODArrayBase()
@@ -274,8 +325,18 @@ public:
     const T * data() const { return t_start(); }
 
     /// The index is signed to access -1th element without pointer overflow.
-    T & operator[] (ssize_t n)                 { return t_start()[n]; }
-    const T & operator[] (ssize_t n) const     { return t_start()[n]; }
+    T & operator[] (ssize_t n)
+    {
+        /// <= size, because taking address of one element past memory range is Ok in C++ (expression like &arr[arr.size()] is perfectly valid).
+        assert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
+        return t_start()[n];
+    }
+
+    const T & operator[] (ssize_t n) const
+    {
+        assert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
+        return t_start()[n];
+    }
 
     T & front()             { return t_start()[0]; }
     T & back()              { return t_end()[-1]; }
@@ -312,13 +373,13 @@ public:
         this->c_end = this->c_start + this->byte_size(n);
     }
 
-    template <typename ... TAllocatorParams>
-    void push_back(const T & x, TAllocatorParams &&... allocator_params)
+    template <typename U, typename ... TAllocatorParams>
+    void push_back(U && x, TAllocatorParams &&... allocator_params)
     {
         if (unlikely(this->c_end == this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
-        *t_end() = x;
+        new (t_end()) T(std::forward<U>(x));
         this->c_end += this->byte_size(1);
     }
 
@@ -393,6 +454,11 @@ public:
 
     void swap(PODArray & rhs)
     {
+#ifndef NDEBUG
+        this->unprotect();
+        rhs.unprotect();
+#endif
+
         /// Swap two PODArray objects, arr1 and arr2, that satisfy the following conditions:
         /// - The elements of arr1 are stored on stack.
         /// - The elements of arr2 are stored on heap.
@@ -441,7 +507,9 @@ public:
         };
 
         if (!this->isInitialized() && !rhs.isInitialized())
+        {
             return;
+        }
         else if (!this->isInitialized() && rhs.isInitialized())
         {
             do_move(rhs, *this);
@@ -485,9 +553,13 @@ public:
             rhs.c_end = rhs.c_start + this->byte_size(lhs_size);
         }
         else if (this->isAllocatedFromStack() && !rhs.isAllocatedFromStack())
+        {
             swap_stack_heap(*this, rhs);
+        }
         else if (!this->isAllocatedFromStack() && rhs.isAllocatedFromStack())
+        {
             swap_stack_heap(rhs, *this);
+        }
         else
         {
             std::swap(this->c_start, rhs.c_start);

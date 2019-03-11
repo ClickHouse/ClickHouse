@@ -43,12 +43,6 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
     creation_time = std::chrono::system_clock::now();
 }
 
-ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(const ComplexKeyHashedDictionary & other)
-    : ComplexKeyHashedDictionary{
-          other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty, other.saved_block}
-{
-}
-
 #define DECLARE(TYPE) \
     void ComplexKeyHashedDictionary::get##TYPE( \
         const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
@@ -617,7 +611,7 @@ void ComplexKeyHashedDictionary::getItemsImpl(
         const auto key = placeKeysInPool(i, key_columns, keys, temporary_keys_pool);
 
         const auto it = attr.find(key);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(it->second) : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(it->getSecond()) : get_default(i));
 
         /// free memory allocated for the key
         temporary_keys_pool.rollback(key.size);
@@ -785,7 +779,7 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute & att
     std::vector<StringRef> keys;
     keys.reserve(attr.size());
     for (const auto & key : attr)
-        keys.push_back(key.first);
+        keys.push_back(key.getFirst());
 
     return keys;
 }

@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Parsers/StringRange.h>
+#include <Parsers/IAST.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/SubqueryForSet.h>
 
 
 namespace DB
@@ -10,42 +12,10 @@ namespace DB
 class Context;
 class ASTFunction;
 
-
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-/// Will compare sets by their position in query string. It's possible because IAST::clone() doesn't chane IAST::range.
-/// It should be taken into account when we want to change AST part which contains sets.
-using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangePointersHash, StringRangePointersEqualTo>;
-
-class Join;
-using JoinPtr = std::shared_ptr<Join>;
-
-/// Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
-struct SubqueryForSet
-{
-    /// The source is obtained using the InterpreterSelectQuery subquery.
-    BlockInputStreamPtr source;
-
-    /// If set, build it from result.
-    SetPtr set;
-    JoinPtr join;
-    /// Apply this actions to joined block.
-    ExpressionActionsPtr joined_block_actions;
-    /// Rename column from joined block from this list.
-    NamesWithAliases joined_block_aliases;
-
-    /// If set, put the result into the table.
-    /// This is a temporary table for transferring to remote servers for distributed query processing.
-    StoragePtr table;
-};
-
-/// ID of subquery -> what to do with it.
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
-
-
-/// The case of an explicit enumeration of values.
-void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
-                     const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
+ /// The case of an explicit enumeration of values.
+SetPtr makeExplicitSet(
+    const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
+    const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
 
 
 /** For ActionsVisitor
@@ -111,7 +81,7 @@ private:
     std::ostream * ostr;
     ScopeStack actions_stack;
 
-    void makeSet(const ASTFunction * node, const Block & sample_block);
+    SetPtr makeSet(const ASTFunction * node, const Block & sample_block);
 };
 
 }

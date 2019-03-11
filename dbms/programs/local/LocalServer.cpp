@@ -17,6 +17,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -66,11 +67,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings(Context & context)
+void LocalServer::applyCmdSettings()
 {
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (cmd_settings.NAME.changed) \
-            context.getSettingsRef().NAME = cmd_settings.NAME;
+            context->getSettingsRef().NAME = cmd_settings.NAME;
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 }
@@ -102,7 +103,7 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     Logger * log = &logger();
-
+    ThreadStatus thread_status;
     UseSSL use_ssl;
 
     if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
@@ -137,7 +138,7 @@ try
     static KillingErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
 
-    /// Don't initilaize DateLUT
+    /// Don't initialize DateLUT
 
     registerFunctions();
     registerAggregateFunctions();
@@ -179,7 +180,7 @@ try
     std::string default_database = config().getString("default_database", "_local");
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
-    applyCmdOptions(*context);
+    applyCmdOptions();
 
     if (!context->getPath().empty())
     {
@@ -274,7 +275,7 @@ void LocalServer::processQueries()
 
     context->setUser("default", "", Poco::Net::SocketAddress{}, "");
     context->setCurrentQueryId("");
-    applyCmdSettings(*context);
+    applyCmdSettings();
 
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(*context);
@@ -296,7 +297,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {}, {});
         }
         catch (...)
         {
@@ -494,10 +495,10 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("ignore-error", true);
 }
 
-void LocalServer::applyCmdOptions(Context & context)
+void LocalServer::applyCmdOptions()
 {
-    context.setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
-    applyCmdSettings(context);
+    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings();
 }
 
 }
