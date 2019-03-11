@@ -81,7 +81,9 @@ public:
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    void alter(
+        const AlterCommands & params, const String & database_name, const String & table_name,
+        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
 private:
     String name;
