@@ -57,6 +57,11 @@ public:
         return chars.allocated_bytes() + sizeof(n);
     }
 
+    void protect() override
+    {
+        chars.protect();
+    }
+
     Field operator[](size_t index) const override
     {
         return String(reinterpret_cast<const char *>(&chars[n * index]), n);

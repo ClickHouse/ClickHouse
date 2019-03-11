@@ -513,13 +513,16 @@ void MergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i)    //-V756
             for (size_t j = 0; j < key_size; ++j)
-                storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j].get(), index_file);
+                storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j], index_file);
 
         for (size_t i = 0; i < key_size; ++i)
+        {
+            loaded_index[i]->protect();
             if (loaded_index[i]->size() != marks_count)
                 throw Exception("Cannot read all data from index file " + index_path
                     + "(expected size: " + toString(marks_count) + ", read: " + toString(loaded_index[i]->size()) + ")",
                     ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
 
         if (!index_file.eof())
             throw Exception("Index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);

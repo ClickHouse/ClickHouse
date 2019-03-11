@@ -315,6 +315,12 @@ size_t ColumnTuple::allocatedBytes() const
     return res;
 }
 
+void ColumnTuple::protect()
+{
+    for (auto & column : columns)
+        column->assumeMutableRef().protect();
+}
+
 void ColumnTuple::getExtremes(Field & min, Field & max) const
 {
     const size_t tuple_size = columns.size();
