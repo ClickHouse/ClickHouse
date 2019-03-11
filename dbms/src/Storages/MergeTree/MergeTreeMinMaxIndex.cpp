@@ -17,9 +17,11 @@ namespace ErrorCodes
 
 
 MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index)
-    : IMergeTreeIndexGranule(), index(index), parallelogram()
-{
-}
+    : IMergeTreeIndexGranule(), index(index), parallelogram() {}
+
+MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(
+    const MergeTreeMinMaxIndex & index, std::vector<Range> && parallelogram)
+    : IMergeTreeIndexGranule(), index(index), parallelogram(std::move(parallelogram)) {}
 
 void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
 {
@@ -51,7 +53,16 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
     }
 }
 
-void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
+
+MergeTreeMinMaxAggregator::MergeTreeMinMaxAggregator(const MergeTreeMinMaxIndex & index)
+    : index(index) {}
+
+MergeTreeIndexGranulePtr MergeTreeMinMaxAggregator::getGranuleAndReset()
+{
+    return std::make_shared<MergeTreeMinMaxGranule>(index, std::move(parallelogram));
+}
+
+void MergeTreeMinMaxAggregator::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -108,6 +119,13 @@ MergeTreeIndexGranulePtr MergeTreeMinMaxIndex::createIndexGranule() const
 {
     return std::make_shared<MergeTreeMinMaxGranule>(*this);
 }
+
+
+MergeTreeIndexAggregatorPtr MergeTreeMinMaxIndex::createIndexAggregator() const
+{
+    return std::make_shared<MergeTreeMinMaxAggregator>(*this);
+}
+
 
 IndexConditionPtr MergeTreeMinMaxIndex::createIndexCondition(
     const SelectQueryInfo & query, const Context & context) const
