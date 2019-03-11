@@ -224,7 +224,7 @@ BlockInputStreams StorageMerge::read(
         current_streams = std::max(size_t(1), current_streams);
 
         StoragePtr storage = it->first;
-        TableStructureReadLockPtr struct_lock = it->second;
+        TableStructureReadLockHolder struct_lock = it->second;
 
         BlockInputStreams source_streams;
 
@@ -262,7 +262,7 @@ BlockInputStreams StorageMerge::read(
 
 BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
                                                     const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
-                                                    const TableStructureReadLockPtr & struct_lock, Names & real_column_names,
+                                                    const TableStructureReadLockHolder & struct_lock, Names & real_column_names,
                                                     Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                                     bool concat_streams)
 {
@@ -345,7 +345,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
         {
             auto & table = iterator->table();
             if (table.get() != this)
-                selected_tables.emplace_back(table, table->lockStructure(false, query_id));
+                selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id));
         }
 
         iterator->next();
@@ -375,7 +375,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
             if (storage.get() != this)
             {
                 virtual_column->insert(storage->getTableName());
-                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false, query_id) : TableStructureReadLockPtr{});
+                selected_tables.emplace_back(storage, get_lock ? storage->lockStructureForShare(false, query_id) : TableStructureReadLockHolder{});
             }
         }
 
@@ -395,9 +395,11 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
     return selected_tables;
 }
 
-void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageMerge::alter(
+    const AlterCommands & params, const String & database_name, const String & table_name,
+    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    auto lock = lockStructureForAlter(context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
     auto new_indices = getIndicesDescription();

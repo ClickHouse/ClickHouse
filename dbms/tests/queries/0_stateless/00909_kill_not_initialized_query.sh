@@ -36,11 +36,16 @@ sleep 1
 # Kill $query_for_pending SYNC. This query is not blocker, so it should be killed fast.
 timeout 5 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query='$query_for_pending' SYNC" &>/dev/null
 
-# But let's sleep a little time, just to be sure
-sleep 3
-
 # Both queries have to be killed, doesn't matter with SYNC or ASYNC kill
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_for_pending'"
-$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_to_kill'"
+for run in {1..15}
+do
+    sleep 1
+    no_first_query=`$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_for_pending'"`
+    no_second_query=`$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes where query='$query_to_kill'"`
+    if [ $no_first_query == "0" ] && [ $no_second_query == "0" ]; then
+        echo "killed"
+        break
+    fi
+done
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.cannot_kill_query" &>/dev/null

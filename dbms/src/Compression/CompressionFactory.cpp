@@ -19,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_CODEC;
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
 
@@ -85,7 +84,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
     if (family_code_and_creator == family_code_with_codec.end())
-        throw Exception("Unknown codec family code : " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
+        throw Exception("Unknown codec family code: " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
 
     return family_code_and_creator->second({}, nullptr);
 }
