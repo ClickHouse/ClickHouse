@@ -11,7 +11,7 @@ set(CLICKHOUSE_ODBC_BRIDGE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/validateODBCConnectionString.cpp
 )
 
-set(CLICKHOUSE_ODBC_BRIDGE_LINK PRIVATE daemon dbms clickhouse_common_io)
+set(CLICKHOUSE_ODBC_BRIDGE_LINK PRIVATE dbms clickhouse_common_io PUBLIC daemon)
 set(CLICKHOUSE_ODBC_BRIDGE_INCLUDE PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 if (USE_POCO_SQLODBC)
