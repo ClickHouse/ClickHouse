@@ -1,0 +1,6 @@
+#!/bin/sh
+
+set -e
+CMD=$1
+shift
+clickhouse-$CMD $*
