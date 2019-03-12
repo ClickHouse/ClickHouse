@@ -3,11 +3,12 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/IInterpreter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IInterpreter.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -16,7 +17,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class ASTSelectQuery;
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 
@@ -99,6 +99,8 @@ private:
         bool only_analyze_,
         bool modify_inplace);
 
+    ASTSelectQuery & getSelectQuery() { return *query_ptr->as<ASTSelectQuery>(); }
+
 
     struct Pipeline
     {
@@ -133,7 +135,6 @@ private:
         }
     };
 
-    ASTSelectQuery & selectQuery();
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
 
