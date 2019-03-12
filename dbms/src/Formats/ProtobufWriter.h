@@ -238,29 +238,29 @@ using ConstAggregateDataPtr = const char *;
 class ProtobufWriter
 {
 public:
-    bool writeNumber(Int8 value) { return false; }
-    bool writeNumber(UInt8 value) { return false; }
-    bool writeNumber(Int16 value) { return false; }
-    bool writeNumber(UInt16 value) { return false; }
-    bool writeNumber(Int32 value) { return false; }
-    bool writeNumber(UInt32 value) { return false; }
-    bool writeNumber(Int64 value) { return false; }
-    bool writeNumber(UInt64 value) { return false; }
-    bool writeNumber(UInt128 value) { return false; }
-    bool writeNumber(Float32 value) { return false; }
-    bool writeNumber(Float64 value) { return false; }
-    bool writeString(const StringRef & value) { return false; }
-    void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & name_value_pairs) {}
-    void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & name_value_pairs) {}
-    bool writeEnum(Int8 value) { return false; }
-    bool writeEnum(Int16 value) { return false; }
-    bool writeUUID(const UUID & value) { return false; }
-    bool writeDate(DayNum date) { return false; }
-    bool writeDateTime(time_t tm) { return false; }
-    bool writeDecimal(Decimal32 decimal, UInt32 scale) { return false; }
-    bool writeDecimal(Decimal64 decimal, UInt32 scale) { return false; }
-    bool writeDecimal(const Decimal128 & decimal, UInt32 scale) { return false; }
-    bool writeAggregateFunction(const AggregateFunctionPtr & function, ConstAggregateDataPtr place) { return false; }
+    bool writeNumber(Int8 /* value */) { return false; }
+    bool writeNumber(UInt8 /* value */) { return false; }
+    bool writeNumber(Int16 /* value */) { return false; }
+    bool writeNumber(UInt16 /* value */) { return false; }
+    bool writeNumber(Int32 /* value */) { return false; }
+    bool writeNumber(UInt32 /* value */) { return false; }
+    bool writeNumber(Int64 /* value */) { return false; }
+    bool writeNumber(UInt64 /* value */) { return false; }
+    bool writeNumber(UInt128 /* value */) { return false; }
+    bool writeNumber(Float32 /* value */) { return false; }
+    bool writeNumber(Float64 /* value */) { return false; }
+    bool writeString(const StringRef & /* value */) { return false; }
+    void prepareEnumMapping(const std::vector<std::pair<std::string, Int8>> & /* name_value_pairs */) {}
+    void prepareEnumMapping(const std::vector<std::pair<std::string, Int16>> & /* name_value_pairs */) {}
+    bool writeEnum(Int8 /* value */) { return false; }
+    bool writeEnum(Int16 /* value */) { return false; }
+    bool writeUUID(const UUID & /* value */) { return false; }
+    bool writeDate(DayNum /* date */) { return false; }
+    bool writeDateTime(time_t /* tm */) { return false; }
+    bool writeDecimal(Decimal32 /* decimal */, UInt32 /* scale */) { return false; }
+    bool writeDecimal(Decimal64 /* decimal */, UInt32 /* scale */) { return false; }
+    bool writeDecimal(const Decimal128 & /* decimal */, UInt32 /* scale */) { return false; }
+    bool writeAggregateFunction(const AggregateFunctionPtr & /* function */, ConstAggregateDataPtr /* place */) { return false; }
 };
 
 }

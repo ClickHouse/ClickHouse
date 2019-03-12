@@ -18,14 +18,19 @@ namespace ErrorCodes
 }
 
 /// 0b11 -- can be true and false at the same time
-const Field UNKNOWN_FIELD(3);
+const Field UNKNOWN_FIELD(3u);
 
 
 MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(const MergeTreeSetSkippingIndex & index)
-        : IMergeTreeIndexGranule(), index(index), set(new Set(SizeLimits{}, true))
-{
-    set->setHeader(index.header);
-}
+    : IMergeTreeIndexGranule()
+    , index(index)
+    , block(index.header.cloneEmpty()) {}
+
+MergeTreeSetIndexGranule::MergeTreeSetIndexGranule(
+    const MergeTreeSetSkippingIndex & index, MutableColumns && mutable_columns)
+    : IMergeTreeIndexGranule()
+    , index(index)
+    , block(index.header.cloneWithColumns(std::move(mutable_columns))) {}
 
 void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
 {
@@ -33,10 +38,9 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
         throw Exception(
                 "Attempt to write empty set index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & columns = set->getSetElements();
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
 
-    if (size() > index.max_rows)
+    if (index.max_rows && size() > index.max_rows)
     {
         size_type->serializeBinary(0, ostr);
         return;
@@ -47,74 +51,164 @@ void MergeTreeSetIndexGranule::serializeBinary(WriteBuffer & ostr) const
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & type = index.data_types[i];
-        type->serializeBinaryBulk(*columns[i], ostr, 0, size());
+
+        IDataType::SerializeBinaryBulkSettings settings;
+        settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
+        settings.position_independent_encoding = false;
+        settings.low_cardinality_max_dictionary_size = 0;
+
+        IDataType::SerializeBinaryBulkStatePtr state;
+        type->serializeBinaryBulkStatePrefix(settings, state);
+        type->serializeBinaryBulkWithMultipleStreams(*block.getByPosition(i).column, 0, size(), settings, state);
+        type->serializeBinaryBulkStateSuffix(settings, state);
     }
 }
 
 void MergeTreeSetIndexGranule::deserializeBinary(ReadBuffer & istr)
 {
-    if (!set->empty())
-    {
-        auto new_set = std::make_unique<Set>(SizeLimits{}, true);
-        new_set->setHeader(index.header);
-        set.swap(new_set);
-    }
+    block.clear();
 
-    Block block;
     Field field_rows;
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     size_type->deserializeBinary(field_rows, istr);
     size_t rows_to_read = field_rows.get<size_t>();
 
+    if (rows_to_read == 0)
+        return;
+
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & type = index.data_types[i];
         auto new_column = type->createColumn();
-        type->deserializeBinaryBulk(*new_column, istr, rows_to_read, 0);
+
+        IDataType::DeserializeBinaryBulkSettings settings;
+        settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
+        settings.position_independent_encoding = false;
+
+        IDataType::DeserializeBinaryBulkStatePtr state;
+        type->deserializeBinaryBulkStatePrefix(settings, state);
+        type->deserializeBinaryBulkWithMultipleStreams(*new_column, rows_to_read, settings, state);
 
         block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, index.columns[i]));
     }
-
-    set->insertFromBlock(block);
 }
 
-void MergeTreeSetIndexGranule::update(const Block & new_block, size_t * pos, size_t limit)
+
+MergeTreeSetIndexAggregator::MergeTreeSetIndexAggregator(const MergeTreeSetSkippingIndex & index)
+    : index(index), columns(index.header.cloneEmptyColumns())
 {
-    if (*pos >= new_block.rows())
+    ColumnRawPtrs column_ptrs;
+    column_ptrs.reserve(index.columns.size());
+    Columns materialized_columns;
+    for (const auto & column : index.header.getColumns())
+    {
+        materialized_columns.emplace_back(column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        column_ptrs.emplace_back(materialized_columns.back().get());
+    }
+
+    data.init(ClearableSetVariants::chooseMethod(column_ptrs, key_sizes));
+
+    columns = index.header.cloneEmptyColumns();
+}
+
+void MergeTreeSetIndexAggregator::update(const Block & block, size_t * pos, size_t limit)
+{
+    if (*pos >= block.rows())
         throw Exception(
                 "The provided position is not less than the number of block rows. Position: "
-                + toString(*pos) + ", Block rows: " + toString(new_block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
+                + toString(*pos) + ", Block rows: " + toString(block.rows()) + ".", ErrorCodes::LOGICAL_ERROR);
 
-    size_t rows_read = std::min(limit, new_block.rows() - *pos);
+    size_t rows_read = std::min(limit, block.rows() - *pos);
 
-    if (size() > index.max_rows)
+    if (index.max_rows && size() > index.max_rows)
     {
         *pos += rows_read;
         return;
     }
 
-    Block key_block;
-    for (size_t i = 0; i < index.columns.size(); ++i)
+    ColumnRawPtrs index_column_ptrs;
+    index_column_ptrs.reserve(index.columns.size());
+    Columns materialized_columns;
+    for (const auto & column_name : index.columns)
     {
-        const auto & name = index.columns[i];
-        const auto & type = index.data_types[i];
-        key_block.insert(
-                ColumnWithTypeAndName(
-                    new_block.getByName(name).column->cut(*pos, rows_read),
-                    type,
-                    name));
+        materialized_columns.emplace_back(
+                block.getByName(column_name).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        index_column_ptrs.emplace_back(materialized_columns.back().get());
     }
 
-    set->insertFromBlock(key_block);
+    IColumn::Filter filter(block.rows(), 0);
+
+    bool has_new_data = false;
+    switch (data.type)
+    {
+        case ClearableSetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+        case ClearableSetVariants::Type::NAME: \
+            has_new_data = buildFilter(*data.NAME, index_column_ptrs, filter, *pos, rows_read, data); \
+            break;
+        APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
+
+    if (has_new_data)
+    {
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            auto filtered_column = block.getByName(index.columns[i]).column->filter(filter, block.rows());
+            columns[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+        }
+    }
 
     *pos += rows_read;
 }
 
-Block MergeTreeSetIndexGranule::getElementsBlock() const
+template <typename Method>
+bool MergeTreeSetIndexAggregator::buildFilter(
+    Method & method,
+    const ColumnRawPtrs & column_ptrs,
+    IColumn::Filter & filter,
+    size_t pos,
+    size_t limit,
+    ClearableSetVariants & variants) const
 {
-    if (size() > index.max_rows)
-        return index.header;
-    return index.header.cloneWithColumns(set->getSetElements());
+    /// Like DistinctSortedBlockInputStream.
+    typename Method::State state(column_ptrs, key_sizes, nullptr);
+
+    bool has_new_data = false;
+    for (size_t i = 0; i < limit; ++i)
+    {
+        auto emplace_result = state.emplaceKey(method.data, pos + i, variants.string_pool);
+
+        if (emplace_result.isInserted())
+            has_new_data = true;
+
+        /// Emit the record if there is no such key in the current set yet.
+        /// Skip it otherwise.
+        filter[pos + i] = emplace_result.isInserted();
+    }
+    return has_new_data;
+}
+
+MergeTreeIndexGranulePtr MergeTreeSetIndexAggregator::getGranuleAndReset()
+{
+    auto granule = std::make_shared<MergeTreeSetIndexGranule>(index, std::move(columns));
+
+    switch (data.type)
+    {
+        case ClearableSetVariants::Type::EMPTY:
+            break;
+#define M(NAME) \
+        case ClearableSetVariants::Type::NAME: \
+            data.NAME->data.clear(); \
+            break;
+        APPLY_FOR_SET_VARIANTS(M)
+#undef M
+    }
+
+    columns = index.header.cloneEmptyColumns();
+
+    return granule;
 }
 
 
@@ -171,16 +265,30 @@ bool SetIndexCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule)
         throw Exception(
                 "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
-    if (useless || !granule->size() || granule->size() > index.max_rows)
+    if (useless || !granule->size() || (index.max_rows && granule->size() > index.max_rows))
         return true;
 
-    Block result = granule->getElementsBlock();
+    Block result = granule->block;
     actions->execute(result);
 
-    const auto & column = result.getByName(expression_ast->getColumnName()).column;
+    auto column = result.getByName(expression_ast->getColumnName()).column->convertToFullColumnIfLowCardinality();
+    auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
+
+    const NullMap * null_map = nullptr;
+
+    if (auto * col_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
+        null_map = &col_nullable->getNullMapData();
+    }
+
+    if (!col_uint8)
+        throw Exception("ColumnUInt8 expected as Set index condition result.", ErrorCodes::LOGICAL_ERROR);
+
+    auto & condition = col_uint8->getData();
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getInt(i) & 1)
+        if ((!null_map || (*null_map)[i] == 0) && condition[i] & 1)
             return true;
 
     return false;
@@ -344,8 +452,13 @@ MergeTreeIndexGranulePtr MergeTreeSetSkippingIndex::createIndexGranule() const
     return std::make_shared<MergeTreeSetIndexGranule>(*this);
 }
 
+MergeTreeIndexAggregatorPtr MergeTreeSetSkippingIndex::createIndexAggregator() const
+{
+    return std::make_shared<MergeTreeSetIndexAggregator>(*this);
+}
+
 IndexConditionPtr MergeTreeSetSkippingIndex::createIndexCondition(
-        const SelectQueryInfo & query, const Context & context) const
+    const SelectQueryInfo & query, const Context & context) const
 {
     return std::make_shared<SetIndexCondition>(query, context, *this);
 };

@@ -16,13 +16,13 @@ void FindIdentifierBestTableData::visit(ASTIdentifier & identifier, ASTPtr &)
 
     if (!identifier.compound())
     {
-        for (const auto & [table, names] : tables)
+        for (const auto & table_names : tables)
         {
-            if (std::find(names.begin(), names.end(), identifier.name) != names.end())
+            if (std::find(table_names.second.begin(), table_names.second.end(), identifier.name) != table_names.second.end())
             {
                 // TODO: make sure no collision ever happens
                 if (!best_table)
-                    best_table = &table;
+                    best_table = &table_names.first;
             }
         }
     }
@@ -30,13 +30,13 @@ void FindIdentifierBestTableData::visit(ASTIdentifier & identifier, ASTPtr &)
     {
         // FIXME: make a better matcher using `names`?
         size_t best_match = 0;
-        for (const auto & [table, names] : tables)
+        for (const auto & table_names : tables)
         {
-            if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, table))
+            if (size_t match = IdentifierSemantic::canReferColumnToTable(identifier, table_names.first))
                 if (match > best_match)
                 {
                     best_match = match;
-                    best_table = &table;
+                    best_table = &table_names.first;
                 }
         }
     }
