@@ -347,7 +347,8 @@ private:
     mutable RWLock alter_intention_lock = RWLockImpl::create();
 
     /// It is taken for share for the entire INSERT query and the entire merge of the parts (for MergeTree).
-    /// ALTER queries acquire an exclusive lock to ensure
+    /// ALTER COLUMN queries acquire an exclusive lock to ensure that no new parts with the old structure
+    /// are added to the table and thus the set of parts to modify doesn't change.
     mutable RWLock new_data_structure_lock = RWLockImpl::create();
 
     /// Lock for the table column structure (names, types, etc.) and data path.
