@@ -121,7 +121,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 ALTER TABLE table_name DETACH PARTITION partition_expr
 ```
 
-Moves all data for the specified partition to the 'detached' directory ([how to specify the partition expression](#alter-how-to-specify-part-expr)). The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
+Moves all data for the specified partition to the 'detached' directory. The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
 
 Example:
 
@@ -129,9 +129,11 @@ Example:
 ALTER TABLE visits DETACH PARTITION 201901
 ```
 
+Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+
 After the query is executed, you can do whatever you want with the data in the 'detached' directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the 'detached' directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, use the [system.replicas](../operations/system_tables.md#system_tables-replicas) table. Alternatively, it is easier to make a query on all replicas - all the replicas throw an exception, except the leader replica.
+This query is replicated – it moves the data to the 'detached' directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../operations/system_tables.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
 
 #### DROP PARTITION {#alter_drop-partition}
 
@@ -139,7 +141,9 @@ This query is replicated – it moves the data to the 'detached' directory on al
 ALTER TABLE table_name DROP PARTITION partition_expr
 ```
 
-Deletes the data of specified partition from the table ([how to specify the partition expression](#alter-how-to-specify-part-expr)). This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
+Deletes the specified partition from the table. This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
+
+Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
 The query is replicated – it deletes data on all replicas.
 
@@ -165,10 +169,10 @@ So you can put data to the 'detached' directory on one replica, and use the `ALT
 #### REPLACE PARTITION {#alter_replace-partition}
 
 ``` sql
-ALTER TABLE table2_name REPLACE PARTITION partition_expr FROM table1_name
+ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2`. Note that:
+This query copies the data partition from the `table1` to `table2` (data isn't deleted from `table1`). Note that:
 
 - Both tables must have the same structure.
 - When creating the `table2`, you must specify the same partition key as for the `table1`. 
@@ -195,28 +199,30 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
-This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once. Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions.
+This query creates a local backup of a specified partition. Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
 
 At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where
 
 - `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
 - `N` is the incremental number of the backup.
 
-The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. It also performs 'chmod' for all files, forbidding writing into them.
+The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs 'chmod' for all files, forbidding writing into them.
 
-The query creates backup almost instantly (but first it waits for the current queries to the corresponding table to finish running). At first, the backup does not take any space on the disk. As the system works, the backup can take disk space, as data is modified. If the backup is made for old enough data, it does not take space on the disk.
+The query creates backup almost instantly (but first it waits for the current queries to the corresponding table to finish running).
+
+At first, the backup does not take any space on the disk. As the system works, the backup can take disk space, as data is modified. If the backup is made for old enough data, it does not take space on the disk.
 
 After creating the backup, you can copy the data from `/var/lib/clickhouse/shadow/` to the remote server and then delete it from the local server. The entire backup process is performed without stopping the server.
 
 The `ALTER ... FREEZE PARTITION` query is not replicated. It creates a local backup only on the local server.
 
-As an alternative, you can manually copy data from the `/var/lib/clickhouse/data/database/table` directory. But if you do this while the server is running, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. Copy the data when the server is not running – then the resulting data will be the same as after the `ALTER TABLE t FREEZE PARTITION` query.
+Another way to create a local backup is to copy data from the `/var/lib/clickhouse/data/database/table` directory manually. Note that you should do it when the server isn't running. Otherwise, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. Copy the data when the server is not running – then the resulting data will be the same as after the `ALTER TABLE t FREEZE PARTITION` query.
 
 `ALTER TABLE ... FREEZE PARTITION` copies only the data, not table metadata. To make a backup of table metadata, copy the file `/var/lib/clickhouse/metadata/database/table.sql`
 
 To add the data to a table from a backup, do the following:
 
-1. Use the `CREATE` query to create the table if it does not exist. To view the query, use the .sql file (replace `ATTACH` in it with `CREATE`).
+1. Create the table if it does not exist. To view the query, use the .sql file (replace `ATTACH` in it with `CREATE`).
 2. Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
 3. Run `ALTER TABLE ... ATTACH PARTITION` queries to add the data to a table.
 
@@ -233,7 +239,7 @@ Downloads a partition from another server. This query only works for the replica
 The query does the following:
 
 1. Downloads the partition from the specified shard. In 'path-in-zookeeper' you must specify a path to the shard in ZooKeeper.
-2. Then the query puts the downloaded data to the 'detached' directory of the specified table. Use the [ATTACH PART|PARTITION](#alter_attach-partition) query to add the data to the table.
+2. Then the query puts the downloaded data to the 'detached' directory of the `table_name` table. Use the [ATTACH PARTITION|PART](#alter_attach-partition) query to add the data to the table.
 
 For example:
 
@@ -241,12 +247,14 @@ For example:
 ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
 ALTER TABLE users ATTACH PARTITION 201902;
 ```
+Note that:
+
+- The `ALTER ... FETCH PARTITION` query isn't replicated. It places the partition to the 'detached' directory only on the local server. 
+- The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the 'detached' directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
 
 Although the query is called `ALTER TABLE`, it does not change the table structure and does not immediately change the data available in the table.
-
-The `ALTER ... FETCH PARTITION` query is not replicated. It places the partition to the 'detached' directory only on the local server. Note that when you perform the `ALTER TABLE ... ATTACH` query, it adds the data to all replicas. The data is added to one of the replicas from the 'detached' directory, and to the others - from neighboring replicas.
 
 #### How To Set Partition Expression {#alter-how-to-specify-part-expr}
 
@@ -257,7 +265,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
 - In the [ALTER ATTACH PART](#alter_attach-partition) query, to specify the name of a part, use a value from the `name` column of the `system.parts` table. For example, `ALTER TABLE visits ATTACH PART 201901_1_1_0`.
 
-Correct usage of quotes in the partition expression depends on the type of the partition key, that was specified when creating a table. For example, for the String type partitions, you have to specify its name in quotes (`'`). For the Date and Int* types no quotes needed.
+Correct usage of quotes in the partition expression depends on the type of the column, that was specified the partitioning for. For example, for the `String` type column, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes needed.
 
 For old-style tables, you can specify the partition either as a number `201901` or a string `'201901'`. The syntax for the new-style tables is stricter with types (similar to the parser for the VALUES input format).
 
