@@ -1228,7 +1228,8 @@ private:
             String current_format = format;
 
             /// The query can specify output format or output file.
-            if (const auto * query_with_output = parsed_query->as<ASTQueryWithOutput>())
+            /// FIXME: try to prettify this cast using `as<>()`
+            if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
             {
                 if (query_with_output->out_file)
                 {

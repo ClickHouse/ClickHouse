@@ -501,7 +501,7 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     }
 
     ASTPtr arguments_ast = engine->arguments->clone();
-    ASTs & arguments = arguments_ast->as<ASTExpressionList>()->children; // FIXME: what' the point of casting?
+    ASTs & arguments = arguments_ast->children;
 
     if (isExtendedDefinitionStorage(storage_ast))
     {

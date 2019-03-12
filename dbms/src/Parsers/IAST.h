@@ -45,12 +45,14 @@ public:
     template <class Derived>
     Derived * as()
     {
+        // TODO: check, if we downcasting to base type, then just return |this|.
         return typeid_cast<Derived *>(this);
     }
 
     template <class Derived>
     const Derived * as() const
     {
+        // TODO: check, if we downcasting to base type, then just return |this|.
         return typeid_cast<const Derived *>(this);
     }
 

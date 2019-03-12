@@ -506,7 +506,8 @@ void executeQuery(
 
         if (streams.in)
         {
-            const auto * ast_query_with_output = ast->as<ASTQueryWithOutput>();
+            /// FIXME: try to prettify this cast using `as<>()`
+            const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
             std::optional<WriteBufferFromFile> out_file_buf;
