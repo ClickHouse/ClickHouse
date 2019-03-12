@@ -191,23 +191,25 @@ namespace CurrentMemoryTracker
     void alloc(Int64 size)
     {
         if (DB::current_thread)
-            DB::CurrentThread::getMemoryTracker().alloc(size);
+            DB::CurrentThread::getMemoryTracker()->alloc(size);
     }
 
     void realloc(Int64 old_size, Int64 new_size)
     {
         if (DB::current_thread)
-            DB::CurrentThread::getMemoryTracker().alloc(new_size - old_size);
+            DB::CurrentThread::getMemoryTracker()->alloc(new_size - old_size);
     }
 
     void free(Int64 size)
     {
         if (DB::current_thread)
-            DB::CurrentThread::getMemoryTracker().free(size);
+            DB::CurrentThread::getMemoryTracker()->free(size);
     }
 }
 
 DB::SimpleActionLock getCurrentMemoryTrackerActionLock()
 {
-    return DB::CurrentThread::getMemoryTracker().blocker.cancel();
+    if (!DB::current_thread)
+        return {};
+    return DB::CurrentThread::getMemoryTracker()->blocker.cancel();
 }
