@@ -1254,7 +1254,8 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ASTPtr alias_node;
     if (ParserAlias(allow_alias_without_as_keyword_now).parse(pos, alias_node, expected))
     {
-        if (auto * ast_with_alias = node->as<ASTWithAlias>())
+        /// FIXME: try to prettify this cast using `as<>()`
+        if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             getIdentifierName(alias_node, ast_with_alias->alias);
             ast_with_alias->prefer_alias_to_column_name = prefer_alias_to_column_name;

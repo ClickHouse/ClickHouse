@@ -359,11 +359,10 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
-    const auto * node = select_query->join()->as<ASTTablesInSelectQueryElement>();
-    if (!node)
+    if (!select_query->join())
         return;
 
-    const auto * table_join = node->table_join->as<ASTTableJoin>();
+    const auto * table_join = select_query->join()->table_join->as<ASTTableJoin>();
     if (!(table_join && table_join->using_expression_list))
         return;
 

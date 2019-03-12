@@ -35,8 +35,15 @@ std::enable_if_t<std::is_reference_v<To>, To> typeid_cast(From & from)
 template <typename To, typename From>
 To typeid_cast(From * from)
 {
-    if (typeid(*from) == typeid(std::remove_pointer_t<To>))
-        return static_cast<To>(from);
-    else
-        return nullptr;
+    try
+    {
+        if (typeid(*from) == typeid(std::remove_pointer_t<To>))
+            return static_cast<To>(from);
+        else
+            return nullptr;
+    }
+    catch (const std::exception & e)
+    {
+        throw DB::Exception(e.what(), DB::ErrorCodes::BAD_CAST);
+    }
 }

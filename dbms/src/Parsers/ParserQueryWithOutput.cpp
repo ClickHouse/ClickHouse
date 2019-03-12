@@ -62,7 +62,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parsed)
         return false;
 
-    auto * query_with_output = query->as<ASTQueryWithOutput>();
+    /// FIXME: try to prettify this cast using `as<>()`
+    auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(query.get());
 
     ParserKeyword s_into_outfile("INTO OUTFILE");
     if (s_into_outfile.ignore(pos, expected))
