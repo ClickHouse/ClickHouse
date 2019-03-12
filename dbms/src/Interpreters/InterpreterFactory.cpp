@@ -143,6 +143,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }
+    else if (typeid_cast<ASTShowCreateDictionaryQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
     else if (typeid_cast<ASTDescribeQuery *>(query.get()))
     {
         return std::make_unique<InterpreterDescribeQuery>(query, context);

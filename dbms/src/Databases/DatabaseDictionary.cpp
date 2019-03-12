@@ -250,6 +250,11 @@ ASTPtr DatabaseDictionary::tryGetCreateTableQuery(const Context & context, const
     return getCreateTableQueryImpl(context, table_name, false);
 }
 
+ASTPtr DatabaseDictionary::tryGetCreateDictionaryQuery(const Context &, const String &) const
+{
+    throw Exception("DatabaseDictionary: tryGetCreateDictionaryQuery() isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & /*context*/) const
 {
     String query;

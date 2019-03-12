@@ -79,6 +79,13 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery(
     throw Exception("There is no CREATE DATABASE query for DatabaseMemory", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 }
 
+ASTPtr DatabaseMemory::tryGetCreateDictionaryQuery(
+    const Context &,
+    const String &) const
+{
+    throw Exception("There is no CREATE DICTIONARY query for DatabaseMemory", ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+}
+
 String DatabaseMemory::getDatabaseName() const
 {
     return name;

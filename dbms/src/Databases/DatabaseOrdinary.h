@@ -81,9 +81,17 @@ public:
         const Context & context,
         const String & table_name) const override;
 
+    ASTPtr getCreateDictionaryQuery(
+        const Context & context,
+        const String & dictionary_name) const override;
+
     ASTPtr tryGetCreateTableQuery(
         const Context & context,
         const String & table_name) const override;
+
+    ASTPtr tryGetCreateDictionaryQuery(
+        const Context & context,
+        const String & dictionary_name) const override;
 
     void loadDictionaries(
         Context & context,
@@ -139,6 +147,8 @@ private:
 private:
 
     void startupTables(ThreadPool * thread_pool);
+
+    ASTPtr getCreateDictionaryQueryImpl(const Context & context, const String & dictionary_name, bool throw_on_error) const;
 
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 

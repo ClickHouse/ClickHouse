@@ -1,6 +1,7 @@
 #include <iomanip>
 
 #include <Poco/Event.h>
+#include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
 #include <common/logger_useful.h>
 
@@ -391,7 +392,17 @@ void DatabaseOrdinary::removeTable(
     }
 }
 
-static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true)
+namespace
+{
+    enum class ObjectKind
+    {
+        DATABASE,
+        TABLE,
+        DICTIONARY
+    };
+}
+
+static ASTPtr getQueryFromMetadata(const String & metadata_path, ObjectKind kind = ObjectKind::TABLE, bool throw_on_error = true)
 {
     String query;
 
@@ -408,10 +419,20 @@ static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_e
             throw;
     }
 
-    ParserCreateQuery parser;
+    std::unique_ptr<IParser> parser;
+    switch (kind)
+    {
+        case ObjectKind::DATABASE:
+        case ObjectKind::TABLE:
+            parser = std::make_unique<ParserCreateQuery>();
+            break;
+        case ObjectKind::DICTIONARY:
+            parser = std::make_unique<ParserCreateDictionaryQuery>();
+            break;
+    }
     const char * pos = query.data();
     std::string error_message;
-    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
+    auto ast = tryParseQuery(*parser, pos, pos + query.size(), error_message, /* hilite = */ false,
                              "in file " + metadata_path, /* allow_multi_statements = */ false, 0);
 
     if (!ast && throw_on_error)
@@ -420,9 +441,9 @@ static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_e
     return ast;
 }
 
-static ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database, bool throw_on_error)
+static ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database, ObjectKind kind, bool throw_on_error)
 {
-    ASTPtr ast = getQueryFromMetadata(metadata_path, throw_on_error);
+    ASTPtr ast = getQueryFromMetadata(metadata_path, kind, throw_on_error);
 
     if (ast)
     {
@@ -497,13 +518,35 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
     }
 }
 
+ASTPtr DatabaseOrdinary::getCreateDictionaryQueryImpl(
+    const Context & context,
+    const String & dictionary_name,
+    bool throw_on_error) const
+{
+    auto dictionary_metadata_path = getDictionaryMetadataPath(dictionary_name);
+    ASTPtr ast = getCreateQueryFromMetadata(dictionary_metadata_path, name, ObjectKind::DICTIONARY, throw_on_error);
+    if (!ast && throw_on_error)
+    {
+        /// Handle system.* tables for which there are no table.sql files.
+        bool has_table = tryGetDictionary(context, dictionary_name) != nullptr;
+
+        auto msg = has_table
+                   ? "There is no CREATE DICTIONARY query for dictionary "
+                   : "There is no metadata file for dictionary ";
+
+        throw Exception(msg + dictionary_name, ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
+    }
+
+    return ast;
+}
+
 ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context,
                                                  const String & table_name, bool throw_on_error) const
 {
     ASTPtr ast;
 
     auto table_metadata_path = detail::getTableMetadataPath(metadata_path.toString(), table_name);
-    ast = getCreateQueryFromMetadata(table_metadata_path, name, throw_on_error);
+    ast = getCreateQueryFromMetadata(table_metadata_path, name, ObjectKind::TABLE, throw_on_error);
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
@@ -529,12 +572,22 @@ ASTPtr DatabaseOrdinary::tryGetCreateTableQuery(const Context & context, const S
     return getCreateTableQueryImpl(context, table_name, false);
 }
 
+ASTPtr DatabaseOrdinary::getCreateDictionaryQuery(const Context & context, const String & dictionary_name) const
+{
+    return getCreateDictionaryQueryImpl(context, dictionary_name, true);
+}
+
+ASTPtr DatabaseOrdinary::tryGetCreateDictionaryQuery(const Context & context, const String & dictionary_name) const
+{
+    return getCreateDictionaryQueryImpl(context, dictionary_name, false);
+}
+
 ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) const
 {
     ASTPtr ast;
 
     auto database_metadata_path = detail::getDatabaseMetadataPath(metadata_path.toString());
-    ast = getCreateQueryFromMetadata(database_metadata_path, name, true);
+    ast = getCreateQueryFromMetadata(database_metadata_path, name, ObjectKind::DATABASE, true);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.

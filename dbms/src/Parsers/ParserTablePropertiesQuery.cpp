@@ -21,6 +21,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ParserKeyword s_create("CREATE");
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_table("TABLE");
+    ParserKeyword s_dictionary("DICTIONARY");
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p;
 
@@ -43,6 +44,10 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         {
             parse_only_database_name = true;
             query = std::make_shared<ASTShowCreateDatabaseQuery>();
+        }
+        else if (s_dictionary.ignore(pos, expected))
+        {
+            query = std::make_shared<ASTShowCreateDictionaryQuery>();
         }
         else
             query = std::make_shared<ASTShowCreateTableQuery>();

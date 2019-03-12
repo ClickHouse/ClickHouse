@@ -978,6 +978,32 @@ ASTPtr Context::getCreateDatabaseQuery(const String & database_name) const
     return shared->databases[db]->getCreateDatabaseQuery(*this);
 }
 
+ASTPtr Context::getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const
+{
+    auto lock = getLock();
+    String db = resolveDatabase(database_name, dictionary_name);
+    assertDatabaseExists(db);
+    return shared->databases[db]->getCreateDictionaryQuery(*this, dictionary_name);
+}
+
+ASTPtr Context::tryGetCreateTableQuery(const String & database_name, const String & table_name) const
+{
+    auto lock = getLock();
+
+    String db = resolveDatabase(database_name, current_database);
+    assertDatabaseExists(db);
+
+    return shared->databases[db]->tryGetCreateTableQuery(*this, table_name);
+}
+
+ASTPtr Context::tryGetCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const
+{
+    auto lock = getLock();
+    String db = resolveDatabase(database_name, dictionary_name);
+    assertDatabaseExists(db);
+    return shared->databases[db]->tryGetCreateDictionaryQuery(*this, dictionary_name);
+}
+
 Settings Context::getSettings() const
 {
     return settings;

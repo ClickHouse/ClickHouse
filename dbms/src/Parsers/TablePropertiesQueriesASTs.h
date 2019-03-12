@@ -18,6 +18,12 @@ struct ASTShowCreateTableQueryIDAndQueryNames
     static constexpr auto Query = "SHOW CREATE TABLE";
 };
 
+struct ASTShowCreateDictionaryQueryIDAndQueryNames
+{
+    static constexpr auto ID = "ShowCreateDictionaryQuery";
+    static constexpr auto Query = "SHOW CREATE DICTIONARY";
+};
+
 struct ASTShowCreateDatabaseQueryIDAndQueryNames
 {
     static constexpr auto ID = "ShowCreateDatabaseQuery";
@@ -32,6 +38,7 @@ struct ASTDescribeQueryExistsQueryIDAndQueryNames
 
 using ASTExistsQuery = ASTQueryWithTableAndOutputImpl<ASTExistsQueryIDAndQueryNames>;
 using ASTShowCreateTableQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateTableQueryIDAndQueryNames>;
+using ASTShowCreateDictionaryQuery = ASTQueryWithTableAndOutputImpl<ASTShowCreateDictionaryQueryIDAndQueryNames>;
 
 class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShowCreateDatabaseQueryIDAndQueryNames>
 {

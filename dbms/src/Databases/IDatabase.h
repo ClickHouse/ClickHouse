@@ -169,6 +169,14 @@ public:
         return tryGetCreateTableQuery(context, name);
     }
 
+    /// Get the CREATE DICTIONARY query for the dictionary.
+    virtual ASTPtr tryGetCreateDictionaryQuery(const Context & context, const String & name) const = 0;
+
+    virtual ASTPtr getCreateDictionaryQuery(const Context & context, const String & name) const
+    {
+        return tryGetCreateDictionaryQuery(context, name);
+    }
+
     /// Get the CREATE DATABASE query for current database.
     virtual ASTPtr getCreateDatabaseQuery(const Context & context) const = 0;
 
