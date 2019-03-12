@@ -583,27 +583,33 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 
 bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & token) const
 {
-    //throw Exception("It's a bug: Like queries are not supported by SplitTokenExtractor.", ErrorCodes::LOGICAL_ERROR);
     token.clear();
     bool bad_token = false; // % or _ before token
+    bool escaped = false;
     for (; *pos < str.size(); ++*pos)
     {
-        if (str[*pos] == '%' || str[*pos] == '_')
+        if (!escaped && (str[*pos] == '%' || str[*pos] == '_'))
         {
             token.clear();
             bad_token = true;
         }
-        else if (!isAlphaNumericASCII(str[*pos]))
+        else if (!escaped && str[*pos] == '\\')
+        {
+            escaped = true;
+        }
+        else if (isASCII(str[*pos]) && !isAlphaNumericASCII(str[*pos]))
         {
             if (!bad_token && !token.empty())
                 return true;
 
             token.clear();
             bad_token = false;
+            escaped = false;
         }
         else
         {
             token += str[*pos];
+            escaped = false;
         }
     }
 
