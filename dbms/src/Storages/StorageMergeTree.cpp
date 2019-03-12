@@ -193,7 +193,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 }
 
 
-std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepare_alter_transactions(
+std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepareAlterTransactions(
     const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const size_t thread_pool_size)
 {
     ThreadPool thread_pool(thread_pool_size);
@@ -201,7 +201,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions(parts.size());
 
-    const auto& columns_for_parts = new_columns.getAllPhysical();
+    const auto & columns_for_parts = new_columns.getAllPhysical();
 
     size_t i = 0;
     for (const auto & part : parts)
@@ -210,7 +210,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
             [this, i, &transactions, &part, columns_for_parts, new_indices = new_indices.indices]
             {
                 if (auto transaction = this->data.alterDataPart(part, columns_for_parts, new_indices, false))
-                    transactions[i] = (std::move(transaction));
+                    transactions[i] = std::move(transaction);
             }
         );
 
@@ -219,7 +219,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     thread_pool.wait();
 
     auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
-        [](const MergeTreeData::AlterDataPartTransactionPtr& transaction)
+        [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
         {
             return transaction == nullptr;
         }
@@ -259,7 +259,7 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
 
-    auto transactions = prepare_alter_transactions(new_columns, new_indices, 2 * getNumberOfPhysicalCPUCores());
+    auto transactions = prepareAlterTransactions(new_columns, new_indices, 2 * getNumberOfPhysicalCPUCores());
 
     auto table_hard_lock = lockStructureForAlter(context.getCurrentQueryId());
 
