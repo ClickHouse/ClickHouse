@@ -273,9 +273,21 @@ Stores extremes of the specified expression (if the expression is `tuple`, then 
 * `set(max_rows)`
 Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"), use them to check if the `WHERE` expression is not satisfiable on a block of the data.  
 
+* `ngrambf(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
+Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from block of data. Works only with strings.
+Can be used for optimization of `equals`, `like` and `in` expressions.
+`n` -- ngram size,
+`size_of_bloom_filter_in_bytes` -- bloom filter size in bytes (you can use big values here, for example, 256 or 512, because it can be compressed well),
+`number_of_hash_functions` -- number of hash functions used in bloom filter,
+`random_seed` -- seed for bloom filter hash functions.
+
+* `tokenbf(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
+The same as `ngrambf`, but instead of ngrams stores tokens, which are sequences separated by non-alphanumeric characters.
+
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
+INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
+INDEX sample_index3 (lower(str), str) TYPE ngrambf(3, 256, 2, 0) GRANULARITY 4
 ```
 
 
