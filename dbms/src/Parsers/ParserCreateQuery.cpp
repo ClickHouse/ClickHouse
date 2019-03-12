@@ -549,6 +549,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyValueFunction key_value_pairs_p;
     ParserKeyValuePairsList key_value_pairs_list_p;
     ParserExpressionList expression_list_p(false);
+    ParserKeyValuePairsList expression_parser;
 
     ASTPtr primary_key;
     ASTPtr composite_key;
@@ -562,6 +563,13 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (composite_key_keyword.ignore(pos) && !key_value_pairs_list_p.parse(pos, composite_key, expected))
         return false;
+
+    /// Exactly one of two keys should be defined
+    if (!(bool(primary_key) ^ bool(composite_key)))
+        return false;
+
+    if (composite_key_keyword.ignore(pos))
+        expression_parser.parse(pos, composite_key, expected);
 
     /// Exactly one of two keys should be defined
     if (!(bool(primary_key) ^ bool(composite_key)))
