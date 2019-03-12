@@ -86,7 +86,7 @@ default_expression String - выражение для значения по ум
 
 ## system.graphite_retentions
 
-Содержит информацию о том, какие параметры [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](table_engines/graphitemergetree.md).
+Содержит информацию о том, какие параметры [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](table_engines/graphitemergetree.md).
 
 Столбцы:
 - `config_name`     (String) - Имя параметра, используемого для `graphite_rollup`.

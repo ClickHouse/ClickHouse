@@ -568,7 +568,7 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     else if (table_join->on_expression)
         collectJoinedColumnsFromJoinOnExpr(analyzed_join, *table_join);
 
-    bool make_nullable = join_use_nulls && (table_join->kind == ASTTableJoin::Kind::Left || table_join->kind == ASTTableJoin::Kind::Full);
+    bool make_nullable = join_use_nulls && isLeftOrFull(table_join->kind);
 
     analyzed_join.calculateAvailableJoinedColumns(make_nullable);
 }

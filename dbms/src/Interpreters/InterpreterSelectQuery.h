@@ -133,6 +133,7 @@ private:
         }
     };
 
+    ASTSelectQuery & selectQuery();
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
 
