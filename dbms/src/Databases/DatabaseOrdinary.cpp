@@ -333,7 +333,10 @@ void DatabaseOrdinary::createTable(
     {
         std::lock_guard lock(tables_mutex);
         if (tables.find(table_name) != tables.end())
-            throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+            throw Exception("Table " + name + "." + table_name + " already exists", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+        if (dictionaries.find(table_name) != dictionaries.end())
+            throw Exception("Dictionary " + name + "." + table_name + " exists", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
     String table_metadata_path = getTableMetadataPath(table_name);
