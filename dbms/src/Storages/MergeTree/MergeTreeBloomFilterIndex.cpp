@@ -570,7 +570,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
     *token_len = 0;
     while (*pos < len)
     {
-        if (!isAlphaNumericASCII(data[*pos]))
+        if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
         {
             if (*token_len > 0)
                 return true;
@@ -578,8 +578,9 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         }
         else
         {
-            ++*pos;
-            ++*token_len;
+            const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*pos]));
+            *pos += sz;
+            *token_len += sz;
         }
     }
     return *token_len > 0;
@@ -590,16 +591,18 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
     token.clear();
     bool bad_token = false; // % or _ before token
     bool escaped = false;
-    for (; *pos < str.size(); ++*pos)
+    while (*pos < str.size())
     {
         if (!escaped && (str[*pos] == '%' || str[*pos] == '_'))
         {
             token.clear();
             bad_token = true;
+            ++*pos;
         }
         else if (!escaped && str[*pos] == '\\')
         {
             escaped = true;
+            ++*pos;
         }
         else if (isASCII(str[*pos]) && !isAlphaNumericASCII(str[*pos]))
         {
@@ -609,10 +612,16 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
             token.clear();
             bad_token = false;
             escaped = false;
+            ++*pos;
         }
         else
         {
-            token += str[*pos];
+            const size_t sz = UTF8::seqLength(static_cast<UInt8>(str[*pos]));
+            for (size_t j = 0; j < sz; ++j)
+            {
+                token += str[*pos];
+                ++*pos;
+            }
             escaped = false;
         }
     }
