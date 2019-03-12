@@ -740,7 +740,6 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         {
             return false;
         }
-        
 
         if (key_column_num == static_cast<size_t>(-1))
             throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);

@@ -129,7 +129,7 @@ namespace DB
 
     bool RangeSet::intersectsRange(const Range &rhs) const
     {
-        auto left_it = std::lower_bound(data.begin(), data.end(), rhs, [](const Range& element, const Range& value)
+        auto cmp_left = [](const Range& element, const Range& value)
         {
             if (!value.left_bounded)
             {
@@ -140,8 +140,25 @@ namespace DB
                 return true;
             }
             return false;
-        });
-        auto right_it = std::lower_bound(data.begin(), data.end(), rhs, [](const Range& element, const Range& value)
+        };
+        /* This is a temporary fix, due to a bug in some versions of libc++
+         * see fix at: http://llvm.org/viewvc/llvm-project?view=revision&revision=345434*/
+        // auto left_it = std::lower_bound(data.begin(), data.end(), rhs, cmp_left);
+        int lp = -1, rp = static_cast<int>(data.size());
+        while (rp - lp > 1)
+        {
+            int m = lp + (rp - lp) / 2;
+            if (cmp_left(data[m], rhs))
+            {
+                lp = m;
+            }
+            else
+            {
+                rp = m;
+            }
+        }
+        auto left_it = rp;
+        auto cmp_right = [](const Range& element, const Range& value)
         {
             if (!value.right_bounded)
             {
@@ -152,7 +169,23 @@ namespace DB
                 return false;
             }
             return true;
-        });
+        };
+        // auto right_it = std::lower_bound(data.begin(), data.end(), rhs, cmp_right);
+        lp = -1;
+        rp = static_cast<int>(data.size());
+        while (rp - lp > 1)
+        {
+            int m = lp + (rp - lp) / 2;
+            if (cmp_right(data[m], rhs))
+            {
+                lp = m;
+            }
+            else
+            {
+                rp = m;
+            }
+        }
+        auto right_it = rp;
         return left_it < right_it;
     }
 
