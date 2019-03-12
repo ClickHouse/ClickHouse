@@ -280,7 +280,7 @@ void StorageMergeTree::alter(
     data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
 
     for (auto & transaction : transactions)
-            transaction->commit();
+        transaction->commit();
 
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
