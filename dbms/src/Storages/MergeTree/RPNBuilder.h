@@ -9,29 +9,11 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/KeyCondition.h>
+
 
 namespace DB
 {
-
-
-/** Calculate expressions, that depend only on constants.
-  * For index to work when something like "WHERE Date = toDate(now())" is written.
-  */
-static Block getBlockWithConstants(
-    const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context)
-{
-    Block result
-    {
-        { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
-    };
-
-    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
-
-    expr_for_constant_folding->execute(result);
-
-    return result;
-}
-
 
 /// Builds reverse polish notation
 template <typename RPNElement>
@@ -51,7 +33,7 @@ public:
         /** Evaluation of expressions that depend only on constants.
           * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
           */
-        block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
+        block_with_constants = KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
         /// Trasform WHERE section to Reverse Polish notation
         const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
@@ -75,7 +57,7 @@ public:
         }
     }
 
-    void extractRPN(RPN & out) { out = std::move(rpn); }
+    RPN && extractRPN() { return std::move(rpn); }
 
 private:
     void traverseAST(const ASTPtr & node)
