@@ -1,4 +1,6 @@
 #include <Common/typeid_cast.h>
+#include <Functions/FunctionsComparison.h>
+#include <Functions/FunctionsLogical.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -29,6 +31,8 @@ struct JoinedTable
     DatabaseAndTableWithAlias table;
     ASTTablesInSelectQueryElement * element = nullptr;
     ASTTableJoin * join = nullptr;
+    ASTPtr array_join = nullptr;
+    bool has_using = false;
 
     JoinedTable(ASTPtr table_element)
     {
@@ -47,11 +51,16 @@ struct JoinedTable
             }
 
             if (join->using_expression_list)
-                throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
+                has_using = true;
         }
 
-        auto & expr = typeid_cast<const ASTTableExpression &>(*element->table_expression);
-        table = DatabaseAndTableWithAlias(expr);
+        if (element->table_expression)
+        {
+            auto & expr = typeid_cast<const ASTTableExpression &>(*element->table_expression);
+            table = DatabaseAndTableWithAlias(expr);
+        }
+
+        array_join = element->array_join;
     }
 
     void rewriteCommaToCross()
@@ -62,6 +71,16 @@ struct JoinedTable
 
     bool canAttachOnExpression() const { return join && !join->on_expression; }
 };
+
+bool isComparison(const String & name)
+{
+    return name == NameEquals::name ||
+        name == NameNotEquals::name ||
+        name == NameLess::name ||
+        name == NameGreater::name ||
+        name == NameLessOrEquals::name ||
+        name == NameGreaterOrEquals::name;
+}
 
 /// It checks if where expression could be moved to JOIN ON expression partially or entirely.
 class CheckExpressionVisitorData
@@ -79,7 +98,7 @@ public:
         if (!ands_only)
             return;
 
-        if (node.name == "and")
+        if (node.name == NameAnd::name)
         {
             if (!node.arguments || node.arguments->children.empty())
                 throw Exception("Logical error: function requires argiment", ErrorCodes::LOGICAL_ERROR);
@@ -92,10 +111,14 @@ public:
                     ands_only = false;
             }
         }
-        else if (node.name == "equals")
+        else if (node.name == NameEquals::name)
         {
             if (size_t min_table = canMoveEqualsToJoinOn(node))
                 asts_to_join_on[min_table].push_back(ast);
+        }
+        else if (isComparison(node.name))
+        {
+            /// leave other comparisons as is
         }
         else
         {
@@ -122,7 +145,7 @@ public:
         for (auto & ast : expressions)
             arguments.emplace_back(ast->clone());
 
-        return makeASTFunction("and", std::move(arguments));
+        return makeASTFunction(NameAnd::name, std::move(arguments));
     }
 
 private:
@@ -202,8 +225,14 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables
     for (auto & child : tables->children)
     {
         joined_tables.emplace_back(JoinedTable(child));
+        JoinedTable & t = joined_tables.back();
+        if (t.array_join)
+            return false;
 
-        if (ASTTableJoin * join = joined_tables.back().join)
+        if (num_tables > 2 && t.has_using)
+            throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
+
+        if (ASTTableJoin * join = t.join)
             if (join->kind == ASTTableJoin::Kind::Comma)
                 ++num_comma;
     }
