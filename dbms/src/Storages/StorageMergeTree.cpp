@@ -194,7 +194,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
 
 std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepare_alter_transactions(
-    const ColumnsDescription& new_columns, const IndicesDescription& new_indices, const size_t thread_pool_size)
+    const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const size_t thread_pool_size)
 {
     ThreadPool thread_pool(thread_pool_size);
 
