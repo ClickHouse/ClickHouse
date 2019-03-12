@@ -175,12 +175,16 @@ BloomFilterCondition::BloomFilterCondition(
     const Context & context,
     const MergeTreeBloomFilterIndex & index_) : index(index_), prepared_sets(query_info.sets)
 {
-    RPNBuilder<RPNElement>(
-        query_info, context,
-        [this] (const ASTPtr & node, const Context & /* context */, Block & block_with_constants, RPNElement & out) -> bool
-        {
-            return this->atomFromAST(node, block_with_constants, out);
-        }).extractRPN(rpn);
+    rpn = std::move(
+            RPNBuilder<RPNElement>(
+                    query_info, context,
+                    [this] (const ASTPtr & node,
+                            const Context & /* context */,
+                            Block & block_with_constants,
+                            RPNElement & out) -> bool
+                    {
+                        return this->atomFromAST(node, block_with_constants, out);
+                    }).extractRPN());
 }
 
 bool BloomFilterCondition::alwaysUnknownOrTrue() const
