@@ -38,6 +38,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/JoinToSubqueryTransformVisitor.h>
+#include <Interpreters/CrossToInnerJoinVisitor.h>
 
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
@@ -154,7 +156,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
+    if (settings.allow_experimental_cross_to_join_conversion)
+    {
+        CrossToInnerJoinVisitor::Data cross_to_inner;
+        CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
+    }
+
+    if (settings.allow_experimental_multiple_joins_emulation)
+    {
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data;
+        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
+    }
+
     max_streams = settings.max_threads;
+    ASTSelectQuery & query = selectQuery();
 
     ASTPtr table_expression = extractTableExpression(*query_ptr->as<ASTSelectQuery>(), 0);
 
@@ -264,9 +279,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 }
 
 
+ASTSelectQuery & InterpreterSelectQuery::selectQuery()
+{
+    return *query_ptr->as<ASTSelectQuery>();
+}
+
+
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
-    if (auto db_and_table = getDatabaseAndTable(*query_ptr->as<ASTSelectQuery>(), 0))
+    if (auto db_and_table = getDatabaseAndTable(selectQuery(), 0))
     {
         table_name = db_and_table->table;
         database_name = db_and_table->database;
@@ -365,6 +386,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
     {
         ExpressionActionsChain chain(context);
+        ASTSelectQuery & query = selectQuery();
 
         Names additional_required_columns_after_prewhere;
         const auto * query = query_ptr->as<ASTSelectQuery>();
@@ -489,6 +511,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
      *  then perform the remaining operations with one resulting stream.
      */
 
+    ASTSelectQuery & query = selectQuery();
     const Settings & settings = context.getSettingsRef();
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
@@ -574,7 +597,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             if (expressions.hasJoin())
             {
                 const auto * join = query->join()->table_join->as<ASTTableJoin>();
-                if (join->kind == ASTTableJoin::Kind::Full || join->kind == ASTTableJoin::Kind::Right)
+                if (isRightOrFull(join->kind))
                     pipeline.stream_with_non_joined_data = expressions.before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
                         pipeline.firstStream()->getHeader(), settings.max_block_size);
 
@@ -785,6 +808,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
         const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
+    ASTSelectQuery & query = selectQuery();
     const Settings & settings = context.getSettingsRef();
 
     /// Actions to calculate ALIAS if required.
@@ -1080,8 +1104,7 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(
-            stream, expression, query_ptr->as<ASTSelectQuery>()->where_expression->getColumnName(), remove_fiter);
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, selectQuery().where_expression->getColumnName(), remove_fiter);
     });
 }
 
@@ -1209,8 +1232,7 @@ void InterpreterSelectQuery::executeHaving(Pipeline & pipeline, const Expression
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(
-            stream, expression, query_ptr->as<ASTSelectQuery>()->having_expression->getColumnName());
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, selectQuery().having_expression->getColumnName());
     });
 }
 
@@ -1225,7 +1247,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
         pipeline.firstStream(),
         overflow_row,
         expression,
-        has_having ? query_ptr->as<ASTSelectQuery>()->having_expression->getColumnName() : "",
+        has_having ? selectQuery().having_expression->getColumnName() : "",
         settings.totals_mode,
         settings.totals_auto_threshold,
         final);
@@ -1293,10 +1315,9 @@ static SortDescription getSortDescription(const ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->as<ASTSelectQuery>();
-
-    SortDescription order_descr = getSortDescription(*query);
-    UInt64 limit = getLimitForSorting(*query, context);
+    ASTSelectQuery & query = selectQuery();
+    SortDescription order_descr = getSortDescription(query);
+    UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -1326,10 +1347,9 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->as<ASTSelectQuery>();
-
-    SortDescription order_descr = getSortDescription(*query);
-    UInt64 limit = getLimitForSorting(*query, context);
+    ASTSelectQuery & query = selectQuery();
+    SortDescription order_descr = getSortDescription(query);
+    UInt64 limit = getLimitForSorting(query, context);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -1364,9 +1384,8 @@ void InterpreterSelectQuery::executeProjection(Pipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_order, Names columns)
 {
-    const auto * query = query_ptr->as<ASTSelectQuery>();
-
-    if (query->distinct)
+    ASTSelectQuery & query = selectQuery();
+    if (query.distinct)
     {
         const Settings & settings = context.getSettingsRef();
 
@@ -1408,8 +1427,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
 void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->as<ASTSelectQuery>();
-
+    ASTSelectQuery & query = selectQuery();
     /// If there is LIMIT
     if (query->limit_length)
     {
@@ -1424,9 +1442,8 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->as<ASTSelectQuery>();
-
-    if (!query->limit_by_value || !query->limit_by_expression_list)
+    ASTSelectQuery & query = selectQuery();
+    if (!query.limit_by_value || !query.limit_by_expression_list)
         return;
 
     Names columns;
@@ -1467,8 +1484,7 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 {
-    const auto * query = query_ptr->as<ASTSelectQuery>();
-
+    ASTSelectQuery & query = selectQuery();
     /// If there is LIMIT
     if (query->limit_length)
     {
@@ -1540,14 +1556,15 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline)
 
 void InterpreterSelectQuery::ignoreWithTotals()
 {
-    query_ptr->as<ASTSelectQuery>()->group_by_with_totals = false;
+    selectQuery().group_by_with_totals = false;
 }
 
 
 void InterpreterSelectQuery::initSettings()
 {
-    if (auto settings = query_ptr->as<ASTSelectQuery>()->settings)
-        InterpreterSetQuery(settings, context).executeForCurrentContext();
+    ASTSelectQuery & query = selectQuery();
+    if (query.settings)
+        InterpreterSetQuery(query.settings, context).executeForCurrentContext();
 }
 
 }
