@@ -242,7 +242,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. To remove the quotes, you can set the configuration parameter output_format_json_quote_64bit_integers to 0.
+The JSON is compatible with JavaScript. To ensure this, some characters are additionally escaped: the slash `/` is escaped as `\/`; alternative line breaks `U+2028` and `U+2029`, which break some browsers, are escaped as `\uXXXX`. ASCII control characters are escaped: backspace, form feed, line feed, carriage return, and horizontal tab are replaced with `\b`, `\f`, `\n`, `\r`, `\t` , as well as the remaining bytes in the 00-1F range using `\uXXXX` sequences. Invalid UTF-8 sequences are changed to the replacement character � so the output text will consist of valid UTF-8 sequences. For compatibility with JavaScript, Int64 and UInt64 integers are enclosed in double quotes by default. To remove the quotes, you can set the configuration parameter [output_format_json_quote_64bit_integers](../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) to 0.
 
 `rows` – The total number of output rows.
 
@@ -257,7 +257,7 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 ClickHouse supports [NULL](../query_language/syntax.md), which is displayed as `null` in the JSON output.
 
-See also the JSONEachRow format.
+See also the [JSONEachRow](#jsoneachrow) format.
 
 ## JSONCompact {#jsoncompact}
 
@@ -307,24 +307,73 @@ See also the `JSONEachRow` format.
 
 ## JSONEachRow {#jsoneachrow}
 
-Outputs data as separate JSON objects for each row (newline delimited JSON).
+When using this format, ClickHouse outputs rows as separated, newline delimited JSON objects, but the whole data is not a valid JSON.
 
 ```json
-{"SearchPhrase":"","count()":"8267016"}
-{"SearchPhrase": "bathroom interior design","count()": "2166"}
-{"SearchPhrase":"yandex","count()":"1655"}
-{"SearchPhrase":"2014 spring fashion","count()":"1549"}
-{"SearchPhrase":"freeform photo","count()":"1480"}
-{"SearchPhrase":"angelina jolie","count()":"1245"}
-{"SearchPhrase":"omsk","count()":"1112"}
-{"SearchPhrase":"photos of dog breeds","count()":"1091"}
 {"SearchPhrase":"curtain designs","count()":"1064"}
 {"SearchPhrase":"baku","count()":"1000"}
+{"SearchPhrase":"","count":"8267016"}
 ```
 
-Unlike the JSON format, there is no substitution of invalid UTF-8 sequences. Any set of bytes can be output in the rows. This is necessary so that data can be formatted without losing any information. Values are escaped in the same way as for JSON.
+When inserting the data, you should provide a separate JSON object for each row.
 
-For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults, but it can be turned on by option `insert_sample_with_metadata=1`. Whitespace between elements is ignored. If a comma is placed after the objects, it is ignored. Objects don't necessarily have to be separated by new lines.
+### Inserting the Data
+
+```
+INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
+
+ClickHouse allows:
+
+- Any order of key-value pairs in the object.
+- The omission of some values.
+
+ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects to a line. You do not have to separate them with line breaks.
+
+**Processing of omitted values**
+
+ClickHouse substitutes the omitted values with the default values of corresponding [data types](../data_types/index.md).
+
+In case of the `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [insert_sample_with_metadata](../operations/settings/settings.md#session_settings-insert_sample_with_metadata) setting.
+
+Let's consider the following table:
+
+```
+CREATE TABLE IF NOT EXISTS example_table
+(
+    x UInt32,
+    a DEFAULT x * 2
+) ENGINE = Memory;
+```
+
+- If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as a default value for `UInt32` data type).
+- If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
+
+!!! note "Warning"
+    Use this option carefully, enabling it negatively affects the performance of the ClickHouse server.
+
+### Selecting the Data
+
+Let's consider the `UserActivity` table as an example:
+
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
+
+```
+{"UserID":"4324182021466249494","PageViews":5,"Duration":146,"Sign":-1}
+{"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
+```
+
+Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
+
+!!! note "Note"
+    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted into JSON without losing any information.
 
 ## Native {#native}
 
@@ -363,7 +412,7 @@ Rows are not escaped in Pretty* formats. Example is shown for the [PrettyCompact
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
-``` 
+```
 ┌─Escaping_test────────────────────────┐
 │ String with 'quotes' and 	 character │
 └──────────────────────────────────────┘
@@ -482,7 +531,7 @@ Row 1:
 x: 1
 y: ᴺᵁᴸᴸ
 ```
-Rows are not escaped in Vertical format: 
+Rows are not escaped in Vertical format:
 
 ``` sql
 SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
