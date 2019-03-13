@@ -213,21 +213,47 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
         return false;
 
     // Read from underlying buffer directly
-    auto buf = istr.buffer();
+    auto& buf = istr.buffer();
     auto base = reinterpret_cast<const capnp::word *>(istr.position());
 
     // Check if there's enough bytes in the buffer to read the full message
     kj::Array<capnp::word> heap_array;
-    auto array = kj::arrayPtr(base, buf.size() - istr.offset());
-    auto expected_words = capnp::expectedSizeInWordsFromPrefix(array);
-    if (expected_words * sizeof(capnp::word) > array.size())
-    {
-        // We'll need to reassemble the message in a contiguous buffer
-        heap_array = kj::heapArray<capnp::word>(expected_words);
-        istr.readStrict(heap_array.asChars().begin(), heap_array.asChars().size());
-        array = heap_array.asPtr();
-    }
+    kj::ArrayPtr<const capnp::word> array;
 
+    size_t bytesSize = buf.size() - istr.offset();
+	size_t remainingBytes = 0;
+	if (bytesSize < sizeof(capnp::word)) // case when we read less than 8 bytes (capnp::word)
+	{
+		char edgeBytes[sizeof(capnp::word)];
+		while (bytesSize + remainingBytes < sizeof(capnp::word))
+		{
+			istr.readStrict(edgeBytes + remainingBytes, bytesSize);
+			remainingBytes += bytesSize;
+			istr.next();
+			bytesSize = buf.size();
+		}
+
+		auto wordsSize = bytesSize / sizeof(capnp::word) + 1;
+		heap_array = kj::heapArray<capnp::word>(wordsSize + 1);
+		auto chars_heap_array = heap_array.asChars();
+		::memcpy(chars_heap_array.begin(), edgeBytes, remainingBytes);
+		::memcpy(chars_heap_array.begin() + remainingBytes, buf.begin(), buf.size());
+		array = heap_array.asPtr();
+	}
+	else
+	{
+		auto wordsSize = bytesSize / sizeof(capnp::word);
+
+		array = kj::arrayPtr(base, wordsSize);
+		auto expected_words = capnp::expectedSizeInWordsFromPrefix(array);
+		if (expected_words * sizeof(capnp::word) > array.size())
+		{
+			// We'll need to reassemble the message in a contiguous buffer
+			heap_array = kj::heapArray<capnp::word>(expected_words);
+			istr.readStrict(heap_array.asChars().begin(), heap_array.asChars().size());
+			array = heap_array.asPtr();
+		}
+	}
 
 #if CAPNP_VERSION >= 8000
     capnp::UnalignedFlatArrayMessageReader msg(array);
@@ -286,6 +312,12 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
     {
         auto parsed = (msg.getEnd() - base) * sizeof(capnp::word);
         istr.position() += parsed;
+    }
+    // Advance buffer position if used with remaining bytes from previous buffer
+    else if (remainingBytes != 0)
+    {
+	    auto parsed = (msg.getEnd() - heap_array.begin()) * sizeof(capnp::word) - remainingBytes;
+	    istr.position() += parsed;
     }
 
     return true;
