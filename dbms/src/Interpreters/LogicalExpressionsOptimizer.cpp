@@ -4,7 +4,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Core/Block.h>
@@ -12,6 +11,8 @@
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+
+#include <Common/typeid_cast.h>
 
 #include <deque>
 
@@ -87,7 +88,7 @@ void LogicalExpressionsOptimizer::perform()
 }
 
 void LogicalExpressionsOptimizer::shortCircuitLogicExpressions()
-{   
+{
     for (auto & child : select_query->children)
         tryExtractAndReplaceConstColumn(child);
 }
@@ -95,7 +96,7 @@ void LogicalExpressionsOptimizer::shortCircuitLogicExpressions()
 std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAndReplaceConstColumn(ASTPtr & node)
 {
     if (const ASTLiteral * literal = typeid_cast<ASTLiteral *>(node.get()))
-    {   
+    {
         /// const ColumnPtr & column_, const DataTypePtr & type_, const String & name_
         const auto data_type = DataTypeFactory::instance().get(literal->value.getTypeName());
         const auto column_ptr = data_type->createColumnConst(1, literal->value);
@@ -106,14 +107,14 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
     else if (const ASTFunction * function = typeid_cast<ASTFunction * >(node.get()))
     {
         if (function->name == "or" || function->name == "and")
-        {   
+        {
             bool is_or = function->name == "or";
             auto * args = typeid_cast<ASTExpressionList *>(function->arguments.get());
             for (auto & child : args->children)
             {
                 auto value = tryExtractAndReplaceConstColumn(child);
                 if (value.second)
-                {   
+                {
                     bool flag = value.first.column->getBool(0);
                     /// TODO: deal with the alias, but here we just ignore the alais by Short circuit evaluation
                     if ((flag && is_or) || (!flag && !is_or))
@@ -122,7 +123,7 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
                         ASTPtr replace_ast_ptr = std::make_shared<ASTLiteral>(flag);
                         replaceAST(node, replace_ast_ptr);
                         return value;
-                    } 
+                    }
                 }
             }
             /// where (2 = 2) and (number = 3) and (1 = 1)  => where number = 3
@@ -131,10 +132,10 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
                 return typeid_cast<ASTLiteral *>(child.get());
             });
             args->children.erase(new_end, args->children.end());
-            
+
             /// if args->children is empty or just one children left
             if (args->children.size() <= 1)
-            {   
+            {
                 ASTPtr replace_ast_ptr = args->children.empty() ? std::make_shared<ASTLiteral>(is_or ? 0 : 1) : args->children[0];
                 replaceAST(node, replace_ast_ptr);
             }
@@ -157,7 +158,7 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
             }
 
             FunctionBuilderPtr func_builder = FunctionFactory::instance().tryGet(function->name, context);
-            if (func_builder && !TableFunctionFactory::instance().isTableFunctionName(function->name) && 
+            if (func_builder && !TableFunctionFactory::instance().isTableFunctionName(function->name) &&
                 !AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
             {
                 auto func = func_builder->build(args);
