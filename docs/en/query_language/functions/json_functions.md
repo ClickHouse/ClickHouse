@@ -55,5 +55,112 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
+# New functions for working with JSON
+
+## Motivation
+Storing JSON in a String column is fudamentally against the columnstore nature of Clickhouse 
+and is almost always a wrong choice leading to performance problems. On the other hand, the maximum level 
+of nested structures is limited to 2, and modelling 1 to M relationships using several relational tables
+is also not always possible in an efficient way.
+
+Another use case for JSONs in String columns could be a generic storage system receiving
+JSON messages in unspecified and persisting them; further data processing could be done by
+parsing the JSON using DEFAULT columns and MATERIALIZED VIEWS.
+
+The new JSON functions aim to solve some limitations of the existing JSON functions, 
+without pretending to provide a full JSON support or trying to make Clickhouse into a 
+document store. Usage of JSON in Strings must remain an exception.
+
+The following limitations have been solved:
+- Cannot extract JSON arrays
+- Cannot provide a path of property names for extraction
+- Cannot extract all matches of the key (only the first one is returned)
+- Function names are long and hard to remember
+
+All format limitations concerning JSON that exist in the old visitParams* functions
+still exist in the new functions, eg. you cannot have a space between property name and the colon, 
+there is no support  for code points in the format \uXXXX\uYYYY, etc.
+ 
+## jsonAny(jsonString, jsonPath)
+ 
+jsonString must be a canonical JSON. 
+ 
+jsonPath is either the name of the property to find, or a path of properties separated by dots. For
+example,
+
+```
+jsonAny('{"myparam":{"nested": "value"},"other":123}', 'myparam.nested') = 'value'
+```
+The function always returns a `String`. Use the Clickhouse type conversion functions to get the
+data type you need, for example
+
+```
+ toUInt8(jsonAny('{"myparam":{"nested": 1},"other":123}', 'other')) = 123 --UInt8
+```
+
+Because the function always returns Strings, you can also use it for nested function calls. For example,
+
+```
+jsonAny(jsonAny('{"myparam":{"nested": "value"},"other":123}', 'myparam'), 'nested') = 'value'
+```
+
+This function is not suitable if you need to extract an array - use `jsonAnyArray` instead.
+
+ 
+## jsonAnyArray(jsonString, jsonPath)
+ 
+This function works similarly like jsonAny, but always returns `Array(String)`, and therefore is suitable
+for array extraction. If there is a scalar value under the jsonPath, an array with it as a single element
+will be returned.
+ 
+Examples:
+
+``` 
+jsonAnyArray('{"myparam":[100,101,102],"other":123}', 'myparam') = ['100', '101', '102']
+jsonAnyArray('{"myparam":{"nested": "value"},"other":123}', 'other') = ['123']
+jsonAnyArray('{"myparam":{"nested": "value"},"other":123}', 'myparam.nested') = ['value']
+```
+
+If you need to extract arrays of the types other than Strings, you can convert them using the Clickhouse
+type conversion functions:
+
+```
+arrayMap(x -> toInt8(x), jsonsAny('{"myparam":[100,101,102],"other":123}', 'myparam')) = [100, 101, 102] --Array(Int8)
+```
+
+## jsonAll(jsonString, jsonPath)
+
+Similar to jsonAny, but returns all matches of jsonPath in the jsonAll as `Array(String)`
+
+Examples: 
+
+```
+jsonAll('{"myparam":[{"nested": "value1"},{"nested": "value2"},{"nested": "value3"}]}', 'myparam.nested') = ['value1', 'value2', 'value3']
+
+jsonAll('{"parent": [{"child": [{"A": 1}, {"A": 2}]},{"child": [{"A": 3}]}]}', 'A') = ['1','2','3']
+```
+
+
+## jsonAllArrays(jsonString, jsonPath)
+
+Similar to jsonAll, but expects to match several arrays and therefore returns all matches of jsonPath 
+in the jsonAll as `Array(Array(String))`
+
+Example:
+
+```
+jsonAllArrays('{"myparam": [{"A": 1, "B": [17,18,19]}, {"A": 2, "B": [27,28,29]}, {"A": 3, "B": [37,38,39]}]}', 'myparam.B') = [['17','18','19'],['27','28','29'],['37','38','39']]
+```
+
+## jsonCount(jsonString, jsonPath)
+
+Counts the number of occurences of jsonPath in jsonString. For example:
+
+```
+jsonCount('{"myparam": 5}', 'myparam') = 1
+jsonCount('{"myparam": 5}', 'notthere') = 0
+jsonCount('{"myparam": [{"A": 1, "B": [17,18,19]}, {"A": 2, "B": [27,28,29]}, {"A": 3, "B": [37,38,39]}]}', 'myparam.B') = 3
+```
+
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->
