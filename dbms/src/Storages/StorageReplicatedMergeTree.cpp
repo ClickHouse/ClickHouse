@@ -3014,7 +3014,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         return true;
     }
 
-    ReplicatedMergeTreeLogEntryData merge_entry;
+    std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
     {
         /// We must select parts for merge under merge_selecting_mutex because other threads
         /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
@@ -3045,9 +3045,12 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
                 FutureMergedMutatedPart future_merged_part;
                 bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
+                ReplicatedMergeTreeLogEntryData merge_entry;
                 if (selected &&
                     !createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
                     return handle_noop("Can't create merge queue node in ZooKeeper");
+                if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY)
+                    merge_entries.push_back(std::move(merge_entry));
             }
         }
         else
@@ -3074,15 +3077,20 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
                 return handle_noop(disable_reason);
             }
 
+            ReplicatedMergeTreeLogEntryData merge_entry;
             if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
                 return handle_noop("Can't create merge queue node in ZooKeeper");
+            if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY)
+                merge_entries.push_back(std::move(merge_entry));
         }
     }
 
     /// TODO: Bad setting name for such purpose
-    if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY
-        && query_context.getSettingsRef().replication_alter_partitions_sync != 0)
-        waitForAllReplicasToProcessLogEntry(merge_entry);
+    if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
+    {
+        for (auto & merge_entry : merge_entries)
+            waitForAllReplicasToProcessLogEntry(merge_entry);
+    }
 
     return true;
 }
