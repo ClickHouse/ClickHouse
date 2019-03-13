@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #define a_cas a_cas
 static inline int a_cas(volatile int *p, int t, int s)
 {
