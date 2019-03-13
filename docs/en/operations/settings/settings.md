@@ -81,9 +81,29 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
-## insert_sample_with_metadata
+## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
 
-For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
+Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. The setting is applies for `INSERT` queries.
+
+When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+
+When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
+
+Operations where you may need the extended data exchange enabled:
+
+- Inserting the data of the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+
+For all other operations ClickHouse doesn't apply the setting.
+
+!!! note "Note"
+    The functionality of the extended data exchange consumes additional computing resources on the server and can reduce the performance.
+
+**Possible values**
+
+- 0 — Functionality is disabled.
+- 1 — Functionality is enabled.
+
+**Default value:** 0.
 
 ## join_default_strictness {#settings-join_default_strictness}
 
@@ -174,6 +194,20 @@ If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in o
 Any positive integer.
 
 **Default value**: 1048576.
+
+## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
+
+The minimum data volume to be read from storage required for using of the direct I/O access to the storage disk.
+
+ClickHouse uses this setting when selecting the data from tables. If summary storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with `O_DIRECT` option.
+
+**Possible values**
+
+Positive integer.
+
+0 — The direct I/O is disabled.
+
+**Default value**: 0.
 
 ## log_queries
 
@@ -392,7 +426,7 @@ The results of compilation are saved in the build directory in the form of .so f
 If the value is true, running INSERT skips input data from columns with unknown names. Otherwise, this situation will generate an exception.
 It works for JSONEachRow and TSKV formats.
 
-## output_format_json_quote_64bit_integers
+## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 

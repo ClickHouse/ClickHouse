@@ -163,6 +163,11 @@ public:
         return data.allocated_bytes();
     }
 
+    void protect() override
+    {
+        data.protect();
+    }
+
     void insertValue(const T value)
     {
         data.push_back(value);

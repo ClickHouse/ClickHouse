@@ -224,7 +224,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     {
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
-        max_tasks_in_queue = std::max(static_cast<UInt64>(1), config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+        max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
 
         if (config->has(prefix + ".profile"))
             context.setSetting("profile", config->getString(prefix + ".profile"));
@@ -295,7 +295,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason,
     {
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
-        /// Otherwise, that node will be ignored by DDLQueryStatusInputSream.
+        /// Otherwise, that node will be ignored by DDLQueryStatusInputStream.
 
         tryLogCurrentException(log, "Cannot parse DDL task " + entry_name + ", will try to send error status");
 
@@ -1020,12 +1020,12 @@ void DDLWorker::runCleanupThread()
 }
 
 
-class DDLQueryStatusInputSream : public IBlockInputStream
+class DDLQueryStatusInputStream : public IBlockInputStream
 {
 public:
 
-    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
-        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
+    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
+        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},
@@ -1046,7 +1046,7 @@ public:
 
     String getName() const override
     {
-        return "DDLQueryStatusInputSream";
+        return "DDLQueryStatusInputStream";
     }
 
     Block getHeader() const override { return sample; }
@@ -1146,7 +1146,7 @@ public:
         return sample.cloneEmpty();
     }
 
-    ~DDLQueryStatusInputSream() override = default;
+    ~DDLQueryStatusInputStream() override = default;
 
 private:
 
@@ -1289,7 +1289,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     if (context.getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, entry, context);
+    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context);
     io.in = std::move(stream);
     return io;
 }

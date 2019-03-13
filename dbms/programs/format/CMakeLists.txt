@@ -1,7 +1,5 @@
-add_library (clickhouse-format-lib ${LINK_MODE} Format.cpp)
-target_link_libraries (clickhouse-format-lib PRIVATE dbms clickhouse_common_io clickhouse_parsers ${Boost_PROGRAM_OPTIONS_LIBRARY})
-if (CLICKHOUSE_SPLIT_BINARY)
-    add_executable (clickhouse-format clickhouse-format.cpp)
-    target_link_libraries (clickhouse-format PRIVATE clickhouse-format-lib)
-    install (TARGETS clickhouse-format ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-endif ()
+set(CLICKHOUSE_FORMAT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/Format.cpp)
+set(CLICKHOUSE_FORMAT_LINK PRIVATE dbms clickhouse_common_io clickhouse_parsers ${Boost_PROGRAM_OPTIONS_LIBRARY})
+#set(CLICKHOUSE_FORMAT_INCLUDE SYSTEM PRIVATE ...)
+
+clickhouse_program_add(format)

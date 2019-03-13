@@ -50,6 +50,7 @@ string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+set (CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
@@ -98,10 +99,6 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
 
     if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-        if (GLIBC_COMPATIBILITY)
-            message (STATUS "Some symbols from glibc will be replaced for compatibility")
-            link_libraries(glibc-compatibility)
-        endif ()
     endif ()
 endif ()
 
@@ -176,6 +173,60 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 
 
 include (cmake/use_libcxx.cmake)
+
+
+# Set standard, system and compiler libraries explicitly.
+# This is intended for more control of what we are linking.
+
+set (DEFAULT_LIBS "")
+if (OS_LINUX AND NOT UNBUNDLED)
+    # Note: this probably has no effict, but I'm not an expert in CMake.
+    set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
+    set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
+
+    # Disable default linked libraries.
+    set (DEFAULT_LIBS "-nodefaultlibs")
+
+    # Add C++ libraries.
+    #
+    # This consist of:
+    # - C++ standard library (like implementation of std::string);
+    # - C++ ABI implementation (functions for exceptions like __cxa_throw, RTTI, etc);
+    # - functions for internal implementation of exception handling (stack unwinding based on DWARF info; TODO replace with bundled libunwind);
+    # - compiler builtins (example: functions for implementation of __int128 operations);
+    #
+    # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
+    if (USE_LIBCXX)
+        set (BUILTINS_LIB_PATH "")
+            if (COMPILER_CLANG)
+            execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif ()
+
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+    else ()
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc -Wl,-Bdynamic")
+    endif ()
+
+    # Linking with GLIBC prevents portability of binaries to older systems.
+    # We overcome this behaviour by statically linking with our own implementation of all new symbols (that don't exist in older Libc or have infamous "symbol versioning").
+    # The order of linking is important: 'glibc-compatibility' must be before libc but after all other libraries.
+    if (GLIBC_COMPATIBILITY)
+        message (STATUS "Some symbols from glibc will be replaced for compatibility")
+
+        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+        set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
+
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
+    endif ()
+
+    # Add Libc. GLIBC is actually a collection of interdependent libraries.
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lrt -ldl -lpthread -lm -lc")
+
+    # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
+
+    message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+endif ()
+
 
 if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -284,3 +335,36 @@ add_subdirectory (utils)
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
+
+
+if (DEFAULT_LIBS)
+    # Add default libs to all targets as the last dependency.
+    # I have found no better way to specify default libs in CMake that will appear single time in specific order at the end of linker arguments.
+
+    function(add_default_libs target_name)
+        if (TARGET ${target_name})
+            # message(STATUS "Has target ${target_name}")
+            set_property(TARGET ${target_name} APPEND PROPERTY LINK_LIBRARIES "${DEFAULT_LIBS}")
+            set_property(TARGET ${target_name} APPEND PROPERTY INTERFACE_LINK_LIBRARIES "${DEFAULT_LIBS}")
+            if (GLIBC_COMPATIBILITY)
+                add_dependencies(${target_name} glibc-compatibility)
+            endif ()
+        endif ()
+    endfunction ()
+
+    add_default_libs(ltdl)
+    add_default_libs(zlibstatic)
+    add_default_libs(jemalloc)
+    add_default_libs(unwind)
+    add_default_libs(memcpy)
+    add_default_libs(Foundation)
+    add_default_libs(common)
+    add_default_libs(gtest)
+    add_default_libs(lz4)
+    add_default_libs(zstd)
+    add_default_libs(snappy)
+    add_default_libs(arrow)
+    add_default_libs(protoc)
+    add_default_libs(thrift_static)
+    add_default_libs(boost_regex_internal)
+endif ()

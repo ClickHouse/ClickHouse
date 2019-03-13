@@ -112,6 +112,9 @@ public:
     }
 
     const DataTypePtr & getNestedType() const { return nested; }
+
+    /// 1 for plain array, 2 for array of arrays and so on.
+    size_t getNumberOfDimensions() const;
 };
 
 }

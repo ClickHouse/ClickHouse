@@ -39,7 +39,7 @@ struct LastElementCache
     bool check(const Value & value_) { return !empty && value == value_; }
 
     template <typename Key>
-    bool check(const Key & key) { return !empty && value.first == key; }
+    bool check(const Key & key) { return !empty && value.getFirst() == key; }
 };
 
 template <typename Data>
@@ -147,9 +147,8 @@ protected:
             if constexpr (has_mapped)
             {
                 /// Init PairNoInit elements.
-                cache.value.second = Mapped();
-                using Key = decltype(cache.value.first);
-                cache.value.first = Key();
+                cache.value.getSecond() = Mapped();
+                cache.value.getFirstMutable() = {};
             }
             else
                 cache.value = Value();
@@ -171,7 +170,7 @@ protected:
                 static_cast<Derived &>(*this).onExistingKey(key, pool);
 
                 if constexpr (has_mapped)
-                    return EmplaceResult(cache.value.second, cache.value.second, false);
+                    return EmplaceResult(cache.value.getSecond(), cache.value.getSecond(), false);
                 else
                     return EmplaceResult(false);
             }
@@ -183,33 +182,33 @@ protected:
 
         [[maybe_unused]] Mapped * cached = nullptr;
         if constexpr (has_mapped)
-            cached = &it->second;
+            cached = &it->getSecond();
 
         if (inserted)
         {
             if constexpr (has_mapped)
             {
-                new(&it->second) Mapped();
-                static_cast<Derived &>(*this).onNewKey(it->first, pool);
+                new(&it->getSecond()) Mapped();
+                static_cast<Derived &>(*this).onNewKey(it->getFirstMutable(), pool);
             }
             else
-                static_cast<Derived &>(*this).onNewKey(*it, pool);
+                static_cast<Derived &>(*this).onNewKey(it->getValueMutable(), pool);
         }
         else
             static_cast<Derived &>(*this).onExistingKey(key, pool);
 
         if constexpr (consecutive_keys_optimization)
         {
-            cache.value = *it;
+            cache.value = it->getValue();
             cache.found = true;
             cache.empty = false;
 
             if constexpr (has_mapped)
-                cached = &cache.value.second;
+                cached = &cache.value.getSecond();
         }
 
         if constexpr (has_mapped)
-            return EmplaceResult(it->second, *cached, inserted);
+            return EmplaceResult(it->getSecond(), *cached, inserted);
         else
             return EmplaceResult(inserted);
     }
@@ -222,7 +221,7 @@ protected:
             if (cache.check(key))
             {
                 if constexpr (has_mapped)
-                    return FindResult(&cache.value.second, cache.found);
+                    return FindResult(&cache.value.getSecond(), cache.found);
                 else
                     return FindResult(cache.found);
             }
@@ -237,18 +236,18 @@ protected:
             cache.empty = false;
 
             if (found)
-                cache.value = *it;
+                cache.value = it->getValue();
             else
             {
                 if constexpr (has_mapped)
-                    cache.value.first = key;
+                    cache.value.getFirstMutable() = key;
                 else
                     cache.value = key;
             }
         }
 
         if constexpr (has_mapped)
-            return FindResult(found ? &it->second : nullptr, found);
+            return FindResult(found ? &it->getSecond() : nullptr, found);
         else
             return FindResult(found);
     }

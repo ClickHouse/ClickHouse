@@ -151,7 +151,7 @@ private:
     MutableColumns index_columns;
 
     std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
-    MergeTreeIndexGranules skip_indices_granules;
+    MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_filling;
 };
 

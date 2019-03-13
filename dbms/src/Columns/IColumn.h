@@ -253,6 +253,10 @@ public:
     /// Zero, if could be determined.
     virtual size_t allocatedBytes() const = 0;
 
+    /// Make memory region readonly with mprotect if it is large enough.
+    /// The operation is slow and performed only for debug builds.
+    virtual void protect() {}
+
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
     using ColumnCallback = std::function<void(Ptr&)>;

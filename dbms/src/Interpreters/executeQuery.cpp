@@ -21,8 +21,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
-#include <Interpreters/JoinToSubqueryTransformVisitor.h>
-#include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -63,18 +61,24 @@ static String joinLines(const String & query)
 
 
 /// Log query into text log (not into system table).
-static void logQuery(const String & query, const Context & context)
+static void logQuery(const String & query, const Context & context, bool internal)
 {
-    const auto & current_query_id = context.getClientInfo().current_query_id;
-    const auto & initial_query_id = context.getClientInfo().initial_query_id;
-    const auto & current_user = context.getClientInfo().current_user;
+    if (internal)
+    {
+        LOG_DEBUG(&Logger::get("executeQuery"), "(internal) " << joinLines(query));
+    }
+    else
+    {
+        const auto & current_query_id = context.getClientInfo().current_query_id;
+        const auto & initial_query_id = context.getClientInfo().initial_query_id;
+        const auto & current_user = context.getClientInfo().current_user;
 
-    LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
-    << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
-    << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
-    << ") "
-    << joinLines(query)
-    );
+        LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
+            << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
+            << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
+            << ") "
+            << joinLines(query));
+    }
 }
 
 
@@ -176,13 +180,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
+        /// Anyway log the query.
+        String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
+        logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
+
         if (!internal)
-        {
-            /// Anyway log the query.
-            String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
-            logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
             onExceptionBeforeStart(query, context, current_time);
-        }
 
         throw;
     }
@@ -193,24 +196,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
-        if (!internal)
-            logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
-
-        if (!internal && settings.allow_experimental_multiple_joins_emulation)
-        {
-            JoinToSubqueryTransformVisitor::Data join_to_subs_data;
-            JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
-            if (join_to_subs_data.done)
-                logQuery(queryToString(*ast), context);
-        }
-
-        if (!internal && settings.allow_experimental_cross_to_join_conversion)
-        {
-            CrossToInnerJoinVisitor::Data cross_to_inner;
-            CrossToInnerJoinVisitor(cross_to_inner).visit(ast);
-            if (cross_to_inner.done)
-                logQuery(queryToString(*ast), context);
-        }
+        logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);

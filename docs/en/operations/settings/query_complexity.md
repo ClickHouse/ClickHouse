@@ -111,6 +111,18 @@ What to do if the query is run longer than 'max_execution_time': 'throw' or 'bre
 
 Minimal execution speed in rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.
 
+## min_execution_speed_bytes
+
+Minimum number of execution bytes per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.
+
+## max_execution_speed
+
+Maximum number of execution rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is high, the execution speed will be reduced.
+
+## max_execution_speed_bytes
+
+Maximum number of execution bytes per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is high, the execution speed will be reduced.
+
 ## timeout_before_checking_execution_speed
 
 Checks that execution speed is not too slow (no less than 'min_execution_speed'), after the specified time in seconds has expired.

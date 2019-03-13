@@ -55,14 +55,11 @@ struct Progress
     /// Each value separately is changed atomically (but not whole object).
     bool incrementPiecewiseAtomically(const Progress & rhs)
     {
-        if (!rhs.rows)
-            return false;
-
         rows += rhs.rows;
         bytes += rhs.bytes;
         total_rows += rhs.total_rows;
 
-        return true;
+        return rhs.rows ? true : false;
     }
 
     void reset()

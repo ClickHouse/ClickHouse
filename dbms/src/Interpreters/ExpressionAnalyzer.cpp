@@ -304,7 +304,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
     {
         const IAST & args = *func->arguments;
 
-        if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0)))
+        if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0), context))
         {
             const ASTPtr & arg = args.children.at(1);
             if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
