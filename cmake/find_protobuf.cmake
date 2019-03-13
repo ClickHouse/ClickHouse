@@ -1,3 +1,7 @@
+option (ENABLE_PROTOBUF "Enable protobuf" ON)
+
+if (ENABLE_PROTOBUF)
+
 option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled" ${NOT_UNBUNDLED})
 
 if(OS_FREEBSD AND SANITIZE STREQUAL "address")
@@ -92,6 +96,8 @@ elseif(NOT MISSING_INTERNAL_PROTOBUF_LIBRARY)
         set(${SRCS} ${${SRCS}} PARENT_SCOPE)
         set(${HDRS} ${${HDRS}} PARENT_SCOPE)
     endfunction()
+endif()
+
 endif()
 
 message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY}")
