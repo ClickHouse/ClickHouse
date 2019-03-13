@@ -269,6 +269,7 @@ def main(args):
                                     while proc.returncode != 0 and need_retry(stderr):
                                         proc, stdout, stderr = run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file)
                                         sleep(2**counter)
+                                        counter += 1
                                         if counter > 6:
                                             break
 
