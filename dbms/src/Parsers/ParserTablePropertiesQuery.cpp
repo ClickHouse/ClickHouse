@@ -30,6 +30,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     std::shared_ptr<ASTQueryWithTableOrDictionaryAndOutput> query;
 
     bool parse_only_database_name = false;
+    bool parse_dictionary = false;
 
     if (s_exists.ignore(pos, expected))
     {
@@ -48,6 +49,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         else if (s_dictionary.ignore(pos, expected))
         {
             query = std::make_shared<ASTShowCreateDictionaryQuery>();
+            parse_dictionary = true;
         }
         else
             query = std::make_shared<ASTShowCreateTableQuery>();
@@ -81,7 +83,10 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     }
 
     getIdentifierName(database, query->database);
-    getIdentifierName(table, query->table);
+    if (parse_dictionary)
+        getIdentifierName(table, query->dictionary);
+    else
+        getIdentifierName(table, query->table);
 
     node = query;
 
