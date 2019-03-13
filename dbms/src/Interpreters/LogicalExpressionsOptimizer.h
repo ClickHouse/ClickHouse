@@ -15,7 +15,8 @@ namespace DB
 struct Settings;
 class ASTFunction;
 class ASTSelectQuery;
-
+class Context;
+class ColumnWithTypeAndName;
 
 /** This class provides functions for optimizing boolean expressions within queries.
   *
@@ -28,15 +29,17 @@ class LogicalExpressionsOptimizer final
     struct ExtractedSettings
     {
         const UInt64 optimize_min_equality_disjunction_chain_length;
+        const bool allow_short_circuit_logic_expressions;
 
-        ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_)
-        :   optimize_min_equality_disjunction_chain_length(optimize_min_equality_disjunction_chain_length_)
+        ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_, bool allow_short_circuit_logic_expressions_)
+        :   optimize_min_equality_disjunction_chain_length(optimize_min_equality_disjunction_chain_length_),
+            allow_short_circuit_logic_expressions{allow_short_circuit_logic_expressions_}
         {}
     };
 
 public:
     /// Constructor. Accepts the root of the query DAG.
-    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, ExtractedSettings && settings_);
+    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const Context & context_, ExtractedSettings && settings_);
 
     /** Replace all rather long homogeneous OR-chains expr = x1 OR ... OR expr = xN
       * on the expressions `expr` IN (x1, ..., xN).
@@ -73,6 +76,9 @@ private:
       * This information is grouped by the expression that is on the left side of the equation.
       */
     void collectDisjunctiveEqualityChains();
+    void shortCircuitLogicExpressions();
+    std::pair<ColumnWithTypeAndName, bool> tryExtractAndReplaceConstColumn(ASTPtr & node);
+    void replaceAST(ASTPtr & node, ASTPtr & replacer);
 
     /** Check that the set of equalities expr = x1, ..., expr = xN fulfills the following two requirements:
       * 1. It's not too small
@@ -99,6 +105,7 @@ private:
 
 private:
     ASTSelectQuery * select_query;
+    const Context & context;
     const ExtractedSettings settings;
     /// Information about the OR-chains inside the query.
     DisjunctiveEqualityChainsMap disjunctive_equality_chains_map;

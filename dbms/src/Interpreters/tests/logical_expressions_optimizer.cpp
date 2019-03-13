@@ -2,6 +2,7 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
@@ -32,7 +33,6 @@ TestResult check(const TestEntry & entry);
 bool parse(DB::ASTPtr & ast, const std::string & query);
 bool equals(const DB::ASTPtr & lhs, const DB::ASTPtr & rhs);
 void reorder(DB::IAST * ast);
-
 
 void run()
 {
@@ -212,8 +212,8 @@ TestResult check(const TestEntry & entry)
             return TestResult(false, "parse error");
 
         auto select_query = typeid_cast<DB::ASTSelectQuery *>(&*ast_input);
-
-        DB::LogicalExpressionsOptimizer optimizer(select_query, entry.limit);
+        DB::Context context = DB::Context::createGlobal();
+        DB::LogicalExpressionsOptimizer optimizer(select_query, context, {entry.limit, false});
         optimizer.perform();
 
         /// Parse the expected result.

@@ -1,1 +1,17 @@
 SELECT \n    a, \n    b\nFROM a 
+-- short_circuit_logic tests ---
+SELECT 0
+SELECT number\nFROM numbers(10) \nWHERE 1
+SELECT number\nFROM numbers(10) \nWHERE number = 3
+SELECT number\nFROM numbers(10) \nWHERE rand(10) = 1000
+SELECT number\nFROM numbers(10) \nWHERE now() > 1000
+SELECT number\nFROM numbers(10) \nWHERE rand() > 4
+SELECT number\nFROM numbers(10) \nWHERE 1 AS a
+SELECT \n    rand(), \n    rand(), \n    rand() + rand()
+SELECT 33
+SELECT if(number = 44, 33, 44)\nFROM numbers(10) 
+SELECT number\nFROM numbers(10) \nWHERE 1
+SELECT number\nFROM numbers(10) \nWHERE 0
+SELECT number\nFROM numbers(10) \nPREWHERE 0
+SELECT number\nFROM numbers(10) \nWHERE 0
+>>>>>>> simple logical_short_circuit optimization

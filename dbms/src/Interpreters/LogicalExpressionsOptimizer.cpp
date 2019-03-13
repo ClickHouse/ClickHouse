@@ -4,8 +4,14 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
-
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Functions/FunctionFactory.h>
+#include <TableFunctions/TableFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <deque>
 
@@ -30,8 +36,8 @@ bool LogicalExpressionsOptimizer::OrWithExpression::operator<(const OrWithExpres
     return std::tie(this->or_function, this->expression) < std::tie(rhs.or_function, rhs.expression);
 }
 
-LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, ExtractedSettings && settings_)
-    : select_query(select_query_), settings(settings_)
+LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const Context & context_, ExtractedSettings && settings_)
+    : select_query(select_query_), context(context_), settings(settings_)
 {
 }
 
@@ -41,6 +47,9 @@ void LogicalExpressionsOptimizer::perform()
         return;
     if (visited_nodes.count(select_query))
         return;
+
+    if (settings.allow_short_circuit_logic_expressions)
+        shortCircuitLogicExpressions();
 
     size_t position = 0;
     for (auto & column : select_query->select()->children)
@@ -75,6 +84,125 @@ void LogicalExpressionsOptimizer::perform()
         fixBrokenOrExpressions();
         reorderColumns();
     }
+}
+
+void LogicalExpressionsOptimizer::shortCircuitLogicExpressions()
+{   
+    for (auto & child : select_query->children)
+        tryExtractAndReplaceConstColumn(child);
+}
+
+std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAndReplaceConstColumn(ASTPtr & node)
+{
+    if (const ASTLiteral * literal = typeid_cast<ASTLiteral *>(node.get()))
+    {   
+        /// const ColumnPtr & column_, const DataTypePtr & type_, const String & name_
+        const auto data_type = DataTypeFactory::instance().get(literal->value.getTypeName());
+        const auto column_ptr = data_type->createColumnConst(1, literal->value);
+        ColumnWithTypeAndName column{column_ptr, data_type, ""};
+
+        return std::make_pair(column, true);
+    }
+    else if (const ASTFunction * function = typeid_cast<ASTFunction * >(node.get()))
+    {
+        if (function->name == "or" || function->name == "and")
+        {   
+            bool is_or = function->name == "or";
+            auto * args = typeid_cast<ASTExpressionList *>(function->arguments.get());
+            for (auto & child : args->children)
+            {
+                auto value = tryExtractAndReplaceConstColumn(child);
+                if (value.second)
+                {   
+                    bool flag = value.first.column->getBool(0);
+                    /// TODO: deal with the alias, but here we just ignore the alais by Short circuit evaluation
+                    if ((flag && is_or) || (!flag && !is_or))
+                    {
+                        Field f;
+                        ASTPtr replace_ast_ptr = std::make_shared<ASTLiteral>(flag);
+                        replaceAST(node, replace_ast_ptr);
+                        return value;
+                    } 
+                }
+            }
+            /// where (2 = 2) and (number = 3) and (1 = 1)  => where number = 3
+            auto new_end = std::remove_if(args->children.begin(), args->children.end(), [](ASTPtr & child)
+            {
+                return typeid_cast<ASTLiteral *>(child.get());
+            });
+            args->children.erase(new_end, args->children.end());
+            
+            /// if args->children is empty or just one children left
+            if (args->children.size() <= 1)
+            {   
+                ASTPtr replace_ast_ptr = args->children.empty() ? std::make_shared<ASTLiteral>(is_or ? 0 : 1) : args->children[0];
+                replaceAST(node, replace_ast_ptr);
+            }
+        }
+        else
+        {
+            ColumnsWithTypeAndName args;
+            ColumnNumbers args_position;
+            size_t position = 0;
+            auto * func_args = typeid_cast<ASTExpressionList *>(function->arguments.get());
+
+            for (auto & child : func_args->children)
+            {
+                auto value = tryExtractAndReplaceConstColumn(child);
+                if (!value.second)
+                    return std::make_pair(ColumnWithTypeAndName(), false);
+                args.push_back(value.first);
+                args_position.push_back(position);
+                ++position;
+            }
+
+            FunctionBuilderPtr func_builder = FunctionFactory::instance().tryGet(function->name, context);
+            if (func_builder && !TableFunctionFactory::instance().isTableFunctionName(function->name) && 
+                !AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
+            {
+                auto func = func_builder->build(args);
+                if (func->isSuitableForConstantFolding() && func->isDeterministic() && func->isDeterministicInScopeOfQuery())
+                {
+                    const auto & data_type = func->getReturnType();
+                    args.emplace_back(nullptr, data_type, "");
+                    Block temporary_block{args};
+
+                    func->execute(temporary_block, args_position, args.size() - 1, 1);
+                    ColumnWithTypeAndName column{temporary_block.getByPosition(args.size() - 1).column, data_type, ""};
+
+                    /// replace ast
+                    Field f = (*temporary_block.getByPosition(args.size() - 1).column)[0];
+                    ASTPtr replace_ast_ptr = std::make_shared<ASTLiteral>(f);
+                    replaceAST(node, replace_ast_ptr);
+
+                    return std::make_pair(column, true);
+                }
+            }
+        }
+
+    }
+    else
+    {
+        for (auto & child : node->children)
+            tryExtractAndReplaceConstColumn(child);
+    }
+    return std::make_pair(ColumnWithTypeAndName{}, false);
+}
+
+void LogicalExpressionsOptimizer::replaceAST(ASTPtr & node, ASTPtr & replacer)
+{
+    String replace_alias = replacer->tryGetAlias();
+    String node_alias = node->tryGetAlias();
+    replacer->setAlias(node_alias);
+
+    if (select_query->where_expression && (node == select_query->where_expression))
+        select_query->where_expression = replacer;
+    if (select_query->prewhere_expression && (node == select_query->prewhere_expression))
+        select_query->prewhere_expression = replacer;
+    if (select_query->having_expression && (node == select_query->having_expression))
+        select_query->having_expression = replacer;
+
+    node = replacer;
 }
 
 void LogicalExpressionsOptimizer::reorderColumns()
