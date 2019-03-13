@@ -14,8 +14,8 @@ CREATE TABLE visits
     ClientID UUID
 )
 ENGINE = MergeTree()
-PARTITION BY toYYYYMM(Date)
-ORDER BY Hour
+PARTITION BY toYYYYMM(VisitDate)
+ORDER BY Hour;
 ```
 
 The partition key can also be a tuple of expressions (similar to the [primary key](mergetree.md#primary-keys-and-indexes-in-queries)). For example:
@@ -23,8 +23,7 @@ The partition key can also be a tuple of expressions (similar to the [primary ke
 ``` sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
 PARTITION BY (toMonday(StartDate), EventType)
-ORDER BY (CounterID, StartDate, intHash32(UserID))
-SAMPLE BY intHash32(UserID)
+ORDER BY (CounterID, StartDate, intHash32(UserID));
 ```
 
 In this example, we set partitioning by the event types that occurred during the current week.
@@ -32,7 +31,7 @@ In this example, we set partitioning by the event types that occurred during the
 When inserting new data to a table, this data is stored as a separate part (chunk) sorted by the primary key. In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
 
 !!! info
-    A merge only works for data parts that have the same value for the partitioning expression. This means you should not make overly granular partitions (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
+    A merge only works for data parts that have the same value for the partitioning expression. This means you shouldn't make overly granular partitions (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 
 Use the [system.parts](../system_tables.md#system_tables-parts) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 

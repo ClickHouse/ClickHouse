@@ -177,8 +177,6 @@ This query copies the data partition from the `table1` to `table2` (data isn't d
 - Both tables must have the same structure.
 - When creating the `table2`, you must specify the same partition key as for the `table1`. 
 
-Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
-
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
 ``` sql
@@ -199,8 +197,13 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
-This query creates a local backup of a specified partition. Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
+This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once. 
 
+Note that for old-styled tables you can specify the prefix of the partition name (for example, '2019') - then the query creates the backup for all the corresponding partitions. Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+
+!!! note
+   The entire backup process is performed without stopping the server.
+   
 At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where
 
 - `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
@@ -208,23 +211,21 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 
 The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs 'chmod' for all files, forbidding writing into them.
 
+After creating the backup, you can copy the data from `/var/lib/clickhouse/shadow/` to the remote server and then delete it from the local server. Note that the `ALTER t FREEZE PARTITION` query is not replicated. It creates a local backup only on the local server.
+
 The query creates backup almost instantly (but first it waits for the current queries to the corresponding table to finish running).
 
 At first, the backup does not take any space on the disk. As the system works, the backup can take disk space, as data is modified. If the backup is made for old enough data, it does not take space on the disk.
 
-After creating the backup, you can copy the data from `/var/lib/clickhouse/shadow/` to the remote server and then delete it from the local server. The entire backup process is performed without stopping the server.
-
-The `ALTER ... FREEZE PARTITION` query is not replicated. It creates a local backup only on the local server.
-
 Another way to create a local backup is to copy data from the `/var/lib/clickhouse/data/database/table` directory manually. Note that you should do it when the server isn't running. Otherwise, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. Copy the data when the server is not running – then the resulting data will be the same as after the `ALTER TABLE t FREEZE PARTITION` query.
 
-`ALTER TABLE ... FREEZE PARTITION` copies only the data, not table metadata. To make a backup of table metadata, copy the file `/var/lib/clickhouse/metadata/database/table.sql`
+`ALTER TABLE t FREEZE PARTITION` copies only the data, not table metadata. To make a backup of table metadata, copy the file `/var/lib/clickhouse/metadata/database/table.sql`
 
 To add the data to a table from a backup, do the following:
 
 1. Create the table if it does not exist. To view the query, use the .sql file (replace `ATTACH` in it with `CREATE`).
 2. Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
-3. Run `ALTER TABLE ... ATTACH PARTITION` queries to add the data to a table.
+3. Run `ALTER TABLE t ATTACH PARTITION` queries to add the data to a table.
 
 Restoring from a backup does not require stopping the server.
 
