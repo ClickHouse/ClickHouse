@@ -307,11 +307,15 @@ See also the `JSONEachRow` format.
 
 ## JSONEachRow {#jsoneachrow}
 
-You can use it both in the `SELECT` and `INSERT` queries. When you select the data in this format, ClickHouse returns each row as a JSON object. When inserting the data, you should provide each row as a JSON object.
+When using this format, ClickHouse outputs rows as separated, newline delimited JSON objects, but the whole data is not a valid JSON.
 
 ```json
+{"SearchPhrase":"curtain designs","count()":"1064"}
+{"SearchPhrase":"baku","count()":"1000"}
 {"SearchPhrase":"","count":"8267016"}
 ```
+
+When inserting the data, you should provide a separate JSON object for each row.
 
 ### Inserting the Data
 
@@ -321,7 +325,7 @@ INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021
 
 ClickHouse allows:
 
-- Any order of key-value pairs for the object.
+- Any order of key-value pairs in the object.
 - The omission of some values.
 
 ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects to a line. You do not have to separate them with line breaks.
@@ -345,7 +349,8 @@ CREATE TABLE IF NOT EXISTS example_table
 - If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as a default value for `UInt32` data type).
 - If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
-    Use this option carefully, it affects the performance of the ClickHouse server.
+!!! note "Warning"
+    Use this option carefully, enabling it negatively affects the performance of the ClickHouse server.
 
 ### Selecting the Data
 
@@ -368,7 +373,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
 !!! note "Note"
-    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted into JSON without of losing any information.
+    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted into JSON without losing any information.
 
 ## Native {#native}
 
