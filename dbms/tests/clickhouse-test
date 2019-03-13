@@ -364,6 +364,8 @@ def main(args):
                 print("\nStacktraces of all threads:")
                 print(get_stacktraces(server_pid))
             exit_code = 1
+        else:
+            print(colored("\nNo queries hung.", "green", attrs=["bold"]))
 
     sys.exit(exit_code)
 
