@@ -310,13 +310,13 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
     if (heap_array.size() == 0)
     {
         auto parsed = (msg.getEnd() - base) * sizeof(capnp::word);
-        istr.position() += parsed;
+        istr.ignore(parsed);
     }
     // Advance buffer position if used with remaining bytes from previous buffer
     else if (remainingBytes != 0)
     {
         auto parsed = (msg.getEnd() - heap_array.begin()) * sizeof(capnp::word) - remainingBytes;
-        istr.position() += parsed;
+        istr.ignore(parsed);
     }
 
     return true;
