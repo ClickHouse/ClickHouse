@@ -74,7 +74,15 @@ public:
     void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { name = new_table_name; }
 
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override { return false; }
+    bool supportsPrewhere() const override
+    {
+        if (no_destination)
+            return false;
+        auto dest = global_context.tryGetTable(destination_database, destination_table);
+        if (dest && dest.get() != this)
+            return dest->supportsPrewhere();
+        return false;
+    }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
 
