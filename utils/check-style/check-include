@@ -19,7 +19,6 @@ inc="-I. \
 -I./contrib/double-conversion \
 -I./contrib/cityhash102/include \
 -I./contrib/croaring \
--I./contrib/cppkafka/include \
 -I./contrib/murmurhash/include \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
@@ -57,6 +56,8 @@ inc="-I. \
 -I./contrib/libhdfs3/include \
 -I./contrib/base64/include \
 -I./contrib/protobuf/src \
+-I./contrib/cppkafka/include \
+-I./contrib/librdkafka-cmake/include \
 -I./contrib/lz4/lib \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
