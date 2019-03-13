@@ -119,7 +119,6 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
                     /// TODO: deal with the alias, but here we just ignore the alais by Short circuit evaluation
                     if ((flag && is_or) || (!flag && !is_or))
                     {
-                        Field f;
                         ASTPtr replace_ast_ptr = std::make_shared<ASTLiteral>(flag);
                         replaceAST(node, replace_ast_ptr);
                         return value;
