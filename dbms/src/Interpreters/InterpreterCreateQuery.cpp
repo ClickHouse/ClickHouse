@@ -45,6 +45,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <Compression/CompressionFactory.h>
+#include <Interpreters/InterpreterDropQuery.h>
 
 
 namespace DB
@@ -623,6 +624,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 if (create.if_not_exists)
                     return {};
+                else if (create.replace_view)
+                {
+                    /// when executing CREATE OR REPLACE VIEW, drop current existing view
+                    auto drop_ast = std::make_shared<ASTDropQuery>();
+                    drop_ast->database = database_name;
+                    drop_ast->table = table_name;
+                    drop_ast->no_ddl_lock = true;
+
+                    InterpreterDropQuery interpreter(drop_ast, context);
+                    interpreter.execute();
+                }
                 else
                     throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
             }
