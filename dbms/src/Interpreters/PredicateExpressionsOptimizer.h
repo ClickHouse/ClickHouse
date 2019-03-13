@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-
+#include "DatabaseAndTableWithAlias.h"
+#include "ExpressionAnalyzer.h"
 #include <map>
 
 namespace DB
