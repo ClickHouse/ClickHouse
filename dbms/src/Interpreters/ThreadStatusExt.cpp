@@ -218,7 +218,10 @@ void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group
 const std::string & CurrentThread::getQueryId()
 {
     if (unlikely(!current_thread))
-        return getQueryId();
+    {
+        const static std::string empty;
+        return empty;
+    }
     return get().getQueryId();
 }
 
