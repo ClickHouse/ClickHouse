@@ -7,7 +7,7 @@ namespace DB
 {
 
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const String & schema, UInt64 max_block_size_)
+    StorageKafka & storage_, const Context & context_, const String & schema, size_t max_block_size_)
     : storage(storage_), context(context_), max_block_size(max_block_size_)
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
