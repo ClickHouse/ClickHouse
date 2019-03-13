@@ -112,7 +112,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
     add_custom_target (clickhouse ALL DEPENDS clickhouse-bundle)
 
-    install (PROGRAMS clickhouse DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    install(PROGRAMS clickhouse-split-helper DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME clickhouse COMPONENT clickhouse)
 else ()
     if (USE_EMBEDDED_COMPILER)
         # before add_executable !
