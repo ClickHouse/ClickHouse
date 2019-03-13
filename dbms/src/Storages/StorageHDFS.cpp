@@ -167,7 +167,7 @@ void registerStorageHDFS(StorageFactory & factory)
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
-        String format_name = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
+        String format_name = engine_args[1]->as<ASTLiteral>()->value.safeGet<String>();
 
         return StorageHDFS::create(url, args.table_name, format_name, args.columns, args.context);
     });
