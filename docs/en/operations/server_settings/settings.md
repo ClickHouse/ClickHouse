@@ -713,11 +713,11 @@ Storage method of the data parts headers in ZooKeeper.
 
 This setting applies only to the `MergeTree`-family and it can be specified:
 
-- Globally in the `config.xml`.
+- Globally in the [merge_tree](#server_settings-merge_tree) section of the `config.xml` file.
 
-    ClickHouse use the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior with the setting change.
+    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior with the setting change.
 
-- For each separate table.
+- For each individual table.
 
     When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). Ones creating a table you can't change its behavior even with the global setting.
 
