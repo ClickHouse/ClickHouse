@@ -612,6 +612,19 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <tcp_port>9000</tcp_port>
 ```
 
+## tcp_port_secure {#server_settings-tcp_port_secure}
+
+TCP порт для защищённого обмена данными с клиентами. Используйте с настройкой [OpenSSL](#server_settings-openssl).
+
+**Possible values**
+
+Положительное целое.
+
+**Default value**
+
+```xml
+<tcp_port_secure>9440</tcp_port_secure>
+```
 
 ## tmp_path
 
