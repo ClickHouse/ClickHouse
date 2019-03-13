@@ -36,7 +36,7 @@
 └───────┘
 ```
 
-Запрос `SELECT * FROM FixedStringTable WHERE a = 'b'` не возвращает необходимых данных. Необходимо дополнить шаблон фильтра пустыми байтами.
+Запрос `SELECT * FROM FixedStringTable WHERE a = 'b'` не возвращает необходимых данных. Необходимо дополнить шаблон фильтра нулевыми байтами.
 
 ```
 SELECT * FROM FixedStringTable
@@ -49,9 +49,8 @@ WHERE a = 'b\0'
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-Обратите внимание, как это поведение отличается от поведения MySQL для типа `CHAR`  (строки дополняются пробелами, пробелы перед выводом вырезаются).
+Это поведение отличается от поведения MySQL для типа <x id="1"/>CHAR<x id="2"/>, где строки дополняются пробелами, а пробелы перед выводом вырезаются.
 
 Обратите внимание, что длина значения `FixedString(N)` постоянна. Функция [length](../query_language/functions/array_functions.md#array_functions-length) возвращает `N` даже если значение `FixedString(N)` заполнено только нулевыми байтами, однако функция [empty](../query_language/functions/string_functions.md#string_functions-empty) в этом же случае возвращает `1`.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/fixedstring/) <!--hide-->
-
