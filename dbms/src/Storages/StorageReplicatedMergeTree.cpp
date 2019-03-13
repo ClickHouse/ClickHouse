@@ -3080,7 +3080,8 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
     }
 
     /// TODO: Bad setting name for such purpose
-    if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
+    if (merge_entry.type != ReplicatedMergeTreeLogEntryData::Type::EMPTY
+        && query_context.getSettingsRef().replication_alter_partitions_sync != 0)
         waitForAllReplicasToProcessLogEntry(merge_entry);
 
     return true;
