@@ -241,7 +241,7 @@ INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 
 For tables from the `*MergeTree` family data skipping indices can be specified.
 
-These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules,
+These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (size of the granule is specified using `index_granularity` setting in the table engine),
 then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where `where` query cannot be satisfied.
 
 
