@@ -58,6 +58,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (command_ast->column)
             command.after_column = *getIdentifierName(command_ast->column);
 
+        if (ast_col_decl.ttl)
+            command.ttl = ast_col_decl.ttl;
+
         command.if_not_exists = command_ast->if_not_exists;
 
         return command;
@@ -100,6 +103,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
             command.comment = ast_comment.value.get<String>();
         }
+
+        if (ast_col_decl.ttl)
+            command.ttl = ast_col_decl.ttl;
+
         command.if_exists = command_ast->if_exists;
 
         return command;

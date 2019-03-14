@@ -94,6 +94,19 @@ bool ColumnsDescription::operator==(const ColumnsDescription & other) const
         if (other.codecs.at(col_name)->getCodecDesc() != codec_ptr->getCodecDesc())
             return false;
     }
+
+    if (ttl_asts.size() != other.ttl_asts.size())
+        return false;
+
+    for (const auto & [col_name, ttl_ast] : ttl_asts)
+    {
+        auto it = other.ttl_asts.find(col_name);
+        if (it == other.ttl_asts.end())
+            return false;
+        if (queryToString(ttl_ast) != queryToString(it->second))
+            return false;
+    }
+
     return true;
 }
 
@@ -145,7 +158,7 @@ String ColumnsDescription::toString() const
             const auto ttl_it = ttl_asts.find(column.name);
             if (ttl_it != ttl_asts.end())
             {
-                writeText("\tTTL\t", buf);
+                writeCString("\tTTL\t", buf);
                 writeText(queryToString(ttl_it->second), buf);
             }
             writeChar('\n', buf);
@@ -158,71 +171,6 @@ String ColumnsDescription::toString() const
     return buf.str();
 }
 
-<<<<<<< HEAD
-std::optional<ColumnDefault> parseDefaultInfo(ReadBufferFromString & buf)
-{
-    if (*buf.position() == '\n')
-        return {};
-
-    assertChar('\t', buf);
-    if (*buf.position() == '\t')
-        return {};
-
-    String default_kind_str;
-    readText(default_kind_str, buf);
-    const auto default_kind = columnDefaultKindFromString(default_kind_str);
-    assertChar('\t', buf);
-
-    ParserExpression expr_parser;
-    String default_expr_str;
-    readText(default_expr_str, buf);
-    ASTPtr default_expr = parseQuery(expr_parser, default_expr_str, "default_expression", 0);
-    return ColumnDefault{default_kind, std::move(default_expr)};
-}
-
-String parseComment(ReadBufferFromString& buf)
-{
-    if (*buf.position() == '\n')
-        return {};
-
-    assertChar('\t', buf);
-    ParserStringLiteral string_literal_parser;
-    String comment_expr_str;
-    readText(comment_expr_str, buf);
-    ASTPtr comment_expr = parseQuery(string_literal_parser, comment_expr_str, "comment expression", 0);
-    return typeid_cast<ASTLiteral &>(*comment_expr).value.get<String>();
-}
-
-CompressionCodecPtr parseCodec(ReadBufferFromString& buf)
-{
-    if (*buf.position() == '\n')
-        return {};
-
-    assertChar('\t', buf);
-    ParserCodec codec_parser;
-    String codec_expr_str;
-    readText(codec_expr_str, buf);
-    ASTPtr codec_expr = parseQuery(codec_parser, codec_expr_str, "codec expression", 0);
-    if (codec_expr)
-        return CompressionCodecFactory::instance().get(codec_expr);
-    else
-        return nullptr;
-}
-
-ASTPtr parseTTLExpression(ReadBufferFromString& buf)
-{
-    if (*buf.position() == '\n')
-        return {};
-
-    assertChar('\t', buf);
-    ParserExpression expression_parser;
-    String ttl_expr_str;
-    readText(ttl_expr_str, buf);
-    return parseQuery(expression_parser, ttl_expr_str, "ttl expression", 0);
-}
-
-=======
->>>>>>> upstream/master
 void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const DataTypeFactory & data_type_factory)
 {
     ParserColumnDeclaration column_parser(true);
@@ -264,6 +212,9 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
             auto codec = CompressionCodecFactory::instance().get(col_ast->codec, type);
             result.codecs.emplace(column_name, std::move(codec));
         }
+
+        if (col_ast->ttl)
+            result.ttl_asts.emplace(column_name, col_ast->ttl->clone());
     }
     else
         throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);

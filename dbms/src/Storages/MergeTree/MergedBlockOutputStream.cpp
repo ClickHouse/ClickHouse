@@ -390,6 +390,16 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
     }
 
+    if (new_part->ttl_infos.part_min_ttl)
+    {
+        /// Write a file with ttl infos in json format.
+        WriteBufferFromFile out(part_path + "ttl.txt", 4096);
+        HashingWriteBuffer out_hashing(out);
+        new_part->ttl_infos.write(out_hashing);
+        checksums.files["ttl.txt"].file_size = out_hashing.count();
+        checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+    }
+
     {
         /// Write a file with a description of columns.
         WriteBufferFromFile out(part_path + "columns.txt", 4096);
@@ -400,13 +410,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         /// Write file with checksums.
         WriteBufferFromFile out(part_path + "checksums.txt", 4096);
         checksums.write(out);
-    }
-
-    if (new_part->ttl_infos.part_min_ttl)
-    {
-        /// Write a file with ttl infos in json format.
-        WriteBufferFromFile out(part_path + "ttl.txt");
-        new_part->ttl_infos.write(out);
     }
 
     new_part->rows_count = rows_count;

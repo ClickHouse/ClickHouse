@@ -52,6 +52,9 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "codec_expression";
     block.insert(col);
 
+    col.name = "ttl_expression";
+    block.insert(col);
+
     return block;
 }
 
@@ -64,6 +67,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     ColumnDefaults column_defaults;
     ColumnComments column_comments;
     ColumnCodecs column_codecs;
+    ColumnTTLs column_ttls;
     StoragePtr table;
 
     auto table_expression = typeid_cast<const ASTTableExpression *>(ast.table_expression.get());
@@ -98,6 +102,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         column_defaults = table->getColumns().defaults;
         column_comments = table->getColumns().comments;
         column_codecs = table->getColumns().codecs;
+        column_ttls = table->getColumns().ttl_asts;
     }
 
     Block sample_block = getSampleBlock();
@@ -139,6 +144,12 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         {
             res_columns[5]->insert(codecs_it->second->getCodecDesc());
         }
+
+        const auto ttl_it = column_ttls.find(column.name);
+        if (ttl_it == std::end(column_ttls))
+            res_columns[6]->insertDefault();
+        else
+            res_columns[6]->insert(queryToString(ttl_it->second));
     }
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));

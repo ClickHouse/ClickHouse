@@ -40,6 +40,7 @@ struct AlterCommand
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
     String comment;
+    ASTPtr ttl;
 
     /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
     String after_column;

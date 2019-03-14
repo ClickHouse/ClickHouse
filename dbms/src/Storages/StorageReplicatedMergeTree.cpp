@@ -54,6 +54,7 @@
 #include <thread>
 #include <future>
 
+#include <Parsers/queryToString.h>
 
 namespace ProfileEvents
 {

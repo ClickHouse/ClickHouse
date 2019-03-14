@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-}
-
 void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_infos)
 {
     for (const auto & [name, ttl_info] : other_infos.columns_ttl)
@@ -24,7 +19,7 @@ void MergeTreeDataPartTTLInfos::update(const MergeTreeDataPartTTLInfos & other_i
     updatePartMinTTL(table_ttl.min);
 }
 
-void MergeTreeDataPartTTLInfos::read(ReadBufferFromFile & in)
+void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
 {
     String json_str;
     readString(json_str, in);
@@ -55,7 +50,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBufferFromFile & in)
     }
 }
 
-void MergeTreeDataPartTTLInfos::write(WriteBufferFromFile & out) const
+void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
 {
     writeString("ttl format version: 1\n", out);
     writeString("{", out);
@@ -79,7 +74,9 @@ void MergeTreeDataPartTTLInfos::write(WriteBufferFromFile & out) const
     }
     if (table_ttl.min)
     {
-        writeString(",\"table\":{\"min\":", out);
+        if (!columns_ttl.empty())
+            writeString(",", out);
+        writeString("\"table\":{\"min\":", out);
         writeIntText(table_ttl.min, out);
         writeString(",\"max\":", out);
         writeIntText(table_ttl.max, out);

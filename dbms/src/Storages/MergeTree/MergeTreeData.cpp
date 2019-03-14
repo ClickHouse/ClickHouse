@@ -1551,7 +1551,7 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
         log_message << *it;
     }
 
-    LOG_DEBUG(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
+    LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
 
     if (auto transaction = alterDataPart(data_part, new_columns, getIndicesDescription().indices, false))
         transaction->commit();

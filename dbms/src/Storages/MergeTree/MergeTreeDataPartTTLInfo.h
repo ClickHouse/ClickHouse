@@ -37,8 +37,8 @@ struct MergeTreeDataPartTTLInfos
     MergeTreeDataPartTTLInfo table_ttl;
     time_t part_min_ttl = 0;
 
-    void read(ReadBufferFromFile & in);
-    void write(WriteBufferFromFile & out) const;
+    void read(ReadBuffer & in);
+    void write(WriteBuffer & out) const;
     void update(const MergeTreeDataPartTTLInfos & other_infos);
 
     void updatePartMinTTL(time_t time)
