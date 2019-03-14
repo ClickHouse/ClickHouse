@@ -110,9 +110,9 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
         {
             bool is_or = function->name == "or";
             auto * args = typeid_cast<ASTExpressionList *>(function->arguments.get());
-            for (auto & child : args->children)
+            for (auto it = args->children.begin(); it != args->children.end();)
             {
-                auto value = tryExtractAndReplaceConstColumn(child);
+                auto value = tryExtractAndReplaceConstColumn(*it);
                 if (value.second)
                 {
                     bool flag = value.first.column->getBool(0);
@@ -123,16 +123,14 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
                         replaceAST(node, replace_ast_ptr);
                         return value;
                     }
+                    /// erase the constant value from conditions, eg: where (2 = 2) and (number = 3) and (1 = 1)  => where number = 3
+                    it = args->children.erase(it);
                 }
+                else
+                    ++ it;
             }
-            /// where (2 = 2) and (number = 3) and (1 = 1)  => where number = 3
-            auto new_end = std::remove_if(args->children.begin(), args->children.end(), [](ASTPtr & child)
-            {
-                return typeid_cast<ASTLiteral *>(child.get());
-            });
-            args->children.erase(new_end, args->children.end());
 
-            /// if args->children is empty or just one children left
+            /// if args->children is empty or just one children left, replace the function with a single AST
             if (args->children.size() <= 1)
             {
                 ASTPtr replace_ast_ptr = args->children.empty() ? std::make_shared<ASTLiteral>(is_or ? 0 : 1) : args->children[0];
@@ -170,7 +168,6 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
                     func->execute(temporary_block, args_position, args.size() - 1, 1);
                     ColumnWithTypeAndName column{temporary_block.getByPosition(args.size() - 1).column, data_type, ""};
 
-                    /// replace ast
                     Field f = (*temporary_block.getByPosition(args.size() - 1).column)[0];
                     ASTPtr replace_ast_ptr = std::make_shared<ASTLiteral>(f);
                     replaceAST(node, replace_ast_ptr);
