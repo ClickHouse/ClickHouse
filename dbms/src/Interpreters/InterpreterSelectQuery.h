@@ -120,13 +120,13 @@ private:
         BlockInputStreamPtr & firstStream() { return streams.at(0); }
 
         template <typename Transform>
-        void transform(Transform && transform)
+        void transform(Transform && transformation)
         {
             for (auto & stream : streams)
-                transform(stream);
+                transformation(stream);
 
             if (stream_with_non_joined_data)
-                transform(stream_with_non_joined_data);
+                transformation(stream_with_non_joined_data);
         }
 
         bool hasMoreThanOneStream() const
