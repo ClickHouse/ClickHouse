@@ -2,47 +2,35 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 
 
 namespace DB
 {
-
 template <typename T>
 class JSONNullableImplBase
 {
 public:
-    static DataTypePtr getType()
-    {
-        return std::make_shared<DataTypeNullable>(
-            std::make_shared<T>()
-        );
-    }
+    static DataTypePtr getType() { return std::make_shared<DataTypeNullable>(std::make_shared<T>()); }
 
-    static Field getDefault()
-    {
-        return {};
-    }
+    static Field getDefault() { return {}; }
 };
 
-class JSONHasImpl: public JSONNullableImplBase<DataTypeUInt8>
+class JSONHasImpl : public JSONNullableImplBase<DataTypeUInt8>
 {
 public:
-    static constexpr auto name {"jsonHas"};
+    static constexpr auto name{"jsonHas"};
 
-    static Field getValue(ParsedJson::iterator &)
-    {
-        return {1};
-    }
+    static Field getValue(ParsedJson::iterator &) { return {1}; }
 };
 
-class JSONLengthImpl: public JSONNullableImplBase<DataTypeUInt64>
+class JSONLengthImpl : public JSONNullableImplBase<DataTypeUInt64>
 {
 public:
-    static constexpr auto name {"jsonLength"};
+    static constexpr auto name{"jsonLength"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -63,10 +51,10 @@ public:
     }
 };
 
-class JSONTypeImpl: public JSONNullableImplBase<DataTypeUInt8>
+class JSONTypeImpl : public JSONNullableImplBase<DataTypeUInt8>
 {
 public:
-    static constexpr auto name {"jsonType"};
+    static constexpr auto name{"jsonType"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -78,34 +66,21 @@ public:
 class JSONExtractImpl
 {
 public:
-    static constexpr auto name {"jsonExtract"};
+    static constexpr auto name{"jsonExtract"};
 
     static DataTypePtr getType(const DataTypePtr & type)
     {
-        WhichDataType which {
-            type
-        };
+        WhichDataType which{type};
 
-        if (
-            which.isNativeUInt()
-            || which.isNativeInt()
-            || which.isFloat()
-            || which.isEnum()
-            || which.isDateOrDateTime()
-            || which.isStringOrFixedString()
-            || which.isInterval()
-        )
-            return std::make_shared<DataTypeNullable>(
-                type
-            );
+        if (which.isNativeUInt() || which.isNativeInt() || which.isFloat() || which.isEnum() || which.isDateOrDateTime()
+            || which.isStringOrFixedString() || which.isInterval())
+            return std::make_shared<DataTypeNullable>(type);
 
         if (which.isArray())
         {
             auto array_type = static_cast<const DataTypeArray *>(type.get());
 
-            return std::make_shared<DataTypeArray>(
-                getType(array_type->getNestedType())
-            );
+            return std::make_shared<DataTypeArray>(getType(array_type->getNestedType()));
         }
 
         if (which.isTuple())
@@ -115,41 +90,27 @@ public:
             DataTypes types;
             types.reserve(tuple_type->getElements().size());
 
-            for (const DataTypePtr & element: tuple_type->getElements())
+            for (const DataTypePtr & element : tuple_type->getElements())
             {
                 types.push_back(getType(element));
             }
 
-            return std::make_shared<DataTypeTuple>(
-                std::move(types)
-            );
+            return std::make_shared<DataTypeTuple>(std::move(types));
         }
 
-        throw Exception {
-            "Unsupported return type schema: " + type->getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
+        throw Exception{"Unsupported return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
     static Field getDefault(const DataTypePtr & type)
     {
-        WhichDataType which {
-            type
-        };
+        WhichDataType which{type};
 
-        if (
-            which.isNativeUInt()
-            || which.isNativeInt()
-            || which.isFloat()
-            || which.isEnum()
-            || which.isDateOrDateTime()
-            || which.isStringOrFixedString()
-            || which.isInterval()
-        )
+        if (which.isNativeUInt() || which.isNativeInt() || which.isFloat() || which.isEnum() || which.isDateOrDateTime()
+            || which.isStringOrFixedString() || which.isInterval())
             return {};
 
         if (which.isArray())
-            return {Array {}};
+            return {Array{}};
 
         if (which.isTuple())
         {
@@ -158,32 +119,21 @@ public:
             Tuple tuple;
             tuple.toUnderType().reserve(tuple_type->getElements().size());
 
-            for (const DataTypePtr & element: tuple_type->getElements())
+            for (const DataTypePtr & element : tuple_type->getElements())
                 tuple.toUnderType().push_back(getDefault(element));
 
             return {tuple};
         }
 
         // should not reach
-        throw Exception {
-            "Unsupported return type schema: " + type->getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
+        throw Exception{"Unsupported return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
     static Field getValue(ParsedJson::iterator & pjh, const DataTypePtr & type)
     {
-        WhichDataType which {
-            type
-        };
+        WhichDataType which{type};
 
-        if (
-            which.isNativeUInt()
-            || which.isNativeInt()
-            || which.isEnum()
-            || which.isDateOrDateTime()
-            || which.isInterval()
-        )
+        if (which.isNativeUInt() || which.isNativeInt() || which.isEnum() || which.isDateOrDateTime() || which.isInterval())
         {
             if (pjh.is_integer())
                 return {pjh.get_integer()};
@@ -194,7 +144,7 @@ public:
         if (which.isFloat())
         {
             if (pjh.is_integer())
-                return {(double) pjh.get_integer()};
+                return {(double)pjh.get_integer()};
             else if (pjh.is_double())
                 return {pjh.get_double()};
             else
@@ -204,10 +154,9 @@ public:
         if (which.isStringOrFixedString())
         {
             if (pjh.is_string())
-                return {String {pjh.get_string()}};
+                return {String{pjh.get_string()}};
             else
                 return getDefault(type);
-
         }
 
         if (which.isArray())
@@ -225,9 +174,7 @@ public:
             {
                 first = false;
 
-                ParsedJson::iterator pjh1 {
-                    pjh
-                };
+                ParsedJson::iterator pjh1{pjh};
 
                 array.push_back(getValue(pjh1, array_type->getNestedType()));
             }
@@ -248,16 +195,14 @@ public:
             bool valid = true;
             bool first = true;
 
-            for (const DataTypePtr & element: tuple_type->getElements())
+            for (const DataTypePtr & element : tuple_type->getElements())
             {
                 if (valid)
                 {
                     valid &= first ? pjh.down() : pjh.next();
                     first = false;
 
-                    ParsedJson::iterator pjh1 {
-                        pjh
-                    };
+                    ParsedJson::iterator pjh1{pjh};
 
                     tuple.toUnderType().push_back(getValue(pjh1, element));
                 }
@@ -269,17 +214,14 @@ public:
         }
 
         // should not reach
-        throw Exception {
-            "Unsupported return type schema: " + type->getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
+        throw Exception{"Unsupported return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 };
 
-class JSONExtractUIntImpl: public JSONNullableImplBase<DataTypeUInt64>
+class JSONExtractUIntImpl : public JSONNullableImplBase<DataTypeUInt64>
 {
 public:
-    static constexpr auto name {"jsonExtractUInt"};
+    static constexpr auto name{"jsonExtractUInt"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -290,10 +232,10 @@ public:
     }
 };
 
-class JSONExtractIntImpl: public JSONNullableImplBase<DataTypeInt64>
+class JSONExtractIntImpl : public JSONNullableImplBase<DataTypeInt64>
 {
 public:
-    static constexpr auto name {"jsonExtractInt"};
+    static constexpr auto name{"jsonExtractInt"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -304,10 +246,10 @@ public:
     }
 };
 
-class JSONExtractFloatImpl: public JSONNullableImplBase<DataTypeFloat64>
+class JSONExtractFloatImpl : public JSONNullableImplBase<DataTypeFloat64>
 {
 public:
-    static constexpr auto name {"jsonExtractFloat"};
+    static constexpr auto name{"jsonExtractFloat"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -318,10 +260,10 @@ public:
     }
 };
 
-class JSONExtractBoolImpl: public JSONNullableImplBase<DataTypeUInt8>
+class JSONExtractBoolImpl : public JSONNullableImplBase<DataTypeUInt8>
 {
 public:
-    static constexpr auto name {"jsonExtractBool"};
+    static constexpr auto name{"jsonExtractBool"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -345,63 +287,34 @@ public:
 //     }
 // };
 
-class JSONExtractStringImpl: public JSONNullableImplBase<DataTypeString>
+class JSONExtractStringImpl : public JSONNullableImplBase<DataTypeString>
 {
 public:
-    static constexpr auto name {"jsonExtractString"};
+    static constexpr auto name{"jsonExtractString"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
         if (pjh.is_string())
-            return {String {pjh.get_string()}};
+            return {String{pjh.get_string()}};
         else
             return getDefault();
-
     }
 };
 
 void registerFunctionsJSON(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionJSONBase<
-        JSONHasImpl,
-        false
-    >>();
-    factory.registerFunction<FunctionJSONBase<
-        JSONLengthImpl,
-        false
-    >>();
-    factory.registerFunction<FunctionJSONBase<
-        JSONTypeImpl,
-        false
-    >>();
-    factory.registerFunction<FunctionJSONBase<
-        JSONExtractImpl,
-        true
-    >>();
-    factory.registerFunction<FunctionJSONBase<
-        JSONExtractUIntImpl,
-        false
-    >>();
-    factory.registerFunction<FunctionJSONBase<
-        JSONExtractIntImpl,
-        false
-    >>();
-    factory.registerFunction<FunctionJSONBase<
-        JSONExtractFloatImpl,
-        false
-    >>();
-    factory.registerFunction<FunctionJSONBase<
-        JSONExtractBoolImpl,
-        false
-    >>();
+    factory.registerFunction<FunctionJSONBase<JSONHasImpl, false>>();
+    factory.registerFunction<FunctionJSONBase<JSONLengthImpl, false>>();
+    factory.registerFunction<FunctionJSONBase<JSONTypeImpl, false>>();
+    factory.registerFunction<FunctionJSONBase<JSONExtractImpl, true>>();
+    factory.registerFunction<FunctionJSONBase<JSONExtractUIntImpl, false>>();
+    factory.registerFunction<FunctionJSONBase<JSONExtractIntImpl, false>>();
+    factory.registerFunction<FunctionJSONBase<JSONExtractFloatImpl, false>>();
+    factory.registerFunction<FunctionJSONBase<JSONExtractBoolImpl, false>>();
     // factory.registerFunction<FunctionJSONBase<
     //     JSONExtractRawImpl,
     //     false
     // >>();
-    factory.registerFunction<FunctionJSONBase<
-        JSONExtractStringImpl,
-        false
-    >>();
+    factory.registerFunction<FunctionJSONBase<JSONExtractStringImpl, false>>();
 }
-
 }

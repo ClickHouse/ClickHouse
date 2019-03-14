@@ -13,4 +13,4 @@ hello
 ('a','hello','b',[-100,200,300])
 [-100,NULL,300]
 ['a','hello','b',NULL]
-[(NULL,NULL,NULL),(NULL,NULL,NULL),(NULL,NULL,NULL),(-100,200,300)]
+[(NULL,NULL,NULL),(NULL,NULL,NULL),(NULL,NULL,NULL),(-100,200,44)]
