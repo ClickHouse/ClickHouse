@@ -296,3 +296,6 @@ endif ()
 if (USE_BASE64)
     add_subdirectory (base64-cmake)
 endif()
+
+add_subdirectory (simdjson)
+set (SIMDJSON_BUILD_STATIC ON CACHE INTERNAL "")
