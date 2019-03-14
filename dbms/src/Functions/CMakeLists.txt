@@ -60,3 +60,6 @@ if (USE_XXHASH)
     target_link_libraries(clickhouse_functions PRIVATE ${XXHASH_LIBRARY})
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${XXHASH_INCLUDE_DIR})
 endif()
+
+target_include_directories(clickhouse_functions PRIVATE "${PROJECT_SOURCE_DIR}/contrib/simdjson/include")
+target_link_libraries(clickhouse_functions PRIVATE simdjson)
