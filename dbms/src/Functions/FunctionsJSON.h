@@ -3,6 +3,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -116,7 +117,17 @@ public:
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        if constexpr (ExtraArg)
+            return {1};
+        else
+            return {};
+    }
+
+    DataTypePtr getReturnTypeImpl(
+        const ColumnsWithTypeAndName & arguments
+    ) const override
     {
         if constexpr (ExtraArg)
         {
@@ -126,7 +137,13 @@ public:
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
                 };
 
-            virtual_type = arguments[1];
+            auto col_type_const {
+                static_cast<const ColumnConst *>(arguments[1].column.get())
+            };
+
+            virtual_type = DataTypeFactory::instance().get(
+                col_type_const->getValue<String>()
+            );
         }
         else
         {
@@ -137,9 +154,9 @@ public:
                 };
         }
 
-        if (!isString(arguments[0]))
+        if (!isString(arguments[0].type))
             throw Exception {
-                "Illegal type " + arguments[0]->getName()
+                "Illegal type " + arguments[0].type->getName()
                     + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
             };
@@ -148,13 +165,13 @@ public:
 
         for (const auto i : ext::range(1 + ExtraArg, arguments.size()))
         {
-            if (isString(arguments[i]))
+            if (isString(arguments[i].type))
                 actions.push_back(Action::key);
-            else if (isInteger(arguments[i]))
+            else if (isInteger(arguments[i].type))
                 actions.push_back(Action::index);
             else
                 throw Exception {
-                    "Illegal type " + arguments[i]->getName()
+                    "Illegal type " + arguments[i].type->getName()
                         + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
                 };

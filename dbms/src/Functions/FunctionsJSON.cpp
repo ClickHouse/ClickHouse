@@ -86,23 +86,11 @@ public:
             type
         };
 
-        if (which.isNativeUInt())
-            return std::make_shared<DataTypeNullable>(
-                std::make_shared<DataTypeUInt64>()
-            );
-
-        if (which.isNativeInt())
-            return std::make_shared<DataTypeNullable>(
-                std::make_shared<DataTypeInt64>()
-            );
-
-        if (which.isFloat())
-            return std::make_shared<DataTypeNullable>(
-                std::make_shared<DataTypeFloat64>()
-            );
-
         if (
-            which.isEnum()
+            which.isNativeUInt()
+            || which.isNativeInt()
+            || which.isFloat()
+            || which.isEnum()
             || which.isDateOrDateTime()
             || which.isStringOrFixedString()
             || which.isInterval()
