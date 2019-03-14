@@ -1,7 +1,7 @@
 import time
 import pytest
 
-from helpers.cluster import ClickHouseCluster, CLICKHOUSE_START_COMMAND
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -41,10 +41,7 @@ def test_startup_without_zookeeper(start_cluster):
     node1.query("SELECT COUNT(*) from test_table") == "3\n"
     node1.query("SELECT is_readonly from system.replicas where table='test_table'") == "1\n"
 
-    node1.exec_in_container(["bash", "-c", "pkill clickhouse"], user='root')
-    time.sleep(5)
-
-    node1.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user='root')
+    node1.restart_clickhouse()
     time.sleep(5)
 
     node1.query("SELECT COUNT(*) from test_table") == "3\n"
