@@ -31,9 +31,10 @@ class LogicalExpressionsOptimizer final
         const UInt64 optimize_min_equality_disjunction_chain_length;
         const bool allow_short_circuit_logic_expressions;
 
-        ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_, bool allow_short_circuit_logic_expressions_)
-        :   optimize_min_equality_disjunction_chain_length(optimize_min_equality_disjunction_chain_length_),
-            allow_short_circuit_logic_expressions{allow_short_circuit_logic_expressions_}
+        template <typename T>
+        ExtractedSettings(const T & settings)
+        :   optimize_min_equality_disjunction_chain_length(settings.optimize_min_equality_disjunction_chain_length),
+            allow_short_circuit_logic_expressions(settings.allow_short_circuit_logic_expressions)
         {}
     };
 

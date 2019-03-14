@@ -213,7 +213,9 @@ TestResult check(const TestEntry & entry)
 
         auto select_query = typeid_cast<DB::ASTSelectQuery *>(&*ast_input);
         DB::Context context = DB::Context::createGlobal();
-        DB::LogicalExpressionsOptimizer optimizer(select_query, context, {entry.limit, false});
+        DB::Settings settings;
+        settings.optimize_min_equality_disjunction_chain_length = entry.limit;
+        DB::LogicalExpressionsOptimizer optimizer(select_query, context, settings);
         optimizer.perform();
 
         /// Parse the expected result.
