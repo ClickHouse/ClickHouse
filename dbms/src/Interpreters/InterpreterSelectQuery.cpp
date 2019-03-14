@@ -793,13 +793,13 @@ void InterpreterSelectQuery::executeFetchColumns(
     /// Are ALIAS columns required for query execution?
     auto alias_columns_required = false;
 
-    if (storage && !storage->getColumns().aliases.empty())
+    if (storage)
     {
-        const auto & column_defaults = storage->getColumns().defaults;
-        for (const auto & column : required_columns)
+        const ColumnsDescription & storage_columns = storage->getColumns();
+        for (const auto & column_name : required_columns)
         {
-            const auto default_it = column_defaults.find(column);
-            if (default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
+            auto column_default = storage_columns.getDefault(column_name);
+            if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
                 alias_columns_required = true;
                 break;
@@ -828,10 +828,10 @@ void InterpreterSelectQuery::executeFetchColumns(
             for (const auto & column : required_columns)
             {
                 ASTPtr column_expr;
-                const auto default_it = column_defaults.find(column);
-                bool is_alias = default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias;
+                const auto column_default = storage_columns.getDefault(column);
+                bool is_alias = column_default && column_default->kind == ColumnDefaultKind::Alias;
                 if (is_alias)
-                    column_expr = setAlias(default_it->second.expression->clone(), column);
+                    column_expr = setAlias(column_default->expression->clone(), column);
                 else
                     column_expr = std::make_shared<ASTIdentifier>(column);
 

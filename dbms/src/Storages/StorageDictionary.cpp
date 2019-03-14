@@ -78,7 +78,7 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
     auto dictionary_names_and_types = getNamesAndTypes(dictionary_structure);
     std::set<NameAndTypePair> names_and_types_set(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
 
-    for (const auto & column : getColumns().ordinary)
+    for (const auto & column : getColumns().getOrdinary())
     {
         if (names_and_types_set.find(column) == names_and_types_set.end())
         {

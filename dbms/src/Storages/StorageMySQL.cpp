@@ -57,7 +57,7 @@ BlockInputStreams StorageMySQL::read(
 {
     check(column_names);
     String query = transformQueryForExternalDatabase(
-        *query_info.query, getColumns().ordinary, IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
+        *query_info.query, getColumns().getOrdinary(), IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
 
     Block sample_block;
     for (const String & column_name : column_names)

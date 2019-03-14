@@ -176,10 +176,10 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         ConnectionTimeouts::getHTTPTimeouts(context));
 
 
-    const ColumnsDescription & columns = getColumns();
-    if (columns.defaults.empty())
+    auto column_defaults = getColumns().getDefaults();
+    if (column_defaults.empty())
         return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns.defaults, context)};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
 void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
