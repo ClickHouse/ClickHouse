@@ -55,30 +55,25 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 
 There is currently no support for code points in the format `\uXXXX\uYYYY` that are not from the basic multilingual plane (they are converted to CESU-8 instead of UTF-8).
 
-# New functions for working with JSON
+# New style functions for working with JSON
 
 ## Motivation
-Storing JSON in a String column is fudamentally against the columnstore nature of Clickhouse 
+Storing JSON in a String column is fundamentally against the columnstore nature of Clickhouse 
 and is almost always a wrong choice leading to performance problems. On the other hand, the maximum level 
 of nested structures is limited to 2, and modelling 1 to M relationships using several relational tables
 is also not always possible in an efficient way.
 
 Another use case for JSONs in String columns could be a generic storage system receiving
 JSON messages in unspecified and persisting them; further data processing could be done by
-parsing the JSON using DEFAULT columns and MATERIALIZED VIEWS.
+parsing the JSON using DEFAULT columns and materialized VIEWS.
 
-The new JSON functions aim to solve some limitations of the existing JSON functions, 
-without pretending to provide a full JSON support or trying to make Clickhouse into a 
-document store. Usage of JSON in Strings must remain an exception.
+The new style JSON functions aim to solve some limitations of the existing JSON functions. Use them, if you 
+- must extract JSON arrays,
+- must perform extraction of nested structures,
+- or must extract several matching keys.
 
-The following limitations have been solved:
-- Cannot extract JSON arrays
-- Cannot provide a path of property names for extraction
-- Cannot extract all matches of the key (only the first one is returned)
-- Function names are long and hard to remember
-
-All format limitations concerning JSON that exist in the old visitParams* functions
-still exist in the new functions, eg. you cannot have a space between property name and the colon, 
+All format limitations concerning JSON that exist in the visitParams* functions
+still exist in the new style functions, eg. you cannot have a space between property name and the colon, 
 there is no support  for code points in the format \uXXXX\uYYYY, etc.
  
 ## jsonAny(jsonString, jsonPath)
