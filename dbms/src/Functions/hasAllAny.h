@@ -90,8 +90,6 @@ public:
 
         for (auto & argument_column : preprocessed_columns)
         {
-            std::cerr << argument_column->getName() << "\n";
-
             bool is_const = false;
 
             if (auto argument_column_const = typeid_cast<const ColumnConst *>(argument_column.get()))
