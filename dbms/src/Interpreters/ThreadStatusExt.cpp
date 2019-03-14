@@ -262,11 +262,12 @@ CurrentThread::QueryScope::QueryScope(Context & query_context)
 
 void CurrentThread::QueryScope::logPeakMemoryUsage()
 {
-    if (!CurrentThread::getGroup())
+    auto group = CurrentThread::getGroup();
+    if (!group)
         return;
 
     log_peak_memory_usage_in_destructor = false;
-    CurrentThread::getGroup()->memory_tracker.logPeakMemoryUsage();
+    group->memory_tracker.logPeakMemoryUsage();
 }
 
 CurrentThread::QueryScope::~QueryScope()
