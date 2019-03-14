@@ -555,17 +555,17 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
       */
     MergeTreeData::DataParts unexpected_parts;
 
+    /// Collect unexpected parts
+    for (const auto & part : parts)
+        if (!expected_parts.count(part->name))
+            unexpected_parts.insert(part); /// this parts we will place to detached with ignored_ prefix
+
     /// Which parts should be taken from other replicas.
     Strings parts_to_fetch;
 
-    for (const auto & part : parts)
-    {
-        if (expected_parts.count(part->name))
-            parts_to_fetch.push_back(part->name); /// these parts we will fetch from other replicas
-        else
-            unexpected_parts.insert(part); /// this parts we will place to detached with ignored_ prefix
-    }
-
+    for (const String & missing_name : expected_parts)
+        if (!data.getActiveContainingPart(missing_name))
+            parts_to_fetch.push_back(missing_name);
 
     /** To check the adequacy, for the parts that are in the FS, but not in ZK, we will only consider not the most recent parts.
       * Because unexpected new parts usually arise only because they did not have time to enroll in ZK with a rough restart of the server.
