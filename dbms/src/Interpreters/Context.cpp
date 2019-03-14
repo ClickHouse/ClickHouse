@@ -24,6 +24,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
@@ -581,14 +582,19 @@ void Context::calculateUserSettings()
     /// NOTE: we ignore global_context settings (from which it is usually copied)
     /// NOTE: global_context settings are immutable and not auto updated
     settings = Settings();
+    settings_constraints = std::make_shared<SettingsConstraints>();
 
     /// 2) Apply settings from default profile
     auto default_profile_name = getDefaultProfileName();
     if (profile != default_profile_name)
+    {
         settings.setProfile(default_profile_name, *shared->users_config);
+        settings_constraints->setProfile(default_profile_name, *shared->users_config);
+    }
 
     /// 3) Apply settings from current user
     settings.setProfile(profile, *shared->users_config);
+    settings_constraints->setProfile(profile, *shared->users_config);
 }
 
 
@@ -990,27 +996,41 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
-void Context::setSetting(const String & name, const Field & value)
+void Context::setSetting(const String & name, const Field & value, bool checkConstraints)
 {
     if (name == "profile")
     {
         auto lock = getLock();
         settings.setProfile(value.safeGet<String>(), *shared->users_config);
+        settings_constraints = std::make_shared<SettingsConstraints>();
+        settings_constraints->setProfile(value.safeGet<String>(), *shared->users_config);
     }
+    else if (checkConstraints)
+        settings.set(name, value, getSettingsConstraints());
     else
         settings.set(name, value);
 }
 
 
-void Context::setSetting(const String & name, const std::string & value)
+void Context::setSetting(const String & name, const std::string & value, bool checkConstraints)
 {
     if (name == "profile")
     {
         auto lock = getLock();
         settings.setProfile(value, *shared->users_config);
+        settings_constraints = std::make_shared<SettingsConstraints>();
+        settings_constraints->setProfile(value, *shared->users_config);
     }
+    else if (checkConstraints)
+        settings.set(name, value, getSettingsConstraints());
     else
         settings.set(name, value);
+}
+
+
+const SettingsConstraints * Context::getSettingsConstraints() const
+{
+    return settings_constraints.get();
 }
 
 

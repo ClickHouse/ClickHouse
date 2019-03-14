@@ -22,7 +22,7 @@ BlockIO InterpreterSetQuery::execute()
 
     Context & target = context.getSessionContext();
     for (const auto & change : ast.changes)
-        target.setSetting(change.name, change.value);
+        target.setSetting(change.name, change.value, true);
 
     return {};
 }
@@ -66,7 +66,7 @@ void InterpreterSetQuery::executeForCurrentContext()
     checkAccess(ast);
 
     for (const auto & change : ast.changes)
-        context.setSetting(change.name, change.value);
+        context.setSetting(change.name, change.value, true);
 }
 
 

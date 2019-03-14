@@ -17,6 +17,7 @@ namespace DB
 
 class IColumn;
 class Field;
+struct SettingsConstraints;
 
 /** Settings of query execution.
   */
@@ -312,16 +313,16 @@ struct Settings
 #undef DECLARE
 
     /// Set setting by name.
-    void set(const String & name, const Field & value);
+    void set(const String & name, const Field & value, const SettingsConstraints * constraints = nullptr);
 
     /// Set setting by name. Read value, serialized in binary form from buffer (for inter-server communication).
-    void set(const String & name, ReadBuffer & buf);
+    void set(const String & name, ReadBuffer & buf, const SettingsConstraints * constraints = nullptr);
 
     /// Skip value, serialized in binary form in buffer.
     void ignore(const String & name, ReadBuffer & buf);
 
     /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
-    void set(const String & name, const String & value);
+    void set(const String & name, const String & value, const SettingsConstraints * constraints = nullptr);
 
     /// Get setting by name. Converts value to String.
     String get(const String & name) const;
@@ -338,7 +339,7 @@ struct Settings
 
     /// Read settings from buffer. They are serialized as list of contiguous name-value pairs, finished with empty name.
     /// If readonly=1 is set, ignore read settings.
-    void deserialize(ReadBuffer & buf);
+    void deserialize(ReadBuffer & buf, const SettingsConstraints * constraints = nullptr);
 
     /// Write changed settings to buffer. (For example, to be sent to remote server.)
     void serialize(WriteBuffer & buf) const;

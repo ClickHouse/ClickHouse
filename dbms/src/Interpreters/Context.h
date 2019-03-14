@@ -117,6 +117,7 @@ private:
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
+    std::shared_ptr<SettingsConstraints> settings_constraints;
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -244,12 +245,13 @@ public:
 
     Settings getSettings() const;
     void setSettings(const Settings & settings_);
+    const SettingsConstraints * getSettingsConstraints() const;
 
     /// Set a setting by name.
-    void setSetting(const String & name, const Field & value);
+    void setSetting(const String & name, const Field & value, bool checkConstraints = false);
 
     /// Set a setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
-    void setSetting(const String & name, const std::string & value);
+    void setSetting(const String & name, const std::string & value, bool checkConstraints = false);
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;

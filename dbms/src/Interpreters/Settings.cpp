@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/SettingsConstraints.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <string.h>
@@ -20,10 +21,15 @@ namespace ErrorCodes
 
 
 /// Set the configuration by name.
-void Settings::set(const String & name, const Field & value)
+void Settings::set(const String & name, const Field & value, const SettingsConstraints * constraints)
 {
 #define TRY_SET(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    else if (name == #NAME) NAME.set(value);
+    else if (name == #NAME) \
+    { \
+        if (constraints) \
+            constraints->check(name, value); \
+        NAME.set(value); \
+    }
 
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_SET)
@@ -34,10 +40,21 @@ void Settings::set(const String & name, const Field & value)
 }
 
 /// Set the configuration by name. Read the binary serialized value from the buffer (for interserver interaction).
-void Settings::set(const String & name, ReadBuffer & buf)
+void Settings::set(const String & name, ReadBuffer & buf, const SettingsConstraints * constraints)
 {
 #define TRY_SET(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    else if (name == #NAME) NAME.set(buf);
+    else if (name == #NAME) \
+    { \
+        if (constraints) \
+        { \
+            TYPE temp{DEFAULT}; \
+            temp.set(buf); \
+            constraints->check(name, temp); \
+            NAME = std::move(temp); \
+        } \
+        else \
+            NAME.set(buf); \
+    }
 
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_SET)
@@ -63,10 +80,15 @@ void Settings::ignore(const String & name, ReadBuffer & buf)
 
 /** Set the setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
     */
-void Settings::set(const String & name, const String & value)
+void Settings::set(const String & name, const String & value, const SettingsConstraints * constraints)
 {
 #define TRY_SET(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    else if (name == #NAME) NAME.set(value);
+    else if (name == #NAME) \
+    { \
+        if (constraints) \
+            constraints->check(name, value); \
+        NAME.set(value); \
+    }
 
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_SET)
@@ -108,7 +130,6 @@ bool Settings::tryGet(const String & name, String & value) const
 void Settings::setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config)
 {
     String elem = "profiles." + profile_name;
-
     if (!config.has(elem))
         throw Exception("There is no profile '" + profile_name + "' in configuration file.", ErrorCodes::THERE_IS_NO_PROFILE);
 
@@ -117,6 +138,8 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
 
     for (const std::string & key : config_keys)
     {
+        if (key == "constraints")
+            continue;
         if (key == "profile")   /// Inheritance of one profile from another.
             setProfile(config.getString(elem + "." + key), config);
         else
@@ -140,7 +163,7 @@ void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::Abs
 
 /// Read the settings from the buffer. They are written as a set of name-value pairs that go successively, ending with an empty `name`.
 /// If the `check_readonly` flag is set, `readonly` is set in the preferences, but some changes have occurred - throw an exception.
-void Settings::deserialize(ReadBuffer & buf)
+void Settings::deserialize(ReadBuffer & buf, const SettingsConstraints * constraints)
 {
     auto before_readonly = readonly;
 
@@ -155,7 +178,7 @@ void Settings::deserialize(ReadBuffer & buf)
 
         /// If readonly = 2, then you can change the settings, except for the readonly setting.
         if (before_readonly == 0 || (before_readonly == 2 && name != "readonly"))
-            set(name, buf);
+            set(name, buf, constraints);
         else
             ignore(name, buf);
     }
