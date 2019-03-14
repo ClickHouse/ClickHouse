@@ -57,25 +57,25 @@ comma nullable
 2	2	1	2
 cross
 SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nCROSS JOIN t2 \nWHERE a = t2.a
-SELECT *\nFROM t1 \nALL INNER JOIN t2 ON t1.a = t2.a
+SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nALL INNER JOIN t2 ON a = t2.a\nWHERE a = t2.a
 cross nullable
 SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \n, t2 \nWHERE a = t2.a
-SELECT *\nFROM t1 \nALL INNER JOIN t2 ON t1.a = t2.a
+SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nALL INNER JOIN t2 ON a = t2.a\nWHERE a = t2.a
 cross nullable vs not nullable
 SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nCROSS JOIN t2 \nWHERE a = t2.b
-SELECT *\nFROM t1 \nALL INNER JOIN t2 ON t1.a = t2.b
+SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nALL INNER JOIN t2 ON a = t2.b\nWHERE a = t2.b
 cross self
 SELECT \n    a, \n    b, \n    y.a, \n    y.b\nFROM t1 AS x \nCROSS JOIN t1 AS y \nWHERE (a = y.a) AND (b = y.b)
-SELECT *\nFROM t1 AS x \nALL INNER JOIN t1 AS y ON (x.a = y.a) AND (x.b = y.b)
+SELECT \n    a, \n    b, \n    y.a, \n    y.b\nFROM t1 AS x \nALL INNER JOIN t1 AS y ON (a = y.a) AND (b = y.b)\nWHERE (a = y.a) AND (b = y.b)
 cross one table expr
 SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nCROSS JOIN t2 \nWHERE a = b
 SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nCROSS JOIN t2 \nWHERE a = b
 cross multiple ands
 SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nCROSS JOIN t2 \nWHERE (a = t2.a) AND (b = t2.b)
-SELECT *\nFROM t1 \nALL INNER JOIN t2 ON (t1.a = t2.a) AND (t1.b = t2.b)
+SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nALL INNER JOIN t2 ON (a = t2.a) AND (b = t2.b)\nWHERE (a = t2.a) AND (b = t2.b)
 cross and inside and
 SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nCROSS JOIN t2 \nWHERE (a = t2.a) AND ((a = t2.a) AND ((a = t2.a) AND (b = t2.b)))
-SELECT *\nFROM t1 \nALL INNER JOIN t2 ON (t1.a = t2.a) AND (t1.a = t2.a) AND (t1.a = t2.a) AND (t1.b = t2.b)
+SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nALL INNER JOIN t2 ON (a = t2.a) AND (a = t2.a) AND (a = t2.a) AND (b = t2.b)\nWHERE (a = t2.a) AND ((a = t2.a) AND ((a = t2.a) AND (b = t2.b)))
 cross split conjunction
 SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nCROSS JOIN t2 \nWHERE (a = t2.a) AND (b = t2.b) AND (a >= 1) AND (t2.b > 0)
-SELECT *\nFROM t1 \nALL INNER JOIN t2 ON (t1.a = t2.a) AND (t1.b = t2.b)\nWHERE (t1.a = t2.a) AND (t1.b = t2.b) AND (t1.a >= 1) AND (t2.b > 0)
+SELECT \n    a, \n    b, \n    t2.a, \n    t2.b\nFROM t1 \nALL INNER JOIN t2 ON (a = t2.a) AND (b = t2.b)\nWHERE (a = t2.a) AND (b = t2.b) AND (a >= 1) AND (t2.b > 0)
