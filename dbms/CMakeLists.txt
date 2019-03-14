@@ -184,7 +184,9 @@ target_link_libraries (clickhouse_common_io
     string_utils
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
+        PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
+        PRIVATE
     pocoext
         PUBLIC
     ${Poco_Net_LIBRARY}
@@ -351,6 +353,6 @@ if (ENABLE_TESTS AND USE_GTEST)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
-    target_link_libraries(unit_tests_dbms PRIVATE gtest_main dbms clickhouse_common_zookeeper)
+    target_link_libraries(unit_tests_dbms PRIVATE ${GTEST_BOTH_LIBRARIES} dbms clickhouse_common_zookeeper)
     add_check(unit_tests_dbms)
 endif ()
