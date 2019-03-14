@@ -107,9 +107,9 @@ Also, they are replicated (syncing indices metadata through ZooKeeper).
 
 The following operations with [partitions](../operations/table_engines/custom_partitioning_key.md) are available:
 
-- [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the 'detached' directory and forget it.
+- [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` directory and forget it.
 - [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
-- [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the 'detached' directory to the table.
+- [ATTACH PART|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
 - [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 - [CLEAR COLUMN IN PARTITION](#alter_clear-column-partition) - Resets the value of a specified column in a partition.
 - [FREEZE PARTITION](#alter_freeze-partition) – Creates a backup of a partition.
@@ -121,7 +121,7 @@ The following operations with [partitions](../operations/table_engines/custom_pa
 ALTER TABLE table_name DETACH PARTITION partition_expr
 ```
 
-Moves all data for the specified partition to the 'detached' directory. The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
+Moves all data for the specified partition to the `detached` directory. The server forgets about the detached data partition as if it does not exist. The server will not know about this data until you make the [ATTACH](#alter_attach-partition) query.
 
 Example:
 
@@ -131,9 +131,9 @@ ALTER TABLE visits DETACH PARTITION 201901
 
 Read about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-After the query is executed, you can do whatever you want with the data in the 'detached' directory — delete it from the file system, or just leave it.
+After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the 'detached' directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../operations/system_tables.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](../operations/system_tables.md#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replica.
 
 #### DROP PARTITION {#alter_drop-partition}
 
@@ -153,7 +153,7 @@ The query is replicated – it deletes data on all replicas.
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
 ```
 
-Adds data to the table from the 'detached' directory. It is possible to add data for an entire partition or for a separate part. Examples:
+Adds data to the table from the `detached` directory. It is possible to add data for an entire partition or for a separate part. Examples:
 
 ``` sql
 ALTER TABLE visits ATTACH PARTITION 201901;
@@ -162,9 +162,9 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. Each replica checks whether there is data in the 'detached' directory. If the data is in this directory, the query checks the integrity, verifies that it matches the data on the server that initiated the query. If everything is correct, the query adds data to the replica. If not, it downloads data from the query requestor replica, or from another replica where the data has already been added.
+This query is replicated. Each replica checks whether there is data in the `detached` directory. If the data is in this directory, the query checks the integrity, verifies that it matches the data on the server that initiated the query. If everything is correct, the query adds data to the replica. If not, it downloads data from the query requestor replica, or from another replica where the data has already been added.
 
-So you can put data to the 'detached' directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
+So you can put data to the `detached` directory on one replica, and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
 
 #### REPLACE PARTITION {#alter_replace-partition}
 
@@ -172,7 +172,9 @@ So you can put data to the 'detached' directory on one replica, and use the `ALT
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2` (data isn't deleted from `table1`). Note that:
+This query copies the data partition from the `table1` to `table2`. Data won't be deleted from `table1`.
+
+Note that:
 
 - Both tables must have the same structure.
 - When creating the `table2`, you must specify the same partition key as for the `table1`. 
@@ -240,7 +242,7 @@ Downloads a partition from another server. This query only works for the replica
 The query does the following:
 
 1. Downloads the partition from the specified shard. In 'path-in-zookeeper' you must specify a path to the shard in ZooKeeper.
-2. Then the query puts the downloaded data to the 'detached' directory of the `table_name` table. Use the [ATTACH PARTITION|PART](#alter_attach-partition) query to add the data to the table.
+2. Then the query puts the downloaded data to the `detached` directory of the `table_name` table. Use the [ATTACH PARTITION|PART](#alter_attach-partition) query to add the data to the table.
 
 For example:
 
@@ -250,8 +252,8 @@ ALTER TABLE users ATTACH PARTITION 201902;
 ```
 Note that:
 
-- The `ALTER ... FETCH PARTITION` query isn't replicated. It places the partition to the 'detached' directory only on the local server. 
-- The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the 'detached' directory, and to the others - from neighboring replicas.
+- The `ALTER ... FETCH PARTITION` query isn't replicated. It places the partition to the `detached` directory only on the local server. 
+- The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the `detached` directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
 

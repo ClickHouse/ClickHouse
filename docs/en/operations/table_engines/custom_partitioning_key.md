@@ -31,7 +31,7 @@ In this example, we set partitioning by the event types that occurred during the
 When inserting new data to a table, this data is stored as a separate part (chunk) sorted by the primary key. In 10-15 minutes after inserting, the parts of the same partition are merged into the entire part.
 
 !!! info
-    A merge only works for data parts that have the same value for the partitioning expression. This means you shouldn't make overly granular partitions (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
+    A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn't make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 
 Use the [system.parts](../system_tables.md#system_tables-parts) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 
@@ -113,7 +113,7 @@ The folders '201901_1_1_0', '201901_1_7_1' and so on are the directories of the 
 
 Note that on the operating server, you cannot manually change the set of parts or their data on the file system, since the server will not know about it. For non-replicated tables, you can do this when the server is stopped, but we do not recommend it. For replicated tables, the set of parts cannot be changed in any case.
 
-The 'detached' directory contains parts that were detached from the table using the [DETACH](#alter_detach-partition) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from the 'detached' directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../query_language/alter.md#alter_attach-partition) query.
+The `detached` directory contains parts that were detached from the table using the [DETACH](#alter_detach-partition) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from the `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../query_language/alter.md#alter_attach-partition) query.
     
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../query_language/alter.md#alter_manipulations-with-partitions). 
 
