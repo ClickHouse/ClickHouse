@@ -258,6 +258,13 @@ public:
     using ColumnCallback = std::function<void(Ptr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
 
+    /// Columns have equal structure.
+    /// If true - you can use "compareAt", "insertFrom", etc. methods.
+    virtual bool structureEquals(const IColumn &) const
+    {
+        throw Exception("Method structureEquals is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
 
     MutablePtr mutate() const &&
     {

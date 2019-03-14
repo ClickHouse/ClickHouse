@@ -246,6 +246,12 @@ public:
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
     StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
 
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnVector<T>);
+    }
+
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
     {

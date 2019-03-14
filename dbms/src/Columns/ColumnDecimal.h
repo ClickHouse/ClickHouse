@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 
@@ -131,6 +132,13 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnDecimal<T> *>(&rhs))
+            return scale == rhs_concrete->scale;
+        return false;
+    }
 
 
     void insert(const T value) { data.push_back(value); }

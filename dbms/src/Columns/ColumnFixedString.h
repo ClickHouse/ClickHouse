@@ -2,6 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/memcmpSmall.h>
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 
@@ -129,6 +130,12 @@ public:
 
     void getExtremes(Field & min, Field & max) const override;
 
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
+            return n == rhs_concrete->n;
+        return false;
+    }
 
     bool canBeInsideNullable() const override { return true; }
 

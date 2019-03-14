@@ -2,6 +2,8 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -86,6 +88,13 @@ public:
     {
         callback(nested_column);
         callback(null_map);
+    }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
+            return nested_column->structureEquals(*rhs_nullable->nested_column);
+        return false;
     }
 
     bool isColumnNullable() const override { return true; }

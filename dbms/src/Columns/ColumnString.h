@@ -243,6 +243,11 @@ public:
 
     bool canBeInsideNullable() const override { return true; }
 
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnString);
+    }
+
 
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }

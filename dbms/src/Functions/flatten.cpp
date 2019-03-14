@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 /// flatten([[1, 2, 3], [4, 5]]) = [1, 2, 3, 4, 5] - flatten array.
 class FunctionFlatten : public IFunction
 {
