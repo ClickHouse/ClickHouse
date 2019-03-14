@@ -13,10 +13,10 @@ namespace DB
 {
 
 struct Settings;
+struct ColumnWithTypeAndName;
 class ASTFunction;
 class ASTSelectQuery;
 class Context;
-class ColumnWithTypeAndName;
 
 /** This class provides functions for optimizing boolean expressions within queries.
   *
