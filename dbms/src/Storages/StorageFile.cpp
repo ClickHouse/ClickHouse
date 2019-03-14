@@ -192,9 +192,10 @@ BlockInputStreams StorageFile::read(
 {
     BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
     const ColumnsDescription & columns = getColumns();
-    if (columns.defaults.empty())
+    auto column_defaults = columns.getDefaults();
+    if (column_defaults.empty())
         return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns.defaults, context)};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
 

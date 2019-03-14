@@ -89,29 +89,23 @@ ColumnsDescription getStructureOfRemoteTable(
 
         for (size_t i = 0; i < size; ++i)
         {
-            String column_name = (*name)[i].get<const String &>();
+            ColumnDescription column;
+
+            column.name = (*name)[i].get<const String &>();
+
             String data_type_name = (*type)[i].get<const String &>();
+            column.type = data_type_factory.get(data_type_name);
+
             String kind_name = (*default_kind)[i].get<const String &>();
-
-            auto data_type = data_type_factory.get(data_type_name);
-
-            if (kind_name.empty())
-                res.ordinary.emplace_back(column_name, std::move(data_type));
-            else
+            if (!kind_name.empty())
             {
-                auto kind = columnDefaultKindFromString(kind_name);
-
+                column.default_desc.kind = columnDefaultKindFromString(kind_name);
                 String expr_str = (*default_expr)[i].get<const String &>();
-                ASTPtr expr = parseQuery(expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0);
-                res.defaults.emplace(column_name, ColumnDefault{kind, expr});
-
-                if (ColumnDefaultKind::Default == kind)
-                    res.ordinary.emplace_back(column_name, std::move(data_type));
-                else if (ColumnDefaultKind::Materialized == kind)
-                    res.materialized.emplace_back(column_name, std::move(data_type));
-                else if (ColumnDefaultKind::Alias == kind)
-                    res.aliases.emplace_back(column_name, std::move(data_type));
+                column.default_desc.expression = parseQuery(
+                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0);
             }
+
+            res.add(column);
         }
     }
 
