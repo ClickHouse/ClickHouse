@@ -8,9 +8,9 @@ ANALYZE SELECT * FROM a;
 DROP TABLE a;
 
 
-select '-- shORt_circuit_logic tests ---';
+select '-- short_circuit_logic tests ---';
 set enable_debug_queries = 1;
-set allow_shORt_circuit_logic_expressions = 1;
+set allow_short_circuit_logic_expressions = 1;
 
 analyze SELECT 1 AND (3 + 5) AND 0;
 
