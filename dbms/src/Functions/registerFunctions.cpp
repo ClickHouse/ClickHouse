@@ -42,6 +42,7 @@ void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
+void registerFunctionTypeOf(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -83,6 +84,7 @@ void registerFunctions()
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionTransform(factory);
+    registerFunctionTypeOf(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
