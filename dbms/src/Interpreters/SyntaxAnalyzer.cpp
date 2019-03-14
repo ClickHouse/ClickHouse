@@ -146,6 +146,7 @@ void normalizeTree(
         table_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
 
     QueryNormalizer::Data normalizer_data(result.aliases, context.getSettingsRef(), std::move(table_with_columns));
+    normalizer_data.asterisk_left_columns_only = asterisk_left_columns_only;
     QueryNormalizer(normalizer_data).visit(query);
 }
 
@@ -754,7 +755,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree(query, result, (storage ? storage->getColumns().ordinary.getNames() : source_columns_list), source_columns_set,
-                  context, select_query, settings.asterisk_left_columns_only != 0);
+                  context, select_query, settings.asterisk_left_columns_only);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.

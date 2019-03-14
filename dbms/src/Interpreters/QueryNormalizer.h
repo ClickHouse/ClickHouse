@@ -54,6 +54,7 @@ public:
         const Aliases & aliases;
         const ExtractedSettings settings;
         const std::vector<TableWithColumnNames> tables_with_columns;
+        bool asterisk_left_columns_only;
 
         /// tmp data
         size_t level;
@@ -65,6 +66,7 @@ public:
             : aliases(aliases_)
             , settings(settings_)
             , tables_with_columns(tables_with_columns_)
+            , asterisk_left_columns_only(false)
             , level(0)
         {}
 

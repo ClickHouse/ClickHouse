@@ -162,6 +162,13 @@ void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & dat
     {
         if (typeid_cast<const ASTAsterisk *>(child.get()))
         {
+            if (data.asterisk_left_columns_only && !tables_with_columns.empty())
+            {
+                for (const auto & column_name : tables_with_columns[0].second)
+                    node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+                continue;
+            }
+
             for (const auto & pr : tables_with_columns)
                 for (const auto & column_name : pr.second)
                     node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
