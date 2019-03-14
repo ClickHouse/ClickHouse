@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/IFunction.h>
@@ -14,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -127,14 +129,14 @@ public:
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH
                 };
 
-            auto col_type_const {
-                typeid_cast<const ColumnConst *>(arguments[1].column.get())
-            };
+            auto col_type_const = typeid_cast<const ColumnConst *>(
+                arguments[1].column.get()
+            );
 
             if (!col_type_const)
                 throw Exception {
-                    "The second argument for function " + getName()
-                        + " must be constant",
+                    "Illegal non-const column " + arguments[1].column->getName()
+                        + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN
                 };
 
@@ -194,28 +196,62 @@ public:
 
         const ColumnPtr & arg_json = block.getByPosition(arguments[0]).column;
 
+        auto col_json_const = typeid_cast<const ColumnConst *>(
+            arg_json.get()
+        );
+
+        auto col_json_string = typeid_cast<const ColumnString *>(
+            col_json_const
+                ? col_json_const->getDataColumnPtr().get()
+                : arg_json.get()
+        );
+
+        if (!col_json_string)
+            throw Exception {
+                "Illegal column " + arg_json->getName()
+                    + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN
+            };
+
+        const ColumnString::Chars & chars = col_json_string->getChars();
+        const ColumnString::Offsets & offsets = col_json_string->getOffsets();
+
+        size_t max_size = 1;
+
+        for (const auto i : ext::range(0, input_rows_count))
+            if (max_size < offsets[i] - offsets[i - 1] - 1)
+                max_size = offsets[i] - offsets[i - 1] - 1;
+
+        ParsedJson pj;
+        if (!pj.allocateCapacity(max_size))
+            throw Exception {
+                "Can not allocate memory for " + std::to_string(max_size)
+                    + " units when parsing JSON",
+                ErrorCodes::CANNOT_ALLOCATE_MEMORY
+            };
+
         for (const auto i : ext::range(0, input_rows_count))
         {
-            // TODO: avoid multiple memory allocation?
-            ParsedJson pj {
-                build_parsed_json((*arg_json)[i].get<String>())
-            };
+            bool ok = json_parse(
+                &chars[offsets[i - 1]],
+                offsets[i] - offsets[i - 1] - 1,
+                pj
+            ) == 0;
+
             ParsedJson::iterator pjh {
                 pj
             };
 
-            bool ok = true;
-
             for (const auto j : ext::range(0, actions.size()))
             {
+                if (!ok)
+                    break;
+
                 ok = tryMove(
                     pjh,
                     actions[j],
                     (*block.getByPosition(arguments[j + 1 + ExtraArg]).column)[i]
                 );
-
-                if (!ok)
-                    break;
             }
 
             if (ok)
