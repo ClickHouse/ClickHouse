@@ -101,9 +101,7 @@ public:
 
         if (which.isArray())
         {
-            auto array_type {
-                static_cast<const DataTypeArray *>(type.get())
-            };
+            auto array_type = static_cast<const DataTypeArray *>(type.get());
 
             return std::make_shared<DataTypeArray>(
                 getType(array_type->getNestedType())
@@ -112,9 +110,7 @@ public:
 
         if (which.isTuple())
         {
-            auto tuple_type {
-                static_cast<const DataTypeTuple *>(type.get())
-            };
+            auto tuple_type = static_cast<const DataTypeTuple *>(type.get());
 
             DataTypes types;
             types.reserve(tuple_type->getElements().size());
@@ -157,9 +153,7 @@ public:
 
         if (which.isTuple())
         {
-            auto tuple_type {
-                static_cast<const DataTypeTuple *>(type.get())
-            };
+            auto tuple_type = static_cast<const DataTypeTuple *>(type.get());
 
             Tuple tuple;
             tuple.toUnderType().reserve(tuple_type->getElements().size());
@@ -221,9 +215,7 @@ public:
             if (!pjh.is_object_or_array())
                 return getDefault(type);
 
-            auto array_type {
-                static_cast<const DataTypeArray *>(type.get())
-            };
+            auto array_type = static_cast<const DataTypeArray *>(type.get());
 
             Array array;
 
@@ -248,9 +240,7 @@ public:
             if (!pjh.is_object_or_array())
                 return getDefault(type);
 
-            auto tuple_type {
-                static_cast<const DataTypeTuple *>(type.get())
-            };
+            auto tuple_type = static_cast<const DataTypeTuple *>(type.get());
 
             Tuple tuple;
             tuple.toUnderType().reserve(tuple_type->getElements().size());
