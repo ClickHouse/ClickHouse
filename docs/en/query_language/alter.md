@@ -177,7 +177,7 @@ This query copies the data partition from the `table1` to `table2`. Note that da
 For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
-- When creating the `table2`, you must specify the same partition key as for the `table1`. 
+- Both tables must have the same partition key.  
 
 #### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
