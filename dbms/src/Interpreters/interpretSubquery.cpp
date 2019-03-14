@@ -64,14 +64,14 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         {
             auto query_context = const_cast<Context *>(&context.getQueryContext());
             const auto & storage = query_context->executeTableFunction(table_expression);
-            columns = storage->getColumns().ordinary;
+            columns = storage->getColumns().getOrdinary();
             select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression));
         }
         else
         {
             DatabaseAndTableWithAlias database_table(*table);
             const auto & storage = context.getTable(database_table.database, database_table.table);
-            columns = storage->getColumns().ordinary;
+            columns = storage->getColumns().getOrdinary();
             select_query->replaceDatabaseAndTable(database_table.database, database_table.table);
         }
 

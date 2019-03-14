@@ -301,7 +301,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
                         "added to the sorting key. You can add expressions that use only the newly added columns",
                         ErrorCodes::BAD_ARGUMENTS);
 
-                if (new_columns.defaults.count(col))
+                if (new_columns.getDefaults().count(col))
                     throw Exception("Newly added column " + col + " has a default expression, so adding "
                         "expressions that use it to the sorting key is forbidden",
                         ErrorCodes::BAD_ARGUMENTS);

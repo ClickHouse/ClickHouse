@@ -115,7 +115,7 @@ BlockIO InterpreterInsertQuery::execute()
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, query_sample_block, table->getSampleBlock(), table->getColumns().defaults, context);
+        out, query_sample_block, table->getSampleBlock(), table->getColumns().getDefaults(), context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -140,9 +140,9 @@ BlockIO InterpreterInsertQuery::execute()
         if (!allow_materialized)
         {
             Block in_header = res.in->getHeader();
-            for (const auto & name_type : table->getColumns().materialized)
-                if (in_header.has(name_type.name))
-                    throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
+            for (const auto & column : table->getColumns())
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized && in_header.has(column.name))
+                    throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
     else if (query.data && !query.has_tail) /// can execute without additional data

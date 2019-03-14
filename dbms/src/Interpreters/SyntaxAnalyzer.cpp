@@ -75,7 +75,7 @@ void collectSourceColumns(ASTSelectQuery * select_query, StoragePtr storage, Nam
 
         if (select_query)
         {
-            const auto & storage_aliases = storage->getColumns().aliases;
+            const auto & storage_aliases = storage->getColumns().getAliases();
             source_columns.insert(source_columns.end(), storage_aliases.begin(), storage_aliases.end());
         }
     }
@@ -664,7 +664,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         }
 
         translateQualifiedNames(query, *select_query, context,
-                                (storage ? storage->getColumns().ordinary.getNames() : source_columns_list), source_columns_set,
+                                (storage ? storage->getColumns().getOrdinary().getNames() : source_columns_list), source_columns_set,
                                 result.analyzed_join.columns_from_joined_table);
 
         /// Depending on the user's profile, check for the execution rights
