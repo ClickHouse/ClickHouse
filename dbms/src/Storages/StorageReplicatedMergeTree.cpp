@@ -277,6 +277,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         return;
     }
 
+    if (attach && !current_zookeeper->exists(zookeeper_path + "/metadata"))
+    {
+        LOG_WARNING(log, "No metadata in ZooKeeper: table will be in readonly mode.");
+        is_readonly = true;
+        return;
+    }
+
     if (!attach)
     {
         if (!data.getDataParts().empty())
