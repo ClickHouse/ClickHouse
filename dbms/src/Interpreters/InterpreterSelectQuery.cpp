@@ -559,6 +559,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
 
+        /// At this point the effective depth of pipeline should be 1.
+        /// The actual depth may be 2, because of alias actions' ExpressionBlockInputStream.
+
+        /// TODO: Apply table filters, if present.
+
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
     }
 
@@ -1029,12 +1034,17 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if (pipeline.streams.empty())
         {
-            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
+            pipeline.streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
             if (query_info.prewhere_info)
-                pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
-                        pipeline.streams.back(), prewhere_info->prewhere_actions,
-                        prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column);
+                pipeline.transform([&](auto & stream))
+                {
+                    stream = std::make_shared<FilterBlockInputStream>(
+                        stream,
+                        prewhere_info->prewhere_actions,
+                        prewhere_info->prewhere_column_name,
+                        prewhere_info->remove_prewhere_column);
+                }
         }
 
         pipeline.transform([&](auto & stream)
