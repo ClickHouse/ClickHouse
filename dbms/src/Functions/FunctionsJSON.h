@@ -1,11 +1,8 @@
 #pragma once
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
 #include <ext/range.h>
@@ -17,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
@@ -117,14 +115,6 @@ public:
         return true;
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-    {
-        if constexpr (ExtraArg)
-            return {1};
-        else
-            return {};
-    }
-
     DataTypePtr getReturnTypeImpl(
         const ColumnsWithTypeAndName & arguments
     ) const override
@@ -138,8 +128,15 @@ public:
                 };
 
             auto col_type_const {
-                static_cast<const ColumnConst *>(arguments[1].column.get())
+                typeid_cast<const ColumnConst *>(arguments[1].column.get())
             };
+
+            if (!col_type_const)
+                throw Exception {
+                    "The second argument for function " + getName()
+                        + " must be constant",
+                    ErrorCodes::ILLEGAL_COLUMN
+                };
 
             virtual_type = DataTypeFactory::instance().get(
                 col_type_const->getValue<String>()
