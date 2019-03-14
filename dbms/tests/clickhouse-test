@@ -160,7 +160,21 @@ def main(args):
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
-    for suite in sorted(os.listdir(base_dir)):
+    def sute_key_func(item):
+       if args.order == 'random':
+             return random()
+
+       if -1 == item.find('_'):
+           return 99998
+
+       prefix, suffix = item.split('_', 1)
+
+       try:
+           return int(prefix), suffix
+       except ValueError:
+           return 99997
+
+    for suite in sorted(os.listdir(base_dir), key=sute_key_func):
         if SERVER_DIED:
             break
 
