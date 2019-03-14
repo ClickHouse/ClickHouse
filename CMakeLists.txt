@@ -182,7 +182,6 @@ include (cmake/find_cxxabi.cmake)
 include (cmake/find_cxx.cmake)
 
 include (cmake/test_compiler.cmake)
-include (cmake/arch.cmake)
 
 if (OS_LINUX AND COMPILER_CLANG)
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS}")
