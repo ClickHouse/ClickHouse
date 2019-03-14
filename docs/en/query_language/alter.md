@@ -172,9 +172,9 @@ So you can put data to the `detached` directory on one replica, and use the `ALT
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-This query copies the data partition from the `table1` to `table2`. Data won't be deleted from `table1`.
+This query copies the data partition from the `table1` to `table2`. Note that data won't be deleted from `table1`.
 
-Note that:
+For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - When creating the `table2`, you must specify the same partition key as for the `table1`. 
