@@ -36,7 +36,7 @@ struct RenameDescription
 
 BlockIO InterpreterRenameQuery::execute()
 {
-    ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
+    const auto & rename = query_ptr->as<ASTRenameQuery &>();
 
     if (!rename.cluster.empty())
     {

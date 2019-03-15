@@ -1,16 +1,14 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage.h>
+
+#include <ext/shared_ptr_helper.h>
 
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
 
 class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
