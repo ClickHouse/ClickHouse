@@ -54,7 +54,6 @@
 ### Performance Improvement
 * Improved heuristics of "move to PREWHERE" optimization. [#4405](https://github.com/yandex/ClickHouse/pull/4405) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Use proper lookup tables that uses HashTable's API for 8-bit and 16-bit keys. [#4536](https://github.com/yandex/ClickHouse/pull/4536) ([Amos Bird](https://github.com/amosbird))
-*  [#4465](https://github.com/yandex/ClickHouse/pull/4465) ([Vitaly Baranov](https://github.com/vitlibar))
 * Improved performance of string comparison. [#4564](https://github.com/yandex/ClickHouse/pull/4564) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Cleanup distributed DDL queue in a separate thread so that it doesn't slow down the main loop that processes distributed DDL tasks. [#4502](https://github.com/yandex/ClickHouse/pull/4502) ([Alex Zatelepin](https://github.com/ztlpn))
 * When `min_bytes_to_use_direct_io` is set to 1, not every file was opened with O_DIRECT mode because the data size to read was sometimes underestimated by the size of one compressed block. [#4526](https://github.com/yandex/ClickHouse/pull/4526) ([alexey-milovidov](https://github.com/alexey-milovidov))
