@@ -1,11 +1,14 @@
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Core/Settings.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Functions/FunctionFactory.h>
@@ -13,6 +16,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/FieldVisitors.h>
 
 #include <deque>
 
@@ -96,11 +100,12 @@ void LogicalExpressionsOptimizer::shortCircuitLogicExpressions()
 std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAndReplaceConstColumn(ASTPtr & node)
 {
     if (const ASTLiteral * literal = typeid_cast<ASTLiteral *>(node.get()))
-    {
-        /// const ColumnPtr & column_, const DataTypePtr & type_, const String & name_
-        const auto data_type = DataTypeFactory::instance().get(literal->value.getTypeName());
-        const auto column_ptr = data_type->createColumnConst(1, literal->value);
-        ColumnWithTypeAndName column{column_ptr, data_type, ""};
+    {   
+        DataTypePtr type = applyVisitor(FieldToDataType(), literal->value);
+        ColumnWithTypeAndName column;
+        column.column = type->createColumnConst(1, convertFieldToType(literal->value, *type));
+        column.type = type;
+        column.name = node->getColumnName();
 
         return std::make_pair(column, true);
     }
@@ -144,15 +149,19 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
             size_t position = 0;
             auto * func_args = typeid_cast<ASTExpressionList *>(function->arguments.get());
 
+            bool flag = true;
             for (auto & child : func_args->children)
             {
                 auto value = tryExtractAndReplaceConstColumn(child);
                 if (!value.second)
-                    return std::make_pair(ColumnWithTypeAndName(), false);
+                    flag = false;
                 args.push_back(value.first);
                 args_position.push_back(position);
                 ++position;
             }
+
+            if (!flag)
+                return std::make_pair(ColumnWithTypeAndName(), false);
 
             FunctionBuilderPtr func_builder = FunctionFactory::instance().tryGet(function->name, context);
             if (func_builder && !TableFunctionFactory::instance().isTableFunctionName(function->name) &&

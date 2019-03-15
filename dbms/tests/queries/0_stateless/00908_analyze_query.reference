@@ -14,4 +14,10 @@ SELECT number\nFROM numbers(10) \nWHERE 1
 SELECT number\nFROM numbers(10) \nWHERE 0
 SELECT number\nFROM numbers(10) \nPREWHERE 0
 SELECT number\nFROM numbers(10) \nWHERE 0
+<<<<<<< HEAD
 >>>>>>> simple logical_short_circuit optimization
+=======
+SELECT [1, 2, 7]
+SELECT arrayMap(x -> 3, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+SELECT arrayMap(x -> 6, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+>>>>>>> support lambda function optimize

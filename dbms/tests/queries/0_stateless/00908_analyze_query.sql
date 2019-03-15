@@ -35,4 +35,11 @@ analyze SELECT number FROM numbers(10) where 2 = 3 or 3 = 4 or ((number = 4 and 
 =======
 analyze SELECT number FROM numbers(10) PREWHERE number % 2 = 1 AND 3 % 2 = 0;
 analyze SELECT number FROM numbers(10) WHERE 2 = 3 OR 3 = 4 OR ((number = 4 AND  1 = 3));
+<<<<<<< HEAD
 >>>>>>> fix sql keywords to upper
+=======
+
+analyze SELECT [1, 2, 3 + 3 = 6 ? 7 : 8];
+analyze SELECT arrayMap(x -> 1 = 1 or x + 3 = 6 ? 3 : 4,  range(10));
+analyze SELECT arrayMap(x -> (3 + 3), range(10 + 3));
+>>>>>>> support lambda function optimize
