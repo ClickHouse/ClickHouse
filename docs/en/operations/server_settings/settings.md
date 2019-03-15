@@ -613,11 +613,11 @@ Port for communicating with clients over the TCP protocol.
 
 TCP port for secure communication with clients. Use it with [OpenSSL](#server_settings-openssl) settings.
 
-**Возможные значения**
+**Possible values**
 
 Positive integer.
 
-**Значение по умолчанию**
+**Default value**
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>

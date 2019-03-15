@@ -616,11 +616,11 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 TCP порт для защищённого обмена данными с клиентами. Используйте с настройкой [OpenSSL](#server_settings-openssl).
 
-**Possible values**
+**Возможные значения**
 
-Положительное целое.
+Положительное целое число.
 
-**Default value**
+**Значение по умолчанию**
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
