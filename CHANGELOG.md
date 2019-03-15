@@ -1,7 +1,7 @@
 ## ClickHouse release 19.4.0.49, 2019-03-09
 
 ### New Feature
-* Added support for Protobuf format. [#4174](https://github.com/yandex/ClickHouse/pull/4174) ([Vitaly Baranov](https://github.com/vitlibar))
+* Added full support for Protobuf format (input and output, nested data structured). [#4174](https://github.com/yandex/ClickHouse/pull/4174) ([Vitaly Baranov](https://github.com/vitlibar))
 * Added bitmap functions with Roaring Bitmaps. [#4207](https://github.com/yandex/ClickHouse/pull/4207) ([Andy Yang](https://github.com/andyyzh))
 * Parquet format support [#4448](https://github.com/yandex/ClickHouse/pull/4448) ([proller](https://github.com/proller))
 * N-gram distance was added for fuzzy string comparison. It is similar to q-gram metrics in R language. [#4466](https://github.com/yandex/ClickHouse/pull/4466) ([Danila Kutenin](https://github.com/danlark1))
