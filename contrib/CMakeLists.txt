@@ -283,9 +283,13 @@ if (USE_INTERNAL_BROTLI_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
-    set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
-    set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
+    if (MAKE_STATIC_LIBRARIES)
+        set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
+    else ()
+        set(protobuf_BUILD_SHARED_LIBS ON CACHE INTERNAL "" FORCE)
+    endif ()
     set(protobuf_WITH_ZLIB 0 CACHE INTERNAL "" FORCE) # actually will use zlib, but skip find
+    set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
     add_subdirectory(protobuf/cmake)
 endif ()
 
