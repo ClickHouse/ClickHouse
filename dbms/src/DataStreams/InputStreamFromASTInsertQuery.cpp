@@ -20,7 +20,7 @@ namespace ErrorCodes
 InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, Context & context)
 {
-    const ASTInsertQuery * ast_insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+    const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
     if (!ast_insert_query)
         throw Exception("Logical error: query requires data to insert, but it is not INSERT query", ErrorCodes::LOGICAL_ERROR);
