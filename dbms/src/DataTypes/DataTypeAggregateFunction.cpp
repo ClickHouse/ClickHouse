@@ -346,7 +346,7 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
         function_name = parametric->name;
 
-        const ASTs & parameters = parametric->arguments->as<ASTExpressionList>()->children;
+        const ASTs & parameters = parametric->arguments->children;
         params_row.resize(parameters.size());
 
         for (size_t i = 0; i < parameters.size(); ++i)

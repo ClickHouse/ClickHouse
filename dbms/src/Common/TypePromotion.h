@@ -4,6 +4,13 @@
 
 namespace DB {
 
+/* This base class adds public methods:
+ *  -       Derived * as<Derived>()
+ *  - const Derived * as<Derived>() const
+ *  -       Derived & as<Derived &>()
+ *  - const Derived & as<Derived &>() const
+ */
+
 template <class Base>
 class TypePromotion {
 private:

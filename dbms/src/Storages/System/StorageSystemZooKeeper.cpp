@@ -59,17 +59,17 @@ static bool extractPathImpl(const IAST & elem, String & res)
 
     if (function->name == "equals")
     {
-        const auto * args = function->arguments->as<ASTExpressionList>();
+        const auto & args = function->arguments->as<ASTExpressionList &>();
         const IAST * value;
 
-        if (args->children.size() != 2)
+        if (args.children.size() != 2)
             return false;
 
         const ASTIdentifier * ident;
-        if ((ident = args->children.at(0)->as<ASTIdentifier>()))
-            value = &*args->children.at(1);
-        else if ((ident = args->children.at(1)->as<ASTIdentifier>()))
-            value = &*args->children.at(0);
+        if ((ident = args.children.at(0)->as<ASTIdentifier>()))
+            value = args.children.at(1).get();
+        else if ((ident = args.children.at(1)->as<ASTIdentifier>()))
+            value = args.children.at(0).get();
         else
             return false;
 
@@ -95,12 +95,12 @@ static bool extractPathImpl(const IAST & elem, String & res)
   */
 static String extractPath(const ASTPtr & query)
 {
-    const auto * select = query->as<ASTSelectQuery>();
-    if (!select->where_expression)
+    const auto & select = query->as<ASTSelectQuery &>();
+    if (!select.where_expression)
         return "";
 
     String res;
-    return extractPathImpl(*select->where_expression, res) ? res : "";
+    return extractPathImpl(*select.where_expression, res) ? res : "";
 }
 
 
