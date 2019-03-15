@@ -53,7 +53,7 @@ inline ALWAYS_INLINE void writeSlice(const StringSource::Slice & slice, FixedStr
 /// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericArraySlice, GenericArraySink).
 inline ALWAYS_INLINE void writeSlice(const GenericArraySlice & slice, GenericArraySink & sink)
 {
-    if (typeid(slice.elements) == typeid(static_cast<const IColumn *>(&sink.elements)))
+    if (slice.elements->structureEquals(sink.elements))
     {
         sink.elements.insertRangeFrom(*slice.elements, slice.begin, slice.size);
         sink.current_offset += slice.size;
@@ -125,7 +125,7 @@ void writeSlice(const NumericValueSlice<T> & slice, NumericArraySink<U> & sink)
 /// Assuming same types of underlying columns for slice and sink if (ArraySlice, ArraySink) is (GenericValueSlice, GenericArraySink).
 inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, GenericArraySink & sink)
 {
-    if (typeid(slice.elements) == typeid(static_cast<const IColumn *>(&sink.elements)))
+    if (slice.elements->structureEquals(sink.elements))
     {
         sink.elements.insertFrom(*slice.elements, slice.position);
         ++sink.current_offset;
@@ -457,7 +457,7 @@ template <bool all>
 bool sliceHas(const GenericArraySlice & first, const GenericArraySlice & second)
 {
     /// Generic arrays should have the same type in order to use column.compareAt(...)
-    if (typeid(*first.elements) != typeid(*second.elements))
+    if (!first.elements->structureEquals(*second.elements))
         return false;
 
     auto impl = sliceHasImpl<all, GenericArraySlice, GenericArraySlice, sliceEqualElements>;

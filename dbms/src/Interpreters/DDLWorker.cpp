@@ -224,7 +224,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     {
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
-        max_tasks_in_queue = std::max(static_cast<UInt64>(1), config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+        max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
 
         if (config->has(prefix + ".profile"))
             context.setSetting("profile", config->getString(prefix + ".profile"));
