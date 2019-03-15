@@ -29,15 +29,15 @@ struct ColumnDescription
     void readText(ReadBuffer & buf);
 };
 
-struct ColumnsDescription
+class ColumnsDescription
 {
-private:
-    std::list<ColumnDescription> columns;
-    std::unordered_map<String, std::list<ColumnDescription>::iterator> name_to_column;
-
 public:
     ColumnsDescription() = default;
     explicit ColumnsDescription(NamesAndTypesList ordinary_);
+    ColumnsDescription(const ColumnsDescription & other);
+    ColumnsDescription & operator=(const ColumnsDescription & other);
+    ColumnsDescription(ColumnsDescription &&) noexcept = default;
+    ColumnsDescription & operator=(ColumnsDescription &&) noexcept = default;
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String());
@@ -80,6 +80,10 @@ public:
     static ColumnsDescription parse(const String & str);
 
     static const ColumnsDescription * loadFromContext(const Context & context, const String & db, const String & table);
+
+private:
+    std::list<ColumnDescription> columns;
+    std::unordered_map<String, std::list<ColumnDescription>::iterator> name_to_column;
 };
 
 }
