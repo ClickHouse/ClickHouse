@@ -5,7 +5,7 @@ namespace DB
 {
 
 MergingAggregatedTransform::MergingAggregatedTransform(
-    Block header, MergingAggregatedTransformParamsPtr params, size_t max_threads)
+    Block header, AggregatingTransformParamsPtr params, size_t max_threads)
     : IAccumulatingTransform(std::move(header), params->getHeader())
     , params(std::move(params)), max_threads(max_threads)
 {

@@ -259,7 +259,9 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
             expendPipeline(pid);
             /// Add node to queue again.
             prepare_queue.push(pid);
-            node.status = ExecStatus::Preparing;
+
+            /// node ref is not valid now.
+            graph[pid].status = ExecStatus::Preparing;
             break;
         }
     }

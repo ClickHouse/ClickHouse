@@ -1,23 +1,10 @@
 #pragma once
 #include <Processors/IAccumulatingTransform.h>
 #include <Interpreters/Aggregator.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 
 namespace DB
 {
-
-struct MergingAggregatedTransformParams
-{
-    Aggregator::Params params;
-    Aggregator aggregator;
-    bool final;
-
-    MergingAggregatedTransformParams(const Aggregator::Params & params, bool final)
-            : params(params), aggregator(params), final(final) {}
-
-    Block getHeader() const { return aggregator.getHeader(final); }
-};
-
-using MergingAggregatedTransformParamsPtr = std::unique_ptr<MergingAggregatedTransformParams>;
 
 /** A pre-aggregate stream of blocks in which each block is already aggregated.
   * Aggregate functions in blocks should not be finalized so that their states can be merged.
@@ -25,7 +12,7 @@ using MergingAggregatedTransformParamsPtr = std::unique_ptr<MergingAggregatedTra
 class MergingAggregatedTransform : public IAccumulatingTransform
 {
 public:
-    MergingAggregatedTransform(Block header, MergingAggregatedTransformParamsPtr params, size_t max_threads);
+    MergingAggregatedTransform(Block header, AggregatingTransformParamsPtr params, size_t max_threads);
     String getName() const override { return "MergingAggregatedTransform"; }
 
 protected:
@@ -33,7 +20,7 @@ protected:
     Chunk generate() override;
 
 private:
-    MergingAggregatedTransformParamsPtr params;
+    AggregatingTransformParamsPtr params;
     Logger * log = &Logger::get("MergingAggregatedTransform");
     size_t max_threads;
 
