@@ -287,7 +287,7 @@ BlockInputStreams StorageDistributed::read(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     Block header = materializeBlock(
-        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions::run(processed_stage)).getSampleBlock());
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock());
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(

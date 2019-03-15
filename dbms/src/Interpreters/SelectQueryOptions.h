@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 /**
  * to_stage
  * - the stage to which the query is to be executed. By default - till to the end.
@@ -21,42 +16,59 @@ namespace ErrorCodes
  *
  * only_analyze
  * - the object was created only for query analysis.
+ *
+ * is_subquery
+ * - there could be some specific for subqueries. Ex. there's no need to pass duplicated columns in results, cause of indirect results.
  */
-struct SelectQueryOptions
+class SelectQueryOptions
 {
-    QueryProcessingStage::Enum to_stage = QueryProcessingStage::Complete;
-    size_t subquery_depth = 0;
-    bool only_analyze = false;
-    bool modify_inplace = false;
-
-    static SelectQueryOptions run(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
-    {
-        return {stage, depth, false, false};
-    }
-
-    static SelectQueryOptions analyze(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
-    {
-        return {stage, depth, true, false};
-    }
-
-    static SelectQueryOptions analyzeModify(QueryProcessingStage::Enum stage, size_t depth = 0)
-    {
-        return {stage, depth, true, true};
-    }
+public:
+    SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
+        : to_stage(stage)
+        , subquery_depth(depth)
+        , only_analyze(false)
+        , modify_inplace(false)
+    {}
 
     const SelectQueryOptions & queryOptions() const { return *this; }
 
     SelectQueryOptions subqueryOptions(QueryProcessingStage::Enum stage) const
     {
-        return SelectQueryOptions{stage, subquery_depth + 1, only_analyze, modify_inplace};
+        SelectQueryOptions out = *this;
+        out.to_stage = stage;
+        ++out.subquery_depth;
+        return out;
     }
 
-    const SelectQueryOptions & checkZeroSubquery() const
+    friend SelectQueryOptions analyze(const SelectQueryOptions & src, bool value = true)
     {
-        if (subquery_depth)
-            throw Exception("Logical error: zero subquery depth expected", ErrorCodes::LOGICAL_ERROR);
-        return *this;
+        SelectQueryOptions out = src;
+        out.only_analyze = value;
+        return out;
     }
+
+    friend SelectQueryOptions modify(const SelectQueryOptions & src, bool value = true)
+    {
+        SelectQueryOptions out = src;
+        out.modify_inplace = value;
+        return out;
+    }
+
+    friend SelectQueryOptions noSubquery(const SelectQueryOptions & src)
+    {
+        SelectQueryOptions out = src;
+        out.subquery_depth = 0;
+        return out;
+    }
+
+    friend SelectQueryOptions noModify(const SelectQueryOptions & src) { return modify(src, false); }
+    friend bool isSubquery(const SelectQueryOptions & opt) { return opt.subquery_depth; }
+
+protected:
+    QueryProcessingStage::Enum to_stage;
+    size_t subquery_depth;
+    bool only_analyze;
+    bool modify_inplace;
 };
 
 }
