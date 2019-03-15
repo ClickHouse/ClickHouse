@@ -4,7 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
+#include <Common/TypePromotion.h>
 
 #include <algorithm>
 #include <ostream>
@@ -32,7 +32,7 @@ class WriteBuffer;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public std::enable_shared_from_this<IAST>
+class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
 {
 public:
     ASTs children;
@@ -41,20 +41,6 @@ public:
     IAST() = default;
     IAST(const IAST &) = default;
     IAST & operator=(const IAST &) = default;
-
-    template <class Derived>
-    Derived * as()
-    {
-        // TODO: check, if we downcasting to base type, then just return |this|.
-        return typeid_cast<Derived *>(this);
-    }
-
-    template <class Derived>
-    const Derived * as() const
-    {
-        // TODO: check, if we downcasting to base type, then just return |this|.
-        return typeid_cast<const Derived *>(this);
-    }
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
