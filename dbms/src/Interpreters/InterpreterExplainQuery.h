@@ -2,14 +2,11 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
 
 /// Returns single row with explain results
 class InterpreterExplainQuery : public IInterpreter

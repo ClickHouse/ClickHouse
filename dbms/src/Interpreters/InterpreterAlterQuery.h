@@ -1,14 +1,13 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
 class Context;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 /** Allows you add or remove a column in the table.
   * It also allows you to manipulate the partitions of the MergeTree family tables.

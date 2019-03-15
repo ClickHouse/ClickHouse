@@ -36,13 +36,13 @@ struct JoinedTable
 
     JoinedTable(ASTPtr table_element)
     {
-        element = typeid_cast<ASTTablesInSelectQueryElement *>(table_element.get());
+        element = table_element->as<ASTTablesInSelectQueryElement>();
         if (!element)
             throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
 
         if (element->table_join)
         {
-            join = typeid_cast<ASTTableJoin *>(element->table_join.get());
+            join = element->table_join->as<ASTTableJoin>();
             if (join->kind == ASTTableJoin::Kind::Cross ||
                 join->kind == ASTTableJoin::Kind::Comma)
             {
@@ -56,7 +56,7 @@ struct JoinedTable
 
         if (element->table_expression)
         {
-            auto & expr = typeid_cast<const ASTTableExpression &>(*element->table_expression);
+            const auto & expr = element->table_expression->as<ASTTableExpression &>();
             table = DatabaseAndTableWithAlias(expr);
         }
 
@@ -105,7 +105,7 @@ public:
 
             for (auto & child : node.arguments->children)
             {
-                if (auto func = typeid_cast<const ASTFunction *>(child.get()))
+                if (const auto * func = child->as<ASTFunction>())
                     visit(*func, child);
                 else
                     ands_only = false;
@@ -160,8 +160,8 @@ private:
         if (node.arguments->children.size() != 2)
             return false;
 
-        auto left = typeid_cast<const ASTIdentifier *>(node.arguments->children[0].get());
-        auto right = typeid_cast<const ASTIdentifier *>(node.arguments->children[1].get());
+        const auto * left = node.arguments->children[0]->as<ASTIdentifier>();
+        const auto * right = node.arguments->children[1]->as<ASTIdentifier>();
         if (!left || !right)
             return false;
 
@@ -213,7 +213,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables
     if (!select.tables)
         return false;
 
-    auto tables = typeid_cast<const ASTTablesInSelectQuery *>(select.tables.get());
+    const auto * tables = select.tables->as<ASTTablesInSelectQuery>();
     if (!tables)
         return false;
 
@@ -232,7 +232,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables
         if (num_tables > 2 && t.has_using)
             throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
 
-        if (ASTTableJoin * join = t.join)
+        if (auto * join = t.join)
             if (join->kind == ASTTableJoin::Kind::Comma)
                 ++num_comma;
     }
@@ -244,7 +244,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables
 
 void CrossToInnerJoinMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * t = ast->as<ASTSelectQuery>())
         visit(*t, ast, data);
 }
 

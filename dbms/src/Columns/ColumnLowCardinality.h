@@ -5,6 +5,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
+
 namespace DB
 {
 
@@ -130,6 +131,14 @@ public:
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
             callback(dictionary.getColumnUniquePtr());
+    }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
+            return idx.getPositions()->structureEquals(*rhs_low_cardinality->idx.getPositions())
+                && dictionary.getColumnUnique().structureEquals(rhs_low_cardinality->dictionary.getColumnUnique());
+        return false;
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
