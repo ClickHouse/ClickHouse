@@ -1,3 +1,7 @@
+option (ENABLE_PROTOBUF "Enable protobuf" ON)
+
+if (ENABLE_PROTOBUF)
+
 option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/protobuf/cmake/CMakeLists.txt")
@@ -96,6 +100,8 @@ if(OS_FREEBSD AND SANITIZE STREQUAL "address")
     else()
         set(USE_PROTOBUF 0)
     endif()
+endif()
+
 endif()
 
 message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY}")

@@ -128,8 +128,8 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context
                 res_columns[i++]->insert(config.first);
                 res_columns[i++]->insert(regexp);
                 res_columns[i++]->insert(function);
-                res_columns[i++]->insert(NULL);
-                res_columns[i++]->insert(NULL);
+                res_columns[i++]->insertDefault();
+                res_columns[i++]->insertDefault();
                 res_columns[i++]->insert(priority);
                 res_columns[i++]->insert(is_default);
                 res_columns[i++]->insert(config.second.databases);

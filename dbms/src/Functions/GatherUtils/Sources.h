@@ -14,7 +14,15 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/FunctionHelpers.h>
 
-namespace DB::GatherUtils
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+namespace GatherUtils
 {
 
 template <typename T>
@@ -658,5 +666,7 @@ struct NullableValueSource : public ValueSource
         return slice;
     }
 };
+
+}
 
 }

@@ -145,8 +145,9 @@ Aggregator::Aggregator(const Params & params_)
     isCancelled([]() { return false; })
 {
     /// Use query-level memory tracker
-    if (auto memory_tracker = CurrentThread::getMemoryTracker().getParent())
-        memory_usage_before_aggregation = memory_tracker->get();
+    if (auto memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto memory_tracker = memory_tracker_child->getParent())
+            memory_usage_before_aggregation = memory_tracker->get();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -835,8 +836,9 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = 0;
-    if (auto memory_tracker = CurrentThread::getMemoryTracker().getParent())
-        current_memory_usage = memory_tracker->get();
+    if (auto memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto memory_tracker = memory_tracker_child->getParent())
+            current_memory_usage = memory_tracker->get();
 
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;    /// Here all the results in the sum are taken into account, from different threads.
 
