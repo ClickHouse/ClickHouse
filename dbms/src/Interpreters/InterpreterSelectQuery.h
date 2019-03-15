@@ -133,6 +133,7 @@ private:
         }
     };
 
+    ASTSelectQuery & selectQuery();
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
 
@@ -222,7 +223,6 @@ private:
     void initSettings();
 
     ASTPtr query_ptr;
-    ASTSelectQuery & query;
     Context context;
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth = 0;

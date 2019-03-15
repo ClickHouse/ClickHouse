@@ -73,6 +73,7 @@ public:
     size_t allocatedBytes() const override;
     void protect() override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    bool structureEquals(const IColumn & rhs) const override;
 
     size_t tupleSize() const { return columns.size(); }
 

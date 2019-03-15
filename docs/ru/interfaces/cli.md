@@ -103,7 +103,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 - Определенного параметром `--config-file`.
 - `./clickhouse-client.xml`
-- `\~/.clickhouse-client/config.xml`
+- `~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`
 
 Пример конфигурационного файла:
