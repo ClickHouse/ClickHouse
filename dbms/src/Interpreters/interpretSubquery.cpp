@@ -124,7 +124,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     }
 
     return std::make_shared<InterpreterSelectWithUnionQuery>(
-        query, subquery_context, required_source_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+        query, subquery_context, SelectQueryOptions::run(QueryProcessingStage::Complete, subquery_depth + 1), required_source_columns);
 }
 
 }

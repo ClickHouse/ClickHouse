@@ -51,7 +51,8 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     }
     else if (ast.getKind() == ASTExplainQuery::AnalyzedSyntax)
     {
-        InterpreterSelectWithUnionQuery interpreter(ast.children.at(0), context, {}, QueryProcessingStage::FetchColumns, 0, true, true);
+        InterpreterSelectWithUnionQuery interpreter(ast.children.at(0), context,
+                                                    SelectQueryOptions::analyzeModify(QueryProcessingStage::FetchColumns));
         interpreter.getQuery()->format(IAST::FormatSettings(ss, false));
     }
 
