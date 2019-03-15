@@ -880,12 +880,12 @@ private:
     void processInsertQuery()
     {
         /// Send part of query without data, because data will be sent separately.
-        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
-        String query_without_data = insert_query->data
-            ? query.substr(0, insert_query->data - query.data())
+        const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
+        String query_without_data = parsed_insert_query.data
+            ? query.substr(0, parsed_insert_query.data - query.data())
             : query;
 
-        if (!insert_query->data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
+        if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -937,14 +937,14 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
-        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
-        if (!insert_query)
+        const auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
+        if (!parsed_insert_query)
             return;
 
-        if (insert_query->data)
+        if (parsed_insert_query->data)
         {
             /// Send data contained in the query.
-            ReadBufferFromMemory data_in(insert_query->data, insert_query->end - insert_query->data);
+            ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
             sendDataFrom(data_in, sample, columns_description);
         }
         else if (!is_interactive)
@@ -1233,8 +1233,8 @@ private:
             {
                 if (query_with_output->out_file)
                 {
-                    const auto * out_file_node = query_with_output->out_file->as<ASTLiteral>();
-                    const auto & out_file = out_file_node->value.safeGet<std::string>();
+                    const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
+                    const auto & out_file = out_file_node.value.safeGet<std::string>();
 
                     out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
                     out_buf = &*out_file_buf;
@@ -1247,8 +1247,8 @@ private:
                 {
                     if (has_vertical_output_suffix)
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-                    const auto * id = query_with_output->format->as<ASTIdentifier>();
-                    current_format = id->name;
+                    const auto & id = query_with_output->format->as<ASTIdentifier &>();
+                    current_format = id.name;
                 }
                 if (query_with_output->settings_ast)
                 {
