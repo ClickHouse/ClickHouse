@@ -691,7 +691,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 /// Count the number of parts covered by the broken part. If it is at least two, assume that
                 /// the broken part was created as a result of merging them and we won't lose data if we
                 /// delete it.
-                int contained_parts = 0;
+                size_t contained_parts = 0;
 
                 LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
 
