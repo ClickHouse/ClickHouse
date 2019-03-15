@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 /** Creates an array, multiplying the column (the first argument) by the number of elements in the array (the second argument).
   */
 class FunctionReplicate : public IFunction

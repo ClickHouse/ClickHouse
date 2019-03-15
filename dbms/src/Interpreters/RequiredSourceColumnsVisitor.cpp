@@ -22,7 +22,7 @@ static std::vector<String> extractNamesFromLambda(const ASTFunction & node)
     if (node.arguments->children.size() != 2)
         throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(node.arguments->children[0].get());
+    const auto * lambda_args_tuple = node.arguments->children[0]->as<ASTFunction>();
 
     if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
         throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
@@ -30,7 +30,7 @@ static std::vector<String> extractNamesFromLambda(const ASTFunction & node)
     std::vector<String> names;
     for (auto & child : lambda_args_tuple->arguments->children)
     {
-        ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(child.get());
+        const auto * identifier = child->as<ASTIdentifier>();
         if (!identifier)
             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
@@ -42,16 +42,14 @@ static std::vector<String> extractNamesFromLambda(const ASTFunction & node)
 
 bool RequiredSourceColumnsMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
-    if (typeid_cast<ASTSelectQuery *>(child.get()))
+    if (child->as<ASTSelectQuery>())
         return false;
 
     /// Processed. Do not need children.
-    if (typeid_cast<ASTTableExpression *>(node.get()) ||
-        typeid_cast<ASTArrayJoin *>(node.get()) ||
-        typeid_cast<ASTSelectQuery *>(node.get()))
+    if (node->as<ASTTableExpression>() || node->as<ASTArrayJoin>() || node->as<ASTSelectQuery>())
         return false;
 
-    if (auto * f = typeid_cast<ASTFunction *>(node.get()))
+    if (const auto * f = node->as<ASTFunction>())
     {
         /// "indexHint" is a special function for index analysis. Everything that is inside it is not calculated. @sa KeyCondition
         /// "lambda" visit children itself.
@@ -66,12 +64,12 @@ void RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
 {
     /// results are columns
 
-    if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+    if (auto * t = ast->as<ASTIdentifier>())
     {
         visit(*t, ast, data);
         return;
     }
-    if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
+    if (auto * t = ast->as<ASTFunction>())
     {
         data.addColumnAliasIfAny(*ast);
         visit(*t, ast, data);
@@ -80,24 +78,24 @@ void RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
 
     /// results are tables
 
-    if (auto * t = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
+    if (auto * t = ast->as<ASTTablesInSelectQueryElement>())
     {
         visit(*t, ast, data);
         return;
     }
 
-    if (auto * t = typeid_cast<ASTTableExpression *>(ast.get()))
+    if (auto * t = ast->as<ASTTableExpression>())
     {
         visit(*t, ast, data);
         return;
     }
-    if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * t = ast->as<ASTSelectQuery>())
     {
         data.addTableAliasIfAny(*ast);
         visit(*t, ast, data);
         return;
     }
-    if (typeid_cast<ASTSubquery *>(ast.get()))
+    if (ast->as<ASTSubquery>())
     {
         data.addTableAliasIfAny(*ast);
         return;
@@ -105,7 +103,7 @@ void RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
 
     /// other
 
-    if (auto * t = typeid_cast<ASTArrayJoin *>(ast.get()))
+    if (auto * t = ast->as<ASTArrayJoin>())
     {
         data.has_array_join = true;
         visit(*t, ast, data);
@@ -118,7 +116,7 @@ void RequiredSourceColumnsMatcher::visit(ASTSelectQuery & select, const ASTPtr &
     /// special case for top-level SELECT items: they are publics
     for (auto & node : select.select_expression_list->children)
     {
-        if (auto * identifier = typeid_cast<ASTIdentifier *>(node.get()))
+        if (const auto * identifier = node->as<ASTIdentifier>())
             data.addColumnIdentifier(*identifier);
         else
             data.addColumnAliasIfAny(*node);
@@ -170,9 +168,9 @@ void RequiredSourceColumnsMatcher::visit(ASTTablesInSelectQueryElement & node, c
 
     for (auto & child : node.children)
     {
-        if (auto * e = typeid_cast<ASTTableExpression *>(child.get()))
+        if (auto * e = child->as<ASTTableExpression>())
             expr = e;
-        if (auto * j = typeid_cast<ASTTableJoin *>(child.get()))
+        if (auto * j = child->as<ASTTableJoin>())
             join = j;
     }
 
@@ -207,7 +205,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTArrayJoin & node, const ASTPtr
     {
         data.addArrayJoinAliasIfAny(*expr);
 
-        if (auto * identifier = typeid_cast<ASTIdentifier *>(expr.get()))
+        if (const auto * identifier = expr->as<ASTIdentifier>())
         {
             data.addArrayJoinIdentifier(*identifier);
             continue;
