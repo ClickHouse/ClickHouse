@@ -79,13 +79,9 @@ namespace ErrorCodes
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const Names & required_result_column_names,
-    QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_,
-    bool only_analyze_,
-    bool modify_inplace)
-    : InterpreterSelectQuery(
-          query_ptr_, context_, nullptr, nullptr, required_result_column_names, to_stage_, subquery_depth_, only_analyze_, modify_inplace)
+    const SelectQueryOptions & options,
+    const Names & required_result_column_names)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options, required_result_column_names)
 {
 }
 
@@ -93,10 +89,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const BlockInputStreamPtr & input_,
-    QueryProcessingStage::Enum to_stage_,
-    bool only_analyze_,
-    bool modify_inplace)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, Names{}, to_stage_, 0, only_analyze_, modify_inplace)
+    const SelectQueryOptions & options)
+    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options.checkZeroSubquery())
 {
 }
 
@@ -104,10 +98,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const StoragePtr & storage_,
-    QueryProcessingStage::Enum to_stage_,
-    bool only_analyze_,
-    bool modify_inplace)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, Names{}, to_stage_, 0, only_analyze_, modify_inplace)
+    const SelectQueryOptions & options)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options.checkZeroSubquery())
 {
 }
 
@@ -134,17 +126,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Context & context_,
     const BlockInputStreamPtr & input_,
     const StoragePtr & storage_,
-    const Names & required_result_column_names,
-    QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_,
-    bool only_analyze_,
-    bool modify_inplace)
+    const SelectQueryOptions & options,
+    const Names & required_result_column_names)
+    : SelectQueryOptions(options)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
-    : query_ptr(modify_inplace ? query_ptr_ : query_ptr_->clone())
+    , query_ptr(modify_inplace ? query_ptr_ : query_ptr_->clone())
     , context(context_)
-    , to_stage(to_stage_)
-    , subquery_depth(subquery_depth_)
-    , only_analyze(only_analyze_)
     , storage(storage_)
     , input(input_)
     , log(&Logger::get("InterpreterSelectQuery"))
@@ -190,7 +177,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Read from subquery.
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze, modify_inplace);
+            table_expression, getSubqueryContext(context), subqueryOptions(QueryProcessingStage::Complete), required_columns);
 
         source_header = interpreter_subquery->getSampleBlock();
     }
@@ -248,11 +235,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                     table_expression,
                     getSubqueryContext(context),
-                    required_columns,
-                    QueryProcessingStage::Complete,
-                    subquery_depth + 1,
-                    only_analyze,
-                    modify_inplace);
+                    subqueryOptions(QueryProcessingStage::Complete),
+                    required_columns);
         }
     }
 
@@ -1001,8 +985,11 @@ void InterpreterSelectQuery::executeFetchColumns(
             if (!subquery)
                 throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
 
+            SelectQueryOptions opts = subqueryOptions(QueryProcessingStage::Complete);
+            opts.modify_inplace = false;
+
             interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                subquery, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+                subquery, getSubqueryContext(context), opts, required_columns);
 
             if (query_analyzer->hasAggregation())
                 interpreter_subquery->ignoreWithTotals();
