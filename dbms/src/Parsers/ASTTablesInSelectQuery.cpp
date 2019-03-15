@@ -208,7 +208,7 @@ void ASTArrayJoin::formatImpl(const FormatSettings & settings, FormatState & sta
 
     settings.one_line
         ? expression_list->formatImpl(settings, state, frame)
-        : typeid_cast<const ASTExpressionList &>(*expression_list).formatImplMultiline(settings, state, frame);
+        : expression_list->as<ASTExpressionList &>().formatImplMultiline(settings, state, frame);
 }
 
 
@@ -218,7 +218,7 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
     {
         if (table_join)
         {
-            static_cast<const ASTTableJoin &>(*table_join).formatImplBeforeTable(settings, state, frame);
+            table_join->as<ASTTableJoin &>().formatImplBeforeTable(settings, state, frame);
             settings.ostr << " ";
         }
 
@@ -226,7 +226,7 @@ void ASTTablesInSelectQueryElement::formatImpl(const FormatSettings & settings, 
         settings.ostr << " ";
 
         if (table_join)
-            static_cast<const ASTTableJoin &>(*table_join).formatImplAfterTable(settings, state, frame);
+            table_join->as<ASTTableJoin &>().formatImplAfterTable(settings, state, frame);
     }
     else if (array_join)
     {

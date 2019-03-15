@@ -1,14 +1,13 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
 class Context;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Return names, types and other information about columns in specified table.
