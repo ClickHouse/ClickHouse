@@ -112,7 +112,7 @@ String transformQueryForExternalDatabase(
       * copy only compatible parts of it.
       */
 
-    auto & original_where = clone_query->as<ASTSelectQuery>()->where_expression;
+    auto & original_where = clone_query->as<ASTSelectQuery &>().where_expression;
     if (original_where)
     {
         replaceConstFunction(*original_where, context, available_columns);

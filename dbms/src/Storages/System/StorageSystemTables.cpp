@@ -240,10 +240,10 @@ protected:
 
                         if (ast)
                         {
-                            const auto * ast_create = ast->as<ASTCreateQuery>();
-                            if (ast_create->storage)
+                            const auto & ast_create = ast->as<ASTCreateQuery &>();
+                            if (ast_create.storage)
                             {
-                                engine_full = queryToString(*ast_create->storage);
+                                engine_full = queryToString(*ast_create.storage);
 
                                 static const char * const extra_head = " ENGINE = ";
                                 if (startsWith(engine_full, extra_head))

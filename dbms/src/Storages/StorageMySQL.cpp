@@ -199,21 +199,21 @@ void registerStorageMySQL(StorageFactory & factory)
             engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
 
         /// 3306 is the default MySQL port.
-        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral>()->value.safeGet<String>(), 3306);
+        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 3306);
 
-        const String & remote_database = engine_args[1]->as<ASTLiteral>()->value.safeGet<String>();
-        const String & remote_table = engine_args[2]->as<ASTLiteral>()->value.safeGet<String>();
-        const String & username = engine_args[3]->as<ASTLiteral>()->value.safeGet<String>();
-        const String & password = engine_args[4]->as<ASTLiteral>()->value.safeGet<String>();
+        const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
         mysqlxx::Pool pool(remote_database, parsed_host_port.first, username, password, parsed_host_port.second);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
         if (engine_args.size() >= 6)
-            replace_query = engine_args[5]->as<ASTLiteral>()->value.safeGet<UInt64>();
+            replace_query = engine_args[5]->as<ASTLiteral &>().value.safeGet<UInt64>();
         if (engine_args.size() == 7)
-            on_duplicate_clause = engine_args[6]->as<ASTLiteral>()->value.safeGet<String>();
+            on_duplicate_clause = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
 
         if (replace_query && !on_duplicate_clause.empty())
             throw Exception(

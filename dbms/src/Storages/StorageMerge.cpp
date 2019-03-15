@@ -491,8 +491,8 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
 
-        String source_database = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
-        String table_name_regexp = engine_args[1]->as<ASTLiteral>()->value.safeGet<String>();
+        String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageMerge::create(
             args.table_name, args.columns,

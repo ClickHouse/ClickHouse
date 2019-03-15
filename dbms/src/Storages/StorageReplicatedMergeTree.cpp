@@ -447,17 +447,17 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
         storage_modifier = [&](IAST & ast)
         {
-            auto * storage_ast = ast.as<ASTStorage>();
+            auto & storage_ast = ast.as<ASTStorage &>();
 
-            if (!storage_ast->order_by)
+            if (!storage_ast.order_by)
                 throw Exception(
                     "ALTER MODIFY ORDER BY of default-partitioned tables is not supported",
                     ErrorCodes::LOGICAL_ERROR);
 
             if (new_primary_key_ast.get() != data.primary_key_ast.get())
-                storage_ast->set(storage_ast->primary_key, new_primary_key_ast);
+                storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
 
-            storage_ast->set(storage_ast->order_by, new_order_by_ast);
+            storage_ast.set(storage_ast.order_by, new_order_by_ast);
         };
     }
 
@@ -3567,7 +3567,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     String partition_id;
 
     if (attach_part)
-        partition_id = partition->as<ASTLiteral>()->value.safeGet<String>();
+        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
     else
         partition_id = data.getPartitionIDFromQuery(partition, query_context);
 

@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 Array getAggregateFunctionParametersArray(const ASTPtr & expression_list, const std::string & error_context)
 {
-    const ASTs & parameters = expression_list->as<ASTExpressionList>()->children;
+    const ASTs & parameters = expression_list->children;
     if (parameters.empty())
         throw Exception("Parameters list to aggregate functions cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 

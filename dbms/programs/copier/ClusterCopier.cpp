@@ -1179,7 +1179,7 @@ protected:
     /// Removes MATERIALIZED and ALIAS columns from create table query
     static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
     {
-        const ASTs & column_asts = query_ast->as<ASTCreateQuery>()->columns_list->columns->children;
+        const ASTs & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
         auto new_columns = std::make_shared<ASTExpressionList>();
 
         for (const ASTPtr & column_ast : column_asts)

@@ -76,18 +76,17 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
-    auto * select = ast->as<ASTSelectQuery>();
-    if (!select->with_expression_list)
+    auto & select = ast->as<ASTSelectQuery &>();
+    if (!select.with_expression_list)
     {
-        select->with_expression_list = std::make_shared<ASTExpressionList>();
-        select->children.insert(select->children.begin(), select->with_expression_list);
+        select.with_expression_list = std::make_shared<ASTExpressionList>();
+        select.children.insert(select.children.begin(), select.with_expression_list);
     }
 
-    auto * with = select->with_expression_list->as<ASTExpressionList>();
     auto literal = std::make_shared<ASTLiteral>(value);
     literal->alias = column_name;
     literal->prefer_alias_to_column_name = true;
-    with->children.push_back(literal);
+    select.with_expression_list->children.push_back(literal);
 }
 
 /// Verifying that the function depends only on the specified columns
@@ -126,18 +125,18 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
     if (functions.size() == 1)
         return functions[0];
     ASTPtr new_query = std::make_shared<ASTFunction>();
-    auto * new_function = new_query->as<ASTFunction>();
-    new_function->name = "and";
-    new_function->arguments = std::make_shared<ASTExpressionList>();
-    new_function->arguments->children = functions;
-    new_function->children.push_back(new_function->arguments);
+    auto & new_function = new_query->as<ASTFunction &>();
+    new_function.name = "and";
+    new_function.arguments = std::make_shared<ASTExpressionList>();
+    new_function.arguments->children = functions;
+    new_function.children.push_back(new_function.arguments);
     return new_query;
 }
 
 void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
 {
-    const auto * select = query->as<ASTSelectQuery>();
-    if (!select->where_expression && !select->prewhere_expression)
+    const auto & select = query->as<ASTSelectQuery &>();
+    if (!select.where_expression && !select.prewhere_expression)
         return;
 
     NameSet columns;
@@ -146,10 +145,10 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
 
     /// We will create an expression that evaluates the expressions in WHERE and PREWHERE, depending only on the existing columns.
     std::vector<ASTPtr> functions;
-    if (select->where_expression)
-        extractFunctions(select->where_expression, columns, functions);
-    if (select->prewhere_expression)
-        extractFunctions(select->prewhere_expression, columns, functions);
+    if (select.where_expression)
+        extractFunctions(select.where_expression, columns, functions);
+    if (select.prewhere_expression)
+        extractFunctions(select.prewhere_expression, columns, functions);
 
     ASTPtr expression_ast = buildWhereExpression(functions);
     if (!expression_ast)

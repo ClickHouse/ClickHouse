@@ -55,7 +55,7 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
 
         auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        extractDependentTable(*inner_query->as<ASTSelectQuery>(), select_database_name, select_table_name);
+        extractDependentTable(inner_query->as<ASTSelectQuery &>(), select_database_name, select_table_name);
     }
     else
         throw Exception("Logical error while creating StorageMaterializedView."
@@ -80,7 +80,7 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
 
         const auto & inner_query = ast_select->list_of_selects->children.at(0);
 
-        checkAllowedQueries(*inner_query->as<ASTSelectQuery>());
+        checkAllowedQueries(inner_query->as<ASTSelectQuery &>());
     }
 }
 
@@ -110,9 +110,9 @@ StorageMaterializedView::StorageMaterializedView(
 
     inner_query = query.select->list_of_selects->children.at(0);
 
-    auto * select_query = inner_query->as<ASTSelectQuery>();
-    extractDependentTable(*select_query, select_database_name, select_table_name);
-    checkAllowedQueries(*select_query);
+    auto & select_query = inner_query->as<ASTSelectQuery &>();
+    extractDependentTable(select_query, select_database_name, select_table_name);
+    checkAllowedQueries(select_query);
 
     if (!select_table_name.empty())
         global_context.addDependency(
