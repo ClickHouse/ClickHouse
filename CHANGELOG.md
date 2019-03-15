@@ -23,7 +23,6 @@
 * When there are more than 1000 threads in a thread pool, `std::terminate` may happen on thread exit. The bug and the fix is described by [Azat Khuzhin](https://github.com/azat) in PR #4485. [#4505](https://github.com/yandex/ClickHouse/pull/4505) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fix undefined behaviour in `dictIsIn` function for cache dictionaries. [#4515](https://github.com/yandex/ClickHouse/pull/4515) ([alesapin](https://github.com/alesapin))
 * Fix broken progress bar in 19.3 [#4627](https://github.com/yandex/ClickHouse/pull/4627) ([filimonov](https://github.com/filimonov))
-* Removed the `inline` tags of `void readBinary(...)` in `Field.cpp`. Also merged redundant `namespace DB` blocks. [#4530](https://github.com/yandex/ClickHouse/pull/4530) ([hcz](https://github.com/hczhcz))
 * Fixed a deadlock when a SELECT query locks the same table multiple times (e.g. from different threads or when executing multiple subqueries) and there is a concurrent DDL query. Fixes #4316 [#4535](https://github.com/yandex/ClickHouse/pull/4535) ([Alex Zatelepin](https://github.com/ztlpn))
 * Modified links that have expired in the tutorial ... [#4545](https://github.com/yandex/ClickHouse/pull/4545) ([MeiK](https://github.com/MeiK-h))
 * Disable compile expressions until we get own `llvm` contrib and can test it with `clang` and `asan`. [#4579](https://github.com/yandex/ClickHouse/pull/4579) ([alesapin](https://github.com/alesapin))
@@ -65,26 +64,26 @@
 
 ### Bug fixes
 
-* Fixed error in #3920. This error manifestate itself as random cache corruption (messages `Unknown codec family code`, `Cannot seek through file`) and segfaults. This bug first appeared in version 19.1 and is present in versions up to  19.1.10 and 19.3.6. https://github.com/yandex/ClickHouse/pull/4623
+* Fixed error in #3920. This error manifestate itself as random cache corruption (messages `Unknown codec family code`, `Cannot seek through file`) and segfaults. This bug first appeared in version 19.1 and is present in versions up to  19.1.10 and 19.3.6. [#4623](https://github.com/yandex/ClickHouse/pull/4623) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 
 ## ClickHouse release 19.3.6, 2019-03-02
 
 ### Bug fixes
 
-* When there are more than 1000 threads in a thread pool, `std::terminate` may happen on thread exit. The bug and the fix is described by [Azat Khuzhin](https://github.com/azat) in PR #4485. https://github.com/yandex/ClickHouse/pull/4505
-* Now it's possible to create `ReplicatedMergeTree*` tables with comments on columns without defaults and tables with columns codecs without comments and defaults. Also fix comparison of codecs. https://github.com/yandex/ClickHouse/pull/4523
-* Fixed crash on JOIN with array or tuple. https://github.com/yandex/ClickHouse/pull/4552
-* Fixed crash in clickhouse-copier with the message `ThreadStatus not created`. https://github.com/yandex/ClickHouse/pull/4540
-* Fixed hangup on server shutdown if distributed DDLs were used. https://github.com/yandex/ClickHouse/pull/4472
-* Incorrect column numbers were printed in error message about text format parsing for columns with number greater than 10. https://github.com/yandex/ClickHouse/pull/4484
+* When there are more than 1000 threads in a thread pool, `std::terminate` may happen on thread exit. [Azat Khuzhin](https://github.com/azat) [#4485](https://github.com/yandex/ClickHouse/pull/4485) [#4505](https://github.com/yandex/ClickHouse/pull/4505) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Now it's possible to create `ReplicatedMergeTree*` tables with comments on columns without defaults and tables with columns codecs without comments and defaults. Also fix comparison of codecs. [#4523](https://github.com/yandex/ClickHouse/pull/4523) ([alesapin](https://github.com/alesapin))
+* Fixed crash on JOIN with array or tuple. [#4552](https://github.com/yandex/ClickHouse/pull/4552) ([Artem Zuikov](https://github.com/4ertus2))
+* Fixed crash in clickhouse-copier with the message `ThreadStatus not created`. [#4540](https://github.com/yandex/ClickHouse/pull/4540) ([Artem Zuikov](https://github.com/4ertus2))
+* Fixed hangup on server shutdown if distributed DDLs were used. [#4472](https://github.com/yandex/ClickHouse/pull/4472) ([Alex Zatelepin](https://github.com/ztlpn))
+* Incorrect column numbers were printed in error message about text format parsing for columns with number greater than 10. [#4484](https://github.com/yandex/ClickHouse/pull/4484) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 ### Build/Testing/Packaging Improvements
 
-* Fixed build with AVX enabled. https://github.com/yandex/ClickHouse/pull/4527
-* Enable extended accounting and IO accounting based on good known version instead of kernel under which it is compiled. https://github.com/yandex/ClickHouse/pull/4541
-* Allow to skip setting of core_dump.size_limit, warning instead of throw if limit set fail. https://github.com/yandex/ClickHouse/pull/4473
-* Removed the `inline` tags of `void readBinary(...)` in `Field.cpp`. Also merged redundant `namespace DB` blocks. https://github.com/yandex/ClickHouse/pull/4530
+* Fixed build with AVX enabled. [#4527](https://github.com/yandex/ClickHouse/pull/4527) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Enable extended accounting and IO accounting based on good known version instead of kernel under which it is compiled. [#4541](https://github.com/yandex/ClickHouse/pull/4541) ([nvartolomei](https://github.com/nvartolomei))
+* Allow to skip setting of core_dump.size_limit, warning instead of throw if limit set fail. [#4473](https://github.com/yandex/ClickHouse/pull/4473) ([proller](https://github.com/proller))
+* Removed the `inline` tags of `void readBinary(...)` in `Field.cpp`. Also merged redundant `namespace DB` blocks. [#4530](https://github.com/yandex/ClickHouse/pull/4530) ([hcz](https://github.com/hczhcz))
 
 
 ## ClickHouse release 19.3.5, 2019-02-21
