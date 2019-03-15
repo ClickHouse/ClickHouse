@@ -2,7 +2,8 @@
 
 #include <Common/typeid_cast.h>
 
-namespace DB {
+namespace DB
+{
 
 /* This base class adds public methods:
  *  -       Derived * as<Derived>()
@@ -12,7 +13,8 @@ namespace DB {
  */
 
 template <class Base>
-class TypePromotion {
+class TypePromotion
+{
 private:
     /// Need a helper-struct to fight the lack of the function-template partial specialization.
     template <class T, bool is_const, bool is_ref = std::is_reference_v<T>>
