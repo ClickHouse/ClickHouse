@@ -206,7 +206,7 @@ Note that for old-styled tables you can specify the prefix of the partition name
 !!! note
    The entire backup process is performed without stopping the server.
    
-At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where
+At the time of execution, for a data snapshot, the query creates hardlinks to a table data. Hardlinks are placed in the directory `/var/lib/clickhouse/shadow/N/...`, where:
 
 - `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
 - `N` is the incremental number of the backup.
@@ -217,19 +217,17 @@ After creating the backup, you can copy the data from `/var/lib/clickhouse/shado
 
 The query creates backup almost instantly (but first it waits for the current queries to the corresponding table to finish running).
 
-At first, the backup does not take any space on the disk. As the system works, the backup can take disk space, as data is modified. If the backup is made for old enough data, it does not take space on the disk.
-
-Another way to create a local backup is to copy data from the `/var/lib/clickhouse/data/database/table` directory manually. Note that you should do it when the server isn't running. Otherwise, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. Copy the data when the server is not running – then the resulting data will be the same as after the `ALTER TABLE t FREEZE PARTITION` query.
-
 `ALTER TABLE t FREEZE PARTITION` copies only the data, not table metadata. To make a backup of table metadata, copy the file `/var/lib/clickhouse/metadata/database/table.sql`
 
-To add the data to a table from a backup, do the following:
+To restore data from a backup, do the following:
 
 1. Create the table if it does not exist. To view the query, use the .sql file (replace `ATTACH` in it with `CREATE`).
 2. Copy the data from the `data/database/table/` directory inside the backup to the `/var/lib/clickhouse/data/database/table/detached/` directory.
 3. Run `ALTER TABLE t ATTACH PARTITION` queries to add the data to a table.
 
-Restoring from a backup does not require stopping the server.
+Restoring from a backup doesn't require stopping the server.
+
+For more information about backups and restoring data, see the [Data Backup](../operations/backup.md) section.
 
 #### FETCH PARTITION {#alter_fetch-partition}
 
@@ -268,7 +266,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
 - In the [ALTER ATTACH PART](#alter_attach-partition) query, to specify the name of a part, use a value from the `name` column of the `system.parts` table. For example, `ALTER TABLE visits ATTACH PART 201901_1_1_0`.
 
-Correct usage of quotes in the partition expression depends on the type of the column, that was specified the partitioning for. For example, for the `String` type column, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes needed.
+Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 
 For old-style tables, you can specify the partition either as a number `201901` or a string `'201901'`. The syntax for the new-style tables is stricter with types (similar to the parser for the VALUES input format).
 
