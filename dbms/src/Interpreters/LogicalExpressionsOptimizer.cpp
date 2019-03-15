@@ -100,7 +100,7 @@ void LogicalExpressionsOptimizer::shortCircuitLogicExpressions()
 std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAndReplaceConstColumn(ASTPtr & node)
 {
     if (const ASTLiteral * literal = typeid_cast<ASTLiteral *>(node.get()))
-    {   
+    {
         DataTypePtr type = applyVisitor(FieldToDataType(), literal->value);
         ColumnWithTypeAndName column;
         column.column = type->createColumnConst(1, convertFieldToType(literal->value, *type));
