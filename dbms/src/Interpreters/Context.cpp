@@ -1203,6 +1203,8 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
 ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
+    const auto & config = getConfigRef();
+
     std::lock_guard lock(shared->external_dictionaries_mutex);
 
     if (!shared->external_dictionaries)
@@ -1214,6 +1216,7 @@ ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_
 
         shared->external_dictionaries.emplace(
             std::move(config_repository),
+            config,
             *this->global_context,
             throw_on_error);
     }

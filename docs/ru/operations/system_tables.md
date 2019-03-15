@@ -83,6 +83,23 @@ default_expression String - выражение для значения по ум
 
 - `name` (`String`) – Имя функции.
 - `is_aggregate` (`UInt8`) – Признак, является ли функция агрегатной.
+
+## system.graphite_retentions
+
+Содержит информацию о том, какие параметры [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](table_engines/graphitemergetree.md).
+
+Столбцы:
+- `config_name`     (String) - Имя параметра, используемого для `graphite_rollup`.
+- `regexp`          (String) - Шаблон имени метрики.
+- `function`        (String) - Имя агрегирующей функции.
+- `age`             (UInt64) - Минимальный возраст данных в секундах.
+- `precision`       (UInt64) - Точность определения возраста данных в секундах.
+- `priority`        (UInt16) - Приоритет раздела pattern.
+- `is_default`      (UInt8) - Является ли раздел pattern дефолтным.
+- `Tables.database` (Array(String)) - Массив имён баз данных таблиц, использующих параметр `config_name`.
+- `Tables.table`    (Array(String)) - Массив имён таблиц, использующих параметр `config_name`.
+
+
 ## system.merges
 
 Содержит информацию о производящихся прямо сейчас слияниях и мутациях кусков для таблиц семейства MergeTree.

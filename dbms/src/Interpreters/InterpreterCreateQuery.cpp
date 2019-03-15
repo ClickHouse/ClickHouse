@@ -45,6 +45,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <Compression/CompressionFactory.h>
+#include <Interpreters/InterpreterDropQuery.h>
 
 
 namespace DB
@@ -587,11 +588,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String as_table_name = create.as_table;
 
     StoragePtr as_storage;
-    TableStructureReadLockPtr as_storage_lock;
+    TableStructureReadLockHolder as_storage_lock;
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
-        as_storage_lock = as_storage->lockStructure(false, context.getCurrentQueryId());
+        as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
     }
 
     /// Set and retrieve list of columns.
@@ -623,6 +624,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 if (create.if_not_exists)
                     return {};
+                else if (create.replace_view)
+                {
+                    /// when executing CREATE OR REPLACE VIEW, drop current existing view
+                    auto drop_ast = std::make_shared<ASTDropQuery>();
+                    drop_ast->database = database_name;
+                    drop_ast->table = table_name;
+                    drop_ast->no_ddl_lock = true;
+
+                    InterpreterDropQuery interpreter(drop_ast, context);
+                    interpreter.execute();
+                }
                 else
                     throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
             }

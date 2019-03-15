@@ -419,6 +419,7 @@ namespace ErrorCodes
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE = 442;
     extern const int NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA = 443;
     extern const int UNKNOWN_PROTOBUF_FORMAT = 444;
+    extern const int CANNOT_MPROTECT = 445;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

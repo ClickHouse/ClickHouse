@@ -1112,7 +1112,7 @@ void ExpressionActions::optimizeArrayJoin()
 BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
 {
     for (const auto & action : actions)
-        if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))
+        if (action.join && isRightOrFull(action.join->getKind()))
             return action.join->createStreamWithNonJoinedRows(
                 source_header, action.join_key_names_left, action.columns_added_by_join, max_block_size);
 

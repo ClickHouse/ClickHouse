@@ -38,6 +38,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/JoinToSubqueryTransformVisitor.h>
+#include <Interpreters/CrossToInnerJoinVisitor.h>
 
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
@@ -139,7 +141,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     bool modify_inplace)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     : query_ptr(modify_inplace ? query_ptr_ : query_ptr_->clone())
-    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(to_stage_)
     , subquery_depth(subquery_depth_)
@@ -155,7 +156,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
+    if (settings.allow_experimental_cross_to_join_conversion)
+    {
+        CrossToInnerJoinVisitor::Data cross_to_inner;
+        CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
+    }
+
+    if (settings.allow_experimental_multiple_joins_emulation)
+    {
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data;
+        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
+    }
+
     max_streams = settings.max_threads;
+    ASTSelectQuery & query = selectQuery();
 
     ASTPtr table_expression = extractTableExpression(query, 0);
 
@@ -200,7 +214,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     if (storage)
-        table_lock = storage->lockStructure(false, context.getCurrentQueryId());
+        table_lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
 
     syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
@@ -263,9 +277,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 }
 
 
+ASTSelectQuery & InterpreterSelectQuery::selectQuery()
+{
+    return typeid_cast<ASTSelectQuery &>(*query_ptr);
+}
+
+
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
-    if (auto db_and_table = getDatabaseAndTable(query, 0))
+    if (auto db_and_table = getDatabaseAndTable(selectQuery(), 0))
     {
         table_name = db_and_table->table;
         database_name = db_and_table->database;
@@ -364,6 +384,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
     {
         ExpressionActionsChain chain(context);
+        ASTSelectQuery & query = selectQuery();
 
         Names additional_required_columns_after_prewhere;
 
@@ -487,6 +508,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
      *  then perform the remaining operations with one resulting stream.
      */
 
+    ASTSelectQuery & query = selectQuery();
     const Settings & settings = context.getSettingsRef();
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
@@ -569,7 +591,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             if (expressions.hasJoin())
             {
                 const ASTTableJoin & join = static_cast<const ASTTableJoin &>(*query.join()->table_join);
-                if (join.kind == ASTTableJoin::Kind::Full || join.kind == ASTTableJoin::Kind::Right)
+                if (isRightOrFull(join.kind))
                     pipeline.stream_with_non_joined_data = expressions.before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
                         pipeline.firstStream()->getHeader(), settings.max_block_size);
 
@@ -780,6 +802,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
         const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
+    ASTSelectQuery & query = selectQuery();
     const Settings & settings = context.getSettingsRef();
 
     /// Actions to calculate ALIAS if required.
@@ -1074,7 +1097,7 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(stream, expression, query.where_expression->getColumnName(), remove_fiter);
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, selectQuery().where_expression->getColumnName(), remove_fiter);
     });
 }
 
@@ -1202,7 +1225,7 @@ void InterpreterSelectQuery::executeHaving(Pipeline & pipeline, const Expression
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<FilterBlockInputStream>(stream, expression, query.having_expression->getColumnName());
+        stream = std::make_shared<FilterBlockInputStream>(stream, expression, selectQuery().having_expression->getColumnName());
     });
 }
 
@@ -1215,7 +1238,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
 
     pipeline.firstStream() = std::make_shared<TotalsHavingBlockInputStream>(
         pipeline.firstStream(), overflow_row, expression,
-        has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold, final);
+        has_having ? selectQuery().having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold, final);
 }
 
 void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificator modificator)
@@ -1280,6 +1303,7 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
+    ASTSelectQuery & query = selectQuery();
     SortDescription order_descr = getSortDescription(query);
     UInt64 limit = getLimitForSorting(query, context);
 
@@ -1311,6 +1335,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {
+    ASTSelectQuery & query = selectQuery();
     SortDescription order_descr = getSortDescription(query);
     UInt64 limit = getLimitForSorting(query, context);
 
@@ -1347,6 +1372,7 @@ void InterpreterSelectQuery::executeProjection(Pipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_order, Names columns)
 {
+    ASTSelectQuery & query = selectQuery();
     if (query.distinct)
     {
         const Settings & settings = context.getSettingsRef();
@@ -1389,6 +1415,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
 void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 {
+    ASTSelectQuery & query = selectQuery();
     /// If there is LIMIT
     if (query.limit_length)
     {
@@ -1403,6 +1430,7 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 
 void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 {
+    ASTSelectQuery & query = selectQuery();
     if (!query.limit_by_value || !query.limit_by_expression_list)
         return;
 
@@ -1444,6 +1472,7 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 
 void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
 {
+    ASTSelectQuery & query = selectQuery();
     /// If there is LIMIT
     if (query.limit_length)
     {
@@ -1515,12 +1544,13 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline)
 
 void InterpreterSelectQuery::ignoreWithTotals()
 {
-    query.group_by_with_totals = false;
+    selectQuery().group_by_with_totals = false;
 }
 
 
 void InterpreterSelectQuery::initSettings()
 {
+    ASTSelectQuery & query = selectQuery();
     if (query.settings)
         InterpreterSetQuery(query.settings, context).executeForCurrentContext();
 }
