@@ -90,18 +90,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Context & context_,
     const BlockInputStreamPtr & input_,
     const SelectQueryOptions & options)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options.checkZeroSubquery())
-{
-}
+    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, noSubquery(options))
+{}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const StoragePtr & storage_,
     const SelectQueryOptions & options)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options.checkZeroSubquery())
-{
-}
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, noSubquery(options))
+{}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
@@ -985,11 +983,8 @@ void InterpreterSelectQuery::executeFetchColumns(
             if (!subquery)
                 throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
 
-            SelectQueryOptions opts = subqueryOptions(QueryProcessingStage::Complete);
-            opts.modify_inplace = false;
-
             interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                subquery, getSubqueryContext(context), opts, required_columns);
+                subquery, getSubqueryContext(context), noModify(subqueryOptions(QueryProcessingStage::Complete)), required_columns);
 
             if (query_analyzer->hasAggregation())
                 interpreter_subquery->ignoreWithTotals();
