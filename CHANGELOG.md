@@ -1,3 +1,29 @@
+## ClickHouse release 19.3.7, 2019-03-12
+
+### Bug fixes
+
+* Fixed error in #3920. This error manifestate itself as random cache corruption (messages `Unknown codec family code`, `Cannot seek through file`) and segfaults. This bug first appeared in version 19.1 and is present in versions up to  19.1.10 and 19.3.6. https://github.com/yandex/ClickHouse/pull/4623
+
+
+## ClickHouse release 19.3.6, 2019-03-02
+
+### Bug fixes
+
+* When there are more than 1000 threads in a thread pool, `std::terminate` may happen on thread exit. The bug and the fix is described by [Azat Khuzhin](https://github.com/azat) in PR #4485. https://github.com/yandex/ClickHouse/pull/4505
+* Now it's possible to create `ReplicatedMergeTree*` tables with comments on columns without defaults and tables with columns codecs without comments and defaults. Also fix comparison of codecs. https://github.com/yandex/ClickHouse/pull/4523
+* Fixed crash on JOIN with array or tuple. https://github.com/yandex/ClickHouse/pull/4552
+* Fixed crash in clickhouse-copier with the message `ThreadStatus not created`. https://github.com/yandex/ClickHouse/pull/4540
+* Fixed hangup on server shutdown if distributed DDLs were used. https://github.com/yandex/ClickHouse/pull/4472
+* Incorrect column numbers were printed in error message about text format parsing for columns with number greater than 10. https://github.com/yandex/ClickHouse/pull/4484
+
+### Build/Testing/Packaging Improvements
+
+* Fixed build with AVX enabled. https://github.com/yandex/ClickHouse/pull/4527
+* Enable extended accounting and IO accounting based on good known version instead of kernel under which it is compiled. https://github.com/yandex/ClickHouse/pull/4541
+* Allow to skip setting of core_dump.size_limit, warning instead of throw if limit set fail. https://github.com/yandex/ClickHouse/pull/4473
+* Removed the `inline` tags of `void readBinary(...)` in `Field.cpp`. Also merged redundant `namespace DB` blocks. https://github.com/yandex/ClickHouse/pull/4530
+
+
 ## ClickHouse release 19.3.5, 2019-02-21
 
 ### Bug fixes
@@ -67,7 +93,7 @@
 * Fixed race condition when selecting from `system.tables` may give `table doesn't exist` error. [#4313](https://github.com/yandex/ClickHouse/pull/4313) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * `clickhouse-client` can segfault on exit while loading data for command line suggestions if it was run in interactive mode. [#4317](https://github.com/yandex/ClickHouse/pull/4317) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed a bug when the execution of mutations containing `IN` operators was producing incorrect results. [#4099](https://github.com/yandex/ClickHouse/pull/4099) ([Alex Zatelepin](https://github.com/ztlpn))
-* Fixed error: if there is a database with `Dictionary` engine, all dictionaries forced to load at server startup, and if there is a dictionary with ClickHouse source from localhost, the dictionary cannot load. [#4255](https://github.com/yandex/ClickHouse/pull/4255) ([alexey-milovidov](https://github.com/alexey-milovidov)) 
+* Fixed error: if there is a database with `Dictionary` engine, all dictionaries forced to load at server startup, and if there is a dictionary with ClickHouse source from localhost, the dictionary cannot load. [#4255](https://github.com/yandex/ClickHouse/pull/4255) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed error when system logs are tried to create again at server shutdown. [#4254](https://github.com/yandex/ClickHouse/pull/4254) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Correctly return the right type and properly handle locks in `joinGet` function. [#4153](https://github.com/yandex/ClickHouse/pull/4153) ([Amos Bird](https://github.com/amosbird))
 * Added `sumMapWithOverflow` function. [#4151](https://github.com/yandex/ClickHouse/pull/4151) ([Léo Ercolanelli](https://github.com/ercolanelli-leo))
@@ -92,7 +118,7 @@
 * Added script which creates changelog from pull requests description. [#4169](https://github.com/yandex/ClickHouse/pull/4169) [#4173](https://github.com/yandex/ClickHouse/pull/4173) ([KochetovNicolai](https://github.com/KochetovNicolai)) ([KochetovNicolai](https://github.com/KochetovNicolai))
 * Added puppet module for Clickhouse. [#4182](https://github.com/yandex/ClickHouse/pull/4182) ([Maxim Fedotov](https://github.com/MaxFedotov))
 * Added docs for a group of undocumented functions. [#4168](https://github.com/yandex/ClickHouse/pull/4168) ([Winter Zhang](https://github.com/zhang2014))
-* ARM build fixes. [#4210](https://github.com/yandex/ClickHouse/pull/4210)[#4306](https://github.com/yandex/ClickHouse/pull/4306) [#4291](https://github.com/yandex/ClickHouse/pull/4291) ([proller](https://github.com/proller)) ([proller](https://github.com/proller)) 
+* ARM build fixes. [#4210](https://github.com/yandex/ClickHouse/pull/4210)[#4306](https://github.com/yandex/ClickHouse/pull/4306) [#4291](https://github.com/yandex/ClickHouse/pull/4291) ([proller](https://github.com/proller)) ([proller](https://github.com/proller))
 * Dictionary tests now able to run from `ctest`.  [#4189](https://github.com/yandex/ClickHouse/pull/4189) ([proller](https://github.com/proller))
 * Now `/etc/ssl` is used as default directory with SSL certificates. [#4167](https://github.com/yandex/ClickHouse/pull/4167) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Added checking SSE and AVX instruction at start. [#4234](https://github.com/yandex/ClickHouse/pull/4234) ([Igr](https://github.com/igron99))
@@ -140,7 +166,7 @@
 ### Bug Fixes
 * Correctly return the right type and properly handle locks in `joinGet` function. [#4153](https://github.com/yandex/ClickHouse/pull/4153) ([Amos Bird](https://github.com/amosbird))
 * Fixed error when system logs are tried to create again at server shutdown. [#4254](https://github.com/yandex/ClickHouse/pull/4254) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fixed error: if there is a database with `Dictionary` engine, all dictionaries forced to load at server startup, and if there is a dictionary with ClickHouse source from localhost, the dictionary cannot load. [#4255](https://github.com/yandex/ClickHouse/pull/4255) ([alexey-milovidov](https://github.com/alexey-milovidov)) 
+* Fixed error: if there is a database with `Dictionary` engine, all dictionaries forced to load at server startup, and if there is a dictionary with ClickHouse source from localhost, the dictionary cannot load. [#4255](https://github.com/yandex/ClickHouse/pull/4255) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed a bug when the execution of mutations containing `IN` operators was producing incorrect results. [#4099](https://github.com/yandex/ClickHouse/pull/4099) ([Alex Zatelepin](https://github.com/ztlpn))
 * `clickhouse-client` can segfault on exit while loading data for command line suggestions if it was run in interactive mode. [#4317](https://github.com/yandex/ClickHouse/pull/4317) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed race condition when selecting from `system.tables` may give `table doesn't exist` error. [#4313](https://github.com/yandex/ClickHouse/pull/4313) ([alexey-milovidov](https://github.com/alexey-milovidov))
