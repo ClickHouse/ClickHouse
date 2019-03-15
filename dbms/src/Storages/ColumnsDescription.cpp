@@ -111,6 +111,20 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
         add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
 }
 
+ColumnsDescription::ColumnsDescription(const ColumnsDescription & other)
+    : columns(other.columns)
+{
+    for (auto it = columns.begin(); it != columns.end(); ++it)
+        name_to_column.emplace(it->name, it);
+}
+
+ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
+{
+    if (&other != this)
+        *this = ColumnsDescription(other);
+    return *this;
+}
+
 
 /// We are trying to find first column from end with name `column_name` or with a name beginning with `column_name` and ".".
 /// For example "fruits.bananas"
