@@ -21,7 +21,7 @@ namespace
     public:
         SourceFromNativeStream(const Block & header, const std::string & path)
                 : ISource(header), file_in(path), compressed_in(file_in)
-                , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header, 0))
+                , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, ClickHouseRevision::get()))
         {
             block_in->readPrefix();
         }
@@ -41,8 +41,15 @@ namespace
                 return {};
             }
 
+            auto info = std::make_shared<AggregatedChunkInfo>();
+            info->bucket_num = block.info.bucket_num;
+            info->is_overflows = block.info.is_overflows;
+
             UInt64 num_rows = block.rows();
-            return Chunk(block.getColumns(), num_rows);
+            Chunk chunk(block.getColumns(), num_rows);
+            chunk.setChunkInfo(std::move(info));
+
+            return chunk;
         }
 
     private:
@@ -124,10 +131,10 @@ IProcessor::Status AggregatingTransform::prepare()
     }
 
     /// Finish data processing, prepare to generating.
-    if (!is_consume_finished && !is_generate_initialized)
+    if (is_consume_finished && !is_generate_initialized)
         return Status::Ready;
 
-    if (is_generate_initialized && !is_pipeline_created)
+    if (is_generate_initialized && !is_pipeline_created && !processors.empty())
         return Status::ExpandPipeline;
 
     /// Only possible while consuming.
@@ -189,7 +196,11 @@ Processors AggregatingTransform::expandPipeline()
 
 void AggregatingTransform::consume(Chunk chunk)
 {
-    LOG_TRACE(log, "Aggregating");
+    if (!is_consume_started)
+    {
+        LOG_TRACE(log, "Aggregating");
+        is_consume_started = true;
+    }
 
     src_rows += chunk.getNumRows();
     src_bytes += chunk.bytes();
@@ -205,6 +216,8 @@ void AggregatingTransform::initGenerate()
     if (is_generate_initialized)
         return;
 
+    is_generate_initialized = true;
+
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
@@ -219,12 +232,12 @@ void AggregatingTransform::initGenerate()
 
     if (params->aggregator.hasTemporaryFiles())
     {
-        /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
-        if (many_data->variants.size() > 1 && variants.size())
-            params->aggregator.writeToTemporaryFile(variants);
-
         if (variants.isConvertibleToTwoLevel())
             variants.convertToTwoLevel();
+
+        /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
+        if (variants.size())
+            params->aggregator.writeToTemporaryFile(variants);
     }
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
@@ -256,7 +269,7 @@ void AggregatingTransform::initGenerate()
             }
         }
 
-        auto & header = outputs.front().getHeader();
+        auto header = params->aggregator.getHeader(false);
 
         const auto & files = params->aggregator.getTemporaryFiles();
         BlockInputStreams input_streams;
@@ -276,8 +289,6 @@ void AggregatingTransform::initGenerate()
 
         processors.insert(processors.end(), pipe.begin(), pipe.end());
     }
-
-    is_generate_initialized = true;
 }
 
 }

@@ -93,6 +93,8 @@ private:
     Chunk current_chunk;
     bool read_current_chunk = false;
 
+    bool is_consume_started = false;
+
     void initGenerate();
 };
 

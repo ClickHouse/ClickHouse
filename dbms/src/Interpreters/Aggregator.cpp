@@ -2080,10 +2080,10 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
     if (bucket_to_blocks.empty())
         return;
 
-    UInt64 total_input_blocks = 0;
+    UInt64 total_input_rows = 0;
     for (auto & bucket : bucket_to_blocks)
         for (auto & block : bucket.second)
-            total_input_blocks += block.rows();
+            total_input_rows += block.rows();
 
     /** `minus one` means the absence of information about the bucket
       * - in the case of single-level aggregation, as well as for blocks with "overflowing" values.
