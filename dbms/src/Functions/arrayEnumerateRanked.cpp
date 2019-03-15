@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
 {
     const size_t num_arguments = arguments.size();
