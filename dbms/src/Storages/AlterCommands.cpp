@@ -52,6 +52,12 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.default_expression = ast_col_decl.default_expression;
         }
 
+        if (ast_col_decl.comment)
+        {
+            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
+            command.comment = ast_comment.value.get<String>();
+        }
+
         if (ast_col_decl.codec)
             command.codec = compression_codec_factory.get(ast_col_decl.codec);
 
@@ -92,14 +98,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.default_expression = ast_col_decl.default_expression;
         }
 
-        if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec);
-
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
             command.comment = ast_comment.value.get<String>();
         }
+
+        if (ast_col_decl.codec)
+            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+
         command.if_exists = command_ast->if_exists;
 
         return command;
