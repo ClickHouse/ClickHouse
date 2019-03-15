@@ -210,6 +210,20 @@
 * Improved server shutdown time and ALTERs waiting time. [#4372](https://github.com/yandex/ClickHouse/pull/4372) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Added info about the replicated_can_become_leader setting to system.replicas and add logging if the replica won't try to become leader. [#4379](https://github.com/yandex/ClickHouse/pull/4379) ([Alex Zatelepin](https://github.com/ztlpn))
 
+
+## ClickHouse release 19.1.14, 2019-03-14
+
+* Fixed error `Column ... queried more than once` that may happen if the setting `asterisk_left_columns_only` is set to 1 in case of using `GLOBAL JOIN` with `SELECT *` (rare case). The issue does not exist in 19.3 and newer. [6bac7d8d](https://github.com/yandex/ClickHouse/pull/4692/commits/6bac7d8d11a9b0d6de0b32b53c47eb2f6f8e7062) ([Artem Zuikov](https://github.com/4ertus2))
+
+## ClickHouse release 19.1.13, 2019-03-12
+
+This release contains exactly the same set of patches as 19.3.7.
+
+## ClickHouse release 19.1.10, 2019-03-03
+
+This release contains exactly the same set of patches as 19.3.6.
+
+
 ## ClickHouse release 19.1.9, 2019-02-21
 
 ### Bug fixes
