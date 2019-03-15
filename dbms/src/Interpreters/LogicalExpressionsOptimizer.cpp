@@ -197,7 +197,6 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
 
 void LogicalExpressionsOptimizer::replaceAST(ASTPtr & node, ASTPtr & replacer)
 {
-    String replace_alias = replacer->tryGetAlias();
     String node_alias = node->tryGetAlias();
     replacer->setAlias(node_alias);
 
