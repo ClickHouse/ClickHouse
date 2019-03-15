@@ -44,8 +44,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         first_primary_key_column = data.primary_key_columns[0];
 
     calculateColumnSizes(data, queried_columns);
-    determineArrayJoinedNames(*query_info.query->as<ASTSelectQuery>());
-    optimize(*query_info.query->as<ASTSelectQuery>());
+    determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
+    optimize(query_info.query->as<ASTSelectQuery &>());
 }
 
 

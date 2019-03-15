@@ -134,16 +134,16 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
     /// mark table Identifiers as 'not a column'
     if (node.table_expression)
     {
-        auto * expr = node.table_expression->as<ASTTableExpression>();
-        setIdentifierSpecial(expr->database_and_table_name);
+        auto & expr = node.table_expression->as<ASTTableExpression &>();
+        setIdentifierSpecial(expr.database_and_table_name);
     }
 
     /// normalize JOIN ON section
     if (node.table_join)
     {
-        auto * join = node.table_join->as<ASTTableJoin>();
-        if (join->on_expression)
-            visit(join->on_expression, data);
+        auto & join = node.table_join->as<ASTTableJoin &>();
+        if (join.on_expression)
+            visit(join.on_expression, data);
     }
 }
 

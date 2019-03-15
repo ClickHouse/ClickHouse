@@ -144,7 +144,7 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
 String IdentifierSemantic::columnNormalName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
     ASTPtr copy = identifier.clone();
-    setColumnNormalName(*copy->as<ASTIdentifier>(), db_and_table);
+    setColumnNormalName(copy->as<ASTIdentifier &>(), db_and_table);
     return copy->getAliasOrColumnName();
 }
 

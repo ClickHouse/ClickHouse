@@ -117,7 +117,7 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterSystemQuery::execute()
 {
-    auto * query = query_ptr->as<ASTSystemQuery>();
+    auto & query = query_ptr->as<ASTSystemQuery &>();
 
     using Type = ASTSystemQuery::Type;
 
@@ -126,10 +126,10 @@ BlockIO InterpreterSystemQuery::execute()
     system_context.setSetting("profile", context.getSystemProfileName());
 
     /// Make canonical query for simpler processing
-    if (!query->target_table.empty() && query->target_database.empty())
-         query->target_database = context.getCurrentDatabase();
+    if (!query.target_table.empty() && query.target_database.empty())
+         query.target_database = context.getCurrentDatabase();
 
-    switch (query->type)
+    switch (query.type)
     {
         case Type::SHUTDOWN:
             if (kill(0, SIGTERM))
@@ -156,7 +156,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            system_context.getExternalDictionaries().reloadDictionary(query->target_dictionary);
+            system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
             break;
         case Type::RELOAD_DICTIONARIES:
             executeCommandsAndThrowIfError(
@@ -171,38 +171,38 @@ BlockIO InterpreterSystemQuery::execute()
             system_context.reloadConfig();
             break;
         case Type::STOP_MERGES:
-            startStopAction(context, *query, ActionLocks::PartsMerge, false);
+            startStopAction(context, query, ActionLocks::PartsMerge, false);
             break;
         case Type::START_MERGES:
-            startStopAction(context, *query, ActionLocks::PartsMerge, true);
+            startStopAction(context, query, ActionLocks::PartsMerge, true);
             break;
         case Type::STOP_FETCHES:
-            startStopAction(context, *query, ActionLocks::PartsFetch, false);
+            startStopAction(context, query, ActionLocks::PartsFetch, false);
             break;
         case Type::START_FETCHES:
-            startStopAction(context, *query, ActionLocks::PartsFetch, true);
+            startStopAction(context, query, ActionLocks::PartsFetch, true);
             break;
         case Type::STOP_REPLICATED_SENDS:
-            startStopAction(context, *query, ActionLocks::PartsSend, false);
+            startStopAction(context, query, ActionLocks::PartsSend, false);
             break;
         case Type::START_REPLICATED_SENDS:
-            startStopAction(context, *query, ActionLocks::PartsSend, true);
+            startStopAction(context, query, ActionLocks::PartsSend, true);
             break;
         case Type::STOP_REPLICATION_QUEUES:
-            startStopAction(context, *query, ActionLocks::ReplicationQueue, false);
+            startStopAction(context, query, ActionLocks::ReplicationQueue, false);
             break;
         case Type::START_REPLICATION_QUEUES:
-            startStopAction(context, *query, ActionLocks::ReplicationQueue, true);
+            startStopAction(context, query, ActionLocks::ReplicationQueue, true);
             break;
         case Type::SYNC_REPLICA:
-            syncReplica(*query);
+            syncReplica(query);
             break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
             break;
         case Type::RESTART_REPLICA:
-            if (!tryRestartReplica(query->target_database, query->target_table, system_context))
-                throw Exception("There is no " + query->target_database + "." + query->target_table + " replicated table",
+            if (!tryRestartReplica(query.target_database, query.target_table, system_context))
+                throw Exception("There is no " + query.target_database + "." + query.target_table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
         case Type::FLUSH_LOGS:
@@ -214,7 +214,7 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
-            throw Exception(String(ASTSystemQuery::typeToString(query->type)) + " is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(String(ASTSystemQuery::typeToString(query.type)) + " is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -248,20 +248,20 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
     /// Attach actions
     {
         /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-        auto * create = create_ast->as<ASTCreateQuery>();
-        create->attach = true;
+        auto & create = create_ast->as<ASTCreateQuery &>();
+        create.attach = true;
 
         std::string data_path = database->getDataPath();
-        auto columns = InterpreterCreateQuery::getColumnsDescription(*create->columns_list->columns, system_context);
+        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
 
-        StoragePtr table = StorageFactory::instance().get(*create,
+        StoragePtr table = StorageFactory::instance().get(create,
             data_path,
             table_name,
             database_name,
             system_context,
             system_context.getGlobalContext(),
             columns,
-            create->attach,
+            create.attach,
             false);
 
         database->createTable(system_context, table_name, table, create_ast);

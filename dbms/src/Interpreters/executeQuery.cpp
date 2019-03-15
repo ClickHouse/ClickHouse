@@ -498,7 +498,7 @@ void executeQuery(
                 if (!allow_into_outfile)
                     throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
 
-                const auto & out_file = ast_query_with_output->out_file->as<ASTLiteral>()->value.safeGet<std::string>();
+                const auto & out_file = ast_query_with_output->out_file->as<ASTLiteral &>().value.safeGet<std::string>();
                 out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
                 out_buf = &*out_file_buf;
             }

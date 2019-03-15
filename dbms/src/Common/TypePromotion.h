@@ -8,11 +8,11 @@ template <class Base>
 class TypePromotion {
 private:
     /// Need a helper-struct to fight the lack of the function-template partial specialization.
-    template <class T, bool is_ref = std::is_reference_v<T>, bool is_const = std::is_const_v<T>>
+    template <class T, bool is_const, bool is_ref = std::is_reference_v<T>>
     struct CastHelper;
 
     template <class T>
-    struct CastHelper<T, true, false>
+    struct CastHelper<T, false, true>
     {
         auto & value(Base * ptr) { return typeid_cast<T>(*ptr); }
     };
@@ -20,7 +20,7 @@ private:
     template <class T>
     struct CastHelper<T, true, true>
     {
-        auto & value(const Base * ptr) { return typeid_cast<T>(*ptr); }
+        auto & value(const Base * ptr) { return typeid_cast<std::add_lvalue_reference_t<std::add_const_t<std::remove_reference_t<T>>>>(*ptr); }
     };
 
     template <class T>
@@ -30,24 +30,24 @@ private:
     };
 
     template <class T>
-    struct CastHelper<T, false, true>
+    struct CastHelper<T, true, false>
     {
-        auto * value(const Base * ptr) { return typeid_cast<T *>(ptr); }
+        auto * value(const Base * ptr) { return typeid_cast<std::add_const_t<T> *>(ptr); }
     };
 
 public:
     template <class Derived>
-    auto as() -> std::invoke_result_t<decltype(&CastHelper<Derived>::value), CastHelper<Derived>, Base *>
+    auto as() -> std::invoke_result_t<decltype(&CastHelper<Derived, false>::value), CastHelper<Derived, false>, Base *>
     {
         // TODO: if we do downcast to base type, then just return |this|.
-        return CastHelper<Derived>().value(static_cast<Base *>(this));
+        return CastHelper<Derived, false>().value(static_cast<Base *>(this));
     }
 
     template <class Derived>
-    auto as() const -> std::invoke_result_t<decltype(&CastHelper<const Derived>::value), CastHelper<const Derived>, const Base *>
+    auto as() const -> std::invoke_result_t<decltype(&CastHelper<Derived, true>::value), CastHelper<Derived, true>, const Base *>
     {
         // TODO: if we do downcast to base type, then just return |this|.
-        return CastHelper<const Derived>().value(static_cast<const Base *>(this));
+        return CastHelper<Derived, true>().value(static_cast<const Base *>(this));
     }
 };
 

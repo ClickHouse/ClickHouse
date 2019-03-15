@@ -149,10 +149,10 @@ void ExpressionAnalyzer::analyzeAggregation()
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
         {
-            const auto * table_join = join->table_join->as<ASTTableJoin>();
-            if (table_join->using_expression_list)
-                getRootActions(table_join->using_expression_list, true, temp_actions);
-            if (table_join->on_expression)
+            const auto & table_join = join->table_join->as<ASTTableJoin &>();
+            if (table_join.using_expression_list)
+                getRootActions(table_join.using_expression_list, true, temp_actions);
+            if (table_join.on_expression)
                 for (const auto & key_ast : analyzedJoin().key_asts_left)
                     getRootActions(key_ast, true, temp_actions);
 
@@ -536,33 +536,33 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     initChain(chain, source_columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-    const auto * join_element = select_query->join()->as<ASTTablesInSelectQueryElement>();
-    auto * join_params = join_element->table_join->as<ASTTableJoin>();
+    const auto & join_element = select_query->join()->as<ASTTablesInSelectQueryElement &>();
+    auto & join_params = join_element.table_join->as<ASTTableJoin &>();
 
-    if (join_params->strictness == ASTTableJoin::Strictness::Unspecified && join_params->kind != ASTTableJoin::Kind::Cross)
+    if (join_params.strictness == ASTTableJoin::Strictness::Unspecified && join_params.kind != ASTTableJoin::Kind::Cross)
     {
         if (settings.join_default_strictness == "ANY")
-            join_params->strictness = ASTTableJoin::Strictness::Any;
+            join_params.strictness = ASTTableJoin::Strictness::Any;
         else if (settings.join_default_strictness == "ALL")
-            join_params->strictness = ASTTableJoin::Strictness::All;
+            join_params.strictness = ASTTableJoin::Strictness::All;
         else
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
     }
 
-    const auto * table_to_join = join_element->table_expression->as<ASTTableExpression>();
+    const auto & table_to_join = join_element.table_expression->as<ASTTableExpression &>();
 
-    getActionsFromJoinKeys(*join_params, only_types, step.actions);
+    getActionsFromJoinKeys(join_params, only_types, step.actions);
 
     /// Two JOINs are not supported with the same subquery, but different USINGs.
-    auto join_hash = join_element->getTreeHash();
+    auto join_hash = join_element.getTreeHash();
 
     SubqueryForSet & subquery_for_set = subqueries_for_sets[toString(join_hash.first) + "_" + toString(join_hash.second)];
 
     /// Special case - if table name is specified on the right of JOIN, then the table has the type Join (the previously prepared mapping).
     /// TODO This syntax does not support specifying a database name.
-    if (table_to_join->database_and_table_name)
+    if (table_to_join.database_and_table_name)
     {
-        DatabaseAndTableWithAlias database_table(table_to_join->database_and_table_name);
+        DatabaseAndTableWithAlias database_table(table_to_join.database_and_table_name);
         StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
 
         if (table)
@@ -571,7 +571,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
             if (storage_join)
             {
-                storage_join->assertCompatible(join_params->kind, join_params->strictness);
+                storage_join->assertCompatible(join_params.kind, join_params.strictness);
                 /// TODO Check the set of keys.
 
                 JoinPtr & join = storage_join->getJoin();
@@ -596,12 +596,12 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
         {
             ASTPtr table;
 
-            if (table_to_join->subquery)
-                table = table_to_join->subquery;
-            else if (table_to_join->table_function)
-                table = table_to_join->table_function;
-            else if (table_to_join->database_and_table_name)
-                table = table_to_join->database_and_table_name;
+            if (table_to_join.subquery)
+                table = table_to_join.subquery;
+            else if (table_to_join.table_function)
+                table = table_to_join.table_function;
+            else if (table_to_join.database_and_table_name)
+                table = table_to_join.database_and_table_name;
 
             Names action_columns = joined_block_actions->getRequiredColumns();
             NameSet required_columns(action_columns.begin(), action_columns.end());
@@ -619,7 +619,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_set.join = std::make_shared<Join>(analyzedJoin().key_names_right, settings.join_use_nulls,
-            settings.size_limits_for_join, join_params->kind, join_params->strictness);
+            settings.size_limits_for_join, join_params.kind, join_params.strictness);
         subquery_for_set.join->setSampleBlock(sample_block);
         subquery_for_set.joined_block_actions = joined_block_actions;
     }

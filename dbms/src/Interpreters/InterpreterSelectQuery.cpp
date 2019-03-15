@@ -582,8 +582,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         {
             if (expressions.hasJoin())
             {
-                const auto * join = query.join()->table_join->as<ASTTableJoin>();
-                if (isRightOrFull(join->kind))
+                const auto & join = query.join()->table_join->as<ASTTableJoin &>();
+                if (isRightOrFull(join.kind))
                     pipeline.stream_with_non_joined_data = expressions.before_join->createStreamWithNonJoinedDataIfFullOrRightJoin(
                         pipeline.firstStream()->getHeader(), settings.max_block_size);
 
@@ -1285,13 +1285,13 @@ static SortDescription getSortDescription(const ASTSelectQuery & query)
     for (const auto & elem : query.order_expression_list->children)
     {
         String name = elem->children.front()->getColumnName();
-        const auto * order_by_elem = elem->as<ASTOrderByElement>();
+        const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
         std::shared_ptr<Collator> collator;
-        if (order_by_elem->collation)
-            collator = std::make_shared<Collator>(order_by_elem->collation->as<ASTLiteral>()->value.get<String>());
+        if (order_by_elem.collation)
+            collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
 
-        order_descr.emplace_back(name, order_by_elem->direction, order_by_elem->nulls_direction, collator);
+        order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     return order_descr;
@@ -1458,7 +1458,7 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
             for (const auto & elem : ast_union->list_of_selects->children)
-                if (hasWithTotalsInAnySubqueryInFromClause(*elem->as<ASTSelectQuery>()))
+                if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
                     return true;
         }
     }

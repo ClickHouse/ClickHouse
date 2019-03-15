@@ -36,12 +36,12 @@ struct RenameDescription
 
 BlockIO InterpreterRenameQuery::execute()
 {
-    const auto * rename = query_ptr->as<ASTRenameQuery>();
+    const auto & rename = query_ptr->as<ASTRenameQuery &>();
 
-    if (!rename->cluster.empty())
+    if (!rename.cluster.empty())
     {
         NameSet databases;
-        for (const auto & elem : rename->elements)
+        for (const auto & elem : rename.elements)
         {
             databases.emplace(elem.from.database);
             databases.emplace(elem.to.database);
@@ -58,7 +58,7 @@ BlockIO InterpreterRenameQuery::execute()
       */
 
     std::vector<RenameDescription> descriptions;
-    descriptions.reserve(rename->elements.size());
+    descriptions.reserve(rename.elements.size());
 
     /// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
     struct UniqueTableName
@@ -80,7 +80,7 @@ BlockIO InterpreterRenameQuery::execute()
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
 
-    for (const auto & elem : rename->elements)
+    for (const auto & elem : rename.elements)
     {
         descriptions.emplace_back(elem, current_database);
 

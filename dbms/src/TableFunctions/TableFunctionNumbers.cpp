@@ -45,7 +45,7 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
 
 UInt64 TableFunctionNumbers::evaluateArgument(const Context & context, ASTPtr & argument) const
 {
-    return evaluateConstantExpressionOrIdentifierAsLiteral(argument, context)->as<ASTLiteral>()->value.safeGet<UInt64>();
+    return evaluateConstantExpressionOrIdentifierAsLiteral(argument, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
 }
 
 }

@@ -25,16 +25,16 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
 {
-    const auto * query = query_ptr->as<ASTShowTablesQuery>();
+    const auto & query = query_ptr->as<ASTShowTablesQuery &>();
 
     /// SHOW DATABASES
-    if (query->databases)
+    if (query.databases)
         return "SELECT name FROM system.databases";
 
-    if (query->temporary && !query->from.empty())
+    if (query.temporary && !query.from.empty())
         throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 
-    String database = query->from.empty() ? context.getCurrentDatabase() : query->from;
+    String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
 
     /** The parameter check_database_access_rights is reset when the SHOW TABLES query is processed,
       * So that all clients can see a list of all databases and tables in them regardless of their access rights
@@ -45,13 +45,13 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     std::stringstream rewritten_query;
     rewritten_query << "SELECT name FROM system.tables WHERE ";
 
-    if (query->temporary)
+    if (query.temporary)
         rewritten_query << "is_temporary";
     else
         rewritten_query << "database = " << std::quoted(database, '\'');
 
-    if (!query->like.empty())
-        rewritten_query << " AND name " << (query->not_like ? "NOT " : "") << "LIKE " << std::quoted(query->like, '\'');
+    if (!query.like.empty())
+        rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
 
     return rewritten_query.str();
 }

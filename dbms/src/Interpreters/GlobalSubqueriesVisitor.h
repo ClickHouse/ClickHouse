@@ -168,7 +168,7 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
-        if (table_elem.table_join && table_elem.table_join->as<ASTTableJoin>()->locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join && table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global)
         {
             data.addExternalStorage(table_elem.table_expression);
             data.has_global_subqueries = true;

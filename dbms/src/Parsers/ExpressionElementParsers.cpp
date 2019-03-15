@@ -82,18 +82,18 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
     ++pos;
 
-    const auto * expr_list = contents_node->as<ASTExpressionList>();
+    const auto & expr_list = contents_node->as<ASTExpressionList &>();
 
     /// empty expression in parentheses is not allowed
-    if (expr_list->children.empty())
+    if (expr_list.children.empty())
     {
         expected.add(pos, "non-empty parenthesized list of expressions");
         return false;
     }
 
-    if (expr_list->children.size() == 1)
+    if (expr_list.children.size() == 1)
     {
-        node = expr_list->children.front();
+        node = expr_list.children.front();
     }
     else
     {
@@ -170,8 +170,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     String name;
     std::vector<String> parts;
-    const auto * list = id_list->as<ASTExpressionList>();
-    for (const auto & child : list->children)
+    const auto & list = id_list->as<ASTExpressionList &>();
+    for (const auto & child : list.children)
     {
         if (!name.empty())
             name += '.';
@@ -1075,7 +1075,7 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!literal_p.parse(pos, literal_node, expected))
             return false;
 
-        arr.push_back(literal_node->as<ASTLiteral>()->value);
+        arr.push_back(literal_node->as<ASTLiteral &>().value);
     }
 
     expected.add(pos, "closing square bracket");
