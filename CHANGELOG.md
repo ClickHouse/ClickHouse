@@ -1,16 +1,13 @@
 ## ClickHouse release 19.4.0.49, 2019-03-09
 
 ### New Feature
-* ... [#1](https://github.com/yandex/ClickHouse/pull/1) ([kindred77](https://github.com/kindred77))
-* ... [#3](https://github.com/yandex/ClickHouse/pull/3) ([kindred77](https://github.com/kindred77))
-* ... [#2](https://github.com/yandex/ClickHouse/pull/2) ([kindred77](https://github.com/kindred77))
-*  [#4174](https://github.com/yandex/ClickHouse/pull/4174) ([Vitaly Baranov](https://github.com/vitlibar))
-* - Added some Bitmap functions with Roaring bitmaps. ... [#4207](https://github.com/yandex/ClickHouse/pull/4207) ([Andy Yang](https://github.com/andyyzh))
-* Combine rules for graphite rollup from dedicated aggregation and retention patterns. [#4426](https://github.com/yandex/ClickHouse/pull/4426) ([Mikhail f. Shiryaev](https://github.com/Felixoid))
-* In some case, we might need to cap the query to limit its use of computing resource [#4430](https://github.com/yandex/ClickHouse/pull/4430) ([Winter Zhang](https://github.com/zhang2014))
+* Added support for Protobuf format. [#4174](https://github.com/yandex/ClickHouse/pull/4174) ([Vitaly Baranov](https://github.com/vitlibar))
+* Added bitmap functions with Roaring Bitmaps. [#4207](https://github.com/yandex/ClickHouse/pull/4207) ([Andy Yang](https://github.com/andyyzh))
 * Parquet format support [#4448](https://github.com/yandex/ClickHouse/pull/4448) ([proller](https://github.com/proller))
-* Trigram distance was added. It is similar to q-gram metrics in R language. I call it trigramDistance() [#4466](https://github.com/yandex/ClickHouse/pull/4466) ([Danila Kutenin](https://github.com/danlark1))
-* Two new functions: `arrayEnumerateDenseRanked`, `arrayEnumerateUniqRanked` [#4475](https://github.com/yandex/ClickHouse/pull/4475) ([proller](https://github.com/proller))
+* N-gram distance was added for fuzzy string comparison. It is similar to q-gram metrics in R language. [#4466](https://github.com/yandex/ClickHouse/pull/4466) ([Danila Kutenin](https://github.com/danlark1))
+* Combine rules for graphite rollup from dedicated aggregation and retention patterns. [#4426](https://github.com/yandex/ClickHouse/pull/4426) ([Mikhail f. Shiryaev](https://github.com/Felixoid))
+* Added `max_execution_speed` and `max_execution_speed_bytes` to limit resource usage. Added `min_execution_speed_bytes` setting to complement the `min_execution_speed`. [#4430](https://github.com/yandex/ClickHouse/pull/4430) ([Winter Zhang](https://github.com/zhang2014))
+* Added functions `arrayEnumerateDenseRanked` and `arrayEnumerateUniqRanked` (it's like `arrayEnumerateUniq` but allows to fine tune array depth to look for multidimensional arrays). [#4475](https://github.com/yandex/ClickHouse/pull/4475) ([proller](https://github.com/proller))
 
 ### [No category]
 *  [#4610](https://github.com/yandex/ClickHouse/pull/4610) ([Vasily Vasilkov](https://github.com/vgv))
