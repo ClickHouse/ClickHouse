@@ -63,7 +63,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     if (is_cluster_function)
     {
         ASTPtr ast_name = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-        cluster_name = ast_name->as<ASTLiteral>()->value.safeGet<const String &>();
+        cluster_name = ast_name->as<ASTLiteral &>().value.safeGet<const String &>();
     }
     else
     {
@@ -83,7 +83,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
-        remote_database = args[arg_num]->as<ASTLiteral>()->value.safeGet<String>();
+        remote_database = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
 
         ++arg_num;
 
@@ -103,7 +103,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             else
             {
                 args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                remote_table = args[arg_num]->as<ASTLiteral>()->value.safeGet<String>();
+                remote_table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
                 ++arg_num;
             }
         }

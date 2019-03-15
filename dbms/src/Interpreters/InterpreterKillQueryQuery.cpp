@@ -172,13 +172,13 @@ public:
 
 BlockIO InterpreterKillQueryQuery::execute()
 {
-    const auto * query = query_ptr->as<ASTKillQueryQuery>();
+    const auto & query = query_ptr->as<ASTKillQueryQuery &>();
 
-    if (!query->cluster.empty())
+    if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {"system"});
 
     BlockIO res_io;
-    switch (query->type)
+    switch (query.type)
     {
     case ASTKillQueryQuery::Type::Query:
     {
@@ -192,13 +192,13 @@ BlockIO InterpreterKillQueryQuery::execute()
         auto header = processes_block.cloneEmpty();
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
 
-        if (!query->sync || query->test)
+        if (!query.sync || query.test)
         {
             MutableColumns res_columns = header.cloneEmptyColumns();
 
             for (const auto & query_desc : queries_to_stop)
             {
-                auto code = (query->test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
+                auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
                 insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
             }
 
@@ -237,7 +237,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             auto mutation_id = mutation_id_col.getDataAt(i).toString();
 
             CancellationCode code = CancellationCode::Unknown;
-            if (!query->test)
+            if (!query.test)
             {
                 auto storage = context.tryGetTable(database_name, table_name);
                 if (!storage)

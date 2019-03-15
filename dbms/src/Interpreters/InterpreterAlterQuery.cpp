@@ -30,25 +30,25 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, const Co
 
 BlockIO InterpreterAlterQuery::execute()
 {
-    const auto * alter = query_ptr->as<ASTAlterQuery>();
+    const auto & alter = query_ptr->as<ASTAlterQuery &>();
 
-    if (!alter->cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {alter->database});
+    if (!alter.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {alter.database});
 
-    const String & table_name = alter->table;
-    String database_name = alter->database.empty() ? context.getCurrentDatabase() : alter->database;
+    const String & table_name = alter.table;
+    String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
     StoragePtr table = context.getTable(database_name, table_name);
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
     /// mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(database_name);
-    ASTPtr command_list_ptr = alter->command_list->ptr();
+    ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
-    for (ASTAlterCommand * command_ast : alter->command_list->commands)
+    for (ASTAlterCommand * command_ast : alter.command_list->commands)
     {
         if (auto alter_command = AlterCommand::parse(command_ast))
             alter_commands.emplace_back(std::move(*alter_command));

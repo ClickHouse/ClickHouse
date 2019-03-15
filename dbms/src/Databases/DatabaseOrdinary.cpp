@@ -370,9 +370,9 @@ static ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const Str
 
     if (ast)
     {
-        auto * ast_create_query = ast->as<ASTCreateQuery>();
-        ast_create_query->attach = false;
-        ast_create_query->database = database;
+        auto & ast_create_query = ast->as<ASTCreateQuery &>();
+        ast_create_query.attach = false;
+        ast_create_query.database = database;
     }
 
     return ast;
@@ -415,7 +415,7 @@ void DatabaseOrdinary::renameTable(
     ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path, table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + table_name, ErrorCodes::FILE_DOESNT_EXIST);
-    ast->as<ASTCreateQuery>()->table = to_table_name;
+    ast->as<ASTCreateQuery &>().table = to_table_name;
 
     /// NOTE Non-atomic.
     to_database_concrete->createTable(context, to_table_name, table, ast);
@@ -533,20 +533,20 @@ void DatabaseOrdinary::alterTable(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
 
-    const auto * ast_create_query = ast->as<ASTCreateQuery>();
+    const auto & ast_create_query = ast->as<ASTCreateQuery &>();
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
     ASTPtr new_indices = InterpreterCreateQuery::formatIndices(indices);
 
-    ast_create_query->columns_list->replace(ast_create_query->columns_list->columns, new_columns);
+    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
 
-    if (ast_create_query->columns_list->indices)
-        ast_create_query->columns_list->replace(ast_create_query->columns_list->indices, new_indices);
+    if (ast_create_query.columns_list->indices)
+        ast_create_query.columns_list->replace(ast_create_query.columns_list->indices, new_indices);
     else
-        ast_create_query->columns_list->set(ast_create_query->columns_list->indices, new_indices);
+        ast_create_query.columns_list->set(ast_create_query.columns_list->indices, new_indices);
 
     if (storage_modifier)
-        storage_modifier(*ast_create_query->storage);
+        storage_modifier(*ast_create_query.storage);
 
     statement = getTableDefinitionFromCreateQuery(ast);
 

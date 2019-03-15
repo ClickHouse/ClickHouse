@@ -483,37 +483,37 @@ String DB::TaskShard::getHostNameExample() const
 
 static bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
-    const auto * storage = storage_ast->as<ASTStorage>();
-    return storage->partition_by || storage->order_by || storage->sample_by;
+    const auto & storage = storage_ast->as<ASTStorage &>();
+    return storage.partition_by || storage.order_by || storage.sample_by;
 }
 
 static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 {
     String storage_str = queryToString(storage_ast);
 
-    const auto * storage = storage_ast->as<ASTStorage>();
-    const auto * engine = storage->engine->as<ASTFunction>();
+    const auto & storage = storage_ast->as<ASTStorage &>();
+    const auto & engine = storage.engine->as<ASTFunction &>();
 
-    if (!endsWith(engine->name, "MergeTree"))
+    if (!endsWith(engine.name, "MergeTree"))
     {
         throw Exception("Unsupported engine was specified in " + storage_str + ", only *MergeTree engines are supported",
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
-    ASTPtr arguments_ast = engine->arguments->clone();
+    ASTPtr arguments_ast = engine.arguments->clone();
     ASTs & arguments = arguments_ast->children;
 
     if (isExtendedDefinitionStorage(storage_ast))
     {
-        if (storage->partition_by)
-            return storage->partition_by->clone();
+        if (storage.partition_by)
+            return storage.partition_by->clone();
 
         static const char * all = "all";
         return std::make_shared<ASTLiteral>(Field(all, strlen(all)));
     }
     else
     {
-        bool is_replicated = startsWith(engine->name, "Replicated");
+        bool is_replicated = startsWith(engine.name, "Replicated");
         size_t min_args = is_replicated ? 3 : 1;
 
         if (arguments.size() < min_args)
@@ -1184,11 +1184,11 @@ protected:
 
         for (const ASTPtr & column_ast : column_asts)
         {
-            const auto * column = column_ast->as<ASTColumnDeclaration>();
+            const auto & column = column_ast->as<ASTColumnDeclaration &>();
 
-            if (!column->default_specifier.empty())
+            if (!column.default_specifier.empty())
             {
-                ColumnDefaultKind kind = columnDefaultKindFromString(column->default_specifier);
+                ColumnDefaultKind kind = columnDefaultKindFromString(column.default_specifier);
                 if (kind == ColumnDefaultKind::Materialized || kind == ColumnDefaultKind::Alias)
                     continue;
             }
@@ -1197,13 +1197,13 @@ protected:
         }
 
         ASTPtr new_query_ast = query_ast->clone();
-        auto * new_query = new_query_ast->as<ASTCreateQuery>();
+        auto & new_query = new_query_ast->as<ASTCreateQuery &>();
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, new_columns);
         new_columns_list->set(new_columns_list->indices, query_ast->as<ASTCreateQuery>()->columns_list->indices->clone());
 
-        new_query->replace(new_query->columns_list, new_columns_list);
+        new_query.replace(new_query.columns_list, new_columns_list);
 
         return new_query_ast;
     }
@@ -1211,17 +1211,17 @@ protected:
     /// Replaces ENGINE and table name in a create query
     std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
     {
-        const auto * create = create_query_ast->as<ASTCreateQuery>();
-        auto res = std::make_shared<ASTCreateQuery>(*create);
+        const auto & create = create_query_ast->as<ASTCreateQuery &>();
+        auto res = std::make_shared<ASTCreateQuery>(create);
 
-        if (create->storage == nullptr || new_storage_ast == nullptr)
+        if (create.storage == nullptr || new_storage_ast == nullptr)
             throw Exception("Storage is not specified", ErrorCodes::LOGICAL_ERROR);
 
         res->database = new_table.first;
         res->table = new_table.second;
 
         res->children.clear();
-        res->set(res->columns_list, create->columns_list->clone());
+        res->set(res->columns_list, create.columns_list->clone());
         res->set(res->storage, new_storage_ast->clone());
 
         return res;
@@ -1645,7 +1645,7 @@ protected:
         /// Try create table (if not exists) on each shard
         {
             auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query, task_table.table_push, task_table.engine_push_ast);
-            create_query_push_ast->as<ASTCreateQuery>()->if_not_exists = true;
+            create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
             String query = queryToString(create_query_push_ast);
 
             LOG_DEBUG(log, "Create destination tables. Query: " << query);
@@ -1778,8 +1778,8 @@ protected:
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast)
     {
-        const auto * create = create_ast->as<ASTCreateQuery>();
-        dropLocalTableIfExists({create->database, create->table});
+        const auto & create = create_ast->as<ASTCreateQuery &>();
+        dropLocalTableIfExists({create.database, create.table});
 
         InterpreterCreateQuery interpreter(create_ast, context);
         interpreter.execute();

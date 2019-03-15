@@ -26,7 +26,7 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, partition_id, expected))
             return false;
 
-        partition->id = partition_id->as<ASTLiteral>()->value.get<String>();
+        partition->id = partition_id->as<ASTLiteral &>().value.get<String>();
     }
     else
     {

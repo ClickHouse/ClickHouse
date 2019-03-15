@@ -58,7 +58,7 @@ Block InterpreterDescribeQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 {
-    const auto * ast = query_ptr->as<ASTDescribeQuery>();
+    const auto & ast = query_ptr->as<ASTDescribeQuery &>();
 
     NamesAndTypesList columns;
     ColumnDefaults column_defaults;
@@ -66,7 +66,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     ColumnCodecs column_codecs;
     StoragePtr table;
 
-    const auto * table_expression = ast->table_expression->as<ASTTableExpression>();
+    const auto * table_expression = ast.table_expression->as<ASTTableExpression>();
 
     if (table_expression->subquery)
     {

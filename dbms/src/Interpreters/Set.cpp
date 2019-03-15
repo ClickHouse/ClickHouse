@@ -235,8 +235,8 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     DataTypePtr tuple_type;
     Row tuple_values;
-    const auto * list = node->as<ASTExpressionList>();
-    for (auto & elem : list->children)
+    const auto & list = node->as<ASTExpressionList &>();
+    for (auto & elem : list.children)
     {
         if (num_columns == 1)
         {

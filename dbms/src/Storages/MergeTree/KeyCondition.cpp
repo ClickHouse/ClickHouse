@@ -284,20 +284,20 @@ KeyCondition::KeyCondition(
     Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
     /// Trasform WHERE section to Reverse Polish notation
-    const auto * select = query_info.query->as<ASTSelectQuery>();
-    if (select->where_expression)
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    if (select.where_expression)
     {
-        traverseAST(select->where_expression, context, block_with_constants);
+        traverseAST(select.where_expression, context, block_with_constants);
 
-        if (select->prewhere_expression)
+        if (select.prewhere_expression)
         {
-            traverseAST(select->prewhere_expression, context, block_with_constants);
+            traverseAST(select.prewhere_expression, context, block_with_constants);
             rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
     }
-    else if (select->prewhere_expression)
+    else if (select.prewhere_expression)
     {
-        traverseAST(select->prewhere_expression, context, block_with_constants);
+        traverseAST(select.prewhere_expression, context, block_with_constants);
     }
     else
     {
@@ -622,7 +622,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
     DataTypePtr const_type;
     if (const auto * func = node->as<ASTFunction>())
     {
-        const ASTs & args = func->arguments->as<ASTExpressionList>()->children;
+        const ASTs & args = func->arguments->children;
 
         if (args.size() != 2)
             return false;

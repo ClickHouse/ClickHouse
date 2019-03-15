@@ -44,12 +44,12 @@ void forEachNonGlobalSubquery(IAST * node, F && f)
     {
         if (join->table_join && join->table_expression)
         {
-            auto * table_join = join->table_join->as<ASTTableJoin>();
-            if (table_join->locality != ASTTableJoin::Locality::Global)
+            auto & table_join = join->table_join->as<ASTTableJoin &>();
+            if (table_join.locality != ASTTableJoin::Locality::Global)
             {
                 auto & subquery = join->table_expression->as<ASTTableExpression>()->subquery;
                 if (subquery)
-                    f(subquery.get(), nullptr, table_join);
+                    f(subquery.get(), nullptr, &table_join);
             }
             return;
         }
@@ -103,15 +103,15 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
     if (!query->tables)
         return;
 
-    const auto * tables_in_select_query = query->tables->as<ASTTablesInSelectQuery>();
-    if (tables_in_select_query->children.empty())
+    const auto & tables_in_select_query = query->tables->as<ASTTablesInSelectQuery &>();
+    if (tables_in_select_query.children.empty())
         return;
 
-    const auto * tables_element = tables_in_select_query->children[0]->as<ASTTablesInSelectQueryElement>();
-    if (!tables_element->table_expression)
+    const auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
+    if (!tables_element.table_expression)
         return;
 
-    const auto * table_expression = tables_element->table_expression->as<ASTTableExpression>();
+    const auto * table_expression = tables_element.table_expression->as<ASTTableExpression>();
 
     /// If not ordinary table, skip it.
     if (!table_expression->database_and_table_name)
@@ -157,7 +157,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
                         throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
                 }
                 else if (table_join)
-                    table_join->as<ASTTableJoin>()->locality = ASTTableJoin::Locality::Global;
+                    table_join->as<ASTTableJoin &>().locality = ASTTableJoin::Locality::Global;
                 else
                     throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
             }

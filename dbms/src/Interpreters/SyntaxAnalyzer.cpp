@@ -244,9 +244,9 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
 
-                const auto & dict_name = function->arguments->children[0]->as<ASTLiteral>()->value.safeGet<String>();
+                const auto & dict_name = function->arguments->children[0]->as<ASTLiteral &>().value.safeGet<String>();
                 const auto & dict_ptr = context.getExternalDictionaries().getDictionary(dict_name);
-                const auto & attr_name = function->arguments->children[1]->as<ASTLiteral>()->value.safeGet<String>();
+                const auto & attr_name = function->arguments->children[1]->as<ASTLiteral &>().value.safeGet<String>();
 
                 if (!dict_ptr->isInjective(attr_name))
                 {
@@ -324,9 +324,9 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
     for (const auto & elem : elems)
     {
         String name = elem->children.front()->getColumnName();
-        const auto * order_by_elem = elem->as<ASTOrderByElement>();
+        const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
-        if (elems_set.emplace(name, order_by_elem->collation ? order_by_elem->collation->getColumnName() : "").second)
+        if (elems_set.emplace(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "").second)
             unique_elems.emplace_back(elem);
     }
 
@@ -551,24 +551,24 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & s
     if (!node)
         return;
 
-    const auto * table_join = node->table_join->as<ASTTableJoin>();
-    const auto * table_expression = node->table_expression->as<ASTTableExpression>();
-    DatabaseAndTableWithAlias joined_table_name(*table_expression, current_database);
+    const auto & table_join = node->table_join->as<ASTTableJoin &>();
+    const auto & table_expression = node->table_expression->as<ASTTableExpression &>();
+    DatabaseAndTableWithAlias joined_table_name(table_expression, current_database);
 
-    if (table_join->using_expression_list)
+    if (table_join.using_expression_list)
     {
-        const auto * keys = table_join->using_expression_list->as<ASTExpressionList>();
-        for (const auto & key : keys->children)
+        const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
+        for (const auto & key : keys.children)
             analyzed_join.addUsingKey(key);
 
         for (auto & name : analyzed_join.key_names_right)
             if (source_columns.count(name))
                 name = joined_table_name.getQualifiedNamePrefix() + name;
     }
-    else if (table_join->on_expression)
-        collectJoinedColumnsFromJoinOnExpr(analyzed_join, *table_join);
+    else if (table_join.on_expression)
+        collectJoinedColumnsFromJoinOnExpr(analyzed_join, table_join);
 
-    bool make_nullable = join_use_nulls && isLeftOrFull(table_join->kind);
+    bool make_nullable = join_use_nulls && isLeftOrFull(table_join.kind);
 
     analyzed_join.calculateAvailableJoinedColumns(make_nullable);
 }
@@ -593,19 +593,19 @@ void replaceJoinedTable(const ASTTablesInSelectQueryElement* join)
     if (!join || !join->table_expression)
         return;
 
-    const auto * table_expr = join->table_expression->as<ASTTableExpression>();
-    if (table_expr->database_and_table_name)
+    auto & table_expr = join->table_expression->as<ASTTableExpression &>();
+    if (table_expr.database_and_table_name)
     {
-        const auto * table_id = table_expr->database_and_table_name->as<ASTIdentifier>();
-        String expr = "(select * from " + table_id->name + ") as " + table_id->shortName();
+        const auto & table_id = table_expr.database_and_table_name->as<ASTIdentifier &>();
+        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
 
         // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
         //        we can't replace aliased tables.
         // FIXME: long table names include database name, which we can't save within alias.
-        if (table_id->alias.empty() && table_id->isShort())
+        if (table_id.alias.empty() && table_id.isShort())
         {
             ParserTableExpression parser;
-            table_expr = parseQuery(parser, expr, 0)->as<ASTTableExpression>();
+            table_expr = parseQuery(parser, expr, 0)->as<ASTTableExpression &>();
         }
     }
 }
@@ -650,10 +650,10 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
             if (settings.enable_optimize_predicate_expression)
                 replaceJoinedTable(node);
 
-            const auto * joined_expression = node->table_expression->as<ASTTableExpression>();
-            DatabaseAndTableWithAlias table(*joined_expression, context.getCurrentDatabase());
+            const auto & joined_expression = node->table_expression->as<ASTTableExpression &>();
+            DatabaseAndTableWithAlias table(joined_expression, context.getCurrentDatabase());
 
-            NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(*joined_expression, context);
+            NamesAndTypesList joined_columns = getNamesAndTypeListFromTableExpression(joined_expression, context);
             Names original_names = qualifyOccupiedNames(joined_columns, source_columns_set, table);
             result.analyzed_join.calculateColumnsFromJoinedTable(joined_columns, original_names);
         }

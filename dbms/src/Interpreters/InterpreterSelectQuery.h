@@ -99,7 +99,7 @@ private:
         bool only_analyze_,
         bool modify_inplace);
 
-    ASTSelectQuery & getSelectQuery() { return *query_ptr->as<ASTSelectQuery>(); }
+    ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
 
     struct Pipeline

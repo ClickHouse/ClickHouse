@@ -92,16 +92,16 @@ static const ASTTableExpression * getTableExpression(const ASTSelectQuery & sele
     if (!select.tables)
         return {};
 
-    const auto * tables_in_select_query = select.tables->as<ASTTablesInSelectQuery>();
-    if (tables_in_select_query->children.size() <= table_number)
+    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
+    if (tables_in_select_query.children.size() <= table_number)
         return {};
 
-    const auto * tables_element = tables_in_select_query->children[table_number]->as<ASTTablesInSelectQueryElement>();
+    const auto & tables_element = tables_in_select_query.children[table_number]->as<ASTTablesInSelectQueryElement &>();
 
-    if (!tables_element->table_expression)
+    if (!tables_element.table_expression)
         return {};
 
-    return tables_element->table_expression->as<ASTTableExpression>();
+    return tables_element.table_expression->as<ASTTableExpression>();
 }
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database)

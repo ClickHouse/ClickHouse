@@ -209,12 +209,12 @@ bool needRewrite(ASTSelectQuery & select)
         if (!table || !table->table_join)
             throw Exception("Multiple JOIN expects joined tables", ErrorCodes::LOGICAL_ERROR);
 
-        const auto * join = table->table_join->as<ASTTableJoin>();
-        if (isComma(join->kind))
+        const auto & join = table->table_join->as<ASTTableJoin &>();
+        if (isComma(join.kind))
             throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
 
         /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
-        if (join->using_expression_list)
+        if (join.using_expression_list)
             throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
     }
 
@@ -263,9 +263,9 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
         auto * table = child->as<ASTTablesInSelectQueryElement>();
         if (table->table_join)
         {
-            auto * join = table->table_join->as<ASTTableJoin>();
-            if (join->on_expression)
-                ColumnAliasesVisitor(aliases_data).visit(join->on_expression);
+            auto & join = table->table_join->as<ASTTableJoin &>();
+            if (join.on_expression)
+                ColumnAliasesVisitor(aliases_data).visit(join.on_expression);
         }
     }
 

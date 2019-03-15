@@ -213,7 +213,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
         if (!arguments)
         {
             node = makeASTFunction(function_name, node);
-            arguments = node->as<ASTFunction>()->arguments;
+            arguments = node->as<ASTFunction &>().arguments;
         }
 
         ASTPtr elem;

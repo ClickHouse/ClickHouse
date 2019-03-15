@@ -56,8 +56,8 @@ struct JoinedTable
 
         if (element->table_expression)
         {
-            const auto * expr = element->table_expression->as<ASTTableExpression>();
-            table = DatabaseAndTableWithAlias(*expr);
+            const auto & expr = element->table_expression->as<ASTTableExpression &>();
+            table = DatabaseAndTableWithAlias(expr);
         }
 
         array_join = element->array_join;

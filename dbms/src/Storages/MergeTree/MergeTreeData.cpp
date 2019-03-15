@@ -1174,14 +1174,14 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     /// Remove old indices
     std::set<String> new_indices_set;
     for (const auto & index_decl : new_indices)
-        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration>()->name);
+        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
     for (const auto & index_decl : old_indices)
     {
-        const auto * index = index_decl->as<ASTIndexDeclaration>();
-        if (!new_indices_set.count(index->name))
+        const auto & index = index_decl->as<ASTIndexDeclaration &>();
+        if (!new_indices_set.count(index.name))
         {
-            out_rename_map["skp_idx_" + index->name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index->name + ".mrk"] = "";
+            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
+            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
         }
     }
 
@@ -2220,7 +2220,7 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
-        if (const auto * partition_lit = partition_ast->as<ASTPartition>()->value->as<ASTLiteral>())
+        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
             prefix = partition_lit->value.getType() == Field::Types::UInt64
                 ? toString(partition_lit->value.get<UInt64>())
                 : partition_lit->value.safeGet<String>();
@@ -2275,15 +2275,15 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context)
 {
-    const auto * partition_ast = ast->as<ASTPartition>();
+    const auto & partition_ast = ast->as<ASTPartition &>();
 
-    if (!partition_ast->value)
-        return partition_ast->id;
+    if (!partition_ast.value)
+        return partition_ast.id;
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition ID can be passed in the partition value.
-        const auto * partition_lit = partition_ast->value->as<ASTLiteral>();
+        const auto * partition_lit = partition_ast.value->as<ASTLiteral>();
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
@@ -2298,9 +2298,9 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     /// Re-parse partition key fields using the information about expected field types.
 
     size_t fields_count = partition_key_sample.columns();
-    if (partition_ast->fields_count != fields_count)
+    if (partition_ast.fields_count != fields_count)
         throw Exception(
-            "Wrong number of fields in the partition expression: " + toString(partition_ast->fields_count) +
+            "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
 
@@ -2310,7 +2310,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     if (fields_count)
     {
         ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast->fields_str.data, partition_ast->fields_str.size);
+        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data, partition_ast.fields_str.size);
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
@@ -2320,7 +2320,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         RowReadExtension unused;
         if (!input_stream.read(columns, unused))
             throw Exception(
-                "Could not parse partition value: `" + partition_ast->fields_str.toString() + "`",
+                "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
