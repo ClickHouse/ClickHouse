@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-
+#include "IFunction.h"
 #include <Common/intExp.h>
 #include <cmath>
 #include <type_traits>
