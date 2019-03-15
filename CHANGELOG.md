@@ -1,39 +1,28 @@
 ## ClickHouse release 19.4.0.49, 2019-03-09
 
 ### New Feature
-* Added full support for Protobuf format (input and output, nested data structured). [#4174](https://github.com/yandex/ClickHouse/pull/4174) ([Vitaly Baranov](https://github.com/vitlibar))
-* Added bitmap functions with Roaring Bitmaps. [#4207](https://github.com/yandex/ClickHouse/pull/4207) ([Andy Yang](https://github.com/andyyzh))
+* Added full support for Protobuf format (input and output, nested data structured). [#4174](https://github.com/yandex/ClickHouse/pull/4174) [#4493](https://github.com/yandex/ClickHouse/pull/4493) ([Vitaly Baranov](https://github.com/vitlibar))
+* Added bitmap functions with Roaring Bitmaps. [#4207](https://github.com/yandex/ClickHouse/pull/4207) ([Andy Yang](https://github.com/andyyzh)) [#4568](https://github.com/yandex/ClickHouse/pull/4568) ([Vitaly Baranov](https://github.com/vitlibar))
 * Parquet format support [#4448](https://github.com/yandex/ClickHouse/pull/4448) ([proller](https://github.com/proller))
 * N-gram distance was added for fuzzy string comparison. It is similar to q-gram metrics in R language. [#4466](https://github.com/yandex/ClickHouse/pull/4466) ([Danila Kutenin](https://github.com/danlark1))
 * Combine rules for graphite rollup from dedicated aggregation and retention patterns. [#4426](https://github.com/yandex/ClickHouse/pull/4426) ([Mikhail f. Shiryaev](https://github.com/Felixoid))
 * Added `max_execution_speed` and `max_execution_speed_bytes` to limit resource usage. Added `min_execution_speed_bytes` setting to complement the `min_execution_speed`. [#4430](https://github.com/yandex/ClickHouse/pull/4430) ([Winter Zhang](https://github.com/zhang2014))
 * Implemented function `flatten` [#4555](https://github.com/yandex/ClickHouse/pull/4555) [#4409](https://github.com/yandex/ClickHouse/pull/4409) ([alexey-milovidov](https://github.com/alexey-milovidov) [kzon](https://github.com/kzon))
-* Added functions `arrayEnumerateDenseRanked` and `arrayEnumerateUniqRanked` (it's like `arrayEnumerateUniq` but allows to fine tune array depth to look for multidimensional arrays). [#4475](https://github.com/yandex/ClickHouse/pull/4475) ([proller](https://github.com/proller))
+* Added functions `arrayEnumerateDenseRanked` and `arrayEnumerateUniqRanked` (it's like `arrayEnumerateUniq` but allows to fine tune array depth to look for multidimensional arrays). [#4475](https://github.com/yandex/ClickHouse/pull/4475) ([proller](https://github.com/proller)) [#4601](https://github.com/yandex/ClickHouse/pull/4601) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Multiple JOINS with some restrictions: no asterisks, no complex aliases in ON/WHERE/GROUP BY/... [#4462](https://github.com/yandex/ClickHouse/pull/4462) ([Artem Zuikov](https://github.com/4ertus2))
 
-### [No category]
-* Fixed undefined behaviour in ThreadPool [#4612](https://github.com/yandex/ClickHouse/pull/4612) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fix compilation on Mac. [#4371](https://github.com/yandex/ClickHouse/pull/4371) ([Vitaly Baranov](https://github.com/vitlibar))
-* Improve push-down logic for joined statements. [#4387](https://github.com/yandex/ClickHouse/pull/4387) ([Ivan](https://github.com/abyss7))
-* Fixed bug in data skipping indices: order of granules after INSERT was incorrect. [#4407](https://github.com/yandex/ClickHouse/pull/4407) ([Nikita Vasilev](https://github.com/nikvas0))
-* Build fixes for FreeBSD. [#4444](https://github.com/yandex/ClickHouse/pull/4444) ([proller](https://github.com/proller))
-*  [#4568](https://github.com/yandex/ClickHouse/pull/4568) ([Vitaly Baranov](https://github.com/vitlibar))
-*  [#4574](https://github.com/yandex/ClickHouse/pull/4574) ([proller](https://github.com/proller))
-*  [#4582](https://github.com/yandex/ClickHouse/pull/4582) ([proller](https://github.com/proller))
-*  [#4591](https://github.com/yandex/ClickHouse/pull/4591) ([proller](https://github.com/proller))
-*  [#4600](https://github.com/yandex/ClickHouse/pull/4600) ([proller](https://github.com/proller))
-*  [#4601](https://github.com/yandex/ClickHouse/pull/4601) ([alexey-milovidov](https://github.com/alexey-milovidov))
-
 ### Bug Fix
+* Fixed bug in data skipping indices: order of granules after INSERT was incorrect. [#4407](https://github.com/yandex/ClickHouse/pull/4407) ([Nikita Vasilev](https://github.com/nikvas0))
 * Set update_time on full executable dictionary update. [#4551](https://github.com/yandex/ClickHouse/pull/4551) ([Tema Novikov](https://github.com/temoon))
 * Fixed inconsistent values of MemoryTracker when memory region was shrinked, in certain cases. [#4619](https://github.com/yandex/ClickHouse/pull/4619) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed undefined behaviour in ThreadPool [#4612](https://github.com/yandex/ClickHouse/pull/4612) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed a very rare crash with the message `mutex lock failed: Invalid argument` that could happen when a MergeTree table was dropped concurrently with a SELECT. [#4608](https://github.com/yandex/ClickHouse/pull/4608) ([Alex Zatelepin](https://github.com/ztlpn))
 * ODBC driver compatibility with `LowCardinality` data type [#4381](https://github.com/yandex/ClickHouse/pull/4381) ([proller](https://github.com/proller))
 * FreeBSD: Fixup for "AIOcontextPool: Found io_event with unknown id 0" error (patch by urgordeadbeef) [#4438](https://github.com/yandex/ClickHouse/pull/4438) ([proller](https://github.com/proller))
 * `system.part_log` was used unconditionally. [#4483](https://github.com/yandex/ClickHouse/pull/4483) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * When there are more than 1000 threads in a thread pool, `std::terminate` may happen on thread exit. The bug and the fix is described by [Azat Khuzhin](https://github.com/azat) in PR #4485. [#4505](https://github.com/yandex/ClickHouse/pull/4505) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fix undefined behaviour in `dictIsIn` function for cache dictionaries. [#4515](https://github.com/yandex/ClickHouse/pull/4515) ([alesapin](https://github.com/alesapin))
-* Fix broken progress in 19.3 (regression in 92769a24607ec5f78f605b2746699ffb2adba633) ... [#4627](https://github.com/yandex/ClickHouse/pull/4627) ([filimonov](https://github.com/filimonov))
+* Fix broken progress bar in 19.3 [#4627](https://github.com/yandex/ClickHouse/pull/4627) ([filimonov](https://github.com/filimonov))
 * Removed the `inline` tags of `void readBinary(...)` in `Field.cpp`. Also merged redundant `namespace DB` blocks. [#4530](https://github.com/yandex/ClickHouse/pull/4530) ([hcz](https://github.com/hczhcz))
 * Fixed a deadlock when a SELECT query locks the same table multiple times (e.g. from different threads or when executing multiple subqueries) and there is a concurrent DDL query. Fixes #4316 [#4535](https://github.com/yandex/ClickHouse/pull/4535) ([Alex Zatelepin](https://github.com/ztlpn))
 * Modified links that have expired in the tutorial ... [#4545](https://github.com/yandex/ClickHouse/pull/4545) ([MeiK](https://github.com/MeiK-h))
@@ -43,13 +32,11 @@
 * CROSS JOIN with empty WHERE ... [#4598](https://github.com/yandex/ClickHouse/pull/4598) ([Artem Zuikov](https://github.com/4ertus2))
 * Avoid deadlock when the `invalidate_query` for a dictionary with `clickhouse` source was involving `system.dictionaries` table or `Dictionaries` database (rare case). This PR also fixes #4597. [#4599](https://github.com/yandex/ClickHouse/pull/4599) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed segfault in function "replicate" when constant argument is passed. [#4603](https://github.com/yandex/ClickHouse/pull/4603) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* [#4408](https://github.com/yandex/ClickHouse/pull/4408) ([Winter Zhang](https://github.com/zhang2014))
-* #4554 [#4595](https://github.com/yandex/ClickHouse/pull/4595) ([Artem Zuikov](https://github.com/4ertus2))
-*  [#4540](https://github.com/yandex/ClickHouse/pull/4540) ([Artem Zuikov](https://github.com/4ertus2))
-*  [#4552](https://github.com/yandex/ClickHouse/pull/4552) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix lambda function with predicate optimizer. [#4408](https://github.com/yandex/ClickHouse/pull/4408) ([Winter Zhang](https://github.com/zhang2014))
+* Multiple JOINs multiple fixes. [#4595](https://github.com/yandex/ClickHouse/pull/4595) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Build/Testing/Packaging Improvement
-*  [#4621](https://github.com/yandex/ClickHouse/pull/4621) ([Konstantin Podshumok](https://github.com/podshumok))
+* Fix wrong `__asm__` instructions (again) [#4621](https://github.com/yandex/ClickHouse/pull/4621) ([Konstantin Podshumok](https://github.com/podshumok))
 * Add ability to specify settings for `clickhouse-performance-test` from CLI. [#4437](https://github.com/yandex/ClickHouse/pull/4437) ([alesapin](https://github.com/alesapin))
 * Add dictionaries tests to integration tests. [#4477](https://github.com/yandex/ClickHouse/pull/4477) ([alesapin](https://github.com/alesapin))
 * `xxhash.h` does not exist in external lz4 because it is an implementation detail and its symbols are namespaced with `XXH_NAMESPACE` macro.  When lz4 is external, xxHash has to be external too, and the dependents have to link to it. ... [#4495](https://github.com/yandex/ClickHouse/pull/4495) ([Orivej Desh](https://github.com/orivej))
@@ -57,19 +44,20 @@
 * Fixed a case when `quantileTiming` aggregate function can be called with negative or floating point argument (this fixes fuzz test with undefined behaviour sanitizer). [#4506](https://github.com/yandex/ClickHouse/pull/4506) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Added support for clang-9 [#4604](https://github.com/yandex/ClickHouse/pull/4604) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Spelling error correction. [#4531](https://github.com/yandex/ClickHouse/pull/4531) ([sdk2](https://github.com/sdk2))
+* Fix compilation on Mac. [#4371](https://github.com/yandex/ClickHouse/pull/4371) ([Vitaly Baranov](https://github.com/vitlibar))
+* Build fixes for FreeBSD and various unusual build configurations. [#4444](https://github.com/yandex/ClickHouse/pull/4444) ([proller](https://github.com/proller))
 
 ### Improvement
 * Support aliases in JOIN ON section for right table columns [#4412](https://github.com/yandex/ClickHouse/pull/4412) ([Artem Zuikov](https://github.com/4ertus2))
-* Cleanup distributed DDL queue in a separate thread so that it doesn't slow down the main loop that processes distributed DDL tasks. [#4502](https://github.com/yandex/ClickHouse/pull/4502) ([Alex Zatelepin](https://github.com/ztlpn))
 * Result of multiple JOINs need correct result names to be used in subselects. Replace flat aliases with source names in result. [#4474](https://github.com/yandex/ClickHouse/pull/4474) ([Artem Zuikov](https://github.com/4ertus2))
-*  [#4480](https://github.com/yandex/ClickHouse/pull/4480) ([Artem Zuikov](https://github.com/4ertus2))
-*  [#4493](https://github.com/yandex/ClickHouse/pull/4493) ([Vitaly Baranov](https://github.com/vitlibar))
+* Improve push-down logic for joined statements. [#4387](https://github.com/yandex/ClickHouse/pull/4387) ([Ivan](https://github.com/abyss7))
 
 ### Performance Improvement
 * Improved heuristics of "move to PREWHERE" optimization. [#4405](https://github.com/yandex/ClickHouse/pull/4405) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Use proper lookup tables that uses HashTable's API for 8-bit and 16-bit keys. [#4536](https://github.com/yandex/ClickHouse/pull/4536) ([Amos Bird](https://github.com/amosbird))
 *  [#4465](https://github.com/yandex/ClickHouse/pull/4465) ([Vitaly Baranov](https://github.com/vitlibar))
 * Improved performance of string comparison. [#4564](https://github.com/yandex/ClickHouse/pull/4564) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Cleanup distributed DDL queue in a separate thread so that it doesn't slow down the main loop that processes distributed DDL tasks. [#4502](https://github.com/yandex/ClickHouse/pull/4502) ([Alex Zatelepin](https://github.com/ztlpn))
 * When `min_bytes_to_use_direct_io` is set to 1, not every file was opened with O_DIRECT mode because the data size to read was sometimes underestimated by the size of one compressed block. [#4526](https://github.com/yandex/ClickHouse/pull/4526) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 
