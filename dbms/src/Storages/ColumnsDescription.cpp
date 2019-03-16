@@ -195,32 +195,39 @@ void ColumnsDescription::remove(const String & column_name)
 
 void ColumnsDescription::flattenNested()
 {
-    for (auto it = columns.begin(); it != columns.end(); ++it)
+    for (auto it = columns.begin(); it != columns.end();)
     {
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(it->type.get()))
+        const auto * type_arr = typeid_cast<const DataTypeArray *>(it->type.get());
+        if (!type_arr)
         {
-            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get()))
-            {
-                ColumnDescription column = std::move(*it);
-                it = columns.erase(it);
-                name_to_column.erase(column.name);
+            ++it;
+            continue;
+        }
 
-                const DataTypes & elements = type_tuple->getElements();
-                const Strings & names = type_tuple->getElementNames();
-                size_t tuple_size = elements.size();
+        const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get());
+        if (!type_tuple)
+        {
+            ++it;
+            continue;
+        }
 
-                for (size_t i = 0; i < tuple_size; ++i)
-                {
-                    auto nested_column = column;
-                    /// TODO: what to do with default expressions?
-                    nested_column.name = Nested::concatenateName(column.name, names[i]);
-                    nested_column.type = std::make_shared<DataTypeArray>(elements[i]);
+        ColumnDescription column = std::move(*it);
+        it = columns.erase(it);
+        name_to_column.erase(column.name);
 
-                    auto inserted_it = columns.insert(it, std::move(nested_column));
-                    name_to_column.emplace(inserted_it->name, inserted_it);
-                }
+        const DataTypes & elements = type_tuple->getElements();
+        const Strings & names = type_tuple->getElementNames();
+        size_t tuple_size = elements.size();
 
-            }
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            auto nested_column = column;
+            /// TODO: what to do with default expressions?
+            nested_column.name = Nested::concatenateName(column.name, names[i]);
+            nested_column.type = std::make_shared<DataTypeArray>(elements[i]);
+
+            auto inserted_it = columns.insert(it, std::move(nested_column));
+            name_to_column.emplace(inserted_it->name, inserted_it);
         }
     }
 }
