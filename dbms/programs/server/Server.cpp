@@ -49,6 +49,7 @@
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 #include "Common/config_version.h"
+#include "MySQLHandlerFactory.h"
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
@@ -724,6 +725,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                             ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
+                }
+
+                if (config().has("mysql_port"))
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("mysql_port"), /* secure = */ true);
+                    socket.setReceiveTimeout(Poco::Timespan());
+                    socket.setSendTimeout(settings.send_timeout);
+                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                        new MySQLHandlerFactory(*this),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
+
+                    LOG_INFO(log, "Listening mysql: " + address.toString());
                 }
             }
             catch (const Poco::Net::NetException & e)
