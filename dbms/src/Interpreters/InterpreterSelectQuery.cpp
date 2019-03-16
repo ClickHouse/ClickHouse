@@ -615,6 +615,12 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 if (expressions.has_order_by && query.limit_length)
                     executeDistinct(pipeline, false, expressions.selected_columns);
 
+                if (expressions.has_limit_by)
+                {
+                    executeExpression(pipeline, expressions.before_limit_by);
+                    executeLimitBy(pipeline);
+                }
+
                 if (query.limit_length)
                     executePreLimit(pipeline);
             }
