@@ -240,7 +240,7 @@ protected:
 
                         if (ast)
                         {
-                            const ASTCreateQuery & ast_create = typeid_cast<const ASTCreateQuery &>(*ast);
+                            const auto & ast_create = ast->as<ASTCreateQuery &>();
                             if (ast_create.storage)
                             {
                                 engine_full = queryToString(*ast_create.storage);

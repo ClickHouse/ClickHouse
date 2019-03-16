@@ -83,7 +83,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
     String column_line;
     readEscapedStringUntilEOL(column_line, buf);
     ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0);
-    if (const ASTColumnDeclaration * col_ast = typeid_cast<const ASTColumnDeclaration *>(ast.get()))
+    if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
     {
         name = col_ast->name;
         type = DataTypeFactory::instance().get(col_ast->type);
@@ -95,7 +95,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
         }
 
         if (col_ast->comment)
-            comment = typeid_cast<ASTLiteral &>(*col_ast->comment).value.get<String>();
+            comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_ast->codec)
             codec = CompressionCodecFactory::instance().get(col_ast->codec, type);

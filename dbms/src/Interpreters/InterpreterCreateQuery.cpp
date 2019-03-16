@@ -260,7 +260,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 
     for (const auto & ast : columns_ast.children)
     {
-        const auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
+        const auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         DataTypePtr column_type = nullptr;
         if (col_decl.type)
@@ -315,7 +315,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
     {
         ColumnDescription column;
 
-        auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast_it->get());
+        auto & col_decl = (*ast_it)->as<ASTColumnDeclaration &>();
 
         column.name = col_decl.name;
 
@@ -342,11 +342,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
             throw Exception();
 
         if (col_decl.comment)
-        {
-            auto comment_str = typeid_cast<ASTLiteral &>(*col_decl.comment).value.get<String>();
-            if (!comment_str.empty())
-                column.comment = comment_str;
-        }
+            column.comment = col_decl.comment->as<ASTLiteral &>().value.get<String>();
 
         if (col_decl.codec)
             column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type);
@@ -450,7 +446,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_table_name = create.as_table;
 
         ASTPtr as_create_ptr = context.getCreateTableQuery(as_database_name, as_table_name);
-        const auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
+        const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         if (as_create.is_view)
             throw Exception(
@@ -490,8 +486,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Table SQL definition is available even if the table is detached
         auto query = context.getCreateTableQuery(database_name, table_name);
-        auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
-        create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
+        create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
     }
 
@@ -619,7 +614,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::execute()
 {
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
+    auto & create = query_ptr->as<ASTCreateQuery &>();
     checkAccess(create);
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 

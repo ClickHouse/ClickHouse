@@ -15,7 +15,7 @@ std::optional<String> IdentifierSemantic::getColumnName(const ASTIdentifier & no
 std::optional<String> IdentifierSemantic::getColumnName(const ASTPtr & ast)
 {
     if (ast)
-        if (auto id = typeid_cast<const ASTIdentifier *>(ast.get()))
+        if (const auto * id = ast->as<ASTIdentifier>())
             if (!id->semantic->special)
                 return id->name;
     return {};
@@ -31,7 +31,7 @@ std::optional<String> IdentifierSemantic::getTableName(const ASTIdentifier & nod
 std::optional<String> IdentifierSemantic::getTableName(const ASTPtr & ast)
 {
     if (ast)
-        if (auto id = typeid_cast<const ASTIdentifier *>(ast.get()))
+        if (const auto * id = ast->as<ASTIdentifier>())
             if (id->semantic->special)
                 return id->name;
     return {};
@@ -144,7 +144,7 @@ void IdentifierSemantic::setColumnLongName(ASTIdentifier & identifier, const Dat
 String IdentifierSemantic::columnNormalName(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table)
 {
     ASTPtr copy = identifier.clone();
-    setColumnNormalName(typeid_cast<ASTIdentifier &>(*copy), db_and_table);
+    setColumnNormalName(copy->as<ASTIdentifier &>(), db_and_table);
     return copy->getAliasOrColumnName();
 }
 
