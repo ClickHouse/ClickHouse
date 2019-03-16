@@ -51,20 +51,19 @@ struct ColumnNamesContext
         }
     };
 
-    NameSet required_names;
+    std::unordered_map<String, std::set<String>> required_names; /// names with aliases
     NameSet table_aliases;
     NameSet private_aliases;
-    NameSet column_aliases;
+    NameSet complex_aliases;
     NameSet masked_columns;
-    NameSet public_columns;
     NameSet array_join_columns;
     std::vector<JoinedTable> tables; /// ordered list of visited tables in FROM section with joins
     bool has_table_join = false;
     bool has_array_join = false;
 
     bool addTableAliasIfAny(const IAST & ast);
-    bool addColumnAliasIfAny(const IAST & ast, bool is_public = false);
-    void addColumnIdentifier(const ASTIdentifier & node, bool is_public = false);
+    bool addColumnAliasIfAny(const IAST & ast);
+    void addColumnIdentifier(const ASTIdentifier & node);
     bool addArrayJoinAliasIfAny(const IAST & ast);
     void addArrayJoinIdentifier(const ASTIdentifier & node);
 

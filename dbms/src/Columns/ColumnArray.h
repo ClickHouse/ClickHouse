@@ -3,16 +3,11 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Defines.h>
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
-}
 
 /** A column of array values.
   * In memory, it is represented as one column of a nested type, whose size is equal to the sum of the sizes of all arrays,
@@ -70,14 +65,15 @@ public:
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
-    template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
+    void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     ColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max) const override;
@@ -118,6 +114,13 @@ public:
     {
         callback(offsets);
         callback(data);
+    }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
+            return data->structureEquals(*rhs_concrete->data);
+        return false;
     }
 
 private:

@@ -2,6 +2,8 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -64,13 +66,14 @@ public:
 
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
-    void getPermutation(bool reverse, UInt64 limit, int null_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
+    void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
@@ -86,6 +89,13 @@ public:
     {
         callback(nested_column);
         callback(null_map);
+    }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
+            return nested_column->structureEquals(*rhs_nullable->nested_column);
+        return false;
     }
 
     bool isColumnNullable() const override { return true; }

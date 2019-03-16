@@ -27,12 +27,12 @@ namespace ErrorCodes
 
 StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
-    ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
+    ASTs & args_func = ast_function->children;
 
     if (args_func.size() != 1)
         throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
+    ASTs & args = args_func.at(0)->children;
 
     const size_t max_args = is_cluster_function ? 3 : 5;
     if (args.size() < 2 || args.size() > max_args)
@@ -50,7 +50,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     auto getStringLiteral = [](const IAST & node, const char * description)
     {
-        const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(&node);
+        const auto * lit = node.as<ASTLiteral>();
         if (!lit)
             throw Exception(description + String(" must be string literal (in single quotes)."), ErrorCodes::BAD_ARGUMENTS);
 
@@ -63,7 +63,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     if (is_cluster_function)
     {
         ASTPtr ast_name = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-        cluster_name = static_cast<const ASTLiteral &>(*ast_name).value.safeGet<const String &>();
+        cluster_name = ast_name->as<ASTLiteral &>().value.safeGet<const String &>();
     }
     else
     {
@@ -74,7 +74,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
 
-    const auto function = typeid_cast<const ASTFunction *>(args[arg_num].get());
+    const auto * function = args[arg_num]->as<ASTFunction>();
 
     if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
     {
@@ -83,7 +83,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
-        remote_database = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
+        remote_database = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
 
         ++arg_num;
 
@@ -103,7 +103,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             else
             {
                 args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-                remote_table = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
+                remote_table = args[arg_num]->as<ASTLiteral &>().value.safeGet<String>();
                 ++arg_num;
             }
         }
@@ -180,8 +180,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 }
 
 
-TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure)
-    : name{name_}, secure{secure}
+TableFunctionRemote::TableFunctionRemote(const std::string & name, bool secure)
+    : name{name}, secure{secure}
 {
     is_cluster_function = name == "cluster";
 

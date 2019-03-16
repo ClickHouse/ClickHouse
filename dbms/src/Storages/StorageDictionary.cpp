@@ -46,7 +46,7 @@ BlockInputStreams StorageDictionary::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const UInt64 max_block_size,
+    const size_t max_block_size,
     const unsigned /*threads*/)
 {
     auto dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
@@ -101,7 +101,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
-        String dictionary_name = typeid_cast<const ASTLiteral &>(*args.engine_args[0]).value.safeGet<String>();
+        String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageDictionary::create(
             args.table_name, args.columns, args.context, args.attach, dictionary_name);

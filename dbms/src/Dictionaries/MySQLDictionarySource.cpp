@@ -44,7 +44,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <IO/WriteHelpers.h>
 #    include <common/LocalDateTime.h>
 #    include <common/logger_useful.h>
-#    include "MySQLBlockInputStream.h"
+#    include <Formats/MySQLBlockInputStream.h>
 #    include "readInvalidateQuery.h"
 
 

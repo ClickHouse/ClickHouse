@@ -39,13 +39,13 @@ public:
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
             size_t offset,
-            UInt64 limit,
+            size_t limit,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
             IColumn & column,
-            UInt64 limit,
+            size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
@@ -110,10 +110,12 @@ public:
         serializeImpl(column, row_num, &IDataType::serializeAsTextXML, ostr, settings);
     }
 
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override
     {
-        serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf);
+        serializeImpl(column, row_num, &IDataType::serializeProtobuf, protobuf, value_index);
     }
+
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
@@ -148,19 +150,17 @@ public:
 
 private:
 
-    template <typename OutputStream, typename ... Args>
-    using SerializeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, OutputStream &, Args & ...) const;
+    template <typename ... Params>
+    using SerializeFunctionPtr = void (IDataType::*)(const IColumn &, size_t, Params ...) const;
 
-    template <typename OutputStream, typename ... Args>
-    void serializeImpl(const IColumn & column, size_t row_num, SerializeFunctionPtr<OutputStream, Args ...> func,
-                       OutputStream & ostr, Args & ... args) const;
+    template <typename... Params, typename... Args>
+    void serializeImpl(const IColumn & column, size_t row_num, SerializeFunctionPtr<Params...> func, Args &&... args) const;
 
-    template <typename ... Args>
-    using DeserializeFunctionPtr = void (IDataType::*)(IColumn &, ReadBuffer &, Args & ...) const;
+    template <typename ... Params>
+    using DeserializeFunctionPtr = void (IDataType::*)(IColumn &, Params ...) const;
 
-    template <typename ... Args>
-    void deserializeImpl(IColumn & column, DeserializeFunctionPtr<Args ...> func,
-                         ReadBuffer & istr, Args & ... args) const;
+    template <typename ... Params, typename... Args>
+    void deserializeImpl(IColumn & column, DeserializeFunctionPtr<Params...> func, Args &&... args) const;
 
     template <typename Creator>
     static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);

@@ -240,7 +240,7 @@ protected:
 
                         if (ast)
                         {
-                            const ASTCreateQuery & ast_create = typeid_cast<const ASTCreateQuery &>(*ast);
+                            const auto & ast_create = ast->as<ASTCreateQuery &>();
                             if (ast_create.storage)
                             {
                                 engine_full = queryToString(*ast_create.storage);
@@ -314,7 +314,7 @@ BlockInputStreams StorageSystemTables::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const UInt64 max_block_size,
+    const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
     check(column_names);

@@ -45,6 +45,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <Compression/CompressionFactory.h>
+#include <Interpreters/InterpreterDropQuery.h>
 
 
 namespace DB
@@ -196,7 +197,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
 
     for (const auto & ast : column_list_ast.children)
     {
-        auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
+        auto & col_decl = ast->as<ASTColumnDeclaration &>();
 
         DataTypePtr column_type = nullptr;
         if (col_decl.type)
@@ -239,7 +240,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
 
         if (col_decl.comment)
         {
-            if (auto comment_str = typeid_cast<ASTLiteral &>(*col_decl.comment).value.get<String>(); !comment_str.empty())
+            if (auto comment_str = col_decl.comment->as<ASTLiteral &>().value.get<String>(); !comment_str.empty())
                 comments.emplace(col_decl.name, comment_str);
         }
     }
@@ -525,7 +526,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_table_name = create.as_table;
 
         ASTPtr as_create_ptr = context.getCreateTableQuery(as_database_name, as_table_name);
-        const auto & as_create = typeid_cast<const ASTCreateQuery &>(*as_create_ptr);
+        const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         if (as_create.is_view)
             throw Exception(
@@ -565,8 +566,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Table SQL definition is available even if the table is detached
         auto query = context.getCreateTableQuery(database_name, table_name);
-        auto & as_create = typeid_cast<const ASTCreateQuery &>(*query);
-        create = as_create; // Copy the saved create query, but use ATTACH instead of CREATE
+        create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
     }
 
@@ -587,11 +587,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String as_table_name = create.as_table;
 
     StoragePtr as_storage;
-    TableStructureReadLockPtr as_storage_lock;
+    TableStructureReadLockHolder as_storage_lock;
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
-        as_storage_lock = as_storage->lockStructure(false);
+        as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
     }
 
     /// Set and retrieve list of columns.
@@ -623,6 +623,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             {
                 if (create.if_not_exists)
                     return {};
+                else if (create.replace_view)
+                {
+                    /// when executing CREATE OR REPLACE VIEW, drop current existing view
+                    auto drop_ast = std::make_shared<ASTDropQuery>();
+                    drop_ast->database = database_name;
+                    drop_ast->table = table_name;
+                    drop_ast->no_ddl_lock = true;
+
+                    InterpreterDropQuery interpreter(drop_ast, context);
+                    interpreter.execute();
+                }
                 else
                     throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
             }
@@ -683,7 +694,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
 BlockIO InterpreterCreateQuery::execute()
 {
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
+    auto & create = query_ptr->as<ASTCreateQuery &>();
     checkAccess(create);
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 

@@ -74,19 +74,24 @@ public:
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
             size_t offset,
-            UInt64 limit,
+            size_t limit,
             SerializeBinaryBulkSettings & settings,
             SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
             IColumn & column,
-            UInt64 limit,
+            size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeProtobuf(const IColumn & column,
                            size_t row_num,
-                           ProtobufWriter & protobuf) const override;
+                           ProtobufWriter & protobuf,
+                           size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column,
+                             ProtobufReader & protobuf,
+                             bool allow_add_row,
+                             bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override;
 
@@ -107,6 +112,9 @@ public:
     }
 
     const DataTypePtr & getNestedType() const { return nested; }
+
+    /// 1 for plain array, 2 for array of arrays and so on.
+    size_t getNumberOfDimensions() const;
 };
 
 }

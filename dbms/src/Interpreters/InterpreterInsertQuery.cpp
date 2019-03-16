@@ -36,7 +36,7 @@ namespace ErrorCodes
 
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
+    const ASTPtr & query_ptr_, Context & context_, bool allow_materialized_)
     : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
 {
 }
@@ -46,7 +46,7 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 {
     if (query.table_function)
     {
-        auto table_function = typeid_cast<const ASTFunction *>(query.table_function.get());
+        const auto * table_function = query.table_function->as<ASTFunction>();
         const auto & factory = TableFunctionFactory::instance();
         return factory.get(table_function->name, context)->execute(query.table_function, context);
     }
@@ -92,11 +92,11 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
 
 BlockIO InterpreterInsertQuery::execute()
 {
-    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    const auto & query = query_ptr->as<ASTInsertQuery &>();
     checkAccess(query);
     StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructure(true);
+    auto table_lock = table->lockStructureForShare(true, context.getCurrentQueryId());
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
@@ -171,7 +171,7 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
 
 std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
 {
-    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    const auto & query = query_ptr->as<ASTInsertQuery &>();
     return {query.database, query.table};
 }
 

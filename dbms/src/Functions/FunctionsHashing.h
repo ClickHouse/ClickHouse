@@ -14,7 +14,7 @@
 
 #include <Common/config.h>
 #if USE_XXHASH
-    #include <xxhash.h>
+    #include <xxhash.h> // Y_IGNORE
 #endif
 
 #include <Poco/ByteOrder.h>
@@ -48,6 +48,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 

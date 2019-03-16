@@ -4,6 +4,7 @@
 #include <IO/Operators.h>
 #include <ext/map.h>
 #include <ext/range.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -170,7 +171,7 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
     return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -181,7 +182,7 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, UInt64 limit) const
     return ColumnTuple::create(new_columns);
 }
 
-ColumnPtr ColumnTuple::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     const size_t tuple_size = columns.size();
     Columns new_columns(tuple_size);
@@ -261,7 +262,7 @@ struct ColumnTuple::Less
     }
 };
 
-void ColumnTuple::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const
+void ColumnTuple::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     size_t rows = size();
     res.resize(rows);
@@ -315,6 +316,12 @@ size_t ColumnTuple::allocatedBytes() const
     return res;
 }
 
+void ColumnTuple::protect()
+{
+    for (auto & column : columns)
+        column->assumeMutableRef().protect();
+}
+
 void ColumnTuple::getExtremes(Field & min, Field & max) const
 {
     const size_t tuple_size = columns.size();
@@ -335,6 +342,23 @@ void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
         callback(column);
 }
 
+bool ColumnTuple::structureEquals(const IColumn & rhs) const
+{
+    if (auto rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
+    {
+        const size_t tuple_size = columns.size();
+        if (tuple_size != rhs_tuple->columns.size())
+            return false;
+
+        for (const auto i : ext::range(0, tuple_size))
+            if (!columns[i]->structureEquals(*rhs_tuple->columns[i]))
+                return false;
+
+        return true;
+    }
+    else
+        return false;
+}
 
 
 }

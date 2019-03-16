@@ -7,12 +7,10 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -20,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_AST;
     extern const int CYCLIC_ALIASES;
 }
@@ -91,13 +88,6 @@ void QueryNormalizer::visit(ASTFunction & node, const ASTPtr &, Data & data)
         ///  and on all remote servers, function implementation will be same.
         if (endsWith(func_name, "Distinct") && func_name_lowercase == "countdistinct")
             func_name = data.settings.count_distinct_implementation;
-
-        /// As special case, treat count(*) as count(), not as count(list of all columns).
-        if (func_name_lowercase == "count" && func_arguments->children.size() == 1
-            && typeid_cast<const ASTAsterisk *>(func_arguments->children[0].get()))
-        {
-            func_arguments->children.clear();
-        }
     }
 }
 
@@ -111,7 +101,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
     auto it_alias = data.aliases.find(node.name);
-    if (it_alias != data.aliases.end() && current_alias != node.name)
+    if (IdentifierSemantic::canBeAlias(node) && it_alias != data.aliases.end() && current_alias != node.name)
     {
         auto & alias_node = it_alias->second;
 
@@ -138,108 +128,38 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     }
 }
 
-/// Replace *, alias.*, database.table.* with a list of columns.
-void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & data)
+/// mark table identifiers as 'not columns'
+void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
-    if (!data.tables_with_columns)
-        return;
-
-    const auto & tables_with_columns = *data.tables_with_columns;
-    const auto & source_columns_set = data.source_columns_set;
-
-    ASTs old_children;
-    if (data.processAsterisks())
+    /// mark table Identifiers as 'not a column'
+    if (node.table_expression)
     {
-        bool has_asterisk = false;
-        for (const auto & child : node.children)
-        {
-            if (typeid_cast<const ASTAsterisk *>(child.get()) ||
-                typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
-            {
-                has_asterisk = true;
-                break;
-            }
-        }
-
-        if (has_asterisk)
-        {
-            old_children.swap(node.children);
-            node.children.reserve(old_children.size());
-        }
+        auto & expr = node.table_expression->as<ASTTableExpression &>();
+        setIdentifierSpecial(expr.database_and_table_name);
     }
 
-    for (const auto & child : old_children)
+    /// normalize JOIN ON section
+    if (node.table_join)
     {
-        if (typeid_cast<const ASTAsterisk *>(child.get()))
-        {
-            bool first_table = true;
-            for (const auto & [table_name, table_columns] : tables_with_columns)
-            {
-                for (const auto & column_name : table_columns)
-                    if (first_table || !data.join_using_columns.count(column_name))
-                    {
-                        /// qualifed names for duplicates
-                        if (!first_table && source_columns_set && source_columns_set->count(column_name))
-                            node.children.emplace_back(std::make_shared<ASTIdentifier>(table_name.getQualifiedNamePrefix() + column_name));
-                        else
-                            node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-                    }
-
-                first_table = false;
-            }
-        }
-        else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
-        {
-            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
-
-            bool first_table = true;
-            for (const auto & [table_name, table_columns] : tables_with_columns)
-            {
-                if (ident_db_and_name.satisfies(table_name, true))
-                {
-                    for (const auto & column_name : table_columns)
-                    {
-                        /// qualifed names for duplicates
-                        if (!first_table && source_columns_set && source_columns_set->count(column_name))
-                            node.children.emplace_back(std::make_shared<ASTIdentifier>(table_name.getQualifiedNamePrefix() + column_name));
-                        else
-                            node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-                    }
-                    break;
-                }
-
-                first_table = false;
-            }
-        }
-        else
-            node.children.emplace_back(child);
+        auto & join = node.table_join->as<ASTTableJoin &>();
+        if (join.on_expression)
+            visit(join.on_expression, data);
     }
 }
 
-/// mark table identifiers as 'not columns'
-void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data &)
+static bool needVisitChild(const ASTPtr & child)
 {
-    if (node.table_expression)
-    {
-        auto & expr = static_cast<ASTTableExpression &>(*node.table_expression);
-        setIdentifierSpecial(expr.database_and_table_name);
-    }
+    if (child->as<ASTSelectQuery>() || child->as<ASTTableExpression>())
+        return false;
+    return true;
 }
 
 /// special visitChildren() for ASTSelectQuery
 void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & data)
 {
-    if (auto join = select.join())
-        extractJoinUsingColumns(join->table_join, data);
-
     for (auto & child : ast->children)
-    {
-        if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
-            typeid_cast<const ASTTableExpression *>(child.get()))
-            continue;
-
-        visit(child, data);
-    }
+        if (needVisitChild(child))
+            visit(child, data);
 
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
     /// but also in where_expression and having_expression.
@@ -257,31 +177,28 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & 
 ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
 void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
 {
-    ASTFunction * func_node = typeid_cast<ASTFunction *>(node.get());
-    if (func_node && func_node->name == "lambda")
+    if (const auto * func_node = node->as<ASTFunction>())
     {
         /// We skip the first argument. We also assume that the lambda function can not have parameters.
-        for (size_t i = 1, size = func_node->arguments->children.size(); i < size; ++i)
+        size_t first_pos = 0;
+        if (func_node->name == "lambda")
+            first_pos = 1;
+
+        auto & func_children = func_node->arguments->children;
+
+        for (size_t i = first_pos; i < func_children.size(); ++i)
         {
-            auto & child = func_node->arguments->children[i];
+            auto & child = func_children[i];
 
-            if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
-                typeid_cast<const ASTTableExpression *>(child.get()))
-                continue;
-
-            visit(child, data);
+            if (needVisitChild(child))
+                visit(child, data);
         }
     }
-    else if (!typeid_cast<ASTSelectQuery *>(node.get()))
+    else if (!node->as<ASTSelectQuery>())
     {
         for (auto & child : node->children)
-        {
-            if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
-                typeid_cast<const ASTTableExpression *>(child.get()))
-                continue;
-
-            visit(child, data);
-        }
+            if (needVisitChild(child))
+                visit(child, data);
     }
 }
 
@@ -308,15 +225,13 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
             data.current_alias = my_alias;
     }
 
-    if (auto * node = typeid_cast<ASTFunction *>(ast.get()))
+    if (auto * node = ast->as<ASTFunction>())
         visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTIdentifier *>(ast.get()))
+    if (auto * node = ast->as<ASTIdentifier>())
         visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTExpressionList *>(ast.get()))
+    if (auto * node = ast->as<ASTTablesInSelectQueryElement>())
         visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
-        visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * node = ast->as<ASTSelectQuery>())
         visit(*node, ast, data);
 
     /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.
@@ -341,29 +256,6 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
             e.addMessage("(after expansion of aliases)");
             throw;
         }
-    }
-}
-
-/// 'select * from a join b using id' should result one 'id' column
-void QueryNormalizer::extractJoinUsingColumns(const ASTPtr ast, Data & data)
-{
-    const auto & table_join = typeid_cast<const ASTTableJoin &>(*ast);
-
-    if (table_join.using_expression_list)
-    {
-        auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
-        for (const auto & key : keys.children)
-            if (auto opt_column = getIdentifierName(key))
-                data.join_using_columns.insert(*opt_column);
-            else if (typeid_cast<const ASTLiteral *>(key.get()))
-                data.join_using_columns.insert(key->getColumnName());
-            else
-            {
-                String alias = key->tryGetAlias();
-                if (alias.empty())
-                    throw Exception("Logical error: expected identifier or alias, got: " + key->getID(), ErrorCodes::LOGICAL_ERROR);
-                data.join_using_columns.insert(alias);
-            }
     }
 }
 

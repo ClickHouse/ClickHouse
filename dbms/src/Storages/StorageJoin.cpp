@@ -327,18 +327,18 @@ private:
             {
                 for (size_t j = 0; j < columns.size(); ++j)
                     if (j == key_pos)
-                        columns[j]->insertData(rawData(it->first), rawSize(it->first));
+                        columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
                     else
-                        columns[j]->insertFrom(*it->second.block->getByPosition(column_indices[j]).column.get(), it->second.row_num);
+                        columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
                 ++rows_added;
             }
             else
-                for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->second); current != nullptr;
+                for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->getSecond()); current != nullptr;
                      current = current->next)
                 {
                     for (size_t j = 0; j < columns.size(); ++j)
                         if (j == key_pos)
-                            columns[j]->insertData(rawData(it->first), rawSize(it->first));
+                            columns[j]->insertData(rawData(it->getFirst()), rawSize(it->getFirst()));
                         else
                             columns[j]->insertFrom(*current->block->getByPosition(column_indices[j]).column.get(), current->row_num);
                     ++rows_added;
@@ -362,7 +362,7 @@ BlockInputStreams StorageJoin::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
-    UInt64 max_block_size,
+    size_t max_block_size,
     unsigned /*num_streams*/)
 {
     check(column_names);

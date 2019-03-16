@@ -5,6 +5,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
+
 namespace DB
 {
 
@@ -90,19 +91,19 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
     }
 
-    ColumnPtr index(const IColumn & indexes_, UInt64 limit) const override
+    ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
@@ -130,6 +131,14 @@ public:
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
             callback(dictionary.getColumnUniquePtr());
+    }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
+            return idx.getPositions()->structureEquals(*rhs_low_cardinality->idx.getPositions())
+                && dictionary.getColumnUnique().structureEquals(rhs_low_cardinality->dictionary.getColumnUnique());
+        return false;
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }

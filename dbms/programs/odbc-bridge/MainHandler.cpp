@@ -4,7 +4,7 @@
 #include <memory>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Dictionaries/ODBCBlockInputStream.h>
+#include "ODBCBlockInputStream.h"
 #include <Formats/BinaryRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
@@ -37,7 +37,8 @@ ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
     std::lock_guard lock(mutex);
     if (!pool_map->count(connection_str))
     {
-        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str] {
+        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str]
+        {
             return std::make_shared<Poco::Data::SessionPool>("ODBC", validateODBCConnectionString(connection_str));
         }));
     }

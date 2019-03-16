@@ -1,11 +1,13 @@
 #pragma once
 
-#include <string.h>
+#include <cstring>
+#include <cassert>
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
+#include <Common/memcmpSmall.h>
 
 
 class Collator;
@@ -66,25 +68,31 @@ public:
         return chars.allocated_bytes() + offsets.allocated_bytes();
     }
 
+    void protect() override;
+
     MutableColumnPtr cloneResized(size_t to_size) const override;
 
     Field operator[](size_t n) const override
     {
+        assert(n < size());
         return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     void get(size_t n, Field & res) const override
     {
+        assert(n < size());
         res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     StringRef getDataAt(size_t n) const override
     {
+        assert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     StringRef getDataAtWithTerminatingZero(size_t n) const override
     {
+        assert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
@@ -102,7 +110,7 @@ public:
         const size_t new_size = old_size + size_to_append;
 
         chars.resize(new_size);
-        memcpy(&chars[old_size], s.c_str(), size_to_append);
+        memcpy(chars.data() + old_size, s.c_str(), size_to_append);
         offsets.push_back(new_size);
     }
 
@@ -113,36 +121,22 @@ public:
     void insertFrom(const IColumn & src_, size_t n) override
     {
         const ColumnString & src = static_cast<const ColumnString &>(src_);
+        const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];  /// -1th index is Ok, see PaddedPODArray.
 
-        if (n != 0)
+        if (size_to_append == 1)
         {
-            const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];
-
-            if (size_to_append == 1)
-            {
-                /// shortcut for empty string
-                chars.push_back(0);
-                offsets.push_back(chars.size());
-            }
-            else
-            {
-                const size_t old_size = chars.size();
-                const size_t offset = src.offsets[n - 1];
-                const size_t new_size = old_size + size_to_append;
-
-                chars.resize(new_size);
-                memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[offset], size_to_append);
-                offsets.push_back(new_size);
-            }
+            /// shortcut for empty string
+            chars.push_back(0);
+            offsets.push_back(chars.size());
         }
         else
         {
             const size_t old_size = chars.size();
-            const size_t size_to_append = src.offsets[0];
+            const size_t offset = src.offsets[n - 1];
             const size_t new_size = old_size + size_to_append;
 
             chars.resize(new_size);
-            memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[0], size_to_append);
+            memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[offset], size_to_append);
             offsets.push_back(new_size);
         }
     }
@@ -154,7 +148,7 @@ public:
 
         chars.resize(new_size);
         if (length)
-            memcpy(&chars[old_size], pos, length);
+            memcpy(chars.data() + old_size, pos, length);
         chars[old_size + length] = 0;
         offsets.push_back(new_size);
     }
@@ -166,7 +160,7 @@ public:
         const size_t new_size = old_size + length;
 
         chars.resize(new_size);
-        memcpy(&chars[old_size], pos, length);
+        memcpy(chars.data() + old_size, pos, length);
         offsets.push_back(new_size);
     }
 
@@ -194,12 +188,12 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     void insertDefault() override
     {
@@ -210,25 +204,16 @@ public:
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnString & rhs = static_cast<const ColumnString &>(rhs_);
-
-        const size_t size = sizeAt(n);
-        const size_t rhs_size = rhs.sizeAt(m);
-
-        int cmp = memcmp(&chars[offsetAt(n)], &rhs.chars[rhs.offsetAt(m)], std::min(size, rhs_size));
-
-        if (cmp != 0)
-            return cmp;
-        else
-            return size > rhs_size ? 1 : (size < rhs_size ? -1 : 0);
+        return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
     }
 
     /// Variant of compareAt for string comparison with respect of collation.
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, const Collator & collator) const;
 
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     /// Sorting with respect of collation.
-    void getPermutationWithCollation(const Collator & collator, bool reverse, UInt64 limit, Permutation & res) const;
+    void getPermutationWithCollation(const Collator & collator, bool reverse, size_t limit, Permutation & res) const;
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
@@ -245,6 +230,11 @@ public:
 
 
     bool canBeInsideNullable() const override { return true; }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnString);
+    }
 
 
     Chars & getChars() { return chars; }
