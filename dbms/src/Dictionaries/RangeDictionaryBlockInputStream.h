@@ -25,7 +25,7 @@ public:
 
     RangeDictionaryBlockInputStream(
         DictionaryPtr dictionary,
-        UInt64 max_block_size,
+        size_t max_block_size,
         const Names & column_names,
         PaddedPODArray<Key> && ids_to_fill,
         PaddedPODArray<RangeType> && start_dates,
@@ -88,12 +88,12 @@ private:
 template <typename DictionaryType, typename RangeType, typename Key>
 RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::RangeDictionaryBlockInputStream(
     DictionaryPtr dictionary,
-    size_t max_column_size,
+    size_t max_block_size,
     const Names & column_names,
     PaddedPODArray<Key> && ids,
     PaddedPODArray<RangeType> && block_start_dates,
     PaddedPODArray<RangeType> && block_end_dates)
-    : DictionaryBlockInputStreamBase(ids.size(), max_column_size)
+    : DictionaryBlockInputStreamBase(ids.size(), max_block_size)
     , dictionary(dictionary)
     , column_names(column_names)
     , ids(std::move(ids))

@@ -33,7 +33,7 @@ namespace
 
         data.resize(hash_map.size());
         for (auto val : hash_map)
-            data[val.second] = val.first;
+            data[val.getSecond()] = val.getFirst();
 
         for (auto & ind : index)
             ind = hash_map[ind];
@@ -250,7 +250,7 @@ int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
 }
 
-void ColumnLowCardinality::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const
+void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     if (limit == 0)
         limit = size();
@@ -361,7 +361,6 @@ ColumnPtr ColumnLowCardinality::countKeys() const
     idx.countKeys(counter->getData());
     return std::move(counter);
 }
-
 
 
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}

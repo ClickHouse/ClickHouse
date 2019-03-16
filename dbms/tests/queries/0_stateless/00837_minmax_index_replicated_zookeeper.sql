@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS test.minmax_idx1;
 DROP TABLE IF EXISTS test.minmax_idx2;
 
+SET allow_experimental_data_skipping_indices = 1;
+
 CREATE TABLE test.minmax_idx1
 (
     u64 UInt64,

@@ -13,6 +13,10 @@ namespace
 AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertBinary(name, argument_types);
+
+    if (argument_types.size() != 2)
+        throw Exception("Aggregate function groupArrayInsertAt requires two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
     return std::make_shared<AggregateFunctionGroupArrayInsertAtGeneric>(argument_types, parameters);
 }
 

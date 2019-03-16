@@ -111,7 +111,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
 
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-    PaddedPODArray<Key> children(out_size);
+    PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
     while (true)
@@ -575,7 +575,7 @@ PaddedPODArray<CacheDictionary::Key> CacheDictionary::getCachedIds() const
     return array;
 }
 
-BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
+BlockInputStreamPtr CacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<CacheDictionary, Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getCachedIds(), column_names);

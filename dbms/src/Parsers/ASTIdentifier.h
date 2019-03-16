@@ -22,11 +22,12 @@ public:
     String name;
 
     ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {});
+    ASTIdentifier(std::vector<String> && name_parts_);
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name); }
 
-    ASTPtr clone() const override { return std::make_shared<ASTIdentifier>(*this); }
+    ASTPtr clone() const override;
 
     void collectIdentifierNames(IdentifierNameSet & set) const override
     {
@@ -36,11 +37,7 @@ public:
     bool compound() const { return !name_parts.empty(); }
     bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
 
-    void setShortName(const String & new_name)
-    {
-        name = new_name;
-        name_parts.clear();
-    }
+    void setShortName(const String & new_name);
 
     const String & shortName() const
     {
@@ -71,9 +68,6 @@ private:
 
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
 void setIdentifierSpecial(ASTPtr & ast);
-
-bool isIdentifier(const IAST * const ast);
-inline bool isIdentifier(const ASTPtr & ast) { return isIdentifier(ast.get()); }
 
 std::optional<String> getIdentifierName(const IAST * const ast);
 inline std::optional<String> getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }

@@ -100,7 +100,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
 - Defined in the `-config-file` parameter.
 - `./clickhouse-client.xml`
-- `\~/.clickhouse-client/config.xml`
+- `~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`
 
 Example of a config file:

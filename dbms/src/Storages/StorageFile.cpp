@@ -187,7 +187,7 @@ BlockInputStreams StorageFile::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    UInt64 max_block_size,
+    size_t max_block_size,
     unsigned /*num_streams*/)
 {
     BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
@@ -252,7 +252,7 @@ private:
 
 BlockOutputStreamPtr StorageFile::write(
     const ASTPtr & /*query*/,
-    const Settings & /*settings*/)
+    const Context & /*context*/)
 {
     return std::make_shared<StorageFileBlockOutputStream>(*this);
 }
@@ -291,7 +291,7 @@ void registerStorageFile(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String format_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         int source_fd = -1;
         String source_path;
@@ -311,7 +311,7 @@ void registerStorageFile(StorageFactory & factory)
                     throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
                                     ErrorCodes::UNKNOWN_IDENTIFIER);
             }
-            else if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
+            else if (const auto * literal = engine_args[1]->as<ASTLiteral>())
             {
                 auto type = literal->value.getType();
                 if (type == Field::Types::Int64)

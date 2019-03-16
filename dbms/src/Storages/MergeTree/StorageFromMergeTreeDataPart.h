@@ -23,7 +23,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum /*processed_stage*/,
-        UInt64 max_block_size,
+        size_t max_block_size,
         unsigned num_streams) override
     {
         return MergeTreeDataSelectExecutor(part->storage).readFromParts(
@@ -32,7 +32,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & /* query_context */) const override
     {
         return part->storage.mayBenefitFromIndexForIn(left_in_operand);
     }

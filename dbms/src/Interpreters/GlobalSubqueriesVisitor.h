@@ -56,12 +56,12 @@ public:
             ASTPtr table_name;
             ASTPtr subquery_or_table_name;
 
-            if (isIdentifier(subquery_or_table_name_or_table_expression))
+            if (subquery_or_table_name_or_table_expression->as<ASTIdentifier>())
             {
                 table_name = subquery_or_table_name_or_table_expression;
                 subquery_or_table_name = table_name;
             }
-            else if (auto ast_table_expr = typeid_cast<const ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
+            else if (const auto * ast_table_expr = subquery_or_table_name_or_table_expression->as<ASTTableExpression>())
             {
                 if (ast_table_expr->database_and_table_name)
                 {
@@ -74,7 +74,7 @@ public:
                     subquery_or_table_name = subquery;
                 }
             }
-            else if (typeid_cast<const ASTSubquery *>(subquery_or_table_name_or_table_expression.get()))
+            else if (subquery_or_table_name_or_table_expression->as<ASTSubquery>())
             {
                 subquery = subquery_or_table_name_or_table_expression;
                 subquery_or_table_name = subquery;
@@ -115,7 +115,7 @@ public:
 
             auto database_and_table_name = createTableIdentifier("", external_table_name);
 
-            if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
+            if (auto * ast_table_expr = subquery_or_table_name_or_table_expression->as<ASTTableExpression>())
             {
                 ast_table_expr->subquery.reset();
                 ast_table_expr->database_and_table_name = database_and_table_name;
@@ -138,21 +138,18 @@ public:
         }
     };
 
-    static constexpr const char * label = "GlobalSubqueries";
-
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    static void visit(ASTPtr & ast, Data & data)
     {
-        if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
+        if (auto * t = ast->as<ASTFunction>())
             visit(*t, ast, data);
-        if (auto * t = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
+        if (auto * t = ast->as<ASTTablesInSelectQueryElement>())
             visit(*t, ast, data);
-        return {};
     }
 
     static bool needChildVisit(ASTPtr &, const ASTPtr & child)
     {
         /// We do not go into subqueries.
-        if (typeid_cast<ASTSelectQuery *>(child.get()))
+        if (child->as<ASTSelectQuery>())
             return false;
         return true;
     }
@@ -171,8 +168,7 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
-        if (table_elem.table_join
-            && static_cast<const ASTTableJoin &>(*table_elem.table_join).locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join && table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global)
         {
             data.addExternalStorage(table_elem.table_expression);
             data.has_global_subqueries = true;

@@ -54,7 +54,7 @@ private:
 
     std::ostream * response_body_ostr = nullptr;
 
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
     std::ostream * response_header_ostr = nullptr;
 #endif
 

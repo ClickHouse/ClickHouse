@@ -46,7 +46,7 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "default_expression";
     block.insert(col);
 
-    col.name = "comment_expression";
+    col.name = "comment";
     block.insert(col);
 
     col.name = "codec_expression";
@@ -58,7 +58,7 @@ Block InterpreterDescribeQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 {
-    const ASTDescribeQuery & ast = typeid_cast<const ASTDescribeQuery &>(*query_ptr);
+    const auto & ast = query_ptr->as<ASTDescribeQuery &>();
 
     NamesAndTypesList columns;
     ColumnDefaults column_defaults;
@@ -66,7 +66,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     ColumnCodecs column_codecs;
     StoragePtr table;
 
-    auto table_expression = typeid_cast<const ASTTableExpression *>(ast.table_expression.get());
+    const auto * table_expression = ast.table_expression->as<ASTTableExpression>();
 
     if (table_expression->subquery)
     {
@@ -76,7 +76,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     {
         if (table_expression->table_function)
         {
-            auto table_function = typeid_cast<const ASTFunction *>(table_expression->table_function.get());
+            const auto * table_function = table_expression->table_function->as<ASTFunction>();
             /// Get the table function
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function->name, context);
             /// Run it and remember the result
@@ -84,7 +84,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
-            auto identifier = typeid_cast<const ASTIdentifier *>(table_expression->database_and_table_name.get());
+            const auto * identifier = table_expression->database_and_table_name->as<ASTIdentifier>();
 
             String database_name;
             String table_name;
@@ -93,7 +93,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             table = context.getTable(database_name, table_name);
         }
 
-        auto table_lock = table->lockStructure(false);
+        auto table_lock = table->lockStructureForShare(false, context.getCurrentQueryId());
         columns = table->getColumns().getAll();
         column_defaults = table->getColumns().defaults;
         column_comments = table->getColumns().comments;

@@ -114,6 +114,9 @@ class AggregateFunctionUniqCombined final
     : public IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K>, AggregateFunctionUniqCombined<T, K>>
 {
 public:
+    AggregateFunctionUniqCombined(const DataTypes & argument_types_, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T, K>, AggregateFunctionUniqCombined<T, K>>(argument_types_, params_) {}
+
     String getName() const override
     {
         return "uniqCombined";
@@ -176,7 +179,9 @@ private:
     size_t num_args = 0;
 
 public:
-    explicit AggregateFunctionUniqCombinedVariadic(const DataTypes & arguments)
+    explicit AggregateFunctionUniqCombinedVariadic(const DataTypes & arguments, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64, K>,
+            AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple, K>>(arguments, params)
     {
         if (argument_is_tuple)
             num_args = typeid_cast<const DataTypeTuple &>(*arguments[0]).getElements().size();

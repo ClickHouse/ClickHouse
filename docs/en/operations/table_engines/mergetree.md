@@ -70,6 +70,8 @@ For a description of request parameters, see [request description](../../query_l
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
+    - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation required for using of the direct I/O access to the storage disk. During the merging of the data parts, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, thеn ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk. If `min_merge_bytes_to_use_direct_io = 0`, then the direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
+
 
 **Example of sections setting**
 
@@ -228,7 +230,9 @@ To check whether ClickHouse can use the index when running a query, use the sett
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
 
-### Data Skipping Indices
+### Data Skipping Indices (Experimental)
+
+You need to set `allow_experimental_data_skipping_indices` to 1 to use indices.  (run `SET allow_experimental_data_skipping_indices = 1`).
 
 Index declaration in the columns section of the `CREATE` query.
 ```sql
@@ -250,7 +254,7 @@ CREATE TABLE table_name
     s String,
     ...
     INDEX a (u64 * i32, s) TYPE minmax GRANULARITY 3,
-    INDEX b (u64 * length(s)) TYPE set GRANULARITY 4
+    INDEX b (u64 * length(s)) TYPE set(1000) GRANULARITY 4
 ) ENGINE = MergeTree()
 ...
 ```
@@ -267,12 +271,10 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of the data like the primary key.
 
 * `set(max_rows)`
-Stores unique values of the specified expression (no more than `max_rows` rows), use them to check if the `WHERE` expression is not satisfiable on a block of the data.
-If `max_rows=0`, then there are no limits for storing values. `set` without parameters is equal to `set(0)`.  
+Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"), use them to check if the `WHERE` expression is not satisfiable on a block of the data.  
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set GRANULARITY 4
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
 ```
 

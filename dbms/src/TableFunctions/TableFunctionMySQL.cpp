@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Dictionaries/MySQLBlockInputStream.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -87,12 +87,12 @@ DataTypePtr getDataType(const String & mysql_data_type, bool is_nullable, bool i
 
 StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
-    const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
+    const auto & args_func = ast_function->as<ASTFunction &>();
 
     if (!args_func.arguments)
         throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
+    ASTs & args = args_func.arguments->children;
 
     if (args.size() < 5 || args.size() > 7)
         throw Exception("Table function 'mysql' requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
@@ -101,18 +101,18 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
     for (size_t i = 0; i < args.size(); ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    std::string host_port = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-    std::string database_name = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
-    std::string table_name = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
-    std::string user_name = static_cast<const ASTLiteral &>(*args[3]).value.safeGet<String>();
-    std::string password = static_cast<const ASTLiteral &>(*args[4]).value.safeGet<String>();
+    std::string host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
+    std::string password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
     bool replace_query = false;
     std::string on_duplicate_clause;
     if (args.size() >= 6)
-        replace_query = static_cast<const ASTLiteral &>(*args[5]).value.safeGet<UInt64>() > 0;
+        replace_query = args[5]->as<ASTLiteral &>().value.safeGet<UInt64>() > 0;
     if (args.size() == 7)
-        on_duplicate_clause = static_cast<const ASTLiteral &>(*args[6]).value.safeGet<String>();
+        on_duplicate_clause = args[6]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (replace_query && !on_duplicate_clause.empty())
         throw Exception(

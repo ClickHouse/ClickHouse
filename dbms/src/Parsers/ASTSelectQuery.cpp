@@ -65,7 +65,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
         s.one_line
             ? with_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*with_expression_list).formatImplMultiline(s, state, frame);
+            : with_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
         s.ostr << s.nl_or_ws;
     }
 
@@ -73,7 +73,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     s.one_line
         ? select_expression_list->formatImpl(s, state, frame)
-        : typeid_cast<const ASTExpressionList &>(*select_expression_list).formatImplMultiline(s, state, frame);
+        : select_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
 
     if (tables)
     {
@@ -98,7 +98,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? group_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*group_expression_list).formatImplMultiline(s, state, frame);
+            : group_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (group_by_with_rollup)
@@ -121,7 +121,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? order_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*order_expression_list).formatImplMultiline(s, state, frame);
+            : order_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (limit_by_value)
@@ -131,7 +131,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? limit_by_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*limit_by_expression_list).formatImplMultiline(s, state, frame);
+            : limit_by_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (limit_length)
@@ -161,15 +161,15 @@ static const ASTTableExpression * getFirstTableExpression(const ASTSelectQuery &
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return {};
 
-    const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+    const auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return {};
 
-    return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element.table_expression->as<ASTTableExpression>();
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
@@ -177,15 +177,15 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
     if (!select.tables)
         return {};
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
+    auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return {};
 
-    ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+    auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return {};
 
-    return static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element.table_expression->as<ASTTableExpression>();
 }
 
 static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
@@ -193,18 +193,18 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return {};
 
     const ASTArrayJoin * array_join = nullptr;
     for (const auto & child : tables_in_select_query.children)
     {
-        const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
+        const auto & tables_element = child->as<ASTTablesInSelectQueryElement &>();
         if (tables_element.array_join)
         {
             if (!array_join)
-                array_join = static_cast<const ASTArrayJoin *>(tables_element.array_join.get());
+                array_join = tables_element.array_join->as<ASTArrayJoin>();
             else
                 throw Exception("Support for more than one ARRAY JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
         }
@@ -218,20 +218,21 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return {};
 
     const ASTTablesInSelectQueryElement * joined_table = nullptr;
     for (const auto & child : tables_in_select_query.children)
     {
-        const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
+        const auto & tables_element = child->as<ASTTablesInSelectQueryElement &>();
         if (tables_element.table_join)
         {
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception("Support for more than one JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("Multiple JOIN disabled or does not support the query. "
+                                "'set allow_experimental_multiple_joins_emulation' to enable.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -356,4 +357,3 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
 }
 
 }
-
