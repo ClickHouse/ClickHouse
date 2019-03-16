@@ -60,8 +60,8 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 {
     ColumnsDescription columns;
 
-    const auto & ast = typeid_cast<const ASTDescribeQuery &>(*query_ptr);
-    const auto & table_expression = typeid_cast<const ASTTableExpression &>(*ast.table_expression);
+    const auto & ast = query_ptr->as<ASTDescribeQuery &>();
+    const auto & table_expression = ast.table_expression->as<ASTTableExpression &>();
     if (table_expression.subquery)
     {
         auto names_and_types = InterpreterSelectWithUnionQuery::getSampleBlock(
@@ -73,14 +73,14 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         StoragePtr table;
         if (table_expression.table_function)
         {
-            const auto & table_function = typeid_cast<const ASTFunction &>(*table_expression.table_function);
+            const auto & table_function = table_expression.table_function->as<ASTFunction &>();
             TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_function.name, context);
             /// Run the table function and remember the result
             table = table_function_ptr->execute(table_expression.table_function, context);
         }
         else
         {
-            const auto & identifier = typeid_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
+            const auto & identifier = table_expression.database_and_table_name->as<ASTIdentifier &>();
 
             String database_name;
             String table_name;
