@@ -1,11 +1,47 @@
-#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/ASTIdentifier.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 
 namespace DB
 {
+
+ASTPtr ASTIdentifier::clone() const
+{
+    auto ret = std::make_shared<ASTIdentifier>(*this);
+    ret->semantic = std::make_shared<IdentifierSemanticImpl>(*ret->semantic);
+    return ret;
+}
+
+std::shared_ptr<ASTIdentifier> ASTIdentifier::createSpecial(const String & name, std::vector<String> && name_parts)
+{
+    auto ret = std::make_shared<ASTIdentifier>(name, std::move(name_parts));
+    ret->semantic->special = true;
+    return ret;
+}
+
+ASTIdentifier::ASTIdentifier(const String & name_, std::vector<String> && name_parts_)
+    : name(name_)
+    , name_parts(name_parts_)
+    , semantic(std::make_shared<IdentifierSemanticImpl>())
+{
+}
+
+ASTIdentifier::ASTIdentifier(std::vector<String> && name_parts_)
+    : ASTIdentifier(name_parts_.at(0) + '.' + name_parts_.at(1), std::move(name_parts_))
+{}
+
+void ASTIdentifier::setShortName(const String & new_name)
+{
+    name = new_name;
+    name_parts.clear();
+
+    bool special = semantic->special;
+    *semantic = IdentifierSemanticImpl();
+    semantic->special = special;
+}
 
 void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
@@ -16,9 +52,8 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
         settings.ostr << (settings.hilite ? hilite_none : "");
     };
 
-    /// A simple or compound identifier?
-
-    if (name_parts.size() > 1)
+    /// It could be compound but short
+    if (!isShort())
     {
         for (size_t i = 0, size = name_parts.size(); i < size; ++i)
         {
@@ -48,17 +83,10 @@ ASTPtr createTableIdentifier(const String & database_name, const String & table_
     return database_and_table;
 }
 
-bool isIdentifier(const IAST * const ast)
-{
-    if (ast)
-        return typeid_cast<const ASTIdentifier *>(ast);
-    return false;
-}
-
 std::optional<String> getIdentifierName(const IAST * const ast)
 {
     if (ast)
-        if (auto node = typeid_cast<const ASTIdentifier *>(ast))
+        if (const auto * node = ast->as<ASTIdentifier>())
             return node->name;
     return {};
 }
@@ -66,7 +94,7 @@ std::optional<String> getIdentifierName(const IAST * const ast)
 bool getIdentifierName(const ASTPtr & ast, String & name)
 {
     if (ast)
-        if (auto node = typeid_cast<const ASTIdentifier *>(ast.get()))
+        if (const auto * node = ast->as<ASTIdentifier>())
         {
             name = node->name;
             return true;
@@ -74,74 +102,11 @@ bool getIdentifierName(const ASTPtr & ast, String & name)
     return false;
 }
 
-std::optional<String> getColumnIdentifierName(const ASTIdentifier & node)
-{
-    if (!node.special)
-        return node.name;
-    return {};
-}
-
-std::optional<String> getColumnIdentifierName(const ASTPtr & ast)
-{
-    if (ast)
-        if (auto id = typeid_cast<const ASTIdentifier *>(ast.get()))
-            if (!id->special)
-                return id->name;
-    return {};
-}
-
-std::optional<String> getTableIdentifierName(const ASTIdentifier & node)
-{
-    if (node.special)
-        return node.name;
-    return {};
-}
-
-std::optional<String> getTableIdentifierName(const ASTPtr & ast)
-{
-    if (ast)
-        if (auto id = typeid_cast<const ASTIdentifier *>(ast.get()))
-            if (id->special)
-                return id->name;
-    return {};
-}
-
 void setIdentifierSpecial(ASTPtr & ast)
 {
     if (ast)
-        if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(ast.get()))
-            id->setSpecial();
-}
-
-void addIdentifierQualifier(ASTIdentifier & identifier, const String & database, const String & table, const String & alias)
-{
-    if (!alias.empty())
-    {
-        identifier.name_parts.emplace_back(alias);
-    }
-    else
-    {
-        if (!database.empty())
-            identifier.name_parts.emplace_back(database);
-        identifier.name_parts.emplace_back(table);
-    }
-}
-
-bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
-{
-    size_t num_components = identifier.name_parts.size();
-    if (num_components >= 3)
-        return identifier.name_parts[0] == database &&
-               identifier.name_parts[1] == table;
-    return false;
-}
-
-bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table)
-{
-    size_t num_components = identifier.name_parts.size();
-    if (num_components >= 2)
-        return identifier.name_parts[0] == table;
-    return false;
+        if (auto * id = ast->as<ASTIdentifier>())
+            id->semantic->special = true;
 }
 
 }

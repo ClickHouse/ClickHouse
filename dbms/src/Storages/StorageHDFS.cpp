@@ -3,12 +3,12 @@
 #if USE_HDFS
 
 #include <Storages/StorageFactory.h>
-#include <Storages/StorageHDFS.h>
+#include <Storages/StorageHDFS.h> // Y_IGNORE
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/ReadBufferFromHDFS.h>
-#include <IO/WriteBufferFromHDFS.h>
+#include <IO/ReadBufferFromHDFS.h> // Y_IGNORE
+#include <IO/WriteBufferFromHDFS.h> // Y_IGNORE
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
@@ -48,7 +48,7 @@ public:
         const String & format,
         const Block & sample_block,
         const Context & context,
-        size_t max_block_size)
+        UInt64 max_block_size)
     {
         std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uri);
         auto input_stream = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
@@ -146,7 +146,7 @@ BlockInputStreams StorageHDFS::read(
 
 void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
 
-BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<HDFSBlockOutputStream>(uri, format_name, getSampleBlock(), context);
 }
@@ -163,11 +163,11 @@ void registerStorageHDFS(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
-        String url = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageHDFS::create(url, args.table_name, format_name, args.columns, args.context);
     });

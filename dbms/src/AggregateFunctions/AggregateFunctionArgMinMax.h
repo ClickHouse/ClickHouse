@@ -31,12 +31,13 @@ template <typename Data>
 class AggregateFunctionArgMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data>>
 {
 private:
-    DataTypePtr type_res;
-    DataTypePtr type_val;
+    const DataTypePtr & type_res;
+    const DataTypePtr & type_val;
 
 public:
     AggregateFunctionArgMinMax(const DataTypePtr & type_res, const DataTypePtr & type_val)
-        : type_res(type_res), type_val(type_val)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data>>({type_res, type_val}, {}),
+        type_res(this->argument_types[0]), type_val(this->argument_types[1])
     {
         if (!type_val->isComparable())
             throw Exception("Illegal type " + type_val->getName() + " of second argument of aggregate function " + getName()

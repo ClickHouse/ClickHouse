@@ -1,5 +1,3 @@
-set allow_experimental_low_cardinality_type = 1;
-
 drop table if exists test.lc;
 create table test.lc (str StringWithDictionary, val UInt8WithDictionary) engine = MergeTree order by tuple();
 insert into test.lc values ('a', 1), ('b', 2);

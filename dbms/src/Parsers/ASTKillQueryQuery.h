@@ -8,6 +8,13 @@ namespace DB
 class ASTKillQueryQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
+    enum class Type
+    {
+        Query,      /// KILL QUERY
+        Mutation,   /// KILL MUTATION
+    };
+
+    Type type = Type::Query;
     ASTPtr where_expression;    // expression to filter processes from system.processes table
     bool sync = false;          // SYNC or ASYNC mode
     bool test = false;          // does it TEST mode? (doesn't cancel queries just checks and shows them)

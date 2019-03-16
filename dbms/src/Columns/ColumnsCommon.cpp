@@ -3,8 +3,8 @@
 #endif
 
 #include <Columns/IColumn.h>
-#include <Common/typeid_cast.h>
 #include <Columns/ColumnVector.h>
+#include <Common/typeid_cast.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 

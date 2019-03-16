@@ -1,6 +1,4 @@
 #include <Parsers/ParserUseQuery.h>
-
-#include <Common/typeid_cast.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/CommonParsers.h>

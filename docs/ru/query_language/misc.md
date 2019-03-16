@@ -133,7 +133,32 @@ Readonly-пользователи могут останавливать толь
 
 Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для остановки.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/misc/) <!--hide-->
+## KILL MUTATION {#kill-mutation}
+
+```sql
+KILL MUTATION [ON CLUSTER cluster]
+  WHERE <where expression to SELECT FROM system.mutations query>
+  [TEST]
+  [FORMAT format]
+```
+
+Пытается остановить выполняющиеся в данные момент [мутации](alter.md#alter-mutations). Мутации для остановки выбираются из таблицы [`system.mutations`](../operations/system_tables.md#system_tables-mutations) с помощью условия, указанного в секции `WHERE` запроса `KILL`.
+
+Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для остановки.
+
+Примеры:
+
+```sql
+-- Останавливает все мутации одной таблицы:
+KILL MUTATION WHERE database = 'default' AND table = 'table'
+
+-- Останавливает конкретную мутацию:
+KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = 'mutation_3.txt'
+```
+
+Запрос полезен в случаях, когда мутация не может выполниться до конца (например, если функция в запросе мутации бросает исключение на данных таблицы).
+
+Данные, уже изменённые мутацией, остаются в таблице (отката на старую версию данных не происходит).
 
 ## OPTIMIZE
 
@@ -179,7 +204,7 @@ SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Возвращает один столбец statement типа `String`, содержащий одно значение - запрос `CREATE`, с помощью которого создана указанная таблица.
 
-## SHOW DATABASES
+## SHOW DATABASES {#show-databases}
 
 ```sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
@@ -196,7 +221,7 @@ SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Выводит список запросов, выполняющихся в данный момент времени, кроме запросов `SHOW PROCESSLIST`.
+Выводит список запросов, выполняющихся в данный момент времени, кроме самих запросов `SHOW PROCESSLIST`.
 
 Выдаёт таблицу, содержащую столбцы:
 
@@ -214,7 +239,7 @@ SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 
 **query_id** - идентификатор запроса. Непустой, только если был явно задан пользователем. При распределённой обработке запроса идентификатор запроса не передаётся на удалённые серверы.
 
-Запрос полностью аналогичен запросу: `SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format]`.
+Этот запрос аналогичен запросу `SELECT * FROM system.processes` за тем исключением, что последний отображает список запросов, включая самого себя.
 
 Полезный совет (выполните в консоли):
 
@@ -257,3 +282,4 @@ USE db
 Текущая база данных используется для поиска таблиц, если база данных не указана в запросе явно через точку перед именем таблицы.
 При использовании HTTP протокола запрос не может быть выполнен, так как понятия сессии не существует.
 
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/misc/) <!--hide-->

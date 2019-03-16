@@ -36,10 +36,15 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr query;
 
     ParserKeyword s_ast("AST");
+    ParserKeyword s_analyze("ANALYZE");
     bool explain_ast = false;
+    bool analyze_syntax = false;
 
     if (enable_explain && s_ast.ignore(pos, expected))
         explain_ast = true;
+
+    if (enable_explain && s_analyze.ignore(pos, expected))
+        analyze_syntax = true;
 
     bool parsed = select_p.parse(pos, query, expected)
         || show_tables_p.parse(pos, query, expected)
@@ -57,6 +62,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parsed)
         return false;
 
+    /// FIXME: try to prettify this cast using `as<>()`
     auto & query_with_output = dynamic_cast<ASTQueryWithOutput &>(*query);
 
     ParserKeyword s_into_outfile("INTO OUTFILE");
@@ -94,7 +100,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (explain_ast)
     {
-        node = std::make_shared<ASTExplainQuery>();
+        node = std::make_shared<ASTExplainQuery>(ASTExplainQuery::ParsedAST);
+        node->children.push_back(query);
+    }
+    else if (analyze_syntax)
+    {
+        node = std::make_shared<ASTExplainQuery>(ASTExplainQuery::AnalyzedSyntax);
         node->children.push_back(query);
     }
     else

@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
+#include <ext/scope_guard.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
@@ -222,7 +223,7 @@ private:
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
-            context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString() + "/");
+            context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
     }
 
 
@@ -400,6 +401,7 @@ private:
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
 #if USE_READLINE
+            SCOPE_EXIT({ Suggest::instance().finalize(); });
             if (server_revision >= Suggest::MIN_SERVER_REVISION
                 && !config().getBool("disable_suggestion", false))
             {
@@ -702,7 +704,7 @@ private:
                     return true;
                 }
 
-                ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(ast.get());
+                auto * insert = ast->as<ASTInsertQuery>();
 
                 if (insert && insert->data)
                 {
@@ -722,7 +724,11 @@ private:
 
                 try
                 {
-                    if (!processSingleQuery(str, ast) && !ignore_error)
+                    auto ast_to_process = ast;
+                    if (insert && insert->data)
+                        ast_to_process = nullptr;
+
+                    if (!processSingleQuery(str, ast_to_process) && !ignore_error)
                         return false;
                 }
                 catch (...)
@@ -793,14 +799,11 @@ private:
         written_progress_chars = 0;
         written_first_block = false;
 
-        const ASTSetQuery * set_query = typeid_cast<const ASTSetQuery *>(&*parsed_query);
-        const ASTUseQuery * use_query = typeid_cast<const ASTUseQuery *>(&*parsed_query);
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-        const ASTInsertQuery * insert = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
-
         connection->forceConnected();
 
-        if (insert && !insert->select)
+        /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
+        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
+        if (insert_query && !insert_query->select)
             processInsertQuery();
         else
             processOrdinaryQuery();
@@ -808,7 +811,7 @@ private:
         /// Do not change context (current DB, settings) in case of an exception.
         if (!got_exception)
         {
-            if (set_query)
+            if (const auto * set_query = parsed_query->as<ASTSetQuery>())
             {
                 /// Save all changes in settings to avoid losing them if the connection is lost.
                 for (const auto & change : set_query->changes)
@@ -820,7 +823,7 @@ private:
                 }
             }
 
-            if (use_query)
+            if (const auto * use_query = parsed_query->as<ASTUseQuery>())
             {
                 const String & new_database = use_query->database;
                 /// If the client initiates the reconnection, it takes the settings from the config.
@@ -852,7 +855,7 @@ private:
     /// Convert external tables to ExternalTableData and send them using the connection.
     void sendExternalTables()
     {
-        auto * select = typeid_cast<const ASTSelectWithUnionQuery *>(&*parsed_query);
+        const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
         if (!select && !external_tables.empty())
             throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
@@ -877,7 +880,7 @@ private:
     void processInsertQuery()
     {
         /// Send part of query without data, because data will be sent separately.
-        const ASTInsertQuery & parsed_insert_query = typeid_cast<const ASTInsertQuery &>(*parsed_query);
+        const auto & parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
         String query_without_data = parsed_insert_query.data
             ? query.substr(0, parsed_insert_query.data - query.data())
             : query;
@@ -934,7 +937,7 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
-        const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
+        const auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
         if (!parsed_insert_query)
             return;
 
@@ -959,9 +962,13 @@ private:
         String current_format = insert_format;
 
         /// Data format can be specified in the INSERT query.
-        if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*parsed_query))
+        if (const auto * insert = parsed_query->as<ASTInsertQuery>())
+        {
             if (!insert->format.empty())
                 current_format = insert->format;
+            if (insert->settings_ast)
+                InterpreterSetQuery(insert->settings_ast, context).executeForCurrentContext();
+        }
 
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
@@ -1029,25 +1036,56 @@ private:
         InterruptListener interrupt_listener;
         bool cancelled = false;
 
+        // TODO: get the poll_interval from commandline.
+        const auto receive_timeout = connection->getTimeouts().receive_timeout;
+        constexpr size_t default_poll_interval = 1000000; /// in microseconds
+        constexpr size_t min_poll_interval = 5000; /// in microseconds
+        const size_t poll_interval
+            = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
+
         while (true)
         {
-            /// Has the Ctrl+C been pressed and thus the query should be cancelled?
-            /// If this is the case, inform the server about it and receive the remaining packets
-            /// to avoid losing sync.
-            if (!cancelled)
-            {
-                if (interrupt_listener.check())
-                {
-                    connection->sendCancel();
-                    cancelled = true;
-                    if (is_interactive)
-                        std::cout << "Cancelling query." << std::endl;
+            Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
 
-                    /// Pressing Ctrl+C twice results in shut down.
-                    interrupt_listener.unblock();
+            while (true)
+            {
+                /// Has the Ctrl+C been pressed and thus the query should be cancelled?
+                /// If this is the case, inform the server about it and receive the remaining packets
+                /// to avoid losing sync.
+                if (!cancelled)
+                {
+                    auto cancelQuery = [&] {
+                        connection->sendCancel();
+                        cancelled = true;
+                        if (is_interactive)
+                            std::cout << "Cancelling query." << std::endl;
+
+                        /// Pressing Ctrl+C twice results in shut down.
+                        interrupt_listener.unblock();
+                    };
+
+                    if (interrupt_listener.check())
+                    {
+                        cancelQuery();
+                    }
+                    else
+                    {
+                        double elapsed = receive_watch.elapsedSeconds();
+                        if (elapsed > receive_timeout.totalSeconds())
+                        {
+                            std::cout << "Timeout exceeded while receiving data from server."
+                                      << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
+                                      << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
+
+                            cancelQuery();
+                        }
+                    }
                 }
-                else if (!connection->poll(1000000))
-                    continue;    /// If there is no new data, continue checking whether the query was cancelled after a timeout.
+
+                /// Poll for changes after a cancellation check, otherwise it never reached
+                /// because of progress updates from server.
+                if (connection->poll(poll_interval))
+                  break;
             }
 
             if (!receiveAndProcessPacket())
@@ -1190,12 +1228,14 @@ private:
             String current_format = format;
 
             /// The query can specify output format or output file.
-            if (ASTQueryWithOutput * query_with_output = dynamic_cast<ASTQueryWithOutput *>(&*parsed_query))
+            /// FIXME: try to prettify this cast using `as<>()`
+            if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
             {
-                if (query_with_output->out_file != nullptr)
+                if (query_with_output->out_file)
                 {
-                    const auto & out_file_node = typeid_cast<const ASTLiteral &>(*query_with_output->out_file);
+                    const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                     const auto & out_file = out_file_node.value.safeGet<std::string>();
+
                     out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
                     out_buf = &*out_file_buf;
 
@@ -1207,7 +1247,7 @@ private:
                 {
                     if (has_vertical_output_suffix)
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
-                    const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
+                    const auto & id = query_with_output->format->as<ASTIdentifier &>();
                     current_format = id.name;
                 }
                 if (query_with_output->settings_ast)
@@ -1303,7 +1343,11 @@ private:
 
     void onProgress(const Progress & value)
     {
-        progress.incrementPiecewiseAtomically(value);
+        if (!progress.incrementPiecewiseAtomically(value))
+        {
+            // Just a keep-alive update.
+            return;
+        }
         if (block_out_stream)
             block_out_stream->onProgress(value);
         writeProgress();
@@ -1542,12 +1586,19 @@ public:
         po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
             ("help", "produce help message")
-            ("config-file,c", po::value<std::string>(), "config-file path")
+            ("config-file,C", po::value<std::string>(), "config-file path")
+            ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
             ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
             ("port", po::value<int>()->default_value(9000), "server port")
             ("secure,s", "Use TLS connection")
             ("user,u", po::value<std::string>()->default_value("default"), "user")
-            ("password", po::value<std::string>(), "password")
+            /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
+              * implicit_value is used to avoid this exception (to allow user to type just "--password")
+              * Since currently boost provides no way to check if a value has been set implicitly for an option,
+              * the "\n" is used to distinguish this case because there is hardly a chance an user would use "\n"
+              * as the password.
+              */
+            ("password", po::value<std::string>()->implicit_value("\n"), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
@@ -1585,13 +1636,11 @@ public:
             ("structure", po::value<std::string>(), "structure")
             ("types", po::value<std::string>(), "types")
         ;
-
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
-
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
@@ -1643,15 +1692,23 @@ public:
         }
 
         /// Extract settings from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (options.count(#NAME)) \
-            context.setSetting(#NAME, options[#NAME].as<std::string>());
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)                \
+        if (options.count(#NAME))                                        \
+        {                                                                \
+            context.setSetting(#NAME, options[#NAME].as<std::string>()); \
+            config().setString(#NAME, options[#NAME].as<std::string>()); \
+        }
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
+
+        if (options.count("config-file") && options.count("config"))
+            throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
 
         /// Save received data into the internal config.
         if (options.count("config-file"))
             config().setString("config-file", options["config-file"].as<std::string>());
+        if (options.count("config"))
+            config().setString("config-file", options["config"].as<std::string>());
         if (options.count("host") && !options["host"].defaulted())
             config().setString("host", options["host"].as<std::string>());
         if (options.count("query_id"))
@@ -1710,11 +1767,11 @@ public:
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
-    DB::Client client;
-
     try
     {
+        DB::Client client;
         client.init(argc, argv);
+        return client.run();
     }
     catch (const boost::program_options::error & e)
     {
@@ -1726,6 +1783,4 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
-
-    return client.run();
 }

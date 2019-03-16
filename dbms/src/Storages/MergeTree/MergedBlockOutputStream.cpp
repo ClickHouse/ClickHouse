@@ -11,11 +11,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
 constexpr auto MARKS_FILE_EXTENSION = ".mrk";
+constexpr auto INDEX_FILE_EXTENSION = ".idx";
 
 }
 
@@ -109,7 +115,7 @@ void IMergedBlockOutputStream::writeData(
     size_t prev_mark = 0;
     while (prev_mark < size)
     {
-        size_t limit = 0;
+        UInt64 limit = 0;
 
         /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
         if (prev_mark == 0 && index_offset != 0)
@@ -325,6 +331,15 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         }
     }
 
+    /// Finish skip index serialization
+    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+    {
+        auto & stream = *skip_indices_streams[i];
+        if (!skip_indices_aggregators[i]->empty())
+            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+    }
+
+
     if (!total_column_list)
         total_column_list = &columns_list;
 
@@ -341,6 +356,16 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
         index_stream = nullptr;
     }
+
+    for (auto & stream : skip_indices_streams)
+    {
+        stream->finalize();
+        stream->addToChecksums(checksums);
+    }
+
+    skip_indices_streams.clear();
+    skip_indices_aggregators.clear();
+    skip_index_filling.clear();
 
     for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
     {
@@ -398,6 +423,20 @@ void MergedBlockOutputStream::init()
             part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
+
+    for (const auto & index : storage.skip_indices)
+    {
+        String stream_name = index->getFileName();
+        skip_indices_streams.emplace_back(
+                std::make_unique<ColumnStream>(
+                        stream_name,
+                        part_path + stream_name, INDEX_FILE_EXTENSION,
+                        part_path + stream_name, MARKS_FILE_EXTENSION,
+                        codec, max_compress_block_size,
+                        0, aio_threshold));
+        skip_indices_aggregators.push_back(index->createIndexAggregator());
+        skip_index_filling.push_back(0);
+    }
 }
 
 
@@ -410,6 +449,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     WrittenOffsetColumns offset_columns;
 
     auto primary_key_column_names = storage.primary_key_columns;
+    std::set<String> skip_indexes_column_names_set;
+    for (const auto & index : storage.skip_indices)
+        std::copy(index->columns.cbegin(), index->columns.cend(),
+                std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
     /// Here we will add the columns related to the Primary Key, then write the index.
     std::vector<ColumnWithTypeAndName> primary_key_columns(primary_key_column_names.size());
@@ -427,6 +471,21 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
             primary_key_columns[i].column = primary_key_columns[i].column->permute(*permutation, 0);
+    }
+
+    /// The same for skip indexes columns
+    std::vector<ColumnWithTypeAndName> skip_indexes_columns(skip_indexes_column_names.size());
+    std::map<String, size_t> skip_indexes_column_name_to_position;
+
+    for (size_t i = 0, size = skip_indexes_column_names.size(); i < size; ++i)
+    {
+        const auto & name = skip_indexes_column_names[i];
+        skip_indexes_column_name_to_position.emplace(name, i);
+        skip_indexes_columns[i] = block.getByName(name);
+
+        /// Reorder index columns in advance.
+        if (permutation)
+            skip_indexes_columns[i].column = skip_indexes_columns[i].column->permute(*permutation, 0);
     }
 
     if (index_columns.empty())
@@ -459,10 +518,16 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         if (permutation)
         {
             auto primary_column_it = primary_key_column_name_to_position.find(it->name);
+            auto skip_index_column_it = skip_indexes_column_name_to_position.find(it->name);
             if (primary_key_column_name_to_position.end() != primary_column_it)
             {
-                auto & primary_column = *primary_key_columns[primary_column_it->second].column;
+                const auto & primary_column = *primary_key_columns[primary_column_it->second].column;
                 writeData(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i]);
+            }
+            else if (skip_indexes_column_name_to_position.end() != skip_index_column_it)
+            {
+                const auto & index_column = *skip_indexes_columns[skip_index_column_it->second].column;
+                writeData(column.name, *column.type, index_column, offset_columns, false, serialization_states[i]);
             }
             else
             {
@@ -478,6 +543,58 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     }
 
     rows_count += rows;
+
+    {
+        /// Creating block for update
+        Block indices_update_block(skip_indexes_columns);
+        /// Filling and writing skip indices like in IMergedBlockOutputStream::writeData
+        for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+        {
+            const auto index = storage.skip_indices[i];
+            auto & stream = *skip_indices_streams[i];
+            size_t prev_pos = 0;
+
+            while (prev_pos < rows)
+            {
+                UInt64 limit = 0;
+                if (prev_pos == 0 && index_offset != 0)
+                {
+                    limit = index_offset;
+                }
+                else
+                {
+                    limit = storage.index_granularity;
+                    if (skip_indices_aggregators[i]->empty())
+                    {
+                        skip_indices_aggregators[i] = index->createIndexAggregator();
+                        skip_index_filling[i] = 0;
+
+                        if (stream.compressed.offset() >= min_compress_block_size)
+                            stream.compressed.next();
+
+                        writeIntBinary(stream.plain_hashing.count(), stream.marks);
+                        writeIntBinary(stream.compressed.offset(), stream.marks);
+                    }
+                }
+
+                size_t pos = prev_pos;
+                skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
+
+                if (pos == prev_pos + limit)
+                {
+                    ++skip_index_filling[i];
+
+                    /// write index if it is filled
+                    if (skip_index_filling[i] == index->granularity)
+                    {
+                        skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+                        skip_index_filling[i] = 0;
+                    }
+                }
+                prev_pos = pos;
+            }
+        }
+    }
 
     {
         /** While filling index (index_columns), disable memory tracker.

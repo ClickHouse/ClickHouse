@@ -115,10 +115,10 @@ namespace
 
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.context,
                 args.context.getSettingsRef().http_receive_timeout.value,
-                static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>());
+                engine_args[0]->as<ASTLiteral &>().value.safeGet<String>());
             return std::make_shared<StorageXDBC>(args.table_name,
-                static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>(),
-                static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>(),
+                engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
+                engine_args[2]->as<ASTLiteral &>().value.safeGet<String>(),
                 args.columns,
                 args.context,
                 bridge_helper);

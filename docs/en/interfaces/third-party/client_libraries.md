@@ -32,6 +32,7 @@
     - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
 - Java
     - [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
+    - [clickhouse-client](https://github.com/Ecwid/clickhouse-client)    
 - Scala
     - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 - Kotlin

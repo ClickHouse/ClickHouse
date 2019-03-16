@@ -13,12 +13,11 @@
 #include <Core/Types.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
 {
-
-class Context;
 
 struct ExternalLoaderUpdateSettings
 {
@@ -160,7 +159,7 @@ private:
 
     std::unique_ptr<IExternalLoaderConfigRepository> config_repository;
 
-    std::thread reloading_thread;
+    ThreadFromGlobalPool reloading_thread;
     Poco::Event destroy;
 
     Logger * log;

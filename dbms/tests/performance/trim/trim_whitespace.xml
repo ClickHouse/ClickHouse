@@ -2,9 +2,8 @@
     <name>trim_whitespaces</name>
     <type>loop</type>
 
-    <preconditions>
-        <table_exists>whitespaces</table_exists>
-    </preconditions>
+    <create_query>CREATE TABLE IF NOT EXISTS whitespaces(value String) ENGINE = MergeTree() PARTITION BY tuple() ORDER BY tuple()</create_query>
+    <fill_query> INSERT INTO whitespaces SELECT value FROM (SELECT arrayStringConcat(groupArray(' ')) AS spaces, concat(spaces, toString(any(number)), spaces) AS value FROM numbers(100000000) GROUP BY pow(number, intHash32(number) % 4) % 12345678)</fill_query>
 
     <stop_conditions>
         <all_of>
@@ -32,4 +31,6 @@
     </substitutions>
 
     <query>SELECT count() FROM whitespaces WHERE NOT ignore({func})</query>
+
+    <drop_query>DROP TABLE IF EXISTS whitespaces</drop_query>
 </test>

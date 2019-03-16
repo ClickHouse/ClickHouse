@@ -2,7 +2,7 @@
 #include <thread>
 #include <future>
 
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
@@ -39,7 +39,7 @@ static void executeCreateQuery(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0);
 
-    ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.attach = true;
     ast_create_query.database = database;
 

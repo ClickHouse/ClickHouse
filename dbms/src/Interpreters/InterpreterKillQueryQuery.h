@@ -1,14 +1,13 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
 {
 
 class Context;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 
 class InterpreterKillQueryQuery : public IInterpreter
@@ -20,7 +19,7 @@ public:
     BlockIO execute() override;
 
 private:
-    Block getSelectFromSystemProcessesResult();
+    Block getSelectResult(const String & columns, const String & table);
 
     ASTPtr query_ptr;
     Context & context;
@@ -28,4 +27,3 @@ private:
 
 
 }
-

@@ -11,7 +11,7 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     const size_t thread,
     const MergeTreeReadPoolPtr & pool,
     const size_t min_marks_to_read_,
-    const size_t max_block_size_rows_,
+    const UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     const MergeTreeData & storage_,
