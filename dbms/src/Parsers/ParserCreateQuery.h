@@ -254,10 +254,10 @@ protected:
 };
 
 
-class ParserColumnAndIndexDeclaraion : public IParserBase
+class ParserColumnAndIndexDeclaration : public IParserBase
 {
 public:
-    ParserColumnAndIndexDeclaraion(bool parse_key_value_pairs_ = false)
+    ParserColumnAndIndexDeclaration(bool parse_key_value_pairs_ = false)
     : parse_key_value_pairs(parse_key_value_pairs_)
     {}
 
@@ -344,9 +344,8 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** Query like this:
-  *
-  *
+/**
+  * CREATE DICTIONARY db.name
   */
 class ParserCreateDictionaryQuery : public IParserBase
 {

@@ -137,7 +137,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 }
 
 
-bool ParserColumnAndIndexDeclaraion::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserColumnAndIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_index("INDEX");
 
@@ -171,7 +171,7 @@ bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list;
-    if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaraion>(parse_key_value_pairs),
+    if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaration>(parse_key_value_pairs),
                     std::make_unique<ParserToken>(TokenType::Comma),
                     false)
          .parse(pos, list, expected))
