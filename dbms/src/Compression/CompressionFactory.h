@@ -1,14 +1,17 @@
 #pragma once
 
-#include <memory>
+#include <Compression/CompressionInfo.h>
+#include <Compression/ICompressionCodec.h>
+#include <DataTypes/IDataType.h>
+#include <Parsers/IAST_fwd.h>
+#include <Common/IFactoryWithAliases.h>
+
+#include <ext/singleton.h>
+
 #include <functional>
+#include <memory>
 #include <optional>
 #include <unordered_map>
-#include <ext/singleton.h>
-#include <DataTypes/IDataType.h>
-#include <Common/IFactoryWithAliases.h>
-#include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionInfo.h>
 
 namespace DB
 {
@@ -18,10 +21,6 @@ class ICompressionCodec;
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 using CodecNameWithLevel = std::pair<String, std::optional<int>>;
-
-class IAST;
-
-using ASTPtr = std::shared_ptr<IAST>;
 
 /** Creates a codec object by name of compression algorithm family and parameters.
  */
