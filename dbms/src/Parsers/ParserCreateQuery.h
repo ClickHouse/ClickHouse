@@ -97,7 +97,10 @@ template <typename NameParser>
 class IParserColumnDeclaration : public IParserBase
 {
 public:
-    explicit IParserColumnDeclaration(bool require_type_ = true) : require_type(require_type_)
+    explicit IParserColumnDeclaration(bool require_type_ = true,
+                                      bool parse_key_value_pairs_ = false)
+    : require_type(require_type_)
+    , parse_key_value_pairs(parse_key_value_pairs_)
     {
     }
 
@@ -108,6 +111,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
     bool require_type = true;
+    bool parse_key_value_pairs = false;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -180,7 +184,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
-    if (!pairs_list_parser.parse(pos, pairs_list, expected))
+    if (parse_key_value_pairs && !pairs_list_parser.parse(pos, pairs_list, expected))
     {
         return false;
     }
@@ -225,9 +229,16 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
 class ParserColumnDeclarationList : public IParserBase
 {
+public:
+    explicit ParserColumnDeclarationList(bool parse_key_value_pairs_ = false)
+    : parse_key_value_pairs(parse_key_value_pairs_)
+    {}
+
 protected:
     const char * getName() const { return "column declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+
+    bool parse_key_value_pairs = false;
 };
 
 
@@ -245,9 +256,16 @@ protected:
 
 class ParserColumnAndIndexDeclaraion : public IParserBase
 {
+public:
+    ParserColumnAndIndexDeclaraion(bool parse_key_value_pairs_ = false)
+    : parse_key_value_pairs(parse_key_value_pairs_)
+    {}
+
 protected:
     const char * getName() const override { return "column or index declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    bool parse_key_value_pairs = false;
 };
 
 
@@ -261,9 +279,16 @@ protected:
 
 class ParserColumnsOrIndicesDeclarationList : public IParserBase
 {
-    protected:
+public:
+    explicit ParserColumnsOrIndicesDeclarationList(bool parse_key_value_pairs_ = false)
+    : parse_key_value_pairs(parse_key_value_pairs_)
+    {}
+
+protected:
     const char * getName() const override { return "columns or indices declaration list"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    bool parse_key_value_pairs = false;
 };
 
 

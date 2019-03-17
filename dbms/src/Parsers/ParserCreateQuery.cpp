@@ -142,7 +142,7 @@ bool ParserColumnAndIndexDeclaraion::parseImpl(Pos & pos, ASTPtr & node, Expecte
     ParserKeyword s_index("INDEX");
 
     ParserIndexDeclaration index_p;
-    ParserColumnDeclaration column_p;
+    ParserColumnDeclaration column_p(true, parse_key_value_pairs);
 
     ASTPtr new_node = nullptr;
 
@@ -171,8 +171,10 @@ bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list;
-    if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaraion>(), std::make_unique<ParserToken>(TokenType::Comma), false)
-            .parse(pos, list, expected))
+    if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaraion>(parse_key_value_pairs),
+                    std::make_unique<ParserToken>(TokenType::Comma),
+                    false)
+         .parse(pos, list, expected))
         return false;
 
     ASTPtr columns = std::make_shared<ASTExpressionList>();
@@ -648,8 +650,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Exp
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserToken s_dot(TokenType::Dot);
-    // ParserColumnDeclarationList columns_p;
-    ParserColumnsOrIndicesDeclarationList columns_p;
+    ParserColumnsOrIndicesDeclarationList columns_p(true);
     ParserDictionarySource source_p;
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
 
