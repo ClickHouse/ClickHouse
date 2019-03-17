@@ -200,9 +200,9 @@ BlockInputStreams StorageBuffer::read(
                 for (auto & stream : streams_from_dst)
                 {
                     stream = std::make_shared<AddingMissedBlockInputStream>(
-                                stream, header_after_adding_defaults, getColumns().defaults, context);
+                        stream, header_after_adding_defaults, getColumns().getDefaults(), context);
                     stream = std::make_shared<ConvertingBlockInputStream>(
-                                context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
+                        context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
                 }
             }
         }
