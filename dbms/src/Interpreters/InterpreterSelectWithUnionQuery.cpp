@@ -26,9 +26,9 @@ namespace ErrorCodes
 InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const SelectQueryOptions & options,
+    const SelectQueryOptions & options_,
     const Names & required_result_column_names)
-    : SelectQueryOptions(options),
+    : options(options_),
     query_ptr(query_ptr_),
     context(context_)
 {
@@ -53,7 +53,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
         Block full_result_header = InterpreterSelectQuery(
-            ast.list_of_selects->children.at(0), context, analyze(noModify(queryOptions()))).getSampleBlock();
+            ast.list_of_selects->children.at(0), context, options.copy().analyze().noModify()).getSampleBlock();
 
         std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
         for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
@@ -62,7 +62,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 1; query_num < num_selects; ++query_num)
         {
             Block full_result_header_for_current_select = InterpreterSelectQuery(
-                ast.list_of_selects->children.at(query_num), context, analyze(noModify(queryOptions()))).getSampleBlock();
+                ast.list_of_selects->children.at(query_num), context, options.copy().analyze().noModify()).getSampleBlock();
 
             if (full_result_header_for_current_select.columns() != full_result_header.columns())
                 throw Exception("Different number of columns in UNION ALL elements:\n"
@@ -85,7 +85,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(
             ast.list_of_selects->children.at(query_num),
             context,
-            queryOptions(),
+            options,
             current_required_result_column_names));
     }
 
@@ -172,7 +172,7 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
         return cache[key];
     }
 
-    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr, context, analyze(SelectQueryOptions())).getSampleBlock();
+    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr, context, SelectQueryOptions().analyze()).getSampleBlock();
 }
 
 

@@ -274,7 +274,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     if (!storage)
         return BlockInputStreams{
             InterpreterSelectQuery(modified_query_info.query, modified_context, std::make_shared<OneBlockInputStream>(header),
-                                   analyze(SelectQueryOptions(processed_stage))).execute().in};
+                                   SelectQueryOptions(processed_stage).analyze()).execute().in};
 
     BlockInputStreams source_streams;
 
@@ -429,7 +429,7 @@ Block StorageMerge::getQueryHeader(
         case QueryProcessingStage::Complete:
             return materializeBlock(InterpreterSelectQuery(
                 query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
-                analyze(SelectQueryOptions(processed_stage))).getSampleBlock());
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }

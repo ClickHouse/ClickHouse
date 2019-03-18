@@ -20,9 +20,13 @@ namespace DB
  * is_subquery
  * - there could be some specific for subqueries. Ex. there's no need to pass duplicated columns in results, cause of indirect results.
  */
-class SelectQueryOptions
+struct SelectQueryOptions
 {
-public:
+    QueryProcessingStage::Enum to_stage;
+    size_t subquery_depth;
+    bool only_analyze;
+    bool modify_inplace;
+
     SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
         : to_stage(stage)
         , subquery_depth(depth)
@@ -30,45 +34,35 @@ public:
         , modify_inplace(false)
     {}
 
-    const SelectQueryOptions & queryOptions() const { return *this; }
+    SelectQueryOptions copy() const { return *this; }
 
-    SelectQueryOptions subqueryOptions(QueryProcessingStage::Enum stage) const
+    SelectQueryOptions subquery() const
     {
         SelectQueryOptions out = *this;
-        out.to_stage = stage;
+        out.to_stage = QueryProcessingStage::Complete;
         ++out.subquery_depth;
         return out;
     }
 
-    friend SelectQueryOptions analyze(const SelectQueryOptions & src, bool value = true)
+    SelectQueryOptions & analyze(bool value = true)
     {
-        SelectQueryOptions out = src;
-        out.only_analyze = value;
-        return out;
+        only_analyze = value;
+        return *this;
     }
 
-    friend SelectQueryOptions modify(const SelectQueryOptions & src, bool value = true)
+    SelectQueryOptions & modify(bool value = true)
     {
-        SelectQueryOptions out = src;
-        out.modify_inplace = value;
-        return out;
+        modify_inplace = value;
+        return *this;
     }
 
-    friend SelectQueryOptions noSubquery(const SelectQueryOptions & src)
+    SelectQueryOptions & noModify() { return modify(false); }
+
+    SelectQueryOptions & noSubquery()
     {
-        SelectQueryOptions out = src;
-        out.subquery_depth = 0;
-        return out;
+        subquery_depth = 0;
+        return *this;
     }
-
-    friend SelectQueryOptions noModify(const SelectQueryOptions & src) { return modify(src, false); }
-    friend bool isSubquery(const SelectQueryOptions & opt) { return opt.subquery_depth; }
-
-protected:
-    QueryProcessingStage::Enum to_stage;
-    size_t subquery_depth;
-    bool only_analyze;
-    bool modify_inplace;
 };
 
 }

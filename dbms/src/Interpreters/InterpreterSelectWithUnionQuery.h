@@ -14,7 +14,7 @@ class InterpreterSelectQuery;
 
 /** Interprets one or multiple SELECT queries inside UNION ALL chain.
   */
-class InterpreterSelectWithUnionQuery : public IInterpreter, private SelectQueryOptions
+class InterpreterSelectWithUnionQuery : public IInterpreter
 {
 public:
     InterpreterSelectWithUnionQuery(
@@ -41,6 +41,7 @@ public:
     ASTPtr getQuery() const { return query_ptr; }
 
 private:
+    const SelectQueryOptions options;
     ASTPtr query_ptr;
     Context context;
 

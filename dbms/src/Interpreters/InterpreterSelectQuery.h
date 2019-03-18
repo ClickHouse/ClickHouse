@@ -7,8 +7,8 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/IInterpreter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -27,7 +27,7 @@ using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
-class InterpreterSelectQuery : public IInterpreter, private SelectQueryOptions
+class InterpreterSelectQuery : public IInterpreter
 {
 public:
     /**
@@ -207,6 +207,7 @@ private:
       */
     void initSettings();
 
+    const SelectQueryOptions options;
     ASTPtr query_ptr;
     Context context;
     NamesAndTypesList source_columns;
