@@ -367,8 +367,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         select->children.push_back(where_expression);
     }
 
-    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage,
-                                                                  dry_run ? analyze(SelectQueryOptions()) : SelectQueryOptions());
+    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run));
 
     is_prepared = true;
 }
