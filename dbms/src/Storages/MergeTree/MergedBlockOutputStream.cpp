@@ -139,6 +139,8 @@ void fillIndexGranularityImpl(
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
+    if (index_granularity_for_block == 0) /// very rare case when index granularity bytes less then single row
+        index_granularity_for_block = 1;
     std::cerr << "GRANULARITY SIZE IN ROWS:"<< index_granularity_for_block << std::endl;
 
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
