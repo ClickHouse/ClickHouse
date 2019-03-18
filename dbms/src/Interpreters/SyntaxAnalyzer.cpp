@@ -123,6 +123,37 @@ bool hasArrayJoin(const ASTPtr & ast)
     return false;
 }
 
+/// Keep number of columns for 'GLOBAL IN (SELECT 1 AS a, a)'
+void renameDuplicatedColumns(const ASTSelectQuery * select_query)
+{
+    ASTs & elements = select_query->select_expression_list->children;
+
+    std::set<String> all_column_names;
+    std::set<String> assigned_column_names;
+
+    for (auto & expr : elements)
+        all_column_names.insert(expr->getAliasOrColumnName());
+
+    for (auto & expr : elements)
+    {
+        auto name = expr->getAliasOrColumnName();
+
+        if (!assigned_column_names.insert(name).second)
+        {
+            size_t i = 1;
+            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+                ++i;
+
+            name = name + "_" + toString(i);
+            expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
+            expr->setAlias(name);
+
+            all_column_names.insert(name);
+            assigned_column_names.insert(name);
+        }
+    }
+}
+
 /// Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 /// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are inpossible.
@@ -659,6 +690,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     if (select_query)
     {
+        if (remove_duplicates)
+            renameDuplicatedColumns(select_query);
+
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
             if (settings.enable_optimize_predicate_expression)
