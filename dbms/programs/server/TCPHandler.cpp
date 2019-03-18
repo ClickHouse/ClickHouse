@@ -767,7 +767,7 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
-            std::string method = query_context->getSettingsRef().network_compression_method;
+            std::string method = Poco::toUpper(query_context->getSettingsRef().network_compression_method.toString());
             std::optional<int> level;
             if (method == "ZSTD")
                 level = query_context->getSettingsRef().network_zstd_compression_level;
