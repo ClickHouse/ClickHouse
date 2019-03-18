@@ -1,16 +1,18 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
+#include <Interpreters/Context.h>
+#include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <ctime>
-#include <memory>
-#include <functional>
 #include <Poco/File.h>
-#include <Common/escapeForFileName.h>
 #include <Common/ThreadPool.h>
-#include <Interpreters/Context.h>
+#include <Common/escapeForFileName.h>
+
+#include <ctime>
+#include <functional>
+#include <memory>
 
 
 namespace DB
@@ -20,9 +22,6 @@ class Context;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 struct Settings;
 
@@ -157,4 +156,3 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 using Databases = std::map<String, DatabasePtr>;
 
 }
-
