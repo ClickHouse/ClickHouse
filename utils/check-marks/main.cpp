@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include <boost/program_options.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -78,16 +79,29 @@ void checkByCompressedReadBuffer(const std::string & mrk_path, const std::string
     DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0);
 
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+    std::cerr << "MRKPATH:"<<mrk_path << std::endl;
+    bool mrk2_format = boost::algorithm::ends_with(mrk_path, ".mrk2");
+    std::cerr << "endswith:" << mrk2_format << std::endl;
 
     for (size_t mark_num = 0; !mrk_in.eof(); ++mark_num)
     {
         UInt64 offset_in_compressed_file = 0;
         UInt64 offset_in_decompressed_block = 0;
+        UInt64 index_granularity_rows = 0;
 
         DB::readBinary(offset_in_compressed_file, mrk_in);
         DB::readBinary(offset_in_decompressed_block, mrk_in);
 
-        out << "Mark " << mark_num << ", points to " << offset_in_compressed_file << ", " << offset_in_decompressed_block << ".\n" << DB::flush;
+        out << "Mark " << mark_num << ", points to " << offset_in_compressed_file << ", " << offset_in_decompressed_block;
+
+        if (mrk2_format)
+        {
+            DB::readBinary(index_granularity_rows, mrk_in);
+
+            out << ", has rows after " << index_granularity_rows;
+        }
+
+        out << ".\n" << DB::flush;
 
         bin_in.seek(offset_in_compressed_file, offset_in_decompressed_block);
     }

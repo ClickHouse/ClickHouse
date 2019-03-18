@@ -109,34 +109,48 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
     };
 }
 
-void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
+void fillIndexGranularityImpl(
+    const Block & block,
+    size_t index_granularity_bytes,
+    size_t index_granularity_rows,
+    bool blocks_are_granules,
+    size_t index_offset,
+    std::vector<size_t> & index_granularity)
 {
-    size_t rows = block.rows();
-    //std::cerr << "Writing block:" << block.dumpStructure() << std::endl;
-    //std::cerr << "BlockRows:" << rows << std::endl;
+    size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
-    if (storage.index_granularity_bytes == 0)
-        index_granularity_for_block = storage.index_granularity;
+    if (index_granularity_bytes == 0)
+        index_granularity_for_block = index_granularity_rows;
     else
     {
-        //std::cerr << "BlockSizeInMemory:" << block.allocatedBytes() << std::endl;
-        //std::cerr << "Storage index granularity:" << storage.index_granularity_bytes << std::endl;
-        //std::cerr << "Blocks are granules size:" << blocks_are_granules_size << std::endl;
-        size_t block_size_in_memory = block.allocatedBytes();
-        if (blocks_are_granules_size)
-            index_granularity_for_block = rows;
-        else if (block_size_in_memory >= storage.index_granularity_bytes)
-            index_granularity_for_block = block_size_in_memory / storage.index_granularity_bytes;
+        size_t block_size_in_memory = block.bytes();
+        if (blocks_are_granules)
+            index_granularity_for_block = rows_in_block;
+        else if (block_size_in_memory >= index_granularity_bytes)
+        {
+            size_t granules_in_block = block_size_in_memory / index_granularity_bytes;
+            index_granularity_for_block = rows_in_block / granules_in_block;
+        }
         else
-            index_granularity_for_block = storage.index_granularity_bytes / (block_size_in_memory / rows);
+        {
+            size_t size_of_row_in_bytes = block_size_in_memory / rows_in_block;
+            index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
+        }
     }
 
-    //std::cerr << "Final granularity:" << index_granularity_for_block << std::endl;
-    //std::cerr << "Already existing granules:" << index_granularity.size() << std::endl;
-    for (size_t current_row = index_offset; current_row < rows; current_row += index_granularity_for_block)
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
         index_granularity.push_back(index_granularity_for_block);
+}
 
-    //std::cerr << "Total written granules:" << index_granularity.size() << std::endl;
+void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
+{
+    fillIndexGranularityImpl(
+        block,
+        storage.index_granularity_bytes,
+        storage.index_granularity,
+        blocks_are_granules_size,
+        index_offset,
+        index_granularity);
 }
 
 size_t IMergedBlockOutputStream::writeSingleGranule(
@@ -154,76 +168,29 @@ size_t IMergedBlockOutputStream::writeSingleGranule(
     if (write_marks)
     {
         /// Write marks.
-        auto & settings = storage.global_context.getSettingsRef();
-        IDataType::SerializeBinaryBulkSettings serialize_settings;
-        serialize_settings.getter = createStreamGetter(name, offset_columns, skip_offsets);
-        serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-        serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
-
-        size_t size = column.size();
-        size_t prev_mark = 0;
-        while (prev_mark < size)
+        type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
         {
-            UInt64 limit = 0;
+            bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+            if (is_offsets && skip_offsets)
+                return;
 
-            /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
-            if (prev_mark == 0 && index_offset != 0)
-                limit = index_offset;
-            else
-            {
-                limit = storage.index_granularity;
+            String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
-                /// Write marks.
-                type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-                {
-                    bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-                    if (is_offsets && skip_offsets)
-                        return;
+            /// Don't write offsets more than one time for Nested type.
+            if (is_offsets && offset_columns.count(stream_name))
+                return;
 
-                    String stream_name = IDataType::getFileNameForStream(name, substream_path);
+            ColumnStream & stream = *column_streams[stream_name];
 
-                    /// Don't write offsets more than one time for Nested type.
-                    if (is_offsets && offset_columns.count(stream_name))
-                        return;
+            /// There could already be enough data to compress into the new block.
+            if (stream.compressed.offset() >= min_compress_block_size)
+                stream.compressed.next();
 
-                    ColumnStream & stream = *column_streams[stream_name];
-
-                    /// There could already be enough data to compress into the new block.
-                    if (stream.compressed.offset() >= min_compress_block_size)
-                        stream.compressed.next();
-
-                    writeIntBinary(stream.plain_hashing.count(), stream.marks);
-                    writeIntBinary(stream.compressed.offset(), stream.marks);
-                }, serialize_settings.path);
-            }
-
-            type.serializeBinaryBulkWithMultipleStreams(column, prev_mark, limit, serialize_settings, serialization_state);
-
-            /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
-            type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-            {
-                bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-                if (is_offsets && skip_offsets)
-                    return;
-
-                String stream_name = IDataType::getFileNameForStream(name, substream_path);
-
-                /// Don't write offsets more than one time for Nested type.
-                if (is_offsets && offset_columns.count(stream_name))
-                    return;
-
-                ColumnStream & stream = *column_streams[stream_name];
-
-                /// There could already be enough data to compress into the new block.
-                if (stream.compressed.offset() >= min_compress_block_size)
-                    stream.compressed.next();
-
-                writeIntBinary(stream.plain_hashing.count(), stream.marks);
-                writeIntBinary(stream.compressed.offset(), stream.marks);
-                if (stream.marks_file_extension != FIXED_MARKS_FILE_EXTENSION)
-                    writeIntBinary(number_of_rows, stream.marks);
-            }, serialize_settings.path);
-        }
+            writeIntBinary(stream.plain_hashing.count(), stream.marks);
+            writeIntBinary(stream.compressed.offset(), stream.marks);
+            if (stream.marks_file_extension != FIXED_MARKS_FILE_EXTENSION)
+                writeIntBinary(number_of_rows, stream.marks);
+        }, serialize_settings.path);
     }
 
     type.serializeBinaryBulkWithMultipleStreams(column, from_row, number_of_rows, serialize_settings, serialization_state);
@@ -267,8 +234,6 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
     size_t current_column_mark = from_mark;
     while (current_row < total_rows)
     {
-        //std::cerr << "CURRENT ROW:" << current_row << std::endl;
-        //std::cerr << "CURRENT MARK:" << current_column_mark <<  std::endl;
         size_t rows_to_write;
         bool write_marks = true;
 
@@ -303,6 +268,7 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
 
         if (write_marks)
             current_column_mark++;
+        std::cerr << "CURRENT ROW:" << current_row << std::endl;
     }
 
     /// Memoize offsets for Nested types, that are already written. They will not be written again for next columns of Nested structure.
@@ -763,10 +729,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
-        //std::cerr << "Index Granularity size:" << index_granularity.size() << std::endl;
-        //std::cerr << "Index Granularity first elem:" << index_granularity[0] << std::endl;
-        for (size_t i = index_offset; i < rows && current_mark < index_granularity.size(); i += index_granularity[current_mark])
+        std::cerr << "Index Granularity size:" << index_granularity.size() << std::endl;
+        std::cerr << "Index Granularity first elem:" << index_granularity[0] << std::endl;
+        for (size_t i = index_offset; i < rows;)
         {
+            std::cerr << "IN LOOP\n";
             if (storage.hasPrimaryKey())
             {
                 for (size_t j = 0, size = primary_key_columns.size(); j < size; ++j)
@@ -780,6 +747,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             std::cerr << "I:" << i << " Total rows:" << rows << std::endl;
             std::cerr << "Increment current mark:" << current_mark << std::endl;
             ++current_mark;
+            if (current_mark < index_granularity.size())
+                i += index_granularity[current_mark];
+            else
+                break;
         }
     }
     std::cerr << "Index granularity size:" << index_granularity.size() << std::endl;
