@@ -7,17 +7,18 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Native.h>
+#include <DataTypes/NumberTraits.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <DataTypes/NumberTraits.h>
+#include "IFunction.h"
+#include "FunctionHelpers.h"
+#include "intDiv.h"
+#include "castTypeToEither.h"
+#include "FunctionFactory.h"
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <Functions/intDiv.h>
-#include <Functions/castTypeToEither.h>
 #include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -288,7 +289,7 @@ private:
     }
 
     template <bool scale_left>
-    static NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
         if constexpr (is_plus_minus_compare)
         {
@@ -323,7 +324,7 @@ private:
         }
     }
 
-    static NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
+    static NO_SANITIZE_UNDEFINED NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
     {
         if constexpr (is_division)
         {

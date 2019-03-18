@@ -20,12 +20,19 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     , part_columns_lock(data_part->columns_lock)
     , columns_to_read(columns_to_read_)
     , read_with_direct_io(read_with_direct_io_)
-    , mark_cache(storage.context.getMarkCache())
+    , mark_cache(storage.global_context.getMarkCache())
 {
     if (!quiet)
-        LOG_TRACE(log, "Reading " << data_part->marks_count << " marks from part " << data_part->name
-            << ", totaly " << data_part->rows_count
-            << " rows starting from the beginning of the part");
+    {
+        std::stringstream message;
+        message << "Reading " << data_part->marks_count << " marks from part " << data_part->name
+            << ", total " << data_part->rows_count
+            << " rows starting from the beginning of the part, columns: ";
+        for (size_t i = 0, size = columns_to_read.size(); i < size; ++i)
+            message << (i == 0 ? "" : ", ") << columns_to_read[i];
+
+        LOG_TRACE(log, message.rdbuf());
+    }
 
     addTotalRowsApprox(data_part->rows_count);
 

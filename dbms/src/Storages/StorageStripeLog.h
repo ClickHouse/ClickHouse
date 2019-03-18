@@ -36,7 +36,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -53,7 +53,7 @@ public:
 
     String getDataPath() const override { return full_path(); }
 
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
 private:
     String path;

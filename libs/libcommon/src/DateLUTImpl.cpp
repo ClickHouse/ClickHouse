@@ -1,13 +1,13 @@
 #if __has_include(<cctz/civil_time.h>)
 #include <cctz/civil_time.h> // bundled, debian
 #else
-#include <civil_time.h> // freebsd
+#include <civil_time.h> // Y_IGNORE // freebsd
 #endif
 
 #if __has_include(<cctz/time_zone.h>)
 #include <cctz/time_zone.h>
 #else
-#include <time_zone.h>
+#include <time_zone.h> // Y_IGNORE
 #endif
 
 #include <common/DateLUTImpl.h>
@@ -101,7 +101,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
                 ///  when UTC offset was changed. Search is performed with 15-minute granularity, assuming it is enough.
 
                 time_t time_at_offset_change = 900;
-                while (time_at_offset_change < 65536)
+                while (time_at_offset_change < 86400)
                 {
                     auto utc_offset_at_current_time = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(
                         lut[i - 1].date + time_at_offset_change)).offset;
@@ -112,10 +112,11 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
                     time_at_offset_change += 900;
                 }
 
-                lut[i - 1].time_at_offset_change = time_at_offset_change >= 65536 ? 0 : time_at_offset_change;
+                lut[i - 1].time_at_offset_change = time_at_offset_change;
 
-/*                std::cerr << lut[i - 1].year << "-" << int(lut[i - 1].month) << "-" << int(lut[i - 1].day_of_month)
-                    << " offset was changed at " << lut[i - 1].time_at_offset_change << " for " << lut[i - 1].amount_of_offset_change << " seconds.\n";*/
+                /// We doesn't support cases when time change results in switching to previous day.
+                if (static_cast<int>(lut[i - 1].time_at_offset_change) + static_cast<int>(lut[i - 1].amount_of_offset_change) < 0)
+                    lut[i - 1].time_at_offset_change = -lut[i - 1].amount_of_offset_change;
             }
         }
 
@@ -128,7 +129,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     /// Fill excessive part of lookup table. This is needed only to simplify handling of overflow cases.
     while (i < DATE_LUT_SIZE)
     {
-        lut[i] = lut[0];
+        lut[i] = lut[DATE_LUT_MAX_DAY_NUM];
         ++i;
     }
 

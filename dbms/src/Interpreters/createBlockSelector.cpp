@@ -4,7 +4,7 @@
 
 #include <type_traits>
 
-#if __SSE2__
+#ifdef __SSE2__
     #define LIBDIVIDE_USE_SSE2 1
 #endif
 

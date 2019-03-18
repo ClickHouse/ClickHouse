@@ -21,7 +21,7 @@ MetricsTransmitter::~MetricsTransmitter()
     try
     {
         {
-            std::lock_guard<std::mutex> lock{mutex};
+            std::lock_guard lock{mutex};
             quit = true;
         }
 
@@ -41,7 +41,7 @@ void MetricsTransmitter::run()
     const auto & config = context.getConfigRef();
     auto interval = config.getInt(config_name + ".interval", 60);
 
-    const std::string thread_name = "MericsTrns " + std::to_string(interval) + "s";
+    const std::string thread_name = "MetrTx" + std::to_string(interval);
     setThreadName(thread_name.c_str());
 
     const auto get_next_time = [](size_t seconds)
@@ -56,7 +56,7 @@ void MetricsTransmitter::run()
 
     std::vector<ProfileEvents::Count> prev_counters(ProfileEvents::end());
 
-    std::unique_lock<std::mutex> lock{mutex};
+    std::unique_lock lock{mutex};
 
     while (true)
     {

@@ -1,17 +1,17 @@
 #include "RegionsNames.h"
 
-#include "GeodataProviders/INamesProvider.h"
-#include <Poco/Util/Application.h>
-#include <Poco/Exception.h>
-#include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/Exception.h>
+#include <Poco/Util/Application.h>
+#include <common/logger_useful.h>
+#include "GeodataProviders/INamesProvider.h"
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int INCORRECT_DATA;
-    }
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 }
 
 
@@ -77,21 +77,22 @@ void RegionsNames::reload()
                 throw Poco::Exception("Logical error. Maybe size estimate of " + names_source->getSourceName() + " is wrong.");
 
             new_chars.resize(old_size + name_entry.name.length() + 1);
-            memcpy(&new_chars[old_size], name_entry.name.c_str(), name_entry.name.length() + 1);
+            memcpy(new_chars.data() + old_size, name_entry.name.c_str(), name_entry.name.length() + 1);
 
             if (name_entry.id > max_region_id)
             {
                 max_region_id = name_entry.id;
 
                 if (name_entry.id > max_size)
-                    throw DB::Exception("Region id is too large: " + DB::toString(name_entry.id) + ", should be not more than " + DB::toString(max_size),
+                    throw DB::Exception(
+                        "Region id is too large: " + DB::toString(name_entry.id) + ", should be not more than " + DB::toString(max_size),
                         DB::ErrorCodes::INCORRECT_DATA);
             }
 
             while (name_entry.id >= new_names_refs.size())
                 new_names_refs.resize(new_names_refs.size() * 2, StringRef("", 0));
 
-            new_names_refs[name_entry.id] = StringRef(&new_chars[old_size], name_entry.name.length());
+            new_names_refs[name_entry.id] = StringRef(new_chars.data() + old_size, name_entry.name.length());
         }
 
         chars[language_id].swap(new_chars);

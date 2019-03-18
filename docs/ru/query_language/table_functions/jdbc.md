@@ -1,4 +1,3 @@
-<a name="table_functions-jdbc"></a>
 
 # jdbc
 

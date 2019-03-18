@@ -222,7 +222,7 @@ int main(int argc, char ** argv)
         size_t i = 0;
         for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->first.data, it->first.size);
+            devnull.write(it->getFirst().data, it->getFirst().size);
             devnull << std::endl;
         }
 
@@ -249,7 +249,7 @@ int main(int argc, char ** argv)
         size_t i = 0;
         for (auto it = set.begin(); i < elems_show && it != set.end(); ++it, ++i)
         {
-            devnull.write(it->first.data, it->first.size);
+            devnull.write(it->getFirst().data, it->getFirst().size);
             devnull << std::endl;
         }
     }

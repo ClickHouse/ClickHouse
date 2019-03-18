@@ -3,17 +3,15 @@
 #include <Common/LRUCache.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -103,58 +101,6 @@ void PreparedFunctionImpl::createLowCardinalityResultCache(size_t cache_size)
 }
 
 
-static DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
-{
-    if (!type)
-        return type;
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-        return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        DataTypes elements = tuple_type->getElements();
-        for (auto & element : elements)
-            element = recursiveRemoveLowCardinality(element);
-
-        if (tuple_type->haveExplicitNames())
-            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
-        else
-            return std::make_shared<DataTypeTuple>(elements);
-    }
-
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        return low_cardinality_type->getDictionaryType();
-
-    return type;
-}
-
-static ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
-{
-    if (!column)
-        return column;
-
-    if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
-        return ColumnArray::create(recursiveRemoveLowCardinality(column_array->getDataPtr()), column_array->getOffsetsPtr());
-
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
-        return ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), column_const->size());
-
-    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
-    {
-        Columns columns = column_tuple->getColumns();
-        for (auto & element : columns)
-            element = recursiveRemoveLowCardinality(element);
-        return ColumnTuple::create(columns);
-    }
-
-    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-        return column_low_cardinality->convertToFullColumn();
-
-    return column;
-}
-
-
 ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     ColumnPtr result_null_map_column;
@@ -209,10 +155,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
     if (!result_null_map_column)
         return makeNullable(src);
 
-    if (src_not_nullable->isColumnConst())
-        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
-    else
-        return ColumnNullable::create(src_not_nullable, result_null_map_column);
+    return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
 }
 
 
@@ -388,9 +331,9 @@ static const ColumnLowCardinality * findLowCardinalityArgument(const Block & blo
 }
 
 static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-    Block & block, const ColumnNumbers & args, bool can_be_executed_on_default_arguments)
+    Block & block, const ColumnNumbers & args, bool can_be_executed_on_default_arguments, size_t input_rows_count)
 {
-    size_t num_rows = 0;
+    size_t num_rows = input_rows_count;
     ColumnPtr indexes;
 
     for (auto arg : args)
@@ -410,7 +353,10 @@ static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
         if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+        {
             column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
+            column.type = removeLowCardinality(column.type);
+        }
         else if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
             auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
@@ -479,13 +425,11 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
             block_without_low_cardinality.safeGetByPosition(result).type = res_low_cardinality_type->getDictionaryType();
             ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                    block_without_low_cardinality, args, can_be_executed_on_default_arguments);
+                    block_without_low_cardinality, args, can_be_executed_on_default_arguments, input_rows_count);
 
             executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, block_without_low_cardinality.rows(), dry_run);
 
-            auto & keys = block_without_low_cardinality.safeGetByPosition(result).column;
-            if (auto full_column = keys->convertToFullColumnIfConst())
-                keys = full_column;
+            auto keys = block_without_low_cardinality.safeGetByPosition(result).column->convertToFullColumnIfConst();
 
             auto res_mut_dictionary = DataTypeLowCardinality::createColumnUnique(*res_low_cardinality_type->getDictionaryType());
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
@@ -569,8 +513,8 @@ static std::optional<DataTypes> removeNullables(const DataTypes & types)
         if (!typeid_cast<const DataTypeNullable *>(type.get()))
             continue;
         DataTypes filtered;
-        for (const auto & type : types)
-            filtered.emplace_back(removeNullable(type));
+        for (const auto & sub_type : types)
+            filtered.emplace_back(removeNullable(sub_type));
         return filtered;
     }
     return {};

@@ -86,9 +86,9 @@ private:
                 out_const = false;
                 result[arg_idx] = instr_t{instr_type::get_float_64, col};
             }
-            else if (const auto col = checkAndGetColumnConst<ColumnVector<Float64>>(column))
+            else if (const auto col_const = checkAndGetColumnConst<ColumnVector<Float64>>(column))
             {
-                result[arg_idx] = instr_t{instr_type::get_const_float_64, col};
+                result[arg_idx] = instr_t{instr_type::get_const_float_64, col_const};
             }
             else
                 throw Exception("Illegal column " + column->getName() + " of argument of function " + getName(),
@@ -233,7 +233,7 @@ private:
 
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;
-        Ellipse ellipses[ellipses_count];
+        std::vector<Ellipse> ellipses(ellipses_count);
 
         for (const auto ellipse_idx : ext::range(0, ellipses_count))
         {
@@ -285,7 +285,7 @@ private:
                 size_t start_index = 0;
                 for (const auto row : ext::range(0, size))
                 {
-                    dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses, ellipses_count, start_index);
+                    dst_data[row] = isPointInEllipses(col_vec_x->getData()[row], col_vec_y->getData()[row], ellipses.data(), ellipses_count, start_index);
                 }
 
                 block.getByPosition(result).column = std::move(dst);
@@ -295,7 +295,7 @@ private:
                 const auto col_const_x = static_cast<const ColumnConst *> (col_x);
                 const auto col_const_y = static_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
-                UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses, ellipses_count, start_index);
+                UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses.data(), ellipses_count, start_index);
                 block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, res);
             }
             else

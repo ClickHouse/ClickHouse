@@ -20,19 +20,25 @@ INSERT INTO v VALUES ('b');
 
 CREATE MATERIALIZED VIEW t_mv ENGINE = MergeTree ORDER BY date
     AS SELECT date, platform, app FROM t
-    WHERE app = (SELECT min(app) from u) AND platform = (SELECT min(platform) from v);
+    WHERE app = (SELECT min(app) from u) AND platform = (SELECT (SELECT min(platform) from v));
 
 SHOW CREATE TABLE test.t_mv FORMAT TabSeparatedRaw;
 
-INSERT INTO t VALUES ('2000-01-01', 'a', 'a') ('2000-01-02', 'b', 'b');
+USE default;
+DETACH TABLE test.t_mv;
+ATTACH TABLE test.t_mv;
 
-INSERT INTO u VALUES ('a');
-INSERT INTO v VALUES ('a');
+INSERT INTO test.t VALUES ('2000-01-01', 'a', 'a') ('2000-01-02', 'b', 'b');
 
-INSERT INTO t VALUES ('2000-01-03', 'a', 'a') ('2000-01-04', 'b', 'b');
+INSERT INTO test.u VALUES ('a');
+INSERT INTO test.v VALUES ('a');
 
-SELECT * FROM t ORDER BY date;
-SELECT * FROM t_mv ORDER BY date;
+INSERT INTO test.t VALUES ('2000-01-03', 'a', 'a') ('2000-01-04', 'b', 'b');
 
-DROP TABLE IF EXISTS t;
-DROP TABLE IF EXISTS t_mv;
+SELECT * FROM test.t ORDER BY date;
+SELECT * FROM test.t_mv ORDER BY date;
+
+DROP TABLE test.t;
+DROP TABLE test.t_mv;
+DROP TABLE test.u;
+DROP TABLE test.v;

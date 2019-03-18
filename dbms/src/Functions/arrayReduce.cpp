@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -132,9 +133,9 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(col))
         {
             materialized_columns.emplace_back(const_arr->convertToFullColumn());
-            const auto & arr = typeid_cast<const ColumnArray &>(*materialized_columns.back().get());
-            aggregate_arguments_vec[i] = &arr.getData();
-            offsets_i = &arr.getOffsets();
+            const auto & materialized_arr = typeid_cast<const ColumnArray &>(*materialized_columns.back().get());
+            aggregate_arguments_vec[i] = &materialized_arr.getData();
+            offsets_i = &materialized_arr.getOffsets();
         }
         else
             throw Exception("Illegal column " + col->getName() + " as argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);

@@ -1,16 +1,13 @@
 #pragma once
 
-#include <Storages/IStorage.h>
-#include <Storages/AlterCommands.h>
-#include <Storages/MutationCommands.h>
-#include <Storages/PartitionCommands.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
+
+class Context;
 
 /** Allows you add or remove a column in the table.
   * It also allows you to manipulate the partitions of the MergeTree family tables.

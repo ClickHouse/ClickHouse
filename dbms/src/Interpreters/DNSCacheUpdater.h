@@ -11,6 +11,7 @@ namespace DB
 class Context;
 class BackgroundProcessingPool;
 class BackgroundProcessingPoolTaskInfo;
+enum class BackgroundProcessingPoolTaskResult;
 
 
 /// Add a task to BackgroundProcessingPool that watch for ProfileEvents::NetworkErrors and updates DNS cache if it has increased
@@ -25,7 +26,7 @@ public:
     static bool incrementNetworkErrorEventsIfNeeded();
 
 private:
-    bool run();
+    BackgroundProcessingPoolTaskResult run();
 
     Context & context;
     BackgroundProcessingPool & pool;

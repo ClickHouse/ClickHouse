@@ -17,6 +17,7 @@
 #include <common/unaligned.h>
 #include <string>
 #include <type_traits>
+#include <Core/Defines.h>
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
 
@@ -49,7 +50,7 @@ private:
         UInt8 current_bytes[8];
     };
 
-    void finalize()
+    ALWAYS_INLINE void finalize()
     {
         /// In the last free byte, we write the remainder of the division by 256.
         current_bytes[7] = cnt;
@@ -156,7 +157,7 @@ public:
 
     /// template for avoiding 'unsigned long long' vs 'unsigned long' problem on old poco in macos
     template <typename T>
-    void get128(T & lo, T & hi)
+    ALWAYS_INLINE void get128(T & lo, T & hi)
     {
         static_assert(sizeof(T) == 8);
         finalize();
@@ -198,8 +199,6 @@ std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_
     hash.update(x);
     return hash.get64();
 }
-
-#include <string>
 
 inline UInt64 sipHash64(const std::string & s)
 {

@@ -60,7 +60,13 @@ struct FormatSettings
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
 
     UInt64 input_allow_errors_num = 0;
-    Float64 input_allow_errors_ratio = 0;
+    Float32 input_allow_errors_ratio = 0;
+
+    struct Parquet
+    {
+        UInt64 row_group_size = 1000000;
+    } parquet;
+
 };
 
 }

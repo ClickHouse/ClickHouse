@@ -85,7 +85,7 @@ class QuantileTDigest
     Params params;
 
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
-    static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Centroid>) - sizeof(Count) - sizeof(UInt32);
+    static constexpr size_t bytes_in_arena = 128 - sizeof(PODArray<Centroid>) - sizeof(Count) - sizeof(UInt32);
 
     using Summary = PODArray<Centroid, bytes_in_arena / sizeof(Centroid), AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>>;
 
@@ -225,6 +225,10 @@ public:
 
         summary.resize(size);
         buf.read(reinterpret_cast<char *>(summary.data()), size * sizeof(summary[0]));
+
+        count = 0;
+        for (const auto & c : summary)
+            count += c.count;
     }
 
     /** Calculates the quantile q [0, 1] based on the digest.

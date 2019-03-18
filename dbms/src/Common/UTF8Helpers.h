@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Common/BitHelpers.h>
 
-#if __SSE2__
+#ifdef __SSE2__
 #include <emmintrin.h>
 #endif
 
@@ -55,7 +55,7 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     size_t res = 0;
     const auto end = data + size;
 
-#if __SSE2__
+#ifdef __SSE2__
     constexpr auto bytes_sse = sizeof(__m128i);
     const auto src_end_sse = data + size / bytes_sse * bytes_sse;
 

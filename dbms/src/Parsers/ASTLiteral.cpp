@@ -7,6 +7,13 @@
 namespace DB
 {
 
+void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
+{
+    const char * prefix = "Literal_";
+    hash_state.update(prefix, strlen(prefix));
+    applyVisitor(FieldVisitorHash(hash_state), value);
+}
+
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.

@@ -65,10 +65,9 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (database)
-        query->from = typeid_cast<ASTIdentifier &>(*database).name;
+    getIdentifierName(database, query->from);
     if (like)
-        query->like = safeGet<const String &>(typeid_cast<ASTLiteral &>(*like).value);
+        query->like = safeGet<const String &>(like->as<ASTLiteral &>().value);
 
     node = query;
 

@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -38,6 +37,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 struct HasParam
 {
@@ -100,20 +104,23 @@ struct ExtractRaw
             if (*pos == current_expect_end)
             {
                 expects_end.pop_back();
-                current_expect_end = (UInt8) (expects_end.empty() ? 0 : expects_end.back());
+                current_expect_end = expects_end.empty() ? 0 : expects_end.back();
             }
             else
             {
                 switch (*pos)
                 {
                     case '[':
-                        expects_end.push_back((current_expect_end = ']'));
+                        current_expect_end = ']';
+                        expects_end.push_back(current_expect_end);
                         break;
                     case '{':
-                        expects_end.push_back((current_expect_end = '}'));
+                        current_expect_end = '}';
+                        expects_end.push_back(current_expect_end);
                         break;
                     case '"' :
-                        expects_end.push_back((current_expect_end = '"'));
+                        current_expect_end = '"';
+                        expects_end.push_back(current_expect_end);
                         break;
                     case '\\':
                         /// skip backslash

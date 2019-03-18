@@ -25,7 +25,7 @@ class TSKVRowInputStream : public IRowInputStream
 public:
     TSKVRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings);
 
-    bool read(MutableColumns & columns) override;
+    bool read(MutableColumns & columns, RowReadExtension &) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
@@ -41,6 +41,8 @@ private:
     /// Hash table matching `field name -> position in the block`. NOTE You can use perfect hash map.
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap name_map;
+
+    std::vector<UInt8> read_columns;
 };
 
 }

@@ -2,11 +2,14 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 
+#include <common/unaligned.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <DataStreams/ColumnGathererStream.h>
+
 
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
@@ -41,7 +44,7 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(*reinterpret_cast<const T *>(pos));
+    data.push_back(unalignedLoad<T>(pos));
     return pos + sizeof(T);
 }
 
@@ -137,7 +140,7 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    memcpy(&data[old_size], &src_vec.data[start], length * sizeof(data[0]));
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
 template <typename T>

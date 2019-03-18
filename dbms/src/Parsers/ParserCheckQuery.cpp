@@ -4,8 +4,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTCheckQuery.h>
 
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -31,15 +29,15 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         auto query = std::make_shared<ASTCheckQuery>();
-        query->database = typeid_cast<const ASTIdentifier &>(*database).name;
-        query->table = typeid_cast<const ASTIdentifier &>(*table).name;
+        getIdentifierName(database, query->database);
+        getIdentifierName(table, query->table);
         node = query;
     }
     else
     {
         table = database;
         auto query = std::make_shared<ASTCheckQuery>();
-        query->table = typeid_cast<const ASTIdentifier &>(*table).name;
+        getIdentifierName(table, query->table);
         node = query;
     }
 

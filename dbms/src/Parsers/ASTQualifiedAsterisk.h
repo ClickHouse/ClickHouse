@@ -6,13 +6,16 @@
 namespace DB
 {
 
+struct AsteriskSemantic;
+struct AsteriskSemanticImpl;
+
 /** Something like t.*
   * It will have qualifier as its child ASTIdentifier.
   */
 class ASTQualifiedAsterisk : public IAST
 {
 public:
-    String getID() const override { return "QualifiedAsterisk"; }
+    String getID(char) const override { return "QualifiedAsterisk"; }
     ASTPtr clone() const override
     {
         auto clone = std::make_shared<ASTQualifiedAsterisk>(*this);
@@ -23,6 +26,11 @@ public:
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+private:
+    std::shared_ptr<AsteriskSemanticImpl> semantic; /// pimpl
+
+    friend struct AsteriskSemantic;
 };
 
 }

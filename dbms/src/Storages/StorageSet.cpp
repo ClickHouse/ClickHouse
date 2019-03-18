@@ -1,9 +1,9 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Common/escapeForFileName.h>
@@ -79,7 +79,7 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 
 
 
-BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     UInt64 id = ++increment;
     return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(id) + ".bin");
@@ -119,7 +119,7 @@ void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block);
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
-void StorageSet::truncate(const ASTPtr &)
+void StorageSet::truncate(const ASTPtr &, const Context &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();

@@ -15,7 +15,7 @@
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
@@ -81,10 +81,13 @@ struct DefaultHash<CompactStringRef>
 };
 
 
-#define mix(h) ({                   \
-    (h) ^= (h) >> 23;               \
-    (h) *= 0x2127599bf4325c37ULL;   \
-    (h) ^= (h) >> 47; })
+static inline UInt64 mix(UInt64 h)
+{
+    h ^= h >> 23;
+    h *= 0x2127599bf4325c37ULL;
+    h ^= h >> 47;
+    return h;
+}
 
 struct FastHash64
 {
@@ -334,8 +337,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -363,8 +366,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -393,8 +396,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -423,8 +426,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();

@@ -26,8 +26,10 @@ public:
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
-        MODIFY_PRIMARY_KEY,
         MODIFY_ORDER_BY,
+
+        ADD_INDEX,
+        DROP_INDEX,
 
         DROP_PARTITION,
         ATTACH_PARTITION,
@@ -55,13 +57,18 @@ public:
      */
     ASTPtr column;
 
-    /** For MODIFY PRIMARY KEY
-     */
-    ASTPtr primary_key;
-
     /** For MODIFY ORDER BY
      */
     ASTPtr order_by;
+
+    /** The ADD INDEX query stores the IndexDeclaration there.
+     */
+    ASTPtr index_decl;
+
+    /** The ADD INDEX query stores the name of the index following AFTER.
+     *  The DROP INDEX query stores the name for deletion.
+     */
+     ASTPtr index;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
@@ -83,6 +90,10 @@ public:
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
+    bool if_not_exists = false;  /// option for ADD_COLUMN
+
+    bool if_exists = false;  /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
+
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */
     String from;
@@ -97,7 +108,7 @@ public:
     /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
     bool replace = true;
 
-    String getID() const override { return "AlterCommand_" + std::to_string(static_cast<int>(type)); }
+    String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 
     ASTPtr clone() const override;
 
@@ -112,11 +123,11 @@ public:
 
     void add(const ASTPtr & command)
     {
-        commands.push_back(static_cast<ASTAlterCommand *>(command.get()));
+        commands.push_back(command->as<ASTAlterCommand>());
         children.push_back(command);
     }
 
-    String getID() const override { return "AlterCommandList"; }
+    String getID(char) const override { return "AlterCommandList"; }
 
     ASTPtr clone() const override;
 
@@ -129,7 +140,7 @@ class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCl
 public:
     ASTAlterCommandList * command_list = nullptr;
 
-    String getID() const override;
+    String getID(char) const override;
 
     ASTPtr clone() const override;
 

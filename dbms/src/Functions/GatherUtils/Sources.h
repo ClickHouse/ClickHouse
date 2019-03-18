@@ -14,7 +14,15 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/FunctionHelpers.h>
 
-namespace DB::GatherUtils
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+namespace GatherUtils
 {
 
 template <typename T>
@@ -118,21 +126,22 @@ struct ConstSource : public Base
     size_t total_rows;
     size_t row_num = 0;
 
-    explicit ConstSource(const ColumnConst & col)
-            : Base(static_cast<const typename Base::Column &>(col.getDataColumn())), total_rows(col.size())
+    explicit ConstSource(const ColumnConst & col_)
+            : Base(static_cast<const typename Base::Column &>(col_.getDataColumn())), total_rows(col_.size())
     {
     }
 
     template <typename ColumnType>
-    ConstSource(const ColumnType & col, size_t total_rows) : Base(col), total_rows(total_rows)
+    ConstSource(const ColumnType & col_, size_t total_rows_) : Base(col_), total_rows(total_rows_)
     {
     }
 
     template <typename ColumnType>
-    ConstSource(const ColumnType & col, const NullMap & null_map, size_t total_rows) : Base(col, null_map), total_rows(total_rows)
+    ConstSource(const ColumnType & col_, const NullMap & null_map_, size_t total_rows_) : Base(col_, null_map_), total_rows(total_rows_)
     {
     }
 
+    ConstSource(const ConstSource &) = default;
     virtual ~ConstSource() = default;
 
     virtual void accept(ArraySourceVisitor & visitor) // override
@@ -657,5 +666,7 @@ struct NullableValueSource : public ValueSource
         return slice;
     }
 };
+
+}
 
 }

@@ -18,18 +18,28 @@ namespace ErrorCodes
 
 std::string getClusterName(const IAST & node)
 {
-    if (const ASTIdentifier * ast_id = typeid_cast<const ASTIdentifier *>(&node))
+    if (const auto * ast_id = node.as<ASTIdentifier>())
         return ast_id->name;
 
-    if (const ASTLiteral * ast_lit = typeid_cast<const ASTLiteral *>(&node))
+    if (const auto * ast_lit = node.as<ASTLiteral>())
         return ast_lit->value.safeGet<String>();
 
-    if (const ASTFunction * ast_func = typeid_cast<const ASTFunction *>(&node))
+    /// A hack to support hyphens in cluster names.
+    if (const auto * ast_func = node.as<ASTFunction>())
     {
-        if (!ast_func->range.first || !ast_func->range.second)
+        if (ast_func->name != "minus" || !ast_func->arguments || ast_func->arguments->children.size() < 2)
             throw Exception("Illegal expression instead of cluster name.", ErrorCodes::BAD_ARGUMENTS);
 
-        return String(ast_func->range.first, ast_func->range.second);
+        String name;
+        for (const auto & arg : ast_func->arguments->children)
+        {
+            if (name.empty())
+                name += getClusterName(*arg);
+            else
+                name += "-" + getClusterName(*arg);
+        }
+
+        return name;
     }
 
     throw Exception("Illegal expression instead of cluster name.", ErrorCodes::BAD_ARGUMENTS);

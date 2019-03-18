@@ -18,7 +18,12 @@ musl/syscall_ret.c
 musl/sched_cpucount.c
 musl/glob.c
 musl/exp2f.c
-musl/pwritev.c)
+musl/pwritev.c
+musl/getrandom.c
+musl/fcntl.c
+musl/timespec_get.c
+musl/sched_getcpu.c
+)
 
 if (MAKE_STATIC_LIBRARIES)
     set (GLIBC_COMPATIBILITY_SOURCES ${GLIBC_COMPATIBILITY_SOURCES}
@@ -28,5 +33,3 @@ endif ()
 add_library (glibc-compatibility ${GLIBC_COMPATIBILITY_SOURCES})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)
-
-add_subdirectory (tests)

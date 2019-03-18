@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <memory>
 
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/DOMParser.h>

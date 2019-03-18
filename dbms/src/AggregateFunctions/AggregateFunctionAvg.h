@@ -25,7 +25,7 @@ struct AggregateFunctionAvgData
     UInt64 count = 0;
 
     template <typename ResultT>
-    ResultT result() const
+    ResultT NO_SANITIZE_UNDEFINED result() const
     {
         if constexpr (std::is_floating_point_v<ResultT>)
             if constexpr (std::numeric_limits<ResultT>::is_iec559)
@@ -49,13 +49,15 @@ public:
     using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<Decimal128>, ColumnVector<Float64>>;
 
     /// ctor for native types
-    AggregateFunctionAvg()
-        : scale(0)
+    AggregateFunctionAvg(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>(argument_types_, {})
+        , scale(0)
     {}
 
     /// ctor for Decimals
-    AggregateFunctionAvg(const IDataType & data_type)
-        : scale(getDecimalScale(data_type))
+    AggregateFunctionAvg(const IDataType & data_type, const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>(argument_types_, {})
+        , scale(getDecimalScale(data_type))
     {}
 
     String getName() const override { return "avg"; }

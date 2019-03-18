@@ -1,5 +1,6 @@
 #include <sstream>
 
+#include <Common/typeid_cast.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -25,7 +26,7 @@ namespace ErrorCodes
 String getTableDefinitionFromCreateQuery(const ASTPtr & query)
 {
     ASTPtr query_clone = query->clone();
-    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_clone.get());
+    auto & create = query_clone->as<ASTCreateQuery &>();
 
     /// We remove everything that is not needed for ATTACH from the query.
     create.attach = true;
@@ -34,6 +35,7 @@ String getTableDefinitionFromCreateQuery(const ASTPtr & query)
     create.as_table.clear();
     create.if_not_exists = false;
     create.is_populate = false;
+    create.replace_view = false;
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!create.is_view && !create.is_materialized_view)
@@ -60,17 +62,17 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message, 0);
 
-    ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+    auto & ast_create_query = ast->as<ASTCreateQuery &>();
     ast_create_query.attach = true;
     ast_create_query.database = database_name;
 
     /// We do not directly use `InterpreterCreateQuery::execute`, because
     /// - the database has not been created yet;
     /// - the code is simpler, since the query is already brought to a suitable form.
-    if (!ast_create_query.columns)
+    if (!ast_create_query.columns_list || !ast_create_query.columns_list->columns)
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns, context);
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context);
 
     return
     {
@@ -88,7 +90,7 @@ bool DatabaseWithOwnTablesBase::isTableExist(
     const Context & /*context*/,
     const String & table_name) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return tables.find(table_name) != tables.end();
 }
 
@@ -96,7 +98,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     const Context & /*context*/,
     const String & table_name) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it == tables.end())
         return {};
@@ -105,13 +107,13 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
 
 DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return std::make_unique<DatabaseSnapshotIterator>(tables);
 }
 
 bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return tables.empty();
 }
 
@@ -119,7 +121,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 {
     StoragePtr res;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         auto it = tables.find(table_name);
         if (it == tables.end())
             throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -132,7 +134,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 
 void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     if (!tables.emplace(table_name, table).second)
         throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
@@ -144,7 +146,7 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     Tables tables_snapshot;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         tables_snapshot = tables;
     }
 
@@ -153,7 +155,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         kv.second->shutdown();
     }
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     tables.clear();
 }
 

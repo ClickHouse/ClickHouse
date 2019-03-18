@@ -12,7 +12,7 @@ public:
     String column_name;
     ASTPtr expression;
 
-    String getID() const override { return "Assignment_" + column_name; }
+    String getID(char delim) const override { return "Assignment" + (delim + column_name); }
 
     ASTPtr clone() const override
     {

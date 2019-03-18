@@ -5,6 +5,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
+
 namespace DB
 {
 
@@ -73,8 +74,6 @@ public:
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions);
 
     void insertData(const char * pos, size_t length) override;
-    void insertDataWithTerminatingZero(const char * pos, size_t length) override;
-
 
     void popBack(size_t n) override { idx.popBack(n); }
 
@@ -134,8 +133,16 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
+            return idx.getPositions()->structureEquals(*rhs_low_cardinality->idx.getPositions())
+                && dictionary.getColumnUnique().structureEquals(rhs_low_cardinality->dictionary.getColumnUnique());
+        return false;
+    }
+
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
-    bool isFixedAndContiguous() const override { return getDictionary().isFixedAndContiguous(); }
+    bool isFixedAndContiguous() const override { return false; }
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }
@@ -182,7 +189,7 @@ public:
         ColumnPtr indexes;
     };
 
-    DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const;
+    DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(UInt64 offset, UInt64 limit) const;
 
     ColumnPtr countKeys() const;
 
@@ -198,7 +205,7 @@ public:
         ColumnPtr & getPositionsPtr() { return positions; }
         size_t getPositionAt(size_t row) const;
         void insertPosition(UInt64 position);
-        void insertPositionsRange(const IColumn & column, size_t offset, size_t limit);
+        void insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit);
 
         void popBack(size_t n) { positions->assumeMutableRef().popBack(n); }
         void reserve(size_t n) { positions->assumeMutableRef().reserve(n); }

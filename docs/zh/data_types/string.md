@@ -1,4 +1,3 @@
-<a name="data_types-string"></a>
 
 # String
 

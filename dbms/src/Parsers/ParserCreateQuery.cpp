@@ -1,5 +1,7 @@
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -35,7 +37,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     auto func = std::make_shared<ASTFunction>();
-    func->name = typeid_cast<ASTIdentifier &>(*name).name;
+    getIdentifierName(name, func->name);
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
@@ -70,7 +72,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     if (non_parametric.parse(pos, ident, expected))
     {
         auto func = std::make_shared<ASTFunction>();
-        func->name = typeid_cast<ASTIdentifier &>(*ident).name;
+        getIdentifierName(ident, func->name);
         node = func;
         return true;
     }
@@ -88,6 +90,113 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 {
     return ParserList(std::make_unique<ParserColumnDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
+}
+
+bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_type("TYPE");
+    ParserKeyword s_granularity("GRANULARITY");
+
+    ParserIdentifier name_p;
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
+    ParserExpression expression_p;
+    ParserUnsignedInteger granularity_p;
+
+    ASTPtr name;
+    ASTPtr expr;
+    ASTPtr type;
+    ASTPtr granularity;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    if (!s_type.ignore(pos, expected))
+        return false;
+
+    if (!ident_with_optional_params_p.parse(pos, type, expected))
+        return false;
+
+    if (!s_granularity.ignore(pos, expected))
+        return false;
+
+    if (!granularity_p.parse(pos, granularity, expected))
+        return false;
+
+    auto index = std::make_shared<ASTIndexDeclaration>();
+    index->name = name->as<ASTIdentifier &>().name;
+    index->granularity = granularity->as<ASTLiteral &>().value.get<UInt64>();
+    index->set(index->expr, expr);
+    index->set(index->type, type);
+    node = index;
+
+    return true;
+}
+
+
+bool ParserColumnAndIndexDeclaraion::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_index("INDEX");
+
+    ParserIndexDeclaration index_p;
+    ParserColumnDeclaration column_p;
+
+    ASTPtr new_node = nullptr;
+
+    if (s_index.ignore(pos, expected))
+    {
+        if (!index_p.parse(pos, new_node, expected))
+            return false;
+    }
+    else
+    {
+        if (!column_p.parse(pos, new_node, expected))
+            return false;
+    }
+
+    node = new_node;
+    return true;
+}
+
+bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserIndexDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, node, expected);
+}
+
+
+bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr list;
+    if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaraion>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, list, expected))
+        return false;
+
+    ASTPtr columns = std::make_shared<ASTExpressionList>();
+    ASTPtr indices = std::make_shared<ASTExpressionList>();
+
+    for (const auto & elem : list->children)
+    {
+        if (elem->as<ASTColumnDeclaration>())
+            columns->children.push_back(elem);
+        else if (elem->as<ASTIndexDeclaration>())
+            indices->children.push_back(elem);
+        else
+            return false;
+    }
+
+    auto res = std::make_shared<ASTColumns>();
+
+    if (!columns->children.empty())
+        res->set(res->columns, columns);
+    if (!indices->children.empty())
+        res->set(res->indices, indices);
+
+    node = res;
+
+    return true;
 }
 
 
@@ -169,6 +278,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
+
     storage->set(storage->settings, settings);
 
     node = storage;
@@ -188,17 +298,18 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
     ParserKeyword s_populate("POPULATE");
+    ParserKeyword s_or_replace("OR REPLACE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
     ParserIdentifier name_p;
-    ParserColumnDeclarationList columns_p;
+    ParserColumnsOrIndicesDeclarationList columns_or_indices_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr database;
     ASTPtr table;
-    ASTPtr columns;
+    ASTPtr columns_list;
     ASTPtr to_database;
     ASTPtr to_table;
     ASTPtr storage;
@@ -212,6 +323,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     bool is_materialized_view = false;
     bool is_populate = false;
     bool is_temporary = false;
+    bool replace_view = false;
 
     if (!s_create.ignore(pos, expected))
     {
@@ -257,10 +369,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             query->if_not_exists = if_not_exists;
             query->cluster = cluster_str;
 
-            if (database)
-                query->database = typeid_cast<ASTIdentifier &>(*database).name;
-            if (table)
-                query->table = typeid_cast<ASTIdentifier &>(*table).name;
+            getIdentifierName(database, query->database);
+            getIdentifierName(table, query->table);
 
             return true;
         }
@@ -268,7 +378,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// List of columns.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_p.parse(pos, columns, expected))
+            if (!columns_or_indices_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -324,7 +434,12 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
     {
         /// VIEW or MATERIALIZED VIEW
-        if (s_materialized.ignore(pos, expected))
+        if (s_or_replace.ignore(pos, expected))
+        {
+            replace_view = true;
+        }
+
+        if (!replace_view && s_materialized.ignore(pos, expected))
         {
             is_materialized_view = true;
         }
@@ -334,7 +449,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!s_view.ignore(pos, expected))
             return false;
 
-        if (s_if_not_exists.ignore(pos, expected))
+        if (!replace_view && s_if_not_exists.ignore(pos, expected))
             if_not_exists = true;
 
         if (!name_p.parse(pos, table, expected))
@@ -370,7 +485,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_p.parse(pos, columns, expected))
+            if (!columns_or_indices_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -404,24 +519,20 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_materialized_view = is_materialized_view;
     query->is_populate = is_populate;
     query->temporary = is_temporary;
+    query->replace_view = replace_view;
 
-    if (database)
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
-    if (table)
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    getIdentifierName(database, query->database);
+    getIdentifierName(table, query->table);
     query->cluster = cluster_str;
 
-    if (to_database)
-        query->to_database = typeid_cast<ASTIdentifier &>(*to_database).name;
-    if (to_table)
-        query->to_table = typeid_cast<ASTIdentifier &>(*to_table).name;
+    getIdentifierName(to_database, query->to_database);
+    getIdentifierName(to_table, query->to_table);
 
-    query->set(query->columns, columns);
+    query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
-    if (as_database)
-        query->as_database = typeid_cast<ASTIdentifier &>(*as_database).name;
-    if (as_table)
-        query->as_table = typeid_cast<ASTIdentifier &>(*as_table).name;
+
+    getIdentifierName(as_database, query->as_database);
+    getIdentifierName(as_table, query->as_table);
     query->set(query->select, select);
 
     return true;

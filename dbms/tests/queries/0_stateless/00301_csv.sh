@@ -15,7 +15,7 @@ Hello "world", 789 ,2016-01-03
 $CLICKHOUSE_CLIENT --query="SELECT * FROM test.csv ORDER BY d";
 $CLICKHOUSE_CLIENT --query="DROP TABLE test.csv";
 
-$CLICKHOUSE_CLIENT --query="CREATE TABLE test.csv (t DateTime, s String) ENGINE = Memory";
+$CLICKHOUSE_CLIENT --query="CREATE TABLE test.csv (t DateTime('Europe/Moscow'), s String) ENGINE = Memory";
 
 echo '"2016-01-01 01:02:03","1"
 2016-01-02 01:02:03, "2"

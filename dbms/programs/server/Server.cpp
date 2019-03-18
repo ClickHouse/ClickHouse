@@ -2,11 +2,16 @@
 
 #include <memory>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <errno.h>
+#include <pwd.h>
+#include <unistd.h>
 #include <Poco/Version.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/HelpFormatter.h>
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -23,6 +28,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -42,6 +48,7 @@
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
+#include "Common/config_version.h"
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
@@ -70,6 +77,8 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
+    extern const int FAILED_TO_GETPWUID;
+    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
 }
 
 
@@ -83,10 +92,50 @@ static std::string getCanonicalPath(std::string && path)
     return std::move(path);
 }
 
+static std::string getUserName(uid_t user_id)
+{
+    /// Try to convert user id into user name.
+    auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
+    if (buffer_size <= 0)
+        buffer_size = 1024;
+    std::string buffer;
+    buffer.reserve(buffer_size);
+
+    struct passwd passwd_entry;
+    struct passwd * result = nullptr;
+    const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
+
+    if (error)
+        throwFromErrno("Failed to find user name for " + toString(user_id), ErrorCodes::FAILED_TO_GETPWUID, error);
+    else if (result)
+        return result->pw_name;
+    return toString(user_id);
+}
+
 void Server::uninitialize()
 {
     logger().information("shutting down");
     BaseDaemon::uninitialize();
+}
+
+int Server::run()
+{
+    if (config().hasOption("help"))
+    {
+        Poco::Util::HelpFormatter helpFormatter(Server::options());
+        std::stringstream header;
+        header << commandName() << " [OPTION] [-- [ARG]...]\n";
+        header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
+        helpFormatter.setHeader(header.str());
+        helpFormatter.format(std::cout);
+        return 0;
+    }
+    if (config().hasOption("version"))
+    {
+        std::cout << DBMS_NAME << " server version " << VERSION_STRING << "." << std::endl;
+        return 0;
+    }
+    return Application::run();
 }
 
 void Server::initialize(Poco::Util::Application & self)
@@ -100,11 +149,27 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
+void Server::defineOptions(Poco::Util::OptionSet & _options)
+{
+    _options.addOption(
+        Poco::Util::Option("help", "h", "show help and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("help"));
+    _options.addOption(
+        Poco::Util::Option("version", "V", "show version and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("version"));
+    BaseDaemon::defineOptions(_options);
+}
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
-
     UseSSL use_ssl;
+
+    ThreadStatus thread_status;
 
     registerFunctions();
     registerAggregateFunctions();
@@ -166,6 +231,26 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
+    /// Check that the process' user id matches the owner of the data.
+    const auto effective_user_id = geteuid();
+    struct stat statbuf;
+    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    {
+        const auto effective_user = getUserName(effective_user_id);
+        const auto data_owner = getUserName(statbuf.st_uid);
+        std::string message = "Effective user of the process (" + effective_user +
+            ") does not match the owner of the data (" + data_owner + ").";
+        if (effective_user_id == 0)
+        {
+            message += " Run under 'sudo -u " + data_owner + "'.";
+            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+        }
+        else
+        {
+            LOG_WARNING(log, message);
+        }
+    }
+
     global_context->setPath(path);
 
     /// Create directories for 'path' and for default database, if not exist.
@@ -175,6 +260,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+        global_context->shutdown();
+        LOG_DEBUG(log, "Shutted down storages.");
+
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
@@ -350,59 +444,74 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (config().has("max_partition_size_to_drop"))
         global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
 
+    /// Set up caches.
+
+    /// Lower cache size on low-memory systems.
+    double cache_size_to_ram_max_ratio = config().getDouble("cache_size_to_ram_max_ratio", 0.5);
+    size_t max_cache_size = memory_amount * cache_size_to_ram_max_ratio;
+
     /// Size of cache for uncompressed blocks. Zero means disabled.
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
-    if (uncompressed_cache_size)
-        global_context->setUncompressedCache(uncompressed_cache_size);
+    if (uncompressed_cache_size > max_cache_size)
+    {
+        uncompressed_cache_size = max_cache_size;
+        LOG_INFO(log, "Uncompressed cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size)
+            << " because the system has low amount of memory");
+    }
+    global_context->setUncompressedCache(uncompressed_cache_size);
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
     Settings & settings = global_context->getSettingsRef();
 
-    /// Size of cache for marks (index of MergeTree family of tables). It is necessary.
+    /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
-    if (mark_cache_size)
-        global_context->setMarkCache(mark_cache_size);
+    if (!mark_cache_size)
+        LOG_ERROR(log, "Too low mark cache size will lead to severe performance degradation.");
+    if (mark_cache_size > max_cache_size)
+    {
+        mark_cache_size = max_cache_size;
+        LOG_INFO(log, "Mark cache size was lowered to " << formatReadableSizeWithBinarySuffix(uncompressed_cache_size)
+            << " because the system has low amount of memory");
+    }
+    global_context->setMarkCache(mark_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", std::numeric_limits<UInt64>::max());
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
     if (compiled_expression_cache_size)
         global_context->setCompiledExpressionCache(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path.path() + "/");
+    global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
-    LOG_INFO(log, "Loading metadata.");
-    loadMetadataSystem(*global_context);
-    /// After attaching system databases we can initialize system log.
-    global_context->initializeSystemLogs();
-    /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-    attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
-    /// Then, load remaining databases
-    loadMetadata(*global_context);
+    LOG_INFO(log, "Loading metadata from " + path);
+    try
+    {
+        loadMetadataSystem(*global_context);
+        /// After attaching system databases we can initialize system log.
+        global_context->initializeSystemLogs();
+        /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+        attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+        /// Then, load remaining databases
+        loadMetadata(*global_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while loading metadata");
+        throw;
+    }
     LOG_DEBUG(log, "Loaded metadata.");
 
     global_context->setCurrentDatabase(default_database);
-
-    SCOPE_EXIT({
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-        global_context->shutdown();
-        LOG_DEBUG(log, "Shutted down storages.");
-    });
 
     if (has_zookeeper && config().has("distributed_ddl"))
     {
         /// DDL worker should be started after all tables were loaded
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+        global_context->setDDLWorker(std::make_unique<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
@@ -481,7 +590,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, bool secure = 0)
         {
                auto address = make_socket_address(host, port);
-#if !POCO_CLICKHOUSE_PATCH || POCO_VERSION <= 0x02000000 // TODO: fill correct version
+#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION <= 0x02000000 // TODO: fill correct version
                if (secure)
                    /// Bug in old poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
                    /// https://github.com/pocoproject/poco/pull/2257
@@ -511,7 +620,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("http_port"));
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
                         server_pool,
                         socket,
@@ -528,7 +637,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
                         server_pool,
                         socket,
@@ -548,7 +657,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port"));
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(new Poco::Net::TCPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
                         new TCPHandlerFactory(*this),
                         server_pool,
                         socket,
@@ -565,7 +674,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(new Poco::Net::TCPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
                         new TCPHandlerFactory(*this, /* secure= */ true),
                         server_pool,
                         socket,
@@ -588,7 +697,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_http_port"));
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
@@ -604,7 +713,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
@@ -641,10 +750,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         {
             std::stringstream message;
-            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
-                << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
+            message << "Available RAM: " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
+                << " physical cores: " << getNumberOfPhysicalCPUCores() << ";"
                 // on ARM processors it can show only enabled at current moment cores
-                << " threads = " << std::thread::hardware_concurrency() << ".";
+                << " logical cores: " << std::thread::hardware_concurrency() << ".";
             LOG_INFO(log, message.str());
         }
 

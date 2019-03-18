@@ -5,15 +5,14 @@
 #include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <vector>
-#include <string>
 #include <map>
 #include <optional>
+#include <string>
+#include <vector>
 
 
 namespace DB
 {
-
 enum class AttributeUnderlyingType
 {
     UInt8,
@@ -104,8 +103,10 @@ struct DictionaryStructure final
 
 private:
     std::vector<DictionaryAttribute> getAttributes(
-        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-        const bool hierarchy_allowed = true, const bool allow_null_values = true);
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const bool hierarchy_allowed = true,
+        const bool allow_null_values = true);
 };
 
 }

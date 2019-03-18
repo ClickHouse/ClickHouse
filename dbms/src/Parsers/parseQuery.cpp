@@ -236,7 +236,7 @@ ASTPtr tryParseQuery(
     /// If parsed query ends at data for insertion. Data for insertion could be in any format and not necessary be lexical correct.
     ASTInsertQuery * insert = nullptr;
     if (parse_res)
-        insert = typeid_cast<ASTInsertQuery *>(res.get());
+        insert = res->as<ASTInsertQuery>();
 
     if (!(insert && insert->data))
     {
@@ -354,10 +354,8 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
         begin = pos;
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, 0);
-        if (!ast)
-            break;
 
-        ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(ast.get());
+        auto * insert = ast->as<ASTInsertQuery>();
 
         if (insert && insert->data)
         {

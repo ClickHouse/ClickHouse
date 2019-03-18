@@ -1,12 +1,8 @@
-<a name="aggregate_functions_combinators"></a>
-
-# Aggregate function combinators
+# Aggregate function combinators {#aggregate_functions_combinators}
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
-<a name="agg-functions-combinator-if"></a>
-
-## -If
+## -If {#agg-functions-combinator-if}
 
 The suffix -If can be appended to the name of any aggregate function. In this case, the aggregate function accepts an extra argument – a condition (Uint8 type). The aggregate function processes only the rows that trigger the condition. If the condition was not triggered even once, it returns a default value (usually zeros or empty strings).
 

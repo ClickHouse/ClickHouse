@@ -1,4 +1,3 @@
-<a name="external-data"></a>
 
 # External Data for Query Processing
 

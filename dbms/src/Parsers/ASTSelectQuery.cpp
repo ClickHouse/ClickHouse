@@ -1,11 +1,10 @@
-#include <Common/FieldVisitors.h>
+#include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -15,19 +14,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name)
-{
-    if (database_name.empty())
-        return ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database = ASTIdentifier::createSpecial(database_name);
-    ASTPtr table = ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
-    database_and_table->children = {database, table};
-    return database_and_table;
 }
 
 
@@ -79,7 +65,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << indent_str << "WITH " << (s.hilite ? hilite_none : "");
         s.one_line
             ? with_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*with_expression_list).formatImplMultiline(s, state, frame);
+            : with_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
         s.ostr << s.nl_or_ws;
     }
 
@@ -87,7 +73,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     s.one_line
         ? select_expression_list->formatImpl(s, state, frame)
-        : typeid_cast<const ASTExpressionList &>(*select_expression_list).formatImplMultiline(s, state, frame);
+        : select_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
 
     if (tables)
     {
@@ -112,7 +98,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? group_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*group_expression_list).formatImplMultiline(s, state, frame);
+            : group_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (group_by_with_rollup)
@@ -135,7 +121,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "ORDER BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? order_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*order_expression_list).formatImplMultiline(s, state, frame);
+            : order_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (limit_by_value)
@@ -145,7 +131,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
         s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? limit_by_expression_list->formatImpl(s, state, frame)
-            : typeid_cast<const ASTExpressionList &>(*limit_by_expression_list).formatImplMultiline(s, state, frame);
+            : limit_by_expression_list->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
     if (limit_length)
@@ -175,15 +161,15 @@ static const ASTTableExpression * getFirstTableExpression(const ASTSelectQuery &
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return {};
 
-    const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+    const auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return {};
 
-    return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element.table_expression->as<ASTTableExpression>();
 }
 
 static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
@@ -191,15 +177,15 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select)
     if (!select.tables)
         return {};
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
+    auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return {};
 
-    ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+    auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return {};
 
-    return static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element.table_expression->as<ASTTableExpression>();
 }
 
 static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
@@ -207,18 +193,18 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return {};
 
     const ASTArrayJoin * array_join = nullptr;
     for (const auto & child : tables_in_select_query.children)
     {
-        const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
+        const auto & tables_element = child->as<ASTTablesInSelectQueryElement &>();
         if (tables_element.array_join)
         {
             if (!array_join)
-                array_join = static_cast<const ASTArrayJoin *>(tables_element.array_join.get());
+                array_join = tables_element.array_join->as<ASTArrayJoin>();
             else
                 throw Exception("Support for more than one ARRAY JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
         }
@@ -232,20 +218,21 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
     if (!select.tables)
         return {};
 
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select.tables);
+    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return {};
 
     const ASTTablesInSelectQueryElement * joined_table = nullptr;
     for (const auto & child : tables_in_select_query.children)
     {
-        const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
+        const auto & tables_element = child->as<ASTTablesInSelectQueryElement &>();
         if (tables_element.table_join)
         {
             if (!joined_table)
                 joined_table = &tables_element;
             else
-                throw Exception("Support for more than one JOIN in query is not implemented", ErrorCodes::NOT_IMPLEMENTED);
+                throw Exception("Multiple JOIN disabled or does not support the query. "
+                                "'set allow_experimental_multiple_joins_emulation' to enable.", ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 
@@ -283,23 +270,21 @@ bool ASTSelectQuery::final() const
 }
 
 
-ASTPtr ASTSelectQuery::array_join_expression_list() const
+ASTPtr ASTSelectQuery::array_join_expression_list(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
         return {};
 
+    is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
     return array_join->expression_list;
 }
 
 
-bool ASTSelectQuery::array_join_is_left() const
+ASTPtr ASTSelectQuery::array_join_expression_list() const
 {
-    const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
-    if (!array_join)
-        return {};
-
-    return array_join->kind == ASTArrayJoin::Kind::Left;
+    bool is_left;
+    return array_join_expression_list(is_left);
 }
 
 
@@ -308,6 +293,17 @@ const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
     return getFirstTableJoin(*this);
 }
 
+static String getTableExpressionAlias(const ASTTableExpression * table_expression)
+{
+    if (table_expression->subquery)
+        return table_expression->subquery->tryGetAlias();
+    else if (table_expression->table_function)
+        return table_expression->table_function->tryGetAlias();
+    else if (table_expression->database_and_table_name)
+        return table_expression->database_and_table_name->tryGetAlias();
+
+    return String();
+}
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
@@ -326,7 +322,11 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         table_expression = table_expr.get();
     }
 
-    table_expression->database_and_table_name = createDatabaseAndTableNode(database_name, table_name);
+    String table_alias = getTableExpressionAlias(table_expression);
+    table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
+
+    if (!table_alias.empty())
+        table_expression->database_and_table_name->setAlias(table_alias);
 }
 
 
@@ -347,9 +347,13 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
         table_expression = table_expr.get();
     }
 
-    table_expression->table_function = table_function_ptr;
+    String table_alias = getTableExpressionAlias(table_expression);
+    /// Maybe need to modify the alias, so we should clone new table_function node
+    table_expression->table_function = table_function_ptr->clone();
     table_expression->database_and_table_name = nullptr;
+
+    if (table_alias.empty())
+        table_expression->table_function->setAlias(table_alias);
 }
 
 }
-
