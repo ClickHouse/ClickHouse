@@ -4,6 +4,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 #include <IO/HashingWriteBuffer.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDate.h>
 #include <Poco/File.h>
 #include <Common/typeid_cast.h>
 
@@ -66,20 +68,30 @@ void buildScatterSelector(
     }
 }
 
-/// Compute ttls and find minimal
+/// Computes ttls and updates ttl infos
 void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTLInfos & ttl_infos, Block & block, const String & column_name)
 {
     if (!block.has(ttl_entry.result_column))
         ttl_entry.expression->execute(block);
 
+    auto & ttl_info = (column_name.empty() ? ttl_infos.table_ttl : ttl_infos.columns_ttl[column_name]);
+
     const auto & current = block.getByName(ttl_entry.result_column);
-    const ColumnUInt32 * column = typeid_cast<const ColumnUInt32 *>(current.column.get());
-    const ColumnUInt32::Container & vec = column->getData();
 
-    auto & ttl_info = (column_name.empty() ? ttl_infos.table_ttl : ttl_infos.columns_ttl.at(column_name));
-
-    for (auto val : vec)
-        ttl_info.update(val);
+    const IColumn * column = current.column.get();
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
+    {
+        const auto & date_lut = DateLUT::instance();
+        for (const auto & val : column_date->getData())
+            ttl_info.update(date_lut.fromDayNum(DayNum(val)));
+    }
+    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
+    {
+        for (const auto & val : column_date_time->getData())
+            ttl_info.update(val);
+    }
+    else
+        throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
 
     ttl_infos.updatePartMinTTL(ttl_info.min);
 }
@@ -230,10 +242,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         updateTTL(data.ttl_table_entry, new_data_part->ttl_infos, block, "");
 
     for (const auto & [name, ttl_entry] : data.ttl_entries_by_name)
-    {
-        new_data_part->ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
         updateTTL(ttl_entry, new_data_part->ttl_infos, block, name);
-    }
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.

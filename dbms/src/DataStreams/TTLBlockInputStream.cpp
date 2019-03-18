@@ -1,7 +1,14 @@
 #include <DataStreams/TTLBlockInputStream.h>
+#include <DataTypes/DataTypeDate.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 TTLBlockInputStream::TTLBlockInputStream(
     const BlockInputStreamPtr & input_,
@@ -13,6 +20,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     , current_time(current_time_)
     , old_ttl_infos(data_part->ttl_infos)
     , log(&Logger::get(storage.getLogName() + " (TTLBlockInputStream)"))
+    , date_lut(DateLUT::instance())
 {
     children.push_back(input_);
 
@@ -79,8 +87,8 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 {
     storage.ttl_table_entry.expression->execute(block);
 
-    const auto & ttl_result_column = block.getByName(storage.ttl_table_entry.result_column);
-    const ColumnUInt32 * ttl_table_result_column = typeid_cast<const ColumnUInt32 *>(ttl_result_column.column.get());
+    const auto & current = block.getByName(storage.ttl_table_entry.result_column);
+    const IColumn * ttl_column = current.column.get();
 
     MutableColumns result_columns;
     result_columns.reserve(getHeader().columns());
@@ -93,7 +101,7 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            time_t cur_ttl = ttl_table_result_column->getData()[i];
+            UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
             if (cur_ttl > current_time)
             {
                 new_ttl_infos.table_ttl.update(cur_ttl);
@@ -129,18 +137,18 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         MutableColumnPtr result_column = values_column->cloneEmpty();
         result_column->reserve(block.rows());
 
-        const auto & ttl_result_column = block.getByName(ttl_entry.result_column);
-
-        const ColumnUInt32::Container & ttl_vec =
-            (typeid_cast<const ColumnUInt32 *>(ttl_result_column.column.get()))->getData();
+        const auto & current = block.getByName(ttl_entry.result_column);
+        const IColumn * ttl_column = current.column.get();
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            if (ttl_vec[i] <= current_time)
+            UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
+
+            if (cur_ttl <= current_time)
                 result_column->insertDefault();
             else
             {
-                new_ttl_info.update(ttl_vec[i]);
+                new_ttl_info.update(cur_ttl);
                 empty_columns.erase(name);
                 result_column->insertFrom(*values_column, i);
             }
@@ -151,6 +159,16 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
     for (const auto & elem : storage.ttl_entries_by_name)
         if (block.has(elem.second.result_column))
             block.erase(elem.second.result_column);
+}
+
+UInt32 TTLBlockInputStream::getTimestampByIndex(const IColumn * column, size_t ind)
+{
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
+        return date_lut.fromDayNum(DayNum(column_date->getData()[ind]));
+    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
+        return column_date_time->getData()[ind];
+    else
+        throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
 }
 
 }

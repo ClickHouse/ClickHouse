@@ -620,7 +620,6 @@ public:
 
     TTLEntry ttl_table_entry;
 
-
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 

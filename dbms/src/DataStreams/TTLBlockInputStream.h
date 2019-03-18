@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 
+#include <common/DateLUT.h>
+
 namespace DB
 {
 
@@ -39,8 +41,8 @@ private:
     NameSet empty_columns;
 
     size_t rows_removed = 0;
-
     Logger * log;
+    DateLUTImpl date_lut;
 
 private:
     /// Removes values with expired ttl and computes new min_ttl and empty_columns for part
@@ -48,6 +50,8 @@ private:
 
     /// Remove rows with expired table ttl and computes new min_ttl for part
     void removeRowsWithExpiredTableTTL(Block & block);
+
+    UInt32 getTimestampByIndex(const IColumn * column, size_t ind);
 };
 
 }
