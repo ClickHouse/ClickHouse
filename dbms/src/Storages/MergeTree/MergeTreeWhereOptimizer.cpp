@@ -44,9 +44,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         first_primary_key_column = data.primary_key_columns[0];
 
     calculateColumnSizes(data, queried_columns);
-    auto & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
-    determineArrayJoinedNames(select);
-    optimize(select);
+    determineArrayJoinedNames(query_info.query->as<ASTSelectQuery &>());
+    optimize(query_info.query->as<ASTSelectQuery &>());
 }
 
 
@@ -66,7 +65,7 @@ static void collectIdentifiersNoSubqueries(const ASTPtr & ast, NameSet & set)
     if (auto opt_name = getIdentifierName(ast))
         return (void)set.insert(*opt_name);
 
-    if (typeid_cast<const ASTSubquery *>(ast.get()))
+    if (ast->as<ASTSubquery>())
         return;
 
     for (const auto & child : ast->children)
@@ -75,7 +74,7 @@ static void collectIdentifiersNoSubqueries(const ASTPtr & ast, NameSet & set)
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node) const
 {
-    if (const auto func_and = typeid_cast<ASTFunction *>(node.get()); func_and && func_and->name == "and")
+    if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
     {
         for (const auto & elem : func_and->arguments->children)
             analyzeImpl(res, elem);
@@ -219,7 +218,7 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
 
 bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
 {
-    const auto function = typeid_cast<const ASTFunction *>(condition.get());
+    const auto * function = condition->as<ASTFunction>();
     if (!function)
         return false;
 
@@ -232,13 +231,13 @@ bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
     auto right_arg = function->arguments->children.back().get();
 
     /// try to ensure left_arg points to ASTIdentifier
-    if (!isIdentifier(left_arg) && isIdentifier(right_arg))
+    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())
         std::swap(left_arg, right_arg);
 
-    if (isIdentifier(left_arg))
+    if (left_arg->as<ASTIdentifier>())
     {
         /// condition may be "good" if only right_arg is a constant and its value is outside the threshold
-        if (const auto literal = typeid_cast<const ASTLiteral *>(right_arg))
+        if (const auto * literal = right_arg->as<ASTLiteral>())
         {
             const auto & field = literal->value;
             const auto type = field.getType();
@@ -268,7 +267,7 @@ bool MergeTreeWhereOptimizer::isConditionGood(const ASTPtr & condition) const
 
 bool MergeTreeWhereOptimizer::hasPrimaryKeyAtoms(const ASTPtr & ast) const
 {
-    if (const auto func = typeid_cast<const ASTFunction *>(ast.get()))
+    if (const auto * func = ast->as<ASTFunction>())
     {
         const auto & args = func->arguments->children;
 
@@ -288,7 +287,7 @@ bool MergeTreeWhereOptimizer::hasPrimaryKeyAtoms(const ASTPtr & ast) const
 
 bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 {
-    if (const auto func = typeid_cast<const ASTFunction *>(ast.get()))
+    if (const auto * func = ast->as<ASTFunction>())
     {
         if (!KeyCondition::atom_map.count(func->name))
             return false;
@@ -314,7 +313,7 @@ bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 {
     const auto column_name = expr->getColumnName();
 
-    if (typeid_cast<const ASTLiteral *>(expr.get())
+    if (expr->as<ASTLiteral>()
         || (block_with_constants.has(column_name) && block_with_constants.getByName(column_name).column->isColumnConst()))
         return true;
 
@@ -334,7 +333,7 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers
 
 bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
 {
-    if (const auto function_ptr = typeid_cast<const ASTFunction *>(ptr.get()))
+    if (const auto * function_ptr = ptr->as<ASTFunction>())
     {
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
         if ("arrayJoin" == function_ptr->name)

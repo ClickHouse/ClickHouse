@@ -202,7 +202,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         if (!parser_string_literal.parse(pos, ast_from, expected))
             return false;
 
-        command->from = typeid_cast<const ASTLiteral &>(*ast_from).value.get<const String &>();
+        command->from = ast_from->as<ASTLiteral &>().value.get<const String &>();
         command->type = ASTAlterCommand::FETCH_PARTITION;
     }
     else if (s_freeze.ignore(pos, expected))
@@ -229,7 +229,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_string_literal.parse(pos, ast_with_name, expected))
                 return false;
 
-            command->with_name = typeid_cast<const ASTLiteral &>(*ast_with_name).value.get<const String &>();
+            command->with_name = ast_with_name->as<ASTLiteral &>().value.get<const String &>();
         }
     }
     else if (s_modify_column.ignore(pos, expected))

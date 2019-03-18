@@ -32,7 +32,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     query_ptr(query_ptr_),
     context(context_)
 {
-    const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
+    const auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
 
     size_t num_selects = ast.list_of_selects->children.size();
 
