@@ -34,7 +34,7 @@ private:
 
         size_t old_size = vector.size();
         vector.resize(old_size * 2);
-        internal_buffer = Buffer(reinterpret_cast<Position>(&vector[old_size]), reinterpret_cast<Position>(vector.data() + vector.size()));
+        internal_buffer = Buffer(reinterpret_cast<Position>(vector.data() + old_size), reinterpret_cast<Position>(vector.data() + vector.size()));
         working_buffer = internal_buffer;
     }
 
@@ -62,6 +62,14 @@ public:
 
         /// Prevent further writes.
         set(nullptr, 0);
+    }
+
+    bool isFinished() const { return is_finished; }
+
+    void restart()
+    {
+        set(reinterpret_cast<Position>(vector.data()), vector.size());
+        is_finished = false;
     }
 
     ~WriteBufferFromVector() override

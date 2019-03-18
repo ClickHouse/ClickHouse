@@ -28,5 +28,19 @@
                 </replica>
             </shard>
         </shard_with_local_replica>
+	<shard_with_low_cardinality>
+            <shard>
+                <replica>
+                    <host>shard1</host>
+                    <port>9000</port>
+                </replica>
+	    </shard>
+	    <shard>
+                <replica>
+                    <host>shard2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </shard_with_low_cardinality>
     </remote_servers>
 </yandex>

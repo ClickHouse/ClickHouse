@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -20,7 +20,7 @@ public:
         MergeTreeData & storage_,
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
-        CompressionSettings compression_settings_,
+        CompressionCodecPtr default_codec_,
         size_t aio_threshold_,
         bool blocks_are_granules_size_,
         const std::vector<size_t> & index_granularity_);
@@ -39,8 +39,8 @@ protected:
             const std::string & data_file_extension_,
             const std::string & marks_path,
             const std::string & marks_file_extension_,
+            const CompressionCodecPtr & compression_codec,
             size_t max_compress_block_size,
-            CompressionSettings compression_settings,
             size_t estimated_size,
             size_t aio_threshold);
 
@@ -67,7 +67,8 @@ protected:
 
     using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-    void addStreams(const String & path, const String & name, const IDataType & type, size_t estimated_size, bool skip_offsets);
+    void addStreams(const String & path, const String & name, const IDataType & type,
+                    const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets);
 
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
@@ -113,8 +114,6 @@ protected:
 
     size_t current_mark = 0;
 
-    CompressionSettings compression_settings;
-
     const std::string marks_file_extension;
     const size_t mark_size_in_bytes;
     const bool blocks_are_granules_size;
@@ -122,6 +121,7 @@ protected:
     std::vector<size_t> index_granularity;
 
     const bool compute_granularity;
+    CompressionCodecPtr codec;
 };
 
 
@@ -135,7 +135,7 @@ public:
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionSettings compression_settings,
+        CompressionCodecPtr default_codec_,
         bool blocks_are_granules_size_ = false,
         const std::vector<size_t> & index_granularity_ = {});
 
@@ -143,7 +143,7 @@ public:
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionSettings compression_settings,
+        CompressionCodecPtr default_codec_,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
         size_t aio_threshold_,
         bool blocks_are_granules_size_ = false,
@@ -192,6 +192,10 @@ private:
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
     MutableColumns index_columns;
+
+    std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
+    MergeTreeIndexAggregators skip_indices_aggregators;
+    std::vector<size_t> skip_index_filling;
 };
 
 
@@ -204,7 +208,7 @@ public:
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
-        CompressionSettings compression_settings, bool skip_offsets_,
+        CompressionCodecPtr default_codec_, bool skip_offsets_,
         WrittenOffsetColumns & already_written_offset_columns,
         const std::vector<size_t> & index_granularity_);
 

@@ -1,15 +1,21 @@
-<a name="example_datasets-ontime"></a>
 
 # OnTime
+
+Этот датасет может быть получен двумя способами:
+
+- импорт из сырых данных;
+- скачивание готовых партиций.
+
+## Импорт из сырых данных
 
 Скачивание данных:
 
 ```bash
-for s in `seq 1987 2017`
+for s in `seq 1987 2018`
 do
 for m in `seq 1 12`
 do
-wget http://transtats.bts.gov/PREZIP/On_Time_On_Time_Performance_${s}_${m}.zip
+wget https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_${s}_${m}.zip
 done
 done
 ```
@@ -138,7 +144,21 @@ CREATE TABLE `ontime` (
 for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-Запросы:
+## Скачивание готовых партиций
+
+```bash
+curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
+# убедитесь, что установлены корректные права доступа на файлы
+sudo service clickhouse-server restart
+clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
+```
+
+!!!info
+    Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
+    нужно добавить имя базы, `datasets.ontime`.
+
+## Запросы:
 
 Q0.
 
@@ -167,7 +187,7 @@ SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND 
 Q4. Количество задержек по перевозчикам за 2007 год
 
 ``` sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
 Q5. Процент задержек по перевозчикам за 2007 год

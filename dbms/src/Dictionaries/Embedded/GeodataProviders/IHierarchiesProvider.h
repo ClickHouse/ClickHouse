@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Entries.h"
 #include <memory>
 #include <string>
 #include <vector>
+#include "Entries.h"
 
 
 // Iterates over all regions in data source
@@ -46,4 +46,3 @@ public:
 };
 
 using IRegionsHierarchiesDataProviderPtr = std::shared_ptr<IRegionsHierarchiesDataProvider>;
-

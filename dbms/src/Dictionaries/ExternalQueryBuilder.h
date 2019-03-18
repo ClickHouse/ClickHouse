@@ -1,14 +1,13 @@
 #pragma once
 
 #include <string>
-#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
+#include <Formats/FormatSettings.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 
 
 namespace DB
 {
-
 struct DictionaryStructure;
 class WriteBuffer;
 
@@ -37,7 +36,7 @@ struct ExternalQueryBuilder
     std::string composeLoadAllQuery() const;
 
     /** Generate a query to load data after certain time point*/
-    std::string composeUpdateQuery(const std::string &update_field, const std::string &time_point) const;
+    std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
 
     /** Generate a query to load data by set of UInt64 keys. */
     std::string composeLoadIdsQuery(const std::vector<UInt64> & ids);
@@ -53,10 +52,7 @@ struct ExternalQueryBuilder
         IN_WITH_TUPLES,
     };
 
-    std::string composeLoadKeysQuery(
-        const Columns & key_columns,
-        const std::vector<size_t> & requested_rows,
-        LoadKeysMethod method);
+    std::string composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method);
 
 
 private:

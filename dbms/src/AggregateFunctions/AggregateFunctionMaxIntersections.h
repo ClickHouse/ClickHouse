@@ -38,7 +38,7 @@ struct MaxIntersectionsData
     using Value = std::pair<T, Int64>;
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedArenaAllocator<4096>;
+    using Allocator = MixedAlignedArenaAllocator<alignof(Value), 4096>;
     using Array = PODArray<Value, 32, Allocator>;
 
     Array value;
@@ -59,7 +59,7 @@ private:
 
 public:
     AggregateFunctionIntersectionsMax(AggregateFunctionIntersectionsKind kind_, const DataTypes & arguments)
-        : kind(kind_)
+        : IAggregateFunctionDataHelper<MaxIntersectionsData<PointType>, AggregateFunctionIntersectionsMax<PointType>>(arguments, {}), kind(kind_)
     {
         if (!isNumber(arguments[0]))
             throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

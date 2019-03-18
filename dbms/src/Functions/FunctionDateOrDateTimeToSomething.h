@@ -37,23 +37,33 @@ public:
         if (arguments.size() == 1)
         {
             if (!isDateOrDateTime(arguments[0].type))
-                throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
-                    ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
+                        + ". Should be a date or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else if (arguments.size() == 2)
         {
-            if (!WhichDataType(arguments[0].type).isDateTime()
-                || !WhichDataType(arguments[1].type).isString())
+            if (!isDateOrDateTime(arguments[0].type))
+                throw Exception(
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
+                        + ". Should be a date or a date with time",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (!isString(arguments[1].type))
                 throw Exception(
                     "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
-                    "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                    "a constant string with timezone name. The timezone argument is allowed "
-                    "only when the 1st argument has the type DateTime",
+                          "must be of type Date or DateTime. The 2nd argument (optional) must be "
+                          "a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            if (isDate(arguments[0].type) && std::is_same_v<ToDataType, DataTypeDate>)
+                throw Exception(
+                    "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2",
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be 1 or 2",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         /// For DateTime, if time zone is specified, attach it to type.

@@ -1,9 +1,8 @@
-# Functions for searching strings
+# Functions for Searching Strings
 
-The search is case-sensitive in all these functions.
-The search substring or regular expression must be a constant in all these functions.
+The search is case-sensitive by default in all these functions. There are separate variants for case insensitive search.
 
-## position(haystack, needle)
+## position(haystack, needle), locate(haystack, needle)
 
 Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
@@ -16,9 +15,27 @@ The same as `position`, but the position is returned in Unicode code points. Wor
 
 For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
+## multiPosition(haystack, [needle_1, needle_2, ..., needle_n])
+
+The same as `position`, but returns `Array` of the `position`s for all `needle_i`.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiPositionCaseInsensitive, multiPositionUTF8, multiPositionCaseInsensitiveUTF8`.
+
+## firstMatch(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns the index `i` (starting from 1) of the first found `needle_i` in the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `firstMatchCaseInsensitive, firstMatchUTF8, firstMatchCaseInsensitiveUTF8`.
+
+## multiSearch(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns 1, if at least one string `needle_i` matches the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchCaseInsensitive, multiSearchUTF8, multiSearchCaseInsensitiveUTF8`.
+
 ## match(haystack, pattern)
 
-Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax)  of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
+Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
 
 Returns 0 if it doesn't match, or 1 if it matches.
 
@@ -52,6 +69,14 @@ For other regular expressions, the code is the same as for the 'match' function.
 ## notLike(haystack, pattern), haystack NOT LIKE pattern operator
 
 The same thing as 'like', but negative.
+
+## ngramDistance(haystack, needle)
+
+Calculates the 4-gram distance between `haystack` and `needle`: counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns float number from 0 to 1 -- the closer to zero, the more strings are similar to each other. If the `needle` is more than 32Kb, throws an exception. If some of the `haystack` strings are more than 32Kb, the distance is always one.
+
+For case-insensitive search or/and in UTF-8 format use functions `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8`.
+
+Notes: For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the symmetric difference between these hash tables -- collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function -- we zero the 5-th bit (starting from zero) of each codepoint byte -- this works for Latin and mostly for all Cyrillic letters.
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->

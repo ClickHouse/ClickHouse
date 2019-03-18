@@ -16,9 +16,7 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 `any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
-<a name="settings_max_memory_usage"></a>
-
-## max_memory_usage
+## max_memory_usage {#settings_max_memory_usage}
 
 The maximum amount of RAM to use for running a query on a single server.
 
@@ -113,6 +111,18 @@ What to do if the query is run longer than 'max_execution_time': 'throw' or 'bre
 
 Minimal execution speed in rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.
 
+## min_execution_speed_bytes
+
+Minimum number of execution bytes per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.
+
+## max_execution_speed
+
+Maximum number of execution rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is high, the execution speed will be reduced.
+
+## max_execution_speed_bytes
+
+Maximum number of execution bytes per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is high, the execution speed will be reduced.
+
 ## timeout_before_checking_execution_speed
 
 Checks that execution speed is not too slow (no less than 'min_execution_speed'), after the specified time in seconds has expired.
@@ -146,7 +156,7 @@ At this time, it isn't checked during parsing, but only after parsing the query.
 ## max_ast_elements
 
 Maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
-In the same way as the previous setting, it is checked only after parsing the query. By default, 10,000.
+In the same way as the previous setting, it is checked only after parsing the query. By default, 50,000.
 
 ## max_rows_in_set
 

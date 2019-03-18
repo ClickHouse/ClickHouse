@@ -1,17 +1,18 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/ColumnsDescription.h>
-#include <ctime>
-#include <memory>
-#include <functional>
-#include <Poco/File.h>
-#include <Common/escapeForFileName.h>
+#include <Core/Types.h>
 #include <Interpreters/Context.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
+#include <Poco/File.h>
+#include <Common/ThreadPool.h>
+#include <Common/escapeForFileName.h>
 
-
-class ThreadPool;
+#include <ctime>
+#include <functional>
+#include <memory>
 
 
 namespace DB
@@ -21,9 +22,6 @@ class Context;
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 struct Settings;
 
@@ -117,6 +115,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) = 0;
 
     /// Returns time of table's metadata change, 0 if there is no corresponding metadata file.
@@ -157,4 +156,3 @@ using DatabasePtr = std::shared_ptr<IDatabase>;
 using Databases = std::map<String, DatabasePtr>;
 
 }
-

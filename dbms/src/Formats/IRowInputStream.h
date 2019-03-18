@@ -10,6 +10,13 @@
 namespace DB
 {
 
+/// Contains extra information about read data.
+struct RowReadExtension
+{
+    /// IRowInputStream.read() output. It contains non zero for columns that actually read from the source and zero otherwise.
+    /// It's used to attach defaults for partially filled rows.
+    std::vector<UInt8> read_columns;
+};
 
 /** Interface of stream, that allows to read data by rows.
   */
@@ -19,7 +26,7 @@ public:
     /** Read next row and append it to the columns.
       * If no more rows - return false.
       */
-    virtual bool read(MutableColumns & columns) = 0;
+    virtual bool read(MutableColumns & columns, RowReadExtension & extra) = 0;
 
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result

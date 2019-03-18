@@ -16,11 +16,12 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 
-#include <IO/CompressionSettings.h>
 #include <IO/ConnectionTimeouts.h>
 
 #include <Interpreters/Settings.h>
 #include <Interpreters/TablesStatus.h>
+
+#include <Compression/ICompressionCodec.h>
 
 #include <atomic>
 #include <optional>
@@ -96,6 +97,7 @@ public:
 
         Block block;
         std::unique_ptr<Exception> exception;
+        std::vector<String> multistring_message;
         Progress progress;
         BlockStreamProfileInfo profile_info;
 
@@ -116,6 +118,12 @@ public:
     const String & getHost() const;
     UInt16 getPort() const;
     const String & getDefaultDatabase() const;
+
+    /// For proper polling.
+    inline const auto & getTimeouts() const
+    {
+        return timeouts;
+    }
 
     /// If last flag is true, you need to call sendExternalTablesData after.
     void sendQuery(
@@ -202,7 +210,7 @@ private:
     Protocol::Secure secure;             /// Enable data encryption for communication.
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
-    CompressionSettings compression_settings;
+    CompressionCodecPtr compression_codec;
 
     /** If not nullptr, used to limit network traffic.
       * Only traffic for transferring blocks is accounted. Other packets don't.
@@ -254,6 +262,7 @@ private:
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type);
     std::unique_ptr<Exception> receiveException();
     Progress receiveProgress();
     BlockStreamProfileInfo receiveProfileInfo();

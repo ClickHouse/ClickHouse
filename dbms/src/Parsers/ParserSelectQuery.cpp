@@ -61,7 +61,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SELECT [DISTINCT] expr list
+    /// SELECT [DISTINCT] [TOP N] expr list
     {
         if (!s_select.ignore(pos, expected))
             return false;
@@ -173,15 +173,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
 
         ParserToken s_comma(TokenType::Comma);
-        ParserNumber num;
 
-        if (!num.parse(pos, select_query->limit_length, expected))
+        if (!exp_elem.parse(pos, select_query->limit_length, expected))
             return false;
 
         if (s_comma.ignore(pos, expected))
         {
             select_query->limit_offset = select_query->limit_length;
-            if (!num.parse(pos, select_query->limit_length, expected))
+            if (!exp_elem.parse(pos, select_query->limit_length, expected))
                 return false;
         }
         else if (s_by.ignore(pos, expected))
@@ -194,7 +193,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (s_offset.ignore(pos, expected))
         {
-            if (!num.parse(pos, select_query->limit_offset, expected))
+            if (!exp_elem.parse(pos, select_query->limit_offset, expected))
                 return false;
         }
     }
@@ -206,15 +205,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
-        ParserNumber num;
 
-        if (!num.parse(pos, select_query->limit_length, expected))
+        if (!exp_elem.parse(pos, select_query->limit_length, expected))
             return false;
 
         if (s_comma.ignore(pos, expected))
         {
             select_query->limit_offset = select_query->limit_length;
-            if (!num.parse(pos, select_query->limit_length, expected))
+            if (!exp_elem.parse(pos, select_query->limit_length, expected))
                 return false;
         }
     }

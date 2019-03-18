@@ -16,24 +16,24 @@ namespace ErrorCodes
 MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
     const MergeTreeData & storage_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
-    size_t max_block_size_rows_,
+    UInt64 max_block_size_rows_,
     size_t preferred_block_size_bytes_,
     size_t preferred_max_column_in_block_size_bytes_,
     Names column_names,
     const MarkRanges & mark_ranges_,
     bool use_uncompressed_cache_,
-    const PrewhereInfoPtr & prewhere_info,
+    const PrewhereInfoPtr & prewhere_info_,
     bool check_columns,
     size_t min_bytes_to_use_direct_io_,
     size_t max_read_buffer_size_,
     bool save_marks_in_cache_,
-    const Names & virt_column_names,
+    const Names & virt_column_names_,
     size_t part_index_in_query_,
     bool quiet)
     :
-    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info, max_block_size_rows_,
+    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
-        max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names},
+        max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names_},
     required_columns{column_names},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
@@ -167,9 +167,9 @@ try
     if (!reader)
     {
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.context.getUncompressedCache();
+            owned_uncompressed_cache = storage.global_context.getUncompressedCache();
 
-        owned_mark_cache = storage.context.getMarkCache();
+        owned_mark_cache = storage.global_context.getMarkCache();
 
         reader = std::make_unique<MergeTreeReader>(
             path, data_part, columns, owned_uncompressed_cache.get(),

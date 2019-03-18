@@ -28,6 +28,9 @@ public:
     static bool parse(Pos & pos, std::string & cluster_str, Expected & expected);
 
     virtual ~ASTQueryWithOnCluster() = default;
+    ASTQueryWithOnCluster() = default;
+    ASTQueryWithOnCluster(const ASTQueryWithOnCluster &) = default;
+    ASTQueryWithOnCluster & operator=(const ASTQueryWithOnCluster &) = default;
 
 protected:
     template <typename T>

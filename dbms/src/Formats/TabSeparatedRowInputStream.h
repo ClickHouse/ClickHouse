@@ -22,7 +22,7 @@ public:
     TabSeparatedRowInputStream(
         ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings);
 
-    bool read(MutableColumns & columns) override;
+    bool read(MutableColumns & columns, RowReadExtension &) override;
     void readPrefix() override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;

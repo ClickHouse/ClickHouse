@@ -15,7 +15,7 @@
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <common/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
@@ -64,7 +64,7 @@ inline bool operator==(SmallStringRef lhs, SmallStringRef rhs)
     if (lhs.size == 0)
         return true;
 
-#if __SSE2__
+#ifdef __SSE2__
     return memequalSSE2Wide(lhs.data(), rhs.data(), lhs.size);
 #else
     return false;
@@ -144,8 +144,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(data[i], it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();
@@ -173,8 +173,8 @@ int main(int argc, char ** argv)
         {
             map.emplace(SmallStringRef(data[i].data, data[i].size), it, inserted);
             if (inserted)
-                it->second = 0;
-            ++it->second;
+                it->getSecond() = 0;
+            ++it->getSecond();
         }
 
         watch.stop();

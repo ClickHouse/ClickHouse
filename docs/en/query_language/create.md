@@ -9,17 +9,16 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 `A database` is just a directory for tables.
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
 
-<a name="query_language-queries-create_table"></a>
 
-## CREATE TABLE
+## CREATE TABLE {#create-table-query}
 
 The `CREATE TABLE` query can have several forms.
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec],
     ...
 ) ENGINE = engine
 ```
@@ -46,7 +45,7 @@ In all cases, if `IF NOT EXISTS` is specified, the query won't return an error i
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../operations/table_engines/index.md#table_engines).
 
-### Default Values
+### Default Values {#create-default-values}
 
 The column description can specify an expression for a default value, in one of the following ways:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Example: `URLDomain String DEFAULT domain(URL)`.
@@ -80,6 +79,50 @@ When using the ALTER query to add new columns, old data for these columns is not
 If you add a new column to a table but later change its default expression, the values used for old data will change (for data where values were not stored on the disk). Note that when running background merges, data for columns that are missing in one of the merging parts is written to the merged part.
 
 It is not possible to set default values for elements in nested data structures.
+
+## Column Compression Codecs
+
+Besides default data compression, defined in [server settings](../operations/server_settings/settings.md#compression), per-column specification is also available.
+
+Supported compression algorithms:
+
+- `NONE` - no compression for data applied
+- `LZ4`
+- `LZ4HC(level)` - (level) - LZ4\_HC compression algorithm with defined level.
+Possible `level` range: \[3, 12\]. Default value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4,9].
+- `ZSTD(level)` - ZSTD compression algorithm with defined `level`. Possible `level` value range: \[1, 22\]. Default value: 1.
+Greater values stands for better compression and higher CPU usage.
+- `Delta(delta_bytes)` - compression approach when raw values are replace with difference of two neighbour values. Up to `delta_bytes` are used for storing delta value.
+Possible `delta_bytes` values: 1, 2, 4, 8. Default value for delta bytes is `sizeof(type)`, if it is equals to 1, 2, 4, 8 and equals to 1 otherwise.
+
+Syntax example:
+```
+CREATE TABLE codec_example
+(
+    dt Date CODEC(ZSTD), /* используется уровень сжатия по-умолчанию */
+    ts DateTime CODEC(LZ4HC),
+    float_value Float32 CODEC(NONE),
+    double_value Float64 CODEC(LZ4HC(9))
+)
+ENGINE = MergeTree
+PARTITION BY tuple()
+ORDER BY dt
+```
+
+Codecs can be combined in a pipeline. Default table codec is not included into pipeline (if it should be applied to a column, you have to specify it explicitly in pipeline). Example below shows an optimization approach for storing timeseries metrics.
+Usually, values for particular metric, stored in `path` does not differ significantly from point to point. Using delta-encoding allows to reduce disk space usage significantly.
+```
+CREATE TABLE timeseries_example
+(
+    dt Date,
+    ts DateTime,
+    path String,
+    value Float32 CODEC(Delta(2), ZSTD)
+)
+ENGINE = MergeTree
+PARTITION BY dt
+ORDER BY (path, ts)
+```
 
 ### Temporary Tables
 
@@ -124,10 +167,6 @@ CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [TO[db.]name] [ENGINE
 ```
 
 Creates a view. There are two types of views: normal and MATERIALIZED.
-
-When creating a materialized view, you must specify ENGINE – the table engine for storing data.
-
-A materialized view works as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 
 Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 

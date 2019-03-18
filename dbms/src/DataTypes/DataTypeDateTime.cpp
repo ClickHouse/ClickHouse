@@ -6,6 +6,8 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -25,7 +27,7 @@ DataTypeDateTime::DataTypeDateTime(const std::string & time_zone_name)
 {
 }
 
-std::string DataTypeDateTime::getName() const
+std::string DataTypeDateTime::doGetName() const
 {
     if (!has_explicit_time_zone)
         return "DateTime";
@@ -56,8 +58,6 @@ static inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings 
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
             return;
-        default:
-            __builtin_unreachable();
     }
 }
 
@@ -140,6 +140,30 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
+void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
+{
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDateTime(static_cast<const ColumnUInt32 &>(column).getData()[row_num]));
+}
+
+void DataTypeDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    time_t t;
+    if (!protobuf.readDateTime(t))
+        return;
+
+    auto & container = static_cast<ColumnUInt32 &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(t);
+        row_added = true;
+    }
+    else
+        container.back() = t;
+}
+
 bool DataTypeDateTime::equals(const IDataType & rhs) const
 {
     /// DateTime with different timezones are equal, because:
@@ -162,7 +186,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (arguments->children.size() != 1)
         throw Exception("DateTime data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral * arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const auto * arg = arguments->children[0]->as<ASTLiteral>();
     if (!arg || arg->value.getType() != Field::Types::String)
         throw Exception("Parameter for DateTime data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

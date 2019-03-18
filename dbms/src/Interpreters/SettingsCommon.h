@@ -3,7 +3,7 @@
 #include <Poco/Timespan.h>
 #include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <Core/Types.h>
 
 
@@ -157,6 +157,7 @@ struct SettingFloat
 };
 
 
+/// TODO: X macro
 enum class LoadBalancing
 {
     /// among replicas with a minimum number of errors selected randomly
@@ -281,30 +282,6 @@ struct SettingOverflowMode
     void write(WriteBuffer & buf) const;
 };
 
-
-struct SettingCompressionMethod
-{
-    CompressionMethod value;
-    bool changed = false;
-
-    SettingCompressionMethod(CompressionMethod x = CompressionMethod::LZ4) : value(x) {}
-
-    operator CompressionMethod() const { return value; }
-    SettingCompressionMethod & operator= (CompressionMethod x) { set(x); return *this; }
-
-    static CompressionMethod getCompressionMethod(const String & s);
-
-    String toString() const;
-
-    void set(CompressionMethod x);
-    void set(const Field & x);
-    void set(const String & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
-};
-
-
 /// The setting for executing distributed subqueries inside IN or JOIN sections.
 enum class DistributedProductMode
 {
@@ -392,6 +369,41 @@ struct SettingDateTimeInputFormat
 
     operator Value() const { return value; }
     SettingDateTimeInputFormat & operator= (Value x) { set(x); return *this; }
+
+    static Value getValue(const String & s);
+
+    String toString() const;
+
+    void set(Value x);
+    void set(const Field & x);
+    void set(const String & x);
+    void set(ReadBuffer & buf);
+    void write(WriteBuffer & buf) const;
+};
+
+
+enum class LogsLevel
+{
+    none = 0,    /// Disable
+    error,
+    warning,
+    information,
+    debug,
+    trace,
+};
+
+class SettingLogsLevel
+{
+public:
+    using Value = LogsLevel;
+
+    Value value;
+    bool changed = false;
+
+    SettingLogsLevel(Value x) : value(x) {}
+
+    operator Value() const { return value; }
+    SettingLogsLevel & operator= (Value x) { set(x); return *this; }
 
     static Value getValue(const String & s);
 

@@ -40,7 +40,7 @@
       </label>
     {% endif %}
     <a href="{{ base_url }}/{{ nav_item.url }}" title="{{ nav_item.title }}" class="md-nav__link md-nav__link--active">
-      {{ nav_item.title }}
+      <strong>{{ nav_item.title }}</strong>
     </a>
     {% if toc_ | first is defined %}
       {% include "partials/toc.html" %}

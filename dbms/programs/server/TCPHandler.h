@@ -25,6 +25,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class ColumnsDescription;
 
 /// State of query processing.
 struct QueryState
@@ -94,6 +95,9 @@ public:
 
     void run();
 
+    /// This method is called right before the query execution.
+    virtual void customizeContext(DB::Context & /*context*/) {}
+
 private:
     IServer & server;
     Poco::Logger * log;
@@ -105,7 +109,7 @@ private:
     UInt64 client_revision = 0;
 
     Context connection_context;
-    Context query_context;
+    std::optional<Context> query_context;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
@@ -144,6 +148,7 @@ private:
     void sendHello();
     void sendData(const Block & block);    /// Write a block to the network.
     void sendLogData(const Block & block);
+    void sendTableColumns(const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress();
     void sendLogs();

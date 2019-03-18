@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/setThreadName.h>
 #include <Poco/Timestamp.h>
 
 #include <random>
@@ -23,7 +22,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
     , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeCleanupThread)")
     , log(&Logger::get(log_name))
 {
-    task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeCleanupThread::run()
@@ -86,7 +85,6 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// We will keep logs after and including this threshold.
     UInt64 min_saved_log_pointer = std::numeric_limits<UInt64>::max();
 
-
     UInt64 min_log_pointer_lost_candidate = std::numeric_limits<UInt64>::max();
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
@@ -118,7 +116,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/host", &host_stat);
         String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
 
-        UInt32 log_pointer = 0;
+        UInt64 log_pointer = 0;
 
         if (!pointer.empty())
             log_pointer = parse<UInt64>(pointer);
@@ -190,7 +188,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     for (const String & replica : recovering_replicas)
     {
         String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
-        UInt32 log_pointer = 0;
+        UInt64 log_pointer = 0;
         if (!pointer.empty())
             log_pointer = parse<UInt64>(pointer);
         min_saved_log_pointer = std::min(min_saved_log_pointer, log_pointer);
@@ -200,7 +198,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         min_saved_log_pointer = std::min(min_saved_log_pointer, min_log_pointer_lost_candidate);
 
     /// We will not touch the last `min_replicated_logs_to_keep` records.
-    entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
+    entries.erase(entries.end() - std::min<UInt64>(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
     /// We will not touch records that are no less than `min_saved_log_pointer`.
     entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_saved_log_pointer)), entries.end());
 
@@ -296,7 +294,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     /// Virtual node, all nodes that are "greater" than this one will be deleted
     NodeWithStat block_threshold{{}, time_threshold};
 
-    size_t current_deduplication_window = std::min(timed_blocks.size(), storage.data.settings.replicated_deduplication_window.value);
+    size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), storage.data.settings.replicated_deduplication_window.value);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);

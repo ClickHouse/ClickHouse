@@ -17,7 +17,7 @@ function thread1()
 
 function thread2()
 {
-    seq 1 1000 | sed -r -e 's/.+/SELECT count() FROM test.buffer;/' | ${CLICKHOUSE_CLIENT} --multiquery --server_logs_file='/dev/null' --ignore-error 2>&1 | grep -vP '^0$|^10$|^Received exception|^Code: 60'
+    seq 1 1000 | sed -r -e 's/.+/SELECT count() FROM test.buffer;/' | ${CLICKHOUSE_CLIENT} --multiquery --server_logs_file='/dev/null' --ignore-error 2>&1 | grep -vP '^0$|^10$|^Received exception|^Code: 60|^Code: 218'
 }
 
 thread1 &

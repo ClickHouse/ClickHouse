@@ -22,6 +22,6 @@ MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 其余条件以及 `LIMIT` 采样约束语句仅在对MySQL的查询完成后才在ClickHouse中执行。
 
-`MySQL` 引擎不支持 [Nullable](../../data_types/nullable.md#data_type-nullable) 数据类型，因此，当从MySQL表中读取数据时，`NULL` 将转换为指定列类型的默认值（通常为0或空字符串）。
+`MySQL` 引擎不支持 [Nullable](../../data_types/nullable.md) 数据类型，因此，当从MySQL表中读取数据时，`NULL` 将转换为指定列类型的默认值（通常为0或空字符串）。
 
 [Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/mysql/) <!--hide-->

@@ -42,7 +42,7 @@ AsynchronousMetrics::~AsynchronousMetrics()
     try
     {
         {
-            std::lock_guard<std::mutex> lock{wait_mutex};
+            std::lock_guard lock{wait_mutex};
             quit = true;
         }
 
@@ -58,14 +58,14 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
 AsynchronousMetrics::Container AsynchronousMetrics::getValues() const
 {
-    std::lock_guard<std::mutex> lock{container_mutex};
+    std::lock_guard lock{container_mutex};
     return container;
 }
 
 
 void AsynchronousMetrics::set(const std::string & name, Value value)
 {
-    std::lock_guard<std::mutex> lock{container_mutex};
+    std::lock_guard lock{container_mutex};
     container[name] = value;
 }
 
@@ -74,7 +74,7 @@ void AsynchronousMetrics::run()
 {
     setThreadName("AsyncMetrics");
 
-    std::unique_lock<std::mutex> lock{wait_mutex};
+    std::unique_lock lock{wait_mutex};
 
     /// Next minute + 30 seconds. To be distant with moment of transmission of metrics, see MetricsTransmitter.
     const auto get_next_minute = []
@@ -137,10 +137,7 @@ void AsynchronousMetrics::update()
 #if USE_EMBEDDED_COMPILER
     {
         if (auto compiled_expression_cache = context.getCompiledExpressionCache())
-        {
-            set("CompiledExpressionCacheBytes", compiled_expression_cache->weight());
             set("CompiledExpressionCacheCount", compiled_expression_cache->count());
-        }
     }
 #endif
 
@@ -268,7 +265,7 @@ void AsynchronousMetrics::update()
             set("jemalloc." NAME, value); \
         } while (0);
 
-        FOR_EACH_METRIC(GET_METRIC);
+        FOR_EACH_METRIC(GET_METRIC)
 
     #undef GET_METRIC
     #undef FOR_EACH_METRIC

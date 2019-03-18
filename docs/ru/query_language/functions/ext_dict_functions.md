@@ -1,8 +1,6 @@
-<a name="ext_dict_functions"></a>
+# Функции для работы с внешними словарями {#ext_dict_functions}
 
-# Функции для работы с внешними словарями
-
-Информация о подключении и настройке внешних словарей смотрите в разделе "[Внешние словари](../dicts/external_dicts.md#dicts-external_dicts)".
+Информация о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../dicts/external_dicts.md).
 
 ## dictGetUInt8, dictGetUInt16, dictGetUInt32, dictGetUInt64
 

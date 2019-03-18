@@ -1,11 +1,12 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Storages/StorageDistributed.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
 
@@ -29,7 +30,7 @@ namespace
 template <typename F>
 void forEachNonGlobalSubquery(IAST * node, F && f)
 {
-    if (ASTFunction * function = typeid_cast<ASTFunction *>(node))
+    if (auto * function = node->as<ASTFunction>())
     {
         if (function->name == "in" || function->name == "notIn")
         {
@@ -39,14 +40,14 @@ void forEachNonGlobalSubquery(IAST * node, F && f)
 
         /// Pass into other functions, as subquery could be in aggregate or in lambda functions.
     }
-    else if (ASTTablesInSelectQueryElement * join = typeid_cast<ASTTablesInSelectQueryElement *>(node))
+    else if (const auto * join = node->as<ASTTablesInSelectQueryElement>())
     {
         if (join->table_join && join->table_expression)
         {
-            auto & table_join = static_cast<ASTTableJoin &>(*join->table_join);
+            auto & table_join = join->table_join->as<ASTTableJoin &>();
             if (table_join.locality != ASTTableJoin::Locality::Global)
             {
-                auto & subquery = static_cast<ASTTableExpression &>(*join->table_expression).subquery;
+                auto & subquery = join->table_expression->as<ASTTableExpression>()->subquery;
                 if (subquery)
                     f(subquery.get(), nullptr, &table_join);
             }
@@ -58,7 +59,7 @@ void forEachNonGlobalSubquery(IAST * node, F && f)
 
     /// Descent into all children, but not into subqueries of other kind (scalar subqueries), that are irrelevant to us.
     for (auto & child : node->children)
-        if (!typeid_cast<ASTSelectQuery *>(child.get()))
+        if (!child->as<ASTSelectQuery>())
             forEachNonGlobalSubquery(child.get(), f);
 }
 
@@ -68,7 +69,7 @@ void forEachNonGlobalSubquery(IAST * node, F && f)
 template <typename F>
 void forEachTable(IAST * node, F && f)
 {
-    if (auto table_expression = typeid_cast<ASTTableExpression *>(node))
+    if (auto * table_expression = node->as<ASTTableExpression>())
     {
         auto & database_and_table = table_expression->database_and_table_name;
         if (database_and_table)
@@ -82,12 +83,7 @@ void forEachTable(IAST * node, F && f)
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(database_and_table.get());
-    if (!id)
-        throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
-
-    DatabaseAndTableWithAlias db_and_table(*id);
-
+    DatabaseAndTableWithAlias db_and_table(database_and_table);
     return context.tryGetTable(db_and_table.database, db_and_table.table);
 }
 
@@ -107,15 +103,15 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
     if (!query->tables)
         return;
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*query->tables);
+    const auto & tables_in_select_query = query->tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return;
 
-    ASTTablesInSelectQueryElement & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[0]);
+    const auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
     if (!tables_element.table_expression)
         return;
 
-    ASTTableExpression * table_expression = static_cast<ASTTableExpression *>(tables_element.table_expression.get());
+    const auto * table_expression = tables_element.table_expression->as<ASTTableExpression>();
 
     /// If not ordinary table, skip it.
     if (!table_expression->database_and_table_name)
@@ -147,7 +143,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
             {
                 if (function)
                 {
-                    ASTFunction * concrete = static_cast<ASTFunction *>(function);
+                    auto * concrete = function->as<ASTFunction>();
 
                     if (concrete->name == "in")
                         concrete->name = "globalIn";
@@ -161,7 +157,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
                         throw Exception("Logical error: unexpected function name " + concrete->name, ErrorCodes::LOGICAL_ERROR);
                 }
                 else if (table_join)
-                    static_cast<ASTTableJoin &>(*table_join).locality = ASTTableJoin::Locality::Global;
+                    table_join->as<ASTTableJoin &>().locality = ASTTableJoin::Locality::Global;
                 else
                     throw Exception("Logical error: unexpected AST node", ErrorCodes::LOGICAL_ERROR);
             }
@@ -173,8 +169,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
                 std::string table;
                 std::tie(database, table) = getRemoteDatabaseAndTableName(*storage);
 
-                /// TODO: find a way to avoid AST node replacing
-                database_and_table = createDatabaseAndTableNode(database, table);
+                database_and_table = createTableIdentifier(database, table);
             }
             else
                 throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting", ErrorCodes::LOGICAL_ERROR);

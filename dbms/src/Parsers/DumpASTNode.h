@@ -62,23 +62,18 @@ private:
     size_t & visit_depth; /// shared with children
     const char * label;
 
-    String nodeId() const
-    {
-        String id = ast.getID();
-        std::replace(id.begin(), id.end(), '_', ' ');
-        return id;
-    }
+    String nodeId() const { return ast.getID(' '); }
 
     void printNode() const
     {
         (*ostr) << nodeId();
 
-        String aslias = ast.tryGetAlias();
-        if (!aslias.empty())
-            print("alias", aslias, " ");
+        String alias = ast.tryGetAlias();
+        if (!alias.empty())
+            print("alias", alias, " ");
 
         if (!ast.children.empty())
-            print("/", ast.children.size(), " "); /// slash is just a short name for 'children' here
+            print("children", ast.children.size(), " ");
     }
 };
 

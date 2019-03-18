@@ -23,7 +23,7 @@ std::string toString(const ColumnDefaultKind type);
 
 struct ColumnDefault
 {
-    ColumnDefaultKind kind;
+    ColumnDefaultKind kind = ColumnDefaultKind::Default;
     ASTPtr expression;
 };
 
@@ -32,6 +32,5 @@ bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs);
 
 
 using ColumnDefaults = std::unordered_map<std::string, ColumnDefault>;
-
 
 }

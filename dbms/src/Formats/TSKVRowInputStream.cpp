@@ -88,7 +88,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 }
 
 
-bool TSKVRowInputStream::read(MutableColumns & columns)
+bool TSKVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
 {
     if (istr.eof())
         return false;
@@ -96,9 +96,7 @@ bool TSKVRowInputStream::read(MutableColumns & columns)
     size_t num_columns = columns.size();
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
-    /// TODO Ability to provide your DEFAULTs.
-    bool read_columns[num_columns];
-    memset(read_columns, 0, num_columns);
+    read_columns.assign(num_columns, false);
 
     if (unlikely(*istr.position() == '\n'))
     {
@@ -130,14 +128,14 @@ bool TSKVRowInputStream::read(MutableColumns & columns)
                 }
                 else
                 {
-                    index = it->second;
+                    index = it->getSecond();
 
                     if (read_columns[index])
                         throw Exception("Duplicate field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
                     read_columns[index] = true;
 
-                    header.getByPosition(index).type->deserializeTextEscaped(*columns[index], istr, format_settings);
+                    header.getByPosition(index).type->deserializeAsTextEscaped(*columns[index], istr, format_settings);
                 }
             }
             else
@@ -180,6 +178,9 @@ bool TSKVRowInputStream::read(MutableColumns & columns)
         if (!read_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
+    /// return info about defaults set
+    ext.read_columns = read_columns;
+
     return true;
 }
 
@@ -196,7 +197,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
         ReadBuffer & buf,
         const Block & sample,
         const Context &,
-        size_t max_block_size,
+        UInt64 max_block_size,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(

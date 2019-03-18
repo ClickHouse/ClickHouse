@@ -19,7 +19,7 @@ public:
 
 public:
     /** Get text identifying the AST node. */
-    String getID() const override;
+    String getID(char delim) const override;
 
     ASTPtr clone() const override;
 

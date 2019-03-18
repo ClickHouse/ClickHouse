@@ -9,6 +9,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/AlterCommands.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -25,6 +26,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <ext/range.h>
+#include <algorithm>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
@@ -50,7 +52,7 @@ StorageMerge::StorageMerge(
     const Context & context_)
     : IStorage{columns_},
     name(name_), source_database(source_database_),
-    table_name_regexp(table_name_regexp_), context(context_)
+    table_name_regexp(table_name_regexp_), global_context(context_)
 {
 }
 
@@ -94,8 +96,8 @@ bool StorageMerge::hasColumn(const String & column_name) const
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
-    auto database = context.getDatabase(source_database);
-    auto iterator = database->getIterator(context);
+    auto database = global_context.getDatabase(source_database);
+    auto iterator = database->getIterator(global_context);
 
     while (iterator->isValid())
     {
@@ -120,15 +122,15 @@ bool StorageMerge::isRemote() const
 }
 
 
-bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
+bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const
 {
     /// It's beneficial if it is true for at least one table.
-    StorageListWithLocks selected_tables = getSelectedTables();
+    StorageListWithLocks selected_tables = getSelectedTables(query_context.getCurrentQueryId());
 
     size_t i = 0;
     for (const auto & table : selected_tables)
     {
-        if (table.first->mayBenefitFromIndexForIn(left_in_operand))
+        if (table.first->mayBenefitFromIndexForIn(left_in_operand, query_context))
             return true;
 
         ++i;
@@ -184,14 +186,12 @@ BlockInputStreams StorageMerge::read(
     Names real_column_names;
     real_column_names.reserve(column_names.size());
 
-    for (const auto & name : column_names)
+    for (const auto & column_name : column_names)
     {
-        if (name == "_table")
-        {
+        if (column_name == "_table")
             has_table_virtual_column = true;
-        }
         else
-            real_column_names.push_back(name);
+            real_column_names.push_back(column_name);
     }
 
     /** Just in case, turn off optimization "transfer to PREWHERE",
@@ -206,7 +206,8 @@ BlockInputStreams StorageMerge::read(
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
-    StorageListWithLocks selected_tables = getSelectedTables(query_info.query, has_table_virtual_column, true);
+    StorageListWithLocks selected_tables = getSelectedTables(
+        query_info.query, has_table_virtual_column, true, context.getCurrentQueryId());
 
     if (selected_tables.empty())
         return createSourceStreams(
@@ -220,10 +221,10 @@ BlockInputStreams StorageMerge::read(
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(1, current_streams);
+        current_streams = std::max(size_t(1), current_streams);
 
         StoragePtr storage = it->first;
-        TableStructureReadLockPtr struct_lock = it->second;
+        TableStructureReadLockHolder struct_lock = it->second;
 
         BlockInputStreams source_streams;
 
@@ -236,7 +237,7 @@ BlockInputStreams StorageMerge::read(
         else
         {
             source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(
-                header, [=, &real_column_names, &modified_context]() -> BlockInputStreamPtr
+                header, [=]() mutable -> BlockInputStreamPtr
                 {
                     BlockInputStreams streams = createSourceStreams(query_info, processed_stage, max_block_size,
                                                                     header, storage, struct_lock, real_column_names,
@@ -260,8 +261,8 @@ BlockInputStreams StorageMerge::read(
 }
 
 BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                                    const size_t max_block_size, const Block & header, const StoragePtr & storage,
-                                                    const TableStructureReadLockPtr & struct_lock, Names & real_column_names,
+                                                    const UInt64 max_block_size, const Block & header, const StoragePtr & storage,
+                                                    const TableStructureReadLockHolder & struct_lock, Names & real_column_names,
                                                     Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                                     bool concat_streams)
 {
@@ -288,7 +289,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     }
     else if (processed_stage > storage->getQueryProcessingStage(modified_context))
     {
-        typeid_cast<ASTSelectQuery *>(modified_query_info.query.get())->replaceDatabaseAndTable(source_database, storage->getTableName());
+        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, storage->getTableName());
 
         /// Maximum permissible parallelism is streams_num
         modified_context.getSettingsRef().max_threads = UInt64(streams_num);
@@ -332,11 +333,11 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     return source_streams;
 }
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    auto database = context.getDatabase(source_database);
-    auto iterator = database->getIterator(context);
+    auto database = global_context.getDatabase(source_database);
+    auto iterator = database->getIterator(global_context);
 
     while (iterator->isValid())
     {
@@ -344,7 +345,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
         {
             auto & table = iterator->table();
             if (table.get() != this)
-                selected_tables.emplace_back(table, table->lockStructure(false));
+                selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id));
         }
 
         iterator->next();
@@ -354,11 +355,11 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
 }
 
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock, const String & query_id) const
 {
     StorageListWithLocks selected_tables;
-    DatabasePtr database = context.getDatabase(source_database);
-    DatabaseIteratorPtr iterator = database->getIterator(context);
+    DatabasePtr database = global_context.getDatabase(source_database);
+    DatabaseIteratorPtr iterator = database->getIterator(global_context);
 
     auto virtual_column = ColumnString::create();
 
@@ -368,13 +369,13 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
         {
             StoragePtr storage = iterator->table();
 
-            if (query && typeid_cast<ASTSelectQuery *>(query.get())->prewhere_expression && !storage->supportsPrewhere())
+            if (query && query->as<ASTSelectQuery>()->prewhere_expression && !storage->supportsPrewhere())
                 throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
 
             if (storage.get() != this)
             {
                 virtual_column->insert(storage->getTableName());
-                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false) : TableStructureReadLockPtr{});
+                selected_tables.emplace_back(storage, get_lock ? storage->lockStructureForShare(false, query_id) : TableStructureReadLockHolder{});
             }
         }
 
@@ -384,7 +385,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
     if (has_virtual_column)
     {
         Block virtual_columns_block = Block{ColumnWithTypeAndName(std::move(virtual_column), std::make_shared<DataTypeString>(), "_table")};
-        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, context);
+        VirtualColumnUtils::filterBlockWithQuery(query, virtual_columns_block, global_context);
         auto values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_table");
 
         /// Remove unused tables from the list
@@ -394,13 +395,16 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
     return selected_tables;
 }
 
-void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageMerge::alter(
+    const AlterCommands & params, const String & database_name, const String & table_name,
+    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    auto lock = lockStructureForAlter();
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
-    ColumnsDescription new_columns = getColumns();
+    auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(new_columns);
 }
 
@@ -436,7 +440,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
     Block before_block_header = source_stream->getHeader();
     source_stream = std::make_shared<ConvertingBlockInputStream>(context, source_stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
 
-    ASTPtr where_expression = typeid_cast<ASTSelectQuery *>(query.get())->where_expression;
+    auto where_expression = query->as<ASTSelectQuery>()->where_expression;
 
     if (!where_expression)
         return;
@@ -453,11 +457,11 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
             NameAndTypePair virtual_column = getColumn("_table");
             source_columns.insert(source_columns.end(), virtual_column);
-            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(where_expression, source_columns);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
 
-            for (const auto required_column : required_columns)
+            for (const auto & required_column : required_columns)
             {
                 if (required_column == header_column.name)
                     throw Exception("Block structure mismatch in Merge Storage: different types:\n" + before_block_header.dumpStructure()
@@ -487,8 +491,8 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
 
-        String source_database = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
-        String table_name_regexp = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageMerge::create(
             args.table_name, args.columns,

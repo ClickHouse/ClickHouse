@@ -1,4 +1,3 @@
-<a name="table-engine-join"></a>
 
 # Join
 

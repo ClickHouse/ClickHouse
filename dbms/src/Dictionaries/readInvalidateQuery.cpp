@@ -1,20 +1,21 @@
 #include "readInvalidateQuery.h"
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <IO/WriteBufferFromString.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int TOO_MANY_COLUMNS;
-extern const int TOO_MANY_ROWS;
-extern const int RECEIVED_EMPTY_DATA;
+    extern const int TOO_MANY_COLUMNS;
+    extern const int TOO_MANY_ROWS;
+    extern const int RECEIVED_EMPTY_DATA;
 }
 
-std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream)
+std::string readInvalidateQuery(IBlockInputStream & block_input_stream)
 {
     block_input_stream.readPrefix();
-    std::string response;
 
     Block block = block_input_stream.read();
     if (!block)
@@ -30,18 +31,16 @@ std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream)
     if (rows > 1)
         throw Exception("Expected single row in resultset, got at least " + std::to_string(rows), ErrorCodes::TOO_MANY_ROWS);
 
-    auto column = block.getByPosition(0).column;
-    response = column->getDataAt(0).toString();
+    WriteBufferFromOwnString out;
+    auto & column_type = block.getByPosition(0);
+    column_type.type->serializeAsTextQuoted(*column_type.column->convertToFullColumnIfConst(), 0, out, FormatSettings());
 
     while ((block = block_input_stream.read()))
-    {
         if (block.rows() > 0)
             throw Exception("Expected single row in resultset, got at least " + std::to_string(rows + 1), ErrorCodes::TOO_MANY_ROWS);
-    }
 
     block_input_stream.readSuffix();
-
-    return response;
+    return out.str();
 }
 
 }

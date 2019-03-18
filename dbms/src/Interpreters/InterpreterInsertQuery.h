@@ -15,7 +15,7 @@ namespace DB
 class InterpreterInsertQuery : public IInterpreter
 {
 public:
-    InterpreterInsertQuery(const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_ = false);
+    InterpreterInsertQuery(const ASTPtr & query_ptr_, Context & context_, bool allow_materialized_ = false);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -24,13 +24,15 @@ public:
       */
     BlockIO execute() override;
 
+    std::pair<String, String> getDatabaseTable() const;
+
 private:
     StoragePtr getTable(const ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table);
     void checkAccess(const ASTInsertQuery & query);
 
     ASTPtr query_ptr;
-    const Context & context;
+    Context & context;
     bool allow_materialized;
 };
 

@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
+
 namespace
 {
 
@@ -38,7 +39,7 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
         throw Exception("Bin count should be positive", ErrorCodes::BAD_ARGUMENTS);
 
     assertUnary(name, arguments);
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionHistogram>(*arguments[0], bins_count));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionHistogram>(*arguments[0], bins_count, arguments, params));
 
     if (!res)
         throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

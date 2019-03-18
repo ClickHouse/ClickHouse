@@ -2,6 +2,8 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -71,6 +73,7 @@ public:
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
+    void protect() override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void getExtremes(Field & min, Field & max) const override;
@@ -86,6 +89,13 @@ public:
     {
         callback(nested_column);
         callback(null_map);
+    }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_nullable = typeid_cast<const ColumnNullable *>(&rhs))
+            return nested_column->structureEquals(*rhs_nullable->nested_column);
+        return false;
     }
 
     bool isColumnNullable() const override { return true; }

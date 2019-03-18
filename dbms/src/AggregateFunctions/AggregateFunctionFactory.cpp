@@ -5,15 +5,17 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+
 #include <Interpreters/Context.h>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/String.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -102,16 +104,14 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 {
     String name = getAliasToOrName(name_param);
     /// Find by exact match.
-    auto it = aggregate_functions.find(name);
-    if (it != aggregate_functions.end())
+    if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
         return it->second(name, argument_types, parameters);
 
     /// Find by case-insensitive name.
     /// Combinators cannot apply for case insensitive (SQL-style) aggregate function names. Only for native names.
     if (recursion_level == 0)
     {
-        auto it = case_insensitive_aggregate_functions.find(Poco::toLower(name));
-        if (it != case_insensitive_aggregate_functions.end())
+        if (auto it = case_insensitive_aggregate_functions.find(Poco::toLower(name)); it != case_insensitive_aggregate_functions.end())
             return it->second(name, argument_types, parameters);
     }
 
@@ -130,7 +130,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
 
-    throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+    auto hints = this->getHints(name);
+    if (!hints.empty())
+        throw Exception("Unknown aggregate function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+    else
+        throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
 
 

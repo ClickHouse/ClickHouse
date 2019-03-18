@@ -508,6 +508,10 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
+    /// Do not write anything for empty column. (May happen while writing empty arrays.)
+    if (limit == 0)
+        return;
+
     auto sub_column = low_cardinality_column.cutAndCompact(offset, limit);
     ColumnPtr positions = sub_column->getIndexesPtr();
     ColumnPtr keys = sub_column->getDictionary().getNestedColumn();
@@ -709,7 +713,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             readIntBinary(low_cardinality_state->num_pending_rows, *indexes_stream);
         }
 
-        size_t num_rows_to_read = std::min(limit, low_cardinality_state->num_pending_rows);
+        size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
         readIndexes(num_rows_to_read);
         limit -= num_rows_to_read;
         low_cardinality_state->num_pending_rows -= num_rows_to_read;
@@ -725,25 +729,43 @@ void DataTypeLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr)
     dictionary_type->deserializeBinary(field, istr);
 }
 
-template <typename ... Args>
+void DataTypeLowCardinality::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    if (allow_add_row)
+    {
+        deserializeImpl(column, &IDataType::deserializeProtobuf, protobuf, true, row_added);
+        return;
+    }
+
+    row_added = false;
+    auto & low_cardinality_column= getColumnLowCardinality(column);
+    auto  nested_column = low_cardinality_column.getDictionary().getNestedColumn();
+    auto temp_column = nested_column->cloneEmpty();
+    size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(low_cardinality_column.size() - 1);
+    temp_column->insertFrom(*nested_column, unique_row_number);
+    bool dummy;
+    dictionary_type.get()->deserializeProtobuf(*temp_column, protobuf, false, dummy);
+    low_cardinality_column.popBack(1);
+    low_cardinality_column.insertFromFullColumn(*temp_column, 0);
+}
+
+template <typename... Params, typename... Args>
 void DataTypeLowCardinality::serializeImpl(
-        const IColumn & column, size_t row_num, WriteBuffer & ostr,
-        DataTypeLowCardinality::SerealizeFunctionPtr<Args ...> func, Args & ... args) const
+    const IColumn & column, size_t row_num, DataTypeLowCardinality::SerializeFunctionPtr<Params...> func, Args &&... args) const
 {
     auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
-    (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, ostr, std::forward<Args>(args)...);
+    (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
 }
 
-template <typename ... Args>
+template <typename... Params, typename... Args>
 void DataTypeLowCardinality::deserializeImpl(
-        IColumn & column, ReadBuffer & istr,
-        DataTypeLowCardinality::DeserealizeFunctionPtr<Args ...> func, Args & ... args) const
+    IColumn & column, DataTypeLowCardinality::DeserializeFunctionPtr<Params...> func, Args &&... args) const
 {
     auto & low_cardinality_column= getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    (dictionary_type.get()->*func)(*temp_column, istr, std::forward<Args>(args)...);
+    (dictionary_type.get()->*func)(*temp_column, std::forward<Args>(args)...);
 
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
 }
@@ -766,7 +788,7 @@ namespace
         void operator()()
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
-                column = creator((ColumnVector<T> *)(nullptr));
+                column = creator(static_cast<ColumnVector<T> *>(nullptr));
         }
     };
 }
@@ -780,13 +802,13 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         type = nullable_type->getNestedType().get();
 
     if (isString(type))
-        return creator((ColumnString *)(nullptr));
+        return creator(static_cast<ColumnString *>(nullptr));
     if (isFixedString(type))
-        return creator((ColumnFixedString *)(nullptr));
+        return creator(static_cast<ColumnFixedString *>(nullptr));
     if (typeid_cast<const DataTypeDate *>(type))
-        return creator((ColumnVector<UInt16> *)(nullptr));
+        return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
     if (typeid_cast<const DataTypeDateTime *>(type))
-        return creator((ColumnVector<UInt32> *)(nullptr));
+        return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
     if (isNumber(type))
     {
         MutableColumnUniquePtr column;

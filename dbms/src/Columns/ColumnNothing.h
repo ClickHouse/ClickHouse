@@ -20,9 +20,14 @@ private:
 
 public:
     const char * getFamilyName() const override { return "Nothing"; }
-    MutableColumnPtr cloneDummy(size_t s) const override { return ColumnNothing::create(s); }
+    MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnNothing::create(s_); }
 
     bool canBeInsideNullable() const override { return true; }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnNothing);
+    }
 };
 
 }

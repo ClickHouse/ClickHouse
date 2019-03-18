@@ -23,9 +23,7 @@ struct ArrayMapImpl
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
     {
-        return mapped->isColumnConst()
-            ? ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsPtr())
-            : ColumnArray::create(mapped, array.getOffsetsPtr());
+        return ColumnArray::create(mapped->convertToFullColumnIfConst(), array.getOffsetsPtr());
     }
 };
 

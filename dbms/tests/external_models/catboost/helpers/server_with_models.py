@@ -20,6 +20,13 @@ CLICKHOUSE_CONFIG = \
     <users_config>users.xml</users_config>
     <tcp_port>{tcp_port}</tcp_port>
     <catboost_dynamic_library_path>{catboost_dynamic_library_path}</catboost_dynamic_library_path>
+    <logger>
+        <level>trace</level>
+        <log>{path}/clickhouse-server.log</log>
+        <errorlog>{path}/clickhouse-server.err.log</errorlog>
+        <size>never</size>
+        <count>50</count>
+    </logger>
 </yandex>
 '''
 

@@ -30,9 +30,8 @@ bool RegionsHierarchyFormatReader::readNext(RegionEntry & entry)
             ++input->position();
             UInt64 population_big = 0;
             DB::readIntText(population_big, *input);
-            population = population_big > std::numeric_limits<RegionPopulation>::max()
-                ? std::numeric_limits<RegionPopulation>::max()
-                : population_big;
+            population = population_big > std::numeric_limits<RegionPopulation>::max() ? std::numeric_limits<RegionPopulation>::max()
+                                                                                       : population_big;
         }
         DB::assertChar('\n', *input);
 

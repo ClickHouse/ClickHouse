@@ -1,12 +1,11 @@
-<a name="table_engines-graphitemergetree"></a>
 
 # GraphiteMergeTree
 
-This engine is designed for rollup (thinning and aggregating/averaging) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
+This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
 You can use any ClickHouse table engine to store the Graphite data if you don't need rollup, but if you need a rollup use `GraphiteMergeTree`. The engine reduces the volume of storage and increases the efficiency of queries from Graphite.
 
-The engine inherits properties from [MergeTree](mergetree.md#table_engines-mergetree).
+The engine inherits properties from [MergeTree](mergetree.md).
 
 ## Creating a Table
 
@@ -25,14 +24,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
+For a description of request parameters, see [request description](../../query_language/create.md).
 
 A table for the Graphite date should have the following columns:
 
 - Column with the metric name (Graphite sensor). Data type: `String`.
-- Column with the time for measuring the metric. Data type: `DateTime`.
+- Column with the time of measuring the metric. Data type: `DateTime`.
 - Column with the value of the metric. Data type: any numeric.
-- Column with the version of the metric with the same name and time of measurement. Data type: any numeric.
+- Column with the version of the metric. Data type: any numeric.
 
     ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts.
 
@@ -44,7 +43,7 @@ The names of these columns should be set in the rollup configuration.
 
 **Query clauses**
 
-When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
+When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
@@ -79,6 +78,13 @@ required-columns
 pattern
     regexp
     function
+pattern
+    regexp
+    age + precision
+    ...
+pattern
+    regexp
+    function
     age + precision
     ...
 pattern
@@ -89,24 +95,28 @@ default
     ...
 ```
 
-When processing a row, ClickHouse checks the rules in the `pattern` section. If the metric name matches the `regexp`, the rules from the `pattern`section are applied; otherwise, the rules from the `default` section are used.
+**Important:** The order of patterns should be next:
 
-The rules are defined with fields `function` and `age + precision`.
+1. Patterns *without* `function` *or* `retention`.
+1. Patterns *with* both `function` *and* `retention`.
+1. Pattern `dafault`.
+
+
+When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections could contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
 Fields for `pattern` and `default` sections:
 
 - `regexp`– A pattern for the metric name.
 - `age` – The minimum age of the data in seconds.
-- `precision`– How precisely to define the age of the data in seconds.
+- `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
 - `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
 The `required-columns`:
 
 - `path_column_name` — Column with the metric name (Graphite sensor).
-- `time_column_name` — Column with the time for measuring the metric.
+- `time_column_name` — Column with the time of measuring the metric.
 - `value_column_name` — Column with the value of the metric at the time set in `time_column_name`.
-- `version_column_name` — Column with the version timestamp of the metric with the same name and time remains in the database.
-
+- `version_column_name` — Column with the version of the metric.
 
 Example of settings:
 

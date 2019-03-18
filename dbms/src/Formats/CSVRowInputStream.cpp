@@ -1,3 +1,5 @@
+#include <Core/Defines.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
@@ -111,7 +113,7 @@ void CSVRowInputStream::readPrefix()
 }
 
 
-bool CSVRowInputStream::read(MutableColumns & columns)
+bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     if (istr.eof())
         return false;
@@ -123,7 +125,7 @@ bool CSVRowInputStream::read(MutableColumns & columns)
     for (size_t i = 0; i < size; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        data_types[i]->deserializeTextCSV(*columns[i], istr, format_settings);
+        data_types[i]->deserializeAsTextCSV(*columns[i], istr, format_settings);
         skipWhitespacesAndTabs(istr);
 
         skipDelimiter(istr, format_settings.csv.delimiter, i + 1 == size);
@@ -189,7 +191,13 @@ String CSVRowInputStream::getDiagnosticInfo()
 }
 
 
-bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
+/** gcc-7 generates wrong code with optimization level greater than 1.
+  * See tests: dbms/src/IO/tests/write_int.cpp
+  *  and dbms/tests/queries/0_stateless/00898_parsing_bad_diagnostic_message.sh
+  * This is compiler bug. The bug does not present in gcc-8 and clang-8.
+  * Nevertheless, we don't need high optimization of this function.
+  */
+bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
     WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
     const char delimiter = format_settings.csv.delimiter;
@@ -215,7 +223,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         {
             skipWhitespacesAndTabs(istr);
             prev_position = istr.position();
-            data_types[i]->deserializeTextCSV(*columns[i], istr, format_settings);
+            data_types[i]->deserializeAsTextCSV(*columns[i], istr, format_settings);
             curr_position = istr.position();
             skipWhitespacesAndTabs(istr);
         }
@@ -353,7 +361,7 @@ void registerInputFormatCSV(FormatFactory & factory)
             ReadBuffer & buf,
             const Block & sample,
             const Context &,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(

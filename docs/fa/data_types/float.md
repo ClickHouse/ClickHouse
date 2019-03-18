@@ -7,7 +7,7 @@
 Type های float در ClickHouse مشابه C می باشد:
 
 - `Float32` - `float`
-- `Float64`  - `double`
+- `Float64` - `double`
 
 توصیه می کنیم که داده ها را هرزمان که امکان پذیره است به جای float به صورت int ذخیره کنید. برای مثال: تبدیل دقت اعداد به یک مقدار int، مثل سرعت page load در قالب میلی ثانیه.
 
@@ -84,7 +84,7 @@ SELECT 0 / 0
 
 <div dir="rtl" markdown="1">
 
-قوانین مربوط به مرتب سازی ` Nan ` را در بخش [ORDER BY clause](../query_language/select.md#query_language-queries-order_by) ببینید.
+قوانین مربوط به مرتب سازی ` Nan ` را در بخش [ORDER BY clause](../query_language/select.md) ببینید.
 
 </div>
 [مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/float/) <!--hide-->

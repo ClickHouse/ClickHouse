@@ -1,4 +1,4 @@
-FROM ubuntu
+FROM ubuntu:18.04
 
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --force-yes \
@@ -16,15 +16,18 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes -
     module-init-tools \
     cgroupfs-mount \
     python-pip \
-    tzdata
+    tzdata \
+    libreadline-dev \
+    libicu-dev \
+    curl
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip install pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2
+RUN pip install pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psycopg2 pymongo tzlocal
 
 ENV DOCKER_CHANNEL stable
-ENV DOCKER_VERSION 18.09.0
+ENV DOCKER_VERSION 17.09.1-ce
 
 RUN set -eux; \
 	\
