@@ -200,7 +200,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         table_lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
 
-    syntax_analyzer_result = SyntaxAnalyzer(context, options.subquery_depth).analyze(
+    syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
         query_ptr, syntax_analyzer_result, context, NamesAndTypesList(),

@@ -26,12 +26,14 @@ struct SelectQueryOptions
     size_t subquery_depth;
     bool only_analyze;
     bool modify_inplace;
+    bool remove_duplicates;
 
     SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
         : to_stage(stage)
         , subquery_depth(depth)
         , only_analyze(false)
         , modify_inplace(false)
+        , remove_duplicates(false)
     {}
 
     SelectQueryOptions copy() const { return *this; }
@@ -57,6 +59,12 @@ struct SelectQueryOptions
     }
 
     SelectQueryOptions & noModify() { return modify(false); }
+
+    SelectQueryOptions & removeDuplicates(bool value = true)
+    {
+        remove_duplicates = value;
+        return *this;
+    }
 
     SelectQueryOptions & noSubquery()
     {
