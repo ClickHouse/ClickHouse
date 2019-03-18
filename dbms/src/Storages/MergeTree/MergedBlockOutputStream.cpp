@@ -128,7 +128,9 @@ void fillIndexGranularityImpl(
             index_granularity_for_block = rows_in_block;
         else if (block_size_in_memory >= index_granularity_bytes)
         {
+            std::cerr << "BLOCK SIZE In MEMORY:" << block_size_in_memory << std::endl;
             size_t granules_in_block = block_size_in_memory / index_granularity_bytes;
+            std::cerr << "GRANULES IN  BLOCK:" << granules_in_block << std::endl;
             index_granularity_for_block = rows_in_block / granules_in_block;
         }
         else
@@ -137,6 +139,7 @@ void fillIndexGranularityImpl(
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
+    std::cerr << "GRANULARITY SIZE IN ROWS:"<< index_granularity_for_block << std::endl;
 
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
         index_granularity.push_back(index_granularity_for_block);
