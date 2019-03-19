@@ -40,6 +40,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
 #include <Common/localBackup.h>
+#include <Common/StackTrace.h>
 #include <Interpreters/PartLog.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -1162,6 +1163,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
     NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
+    std::cerr << "Stack:" << StackTrace().toString() << std::endl;
     out_expression = nullptr;
     out_rename_map = {};
     out_force_update_metadata = false;
@@ -1278,20 +1280,24 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
             /// After conversion, we need to rename temporary files into original.
 
-            new_types[source_and_expression.first]->enumerateStreams(
-                [&](const IDataType::SubstreamPath & substream_path)
-                {
-                    /// Skip array sizes, because they cannot be modified in ALTER.
-                    if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
-                        return;
+            if (part)
+            {
+                new_types[source_and_expression.first]->enumerateStreams(
+                    [&](const IDataType::SubstreamPath & substream_path)
+                    {
+                        /// Skip array sizes, because they cannot be modified in ALTER.
+                        if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+                            return;
 
-                    String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
-                    String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
+                        String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
+                        String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
-                    std::cerr << "PART MARKS FILE_EXTENSION:" << part->marks_file_extension << std::endl;
-                    out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + part->marks_file_extension] = original_file_name + part->marks_file_extension;
-                }, {});
+                        std::cerr << "PART IS NULL:" << (part == nullptr) << std::endl;
+                        std::cerr << "PART MARKS FILE_EXTENSION:" << part->marks_file_extension << std::endl;
+                        out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
+                        out_rename_map[temporary_file_name + part->marks_file_extension] = original_file_name + part->marks_file_extension;
+                    }, {});
+            }
         }
 
         out_expression->add(ExpressionAction::project(projection));
@@ -1323,6 +1329,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const IndicesASTs & new_indices,
     bool skip_sanity_checks)
 {
+    std::cerr << "LETS DEBUG ALTER\n";
     ExpressionActionsPtr expression;
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
     bool force_update_metadata;
@@ -1454,6 +1461,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         transaction->new_columns.writeText(columns_file);
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
     }
+    std::cerr << "ALTER FINISHED\n";
 
     return transaction;
 }

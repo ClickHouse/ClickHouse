@@ -34,8 +34,8 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Block & block, size_t num_r
     if (num_rows)
     {
         size_t rows_read = merge_tree_reader->readRows(current_mark, continue_reading, num_rows, block);
-        std::cerr << "Rows read:" << rows_read << std::endl;
-        std::cerr << "Num rows:" << num_rows << std::endl;
+        //std::cerr << "Rows read:" << rows_read << std::endl;
+        //std::cerr << "Num rows:" << num_rows << std::endl;
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -178,8 +178,8 @@ size_t MergeTreeRangeReader::Stream::read(Block & block, size_t num_rows, bool s
         offset_after_current_mark += num_rows;
 
         /// Start new granule; skipped_rows_after_offset is already zero.
-        std::cerr << "Offset after current mark:" << offset_after_current_mark << std::endl;
-        std::cerr << "Current Index granularity:" << current_mark_index_granularity << std::endl;
+        //std::cerr << "Offset after current mark:" << offset_after_current_mark << std::endl;
+        //std::cerr << "Current Index granularity:" << current_mark_index_granularity << std::endl;
         if (offset_after_current_mark == current_mark_index_granularity || skip_remaining_rows_in_current_granule)
             toNextMark();
 
@@ -572,7 +572,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             }
 
             auto rows_to_read = std::min(space_left, stream.numPendingRowsInCurrentGranule());
-            std::cerr << "Rows To Read:" << rows_to_read << std::endl;
+            //std::cerr << "Rows To Read:" << rows_to_read << std::endl;
             bool last = rows_to_read == space_left;
             result.addRows(stream.read(result.block, rows_to_read, !last));
             result.addGranule(rows_to_read);

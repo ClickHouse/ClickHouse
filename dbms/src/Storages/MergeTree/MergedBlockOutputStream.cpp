@@ -128,9 +128,9 @@ void fillIndexGranularityImpl(
             index_granularity_for_block = rows_in_block;
         else if (block_size_in_memory >= index_granularity_bytes)
         {
-            std::cerr << "BLOCK SIZE In MEMORY:" << block_size_in_memory << std::endl;
+            //std::cerr << "BLOCK SIZE In MEMORY:" << block_size_in_memory << std::endl;
             size_t granules_in_block = block_size_in_memory / index_granularity_bytes;
-            std::cerr << "GRANULES IN  BLOCK:" << granules_in_block << std::endl;
+            //std::cerr << "GRANULES IN  BLOCK:" << granules_in_block << std::endl;
             index_granularity_for_block = rows_in_block / granules_in_block;
         }
         else
@@ -141,7 +141,7 @@ void fillIndexGranularityImpl(
     }
     if (index_granularity_for_block == 0) /// very rare case when index granularity bytes less then single row
         index_granularity_for_block = 1;
-    std::cerr << "GRANULARITY SIZE IN ROWS:"<< index_granularity_for_block << std::endl;
+    //std::cerr << "GRANULARITY SIZE IN ROWS:"<< index_granularity_for_block << std::endl;
 
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
         index_granularity.push_back(index_granularity_for_block);
@@ -273,7 +273,6 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
 
         if (write_marks)
             current_column_mark++;
-        std::cerr << "CURRENT ROW:" << current_row << std::endl;
     }
 
     /// Memoize offsets for Nested types, that are already written. They will not be written again for next columns of Nested structure.
@@ -520,7 +519,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     }
 
     new_part->rows_count = rows_count;
-    std::cerr << "SETTING CURRENT MARK FOR PART:" << part_path << " to " << current_mark << std::endl;
+    //std::cerr << "SETTING CURRENT MARK FOR PART:" << part_path << " to " << current_mark << std::endl;
     new_part->marks_count = current_mark;
     new_part->modification_time = time(nullptr);
     new_part->columns = *total_column_list;
@@ -734,11 +733,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
-        std::cerr << "Index Granularity size:" << index_granularity.size() << std::endl;
-        std::cerr << "Index Granularity first elem:" << index_granularity[0] << std::endl;
+        //std::cerr << "Index Granularity size:" << index_granularity.size() << std::endl;
+        //std::cerr << "Index Granularity first elem:" << index_granularity[0] << std::endl;
         for (size_t i = index_offset; i < rows;)
         {
-            std::cerr << "IN LOOP\n";
             if (storage.hasPrimaryKey())
             {
                 for (size_t j = 0, size = primary_key_columns.size(); j < size; ++j)
@@ -749,8 +747,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
             }
 
-            std::cerr << "I:" << i << " Total rows:" << rows << std::endl;
-            std::cerr << "Increment current mark:" << current_mark << std::endl;
+            //std::cerr << "I:" << i << " Total rows:" << rows << std::endl;
+            //std::cerr << "Increment current mark:" << current_mark << std::endl;
             ++current_mark;
             if (current_mark < index_granularity.size())
                 i += index_granularity[current_mark];
@@ -758,8 +756,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 break;
         }
     }
-    std::cerr << "Index granularity size:" << index_granularity.size() << std::endl;
-    std::cerr << "block written, total marks:" << current_mark << std::endl;
+    //std::cerr << "Index granularity size:" << index_granularity.size() << std::endl;
+    //std::cerr << "block written, total marks:" << current_mark << std::endl;
 
     index_offset = new_index_offset;
 }

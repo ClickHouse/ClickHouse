@@ -116,7 +116,7 @@ try
         finish();
     }
 
-    std::cerr << "Resulting block in MergeTreeSequentialBlockInputStream:" << res.dumpStructure() << std::endl;
+    //std::cerr << "Resulting block in MergeTreeSequentialBlockInputStream:" << res.dumpStructure() << std::endl;
     return res;
 }
 catch (...)

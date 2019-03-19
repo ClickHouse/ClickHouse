@@ -105,3 +105,36 @@ SELECT COUNT(*) FROM test.huge_granularity_small_blocks;
 SELECT distinct(marks) from system.parts WHERE table = 'huge_granularity_small_blocks' and database='test';
 
 DROP TABLE IF EXISTS test.huge_granularity_small_blocks;
+
+----- Some alter tests ----
+
+DROP TABLE IF EXISTS test.adaptive_granularity_alter;
+
+CREATE TABLE test.adaptive_granularity_alter (
+  p Date,
+  k UInt64,
+  v1 UInt64,
+  v2 Int64
+) ENGINE MergeTree() PARTITION BY toYYYYMM(p) ORDER BY k SETTINGS index_granularity_bytes = 110;
+
+INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+
+SELECT COUNT(*) FROM test.adaptive_granularity_alter;
+
+SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
+
+OPTIMIZE TABLE test.adaptive_granularity_alter FINAL;
+
+ALTER TABLE test.adaptive_granularity_alter MODIFY COLUMN v1 Int16;
+
+SELECT COUNT(*) FROM test.adaptive_granularity_alter;
+
+SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
+
+INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 7, 7000, 8000);
+
+SELECT COUNT(*) FROM test.adaptive_granularity_alter;
+
+SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
+
+DROP TABLE IF EXISTS test.adaptive_granularity_alter;

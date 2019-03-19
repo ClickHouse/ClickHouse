@@ -207,12 +207,12 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 
     for (const auto & column : storage_columns)
     {
-        std::cerr << "Searching for column:" << column.name << std::endl;
+        //std::cerr << "Searching for column:" << column.name << std::endl;
         if (!hasColumnFiles(column.name))
             continue;
 
         const auto size = getColumnSize(column.name, *column.type).data_compressed;
-        std::cerr << "Column size:" <<size<<std::endl;
+        //std::cerr << "Column size:" <<size<<std::endl;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -485,21 +485,24 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
 
 void MergeTreeDataPart::loadMarksIndexGranularity()
 {
-    std::cerr << "LOADING MARKS FOR PART:" << getFullPath() << std::endl;
+    //std::cerr << "LOADING MARKS FOR PART:" << getFullPath() << std::endl;
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
     /// We can use any column, it doesn't matter
     std::string marks_file_path = getFullPath() + escapeForFileName(columns.front().name);
-    std::cerr << "MARKSFILEPATH:" << marks_file_path << std::endl;
-    if (Poco::File(marks_file_path + ".mrk").exists()) {
+    //std::cerr << "MARKSFILEPATH:" << marks_file_path << std::endl;
+    if (Poco::File(marks_file_path + ".mrk").exists())
+    {
         marks_file_extension = ".mrk";
-        std::cerr << "EXISTS .mrk " <<    getFullPath() << std::endl;
+        //std::cerr << "EXISTS .mrk " <<    getFullPath() << std::endl;
     }
-    else if (Poco::File(marks_file_path + ".mrk2").exists()) {
+    else if (Poco::File(marks_file_path + ".mrk2").exists())
+    {
         marks_file_extension = ".mrk2";
-        std::cerr << "EXISTS .mrk2:" << getFullPath() << std::endl;
-    } else
+        //std::cerr << "EXISTS .mrk2:" << getFullPath() << std::endl;
+    }
+    else
         throw Exception("Marks file '" + marks_file_path + "' doesn't exist with extensions .mrk or mrk2", ErrorCodes::NO_FILE_IN_DATA_PART);
 
     marks_file_path += marks_file_extension;
@@ -833,12 +836,12 @@ bool MergeTreeDataPart::hasColumnFiles(const String & column) const
     /// That's Ok under assumption that files exist either for all or for no streams.
 
     String prefix = getFullPath();
-    std::cerr << "ColumnPrefix:" << prefix << std::endl;
+    //std::cerr << "ColumnPrefix:" << prefix << std::endl;
 
 
     String escaped_column = escapeForFileName(column);
-    std::cerr << "Escaped name:" << escaped_column << std::endl;
-    std::cerr << "Marks file extension:" << marks_file_extension << std::endl;
+    //std::cerr << "Escaped name:" << escaped_column << std::endl;
+    //std::cerr << "Marks file extension:" << marks_file_extension << std::endl;
     return Poco::File(prefix + escaped_column + ".bin").exists()
         && Poco::File(prefix + escaped_column + marks_file_extension).exists();
 }
