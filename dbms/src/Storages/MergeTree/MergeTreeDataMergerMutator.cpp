@@ -633,7 +633,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true, true);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:

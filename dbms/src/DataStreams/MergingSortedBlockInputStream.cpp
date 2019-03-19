@@ -18,9 +18,10 @@ namespace ErrorCodes
 
 MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
-    size_t max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
+    size_t max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_, bool average_block_sizes_)
     : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
-    , source_blocks(inputs_.size()), cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
+    , average_block_sizes(average_block_sizes_), source_blocks(inputs_.size())
+    , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
     header = children.at(0)->getHeader();
@@ -172,11 +173,10 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
         rows_granularity[current_granularity]++;
         ++merged_rows;
-        if (merged_rows >= getAvgGranularity(rows_granularity, merged_rows))
-        {
-            //std::cerr << "max_block_size reached:" << merged_rows << std::endl;
-            return true;
-        }
+        if (!average_block_sizes)
+            return merged_rows == max_block_size;
+        else
+            return merged_rows >= getAvgGranularity(rows_granularity, merged_rows);
 
         return false;
     };
