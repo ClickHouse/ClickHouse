@@ -78,7 +78,7 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
     auto dictionary_names_and_types = getNamesAndTypes(dictionary_structure);
     std::set<NameAndTypePair> names_and_types_set(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
 
-    for (const auto & column : getColumns().ordinary)
+    for (const auto & column : getColumns().getOrdinary())
     {
         if (names_and_types_set.find(column) == names_and_types_set.end())
         {
@@ -101,7 +101,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
-        String dictionary_name = typeid_cast<const ASTLiteral &>(*args.engine_args[0]).value.safeGet<String>();
+        String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageDictionary::create(
             args.table_name, args.columns, args.context, args.attach, dictionary_name);

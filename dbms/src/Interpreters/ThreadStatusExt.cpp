@@ -37,6 +37,8 @@ const std::string & ThreadStatus::getQueryId() const
 
 void CurrentThread::defaultThreadDeleter()
 {
+    if (unlikely(!current_thread))
+        return;
     ThreadStatus & thread = CurrentThread::get();
     thread.detachQuery(true, true);
 }
@@ -191,44 +193,63 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 
 void CurrentThread::initializeQuery()
 {
+    if (unlikely(!current_thread))
+        return;
     get().initializeQuery();
     get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
 {
+    if (unlikely(!current_thread))
+        return;
     get().attachQuery(thread_group, true);
     get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
+    if (unlikely(!current_thread))
+        return;
     get().attachQuery(thread_group, false);
     get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
 const std::string & CurrentThread::getQueryId()
 {
+    if (unlikely(!current_thread))
+    {
+        const static std::string empty;
+        return empty;
+    }
     return get().getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)
 {
+    if (unlikely(!current_thread))
+        return;
     return get().attachQueryContext(query_context);
 }
 
 void CurrentThread::finalizePerformanceCounters()
 {
+    if (unlikely(!current_thread))
+        return;
     get().finalizePerformanceCounters();
 }
 
 void CurrentThread::detachQuery()
 {
+    if (unlikely(!current_thread))
+        return;
     get().detachQuery(false);
 }
 
 void CurrentThread::detachQueryIfNotDetached()
 {
+    if (unlikely(!current_thread))
+        return;
     get().detachQuery(true);
 }
 
@@ -241,8 +262,12 @@ CurrentThread::QueryScope::QueryScope(Context & query_context)
 
 void CurrentThread::QueryScope::logPeakMemoryUsage()
 {
+    auto group = CurrentThread::getGroup();
+    if (!group)
+        return;
+
     log_peak_memory_usage_in_destructor = false;
-    CurrentThread::getGroup()->memory_tracker.logPeakMemoryUsage();
+    group->memory_tracker.logPeakMemoryUsage();
 }
 
 CurrentThread::QueryScope::~QueryScope()

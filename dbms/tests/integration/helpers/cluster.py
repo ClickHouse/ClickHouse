@@ -482,6 +482,13 @@ class ClickHouseInstance:
     def get_query_request(self, *args, **kwargs):
         return self.client.get_query_request(*args, **kwargs)
 
+    def restart_clickhouse(self, stop_start_wait_sec=5):
+        if not self.stay_alive:
+            raise Exception("clickhouse can be restarted only with stay_alive=True instance")
+
+        self.exec_in_container(["bash", "-c", "pkill clickhouse"], user='root')
+        time.sleep(stop_start_wait_sec)
+        self.exec_in_container(["bash", "-c", "{} --daemon".format(CLICKHOUSE_START_COMMAND)], user='root')
 
     def exec_in_container(self, cmd, detach=False, **kwargs):
         container = self.get_docker_handle()

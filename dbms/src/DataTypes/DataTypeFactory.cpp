@@ -32,19 +32,19 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
 
 DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 {
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(ast.get()))
+    if (const auto * func = ast->as<ASTFunction>())
     {
         if (func->parameters)
             throw Exception("Data type cannot have multiple parenthesed parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_DATA_TYPE);
         return get(func->name, func->arguments);
     }
 
-    if (const ASTIdentifier * ident = typeid_cast<const ASTIdentifier *>(ast.get()))
+    if (const auto * ident = ast->as<ASTIdentifier>())
     {
         return get(ident->name, {});
     }
 
-    if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(ast.get()))
+    if (const auto * lit = ast->as<ASTLiteral>())
     {
         if (lit->value.isNull())
             return get("Null", {});
