@@ -187,6 +187,12 @@ if (OS_LINUX AND NOT UNBUNDLED)
     # Disable default linked libraries.
     set (DEFAULT_LIBS "-nodefaultlibs")
 
+    # We need builtins from Clang's RT even without libcxx - for ubsan+int128. See https://bugs.llvm.org/show_bug.cgi?id=16404
+    set (BUILTINS_LIB_PATH "")
+    if (COMPILER_CLANG)
+        execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif ()
+
     # Add C++ libraries.
     #
     # This consist of:
@@ -197,14 +203,9 @@ if (OS_LINUX AND NOT UNBUNDLED)
     #
     # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
     if (USE_LIBCXX)
-        set (BUILTINS_LIB_PATH "")
-            if (COMPILER_CLANG)
-            execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
-        endif ()
-
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     endif ()
 
     # Linking with GLIBC prevents portability of binaries to older systems.
