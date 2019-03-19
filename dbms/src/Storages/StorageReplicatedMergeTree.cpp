@@ -397,8 +397,8 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
     {
         if (allow_alter &&
             (skip_sanity_checks ||
-             old_columns.ordinary.sizeOfDifference(columns_from_zk.ordinary) +
-             old_columns.materialized.sizeOfDifference(columns_from_zk.materialized) <= 2))
+             old_columns.getOrdinary().sizeOfDifference(columns_from_zk.getOrdinary()) +
+             old_columns.getMaterialized().sizeOfDifference(columns_from_zk.getMaterialized()) <= 2))
         {
             LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
@@ -454,7 +454,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
         storage_modifier = [&](IAST & ast)
         {
-            auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+            auto & storage_ast = ast.as<ASTStorage &>();
 
             if (!storage_ast.order_by)
                 throw Exception(
@@ -3526,7 +3526,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     String partition_id;
 
     if (attach_part)
-        partition_id = typeid_cast<const ASTLiteral &>(*partition).value.safeGet<String>();
+        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
     else
         partition_id = data.getPartitionIDFromQuery(partition, query_context);
 
@@ -3945,17 +3945,17 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// TODO: add setters and getters interface for database and table fields of AST
     auto new_query = query->clone();
-    if (auto * alter = typeid_cast<ASTAlterQuery *>(new_query.get()))
+    if (auto * alter = new_query->as<ASTAlterQuery>())
     {
         alter->database = leader_address.database;
         alter->table = leader_address.table;
     }
-    else if (auto * optimize = typeid_cast<ASTOptimizeQuery *>(new_query.get()))
+    else if (auto * optimize = new_query->as<ASTOptimizeQuery>())
     {
         optimize->database = leader_address.database;
         optimize->table = leader_address.table;
     }
-    else if (auto * drop = typeid_cast<ASTDropQuery *>(new_query.get()); drop->kind == ASTDropQuery::Kind::Truncate)
+    else if (auto * drop = new_query->as<ASTDropQuery>(); drop->kind == ASTDropQuery::Kind::Truncate)
     {
         drop->database = leader_address.database;
         drop->table    = leader_address.table;

@@ -160,7 +160,7 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 
 Данные, уже изменённые мутацией, остаются в таблице (отката на старую версию данных не происходит).
 
-## OPTIMIZE
+## OPTIMIZE {#misc_operations-optimize}
 
 ```sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]

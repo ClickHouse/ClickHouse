@@ -1,15 +1,15 @@
 #pragma once
+
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
 class Context;
-class IAST;
 class ASTSystemQuery;
 class IStorage;
-using ASTPtr = std::shared_ptr<IAST>;
 using StoragePtr = std::shared_ptr<IStorage>;
 
 

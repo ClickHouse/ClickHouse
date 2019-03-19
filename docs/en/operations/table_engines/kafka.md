@@ -40,7 +40,7 @@ Optional parameters:
 - `kafka_row_delimiter` – Delimiter character, which ends the message.
 - `kafka_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
-- `kafka_skip_broken_messages` – Mode of Kafka messages parser. If `kafka_skip_broken_messages = 1` then the engine skips the Kafka messages (message equals a row of data) that can't be parsed.
+- `kafka_skip_broken_messages` – Kafka message parser mode. If `kafka_skip_broken_messages = 1` then the engine skips the Kafka messages that can't be parsed (a message equals a row of data).
 
 Examples:
 
@@ -76,7 +76,7 @@ Examples:
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
 !!! attention
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+    Do not use this method in new projects. If possible, switch old projects to the method described above.
 
 
 ```
@@ -99,7 +99,7 @@ Groups are flexible and synced on the cluster. For instance, if you have 10 topi
 2. Create a table with the desired structure.
 3. Create a materialized view that converts data from the engine and puts it into a previously created table.
 
-When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from Kafka and convert them to the required format using `SELECT`
+When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from Kafka and convert them to the required format using `SELECT`.
 
 Example:
 

@@ -1,23 +1,24 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Settings.h>
+#include <Parsers/IAST_fwd.h>
+#include <Common/LRUCache.h>
+#include <Common/MultiVersion.h>
+#include <Common/ThreadPool.h>
+#include <Common/config.h>
+
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <thread>
-#include <atomic>
 #include <optional>
-
-#include <Common/config.h>
-#include <Common/MultiVersion.h>
-#include <Common/LRUCache.h>
-#include <Common/ThreadPool.h>
-#include <Core/Types.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/Block.h>
-#include <Interpreters/Settings.h>
-#include <Interpreters/ClientInfo.h>
+#include <thread>
 
 
 namespace Poco
@@ -68,8 +69,6 @@ class IStorage;
 class ITableFunction;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 class IBlockInputStream;
 class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
