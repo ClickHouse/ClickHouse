@@ -40,7 +40,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/typeid_cast.h>
 #include <Common/localBackup.h>
-#include <Common/StackTrace.h>
 #include <Interpreters/PartLog.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -1163,7 +1162,6 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     const IndicesASTs & old_indices, const IndicesASTs & new_indices, ExpressionActionsPtr & out_expression,
     NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
-    std::cerr << "Stack:" << StackTrace().toString() << std::endl;
     out_expression = nullptr;
     out_rename_map = {};
     out_force_update_metadata = false;
@@ -1331,7 +1329,6 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const IndicesASTs & new_indices,
     bool skip_sanity_checks)
 {
-    std::cerr << "LETS DEBUG ALTER\n";
     ExpressionActionsPtr expression;
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
     bool force_update_metadata;
