@@ -581,6 +581,26 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+bool Context::hasUserProperty(const String & database, const String & table, const String & name) const
+{
+    auto lock = getLock();
+    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+
+    auto table_props = props.find(database + "." + table);
+    if (table_props == props.end())
+        return false;
+
+    auto prop = table_props->second.find(name);
+    return prop != table_props->second.end();
+}
+
+const String & Context::getUserProperty(const String & database, const String & table, const String & name) const
+{
+    auto lock = getLock();
+    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+    return props.at(database + "." + table).at(name);
+}
+
 void Context::calculateUserSettings()
 {
     auto lock = getLock();

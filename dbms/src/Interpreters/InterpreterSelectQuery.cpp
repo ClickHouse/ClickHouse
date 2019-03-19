@@ -1460,6 +1460,7 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 }
 
 
+// TODO: move to anonymous namespace
 bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
 {
     if (query.group_by_with_totals)

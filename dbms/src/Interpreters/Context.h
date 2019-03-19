@@ -188,6 +188,9 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
+    bool hasUserProperty(const String & database, const String & table, const String & name) const;
+    const String & getUserProperty(const String & database, const String & table, const String & name) const;
+
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
     /// Compute and set actual user settings, client_info.current_user should be set
