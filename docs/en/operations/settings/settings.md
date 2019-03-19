@@ -36,14 +36,12 @@ Default value: 0.
 
 Let's consider the following queries:
 
-```
-select count() from test_table where date = '2018-10-10'
-select count() from (select * from test_table) where date = '2018-10-10'
-```
+1. `SELECT count() FROM test_table WHERE date = '2018-10-10'`
+2. `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
 
 If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because `WHERE` applies to subquery directly.
 
-If `enable_optimize_predicate_expression = 0`, then the query `select count() from (select * from test_table) where date = '2018-10-10'` is executed much slowly, because the `WHERE` clause applies to all the data after the subquery finishes.
+If `enable_optimize_predicate_expression = 0`, then the second query is executed much slower, because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
