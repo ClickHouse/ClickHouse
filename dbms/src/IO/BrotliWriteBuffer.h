@@ -17,6 +17,8 @@ public:
 
     ~BrotliWriteBuffer() override;
 
+    void finish();
+
 private:
     void nextImpl() override;
 
@@ -30,6 +32,7 @@ private:
     uint8_t  * out_data;
 
     WriteBuffer & out;
+
     bool finished = false;
 };
 
