@@ -16,11 +16,34 @@ Restrictions:
 
 The possible values are:
 
-- `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
-- `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
-- `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
-- `allow`  — Allows the use of these types of subqueries.
+- `deny` — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
+- `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
+- `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
+- `allow` — Allows the use of these types of subqueries.
 
+## enable_optimize_predicate_expression
+
+Turns on the execution of the primary query predicates for subqueries.
+
+Possible values:
+
+- 0 — The functionality is turned off.
+- 1 — The functionality is turned on.
+
+Default value: 0.
+
+**Usage**
+
+Let's consider the following queries:
+
+```
+select count() from test_table where date = '2018-10-10'
+select count() from (select * from test_table) where date = '2018-10-10'
+```
+
+If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because `WHERE` applies to subquery directly.
+
+If `enable_optimize_predicate_expression = 0`, then the query `select count() from (select * from test_table) where date = '2018-10-10'` is executed much slowly, because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
