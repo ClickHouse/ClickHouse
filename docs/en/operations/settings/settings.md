@@ -101,7 +101,7 @@ Default value: 1.
 
 Let's try to insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
 
-```SQL
+```sql
 SET input_format_values_interpret_expressions = 0;
 INSERT INTO datetime_t VALUES (now())
 
@@ -109,9 +109,11 @@ Exception on client:
 Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
 ```
 
-```SQL
+```sql
 SET input_format_values_interpret_expressions = 1;
 INSERT INTO datetime_t VALUES (now())
+
+Ok.
 ```
 
 ## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
