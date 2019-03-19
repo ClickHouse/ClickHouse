@@ -56,15 +56,15 @@ CompressionCodecPtr CompressionCodecFactory::get(const std::vector<CodecNameWith
 
 CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr column_type) const
 {
-    if (const auto * func = typeid_cast<const ASTFunction *>(ast.get()))
+    if (const auto * func = ast->as<ASTFunction>())
     {
         Codecs codecs;
         codecs.reserve(func->arguments->children.size());
         for (const auto & inner_codec_ast : func->arguments->children)
         {
-            if (const auto * family_name = typeid_cast<const ASTIdentifier *>(inner_codec_ast.get()))
+            if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
                 codecs.emplace_back(getImpl(family_name->name, {}, column_type));
-            else if (const auto * ast_func = typeid_cast<const ASTFunction *>(inner_codec_ast.get()))
+            else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
                 codecs.emplace_back(getImpl(ast_func->name, ast_func->arguments, column_type));
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
