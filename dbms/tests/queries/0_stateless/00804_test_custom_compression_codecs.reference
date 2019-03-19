@@ -14,4 +14,5 @@ CREATE TABLE test.compression_codec_multiple_more_types ( id Decimal(38, 13) COD
 7.1000000000000	xxxxxxxxxxxx	[127]	['Henry']
 !
 222
+!ZSTD
 CREATE TABLE test.test_default_delta ( id UInt64 CODEC(Delta(8)),  data String CODEC(Delta(1)),  somedate Date CODEC(Delta(2)),  somenum Float64 CODEC(Delta(8)),  somestr FixedString(3) CODEC(Delta(1)),  othernum Int64 CODEC(Delta(8)),  yetothernum Float32 CODEC(Delta(4)),  `ddd.age` Array(UInt8) CODEC(Delta(1)),  `ddd.Name` Array(String) CODEC(Delta(1)),  `ddd.OName` Array(String) CODEC(Delta(1)),  `ddd.BName` Array(String) CODEC(Delta(1))) ENGINE = MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192
