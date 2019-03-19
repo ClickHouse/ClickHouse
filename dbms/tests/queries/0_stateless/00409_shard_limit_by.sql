@@ -29,4 +29,7 @@ SELECT dummy FROM remote('127.0.0.{2,3}', system.one) LIMIT 2 BY dummy;
 
 SELECT 1 as one FROM remote('127.0.0.{2,3}', system.one) LIMIT 1 BY one;
 
+-- Distributed LIMIT BY with LIMIT
+SELECT toInt8(number / 5 + 100) AS x FROM remote('127.0.0.1', system.numbers) LIMIT 2 BY x LIMIT 5;
+
 DROP TABLE IF EXISTS test.limit_by;

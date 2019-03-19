@@ -15,60 +15,60 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename T> using FuncQuantile = AggregateFunctionQuantile<T, QuantileReservoirSampler<T>, NameQuantile, false, Float64, false>;
-template <typename T> using FuncQuantiles = AggregateFunctionQuantile<T, QuantileReservoirSampler<T>, NameQuantiles, false, Float64, true>;
+template <typename Value, bool FloatReturn> using FuncQuantile = AggregateFunctionQuantile<Value, QuantileReservoirSampler<Value>, NameQuantile, false, std::conditional_t<FloatReturn, Float64, void>, false>;
+template <typename Value, bool FloatReturn> using FuncQuantiles = AggregateFunctionQuantile<Value, QuantileReservoirSampler<Value>, NameQuantiles, false, std::conditional_t<FloatReturn, Float64, void>, true>;
 
-template <typename T> using FuncQuantileDeterministic = AggregateFunctionQuantile<T, QuantileReservoirSamplerDeterministic<T>, NameQuantileDeterministic, true, Float64, false>;
-template <typename T> using FuncQuantilesDeterministic = AggregateFunctionQuantile<T, QuantileReservoirSamplerDeterministic<T>, NameQuantilesDeterministic, true, Float64, true>;
+template <typename Value, bool FloatReturn> using FuncQuantileDeterministic = AggregateFunctionQuantile<Value, QuantileReservoirSamplerDeterministic<Value>, NameQuantileDeterministic, true, std::conditional_t<FloatReturn, Float64, void>, false>;
+template <typename Value, bool FloatReturn> using FuncQuantilesDeterministic = AggregateFunctionQuantile<Value, QuantileReservoirSamplerDeterministic<Value>, NameQuantilesDeterministic, true, std::conditional_t<FloatReturn, Float64, void>, true>;
 
-template <typename T> using FuncQuantileExact = AggregateFunctionQuantile<T, QuantileExact<T>, NameQuantileExact, false, void, false>;
-template <typename T> using FuncQuantilesExact = AggregateFunctionQuantile<T, QuantileExact<T>, NameQuantilesExact, false, void, true>;
+template <typename Value, bool _> using FuncQuantileExact = AggregateFunctionQuantile<Value, QuantileExact<Value>, NameQuantileExact, false, void, false>;
+template <typename Value, bool _> using FuncQuantilesExact = AggregateFunctionQuantile<Value, QuantileExact<Value>, NameQuantilesExact, false, void, true>;
 
-template <typename T> using FuncQuantileExactWeighted = AggregateFunctionQuantile<T, QuantileExactWeighted<T>, NameQuantileExactWeighted, true, void, false>;
-template <typename T> using FuncQuantilesExactWeighted = AggregateFunctionQuantile<T, QuantileExactWeighted<T>, NameQuantilesExactWeighted, true, void, true>;
+template <typename Value, bool _> using FuncQuantileExactWeighted = AggregateFunctionQuantile<Value, QuantileExactWeighted<Value>, NameQuantileExactWeighted, true, void, false>;
+template <typename Value, bool _> using FuncQuantilesExactWeighted = AggregateFunctionQuantile<Value, QuantileExactWeighted<Value>, NameQuantilesExactWeighted, true, void, true>;
 
-template <typename T> using FuncQuantileTiming = AggregateFunctionQuantile<T, QuantileTiming<T>, NameQuantileTiming, false, Float32, false>;
-template <typename T> using FuncQuantilesTiming = AggregateFunctionQuantile<T, QuantileTiming<T>, NameQuantilesTiming, false, Float32, true>;
+template <typename Value, bool _> using FuncQuantileTiming = AggregateFunctionQuantile<Value, QuantileTiming<Value>, NameQuantileTiming, false, Float32, false>;
+template <typename Value, bool _> using FuncQuantilesTiming = AggregateFunctionQuantile<Value, QuantileTiming<Value>, NameQuantilesTiming, false, Float32, true>;
 
-template <typename T> using FuncQuantileTimingWeighted = AggregateFunctionQuantile<T, QuantileTiming<T>, NameQuantileTimingWeighted, true, Float32, false>;
-template <typename T> using FuncQuantilesTimingWeighted = AggregateFunctionQuantile<T, QuantileTiming<T>, NameQuantilesTimingWeighted, true, Float32, true>;
+template <typename Value, bool _> using FuncQuantileTimingWeighted = AggregateFunctionQuantile<Value, QuantileTiming<Value>, NameQuantileTimingWeighted, true, Float32, false>;
+template <typename Value, bool _> using FuncQuantilesTimingWeighted = AggregateFunctionQuantile<Value, QuantileTiming<Value>, NameQuantilesTimingWeighted, true, Float32, true>;
 
-template <typename T> using FuncQuantileTDigest = AggregateFunctionQuantile<T, QuantileTDigest<T>, NameQuantileTDigest, false, Float32, false>;
-template <typename T> using FuncQuantilesTDigest = AggregateFunctionQuantile<T, QuantileTDigest<T>, NameQuantilesTDigest, false, Float32, true>;
+template <typename Value, bool FloatReturn> using FuncQuantileTDigest = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantileTDigest, false, std::conditional_t<FloatReturn, Float32, void>, false>;
+template <typename Value, bool FloatReturn> using FuncQuantilesTDigest = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantilesTDigest, false, std::conditional_t<FloatReturn, Float32, void>, true>;
 
-template <typename T> using FuncQuantileTDigestWeighted = AggregateFunctionQuantile<T, QuantileTDigest<T>, NameQuantileTDigestWeighted, true, Float32, false>;
-template <typename T> using FuncQuantilesTDigestWeighted = AggregateFunctionQuantile<T, QuantileTDigest<T>, NameQuantilesTDigestWeighted, true, Float32, true>;
+template <typename Value, bool FloatReturn> using FuncQuantileTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantileTDigestWeighted, true, std::conditional_t<FloatReturn, Float32, void>, false>;
+template <typename Value, bool FloatReturn> using FuncQuantilesTDigestWeighted = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantilesTDigestWeighted, true, std::conditional_t<FloatReturn, Float32, void>, true>;
 
 
-template <template <typename> class Function>
+template <template <typename, bool> class Function>
 static constexpr bool supportDecimal()
 {
-    return std::is_same_v<Function<Float32>, FuncQuantileExact<Float32>> ||
-        std::is_same_v<Function<Float32>, FuncQuantilesExact<Float32>>;
+    return std::is_same_v<Function<Float32, false>, FuncQuantileExact<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>>;
 }
 
 
-template <template <typename> class Function>
+template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     /// Second argument type check doesn't depend on the type of the first one.
-    Function<void>::assertSecondArg(argument_types);
+    Function<void, true>::assertSecondArg(argument_types);
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);
 
 #define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) return std::make_shared<Function<TYPE>>(argument_type, params);
+    if (which.idx == TypeIndex::TYPE) return std::make_shared<Function<TYPE, true>>(argument_type, params);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-    if (which.idx == TypeIndex::Date) return std::make_shared<Function<DataTypeDate::FieldType>>(argument_type, params);
-    if (which.idx == TypeIndex::DateTime) return std::make_shared<Function<DataTypeDateTime::FieldType>>(argument_type, params);
+    if (which.idx == TypeIndex::Date) return std::make_shared<Function<DataTypeDate::FieldType, false>>(argument_type, params);
+    if (which.idx == TypeIndex::DateTime) return std::make_shared<Function<DataTypeDateTime::FieldType, false>>(argument_type, params);
 
     if constexpr (supportDecimal<Function>())
     {
-        if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32>>(argument_type, params);
-        if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64>>(argument_type, params);
-        if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128>>(argument_type, params);
+        if (which.idx == TypeIndex::Decimal32) return std::make_shared<Function<Decimal32, true>>(argument_type, params);
+        if (which.idx == TypeIndex::Decimal64) return std::make_shared<Function<Decimal64, true>>(argument_type, params);
+        if (which.idx == TypeIndex::Decimal128) return std::make_shared<Function<Decimal128, true>>(argument_type, params);
     }
 
     throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,

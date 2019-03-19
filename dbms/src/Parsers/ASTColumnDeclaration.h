@@ -70,16 +70,16 @@ public:
             default_expression->formatImpl(settings, state, frame);
         }
 
-        if (codec)
-        {
-            settings.ostr << ' ';
-            codec->formatImpl(settings, state, frame);
-        }
-
         if (comment)
         {
             settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
             comment->formatImpl(settings, state, frame);
+        }
+
+        if (codec)
+        {
+            settings.ostr << ' ';
+            codec->formatImpl(settings, state, frame);
         }
     }
 };
