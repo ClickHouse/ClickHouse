@@ -312,9 +312,10 @@ void HTTPHandler::processQuery(
             client_supports_http_compression = true;
             http_response_compression_method = CompressionMethod::Zlib;
         }
-        else if (http_response_compression_methods == "br") {
+        else if (http_response_compression_methods == "br")
+        {
             client_supports_http_compression = true;
-            http_response_compression_method = CompressionMethod ::Brotli;
+            http_response_compression_method = CompressionMethod::Brotli;
         }
     }
 

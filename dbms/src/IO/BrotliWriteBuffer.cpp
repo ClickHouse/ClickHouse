@@ -39,31 +39,7 @@ BrotliWriteBuffer::BrotliWriteBuffer(WriteBuffer & out_, int compression_level, 
 
 BrotliWriteBuffer::~BrotliWriteBuffer()
 {
-    next();
-
-    in_data = reinterpret_cast<unsigned char *>(working_buffer.end());
-    in_available = 0;
-
-    while (true)
-    {
-        out.nextIfAtEnd();
-        out_data = reinterpret_cast<unsigned char *>(out.position());
-        out_capacity = out.buffer().end() - out.position();
-
-        BrotliEncoderCompressStream(
-                brotli->state,
-                BROTLI_OPERATION_FINISH,
-                &in_available,
-                &in_data,
-                &out_capacity,
-                &out_data,
-                nullptr);
-
-        out.position() = out.buffer().end() - out_capacity;
-
-        finished = true;
-        return;
-    }
+    finish();
 }
 
 void BrotliWriteBuffer::nextImpl()
@@ -99,6 +75,43 @@ void BrotliWriteBuffer::nextImpl()
         }
     }
     while (in_available > 0 || out_capacity == 0);
+}
+
+void BrotliWriteBuffer::finish()
+{
+    if (finished)
+        return;
+
+    next();
+
+    while (true)
+    {
+        out.nextIfAtEnd();
+        out_data = reinterpret_cast<unsigned char *>(out.position());
+        out_capacity = out.buffer().end() - out.position();
+
+        int result = BrotliEncoderCompressStream(
+                brotli->state,
+                BROTLI_OPERATION_FINISH,
+                &in_available,
+                &in_data,
+                &out_capacity,
+                &out_data,
+                nullptr);
+
+        out.position() = out.buffer().end() - out_capacity;
+
+        if (BrotliEncoderIsFinished(brotli->state))
+        {
+            finished = true;
+            return;
+        }
+
+        if (result == 0)
+        {
+            throw Exception(std::string("brotli compress failed: "), ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+        }
+    }
 }
 
 }
