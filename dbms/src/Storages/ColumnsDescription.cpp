@@ -37,7 +37,7 @@ namespace ErrorCodes
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto codec_str = [](const CompressionCodecPtr & codec_ptr) { return codec_ptr ? codec_ptr->getCodecDesc() : String(); };
-    auto ttl_str = [](const ASTPtr & ttl) { return ttl ? queryToString(ttl) : String{}; };
+    auto ttl_str = [](const ASTPtr & ttl_ast) { return ttl_ast ? queryToString(ttl_ast) : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
