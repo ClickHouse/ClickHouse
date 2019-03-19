@@ -719,7 +719,7 @@ This setting applies only to the `MergeTree`-family and it can be specified:
 
 - For each individual table.
 
-    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). Ones creating a table you can't change its behavior even with the global setting.
+    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). After creating a table you can't change its behavior even with the global setting.
 
 **Possible values**
 
