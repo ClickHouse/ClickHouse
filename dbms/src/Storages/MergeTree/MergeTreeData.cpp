@@ -1178,16 +1178,18 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 
     /// Remove old indices
-    std::set<String> new_indices_set;
-    for (const auto & index_decl : new_indices)
-        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
-    for (const auto & index_decl : old_indices)
-    {
-        const auto & index = index_decl->as<ASTIndexDeclaration &>();
-        if (!new_indices_set.count(index.name))
+    if (part) {
+        std::set<String> new_indices_set;
+        for (const auto & index_decl : new_indices)
+            new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
+        for (const auto & index_decl : old_indices)
         {
-            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
+            const auto & index = index_decl->as<ASTIndexDeclaration &>();
+            if (!new_indices_set.count(index.name))
+            {
+                out_rename_map["skp_idx_" + index.name + ".idx"] = "";
+                out_rename_map["skp_idx_" + index.name + part->marks_file_extension] = ""; //TODO(alesap) How to deal with it?
+            }
         }
     }
 
@@ -1292,8 +1294,8 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                         String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
                         String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
-                        std::cerr << "PART IS NULL:" << (part == nullptr) << std::endl;
-                        std::cerr << "PART MARKS FILE_EXTENSION:" << part->marks_file_extension << std::endl;
+                        //std::cerr << "PART IS NULL:" << (part == nullptr) << std::endl;
+                        //std::cerr << "PART MARKS FILE_EXTENSION:" << part->marks_file_extension << std::endl;
                         out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
                         out_rename_map[temporary_file_name + part->marks_file_extension] = original_file_name + part->marks_file_extension;
                     }, {});

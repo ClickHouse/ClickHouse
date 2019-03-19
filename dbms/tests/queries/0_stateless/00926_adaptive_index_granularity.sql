@@ -131,10 +131,20 @@ SELECT COUNT(*) FROM test.adaptive_granularity_alter;
 
 SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
 
-INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 7, 7000, 8000);
+INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 42, 42, 42);
 
 SELECT COUNT(*) FROM test.adaptive_granularity_alter;
 
 SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
+
+ALTER TABLE test.adaptive_granularity_alter MODIFY COLUMN v2 String;
+
+INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15', 100, 1000, 'aaaa'), ('2018-05-16', 101, 3000, 'bbbb'), ('2018-05-17', 102, 5000, 'cccc'), ('2018-05-19', 103, 7000, 'dddd');
+
+OPTIMIZE TABLE test.adaptive_granularity_alter FINAL;
+
+SELECT k, v2 FROM test.adaptive_granularity_alter WHERE k >= 100 OR k = 42;
+
+SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
 
 DROP TABLE IF EXISTS test.adaptive_granularity_alter;
