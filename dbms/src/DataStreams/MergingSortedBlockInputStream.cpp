@@ -109,8 +109,6 @@ Block MergingSortedBlockInputStream::readImpl()
     else
         merge(merged_columns, queue_without_collation);
 
-    //std::cerr << "MERGED COLUMNS SIZE:" << merged_columns[0]->size() << std::endl;
-
     return header.cloneWithColumns(std::move(merged_columns));
 }
 
@@ -134,11 +132,12 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
     }
 }
 
-namespace {
+namespace
+{
 size_t getAvgGranularity(const std::unordered_map<size_t, size_t> & rows_granularity, size_t total_rows)
 {
     size_t sum = 0;
-    for (const auto [granularity, rows_num] : rows_granularity)
+    for (const auto & [granularity, rows_num] : rows_granularity)
         sum += granularity * rows_num;
     return sum / total_rows;
 }
@@ -173,9 +172,9 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
         rows_granularity[current_granularity]++;
         ++merged_rows;
-        if (merged_rows == getAvgGranularity(rows_granularity, merged_rows))
+        if (merged_rows >= getAvgGranularity(rows_granularity, merged_rows))
         {
-    //        std::cerr << "max_block_size reached\n";
+            //std::cerr << "max_block_size reached:" << merged_rows << std::endl;
             return true;
         }
 

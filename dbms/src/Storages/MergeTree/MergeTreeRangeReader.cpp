@@ -157,11 +157,13 @@ void MergeTreeRangeReader::Stream::toNextMark()
 {
     ++current_mark;
 
+    size_t total_marks_count = merge_tree_reader->data_part->marks_index_granularity.size();
     /// TODO(alesap) clumsy logic, fixme
-    if (current_mark < merge_tree_reader->data_part->marks_index_granularity.size())
+    if (current_mark < total_marks_count)
         current_mark_index_granularity = merge_tree_reader->data_part->marks_index_granularity[current_mark];
     else
-        current_mark_index_granularity = 0;
+        current_mark_index_granularity = 0; /// HACK?
+        ///throw Exception("Trying to read from mark " + toString(current_mark) + ", but total marks count " + toString(total_marks_count), ErrorCodes::LOGICAL_ERROR);
 
     offset_after_current_mark = 0;
 }

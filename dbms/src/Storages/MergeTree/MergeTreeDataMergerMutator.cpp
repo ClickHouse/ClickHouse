@@ -672,7 +672,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
     /// If merge is vertical we cannot calculate it
-    bool calculate_index_granularity = (merge_alg == MergeAlgorithm::Vertical);
+    bool blocks_are_granules_size = (merge_alg == MergeAlgorithm::Vertical);
 
     MergedBlockOutputStream to{
         data,
@@ -681,7 +681,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         compression_codec,
         merged_column_to_size,
         data.settings.min_merge_bytes_to_use_direct_io,
-        calculate_index_granularity};
+        blocks_are_granules_size};
 
     merged_stream->readPrefix();
     to.writePrefix();
@@ -1045,7 +1045,7 @@ MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMer
     const NamesAndTypesList & gathering_columns, bool deduplicate) const
 {
     /// TODO(alesap) remove me
-    return MergeAlgorithm::Horizontal;
+    return MergeAlgorithm::Vertical;
     if (deduplicate)
         return MergeAlgorithm::Horizontal;
     if (data.settings.enable_vertical_merge_algorithm == 0)
