@@ -3,7 +3,6 @@
 #include <common/logger_useful.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MarksData.h>
 
 namespace DB
 {
@@ -200,4 +199,3 @@ private:
 };
 
 }
-

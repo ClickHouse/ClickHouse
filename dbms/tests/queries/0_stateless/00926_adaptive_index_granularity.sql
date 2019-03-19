@@ -69,9 +69,18 @@ SELECT COUNT(*) FROM test.four_rows_per_granule;
 
 SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule' and database='test';
 
+DETACH TABLE test.four_rows_per_granule;
+
+ATTACH TABLE test.four_rows_per_granule;
+
 OPTIMIZE TABLE test.four_rows_per_granule FINAL;
 
 INSERT INTO test.four_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 7, 7000, 8000);
+
+
+DETACH TABLE test.four_rows_per_granule;
+
+ATTACH TABLE test.four_rows_per_granule;
 
 SELECT COUNT(*) FROM test.four_rows_per_granule;
 
@@ -97,6 +106,10 @@ SELECT COUNT(*) FROM test.huge_granularity_small_blocks;
 SELECT distinct(marks) from system.parts WHERE table = 'huge_granularity_small_blocks' and database='test';
 
 INSERT INTO test.huge_granularity_small_blocks (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 7, 7000, 8000);
+
+DETACH TABLE test.huge_granularity_small_blocks;
+
+ATTACH TABLE test.huge_granularity_small_blocks;
 
 OPTIMIZE TABLE test.huge_granularity_small_blocks FINAL;
 
@@ -127,6 +140,10 @@ OPTIMIZE TABLE test.adaptive_granularity_alter FINAL;
 
 ALTER TABLE test.adaptive_granularity_alter MODIFY COLUMN v1 Int16;
 
+DETACH TABLE test.adaptive_granularity_alter;
+
+ATTACH TABLE test.adaptive_granularity_alter;
+
 SELECT COUNT(*) FROM test.adaptive_granularity_alter;
 
 SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
@@ -138,6 +155,10 @@ SELECT COUNT(*) FROM test.adaptive_granularity_alter;
 SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
 
 ALTER TABLE test.adaptive_granularity_alter MODIFY COLUMN v2 String;
+
+DETACH TABLE test.adaptive_granularity_alter;
+
+ATTACH TABLE test.adaptive_granularity_alter;
 
 INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15', 100, 1000, 'aaaa'), ('2018-05-16', 101, 3000, 'bbbb'), ('2018-05-17', 102, 5000, 'cccc'), ('2018-05-19', 103, 7000, 'dddd');
 
