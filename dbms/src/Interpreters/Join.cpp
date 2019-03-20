@@ -503,11 +503,11 @@ namespace
         }
     };
 
-    template <bool fill_left>
+    template <bool _add_missing>
     void addNotFoundRow(const std::vector<size_t> & right_indexes [[maybe_unused]], MutableColumns & added_columns [[maybe_unused]],
                         IColumn::Offset & current_offset [[maybe_unused]])
     {
-        if constexpr (fill_left)
+        if constexpr (_add_missing)
         {
             ++current_offset;
 
@@ -518,14 +518,12 @@ namespace
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
+    template <bool _add_missing, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool _has_null_map>
     std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
         const Map & map, size_t rows, KeyGetter & key_getter,
         MutableColumns & added_columns, ConstNullMapPtr null_map, IColumn::Filter & filter,
         const std::vector<size_t> & right_indexes)
     {
-        constexpr bool fill_left = Join::KindTrait<KIND>::fill_left;
-
         std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
         if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
             offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
@@ -535,9 +533,9 @@ namespace
 
         for (size_t i = 0; i < rows; ++i)
         {
-            if (has_null_map && (*null_map)[i])
+            if (_has_null_map && (*null_map)[i])
             {
-                addNotFoundRow<fill_left>(right_indexes, added_columns, current_offset);
+                addNotFoundRow<_add_missing>(right_indexes, added_columns, current_offset);
             }
             else
             {
@@ -551,7 +549,7 @@ namespace
                     addFoundRow<STRICTNESS, Map>(mapped, right_indexes, added_columns, current_offset);
                 }
                 else
-                    addNotFoundRow<fill_left>(right_indexes, added_columns, current_offset);
+                    addNotFoundRow<_add_missing>(right_indexes, added_columns, current_offset);
             }
 
             if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
@@ -567,14 +565,16 @@ namespace
         MutableColumns & added_columns, ConstNullMapPtr null_map, const std::vector<size_t> & right_indexes,
         std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
     {
+        constexpr bool left_or_full = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
+
         IColumn::Filter filter(rows, 0);
         KeyGetter key_getter(key_columns, key_sizes, nullptr);
 
         if (null_map)
-            offsets_to_replicate = joinRightIndexedColumns<KIND, STRICTNESS, KeyGetter, Map, true>(
+            offsets_to_replicate = joinRightIndexedColumns<left_or_full, STRICTNESS, KeyGetter, Map, true>(
                 map, rows, key_getter, added_columns, null_map, filter, right_indexes);
         else
-            offsets_to_replicate = joinRightIndexedColumns<KIND, STRICTNESS, KeyGetter, Map, false>(
+            offsets_to_replicate = joinRightIndexedColumns<left_or_full, STRICTNESS, KeyGetter, Map, false>(
                 map, rows, key_getter, added_columns, null_map, filter, right_indexes);
 
         return filter;
