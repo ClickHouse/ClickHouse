@@ -141,7 +141,7 @@ if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-mar
 endif()
 
 if (ARCH_NATIVE)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
 # Special options for better optimized code with clang
@@ -217,6 +217,7 @@ if (OS_LINUX AND NOT UNBUNDLED)
         string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
         set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
+        # FIXME: glibc-compatibility may be non-static in some builds!
         set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
     endif ()
 
@@ -341,3 +342,30 @@ add_subdirectory (utils)
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
+
+if (GLIBC_COMPATIBILITY)
+    # FIXME: actually glibc-compatibility should always be built first,
+    #        because it's unconditionally linked via $DEFAULT_LIBS,
+    #        and these looks like the first places that get linked.
+    function (add_glibc_compat target_name)
+        if (TARGET ${target_name})
+            add_dependencies(${target_name} glibc-compatibility)
+        endif ()
+    endfunction ()
+
+    add_glibc_compat(ltdl)
+    add_glibc_compat(zlibstatic)
+    add_glibc_compat(jemalloc)
+    add_glibc_compat(unwind)
+    add_glibc_compat(memcpy)
+    add_glibc_compat(Foundation)
+    add_glibc_compat(common)
+    add_glibc_compat(gtest)
+    add_glibc_compat(lz4)
+    add_glibc_compat(zstd)
+    add_glibc_compat(snappy)
+    add_glibc_compat(arrow)
+    add_glibc_compat(protoc)
+    add_glibc_compat(thrift_static)
+    add_glibc_compat(boost_regex_internal)
+endif ()
