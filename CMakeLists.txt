@@ -180,7 +180,7 @@ include (cmake/use_libcxx.cmake)
 
 set (DEFAULT_LIBS "")
 if (OS_LINUX AND NOT UNBUNDLED)
-    # Note: this probably has no effict, but I'm not an expert in CMake.
+    # Note: this probably has no effect, but I'm not an expert in CMake.
     set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
     set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
 
@@ -226,6 +226,11 @@ if (OS_LINUX AND NOT UNBUNDLED)
     # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
 
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+endif ()
+
+if (DEFAULT_LIBS)
+    # Add default libs to all targets as the last dependency.
+    set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 endif ()
 
 
@@ -336,9 +341,3 @@ add_subdirectory (utils)
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
-
-
-if (DEFAULT_LIBS)
-    # Add default libs to all targets as the last dependency.
-    set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
-endif ()
