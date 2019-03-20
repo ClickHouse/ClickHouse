@@ -1206,7 +1206,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_types.count(column.name))
         {
             /// The column was deleted.
-            if (!part || part->hasColumnFiles(column.name))
+            if (part && part->hasColumnFiles(column.name))
             {
                 column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
