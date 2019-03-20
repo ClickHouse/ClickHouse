@@ -630,7 +630,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
 
     if (const auto * func = node->as<ASTFunction>())
     {
-        const auto & args = func_ptr->arguments->children;
+        const auto & args = func->arguments->children;
         if (args.size() != 1)
             return false;
 
@@ -645,7 +645,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
                 out_invertible_functions_chain,
                 out_function_argument_stack))
         {
-            auto func_builder = FunctionFactory::instance().tryGet(func_ptr->name, context);
+            auto func_builder = FunctionFactory::instance().tryGet(func->name, context);
             ColumnsWithTypeAndName arguments{{nullptr, current_type, ""}};
             auto func = func_builder->build(arguments);
 
