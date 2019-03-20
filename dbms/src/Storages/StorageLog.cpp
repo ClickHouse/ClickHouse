@@ -551,8 +551,8 @@ void StorageLog::truncate(const ASTPtr &, const Context &)
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
-    const String & column_name = getColumns().ordinary.front().name;
-    const IDataType & column_type = *getColumns().ordinary.front().type;
+    const String & column_name = getColumns().begin()->name;
+    const IDataType & column_type = *getColumns().begin()->type;
     String filename;
 
     /** We take marks from first column.

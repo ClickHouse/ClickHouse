@@ -12,7 +12,7 @@ Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-## length
+## length {#array_functions-length}
 
 Returns the number of items in the array.
 The result type is UInt64.

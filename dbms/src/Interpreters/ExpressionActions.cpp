@@ -414,7 +414,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
                 any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
             }
-            else if (array_join_is_left && !unaligned_array_join)
+            else if (array_join_is_left)
             {
                 for (const auto & name : array_joined_columns)
                 {
@@ -1112,7 +1112,7 @@ void ExpressionActions::optimizeArrayJoin()
 BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, UInt64 max_block_size) const
 {
     for (const auto & action : actions)
-        if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))
+        if (action.join && isRightOrFull(action.join->getKind()))
             return action.join->createStreamWithNonJoinedRows(
                 source_header, action.join_key_names_left, action.columns_added_by_join, max_block_size);
 
