@@ -75,8 +75,8 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
     registerIndex("minmax", minmaxIndexCreator);
     registerIndex("set", setIndexCreator);
-    registerIndex("ngrambf", bloomFilterIndexCreator);
-    registerIndex("tokenbf", bloomFilterIndexCreator);
+    registerIndex("ngrambf_v1", bloomFilterIndexCreator);
+    registerIndex("tokenbf_v1", bloomFilterIndexCreator);
 }
 
 }
