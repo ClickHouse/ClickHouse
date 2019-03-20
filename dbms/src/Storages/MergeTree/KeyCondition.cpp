@@ -628,9 +628,9 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
         return true;
     }
 
-    if (const auto * func = node->as<ASTFunction>())
+    if (const auto * func_ptr = node->as<ASTFunction>())
     {
-        const auto & args = func->arguments->children;
+        const auto & args = func_ptr->arguments->children;
         if (args.size() != 1)
             return false;
 
