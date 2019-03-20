@@ -38,7 +38,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.unsigned_integer_test_table VALUE
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.enum_test_table VALUES ('hello'), ('world'), ('world'), ('yandex'), ('clickhouse'), ('clickhouse');"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.date_test_table VALUES (1), (2), (2), (256), (257), (257);"
 
-export CLICKHOUSE_CLIENT=`echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=debug/g'`
+CLICKHOUSE_CLIENT=`echo ${CLICKHOUSE_CLIENT} | sed 's/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/--send_logs_level=debug/g'`
 
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test.string_test_table WHERE toUInt64(val) == 0;" 2>&1 |grep -q "3 marks to read from 1 ranges" && echo "no monotonic int case: String -> UInt64"
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test.fixed_string_test_table WHERE toUInt64(val) == 0;" 2>&1 |grep -q "3 marks to read from 1 ranges" && echo "no monotonic int case: FixedString -> UInt64"
@@ -73,7 +73,7 @@ ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test.date_test_table WHERE toU
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test.date_test_table WHERE toInt8(val) == 1;" 2>&1 |grep -q "5 marks to read from" && echo "monotonic int case: Date -> Int8"
 ${CLICKHOUSE_CLIENT} --query="SELECT count() FROM test.date_test_table WHERE toUInt8(val) == 1;" 2>&1 |grep -q "5 marks to read from" && echo "monotonic int case: Date -> UInt8"
 
-export CLICKHOUSE_CLIENT=`echo ${CLICKHOUSE_CLIENT} |sed 's/debug/'"${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/g'`
+CLICKHOUSE_CLIENT=`echo ${CLICKHOUSE_CLIENT} | sed 's/--send_logs_level=debug/'"--send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}"'/g'`
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.string_test_table;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.fixed_string_test_table;"
