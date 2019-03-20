@@ -98,14 +98,20 @@ public:
             alternative_data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
             if (mrk_mark == alternative_data_mark)
+            {
+                mark_position++;
                 return;
+            }
 
             uncompressed_hashing_buf.next();
 
             /// At the end of file `compressed_hashing_buf.count()` points to the end of the file even before `calling next()`,
             ///  and the check you just performed does not work correctly. For simplicity, we will not check the last mark.
             if (uncompressed_hashing_buf.eof())
+            {
+                mark_position++;
                 return;
+            }
         }
 
         data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
