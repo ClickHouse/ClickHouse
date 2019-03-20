@@ -516,8 +516,10 @@ namespace
         }
     }
 
+    /// Joins right table columns which indexes are present in right_indexes using specified map.
+    /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
-    std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexColumns(
+    std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
         const Map & map, size_t rows, KeyGetter & key_getter,
         MutableColumns & added_columns, ConstNullMapPtr null_map, IColumn::Filter & filter,
         const std::vector<size_t> & right_indexes)
@@ -560,7 +562,7 @@ namespace
     }
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
-    IColumn::Filter joinRightIndex(
+    IColumn::Filter joinRightColumns(
         const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
         MutableColumns & added_columns, ConstNullMapPtr null_map, const std::vector<size_t> & right_indexes,
         std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
@@ -569,17 +571,17 @@ namespace
         KeyGetter key_getter(key_columns, key_sizes, nullptr);
 
         if (null_map)
-            offsets_to_replicate = joinRightIndexColumns<KIND, STRICTNESS, KeyGetter, Map, true>(
+            offsets_to_replicate = joinRightIndexedColumns<KIND, STRICTNESS, KeyGetter, Map, true>(
                 map, rows, key_getter, added_columns, null_map, filter, right_indexes);
         else
-            offsets_to_replicate = joinRightIndexColumns<KIND, STRICTNESS, KeyGetter, Map, false>(
+            offsets_to_replicate = joinRightIndexedColumns<KIND, STRICTNESS, KeyGetter, Map, false>(
                 map, rows, key_getter, added_columns, null_map, filter, right_indexes);
 
         return filter;
     }
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-    IColumn::Filter switchJoinRightIndex(
+    IColumn::Filter switchJoinRightColumns(
         Join::Type type,
         const Maps & maps_, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
         MutableColumns & added_columns, ConstNullMapPtr null_map, const std::vector<size_t> & right_indexes,
@@ -589,7 +591,7 @@ namespace
         {
         #define M(TYPE) \
             case Join::Type::TYPE: \
-                return joinRightIndex<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
+                return joinRightColumns<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
                     *maps_.TYPE, rows, key_columns, key_sizes, added_columns, null_map, right_indexes, offsets_to_replicate);
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -716,7 +718,7 @@ void Join::joinBlockImpl(
 
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
-    IColumn::Filter filter = switchJoinRightIndex<KIND, STRICTNESS>(
+    IColumn::Filter filter = switchJoinRightColumns<KIND, STRICTNESS>(
         type, maps_, block.rows(), key_columns, key_sizes, added.columns, null_map, right_indexes, offsets_to_replicate);
 
     for (size_t i = 0; i < added.columns.size(); ++i)
