@@ -15,7 +15,7 @@ CREATE TABLE test.bloom_filter_idx
 (
     k UInt64,
     s String,
-    INDEX bf (s, lower(s)) TYPE ngrambf(3, 512, 2, 0) GRANULARITY 1
+    INDEX bf (s, lower(s)) TYPE ngrambf_v1(3, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
 SETTINGS index_granularity = 2;"
@@ -26,7 +26,7 @@ CREATE TABLE test.bloom_filter_idx2
 (
     k UInt64,
     s FixedString(15),
-    INDEX bf (s, lower(s)) TYPE ngrambf(3, 512, 2, 0) GRANULARITY 1
+    INDEX bf (s, lower(s)) TYPE ngrambf_v1(3, 512, 2, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
 SETTINGS index_granularity = 2;"
@@ -110,7 +110,7 @@ CREATE TABLE test.bloom_filter_idx3
 (
     k UInt64,
     s String,
-    INDEX bf (s, lower(s)) TYPE tokenbf(512, 3, 0) GRANULARITY 1
+    INDEX bf (s, lower(s)) TYPE tokenbf_v1(512, 3, 0) GRANULARITY 1
 ) ENGINE = MergeTree()
 ORDER BY k
 SETTINGS index_granularity = 2;"
