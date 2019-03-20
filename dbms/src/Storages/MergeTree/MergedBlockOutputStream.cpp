@@ -236,6 +236,7 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
 
     size_t total_rows = column.size();
     size_t current_row = 0;
+    //std::cerr << "FROM MARK:" << from_mark << std::endl;
     size_t current_column_mark = from_mark;
     while (current_row < total_rows)
     {
@@ -273,7 +274,9 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
 
         if (write_marks)
             current_column_mark++;
+        //std::cerr << "current column mark (loop):" << current_column_mark << std::endl;
     }
+    //std::cerr << "Current column mark:" << current_column_mark << std::endl;
 
     /// Memoize offsets for Nested types, that are already written. They will not be written again for next columns of Nested structure.
     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
@@ -286,7 +289,7 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
         }
     }, serialize_settings.path);
 
-    return std::make_pair(current_column_mark - from_mark - 1, current_row - total_rows);
+    return std::make_pair(current_column_mark, current_row - total_rows);
 }
 
 

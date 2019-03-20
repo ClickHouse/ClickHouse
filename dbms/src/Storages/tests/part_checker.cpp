@@ -35,7 +35,10 @@ std::vector<size_t> readGranularity(const Poco::Path & mrk_file_path, size_t fix
         DB::readBinary(offset_in_decompressed_block, mrk_in);
         UInt64 index_granularity_rows = 0;
         if (extension == "mrk2")
+        {
             DB::readBinary(index_granularity_rows, mrk_in);
+            std::cerr << "Readed rows:" << index_granularity_rows << std::endl;
+        }
         else
             index_granularity_rows = fixed_granularity;
         result.push_back(index_granularity_rows);

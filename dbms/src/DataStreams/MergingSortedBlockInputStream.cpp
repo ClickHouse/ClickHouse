@@ -139,7 +139,12 @@ size_t getAvgGranularity(const std::unordered_map<size_t, size_t> & rows_granula
 {
     size_t sum = 0;
     for (const auto & [granularity, rows_num] : rows_granularity)
+    {
+        //std::cerr << "Granularity:" << granularity << " Rows Num:" << rows_num << std::endl;
         sum += granularity * rows_num;
+    }
+    //std::cerr << "SUM:" << sum << std::endl;
+    //std::cerr << "ANSWER:" << sum / total_rows << std::endl;
     return sum / total_rows;
 }
 }
