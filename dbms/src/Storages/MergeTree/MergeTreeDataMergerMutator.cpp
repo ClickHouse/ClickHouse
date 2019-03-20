@@ -629,11 +629,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     ///  that is going in insertion order.
     std::shared_ptr<IBlockInputStream> merged_stream;
 
+    /// If merge is vertical we cannot calculate it
+    bool blocks_are_granules_size = (merge_alg == MergeAlgorithm::Vertical);
+
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true, true);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
@@ -671,8 +674,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
-    /// If merge is vertical we cannot calculate it
-    bool blocks_are_granules_size = (merge_alg == MergeAlgorithm::Vertical);
 
     MergedBlockOutputStream to{
         data,
