@@ -755,13 +755,13 @@ void Join::joinBlockImpl(
                 if (needed_key_names_right.count(right_name) && !block.has(right_name))
                 {
                     const auto & col = block.getByName(left_name);
-                    auto & column = col.column;
+                    ColumnPtr column = col.column->convertToFullColumnIfConst();
                     MutableColumnPtr mut_column = column->cloneEmpty();
 
-                    for (size_t col_no = 0; col_no < filter.size(); ++col_no)
+                    for (size_t row = 0; row < filter.size(); ++row)
                     {
-                        if (filter[col_no])
-                            mut_column->insertFrom(*column, col_no);
+                        if (filter[row])
+                            mut_column->insertFrom(*column, row);
                         else
                             mut_column->insertDefault();
                     }
@@ -785,22 +785,22 @@ void Join::joinBlockImpl(
             if (needed_key_names_right.count(right_name) && !block.has(right_name))
             {
                 const auto & col = block.getByName(left_name);
-                auto & column = col.column;
+                ColumnPtr column = col.column->convertToFullColumnIfConst();
                 MutableColumnPtr mut_column = column->cloneEmpty();
 
                 size_t last_offset = 0;
-                for (size_t col_no = 0; col_no < column->size(); ++col_no)
+                for (size_t row = 0; row < column->size(); ++row)
                 {
-                    if (size_t to_insert = (*offsets_to_replicate)[col_no] - last_offset)
+                    if (size_t to_insert = (*offsets_to_replicate)[row] - last_offset)
                     {
-                        if (!filter[col_no])
+                        if (!filter[row])
                             mut_column->insertDefault();
                         else
                             for (size_t dup = 0; dup < to_insert; ++dup)
-                                mut_column->insertFrom(*column, col_no);
+                                mut_column->insertFrom(*column, row);
                     }
 
-                    last_offset = (*offsets_to_replicate)[col_no];
+                    last_offset = (*offsets_to_replicate)[row];
                 }
 
                 block.insert({std::move(mut_column), col.type, right_name});
