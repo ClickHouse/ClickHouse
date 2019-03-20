@@ -134,8 +134,8 @@ public:
     /// Reference to the row in block.
     struct RowRef
     {
-        const Block * block;
-        size_t row_num;
+        const Block * block = nullptr;
+        size_t row_num = 0;
 
         RowRef() {}
         RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}

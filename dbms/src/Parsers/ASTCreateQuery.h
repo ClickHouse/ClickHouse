@@ -180,6 +180,7 @@ public:
     bool is_view{false};
     bool is_materialized_view{false};
     bool is_populate{false};
+    bool replace_view{false}; /// CREATE OR REPLACE VIEW
     ASTColumns * columns_list = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
@@ -244,6 +245,7 @@ protected:
                 << (settings.hilite ? hilite_keyword : "")
                     << (attach ? "ATTACH " : "CREATE ")
                     << (temporary ? "TEMPORARY " : "")
+                    << (replace_view ? "OR REPLACE " : "")
                     << what << " "
                     << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")

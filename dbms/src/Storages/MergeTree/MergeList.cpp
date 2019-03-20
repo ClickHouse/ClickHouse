@@ -38,7 +38,7 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
     }
 
     /// Each merge is executed into separate background processing pool thread
-    background_thread_memory_tracker = &CurrentThread::getMemoryTracker();
+    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
         memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
