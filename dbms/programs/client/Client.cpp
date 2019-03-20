@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READLINE;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -295,7 +296,6 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        stdin_is_not_tty = !isatty(STDIN_FILENO);
         if (stdin_is_not_tty || config().has("query"))
             is_interactive = false;
 
@@ -610,9 +610,6 @@ private:
 
                 try
                 {
-                    /// Determine the terminal size.
-                    ioctl(0, TIOCGWINSZ, &terminal_size);
-
                     if (!process(input))
                         break;
                 }
@@ -1569,7 +1566,7 @@ public:
             }
         }
 
-        ioctl(0, TIOCGWINSZ, &terminal_size);
+        stdin_is_not_tty = !isatty(STDIN_FILENO);
 
         namespace po = boost::program_options;
 
@@ -1577,7 +1574,11 @@ public:
         unsigned min_description_length = line_length / 2;
         if (!stdin_is_not_tty)
         {
-            line_length = std::max(3U, static_cast<unsigned>(terminal_size.ws_col));
+            if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
+                throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", ErrorCodes::SYSTEM_ERROR);
+            line_length = std::max(
+                static_cast<unsigned>(strlen("--http_native_compression_disable_checksumming_on_decompress ")),
+                static_cast<unsigned>(terminal_size.ws_col));
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
