@@ -598,6 +598,57 @@ namespace
                 throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
         }
     }
+
+    struct AdditionalColumns
+    {
+        using TypeAndNames = std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>>;
+
+        TypeAndNames type_name;
+        MutableColumns columns;
+
+        AdditionalColumns(size_t reserve)
+        {
+            columns.reserve(reserve);
+            type_name.reserve(reserve);
+        }
+
+        void add(const ColumnWithTypeAndName & src_column)
+        {
+            columns.push_back(src_column.column->cloneEmpty());
+            columns.back()->reserve(src_column.column->size());
+            type_name.emplace_back(src_column.type, src_column.name);
+        }
+
+        ColumnWithTypeAndName moveColumn(size_t i)
+        {
+            return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].first, type_name[i].second);
+        }
+    };
+
+    AdditionalColumns calcAdditionalColumns(const Block & sample_block_with_columns_to_add,
+                                            const Block & block_with_columns_to_add,
+                                            const Block & block,
+                                            std::vector<size_t> & right_indexes, size_t num_columns_to_skip)
+    {
+        size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
+
+        AdditionalColumns additional_columns(num_columns_to_add);
+        right_indexes.reserve(num_columns_to_add);
+
+        for (size_t i = 0; i < num_columns_to_add; ++i)
+        {
+            const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
+
+            /// Don't insert column if it's in left block or not explicitly required.
+            if (!block.has(src_column.name) && block_with_columns_to_add.has(src_column.name))
+            {
+                additional_columns.add(src_column);
+                right_indexes.push_back(num_columns_to_skip + i);
+            }
+        }
+
+        return additional_columns;
+    }
 }
 
 
@@ -658,38 +709,20 @@ void Join::joinBlockImpl(
         num_columns_to_skip = keys_size;
 
     /// Add new columns to the block.
-    size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
-    MutableColumns added_columns;
-    added_columns.reserve(num_columns_to_add);
-
-    std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>> added_type_name;
-    added_type_name.reserve(num_columns_to_add);
 
     std::vector<size_t> right_indexes;
-    right_indexes.reserve(num_columns_to_add);
-
-    for (size_t i = 0; i < num_columns_to_add; ++i)
-    {
-        const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
-
-        /// Don't insert column if it's in left block or not explicitly required.
-        if (!block.has(src_column.name) && block_with_columns_to_add.has(src_column.name))
-        {
-            added_columns.push_back(src_column.column->cloneEmpty());
-            added_columns.back()->reserve(src_column.column->size());
-            added_type_name.emplace_back(src_column.type, src_column.name);
-            right_indexes.push_back(num_columns_to_skip + i);
-        }
-    }
+    AdditionalColumns added = calcAdditionalColumns(sample_block_with_columns_to_add, block_with_columns_to_add, block,
+                                                    right_indexes, num_columns_to_skip);
 
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
     IColumn::Filter filter = switchJoinRightIndex<KIND, STRICTNESS>(
-        type, maps_, block.rows(), key_columns, key_sizes, added_columns, null_map, right_indexes, offsets_to_replicate);
+        type, maps_, block.rows(), key_columns, key_sizes, added.columns, null_map, right_indexes, offsets_to_replicate);
 
-    const auto added_columns_size = added_columns.size();
-    for (size_t i = 0; i < added_columns_size; ++i)
-        block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), added_type_name[i].first, added_type_name[i].second));
+    for (size_t i = 0; i < added.columns.size(); ++i)
+        block.insert(added.moveColumn(i));
+
+    /// Filter & insert missing rows
 
     NameSet needed_key_names_right = requiredRightKeys(key_names_right, columns_added_by_join);
 
