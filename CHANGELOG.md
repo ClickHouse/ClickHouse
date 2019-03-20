@@ -1,3 +1,8 @@
+## ClickHouse release 19.4.1.3, 2019-03-19
+
+### Bug Fixes
+* Fixed remote queries which contain both `LIMIT BY` and `LIMIT`. Previously, if `LIMIT BY` and `LIMIT` were used for remote query, `LIMIT` could happen before `LIMIT BY`, which led to too filtered result. [#4708](https://github.com/yandex/ClickHouse/pull/4708) ([Constantin S. Pan](https://github.com/kvap))
+
 ## ClickHouse release 19.4.0.49, 2019-03-09
 
 ### New Features
