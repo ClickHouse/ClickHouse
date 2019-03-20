@@ -23,7 +23,9 @@ The possible values are:
 
 ## enable_optimize_predicate_expression
 
-Turns on the execution of the primary query predicates for subqueries.
+Turns on the predicate pushdown is `SELECT` queries.
+
+Predicate pushdown may significantly reduce the network traffic for distributed queries.
 
 Possible values:
 
@@ -39,7 +41,7 @@ Let's consider the following queries:
 1. `SELECT count() FROM test_table WHERE date = '2018-10-10'`
 2. `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
 
-If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because `WHERE` applies to subquery directly.
+If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse apply `WHERE` to subquery when processing it.
 
 If `enable_optimize_predicate_expression = 0`, then the second query is executed much slower, because the `WHERE` clause applies to all the data after the subquery finishes.
 
