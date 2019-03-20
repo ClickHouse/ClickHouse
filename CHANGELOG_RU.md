@@ -58,6 +58,32 @@
 * Исправлена сборка под FreeBSD и для некоторых необычных конфигурациях сборки. [#4444](https://github.com/yandex/ClickHouse/pull/4444) ([proller](https://github.com/proller))
 
 
+## ClickHouse release 19.3.7, 2019-03-12
+
+### Исправления ошибок
+
+* Исправлена ошибка в #3920. Ошибка проявлялась в виде случайных повреждений кэша (сообщения `Unknown codec family code`, `Cannot seek through file`) и segfault. Ошибка впервые возникла в 19.1 и присутствует во всех версиях до 19.1.10 и 19.3.6. [#4623](https://github.com/yandex/ClickHouse/pull/4623) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+
+## ClickHouse release 19.3.6, 2019-03-02
+
+### Исправления ошибок
+
+* Если в пуле потоков было более 1000 потоков, то при выходе из потока, вызывается `std::terminate`. [Azat Khuzhin](https://github.com/azat) [#4485](https://github.com/yandex/ClickHouse/pull/4485) [#4505](https://github.com/yandex/ClickHouse/pull/4505) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Теперь возможно создавать таблицы `ReplicatedMergeTree*` с комментариями столбцов без указания DEFAULT, а также с CODEC но без COMMENT и DEFAULT. Исправлено сравнение CODEC друг с другом. [#4523](https://github.com/yandex/ClickHouse/pull/4523) ([alesapin](https://github.com/alesapin))
+* Исправлено падение при JOIN по массивам и кортежам. [#4552](https://github.com/yandex/ClickHouse/pull/4552) ([Artem Zuikov](https://github.com/4ertus2))
+* Исправлено падение `clickhouse-copier` с сообщением `ThreadStatus not created`. [#4540](https://github.com/yandex/ClickHouse/pull/4540) ([Artem Zuikov](https://github.com/4ertus2))
+* Исправлено зависание сервера при завершении работы в случае использования распределённых DDL. [#4472](https://github.com/yandex/ClickHouse/pull/4472) ([Alex Zatelepin](https://github.com/ztlpn))
+* В сообщениях об ошибке при парсинге текстовых форматов, выдавались неправильные номера столбцов, в случае, если номер больше 10. [#4484](https://github.com/yandex/ClickHouse/pull/4484) ([alexey-milovidov](https://github.com/alexey-milovidov))
+
+### Улучшения сборки/тестирования/пакетирования
+
+* Исправлена сборка с включенным AVX. [#4527](https://github.com/yandex/ClickHouse/pull/4527) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Исправлена поддержка расширенных метрик выполнения запроса в случае, если ClickHouse был собран на системе с новым ядром Linux, а запускается на системе с существенно более старым ядром. [#4541](https://github.com/yandex/ClickHouse/pull/4541) ([nvartolomei](https://github.com/nvartolomei))
+* Продолжение работы в случае невозможности применить настройку `core_dump.size_limit` с выводом предупреждения. [#4473](https://github.com/yandex/ClickHouse/pull/4473) ([proller](https://github.com/proller))
+* Удалено `inline` для `void readBinary(...)` в `Field.cpp`. [#4530](https://github.com/yandex/ClickHouse/pull/4530) ([hcz](https://github.com/hczhcz))
+
+
 ## ClickHouse release 19.3.5, 2019-02-21
 
 ### Исправления ошибок:
@@ -192,6 +218,18 @@
 * Добавлена поддержка скалярных подзапросов, возвращающих состояние агрегатной функции. [#4348](https://github.com/yandex/ClickHouse/pull/4348) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Уменьшено время ожидания завершения сервера и завершения запросов `ALTER`. [#4372](https://github.com/yandex/ClickHouse/pull/4372) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Добавлена информация о значении настройки `replicated_can_become_leader` в таблицу `system.replicas`. Добавлено логирование в случае, если реплика не собирается стать лидером. [#4379](https://github.com/yandex/ClickHouse/pull/4379) ([Alex Zatelepin](https://github.com/ztlpn))
+
+## ClickHouse release 19.1.14, 2019-03-14
+
+* Исправлена ошибка `Column ... queried more than once`, которая могла произойти в случае включенной настройки `asterisk_left_columns_only` в случае использования `GLOBAL JOIN` а также `SELECT *` (редкий случай). Эта ошибка изначально отсутствует в версиях 19.3 и более новых. [6bac7d8d](https://github.com/yandex/ClickHouse/pull/4692/commits/6bac7d8d11a9b0d6de0b32b53c47eb2f6f8e7062) ([Artem Zuikov](https://github.com/4ertus2))
+
+## ClickHouse release 19.1.13, 2019-03-12
+
+Этот релиз содержит такие же исправления ошибок, как и 19.3.7.
+
+## ClickHouse release 19.1.10, 2019-03-03
+
+Этот релиз содержит такие же исправления ошибок, как и 19.3.6.
 
 ## ClickHouse release 19.1.9, 2019-02-21
 
