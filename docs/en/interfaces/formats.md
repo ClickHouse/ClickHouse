@@ -12,7 +12,7 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
 | [CSV](#csv) | ✔ | ✔ |
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
-| [Values](#values) | ✔ | ✔ |
+| [Values](#data-format-values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
 | [JSONCompact](#jsoncompact) | ✗ | ✔ |
