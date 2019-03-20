@@ -68,7 +68,7 @@ public:
       */
     MergingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
+        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false, bool average_block_sizes_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -139,6 +139,7 @@ protected:
     bool first = true;
     bool has_collation = false;
     bool quiet = false;
+    bool average_block_sizes = false;
 
     /// May be smaller or equal to max_block_size. To do 'reserve' for columns.
     size_t expected_block_size = 0;

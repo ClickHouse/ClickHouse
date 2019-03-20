@@ -233,8 +233,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
 
                 checkDataPart(
-                    storage.data.getFullPath() + part_name,
-                    storage.data.index_granularity,
+                    part,
                     true,
                     storage.data.primary_key_data_types,
                     storage.data.skip_indices,
