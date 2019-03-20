@@ -83,13 +83,13 @@ If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception
 
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
-Turns on the full SQL parser for values at their insertion if the fast stream parser cannot parse them. It is used only for [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
+Turns on the full SQL parser if the fast stream parser can't parse the data. This setting is used only for [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
 
 Possible values:
 
 - 0 — The functionality is turned off.
 
-    You must provide formatted data with this setting value.
+    In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
 
 - 1 — The functionality is turned on.
 
@@ -115,6 +115,16 @@ INSERT INTO datetime_t VALUES (now())
 
 Ok.
 ```
+
+The last query is equivalent to the following.
+
+```sql
+SET input_format_values_interpret_expressions = 0;
+INSERT INTO datetime_t SELECT now()
+
+Ok.
+```
+
 
 ## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
 
