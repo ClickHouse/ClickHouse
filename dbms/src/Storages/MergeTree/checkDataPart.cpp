@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 
 #include <Poco/File.h>
@@ -36,13 +37,16 @@ class Stream
 {
 public:
     String base_name;
-    String bin_file_ext;
+    String bin_file_extension;
     String bin_file_path;
     String mrk_file_path;
 private:
+    String marks_file_extension;
+    const std::vector<size_t> & index_granularity;
     ReadBufferFromFile file_buf;
     HashingReadBuffer compressed_hashing_buf;
     CompressedReadBuffer uncompressing_buf;
+    size_t mark_position = 0;
 public:
     HashingReadBuffer uncompressed_hashing_buf;
 
@@ -51,12 +55,14 @@ private:
 public:
     HashingReadBuffer mrk_hashing_buf;
 
-    Stream(const String & path, const String & base_name, const String & bin_file_ext = ".bin")
+        Stream(const String & path, const String & base_name, const String & bin_file_extension_, const String & mrk_file_extension_, const std::vector<size_t> & index_granularity_)
         :
         base_name(base_name),
-        bin_file_ext(bin_file_ext),
-        bin_file_path(path + base_name + bin_file_ext),
-        mrk_file_path(path + base_name + ".mrk"),
+        bin_file_path(path + base_name + bin_file_extension_),
+        mrk_file_path(path + base_name + mrk_file_extension_),
+        bin_file_extension(bin_file_extension_),
+        marks_file_extension(mrk_file_extension_),
+        index_granularity(index_granularity_),
         file_buf(bin_file_path),
         compressed_hashing_buf(file_buf),
         uncompressing_buf(compressed_hashing_buf),
@@ -70,7 +76,14 @@ public:
         MarkInCompressedFile mrk_mark;
         readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
         readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
+        size_t mrk_rows;
+        //std::cerr << "File path:" << mrk_file_path << std::endl;
+        if (marks_file_extension == ".mrk2")
+            readIntBinary(mrk_rows, mrk_hashing_buf);
+        else
+            mrk_rows = index_granularity[mark_position];
 
+        //std::cerr << "MRK ROWS:" << mrk_rows << std::endl;
         bool has_alternative_mark = false;
         MarkInCompressedFile alternative_data_mark = {};
         MarkInCompressedFile data_mark = {};
@@ -98,10 +111,13 @@ public:
         data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
         data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
-        if (mrk_mark != data_mark)
-            throw Exception("Incorrect mark: " + data_mark.toString() +
+        if (mrk_mark != data_mark || mrk_rows != index_granularity[mark_position])
+            throw Exception("Incorrect mark: " + data_mark.toStringWithRows(index_granularity[mark_position]) +
                 (has_alternative_mark ? " or " + alternative_data_mark.toString() : "") + " in data, " +
-                mrk_mark.toString() + " in " + mrk_file_path + " file", ErrorCodes::INCORRECT_MARK);
+                mrk_mark.toStringWithRows(mrk_rows) + " in " + mrk_file_path + " file", ErrorCodes::INCORRECT_MARK);
+
+        mark_position++;
+        //std::cerr << "FINISHED\n";
     }
 
     void assertEnd()
@@ -116,15 +132,16 @@ public:
             throw Exception("EOF expected in " + mrk_file_path + " file"
                 + " at position "
                 + toString(mrk_hashing_buf.count()), ErrorCodes::CORRUPTED_DATA);
+        //std::cerr << "GOOD END\n";
     }
 
     void saveChecksums(MergeTreeData::DataPart::Checksums & checksums)
     {
-        checksums.files[base_name + bin_file_ext] = MergeTreeData::DataPart::Checksums::Checksum(
+        checksums.files[base_name + bin_file_extension] = MergeTreeData::DataPart::Checksums::Checksum(
             compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
             uncompressed_hashing_buf.count(), uncompressed_hashing_buf.getHash());
 
-        checksums.files[base_name + ".mrk"] = MergeTreeData::DataPart::Checksums::Checksum(
+        checksums.files[base_name + marks_file_extension] = MergeTreeData::DataPart::Checksums::Checksum(
             mrk_hashing_buf.count(), mrk_hashing_buf.getHash());
     }
 };
@@ -133,8 +150,10 @@ public:
 
 
 MergeTreeData::DataPart::Checksums checkDataPart(
-    const String & path_,
-    size_t index_granularity,
+    const String & full_path,
+    const std::vector<size_t> adaptive_index_granularity,
+    const size_t fixed_granularity,
+    const String marks_file_extension,
     bool require_checksums,
     const DataTypes & primary_key_data_types,
     const MergeTreeIndices & indices,
@@ -153,7 +172,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
 
-    String path = path_;
+    String path = full_path;
     if (!path.empty() && path.back() != '/')
         path += "/";
 
@@ -245,7 +264,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     /// Read and check skip indices.
     for (const auto & index : indices)
     {
-        Stream stream(path, index->getFileName(), ".idx");
+        Stream stream(path, index->getFileName(), ".idx", marks_file_extension, adaptive_index_granularity);
         size_t mark_num = 0;
 
         while (!stream.uncompressed_hashing_buf.eof())
@@ -302,8 +321,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
-                    auto & stream = streams.try_emplace(file_name, path, file_name).first->second;
-
+                    auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", marks_file_extension, adaptive_index_granularity).first->second;
                     try
                     {
                         if (!stream.mrk_hashing_buf.eof())
@@ -320,6 +338,9 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                     }
                 }, settings.path);
 
+            size_t rows_after_mark = adaptive_index_granularity[mark_num];
+            std::cerr << "rows after mark:" << rows_after_mark << std::endl;
+            std::cerr << "mark_num:" << mark_num << std::endl;
             ++mark_num;
 
             /// Read index_granularity rows from column.
@@ -337,12 +358,12 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
             IDataType::DeserializeBinaryBulkStatePtr state;
             name_type.type->deserializeBinaryBulkStatePrefix(settings, state);
-            name_type.type->deserializeBinaryBulkWithMultipleStreams(*tmp_column, index_granularity, settings, state);
+            name_type.type->deserializeBinaryBulkWithMultipleStreams(*tmp_column, rows_after_mark, settings, state);
 
             size_t read_size = tmp_column->size();
             column_size += read_size;
 
-            if (read_size < index_granularity)
+            if (read_size < rows_after_mark || mark_num == adaptive_index_granularity.size())
                 break;
             else if (marks_eof)
                 throw Exception("Unexpected end of mrk file while reading column " + name_type.name, ErrorCodes::CORRUPTED_DATA);
@@ -380,20 +401,56 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
     if (!primary_key_data_types.empty())
     {
-        size_t expected_marks = (*rows - 1) / index_granularity + 1;
+        size_t expected_marks = adaptive_index_granularity.size();
         if (expected_marks != marks_in_primary_key)
+        {
+            String info_about_granularity;
+            if (std::all_of(adaptive_index_granularity.begin(), adaptive_index_granularity.end(), [&fixed_granularity](size_t i) { return i == fixed_granularity; } ))
+                info_about_granularity = "fixed=" + toString(fixed_granularity);
+            else
+                info_about_granularity = "adaptive";
+
             throw Exception("Size of primary key doesn't match expected number of marks."
                 " Number of rows in columns: " + toString(*rows)
-                + ", index_granularity: " + toString(index_granularity)
+                + ", index_granularity: " + info_about_granularity
                 + ", expected number of marks: " + toString(expected_marks)
                 + ", size of primary key: " + toString(marks_in_primary_key),
                 ErrorCodes::CORRUPTED_DATA);
+        }
     }
 
+    for (auto & [fname, checksum] : checksums_data.files)
+    {
+        std::cerr << "FILE NAME IN DATA:" << fname << std::endl;
+    }
+
+    for (auto & [fname, checksum] : checksums_txt.files)
+    {
+        std::cerr << "FILE NAME IN TXT:" << fname << std::endl;
+    }
     if (require_checksums || !checksums_txt.files.empty())
         checksums_txt.checkEqual(checksums_data, true);
 
     return checksums_data;
 }
+
+MergeTreeData::DataPart::Checksums checkDataPart(
+    MergeTreeData::DataPartPtr data_part,
+    bool require_checksums,
+    const DataTypes & primary_key_data_types,
+    const MergeTreeIndices & indices,
+    std::function<bool()> is_cancelled)
+{
+    return checkDataPart(
+        data_part->getFullPath(),
+        data_part->marks_index_granularity,
+        data_part->storage.index_granularity,
+        data_part->marks_file_extension,
+        require_checksums,
+        primary_key_data_types,
+        indices,
+        is_cancelled);
+}
+
 
 }
