@@ -125,7 +125,7 @@ Supported types of `ARRAY JOIN` are listed below:
 - `ARRAY JOIN` - Executing `JOIN` with an array or nested data structure. Empty arrays are not included in the result.
 - `LEFT ARRAY JOIN` - Unlike `ARRAY JOIN`, when using the `LEFT ARRAY JOIN` the result contains the rows with empty arrays. The value for an empty array is set to 0.
 
-Examples below demonstrate the usage of the `ARRAY JOIN` clause. Create a table with an [Array](../data_types/array.md) type column and insert values into it:
+Examples below demonstrate the usage of the `ARRAY JOIN` clause. Let's create a table with an [Array](../data_types/array.md) type column and insert values into it:
 
 ``` sql
 CREATE TABLE arrays_test
