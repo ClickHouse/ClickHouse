@@ -482,22 +482,27 @@ class AddedColumns
 public:
     using TypeAndNames = std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>>;
 
-    AddedColumns(size_t reserve)
+    AddedColumns(const Block & sample_block_with_columns_to_add,
+                 const Block & block_with_columns_to_add,
+                 const Block & block, size_t num_columns_to_skip)
     {
-        columns.reserve(reserve);
-        type_name.reserve(reserve);
-        right_indexes.reserve(reserve);
+        size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
+
+        columns.reserve(num_columns_to_add);
+        type_name.reserve(num_columns_to_add);
+        right_indexes.reserve(num_columns_to_add);
+
+        for (size_t i = 0; i < num_columns_to_add; ++i)
+        {
+            const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
+
+            /// Don't insert column if it's in left block or not explicitly required.
+            if (!block.has(src_column.name) && block_with_columns_to_add.has(src_column.name))
+                addColumn(src_column, num_columns_to_skip + i);
+        }
     }
 
     size_t size() const { return columns.size(); }
-
-    void add(const ColumnWithTypeAndName & src_column, size_t idx)
-    {
-        columns.push_back(src_column.column->cloneEmpty());
-        columns.back()->reserve(src_column.column->size());
-        type_name.emplace_back(src_column.type, src_column.name);
-        right_indexes.push_back(idx);
-    }
 
     ColumnWithTypeAndName moveColumn(size_t i)
     {
@@ -520,27 +525,15 @@ private:
     TypeAndNames type_name;
     MutableColumns columns;
     std::vector<size_t> right_indexes;
-};
 
-AddedColumns calcAddedColumns(const Block & sample_block_with_columns_to_add,
-                                const Block & block_with_columns_to_add,
-                                const Block & block, size_t num_columns_to_skip)
-{
-    size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
-
-    AddedColumns additional_columns(num_columns_to_add);
-
-    for (size_t i = 0; i < num_columns_to_add; ++i)
+    void addColumn(const ColumnWithTypeAndName & src_column, size_t idx)
     {
-        const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
-
-        /// Don't insert column if it's in left block or not explicitly required.
-        if (!block.has(src_column.name) && block_with_columns_to_add.has(src_column.name))
-            additional_columns.add(src_column, num_columns_to_skip + i);
+        columns.push_back(src_column.column->cloneEmpty());
+        columns.back()->reserve(src_column.column->size());
+        type_name.emplace_back(src_column.type, src_column.name);
+        right_indexes.push_back(idx);
     }
-
-    return additional_columns;
-}
+};
 
 template <ASTTableJoin::Strictness STRICTNESS, typename Map>
 void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset [[maybe_unused]])
@@ -714,7 +707,7 @@ void Join::joinBlockImpl(
 
     /// Add new columns to the block.
 
-    AddedColumns added = calcAddedColumns(sample_block_with_columns_to_add, block_with_columns_to_add, block, num_columns_to_skip);
+    AddedColumns added(sample_block_with_columns_to_add, block_with_columns_to_add, block, num_columns_to_skip);
 
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
