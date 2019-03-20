@@ -220,13 +220,6 @@ struct KeyGetterForType
 };
 
 
-/// Do I need to use the hash table maps_*_full, in which we remember whether the row was joined.
-static bool getFullness(ASTTableJoin::Kind kind)
-{
-    return kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full;
-}
-
-
 void Join::init(Type type_)
 {
     type = type_;
@@ -300,7 +293,7 @@ void Join::setSampleBlock(const Block & block)
         if (column.get() != column_no_lc.get())
         {
             materialized_columns.emplace_back(std::move(column_no_lc));
-            key_columns[i] = materialized_columns[i].get();
+            key_columns[i] = materialized_columns.back().get();
         }
 
         /// We will join only keys, where all components are not NULL.
@@ -340,7 +333,7 @@ void Join::setSampleBlock(const Block & block)
     }
 
     /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
-    if (use_nulls && (kind == ASTTableJoin::Kind::Left || kind == ASTTableJoin::Kind::Full))
+    if (use_nulls && isLeftOrFull(kind))
         for (size_t i = 0; i < num_columns_to_add; ++i)
             convertColumnToNullable(sample_block_with_columns_to_add.getByPosition(i));
 }
@@ -476,7 +469,7 @@ bool Join::insertFromBlock(const Block & block)
     blocks.push_back(block);
     Block * stored_block = &blocks.back();
 
-    if (getFullness(kind))
+    if (isRightOrFull(kind))
     {
         /** Move the key columns to the beginning of the block.
           * This is where NonJoinedBlockInputStream will expect.
@@ -511,9 +504,9 @@ bool Join::insertFromBlock(const Block & block)
         stored_block->safeGetByPosition(i).column = stored_block->safeGetByPosition(i).column->convertToFullColumnIfConst();
 
     /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
-    if (use_nulls && (kind == ASTTableJoin::Kind::Left || kind == ASTTableJoin::Kind::Full))
+    if (use_nulls && isLeftOrFull(kind))
     {
-        for (size_t i = getFullness(kind) ? keys_size : 0; i < size; ++i)
+        for (size_t i = isFull(kind) ? keys_size : 0; i < size; ++i)
         {
             convertColumnToNullable(stored_block->getByPosition(i));
         }
@@ -721,7 +714,7 @@ void Join::joinBlockImpl(
       * Because if they are constants, then in the "not joined" rows, they may have different values
       *  - default values, which can differ from the values of these constants.
       */
-    if (getFullness(kind))
+    if (isRightOrFull(kind))
     {
         for (size_t i = 0; i < existing_columns; ++i)
         {
@@ -741,7 +734,7 @@ void Join::joinBlockImpl(
       *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
       */
     size_t num_columns_to_skip = 0;
-    if (getFullness(kind))
+    if (isRightOrFull(kind))
         num_columns_to_skip = keys_size;
 
     /// Add new columns to the block.
@@ -798,7 +791,7 @@ void Join::joinBlockImpl(
 
     if (strictness == ASTTableJoin::Strictness::Any)
     {
-        if (kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right)
+        if (isInnerOrRight(kind))
         {
             /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
             for (size_t i = 0; i < existing_columns; ++i)
@@ -1317,10 +1310,10 @@ private:
 
         for (; it != end; ++it)
         {
-            if (it->second.getUsed())
+            if (it->getSecond().getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, columns_left, columns_keys_and_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->getSecond(), rows_added, columns_left, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
             {

@@ -31,13 +31,11 @@ namespace ErrorCodes
 bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Do not go to FROM, JOIN, subqueries.
-    if (typeid_cast<ASTTableExpression *>(child.get()) ||
-        typeid_cast<ASTSelectWithUnionQuery *>(child.get()))
+    if (child->as<ASTTableExpression>() || child->as<ASTSelectWithUnionQuery>())
         return false;
 
     /// Processed nodes. Do not go into children.
-    if (typeid_cast<ASTQualifiedAsterisk *>(node.get()) ||
-        typeid_cast<ASTTableJoin *>(node.get()))
+    if (node->as<ASTQualifiedAsterisk>() || node->as<ASTTableJoin>())
         return false;
 
     /// ASTSelectQuery + others
@@ -46,15 +44,15 @@ bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
 
 void TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+    if (auto * t = ast->as<ASTIdentifier>())
         visit(*t, ast, data);
-    if (auto * t = typeid_cast<ASTTableJoin *>(ast.get()))
+    if (auto * t = ast->as<ASTTableJoin>())
         visit(*t, ast, data);
-    if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * t = ast->as<ASTSelectQuery>())
         visit(*t, ast, data);
-    if (auto * node = typeid_cast<ASTExpressionList *>(ast.get()))
+    if (auto * node = ast->as<ASTExpressionList>())
         visit(*node, ast, data);
-    if (auto * node = typeid_cast<ASTFunction *>(ast.get()))
+    if (auto * node = ast->as<ASTFunction>())
         visit(*node, ast, data);
 }
 
@@ -91,7 +89,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
     String func_name_lowercase = Poco::toLower(node.name);
     if (func_name_lowercase == "count" &&
         func_arguments->children.size() == 1 &&
-        typeid_cast<const ASTAsterisk *>(func_arguments->children[0].get()))
+        func_arguments->children[0]->as<ASTAsterisk>())
         func_arguments->children.clear();
 }
 
@@ -143,21 +141,14 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
         Visitor(data).visit(*add_node);
 }
 
-/// qualifed names for duplicates
-static std::shared_ptr<ASTIdentifier> makeIdentifier(const String & short_name, const String & long_name, bool need_long_name)
+static void addIdentifier(ASTs & nodes, const String & table_name, const String & column_name, AsteriskSemantic::RevertedAliasesPtr aliases)
 {
-    if (need_long_name)
-        return std::make_shared<ASTIdentifier>(long_name);
-    return std::make_shared<ASTIdentifier>(short_name);
-}
+    auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
 
-static void addIdentifier(ASTs & nodes, std::shared_ptr<ASTIdentifier> identifier, const String & long_name,
-                          AsteriskSemantic::RevertedAliasesPtr aliases)
-{
     bool added = false;
-    if (aliases && aliases->count(long_name))
+    if (aliases && aliases->count(identifier->name))
     {
-        for (const String & alias : (*aliases)[long_name])
+        for (const String & alias : (*aliases)[identifier->name])
         {
             nodes.push_back(identifier->clone());
             nodes.back()->setAlias(alias);
@@ -173,7 +164,6 @@ static void addIdentifier(ASTs & nodes, std::shared_ptr<ASTIdentifier> identifie
 void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPtr &, Data & data)
 {
     const auto & tables_with_columns = data.tables;
-    const auto & source_columns = data.source_columns;
 
     ASTs old_children;
     if (data.processAsterisks())
@@ -181,14 +171,14 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
         bool has_asterisk = false;
         for (const auto & child : node.children)
         {
-            if (typeid_cast<const ASTAsterisk *>(child.get()))
+            if (child->as<ASTAsterisk>())
             {
                 if (tables_with_columns.empty())
                     throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
                 has_asterisk = true;
                 break;
             }
-            else if (auto qa = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
+            else if (const auto * qa = child->as<ASTQualifiedAsterisk>())
             {
                 visit(*qa, child, data); /// check if it's OK before rewrite
                 has_asterisk = true;
@@ -205,45 +195,38 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 
     for (const auto & child : old_children)
     {
-        if (const auto * asterisk = typeid_cast<const ASTAsterisk *>(child.get()))
+        if (const auto * asterisk = child->as<ASTAsterisk>())
         {
             bool first_table = true;
-            for (const auto & [table_name, table_columns] : tables_with_columns)
+            for (const auto & [table, table_columns] : tables_with_columns)
             {
                 for (const auto & column_name : table_columns)
                 {
                     if (first_table || !data.join_using_columns.count(column_name))
                     {
-                        bool need_prefix = !first_table && source_columns.count(column_name);
-                        String long_name = table_name.getQualifiedNamePrefix() + column_name;
-                        auto identifier = makeIdentifier(column_name, long_name, need_prefix);
-                        addIdentifier(node.children, identifier, long_name, AsteriskSemantic::getAliases(*asterisk));
+                        String table_name = table.getQualifiedNamePrefix(false);
+                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*asterisk));
                     }
                 }
 
                 first_table = false;
             }
         }
-        else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
+        else if (const auto * qualified_asterisk = child->as<ASTQualifiedAsterisk>())
         {
             DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
-            bool first_table = true;
-            for (const auto & [table_name, table_columns] : tables_with_columns)
+            for (const auto & [table, table_columns] : tables_with_columns)
             {
-                if (ident_db_and_name.satisfies(table_name, true))
+                if (ident_db_and_name.satisfies(table, true))
                 {
                     for (const auto & column_name : table_columns)
                     {
-                        bool need_prefix = !first_table && source_columns.count(column_name);
-                        String long_name = table_name.getQualifiedNamePrefix() + column_name;
-                        auto identifier = makeIdentifier(column_name, long_name, need_prefix);
-                        addIdentifier(node.children, identifier, long_name, AsteriskSemantic::getAliases(*qualified_asterisk));
+                        String table_name = table.getQualifiedNamePrefix(false);
+                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*qualified_asterisk));
                     }
                     break;
                 }
-
-                first_table = false;
             }
         }
         else
@@ -254,15 +237,15 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
 /// 'select * from a join b using id' should result one 'id' column
 void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, Data & data)
 {
-    const auto & table_join = typeid_cast<const ASTTableJoin &>(*ast);
+    const auto & table_join = ast->as<ASTTableJoin &>();
 
     if (table_join.using_expression_list)
     {
-        auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
+        const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
         for (const auto & key : keys.children)
             if (auto opt_column = getIdentifierName(key))
                 data.join_using_columns.insert(*opt_column);
-            else if (typeid_cast<const ASTLiteral *>(key.get()))
+            else if (key->as<ASTLiteral>())
                 data.join_using_columns.insert(key->getColumnName());
             else
             {

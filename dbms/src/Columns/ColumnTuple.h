@@ -71,7 +71,9 @@ public:
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
+    void protect() override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    bool structureEquals(const IColumn & rhs) const override;
 
     size_t tupleSize() const { return columns.size(); }
 

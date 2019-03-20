@@ -250,9 +250,12 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 }
 
 
-void DataTypeAggregateFunction::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeAggregateFunction::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    protobuf.writeAggregateFunction(function, static_cast<const ColumnAggregateFunction &>(column).getData()[row_num]);
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(
+        protobuf.writeAggregateFunction(function, static_cast<const ColumnAggregateFunction &>(column).getData()[row_num]));
 }
 
 void DataTypeAggregateFunction::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
@@ -337,30 +340,30 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Data type AggregateFunction requires parameters: "
             "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    if (const ASTFunction * parametric = typeid_cast<const ASTFunction *>(arguments->children[0].get()))
+    if (const auto * parametric = arguments->children[0]->as<ASTFunction>())
     {
         if (parametric->parameters)
             throw Exception("Unexpected level of parameters to aggregate function", ErrorCodes::SYNTAX_ERROR);
         function_name = parametric->name;
 
-        const ASTs & parameters = typeid_cast<const ASTExpressionList &>(*parametric->arguments).children;
+        const ASTs & parameters = parametric->arguments->children;
         params_row.resize(parameters.size());
 
         for (size_t i = 0; i < parameters.size(); ++i)
         {
-            const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(parameters[i].get());
-            if (!lit)
+            const auto * literal = parameters[i]->as<ASTLiteral>();
+            if (!literal)
                 throw Exception("Parameters to aggregate functions must be literals",
                     ErrorCodes::PARAMETERS_TO_AGGREGATE_FUNCTIONS_MUST_BE_LITERALS);
 
-            params_row[i] = lit->value;
+            params_row[i] = literal->value;
         }
     }
     else if (auto opt_name = getIdentifierName(arguments->children[0]))
     {
         function_name = *opt_name;
     }
-    else if (typeid_cast<ASTLiteral *>(arguments->children[0].get()))
+    else if (arguments->children[0]->as<ASTLiteral>())
     {
         throw Exception("Aggregate function name for data type AggregateFunction must be passed as identifier (without quotes) or function",
             ErrorCodes::BAD_ARGUMENTS);
@@ -386,4 +389,3 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory)
 
 
 }
-

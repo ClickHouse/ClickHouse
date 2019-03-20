@@ -80,6 +80,7 @@ public:
     bool isNumeric() const override { return column_holder->isNumeric(); }
 
     size_t byteSize() const override { return column_holder->byteSize(); }
+    void protect() override { column_holder->assumeMutableRef().protect(); }
     size_t allocatedBytes() const override
     {
         return column_holder->allocatedBytes()
@@ -92,6 +93,13 @@ public:
         index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+    }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnUnique *>(&rhs))
+            return column_holder->structureEquals(*rhs_concrete->column_holder);
+        return false;
     }
 
     const UInt64 * tryGetSavedHash() const override { return index.tryGetSavedHash(); }

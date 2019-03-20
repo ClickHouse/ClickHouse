@@ -10,6 +10,7 @@
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/FixedHashMap.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -133,8 +134,8 @@ public:
     /// Reference to the row in block.
     struct RowRef
     {
-        const Block * block;
-        size_t row_num;
+        const Block * block = nullptr;
+        size_t row_num = 0;
 
         RowRef() {}
         RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
@@ -218,8 +219,8 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        std::unique_ptr<HashMap<UInt8, Mapped, TrivialHash, HashTableFixedGrower<8>>>   key8;
-        std::unique_ptr<HashMap<UInt16, Mapped, TrivialHash, HashTableFixedGrower<16>>> key16;
+        std::unique_ptr<FixedHashMap<UInt8, Mapped>>   key8;
+        std::unique_ptr<FixedHashMap<UInt16, Mapped>> key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>                     key32;
         std::unique_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>                     key64;
         std::unique_ptr<HashMapWithSavedHash<StringRef, Mapped>>                        key_string;

@@ -419,11 +419,13 @@ namespace ErrorCodes
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE = 442;
     extern const int NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA = 443;
     extern const int UNKNOWN_PROTOBUF_FORMAT = 444;
+    extern const int CANNOT_MPROTECT = 445;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
     extern const int UNKNOWN_EXCEPTION = 1002;
+    extern const int METRIKA_OTHER_ERROR = 1003;
 
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
     extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;

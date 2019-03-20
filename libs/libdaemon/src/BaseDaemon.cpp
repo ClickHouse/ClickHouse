@@ -695,7 +695,7 @@ static void checkRequiredInstructions(volatile InstructionFail & fail)
 
 #if __AVX__
     fail = InstructionFail::AVX;
-    __asm__ volatile ("vaddpd %%ymm0, %%ymm0" : : : "ymm0");
+    __asm__ volatile ("vaddpd %%ymm0, %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
 #if __AVX2__

@@ -76,18 +76,17 @@ String chooseSuffixForSet(const NamesAndTypesList & columns, const std::vector<S
 
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
-    ASTSelectQuery & select = typeid_cast<ASTSelectQuery &>(*ast);
+    auto & select = ast->as<ASTSelectQuery &>();
     if (!select.with_expression_list)
     {
         select.with_expression_list = std::make_shared<ASTExpressionList>();
         select.children.insert(select.children.begin(), select.with_expression_list);
     }
 
-    ASTExpressionList & with = typeid_cast<ASTExpressionList &>(*select.with_expression_list);
     auto literal = std::make_shared<ASTLiteral>(value);
     literal->alias = column_name;
     literal->prefer_alias_to_column_name = true;
-    with.children.push_back(literal);
+    select.with_expression_list->children.push_back(literal);
 }
 
 /// Verifying that the function depends only on the specified columns
@@ -106,7 +105,7 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 /// Extract all subfunctions of the main conjunction, but depending only on the specified columns
 static void extractFunctions(const ASTPtr & expression, const NameSet & columns, std::vector<ASTPtr> & result)
 {
-    const ASTFunction * function = typeid_cast<const ASTFunction *>(expression.get());
+    const auto * function = expression->as<ASTFunction>();
     if (function && function->name == "and")
     {
         for (size_t i = 0; i < function->arguments->children.size(); ++i)
@@ -126,7 +125,7 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
     if (functions.size() == 1)
         return functions[0];
     ASTPtr new_query = std::make_shared<ASTFunction>();
-    ASTFunction & new_function = typeid_cast<ASTFunction & >(*new_query);
+    auto & new_function = new_query->as<ASTFunction &>();
     new_function.name = "and";
     new_function.arguments = std::make_shared<ASTExpressionList>();
     new_function.arguments->children = functions;
@@ -136,7 +135,7 @@ static ASTPtr buildWhereExpression(const ASTs & functions)
 
 void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & context)
 {
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery & >(*query);
+    const auto & select = query->as<ASTSelectQuery &>();
     if (!select.where_expression && !select.prewhere_expression)
         return;
 

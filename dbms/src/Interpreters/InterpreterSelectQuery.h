@@ -3,11 +3,12 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/IInterpreter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IInterpreter.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -16,7 +17,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class ASTSelectQuery;
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 
@@ -52,7 +52,8 @@ public:
         const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        bool only_analyze_ = false);
+        bool only_analyze_ = false,
+        bool modify_inplace = false);
 
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(
@@ -60,7 +61,8 @@ public:
         const Context & context_,
         const BlockInputStreamPtr & input_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        bool only_analyze_ = false);
+        bool only_analyze_ = false,
+        bool modify_inplace = false);
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
@@ -68,7 +70,8 @@ public:
         const Context & context_,
         const StoragePtr & storage_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        bool only_analyze_ = false);
+        bool only_analyze_ = false,
+        bool modify_inplace = false);
 
     ~InterpreterSelectQuery() override;
 
@@ -82,6 +85,8 @@ public:
 
     void ignoreWithTotals();
 
+    ASTPtr getQuery() const { return query_ptr; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -91,7 +96,10 @@ private:
         const Names & required_result_column_names,
         QueryProcessingStage::Enum to_stage_,
         size_t subquery_depth_,
-        bool only_analyze_);
+        bool only_analyze_,
+        bool modify_inplace);
+
+    ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
 
     struct Pipeline
@@ -216,7 +224,6 @@ private:
     void initSettings();
 
     ASTPtr query_ptr;
-    ASTSelectQuery & query;
     Context context;
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth = 0;
@@ -242,7 +249,7 @@ private:
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
-    TableStructureReadLockPtr table_lock;
+    TableStructureReadLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
     BlockInputStreamPtr input;

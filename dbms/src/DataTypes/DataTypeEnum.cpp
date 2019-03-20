@@ -74,7 +74,7 @@ void DataTypeEnum<Type>::fillMaps()
 
         if (!name_to_value_pair.second)
             throw Exception{"Duplicate names in enum: '" + name_and_value.first + "' = " + toString(name_and_value.second)
-                    + " and '" + name_to_value_pair.first->first.toString() + "' = " + toString(name_to_value_pair.first->second),
+                    + " and '" + name_to_value_pair.first->getFirst().toString() + "' = " + toString(name_to_value_pair.first->getSecond()),
                 ErrorCodes::SYNTAX_ERROR};
 
         const auto value_to_name_pair = value_to_name_map.insert(
@@ -225,10 +225,12 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf) const
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf, size_t & value_index) const
 {
+    if (value_index)
+        return;
     protobuf.prepareEnumMapping(values);
-    protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]);
+    value_index = static_cast<bool>(protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]));
 }
 
 template<typename Type>
@@ -355,7 +357,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
-        const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
+        const auto * func = child->as<ASTFunction>();
         if (!func
             || func->name != "equals"
             || func->parameters
@@ -364,8 +366,8 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
                 ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-        const ASTLiteral * name_literal = typeid_cast<const ASTLiteral *>(func->arguments->children[0].get());
-        const ASTLiteral * value_literal = typeid_cast<const ASTLiteral *>(func->arguments->children[1].get());
+        const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
+        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
         if (!name_literal
             || !value_literal

@@ -30,9 +30,11 @@ void registerStorageNull(StorageFactory & factory)
     });
 }
 
-void StorageNull::alter(const AlterCommands & params, const String & current_database_name, const String & current_table_name, const Context & context)
+void StorageNull::alter(
+    const AlterCommands & params, const String & current_database_name, const String & current_table_name,
+    const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    auto lock = lockStructureForAlter();
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     ColumnsDescription new_columns = getColumns();
     IndicesDescription new_indices = getIndicesDescription();

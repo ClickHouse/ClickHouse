@@ -161,32 +161,47 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
         for (auto & loadable_object : loadable_objects)
         {
-            /// If the loadable objects failed to load or even failed to initialize from the config.
-            if (!loadable_object.second.loadable)
-                continue;
+            try
+            {
+                /// If the loadable objects failed to load or even failed to initialize from the config.
+                if (!loadable_object.second.loadable)
+                    continue;
 
-            const LoadablePtr & current = loadable_object.second.loadable;
-            const auto & lifetime = current->getLifetime();
+                const LoadablePtr & current = loadable_object.second.loadable;
+                const auto & lifetime = current->getLifetime();
 
-            /// do not update loadable objects with zero as lifetime
-            if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
-                continue;
+                /// do not update loadable objects with zero as lifetime
+                if (lifetime.min_sec == 0 || lifetime.max_sec == 0)
+                    continue;
 
-            if (!current->supportUpdates())
-                continue;
+                if (!current->supportUpdates())
+                    continue;
 
-            auto update_time = update_times[current->getName()];
+                auto update_time = update_times[current->getName()];
 
-            /// check that timeout has passed
-            if (std::chrono::system_clock::now() < update_time)
-                continue;
+                /// check that timeout has passed
+                if (std::chrono::system_clock::now() < update_time)
+                    continue;
 
-            if (!current->isModified())
-                continue;
+                objects_to_update.emplace_back(loadable_object.first, current);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot check if the '" + loadable_object.first + "' " + object_name + " need to be updated");
 
-            objects_to_update.emplace_back(loadable_object.first, current);
+                if (throw_on_error)
+                    throw;
+            }
         }
     }
+
+    auto getNextUpdateTime = [this](const LoadablePtr & current)
+    {
+        /// Calculate next update time.
+        const auto & lifetime = current->getLifetime();
+        std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
+        return std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+    };
 
     for (auto & [name, current] : objects_to_update)
     {
@@ -195,9 +210,12 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
         try
         {
-            /// create new version of loadable object
-            new_version = current->clone();
-            exception = new_version->getCreationException();
+            if (current->isModified())
+            {
+                /// Create new version of loadable object.
+                new_version = current->clone();
+                exception = new_version->getCreationException();
+            }
         }
         catch (...)
         {
@@ -209,16 +227,17 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
             if (auto it = loadable_objects.find(name); it != loadable_objects.end())
             {
-                /// calculate next update time
-                const auto & lifetime = current->getLifetime();
-                std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
-                update_times[name] = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+                update_times[name] = getNextUpdateTime(current);
 
                 it->second.exception = exception;
                 if (!exception)
                 {
-                    it->second.loadable.reset();
-                    it->second.loadable = std::move(new_version);
+                    /// If the dictionary is not modified - leave old version.
+                    if (new_version)
+                    {
+                        it->second.loadable.reset();
+                        it->second.loadable = std::move(new_version);
+                    }
                 }
                 else
                 {

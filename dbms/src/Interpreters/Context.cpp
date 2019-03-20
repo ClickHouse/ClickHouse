@@ -892,8 +892,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 
     if (!res)
     {
-        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
-            typeid_cast<const ASTFunction *>(table_expression.get())->name, *this);
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression->as<ASTFunction>()->name, *this);
 
         /// Run it and remember the result
         res = table_function_ptr->execute(table_expression, *this);
@@ -1203,6 +1202,8 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
 ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
+    const auto & config = getConfigRef();
+
     std::lock_guard lock(shared->external_dictionaries_mutex);
 
     if (!shared->external_dictionaries)
@@ -1214,6 +1215,7 @@ ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_
 
         shared->external_dictionaries.emplace(
             std::move(config_repository),
+            config,
             *this->global_context,
             throw_on_error);
     }
@@ -1817,6 +1819,19 @@ void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd)
     auto lock = getLock();
     shared->bridge_commands.emplace_back(std::move(cmd));
 }
+
+
+IHostContextPtr & Context::getHostContext()
+{
+    return host_context;
+}
+
+
+const IHostContextPtr & Context::getHostContext() const
+{
+    return host_context;
+}
+
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 {

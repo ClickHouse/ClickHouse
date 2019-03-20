@@ -126,7 +126,7 @@ static void validateUpdateColumns(
     for (const String & column_name : updated_columns)
     {
         auto found = false;
-        for (const auto & col : storage->getColumns().ordinary)
+        for (const auto & col : storage->getColumns().getOrdinary())
         {
             if (col.name == column_name)
             {
@@ -137,7 +137,7 @@ static void validateUpdateColumns(
 
         if (!found)
         {
-            for (const auto & col : storage->getColumns().materialized)
+            for (const auto & col : storage->getColumns().getMaterialized())
             {
                 if (col.name == column_name)
                     throw Exception("Cannot UPDATE materialized column `" + column_name + "`", ErrorCodes::CANNOT_UPDATE_COLUMN);
@@ -187,19 +187,17 @@ void MutationsInterpreter::prepare(bool dry_run)
     std::unordered_map<String, Names> column_to_affected_materialized;
     if (!updated_columns.empty())
     {
-        for (const auto & kv : columns_desc.defaults)
+        for (const auto & column : columns_desc)
         {
-            const String & column = kv.first;
-            const ColumnDefault & col_default = kv.second;
-            if (col_default.kind == ColumnDefaultKind::Materialized)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized)
             {
-                auto query = col_default.expression->clone();
+                auto query = column.default_desc.expression->clone();
                 auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
                 ExpressionAnalyzer analyzer(query, syntax_result, context);
                 for (const String & dependency : analyzer.getRequiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
-                        column_to_affected_materialized[dependency].push_back(column);
+                        column_to_affected_materialized[dependency].push_back(column.name);
                 }
             }
         }
@@ -250,11 +248,14 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (!affected_materialized.empty())
             {
                 stages.emplace_back(context);
-                for (const auto & column : columns_desc.materialized)
+                for (const auto & column : columns_desc)
                 {
-                    stages.back().column_to_updated.emplace(
-                        column.name,
-                        columns_desc.defaults.at(column.name).expression->clone());
+                    if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+                    {
+                        stages.back().column_to_updated.emplace(
+                            column.name,
+                            column.default_desc.expression->clone());
+                    }
                 }
             }
         }
@@ -394,11 +395,7 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(BlockInputStr
 
         const SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
         if (!subqueries_for_sets.empty())
-        {
-            const auto & settings = context.getSettingsRef();
-            in = std::make_shared<CreatingSetsBlockInputStream>(in, subqueries_for_sets,
-                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
-        }
+            in = std::make_shared<CreatingSetsBlockInputStream>(in, subqueries_for_sets, context);
     }
 
     in = std::make_shared<MaterializingBlockInputStream>(in);
