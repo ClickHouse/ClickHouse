@@ -1046,7 +1046,7 @@ MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMer
     const NamesAndTypesList & gathering_columns, bool deduplicate) const
 {
     /// TODO(alesap) remove me
-    return MergeAlgorithm::Vertical;
+    ///return MergeAlgorithm::Vertical;
     if (deduplicate)
         return MergeAlgorithm::Horizontal;
     if (data.settings.enable_vertical_merge_algorithm == 0)
