@@ -682,7 +682,8 @@ void Join::joinBlockImpl(
       * Because if they are constants, then in the "not joined" rows, they may have different values
       *  - default values, which can differ from the values of these constants.
       */
-    if (isRightOrFull(kind))
+    constexpr bool right_or_full = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
+    if constexpr (right_or_full)
     {
         for (size_t i = 0; i < existing_columns; ++i)
         {
@@ -702,7 +703,7 @@ void Join::joinBlockImpl(
       *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
       */
     size_t num_columns_to_skip = 0;
-    if (isRightOrFull(kind))
+    if constexpr (right_or_full)
         num_columns_to_skip = keys_size;
 
     /// Add new columns to the block.
@@ -721,9 +722,10 @@ void Join::joinBlockImpl(
 
     NameSet needed_key_names_right = requiredRightKeys(key_names_right, columns_added_by_join);
 
-    if (strictness == ASTTableJoin::Strictness::Any)
+    if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
     {
-        if (isInnerOrRight(kind))
+        constexpr bool inner_or_right = static_in_v<KIND, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Right>;
+        if constexpr (inner_or_right)
         {
             /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
             for (size_t i = 0; i < existing_columns; ++i)
