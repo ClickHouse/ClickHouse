@@ -143,7 +143,7 @@ else
     fi
     ( [ "$TEST_RUN" ] && $CLICKHOUSE_TEST ) || ${TEST_TRUE:=false}
     ( [ "$TEST_PERF" ] && $CLICKHOUSE_PERFORMANCE_TEST $* ) || true
-    ( [ "$TEST_DICT" ] && mkdir -p $DATA_DIR/etc/dictionaries/ && cd $CUR_DIR/external_dictionaries && python generate_and_test.py --port=$CLICKHOUSE_PORT_TCP --client=$CLICKHOUSE_CLIENT --source=$CUR_DIR/external_dictionaries/source.tsv --reference=$CUR_DIR/external_dictionaries/reference --generated=$DATA_DIR/etc/dictionaries/ --no_mysql --no_mongo ) || true
+    #( [ "$TEST_DICT" ] && mkdir -p $DATA_DIR/etc/dictionaries/ && cd $CUR_DIR/external_dictionaries && python generate_and_test.py --port=$CLICKHOUSE_PORT_TCP --client=$CLICKHOUSE_CLIENT --source=$CUR_DIR/external_dictionaries/source.tsv --reference=$CUR_DIR/external_dictionaries/reference --generated=$DATA_DIR/etc/dictionaries/ --no_mysql --no_mongo ) || true
     $CLICKHOUSE_CLIENT_QUERY "SELECT event, value FROM system.events; SELECT metric, value FROM system.metrics; SELECT metric, value FROM system.asynchronous_metrics;"
     $CLICKHOUSE_CLIENT_QUERY "SELECT 'Still alive'"
 fi
