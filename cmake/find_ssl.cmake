@@ -55,6 +55,11 @@ if (NOT OPENSSL_FOUND AND NOT MISSING_INTERNAL_SSL_LIBRARY)
     set (OPENSSL_FOUND 1)
 endif ()
 
+if(OPENSSL_FOUND)
+    # we need keep OPENSSL_FOUND for many libs in contrib
+    set(USE_SSL 1)
+endif()
+
 endif ()
 
-message (STATUS "Using ssl=${OPENSSL_FOUND}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")
+message (STATUS "Using ssl=${USE_SSL}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")
