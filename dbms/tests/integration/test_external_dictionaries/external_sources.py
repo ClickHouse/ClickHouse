@@ -2,6 +2,7 @@
 import warnings
 import pymysql.cursors
 import pymongo
+import redis
 from tzlocal import get_localzone
 import datetime
 import os
@@ -372,3 +373,34 @@ class SourceHTTP(SourceHTTPBase):
 class SourceHTTPS(SourceHTTPBase):
     def _get_schema(self):
         return "https"
+
+
+class SourceRedis(ExternalSource):
+    def get_source_str(self, table_name):
+        return '''
+            <redis>
+                <host>{host}</host>
+                <port>{port}</port>
+            </redis>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        self.client = redis.StrictRedis(host=self.internal_hostname, port=self.internal_port)
+        self.prepared = True
+
+    def load_data(self, data, table_name):
+        for row_num, row in enumerate(data):
+            self.client.execute_command("SELECT " + str(row_num))
+            self.client.execute_command("FLUSHDB")
+            for cell_name, cell_value in row.data.items():
+                value_type = "$"
+                if isinstance(cell_value, int):
+                    value_type = ":"
+                else:
+                    cell_value = '"' + str(cell_value).replace(' ', '\s') + '"'
+                cmd = "SET " + "$" + cell_name + " " + value_type + str(cell_value)
+                print(cmd)
+                self.client.execute_command(cmd)
