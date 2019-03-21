@@ -141,7 +141,7 @@ if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-mar
 endif()
 
 if (ARCH_NATIVE)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
 # Special options for better optimized code with clang
@@ -180,12 +180,18 @@ include (cmake/use_libcxx.cmake)
 
 set (DEFAULT_LIBS "")
 if (OS_LINUX AND NOT UNBUNDLED)
-    # Note: this probably has no effict, but I'm not an expert in CMake.
+    # Note: this probably has no effect, but I'm not an expert in CMake.
     set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
     set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
 
     # Disable default linked libraries.
     set (DEFAULT_LIBS "-nodefaultlibs")
+
+    # We need builtins from Clang's RT even without libcxx - for ubsan+int128. See https://bugs.llvm.org/show_bug.cgi?id=16404
+    set (BUILTINS_LIB_PATH "")
+    if (COMPILER_CLANG)
+        execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif ()
 
     # Add C++ libraries.
     #
@@ -197,14 +203,9 @@ if (OS_LINUX AND NOT UNBUNDLED)
     #
     # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
     if (USE_LIBCXX)
-        set (BUILTINS_LIB_PATH "")
-            if (COMPILER_CLANG)
-            execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
-        endif ()
-
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     endif ()
 
     # Linking with GLIBC prevents portability of binaries to older systems.
@@ -216,6 +217,7 @@ if (OS_LINUX AND NOT UNBUNDLED)
         string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
         set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
+        # FIXME: glibc-compatibility may be non-static in some builds!
         set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
     endif ()
 
@@ -225,6 +227,11 @@ if (OS_LINUX AND NOT UNBUNDLED)
     # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
 
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+endif ()
+
+if (DEFAULT_LIBS)
+    # Add default libs to all targets as the last dependency.
+    set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 endif ()
 
 
@@ -336,35 +343,29 @@ add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
 
-
-if (DEFAULT_LIBS)
-    # Add default libs to all targets as the last dependency.
-    # I have found no better way to specify default libs in CMake that will appear single time in specific order at the end of linker arguments.
-
-    function(add_default_libs target_name)
+if (GLIBC_COMPATIBILITY)
+    # FIXME: actually glibc-compatibility should always be built first,
+    #        because it's unconditionally linked via $DEFAULT_LIBS,
+    #        and these looks like the first places that get linked.
+    function (add_glibc_compat target_name)
         if (TARGET ${target_name})
-            # message(STATUS "Has target ${target_name}")
-            set_property(TARGET ${target_name} APPEND PROPERTY LINK_LIBRARIES "${DEFAULT_LIBS}")
-            set_property(TARGET ${target_name} APPEND PROPERTY INTERFACE_LINK_LIBRARIES "${DEFAULT_LIBS}")
-            if (GLIBC_COMPATIBILITY)
-                add_dependencies(${target_name} glibc-compatibility)
-            endif ()
+            add_dependencies(${target_name} glibc-compatibility)
         endif ()
     endfunction ()
 
-    add_default_libs(ltdl)
-    add_default_libs(zlibstatic)
-    add_default_libs(jemalloc)
-    add_default_libs(unwind)
-    add_default_libs(memcpy)
-    add_default_libs(Foundation)
-    add_default_libs(common)
-    add_default_libs(gtest)
-    add_default_libs(lz4)
-    add_default_libs(zstd)
-    add_default_libs(snappy)
-    add_default_libs(arrow)
-    add_default_libs(protoc)
-    add_default_libs(thrift_static)
-    add_default_libs(boost_regex_internal)
+    add_glibc_compat(ltdl)
+    add_glibc_compat(zlibstatic)
+    add_glibc_compat(jemalloc)
+    add_glibc_compat(unwind)
+    add_glibc_compat(memcpy)
+    add_glibc_compat(Foundation)
+    add_glibc_compat(common)
+    add_glibc_compat(gtest)
+    add_glibc_compat(lz4)
+    add_glibc_compat(zstd)
+    add_glibc_compat(snappy)
+    add_glibc_compat(arrow)
+    add_glibc_compat(protoc)
+    add_glibc_compat(thrift_static)
+    add_glibc_compat(boost_regex_internal)
 endif ()
