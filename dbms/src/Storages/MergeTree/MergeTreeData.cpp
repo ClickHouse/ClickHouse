@@ -2517,14 +2517,22 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
+        {
             if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
-
+            for (const auto & index : skip_indices)
+                if (index->mayBenefitFromIndexForIn(item))
+                    return true;
+        }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
     else
     {
+        for (const auto & index : skip_indices)
+            if (index->mayBenefitFromIndexForIn(left_in_operand))
+                return true;
+
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
 }

@@ -1,3 +1,8 @@
+## ClickHouse release 19.4.1.3, 2019-03-19
+
+### Bug Fixes
+* Fixed remote queries which contain both `LIMIT BY` and `LIMIT`. Previously, if `LIMIT BY` and `LIMIT` were used for remote query, `LIMIT` could happen before `LIMIT BY`, which led to too filtered result. [#4708](https://github.com/yandex/ClickHouse/pull/4708) ([Constantin S. Pan](https://github.com/kvap))
+
 ## ClickHouse release 19.4.0.49, 2019-03-09
 
 ### New Features
@@ -62,7 +67,7 @@
 
 ### Bug fixes
 
-* Fixed error in #3920. This error manifestate itself as random cache corruption (messages `Unknown codec family code`, `Cannot seek through file`) and segfaults. This bug first appeared in version 19.1 and is present in versions up to  19.1.10 and 19.3.6. [#4623](https://github.com/yandex/ClickHouse/pull/4623) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Fixed error in #3920. This error manifestate itself as random cache corruption (messages `Unknown codec family code`, `Cannot seek through file`) and segfaults. This bug first appeared in version 19.1 and is present in versions up to 19.1.10 and 19.3.6. [#4623](https://github.com/yandex/ClickHouse/pull/4623) ([alexey-milovidov](https://github.com/alexey-milovidov))
 
 
 ## ClickHouse release 19.3.6, 2019-03-02

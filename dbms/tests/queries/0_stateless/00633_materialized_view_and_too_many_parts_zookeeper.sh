@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. $CURDIR/../shell_config.sh
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.root"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.a"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.b"
