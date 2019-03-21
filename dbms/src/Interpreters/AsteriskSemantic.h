@@ -32,7 +32,7 @@ struct AsteriskSemanticImpl
     }
 
     AsteriskSemanticImpl() = default;
-    AsteriskSemanticImpl(const AsteriskSemanticImpl & ) = default;
+    AsteriskSemanticImpl(const AsteriskSemanticImpl &) = default;
 };
 
 
