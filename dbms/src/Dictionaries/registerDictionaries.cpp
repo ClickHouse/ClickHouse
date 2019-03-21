@@ -7,6 +7,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMysql(DictionarySourceFactory & source_factory);
 void registerDictionarySourceClickHouse(DictionarySourceFactory & source_factory);
 void registerDictionarySourceMongoDB(DictionarySourceFactory & source_factory);
+void registerDictionarySourceRedis(DictionarySourceFactory & source_factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & source_factory);
 void registerDictionarySourceJDBC(DictionarySourceFactory & source_factory);
 void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
@@ -30,6 +31,7 @@ void registerDictionaries()
         registerDictionarySourceMysql(source_factory);
         registerDictionarySourceClickHouse(source_factory);
         registerDictionarySourceMongoDB(source_factory);
+        registerDictionarySourceRedis(source_factory);
         registerDictionarySourceXDBC(source_factory);
         registerDictionarySourceJDBC(source_factory);
         registerDictionarySourceExecutable(source_factory);

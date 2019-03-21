@@ -30,6 +30,7 @@ Types of sources (`source_type`):
     - [MySQL](#dicts-external_dicts_dict_sources-mysql)
     - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [Redis](#dicts-external_dicts_dict_sources-redis)
     - [ODBC](#dicts-external_dicts_dict_sources-odbc)
 
 
@@ -420,5 +421,24 @@ Setting fields:
 - `password` – Password of the MongoDB user.
 - `db` – Name of the database.
 - `collection` – Name of the collection.
+
+
+### Redis {#dicts-external_dicts_dict_sources-redis}
+
+Example of settings:
+
+```xml
+<source>
+    <redis>
+        <host>localhost</host>
+        <port>6379</port>
+    </redis>
+</source>
+```
+
+Setting fields:
+
+- `host` – The Redis host.
+- `port` – The port on the Redis server.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
