@@ -244,10 +244,18 @@ struct ContextShared
             return;
         shutdown_called = true;
 
-        system_logs.reset();
+        {
+            std::lock_guard lock(mutex);
+
+            /** After this point, system logs will shutdown their threads and no longer write any data.
+            * It will prevent recreation of system tables at shutdown.
+            * Note that part changes at shutdown won't be logged to part log.
+            */
+            system_logs.reset();
+        }
 
         /** At this point, some tables may have threads that block our mutex.
-          * To complete them correctly, we will copy the current list of tables,
+          * To shutdown them correctly, we will copy the current list of tables,
           *  and ask them all to finish their work.
           * Then delete all objects with tables.
           */
@@ -258,6 +266,8 @@ struct ContextShared
             std::lock_guard lock(mutex);
             current_databases = databases;
         }
+
+        /// We still hold "databases" in Context (instead of std::move) for Buffer tables to flush data correctly.
 
         for (auto & database : current_databases)
             database.second->shutdown();
@@ -1549,51 +1559,47 @@ Compiler & Context::getCompiler()
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-
-    if (!global_context)
-        throw Exception("Logical error: no global context for system logs", ErrorCodes::LOGICAL_ERROR);
-
     shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
 
-QueryLog * Context::getQueryLog()
+std::shared_ptr<QueryLog> Context::getQueryLog()
 {
     auto lock = getLock();
 
     if (!shared->system_logs || !shared->system_logs->query_log)
-        return nullptr;
+        return {};
 
-    return shared->system_logs->query_log.get();
+    return shared->system_logs->query_log;
 }
 
 
-QueryThreadLog * Context::getQueryThreadLog()
+std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
     if (!shared->system_logs || !shared->system_logs->query_thread_log)
-        return nullptr;
+        return {};
 
-    return shared->system_logs->query_thread_log.get();
+    return shared->system_logs->query_thread_log;
 }
 
 
-PartLog * Context::getPartLog(const String & part_database)
+std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
     /// No part log or system logs are shutting down.
     if (!shared->system_logs || !shared->system_logs->part_log)
-        return nullptr;
+        return {};
 
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
     if (part_database == shared->system_logs->part_log_database)
-        return nullptr;
+        return {};
 
-    return shared->system_logs->part_log.get();
+    return shared->system_logs->part_log;
 }
 
 
