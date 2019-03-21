@@ -153,7 +153,7 @@ When running the `ARRAY JOIN`, there is an optimization of the query execution o
 Supported types of `ARRAY JOIN` are listed below:
 
 - `ARRAY JOIN` - Executing `JOIN` with an array or nested data structure. Empty arrays are not included in the result.
-- `LEFT ARRAY JOIN` - Unlike `ARRAY JOIN`, when using the `LEFT ARRAY JOIN` the result contains the rows with empty arrays. The value for an empty array is set to 0.
+- `LEFT ARRAY JOIN` - Unlike `ARRAY JOIN`, when using the `LEFT ARRAY JOIN` the result contains the rows with empty arrays. The value for an empty array is set to default value for an array element type (usually 0, empty string or NULL).
 
 Examples below demonstrate the usage of the `ARRAY JOIN` clause. Let's create a table with an [Array](../data_types/array.md) type column and insert values into it:
 
@@ -252,12 +252,12 @@ ARRAY JOIN arr AS a;
 └───────┴─────────┴───┘
 ```
 
-Multiple arrays of the same size can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the direct product). Example:
+Multiple arrays of the same size can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the cartesian product). Example:
 
 ``` sql
 SELECT s, arr, a, num, mapped
 FROM arrays_test
-ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(lambda(tuple(x), plus(x, 1)), arr) AS mapped;
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped;
 ```
 
 ```
@@ -288,7 +288,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 
 #### ARRAY JOIN With Nested Data Structure
 
-`ARRAY JOIN` also works with nested data structures. Example:
+`ARRAY JOIN` also works with [nested data structure](../data_types/nested_data_structures/nested.md). Example:
 
 ``` sql
 CREATE TABLE nested_test
