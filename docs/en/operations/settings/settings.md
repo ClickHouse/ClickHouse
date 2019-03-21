@@ -81,6 +81,51 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
+## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
+
+Turns on the full SQL parser if the fast stream parser can't parse the data. This setting is used only for [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
+
+Possible values:
+
+- 0 — The functionality is turned off.
+
+    In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
+
+- 1 — The functionality is turned on.
+
+    In this case, you can use an SQL expression as a value, but ClickHouse inserts the data much slower this way. If you insert only formatted data, then ClickHouse behaves as the setting value is 0.
+
+Default value: 1.
+
+**Example of Use**
+
+Let's try to insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
+
+```sql
+SET input_format_values_interpret_expressions = 0;
+INSERT INTO datetime_t VALUES (now())
+
+Exception on client:
+Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
+```
+
+```sql
+SET input_format_values_interpret_expressions = 1;
+INSERT INTO datetime_t VALUES (now())
+
+Ok.
+```
+
+The last query is equivalent to the following.
+
+```sql
+SET input_format_values_interpret_expressions = 0;
+INSERT INTO datetime_t SELECT now()
+
+Ok.
+```
+
+
 ## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
 
 Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. The setting is applies for `INSERT` queries.
@@ -276,7 +321,7 @@ We are writing a URL column with the String type (average size of 60 bytes per v
 
 There usually isn't any reason to change this setting.
 
-## max_query_size
+## max_query_size {#settings-max_query_size}
 
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
 The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.

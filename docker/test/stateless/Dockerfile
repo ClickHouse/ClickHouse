@@ -32,6 +32,7 @@ COPY zookeeper.xml /etc/clickhouse-server/config.d/zookeeper.xml
 COPY listen.xml /etc/clickhouse-server/config.d/listen.xml
 COPY part_log.xml /etc/clickhouse-server/config.d/part_log.xml
 COPY log_queries.xml /etc/clickhouse-server/users.d/log_queries.xml
+COPY readonly.xml /etc/clickhouse-server/users.d/readonly.xml
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-common-static-dbg_*.deb; \
