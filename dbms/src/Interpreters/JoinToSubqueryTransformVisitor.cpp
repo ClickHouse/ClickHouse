@@ -37,8 +37,9 @@ struct ColumnAliasesMatcher
         const std::vector<DatabaseAndTableWithAlias> tables;
         bool public_names;
         AsteriskSemantic::RevertedAliases rev_aliases;  /// long_name -> aliases
-        std::unordered_map<String, String> aliases;     /// alias -> long_name
+        AsteriskSemantic::ForwardAliases aliases;       /// alias -> long_name
         std::vector<std::pair<ASTIdentifier *, bool>> compound_identifiers;
+        std::set<String> known_short_names;             /// all known names (remove others - multiple_joins_omit_unused_columns)
         std::set<String> allowed_long_names;            /// original names allowed as aliases '--t.x as t.x' (select expressions only).
 
         Data(std::vector<DatabaseAndTableWithAlias> && tables_)
@@ -106,6 +107,7 @@ struct ColumnAliasesMatcher
 
     static void visit(ASTIdentifier & node, ASTPtr &, Data & data)
     {
+        data.known_short_names.insert(node.shortName());
         if (node.isShort())
             return;
 
@@ -149,20 +151,20 @@ struct AppendSemanticVisitorData
 {
     using TypeToVisit = ASTSelectQuery;
 
-    AsteriskSemantic::RevertedAliasesPtr rev_aliases = {};
+    const AsteriskSemanticImpl & semantics;
     bool done = false;
 
     void visit(ASTSelectQuery & select, ASTPtr &)
     {
-        if (done || !rev_aliases || !select.select_expression_list)
+        if (done || !select.select_expression_list)
             return;
 
         for (auto & child : select.select_expression_list->children)
         {
             if (auto * node = child->as<ASTAsterisk>())
-                AsteriskSemantic::setAliases(*node, rev_aliases);
+                AsteriskSemantic::set(*node, semantics);
             if (auto * node = child->as<ASTQualifiedAsterisk>())
-                AsteriskSemantic::setAliases(*node, rev_aliases);
+                AsteriskSemantic::set(*node, semantics);
         }
 
         done = true;
@@ -238,8 +240,6 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
 {
-    using RevertedAliases = AsteriskSemantic::RevertedAliases;
-
     if (!needRewrite(select))
         return;
 
@@ -271,8 +271,8 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
 
     aliases_data.replaceIdentifiersWithAliases();
 
-    auto rev_aliases = std::make_shared<RevertedAliases>();
-    rev_aliases->swap(aliases_data.rev_aliases);
+    AsteriskSemanticImpl semantics(std::move(aliases_data.aliases), std::move(aliases_data.rev_aliases),
+                                   std::move(aliases_data.known_short_names));
 
     auto & src_tables = select.tables->children;
     ASTPtr left_table = src_tables[0];
@@ -284,7 +284,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
             throw Exception("Cannot replace tables with subselect", ErrorCodes::LOGICAL_ERROR);
 
         /// attach data to generated asterisk
-        AppendSemanticVisitor::Data semantic_data{rev_aliases, false};
+        AppendSemanticVisitor::Data semantic_data{semantics, false};
         AppendSemanticVisitor(semantic_data).visit(left_table);
     }
 

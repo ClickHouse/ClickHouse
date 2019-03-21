@@ -8,31 +8,46 @@
 namespace DB
 {
 
+/// Contain maps of aliases used in phase of * expanding.
 struct AsteriskSemanticImpl
 {
+    using ForwardAliases = std::unordered_map<String, String>;
+    using ForwardAliasesPtr = std::shared_ptr<ForwardAliases>;
     using RevertedAliases = std::unordered_map<String, std::vector<String>>;
     using RevertedAliasesPtr = std::shared_ptr<RevertedAliases>;
+    using NamesPtr = std::shared_ptr<std::set<String>>;
 
-    RevertedAliasesPtr aliases; /// map of aliases that should be set in phase of * expanding.
+    ForwardAliasesPtr fwd_aliases;
+    RevertedAliasesPtr rev_aliases;
+    NamesPtr known_short_names;
+
+    AsteriskSemanticImpl(ForwardAliases && fwd, RevertedAliases && rev, std::set<String> && names)
+        : fwd_aliases(std::make_shared<ForwardAliases>())
+        , rev_aliases(std::make_shared<RevertedAliases>())
+        , known_short_names(std::make_shared<std::set<String>>())
+    {
+        fwd_aliases->swap(fwd);
+        rev_aliases->swap(rev);
+        known_short_names->swap(names);
+    }
+
+    AsteriskSemanticImpl() = default;
+    AsteriskSemanticImpl(const AsteriskSemanticImpl & ) = default;
 };
 
 
 struct AsteriskSemantic
 {
+    using ForwardAliases = AsteriskSemanticImpl::ForwardAliases;
+    using ForwardAliasesPtr = AsteriskSemanticImpl::ForwardAliasesPtr;
     using RevertedAliases = AsteriskSemanticImpl::RevertedAliases;
     using RevertedAliasesPtr = AsteriskSemanticImpl::RevertedAliasesPtr;
 
-    static void setAliases(ASTAsterisk & node, const RevertedAliasesPtr & aliases) { node.semantic = makeSemantic(aliases); }
-    static void setAliases(ASTQualifiedAsterisk & node, const RevertedAliasesPtr & aliases) { node.semantic = makeSemantic(aliases); }
+    static void set(ASTAsterisk & node, const AsteriskSemanticImpl & sema) { node.semantic = std::make_shared<AsteriskSemanticImpl>(sema); }
+    static void set(ASTQualifiedAsterisk & node, const AsteriskSemanticImpl & sema) { node.semantic = std::make_shared<AsteriskSemanticImpl>(sema); }
 
-    static RevertedAliasesPtr getAliases(const ASTAsterisk & node) { return node.semantic ? node.semantic->aliases : nullptr; }
-    static RevertedAliasesPtr getAliases(const ASTQualifiedAsterisk & node) { return node.semantic ? node.semantic->aliases : nullptr; }
-
-private:
-    static std::shared_ptr<AsteriskSemanticImpl> makeSemantic(const RevertedAliasesPtr & aliases)
-    {
-        return std::make_shared<AsteriskSemanticImpl>(AsteriskSemanticImpl{aliases});
-    }
+    static AsteriskSemanticImpl get(const ASTAsterisk & node) { return node.semantic ? *node.semantic : AsteriskSemanticImpl{}; }
+    static AsteriskSemanticImpl get(const ASTQualifiedAsterisk & node) { return node.semantic ? *node.semantic : AsteriskSemanticImpl{}; }
 };
 
 }

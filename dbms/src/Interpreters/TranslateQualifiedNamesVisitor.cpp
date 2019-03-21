@@ -141,22 +141,38 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
         Visitor(data).visit(*add_node);
 }
 
-static void addIdentifier(ASTs & nodes, const String & table_name, const String & column_name, AsteriskSemantic::RevertedAliasesPtr aliases)
+static void addIdentifier(ASTs & nodes, const String & table_name, const String & column_name,
+                          const AsteriskSemanticImpl & semantics, bool add_unused_columns)
 {
     auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
 
-    bool added = false;
-    if (aliases && aliases->count(identifier->name))
+    if (auto aliases = semantics.rev_aliases)
     {
-        for (const String & alias : (*aliases)[identifier->name])
+        bool added = false;
+        if (aliases->count(identifier->name))
         {
-            nodes.push_back(identifier->clone());
-            nodes.back()->setAlias(alias);
-            added = true;
+            for (const String & alias : (*aliases)[identifier->name])
+            {
+                nodes.push_back(identifier->clone());
+                nodes.back()->setAlias(alias);
+                added = true;
+            }
+        }
+
+        if (!added)
+        {
+            bool need_it = add_unused_columns;
+
+            if (identifier->isSpecial())
+                need_it = true;
+            else if (semantics.known_short_names->count(identifier->shortName()))
+                need_it = true;
+
+            if (need_it)
+                nodes.emplace_back(identifier);
         }
     }
-
-    if (!added)
+    else
         nodes.emplace_back(identifier);
 }
 
@@ -205,7 +221,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     if (first_table || !data.join_using_columns.count(column_name))
                     {
                         String table_name = table.getQualifiedNamePrefix(false);
-                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*asterisk));
+                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::get(*asterisk), data.add_unused_columns);
                     }
                 }
 
@@ -223,7 +239,8 @@ void TranslateQualifiedNamesMatcher::visit(ASTExpressionList & node, const ASTPt
                     for (const auto & column_name : table_columns)
                     {
                         String table_name = table.getQualifiedNamePrefix(false);
-                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::getAliases(*qualified_asterisk));
+                        addIdentifier(node.children, table_name, column_name, AsteriskSemantic::get(*qualified_asterisk),
+                                      data.add_unused_columns);
                     }
                     break;
                 }

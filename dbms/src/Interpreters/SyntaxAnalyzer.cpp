@@ -90,12 +90,14 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
 {
     std::vector<TableWithColumnNames> tables_with_columns = getDatabaseAndTablesWithColumnNames(select_query, context);
 
+    auto & settings = context.getSettingsRef();
+
     if (tables_with_columns.empty())
     {
         Names all_columns_name = source_columns_list;
 
         /// TODO: asterisk_left_columns_only probably does not work in some cases
-        if (!context.getSettingsRef().asterisk_left_columns_only)
+        if (!settings.asterisk_left_columns_only)
         {
             for (auto & column : columns_from_joined_table)
                 all_columns_name.emplace_back(column.name_and_type.name);
@@ -106,6 +108,7 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
 
     LogAST log;
     TranslateQualifiedNamesVisitor::Data visitor_data(source_columns_set, tables_with_columns);
+    visitor_data.add_unused_columns = !settings.multiple_joins_omit_unused_columns;
     TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 }

@@ -155,13 +155,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
-    if (settings.allow_experimental_cross_to_join_conversion)
+    if (settings.allow_cross_to_inner_join_conversion)
     {
         CrossToInnerJoinVisitor::Data cross_to_inner;
         CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
     }
 
-    if (settings.allow_experimental_multiple_joins_emulation)
+    if (settings.allow_multiple_joins_emulation)
     {
         JoinToSubqueryTransformVisitor::Data join_to_subs_data;
         JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);

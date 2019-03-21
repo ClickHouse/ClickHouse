@@ -28,11 +28,13 @@ public:
         const std::vector<TableWithColumnNames> & tables;
         std::unordered_set<String> join_using_columns;
         bool has_columns;
+        bool add_unused_columns;
 
         Data(const NameSet & source_columns_, const std::vector<TableWithColumnNames> & tables_, bool has_columns_ = true)
             : source_columns(source_columns_)
             , tables(tables_)
             , has_columns(has_columns_)
+            , add_unused_columns(false)
         {}
 
         static std::vector<TableWithColumnNames> tablesOnly(const std::vector<DatabaseAndTableWithAlias> & tables)

@@ -36,6 +36,7 @@ public:
 
     bool compound() const { return !name_parts.empty(); }
     bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
+    bool isSpecial() const { return isShort() && shortName().find("--") == 0; }
 
     void setShortName(const String & new_name);
 
