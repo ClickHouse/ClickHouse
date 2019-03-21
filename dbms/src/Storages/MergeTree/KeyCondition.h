@@ -181,19 +181,13 @@ private:
     bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
     bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
-    /** Is node the key column
-      *  or expression in which column of key is wrapped by chain of functions,
+    /** Is node a key column
+      *  or expression in which a key column is wrapped by chain of functions,
       *  that can be monotonic on certain ranges?
       * If these conditions are true, then returns number of column in key, type of resulting expression
       *  and fills chain of possibly-monotonic functions.
       */
-
-    /*bool inferTypeFromASTNode(
-        const ASTPtr & node,
-        const DataTypePtr & out_type);*/
-
     bool isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExpr(
-       // const ASTPtr & node,
         const String & name,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,

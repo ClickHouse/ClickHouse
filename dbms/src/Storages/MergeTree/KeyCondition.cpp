@@ -430,7 +430,7 @@ bool KeyCondition::tryPrepareSetIndex(
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
     DataTypes data_types;
 
-    auto get_key_tuple_position_mapping = [&](const ASTPtr & node, size_t tuple_index)
+    auto get_key_tuple_position_mapping = [&](const ASTPtr & node, size_t tuple_index)->bool
     {
         MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
         index_mapping.tuple_index = tuple_index;
@@ -445,7 +445,10 @@ bool KeyCondition::tryPrepareSetIndex(
             data_types.push_back(data_type);
             if (out_key_column_num < index_mapping.key_index)
                 out_key_column_num = index_mapping.key_index;
+            std::cerr << "INV FUNC SIZE: " << invertible_functions.size() << "\n";
+            return invertible_functions.empty();
         }
+        return true;
     };
 
     const auto * left_arg_tuple = left_arg->as<ASTFunction>();
@@ -453,10 +456,23 @@ bool KeyCondition::tryPrepareSetIndex(
     {
         const auto & tuple_elements = left_arg_tuple->arguments->children;
         for (size_t i = 0; i < tuple_elements.size(); ++i)
-            get_key_tuple_position_mapping(tuple_elements[i], i);
+        {
+            if (!get_key_tuple_position_mapping(tuple_elements[i], i))
+            {
+                std::cerr << "SHIT\n";
+                return false;
+            }
+        }
     }
     else
-        get_key_tuple_position_mapping(left_arg, 0);
+    {
+        std::cerr << "LONELY\n";
+        if (!get_key_tuple_position_mapping(left_arg, 0))
+        {
+            std::cerr << "SHIT\n";
+            return false;
+        }
+    }
 
     if (indexes_mapping.empty())
         return false;
@@ -645,7 +661,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctionsImpl(
                 out_invertible_functions_chain,
                 out_function_argument_stack))
         {
-            auto func_builder = FunctionFactory::instance().tryGet(func->name, context);
+            auto func_builder = FunctionFactory::instance().tryGet(func_ptr->name, context);
             ColumnsWithTypeAndName arguments{{nullptr, current_type, ""}};
             auto func = func_builder->build(arguments);
 
@@ -708,11 +724,17 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
-        if (functionIsInOrGlobalInOperator(func->name)
-            && tryPrepareSetIndex(args, context, out, key_column_num))
+        if (functionIsInOrGlobalInOperator(func->name))
         {
-            key_arg_pos = 0;
-            is_set_const = true;
+            if (tryPrepareSetIndex(args, context, out, key_column_num))
+            {
+                key_arg_pos = 0;
+                is_set_const = true;
+            }
+            else
+            {
+                return false;
+            }
         }
         else if (getConstant(args[1], block_with_constants, const_value, const_type)
             && isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(args[0], context, key_column_num, expr_type, key_expr_type, monotonic_chain, invertible_chain, argument_stack))
@@ -1103,7 +1125,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
         {
             const Range * key_range = &parallelogram[element.key_column];
 
-            /// The case when the column is wrapped in a chain of possibly monotonic functions.
+            /// The case when the expression is obtainable from key columns via invertible functions.
             RangeSet transformed_range_set = *key_range;
             if (!element.invertible_functions_chain.empty())
             {
@@ -1118,6 +1140,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
                 };
                 transformed_range_set = std::move(*new_range_set);
             }
+            /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
                 auto new_range_set = applyMonotonicFunctionsChainToRangeSet(
@@ -1134,6 +1157,13 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
 
                 transformed_range_set = std::move(*new_range_set);
             }
+
+            std::cerr << "Element range: " << element.range.toString() << "\n";
+            std::cerr << "Key set: {";
+            for (const auto& range : transformed_range_set.data) {
+                std::cerr << range.toString() << ", ";
+            }
+            std::cerr << "}\n";
 
             bool intersects = transformed_range_set.intersectsRange(element.range);
             bool contains = transformed_range_set.isContainedBy(element.range);
