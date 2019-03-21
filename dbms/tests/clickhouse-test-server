@@ -31,6 +31,8 @@ export CLICKHOUSE_CONFIG_CLIENT=${CLICKHOUSE_CONFIG_CLIENT:=${CONFIG_CLIENT_DIR}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xml}
 CLICKHOUSE_CONFIG_USERS=${CONFIG_SERVER_DIR}users.xml
 [ ! -f "$CLICKHOUSE_CONFIG_USERS" ] && CLICKHOUSE_CONFIG_USERS=$CUR_DIR/../programs/server/users.xml
+CLICKHOUSE_CONFIG_USERS_D=${CONFIG_SERVER_DIR}users.d
+[ ! -d "$CLICKHOUSE_CONFIG_USERS_D" ] && CLICKHOUSE_CONFIG_USERS_D=$CUR_DIR/../programs/server/users.d
 [ -x "$CUR_DIR/clickhouse-test" ] && TEST_DIR=${TEST_DIR=$CUR_DIR/}
 [ -d "$CUR_DIR/queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/local/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/local/share/clickhouse-test/queries}
@@ -54,6 +56,7 @@ if [ "$DATA_DIR_PATTERN" != "$DATA_DIR" ]; then
     cat $CLICKHOUSE_CONFIG | sed -e s!$DATA_DIR_PATTERN!$DATA_DIR! > $DATA_DIR/etc/server-config.xml
     export CLICKHOUSE_CONFIG=$DATA_DIR/etc/server-config.xml
     cp $CLICKHOUSE_CONFIG_USERS $DATA_DIR/etc
+    cp -r -L $CLICKHOUSE_CONFIG_USERS_D $DATA_DIR/etc
 fi
 
 CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${CLICKHOUSE_EXTRACT} --config=$CLICKHOUSE_CONFIG"}
@@ -140,7 +143,7 @@ else
     fi
     ( [ "$TEST_RUN" ] && $CLICKHOUSE_TEST ) || ${TEST_TRUE:=false}
     ( [ "$TEST_PERF" ] && $CLICKHOUSE_PERFORMANCE_TEST $* ) || true
-    ( [ "$TEST_DICT" ] && mkdir -p $DATA_DIR/etc/dictionaries/ && cd $CUR_DIR/external_dictionaries && python generate_and_test.py --port=$CLICKHOUSE_PORT_TCP --client=$CLICKHOUSE_CLIENT --source=$CUR_DIR/external_dictionaries/source.tsv --reference=$CUR_DIR/external_dictionaries/reference --generated=$DATA_DIR/etc/dictionaries/ --no_mysql --no_mongo ) || true
+    #( [ "$TEST_DICT" ] && mkdir -p $DATA_DIR/etc/dictionaries/ && cd $CUR_DIR/external_dictionaries && python generate_and_test.py --port=$CLICKHOUSE_PORT_TCP --client=$CLICKHOUSE_CLIENT --source=$CUR_DIR/external_dictionaries/source.tsv --reference=$CUR_DIR/external_dictionaries/reference --generated=$DATA_DIR/etc/dictionaries/ --no_mysql --no_mongo ) || true
     $CLICKHOUSE_CLIENT_QUERY "SELECT event, value FROM system.events; SELECT metric, value FROM system.metrics; SELECT metric, value FROM system.asynchronous_metrics;"
     $CLICKHOUSE_CLIENT_QUERY "SELECT 'Still alive'"
 fi

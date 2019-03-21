@@ -1,0 +1,41 @@
+8	aбвгдеёж
+		"rows_read": 2,
+8	aбвгдеёж
+		"rows_read": 2,
+13	abc
+		"rows_read": 1,
+1	ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
+		"rows_read": 2,
+1	ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
+		"rows_read": 2,
+0	ClickHouse - столбцовая система управления базами данных (СУБД) для онлайн обработки аналитических запросов (OLAP).
+		"rows_read": 2,
+0	ClickHouse - столбцовая система управления базами данных (СУБД) для онлайн обработки аналитических запросов (OLAP).
+5	еще строка
+		"rows_read": 4,
+12	<div> странный <strong>html</strong> </div>
+		"rows_read": 2,
+9	2_2%2_2\\
+		"rows_read": 2,
+9	2_2%2_2\\
+		"rows_read": 2,
+9	2_2%2_2\\
+		"rows_read": 2,
+9	2_2%2_2\\
+		"rows_read": 2,
+8	aбвгдеёж
+13	abc
+		"rows_read": 3,
+8	aбвгдеёж
+		"rows_read": 2,
+1	column-oriented
+2	column-oriented
+		"rows_read": 4,
+0	ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
+		"rows_read": 2,
+1	column-oriented
+2	column-oriented
+		"rows_read": 4,
+6	some string
+13	abc
+		"rows_read": 3,
