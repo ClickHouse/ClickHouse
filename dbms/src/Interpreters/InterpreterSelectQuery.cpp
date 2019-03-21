@@ -1037,14 +1037,14 @@ void InterpreterSelectQuery::executeFetchColumns(
             pipeline.streams = {std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns))};
 
             if (query_info.prewhere_info)
-                pipeline.transform([&](auto & stream))
+                pipeline.transform([&](auto & stream)
                 {
                     stream = std::make_shared<FilterBlockInputStream>(
                         stream,
                         prewhere_info->prewhere_actions,
                         prewhere_info->prewhere_column_name,
                         prewhere_info->remove_prewhere_column);
-                }
+                });
         }
 
         pipeline.transform([&](auto & stream)
