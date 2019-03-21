@@ -1,3 +1,7 @@
+option (ENABLE_SSL "Enable ssl" ON)
+
+if (ENABLE_SSL)
+
 if(NOT ARCH_32)
     option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
 endif()
@@ -41,6 +45,8 @@ if (NOT OPENSSL_FOUND)
     endif ()
     set (OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
     set (OPENSSL_FOUND 1)
+endif ()
+
 endif ()
 
 message (STATUS "Using ssl=${OPENSSL_FOUND}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")
