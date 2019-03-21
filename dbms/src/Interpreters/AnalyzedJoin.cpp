@@ -45,7 +45,7 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     if (!join)
         return nullptr;
 
-    const auto & join_params = static_cast<const ASTTableJoin &>(*join->table_join);
+    const auto & join_params = join->table_join->as<ASTTableJoin &>();
 
     /// Create custom expression list with join keys from right table.
     auto expression_list = std::make_shared<ASTExpressionList>();

@@ -2,15 +2,12 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
 
 namespace DB
 {
-
-class IAST; // XXX: should include full class - for proper use inside inline methods
-using ASTPtr = std::shared_ptr<IAST>;
-
 
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {

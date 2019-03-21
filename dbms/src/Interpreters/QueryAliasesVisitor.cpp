@@ -32,18 +32,16 @@ static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, con
 bool QueryAliasesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
     /// Don't descent into table functions and subqueries and special case for ArrayJoin.
-    if (typeid_cast<ASTTableExpression *>(node.get()) ||
-        typeid_cast<ASTSelectWithUnionQuery *>(node.get()) ||
-        typeid_cast<ASTArrayJoin *>(node.get()))
+    if (node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>())
         return false;
     return true;
 }
 
 void QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * s = typeid_cast<ASTSubquery *>(ast.get()))
+    if (auto * s = ast->as<ASTSubquery>())
         visit(*s, ast, data);
-    else if (auto * aj = typeid_cast<ASTArrayJoin *>(ast.get()))
+    else if (auto * aj = ast->as<ASTArrayJoin>())
         visit(*aj, ast, data);
     else
         visitOther(ast, data);
