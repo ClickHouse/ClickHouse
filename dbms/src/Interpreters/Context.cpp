@@ -23,7 +23,7 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>

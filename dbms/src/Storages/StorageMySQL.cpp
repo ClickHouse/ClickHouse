@@ -6,7 +6,7 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>

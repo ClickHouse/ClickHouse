@@ -3,7 +3,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 
 #include <iostream>

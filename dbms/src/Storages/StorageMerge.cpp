@@ -22,7 +22,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <ext/range.h>
