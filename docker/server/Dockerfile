@@ -28,7 +28,7 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
-ADD https://github.com/tianon/gosu/releases/download/1.10/gosu-amd64 /bin/gosu
+ADD https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-amd64 /bin/gosu
 
 RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8
