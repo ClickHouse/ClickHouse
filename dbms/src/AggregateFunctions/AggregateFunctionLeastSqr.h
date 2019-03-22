@@ -1,7 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 template <typename X, typename Y, typename Ret>
-struct AggregateFunctionLeastSqrData
+struct AggregateFunctionLeastSqrData final
 {
     size_t count = 0;
     Ret sum_x = 0;
@@ -93,6 +93,16 @@ public:
         // notice: arguments has been checked before
     }
 
+    String getName() const override
+    {
+        return "leastSqr";
+    }
+
+    const char * getHeaderFilePath() const override
+    {
+        return __FILE__;
+    }
+
     void add(
         AggregateDataPtr place,
         const IColumn ** columns,
@@ -100,8 +110,15 @@ public:
         Arena *
     ) const override
     {
-        X x = (*columns[0])[row_num].template get<X>();
-        Y y = (*columns[1])[row_num].template get<Y>();
+        auto col_x {
+            static_cast<const ColumnVector<X> *>(columns[0])
+        };
+        auto col_y {
+            static_cast<const ColumnVector<Y> *>(columns[1])
+        };
+
+        X x = col_x->getData()[row_num];
+        Y y = col_y->getData()[row_num];
 
         this->data(place).add(x, y);
     }
@@ -168,9 +185,6 @@ public:
 
         to.insert(std::move(result));
     }
-
-    String getName() const override { return "leastSqr"; }
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 }
