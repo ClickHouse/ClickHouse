@@ -9,6 +9,7 @@
     - [clickhouse-client](https://github.com/yurial/clickhouse-client)
     - [aiochclient](https://github.com/maximdanilchenko/aiochclient)
 - PHP
+    - [SeasClick](https://github.com/SeasX/SeasClick)
     - [phpClickHouse](https://github.com/smi2/phpClickHouse)
     - [clickhouse-php-client](https://github.com/8bitov/clickhouse-php-client)
     - [clickhouse-client](https://github.com/bozerkins/clickhouse-client)
