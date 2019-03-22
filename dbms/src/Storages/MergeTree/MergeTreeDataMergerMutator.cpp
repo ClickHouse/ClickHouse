@@ -877,6 +877,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     new_data_part->is_temp = true;
 
     String new_part_tmp_path = new_data_part->getFullPath();
+    std::cerr << "NEW TEMP PART:" << new_part_tmp_path << std::endl;
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
@@ -954,7 +955,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             {
                 String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
                 files_to_skip.insert(stream_name + ".bin");
-                files_to_skip.insert(stream_name + ".mrk");
+                files_to_skip.insert(stream_name + new_data_part->marks_file_extension);
             };
 
             IDataType::SubstreamPath stream_path;
@@ -1030,6 +1031,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->rows_count = source_part->rows_count;
         new_data_part->marks_count = source_part->marks_count;
         new_data_part->marks_index_granularity = source_part->marks_index_granularity;
+        new_data_part->mark_size_in_bytes = source_part->mark_size_in_bytes;
         new_data_part->index = source_part->index;
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;

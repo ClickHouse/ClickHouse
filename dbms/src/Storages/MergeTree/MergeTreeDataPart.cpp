@@ -134,9 +134,21 @@ void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
 
 MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & name_)
-    : storage(storage_), name(name_), info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
+    : storage(storage_)
+    , name(name_)
+    , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
+    , marks_file_extension(storage.index_granularity_bytes > 0 ? ".mrk2" : ".mrk")
 {
 }
+
+MergeTreeDataPart::MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
+    : storage(storage_)
+    , name(name_)
+    , info(info_)
+    , marks_file_extension(storage.index_granularity_bytes > 0 ? ".mrk2" : ".mrk")
+{
+}
+
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
@@ -207,12 +219,15 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 
     for (const auto & column : storage_columns)
     {
-        //std::cerr << "Searching for column:" << column.name << std::endl;
+        std::cerr << "Searching for column:" << column.name << std::endl;
         if (!hasColumnFiles(column.name))
+        {
+            std::cerr << "No column files:" << column.name << std::endl;
             continue;
+        }
 
         const auto size = getColumnSize(column.name, *column.type).data_compressed;
-        //std::cerr << "Column size:" <<size<<std::endl;
+        std::cerr << "Column size:" <<size<<std::endl;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -492,18 +507,8 @@ void MergeTreeDataPart::loadMarksIndexGranularity()
     /// We can use any column, it doesn't matter
     std::string marks_file_path = getFullPath() + escapeForFileName(columns.front().name);
     //std::cerr << "MARKSFILEPATH:" << marks_file_path << std::endl;
-    if (Poco::File(marks_file_path + ".mrk").exists())
-    {
-        marks_file_extension = ".mrk";
-        //std::cerr << "EXISTS .mrk " <<    getFullPath() << std::endl;
-    }
-    else if (Poco::File(marks_file_path + ".mrk2").exists())
-    {
-        marks_file_extension = ".mrk2";
-        //std::cerr << "EXISTS .mrk2:" << getFullPath() << std::endl;
-    }
-    else
-        throw Exception("Marks file '" + marks_file_path + "' doesn't exist with extensions .mrk or mrk2", ErrorCodes::NO_FILE_IN_DATA_PART);
+    if (!Poco::File(marks_file_path + marks_file_extension).exists())
+        throw Exception("Marks file '" + marks_file_path + "' doesn't exist with extension " + marks_file_extension, ErrorCodes::NO_FILE_IN_DATA_PART);
 
     marks_file_path += marks_file_extension;
     size_t marks_file_size = Poco::File(marks_file_path).getSize();
@@ -512,6 +517,7 @@ void MergeTreeDataPart::loadMarksIndexGranularity()
     if (marks_file_extension == ".mrk")
     {
         mark_size_in_bytes = sizeof(size_t) * 2;
+        std::cerr << "(1)SET MARKS SIZE FOR:" << marks_file_path  << "TO:" <<  mark_size_in_bytes << std::endl;
         /// TODO(alesap) Replace hardcoded numbers to something better
         marks_count = marks_file_size / mark_size_in_bytes;
         marks_index_granularity.resize(marks_count, storage.index_granularity); /// all the same
@@ -520,6 +526,7 @@ void MergeTreeDataPart::loadMarksIndexGranularity()
     else
     {
         mark_size_in_bytes = sizeof(size_t) * 3;
+        std::cerr << "(2)SET MARKS SIZE FOR:" << marks_file_path << "TO:" <<  mark_size_in_bytes<< std::endl;
         marks_count = marks_file_size / mark_size_in_bytes;
         ReadBufferFromFile buffer(marks_file_path, marks_file_size, -1);
         marks_index_granularity.resize(marks_count);
@@ -836,12 +843,12 @@ bool MergeTreeDataPart::hasColumnFiles(const String & column) const
     /// That's Ok under assumption that files exist either for all or for no streams.
 
     String prefix = getFullPath();
-    //std::cerr << "ColumnPrefix:" << prefix << std::endl;
+    std::cerr << "ColumnPrefix:" << prefix << std::endl;
 
 
     String escaped_column = escapeForFileName(column);
-    //std::cerr << "Escaped name:" << escaped_column << std::endl;
-    //std::cerr << "Marks file extension:" << marks_file_extension << std::endl;
+    std::cerr << "Escaped name:" << escaped_column << std::endl;
+    std::cerr << "Marks file extension:" << marks_file_extension << std::endl;
     return Poco::File(prefix + escaped_column + ".bin").exists()
         && Poco::File(prefix + escaped_column + marks_file_extension).exists();
 }
