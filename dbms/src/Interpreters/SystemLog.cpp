@@ -16,7 +16,7 @@ constexpr size_t DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS = 7500;
 
 /// Creates a system log with MergeTree engine using parameters from config
 template <typename TSystemLog>
-std::unique_ptr<TSystemLog> createSystemLog(
+std::shared_ptr<TSystemLog> createSystemLog(
     Context & context,
     const String & default_database_name,
     const String & default_table_name,
@@ -33,7 +33,7 @@ std::unique_ptr<TSystemLog> createSystemLog(
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds", DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
-    return std::make_unique<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
+    return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
 }
 
 }
@@ -49,6 +49,14 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
 }
 
 
-SystemLogs::~SystemLogs() = default;
+SystemLogs::~SystemLogs()
+{
+    if (query_log)
+        query_log->shutdown();
+    if (query_thread_log)
+        query_thread_log->shutdown();
+    if (part_log)
+        part_log->shutdown();
+}
 
 }
