@@ -53,10 +53,8 @@ public:
         size_t rows = input_rows_count;
         size_t num_args = arguments.size();
 
-        auto result_column = ColumnUInt8::create(rows);
-
         DataTypePtr common_type = nullptr;
-        auto commonType = [& common_type, & block, & arguments]()
+        auto commonType = [&common_type, &block, &arguments]()
         {
             if (common_type == nullptr)
             {
@@ -106,6 +104,7 @@ public:
                 throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
         }
 
+        auto result_column = ColumnUInt8::create(rows);
         auto result_column_ptr = typeid_cast<ColumnUInt8 *>(result_column.get());
         GatherUtils::sliceHas(*sources[0], *sources[1], all, *result_column_ptr);
 

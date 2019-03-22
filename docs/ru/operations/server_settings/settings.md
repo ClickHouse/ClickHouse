@@ -197,7 +197,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Порт для обращений к серверу по протоколу HTTP(s).
 
-Если указан `https_port`, то требуется конфигурирование [openSSL](#openssl).
+Если указан `https_port`, то требуется конфигурирование [openSSL](#server_settings-openssl).
 
 Если указан `http_port`, то настройка openSSL игнорируется, даже если она задана.
 
@@ -431,7 +431,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## openSSL
+## openSSL {#server_settings-openssl}
 
 Настройки клиента/сервера SSL.
 
@@ -612,6 +612,19 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <tcp_port>9000</tcp_port>
 ```
 
+## tcp_port_secure {#server_settings-tcp_port_secure}
+
+TCP порт для защищённого обмена данными с клиентами. Используйте с настройкой [OpenSSL](#server_settings-openssl).
+
+**Возможные значения**
+
+Положительное целое число.
+
+**Значение по умолчанию**
+
+```xml
+<tcp_port_secure>9440</tcp_port_secure>
+```
 
 ## tmp_path
 

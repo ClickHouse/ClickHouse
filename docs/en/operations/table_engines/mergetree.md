@@ -241,7 +241,7 @@ INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 
 For tables from the `*MergeTree` family data skipping indices can be specified.
 
-These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules,
+These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (size of the granule is specified using `index_granularity` setting in the table engine),
 then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where `where` query cannot be satisfied.
 
 
@@ -273,9 +273,21 @@ Stores extremes of the specified expression (if the expression is `tuple`, then 
 * `set(max_rows)`
 Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"), use them to check if the `WHERE` expression is not satisfiable on a block of the data.  
 
+* `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
+Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from block of data. Works only with strings.
+Can be used for optimization of `equals`, `like` and `in` expressions.
+`n` -- ngram size,
+`size_of_bloom_filter_in_bytes` -- bloom filter size in bytes (you can use big values here, for example, 256 or 512, because it can be compressed well),
+`number_of_hash_functions` -- number of hash functions used in bloom filter,
+`random_seed` -- seed for bloom filter hash functions.
+
+* `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
+The same as `ngrambf_v1`, but instead of ngrams stores tokens, which are sequences separated by non-alphanumeric characters.
+
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
+INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
+INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 ```
 
 
