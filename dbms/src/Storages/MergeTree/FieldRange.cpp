@@ -69,7 +69,7 @@ namespace DB
         {
             return !lhs.left_bounded ||
             (rhs.left_bounded && (Range::less(lhs.left, rhs.left)
-            || (lhs.left_included && !rhs.left_included && Range::equals(lhs.left, rhs.right))
+            || (lhs.left_included && !rhs.left_included && Range::equals(lhs.left, rhs.left))
             ));
         });
         std::vector<Range> normalized;
@@ -89,10 +89,11 @@ namespace DB
                     break;
                 }
                 right_bounded = true;
+                right_border = range.right;
+                right_included = range.right_included;
             }
             else
             {
-                normalized.back().right = range.right;
                 if (!range.right_bounded)
                 {
                     normalized.back().right = Field();
@@ -100,9 +101,15 @@ namespace DB
                     normalized.back().right_included = false;
                     break;
                 }
+                else if (
+                        Range::less(right_border, range.right) ||
+                        (!right_included && range.right_included &&
+                        Range::equals(right_border, range.right)))
+                {
+                    right_border = range.right;
+                    right_included = range.right_included;
+                }
             }
-            right_border = range.right;
-            right_included = range.right_included;
         }
         data = std::move(normalized);
     }
@@ -111,11 +118,17 @@ namespace DB
     {
         if (this != &rhs)
         {
-            for (const auto &range : rhs.data)
+            if (data.empty())
             {
-                data.push_back(range);
+                data = rhs.data;
             }
-            normalize();
+            else
+            {
+                for (const auto &range : rhs.data) {
+                    data.push_back(range);
+                }
+                normalize();
+            }
         }
         return *this;
     }
@@ -125,6 +138,11 @@ namespace DB
         RangeSet tmp = *this;
         tmp |= rhs;
         return tmp;
+    }
+
+    RangeSet & RangeSet::operator |= (const Range &rhs)
+    {
+        return ((*this) |= RangeSet(rhs));
     }
 
     bool RangeSet::intersectsRange(const Range &rhs) const
@@ -209,7 +227,6 @@ namespace DB
         {
             IFunction::Monotonicity monotonicity = func->getMonotonicityForRange(
                     *arg_type.get(), range.left, range.right);
-            std::cerr << arg_type->getName() << "\n";
 
             if (!monotonicity.is_monotonic)
             {

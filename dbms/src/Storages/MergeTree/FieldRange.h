@@ -193,6 +193,7 @@ class RangeSet
 
         RangeSet & operator |= (const RangeSet & rhs);
         RangeSet operator | (const RangeSet & rhs) const;
+        RangeSet & operator |= (const Range &rhs);
         bool intersectsRange(const Range & rhs) const;
         bool isContainedBy(const Range & rhs) const;
 

@@ -343,8 +343,50 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                   */
                 if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
                     rpn.emplace_back(std::move(element));
-            }
 
+                if (rpn.size() >= 3 && rpn.back().function == RPNElement::FUNCTION_AND)
+                {
+                    auto to_modify = rpn.size() - 3;
+                    auto rhs = rpn[to_modify + 1];
+                    auto lhs = rpn[to_modify];
+                    if (
+                            lhs.function == RPNElement::FUNCTION_IN_RANGE &&
+                            rhs.function == RPNElement::FUNCTION_IN_RANGE &&
+                            lhs.key_column == rhs.key_column &&
+                            lhs.monotonic_functions_chain == rhs.monotonic_functions_chain &&
+                            lhs.invertible_functions_chain == rhs.invertible_functions_chain)
+                    {
+                        bool merged = false;
+                        if (!lhs.range.right_bounded && !rhs.range.left_bounded)
+                        {
+                            rpn[to_modify].range.right = rhs.range.right;
+                            rpn[to_modify].range.right_bounded = rhs.range.right_bounded;
+                            rpn[to_modify].range.right_included = rhs.range.right_included;
+                            merged = true;
+                        }
+                        else if (!lhs.range.left_bounded && !rhs.range.right_bounded)
+                        {
+                            rpn[to_modify].range.left = rhs.range.left;
+                            rpn[to_modify].range.left_included = rhs.range.left_included;
+                            rpn[to_modify].range.left_bounded = rhs.range.left_bounded;
+                            merged = true;
+                        }
+                        if (merged)
+                        {
+                            rpn.pop_back();
+                            rpn.pop_back();
+                            if (rpn.back().range.empty()) {
+                                rpn.back().function = RPNElement::ALWAYS_FALSE;
+                            }
+                        }
+                    }
+                }
+            }
+            /*std::cerr << "CURRENT RPN\n";
+            for (const auto& elem : rpn) {
+                std::cerr << elem.toString() << "\n";
+            }
+            std::cerr << "FIN\n";*/
             return;
         }
     }
@@ -445,7 +487,6 @@ bool KeyCondition::tryPrepareSetIndex(
             data_types.push_back(data_type);
             if (out_key_column_num < index_mapping.key_index)
                 out_key_column_num = index_mapping.key_index;
-            std::cerr << "INV FUNC SIZE: " << invertible_functions.size() << "\n";
             return invertible_functions.empty();
         }
         return true;
@@ -459,17 +500,14 @@ bool KeyCondition::tryPrepareSetIndex(
         {
             if (!get_key_tuple_position_mapping(tuple_elements[i], i))
             {
-                std::cerr << "SHIT\n";
                 return false;
             }
         }
     }
     else
     {
-        std::cerr << "LONELY\n";
         if (!get_key_tuple_position_mapping(left_arg, 0))
         {
-            std::cerr << "SHIT\n";
             return false;
         }
     }
@@ -539,7 +577,6 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicOrInvertibleFunctions(
 }
 
 bool KeyCondition::isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExpr(
-  //  const ASTPtr & node,
     const String & name,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
@@ -1137,7 +1174,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
                 if (!new_range_set)
                 {
                     rpn_stack.emplace_back(true, true);
-                };
+                }
                 transformed_range_set = std::move(*new_range_set);
             }
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
@@ -1158,12 +1195,12 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
                 transformed_range_set = std::move(*new_range_set);
             }
 
-            std::cerr << "Element range: " << element.range.toString() << "\n";
+            /*std::cerr << "Element range: " << element.range.toString() << "\n";
             std::cerr << "Key set: {";
             for (const auto& range : transformed_range_set.data) {
                 std::cerr << range.toString() << ", ";
             }
-            std::cerr << "}\n";
+            std::cerr << "}\n";*/
 
             bool intersects = transformed_range_set.intersectsRange(element.range);
             bool contains = transformed_range_set.isContainedBy(element.range);

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -88,15 +90,26 @@ namespace DB
             }
             auto minmax = getMinMaxPossibleBitValueOfArgument(left, right, arg_index, arg_types.size());
             auto type = arg_types[arg_index];
-            Op::decode(minmax.first, type);
-            Op::decode(minmax.second, type);
-            auto result_left = type->getDefault();
-            auto result_right = type->getDefault();
-            auto res = type->createColumn();
+            size_t significant_digits = sizeof(ResultType) / arg_types.size();
+            if (arg_types.size() - arg_index <= sizeof(ResultType) % arg_types.size())
+            {
+                ++significant_digits;
+            }
+            auto plain_ranges = Op::decodeRange(minmax.first, minmax.second, type, significant_digits);
+            std::vector<Range> ranges;
             auto type_size = type->getSizeOfValueInMemory();
-            res->insertData(reinterpret_cast<char*>(&minmax.first), type_size);
-            res->insertData(reinterpret_cast<char*>(&minmax.second), type_size);
-            result = RangeSet(Range((*res)[0], true, (*res)[1], true));
+            for (auto & [left_point, right_point] : plain_ranges)
+            {
+                auto res = type->createColumn();
+                res->insertData(reinterpret_cast<char*>(&left_point), type_size);
+                res->insertData(reinterpret_cast<char*>(&right_point), type_size);
+                auto range = Range((*res)[0], true, (*res)[1], true);
+                if (!range.empty())
+                {
+                    ranges.push_back(range);
+                }
+            }
+            result.data = ranges;
             return true;
         }
 
