@@ -1,5 +1,5 @@
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
