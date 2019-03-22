@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
