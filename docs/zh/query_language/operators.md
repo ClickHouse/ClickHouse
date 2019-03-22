@@ -96,7 +96,7 @@ END
 
 如果该表达式中没有 `ELSE c` 子句，则默认值就是 `NULL`
 
-但 `transform` 函数不支持 `NULL`
+但 `transform` 函数不支持 `NULL` <!-- If `x` is NULL, return NULL; if `c` is NULL, work fine. -->
 
 ## 连接运算符
 
@@ -123,7 +123,7 @@ END
 
 为了高效,  `and` 和 `or` 函数支持任意多参数，一连串的 `AND` 和 `OR` 运算符会转换成其对应的单个函数。
 
-## 判断 `NULL`
+## 判断是否为 `NULL`
 
 ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 。
 
@@ -170,4 +170,4 @@ WHERE isNotNull(y)
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-[原文](https://clickhouse.yandex/docs/en/query_language/operators/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/en/query_language/operators/) <!--hide-->
