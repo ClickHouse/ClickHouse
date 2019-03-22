@@ -1,14 +1,14 @@
 #include <iostream>
 #include <iomanip>
-
 #include <city.h>
-#include <openssl/md5.h>
-
 #include <Common/Stopwatch.h>
-
 #include <Common/SipHash.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
+#include <Common/config.h>
+#if USE_SSL
+#   include <openssl/md5.h>
+#endif
 
 
 int main(int, char **)
@@ -108,6 +108,7 @@ int main(int, char **)
             << std::endl;
     }
 
+#if USE_SSL
     {
         Stopwatch watch;
 
@@ -129,6 +130,7 @@ int main(int, char **)
             << " (" << rows / watch.elapsedSeconds() << " rows/sec., " << bytes / 1000000.0 / watch.elapsedSeconds() << " MB/sec.)"
             << std::endl;
     }
+#endif
 
     return 0;
 }
