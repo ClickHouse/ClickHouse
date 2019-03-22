@@ -16,11 +16,34 @@ Restrictions:
 
 The possible values are:
 
-- `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
-- `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
-- `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
-- `allow`  — Allows the use of these types of subqueries.
+- `deny` — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
+- `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
+- `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
+- `allow` — Allows the use of these types of subqueries.
 
+## enable_optimize_predicate_expression
+
+Turns on the predicate pushdown in `SELECT` queries.
+
+Predicate pushdown may significantly reduce the network traffic for distributed queries.
+
+Possible values:
+
+- 0 — The functionality is turned off.
+- 1 — The functionality is turned on.
+
+Default value: 0.
+
+**Usage**
+
+Let's consider the following queries:
+
+1. `SELECT count() FROM test_table WHERE date = '2018-10-10'`
+2. `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
+
+If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse apply `WHERE` to subquery when processing it.
+
+If `enable_optimize_predicate_expression = 0`, then the second query is executed much slower, because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
