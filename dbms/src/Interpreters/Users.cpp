@@ -1,4 +1,5 @@
 #include <string.h>
+
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -6,6 +7,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
+
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/HexWriteBuffer.h>
@@ -14,9 +16,12 @@
 #include <Common/SimpleCache.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Users.h>
+
+#include <openssl/sha.h>
+
 #include <common/logger_useful.h>
+
 #include <ext/scope_guard.h>
-#include <Common/config.h>
 
 
 namespace DB

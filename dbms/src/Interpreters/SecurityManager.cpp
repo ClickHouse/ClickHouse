@@ -1,17 +1,17 @@
-#include "SecurityManager.h"
+#include <Interpreters/SecurityManager.h>
+
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
+
 #include <Common/Exception.h>
 #include <IO/HexWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
-#include <Common/config.h>
-#if USE_SSL
-#   include <openssl/sha.h>
-#endif
 
+#include <openssl/sha.h>
+
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int BAD_ARGUMENTS;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 using UserPtr = SecurityManager::UserPtr;
@@ -69,7 +68,6 @@ UserPtr SecurityManager::authorizeAndGetUser(
 
     if (!it->second->password_sha256_hex.empty())
     {
-#if USE_SSL
         unsigned char hash[32];
 
         SHA256_CTX ctx;
@@ -88,9 +86,6 @@ UserPtr SecurityManager::authorizeAndGetUser(
 
         if (hash_hex != it->second->password_sha256_hex)
             on_wrong_password();
-#else
-        throw DB::Exception("Sha256 passwords support is disabled, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
-#endif
     }
     else if (password != it->second->password)
     {

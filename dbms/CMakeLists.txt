@@ -309,10 +309,7 @@ if (USE_PARQUET)
     endif ()
 endif ()
 
-if(OPENSSL_CRYPTO_LIBRARY)
-    target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
-endif ()
-target_link_libraries(dbms PRIVATE Threads::Threads)
+target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)
 
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
