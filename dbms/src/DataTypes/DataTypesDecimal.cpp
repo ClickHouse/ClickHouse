@@ -208,8 +208,8 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral * precision = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
-    const ASTLiteral * scale = typeid_cast<const ASTLiteral *>(arguments->children[1].get());
+    const auto * precision = arguments->children[0]->as<ASTLiteral>();
+    const auto * scale = arguments->children[1]->as<ASTLiteral>();
 
     if (!precision || precision->value.getType() != Field::Types::UInt64 ||
         !scale || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
@@ -228,7 +228,7 @@ static DataTypePtr createExect(const ASTPtr & arguments)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral * scale_arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const auto * scale_arg = arguments->children[0]->as<ASTLiteral>();
 
     if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
         throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

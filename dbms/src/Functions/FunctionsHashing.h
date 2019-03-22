@@ -1,7 +1,5 @@
 #pragma once
 
-#include <openssl/md5.h>
-#include <openssl/sha.h>
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
@@ -14,7 +12,12 @@
 
 #include <Common/config.h>
 #if USE_XXHASH
-    #include <xxhash.h> // Y_IGNORE
+#   include <xxhash.h> // Y_IGNORE
+#endif
+
+#if USE_SSL
+#   include <openssl/md5.h>
+#   include <openssl/sha.h>
 #endif
 
 #include <Poco/ByteOrder.h>
@@ -94,7 +97,7 @@ struct IntHash64Impl
     }
 };
 
-
+#if USE_SSL
 struct HalfMD5Impl
 {
     static constexpr auto name = "halfMD5";
@@ -183,6 +186,7 @@ struct SHA256Impl
         SHA256_Final(out_char_data, &ctx);
     }
 };
+#endif
 
 struct SipHash64Impl
 {
@@ -1076,15 +1080,18 @@ private:
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
-
+#if USE_SSL
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
+#endif
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
+#if USE_SSL
 using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
 using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
 using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
+#endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;

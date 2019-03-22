@@ -301,7 +301,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
                         "added to the sorting key. You can add expressions that use only the newly added columns",
                         ErrorCodes::BAD_ARGUMENTS);
 
-                if (new_columns.defaults.count(col))
+                if (new_columns.getDefaults().count(col))
                     throw Exception("Newly added column " + col + " has a default expression, so adding "
                         "expressions that use it to the sorting key is forbidden",
                         ErrorCodes::BAD_ARGUMENTS);
@@ -405,7 +405,7 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
     if (!node)
         return std::make_shared<ASTExpressionList>();
 
-    const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(node.get());
+    const auto * expr_func = node->as<ASTFunction>();
 
     if (expr_func && expr_func->name == "tuple")
     {
@@ -691,7 +691,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 /// Count the number of parts covered by the broken part. If it is at least two, assume that
                 /// the broken part was created as a result of merging them and we won't lose data if we
                 /// delete it.
-                int contained_parts = 0;
+                size_t contained_parts = 0;
 
                 LOG_ERROR(log, "Part " << full_path + file_name << " is broken. Looking for parts to replace it.");
 
@@ -1174,10 +1174,10 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     /// Remove old indices
     std::set<String> new_indices_set;
     for (const auto & index_decl : new_indices)
-        new_indices_set.emplace(dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get()).name);
+        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
     for (const auto & index_decl : old_indices)
     {
-        const auto & index = dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get());
+        const auto & index = index_decl->as<ASTIndexDeclaration &>();
         if (!new_indices_set.count(index.name))
         {
             out_rename_map["skp_idx_" + index.name + ".idx"] = "";
@@ -2219,9 +2219,8 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        const auto & partition = dynamic_cast<const ASTPartition &>(*partition_ast);
         /// Month-partitioning specific - partition value can represent a prefix of the partition to freeze.
-        if (const auto * partition_lit = dynamic_cast<const ASTLiteral *>(partition.value.get()))
+        if (const auto * partition_lit = partition_ast->as<ASTPartition &>().value->as<ASTLiteral>())
             prefix = partition_lit->value.getType() == Field::Types::UInt64
                 ? toString(partition_lit->value.get<UInt64>())
                 : partition_lit->value.safeGet<String>();
@@ -2276,7 +2275,7 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context)
 {
-    const auto & partition_ast = typeid_cast<const ASTPartition &>(*ast);
+    const auto & partition_ast = ast->as<ASTPartition &>();
 
     if (!partition_ast.value)
         return partition_ast.id;
@@ -2284,7 +2283,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         /// Month-partitioning specific - partition ID can be passed in the partition value.
-        const auto * partition_lit = typeid_cast<const ASTLiteral *>(partition_ast.value.get());
+        const auto * partition_lit = partition_ast.value->as<ASTLiteral>();
         if (partition_lit && partition_lit->value.getType() == Field::Types::String)
         {
             String partition_id = partition_lit->value.get<String>();
@@ -2502,7 +2501,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
         if (column_name == name)
             return true;
 
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (const auto * func = node->as<ASTFunction>())
         if (func->arguments->children.size() == 1)
             return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
 
@@ -2514,18 +2513,26 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     /// Make sure that the left side of the IN operator contain part of the key.
     /// If there is a tuple on the left side of the IN operator, at least one item of the tuple
     ///  must be part of the key (probably wrapped by a chain of some acceptable functions).
-    const ASTFunction * left_in_operand_tuple = typeid_cast<const ASTFunction *>(left_in_operand.get());
+    const auto * left_in_operand_tuple = left_in_operand->as<ASTFunction>();
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
+        {
             if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
-
+            for (const auto & index : skip_indices)
+                if (index->mayBenefitFromIndexForIn(item))
+                    return true;
+        }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
     else
     {
+        for (const auto & index : skip_indices)
+            if (index->mayBenefitFromIndexForIn(left_in_operand))
+                return true;
+
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
 }
