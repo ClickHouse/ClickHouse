@@ -17,8 +17,8 @@ The `CREATE TABLE` query can have several forms.
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS|TTL expr1] [compression_codec] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS|TTL expr2] [compression_codec] [TTL expr1],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
