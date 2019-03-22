@@ -218,10 +218,10 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         merge_settings.base = 1;
 
     time_t merge_with_ttl_timeout = data.global_context.getConfigRef().getInt("merge_with_ttl_timeout", 3600);
-    bool can_merge_with_tll = (current_time - last_merge_with_ttl > merge_with_ttl_timeout);
+    bool can_merge_with_ttl = (current_time - last_merge_with_ttl > merge_with_ttl_timeout);
 
     /// NOTE Could allow selection of different merge strategy.
-    if (can_merge_with_tll && has_part_with_expired_ttl)
+    if (can_merge_with_ttl && has_part_with_expired_ttl)
     {
         merge_selector = std::make_unique<TTLMergeSelector>(current_time);
         last_merge_with_ttl = current_time;
