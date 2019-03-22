@@ -1,4 +1,4 @@
-SET insert_sample_with_metadata=1;
+SET input_format_defaults_for_omitted_fields=1;
 
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.defaults;
