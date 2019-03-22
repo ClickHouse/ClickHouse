@@ -23,7 +23,7 @@ The possible values are:
 
 ## enable_optimize_predicate_expression
 
-Turns on the predicate pushdown is `SELECT` queries.
+Turns on the predicate pushdown in `SELECT` queries.
 
 Predicate pushdown may significantly reduce the network traffic for distributed queries.
 
