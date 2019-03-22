@@ -25,81 +25,54 @@ AggregateFunctionPtr createAggregateFunctionLeastSqr(
         x_arg
     };
 
-    if (
-        !which_x.isNativeUInt()
-        && !which_x.isNativeInt()
-        && !which_x.isFloat()
-    )
-        throw Exception {
-            "Illegal type " + x_arg->getName()
-                + " of first argument of aggregate function "
-                + name + ", must be Native Int, Native UInt or Float",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
-
     const IDataType * y_arg = arguments.back().get();
 
     WhichDataType which_y {
         y_arg
     };
 
-    if (
-        !which_y.isNativeUInt()
-        && !which_y.isNativeInt()
-        && !which_y.isFloat()
-    )
-        throw Exception {
-            "Illegal type " + y_arg->getName()
-                + " of second argument of aggregate function "
-                + name + ", must be Native Int, Native UInt or Float",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        };
+    #define FOR_LEASTSQR_TYPES_2(M, T) \
+        M(T, UInt8) \
+        M(T, UInt16) \
+        M(T, UInt32) \
+        M(T, UInt64) \
+        M(T, Int8) \
+        M(T, Int16) \
+        M(T, Int32) \
+        M(T, Int64) \
+        M(T, Float32) \
+        M(T, Float64)
+    #define FOR_LEASTSQR_TYPES(M) \
+        FOR_LEASTSQR_TYPES_2(M, UInt8) \
+        FOR_LEASTSQR_TYPES_2(M, UInt16) \
+        FOR_LEASTSQR_TYPES_2(M, UInt32) \
+        FOR_LEASTSQR_TYPES_2(M, UInt64) \
+        FOR_LEASTSQR_TYPES_2(M, Int8) \
+        FOR_LEASTSQR_TYPES_2(M, Int16) \
+        FOR_LEASTSQR_TYPES_2(M, Int32) \
+        FOR_LEASTSQR_TYPES_2(M, Int64) \
+        FOR_LEASTSQR_TYPES_2(M, Float32) \
+        FOR_LEASTSQR_TYPES_2(M, Float64)
+    #define DISPATCH(T1, T2) \
+        if (which_x.idx == TypeIndex::T1 && which_y.idx == TypeIndex::T2) \
+            return std::make_shared<AggregateFunctionLeastSqr<T1, T2>>( \
+                arguments, \
+                params \
+            );
 
-    if (which_x.isNativeUInt() && which_y.isNativeUInt())
-        return std::make_shared<AggregateFunctionLeastSqr<UInt64, UInt64>>(
-            arguments,
-            params
-        );
-    else if (which_x.isNativeUInt() && which_y.isNativeInt())
-        return std::make_shared<AggregateFunctionLeastSqr<UInt64, Int64>>(
-            arguments,
-            params
-        );
-    else if (which_x.isNativeUInt() && which_y.isFloat())
-        return std::make_shared<AggregateFunctionLeastSqr<UInt64, Float64>>(
-            arguments,
-            params
-        );
-    else if (which_x.isNativeInt() && which_y.isNativeUInt())
-        return std::make_shared<AggregateFunctionLeastSqr<Int64, UInt64>>(
-            arguments,
-            params
-        );
-    else if (which_x.isNativeInt() && which_y.isNativeInt())
-        return std::make_shared<AggregateFunctionLeastSqr<Int64, Int64>>(
-            arguments,
-            params
-        );
-    else if (which_x.isNativeInt() && which_y.isFloat())
-        return std::make_shared<AggregateFunctionLeastSqr<Int64, Float64>>(
-            arguments,
-            params
-        );
-    else if (which_x.isFloat() && which_y.isNativeUInt())
-        return std::make_shared<AggregateFunctionLeastSqr<Float64, UInt64>>(
-            arguments,
-            params
-        );
-    else if (which_x.isFloat() && which_y.isNativeInt())
-        return std::make_shared<AggregateFunctionLeastSqr<Float64, Int64>>(
-            arguments,
-            params
-        );
-    else // if (which_x.isFloat() && which_y.isFloat())
-        return std::make_shared<AggregateFunctionLeastSqr<Float64, Float64>>(
-            arguments,
-            params
-        );
+    FOR_LEASTSQR_TYPES(DISPATCH)
+
+    #undef FOR_LEASTSQR_TYPES_2
+    #undef FOR_LEASTSQR_TYPES
+    #undef DISPATCH
+
+    throw Exception {
+        "Illegal types ("
+            + x_arg->getName() + ", " + y_arg->getName()
+            + ") of arguments of aggregate function " + name
+            + ", must be Native Ints, Native UInts or Floats",
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+    };
 }
 
 }
