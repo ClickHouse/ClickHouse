@@ -81,6 +81,7 @@ namespace MultiRegexps
 
     using Pool = ObjectPoolMap<Regexps, std::vector<String>>;
 
+    template <bool FindAnyIndex>
     inline Pool::Pointer get(const std::vector<StringRef> & patterns)
     {
         /// C++11 has thread-safe function-local statics on most modern compilers.
@@ -100,16 +101,23 @@ namespace MultiRegexps
             for (const StringRef ref : str_patterns)
             {
                 ptrns.push_back(ref.data);
-                flags.push_back(HS_FLAG_DOTALL | HS_FLAG_SINGLEMATCH | HS_FLAG_ALLOWEMPTY);
-#ifdef __AVX2__
-                flags.back() |= HS_CPU_FEATURES_AVX2;
-#endif // __AVX2__
+                flags.push_back(HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_SINGLEMATCH);
             }
             hs_database_t * db = nullptr;
             hs_compile_error_t * compile_error;
 
+
+            std::unique_ptr<unsigned int[]> ids;
+
+            if constexpr (FindAnyIndex)
+            {
+                ids.reset(new unsigned int[ptrns.size()]);
+                for (size_t i = 0; i < ptrns.size(); ++i)
+                    ids[i] = i + 1;
+            }
+
             hs_error_t err
-                = hs_compile_multi(ptrns.data(), flags.data(), nullptr, ptrns.size(), HS_MODE_BLOCK, nullptr, &db, &compile_error);
+                = hs_compile_multi(ptrns.data(), flags.data(), ids.get(), ptrns.size(), HS_MODE_BLOCK, nullptr, &db, &compile_error);
             if (err != HS_SUCCESS)
             {
                 std::unique_ptr<

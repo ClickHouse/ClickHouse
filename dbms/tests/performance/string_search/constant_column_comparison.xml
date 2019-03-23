@@ -23,28 +23,28 @@
     </stop_conditions>
 
     <query><![CDATA[select count(position(URL, 'yandex')), count(position(URL, 'google')) FROM hits_100m_single]]></query>
-    <query><![CDATA[select count(multiPosition(URL, ['yandex', 'google'])) FROM hits_100m_single]]></query>
+    <query><![CDATA[select count(multiSearchAllPositions(URL, ['yandex', 'google'])) FROM hits_100m_single]]></query>
     <query><![CDATA[select count(match(URL, 'yandex|google')) FROM hits_100m_single]]></query>
-    <query><![CDATA[select count(multiMatch(URL, ['yandex', 'google'])) FROM hits_100m_single]]></query>
+    <query><![CDATA[select count(multiMatchAny(URL, ['yandex', 'google'])) FROM hits_100m_single]]></query>
 
     <query><![CDATA[select sum(match(URL, 'yandex')), sum(match(URL, 'google')), sum(match(URL, 'yahoo')), sum(match(URL, 'pikabu')) FROM hits_100m_single]]></query>
-    <query><![CDATA[select sum(multiSearch(URL, ['yandex', 'google', 'yahoo', 'pikabu'])) from hits_100m_single]]></query>
-    <query><![CDATA[select sum(multiMatch(URL, ['yandex', 'google', 'yahoo', 'pikabu'])) from hits_100m_single]]></query>
+    <query><![CDATA[select sum(multiSearchAny(URL, ['yandex', 'google', 'yahoo', 'pikabu'])) from hits_100m_single]]></query>
+    <query><![CDATA[select sum(multiMatchAny(URL, ['yandex', 'google', 'yahoo', 'pikabu'])) from hits_100m_single]]></query>
     <query><![CDATA[select sum(match(URL, 'yandex|google|yahoo|pikabu')) FROM hits_100m_single]]></query>
 
     <query><![CDATA[select sum(match(URL, 'yandex')), sum(match(URL, 'google')), sum(match(URL, 'http')) FROM hits_100m_single]]></query>
-    <query><![CDATA[select sum(multiSearch(URL, ['yandex', 'google', 'http'])) from hits_100m_single]]></query>
-    <query><![CDATA[select sum(multiMatch(URL, ['yandex', 'google', 'http'])) from hits_100m_single]]></query>
+    <query><![CDATA[select sum(multiSearchAny(URL, ['yandex', 'google', 'http'])) from hits_100m_single]]></query>
+    <query><![CDATA[select sum(multiMatchAny(URL, ['yandex', 'google', 'http'])) from hits_100m_single]]></query>
     <query><![CDATA[select sum(match(URL, 'yandex|google|http')) FROM hits_100m_single]]></query>
 
     <query><![CDATA[select sum(match(URL, 'yandex')), sum(match(URL, 'google')), sum(match(URL, 'facebook')), sum(match(URL, 'wikipedia')), sum(match(URL, 'reddit')) FROM hits_100m_single]]></query>
-    <query><![CDATA[select sum(multiSearch(URL, ['yandex', 'google', 'facebook', 'wikipedia', 'reddit'])) from hits_100m_single]]></query>
-    <query><![CDATA[select sum(multiMatch(URL, ['yandex', 'google', 'facebook', 'wikipedia', 'reddit'])) from hits_100m_single]]></query>
+    <query><![CDATA[select sum(multiSearchAny(URL, ['yandex', 'google', 'facebook', 'wikipedia', 'reddit'])) from hits_100m_single]]></query>
+    <query><![CDATA[select sum(multiMatchAny(URL, ['yandex', 'google', 'facebook', 'wikipedia', 'reddit'])) from hits_100m_single]]></query>
     <query><![CDATA[select sum(match(URL, 'yandex|google|facebook|wikipedia|reddit')) FROM hits_100m_single]]></query>
 
-    <query><![CDATA[select sum(firstMatch(URL, ['yandex', 'google', 'http', 'facebook', 'google'])) from hits_100m_single]]></query>
+    <query><![CDATA[select sum(multiSearchFirstIndex(URL, ['yandex', 'google', 'http', 'facebook', 'google'])) from hits_100m_single]]></query>
 
-    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE multiMatch(URL, ['about/address', 'for_woman', '^https?://lm-company.ruy/$', 'ultimateguitar.com'])]]></query>
+    <query><![CDATA[SELECT count() FROM hits_100m_single WHERE multiMatchAny(URL, ['about/address', 'for_woman', '^https?://lm-company.ruy/$', 'ultimateguitar.com'])]]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE match(URL, 'about/address|for_woman|^https?://lm-company.ruy/$|ultimateguitar.com')]]></query>
 
 
