@@ -1,4 +1,4 @@
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 #include <unistd.h>
 #include <sys/random.h>
 #include <pthread.h>
@@ -6,7 +6,7 @@
 
 int getentropy(void *buffer, size_t len)
 {
-	int cs, ret;
+	int cs, ret = 0;
 	char *pos = buffer;
 
 	if (len > 256) {
