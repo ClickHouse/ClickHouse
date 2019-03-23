@@ -26,7 +26,8 @@ namespace DB
   * notLike(haystack, pattern)
   *
   * match(haystack, pattern)       - search by regular expression re2; Returns 0 or 1.
-  * multiMatch(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns 0 or 1 if any pattern_i matches.
+  * multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns 0 or 1 if any pattern_i matches.
+  * multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns index of any match or zero if none;
   *
   * Applies regexp re2 and pulls:
   * - the first subpattern, if the regexp has a subpattern;
@@ -40,20 +41,25 @@ namespace DB
   * replaceRegexpOne(haystack, pattern, replacement) - replaces the pattern with the specified regexp, only the first occurrence.
   * replaceRegexpAll(haystack, pattern, replacement) - replaces the pattern with the specified type, all occurrences.
   *
-  * multiPosition(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- find first occurrences (positions) of all the const patterns inside haystack
-  * multiPositionUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
-  * multiPositionCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
-  * multiPositionCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
-  *
-  * multiSearch(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- find any of the const patterns inside haystack and return 0 or 1
-  * multiSearchUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
-  * multiSearchCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
-  * multiSearchCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchAllPositions(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- find first occurrences (positions) of all the const patterns inside haystack
+  * multiSearchAllPositionsUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchAllPositionsCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchAllPositionsCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
 
-  * firstMatch(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- returns the first index of the matched string or zero if nothing was found
-  * firstMatchUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
-  * firstMatchCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
-  * firstMatchCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstPosition(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- returns the first position of the haystack matched by strings or zero if nothing was found
+  * multiSearchFirstPositionUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstPositionCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstPositionCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  *
+  * multiSearchAny(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- find any of the const patterns inside haystack and return 0 or 1
+  * multiSearchAnyUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchAnyCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchAnyCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+
+  * multiSearchFirstIndex(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- returns the first index of the matched string or zero if nothing was found
+  * multiSearchFirstIndexUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstIndexCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
+  * multiSearchFirstIndexCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   */
 
 namespace ErrorCodes
@@ -271,7 +277,7 @@ public:
 };
 
 /// The argument limiting raises from Volnitsky searcher -- it is performance crucial to save only one byte for pattern number.
-/// But some other searchers use this function, for example, multiMatch -- hyperscan does not have such restrictions
+/// But some other searchers use this function, for example, multiMatchAny -- hyperscan does not have such restrictions
 template <typename Impl, typename Name, size_t LimitArgs = std::numeric_limits<UInt8>::max()>
 class FunctionsMultiStringSearch : public IFunction
 {
