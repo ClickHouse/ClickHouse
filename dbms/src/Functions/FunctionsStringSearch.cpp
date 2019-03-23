@@ -15,6 +15,10 @@
 #include <algorithm>
 #include <memory>
 
+#ifdef __SSSE3__
+#    include <hs.h>
+#endif
+
 #if USE_RE2_ST
 #    include <re2_st/re2.h> // Y_IGNORE
 #else
@@ -334,13 +338,13 @@ struct MultiPositionImpl
 template <typename Impl>
 struct MultiSearchImpl
 {
-    using ResultType = UInt64;
+    using ResultType = UInt8;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
-        PaddedPODArray<UInt64> & res)
+        PaddedPODArray<UInt8> & res)
     {
         Impl::createMultiSearcherInBigHaystack(needles).search(haystack_data, haystack_offsets, res);
     }
@@ -524,8 +528,8 @@ struct MatchImpl
                             res[i] = !revert;
                         else
                         {
-                            const char * str_data = reinterpret_cast<const char *>(&data[i != 0 ? offsets[i - 1] : 0]);
-                            size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
+                            const char * str_data = reinterpret_cast<const char *>(&data[offsets[i - 1]]);
+                            size_t str_size = offsets[i] - offsets[i - 1] - 1;
 
                             /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
                               *  so that it can match when `required_substring` occurs into the string several times,
@@ -577,6 +581,65 @@ struct MatchImpl
     static void constant_vector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+
+struct MultiMatchImpl
+{
+    using ResultType = UInt8;
+
+    static void vector_constant(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const std::vector<StringRef> & needles,
+        PaddedPODArray<UInt8> & res)
+    {
+#ifdef __SSSE3__
+        using ScratchPtr = std::unique_ptr<hs_scratch_t, DB::MultiRegexps::HyperscanDeleter<decltype(&hs_free_scratch), &hs_free_scratch>>;
+
+        const auto & hyperscan_regex = MultiRegexps::get(needles);
+        hs_scratch_t * scratch = nullptr;
+        hs_error_t err = hs_alloc_scratch(hyperscan_regex->get(), &scratch);
+        if (err != HS_SUCCESS)
+            throw Exception("Could not allocate scratch space for hyperscan.", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        ScratchPtr smart_scratch(scratch);
+
+        auto on_match = [](unsigned int /* id */,
+                           unsigned long long /* from */,
+                           unsigned long long /* to */,
+                           unsigned int /* flags */,
+                           void * context) -> int
+        {
+            *reinterpret_cast<UInt8 *>(context) = 1;
+            return 0;
+        };
+        const size_t haystack_offsets_size = haystack_offsets.size();
+        size_t offset = 0;
+        for (size_t i = 0; i < haystack_offsets_size; ++i)
+        {
+            res[i] = 0;
+            hs_scan(
+                hyperscan_regex->get(),
+                reinterpret_cast<const char *>(haystack_data.data()) + offset,
+                haystack_offsets[i] - offset - 1,
+                0,
+                smart_scratch.get(),
+                on_match,
+                &res[i]);
+            offset = haystack_offsets[i];
+        }
+#else
+        PaddedPODArray<UInt8> accum(res.size());
+        memset(res.data(), 0, res.size());
+        memset(accum.data(), 0, accum.size());
+        for (const StringRef ref : needles)
+        {
+            MatchImpl<false, false>::vector_constant(haystack_data, haystack_offsets, ref.toString(), accum);
+            for (size_t i = 0; i < res.size(); ++i)
+                res[i] |= accum[i];
+        }
+#endif // __SSSE3__
     }
 };
 
@@ -1150,6 +1213,10 @@ struct NameNotLike
 {
     static constexpr auto name = "notLike";
 };
+struct NameMultiMatch
+{
+    static constexpr auto name = "multiMatch";
+};
 struct NameExtract
 {
     static constexpr auto name = "extract";
@@ -1201,6 +1268,7 @@ using FunctionFirstMatchCaseInsensitiveUTF8
 using FunctionMatch = FunctionsStringSearch<MatchImpl<false>, NameMatch>;
 using FunctionLike = FunctionsStringSearch<MatchImpl<true>, NameLike>;
 using FunctionNotLike = FunctionsStringSearch<MatchImpl<true, true>, NameNotLike>;
+using FunctionMultiMatch = FunctionsMultiStringSearch<MultiMatchImpl, NameMultiMatch, std::numeric_limits<UInt64>::max()>;
 using FunctionExtract = FunctionsStringSearchToString<ExtractImpl, NameExtract>;
 using FunctionReplaceOne = FunctionStringReplace<ReplaceStringImpl<true>, NameReplaceOne>;
 using FunctionReplaceAll = FunctionStringReplace<ReplaceStringImpl<false>, NameReplaceAll>;
@@ -1238,6 +1306,7 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionMatch>();
     factory.registerFunction<FunctionLike>();
     factory.registerFunction<FunctionNotLike>();
+    factory.registerFunction<FunctionMultiMatch>();
     factory.registerFunction<FunctionExtract>();
 
     factory.registerAlias("locate", NamePosition::name, FunctionFactory::CaseInsensitive);

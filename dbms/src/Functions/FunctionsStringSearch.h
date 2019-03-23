@@ -26,6 +26,7 @@ namespace DB
   * notLike(haystack, pattern)
   *
   * match(haystack, pattern)       - search by regular expression re2; Returns 0 or 1.
+  * multiMatch(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- search by re2 regular expressions pattern_i; Returns 0 or 1 if any pattern_i matches.
   *
   * Applies regexp re2 and pulls:
   * - the first subpattern, if the regexp has a subpattern;
@@ -269,9 +270,13 @@ public:
     }
 };
 
-template <typename Impl, typename Name>
+/// The argument limiting raises from Volnitsky searcher -- it is performance crucial to save only one byte for pattern number.
+/// But some other searchers use this function, for example, multiMatch -- hyperscan does not have such restrictions
+template <typename Impl, typename Name, size_t LimitArgs = std::numeric_limits<UInt8>::max()>
 class FunctionsMultiStringSearch : public IFunction
 {
+    static_assert(LimitArgs > 0);
+
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionsMultiStringSearch>(); }
@@ -282,10 +287,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() + 1 >= std::numeric_limits<UInt8>::max())
+        if (arguments.size() + 1 >= LimitArgs)
             throw Exception(
                 "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
-                    + ", should be at most 255.",
+                    + ", should be at most " + std::to_string(LimitArgs) + ".",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!isString(arguments[0]))
@@ -333,6 +338,7 @@ public:
 
         vec_res.resize(column_haystack_size);
 
+        /// TODO support constant_constant version
         if (col_haystack_vector)
             Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
         else
