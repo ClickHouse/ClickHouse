@@ -89,7 +89,7 @@ namespace MultiRegexps
 
         std::vector<String> str_patterns;
         str_patterns.reserve(patterns.size());
-        for (const StringRef ref : patterns)
+        for (const StringRef & ref : patterns)
             str_patterns.push_back(ref.toString());
 
         return known_regexps.get(str_patterns, [&str_patterns]
