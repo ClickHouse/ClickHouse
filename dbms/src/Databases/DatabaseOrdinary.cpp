@@ -80,7 +80,6 @@ namespace
 
         try
         {
-            // TODO: убрать возврат конфигурации из createDictionaryFromDefinition
             auto [dictionary_name, dictionary_ptr] = createDictionaryFromDefinition(
                 s, database_name, context, "in file " + dictionary_metadata_path.toString());
             database.attachDictionary(dictionary_name, dictionary_ptr);
