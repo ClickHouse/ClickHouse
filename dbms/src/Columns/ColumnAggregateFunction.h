@@ -157,6 +157,8 @@ public:
 
     size_t allocatedBytes() const override;
 
+    void protect() override;
+
     void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 
     void popBack(size_t n) override;

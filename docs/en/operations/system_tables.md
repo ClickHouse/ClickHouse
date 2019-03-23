@@ -87,7 +87,7 @@ Columns:
 
 ## system.graphite_retentions
 
-Contains information about parameters [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) which use in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
+Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which use in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
 
 Столбцы:
 - `config_name`     (String) - `graphite_rollup` parameter name.

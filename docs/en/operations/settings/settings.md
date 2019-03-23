@@ -16,11 +16,34 @@ Restrictions:
 
 The possible values are:
 
-- `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
-- `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
-- `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
-- `allow`  — Allows the use of these types of subqueries.
+- `deny` — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
+- `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
+- `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
+- `allow` — Allows the use of these types of subqueries.
 
+## enable_optimize_predicate_expression
+
+Turns on the predicate pushdown in `SELECT` queries.
+
+Predicate pushdown may significantly reduce the network traffic for distributed queries.
+
+Possible values:
+
+- 0 — The functionality is turned off.
+- 1 — The functionality is turned on.
+
+Default value: 0.
+
+**Usage**
+
+Let's consider the following queries:
+
+1. `SELECT count() FROM test_table WHERE date = '2018-10-10'`
+2. `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
+
+If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse apply `WHERE` to subquery when processing it.
+
+If `enable_optimize_predicate_expression = 0`, then the second query is executed much slower, because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
@@ -81,9 +104,74 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
-## insert_sample_with_metadata
+## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
-For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
+Turns on the full SQL parser if the fast stream parser can't parse the data. This setting is used only for [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
+
+Possible values:
+
+- 0 — The functionality is turned off.
+
+    In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
+
+- 1 — The functionality is turned on.
+
+    In this case, you can use an SQL expression as a value, but ClickHouse inserts the data much slower this way. If you insert only formatted data, then ClickHouse behaves as the setting value is 0.
+
+Default value: 1.
+
+**Example of Use**
+
+Let's try to insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
+
+```sql
+SET input_format_values_interpret_expressions = 0;
+INSERT INTO datetime_t VALUES (now())
+
+Exception on client:
+Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
+```
+
+```sql
+SET input_format_values_interpret_expressions = 1;
+INSERT INTO datetime_t VALUES (now())
+
+Ok.
+```
+
+The last query is equivalent to the following.
+
+```sql
+SET input_format_values_interpret_expressions = 0;
+INSERT INTO datetime_t SELECT now()
+
+Ok.
+```
+
+
+## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
+
+Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. The setting is applies for `INSERT` queries.
+
+When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+
+When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
+
+Operations where you may need the extended data exchange enabled:
+
+- Inserting the data of the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+
+For all other operations ClickHouse doesn't apply the setting.
+
+!!! note "Note"
+    The functionality of the extended data exchange consumes additional computing resources on the server and can reduce the performance.
+
+**Possible values**
+
+- 0 — Functionality is disabled.
+- 1 — Functionality is enabled.
+
+**Default value:** 0.
 
 ## join_default_strictness {#settings-join_default_strictness}
 
@@ -256,7 +344,7 @@ We are writing a URL column with the String type (average size of 60 bytes per v
 
 There usually isn't any reason to change this setting.
 
-## max_query_size
+## max_query_size {#settings-max_query_size}
 
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
 The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
@@ -406,7 +494,7 @@ The results of compilation are saved in the build directory in the form of .so f
 If the value is true, running INSERT skips input data from columns with unknown names. Otherwise, this situation will generate an exception.
 It works for JSONEachRow and TSKV formats.
 
-## output_format_json_quote_64bit_integers
+## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 

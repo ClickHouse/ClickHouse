@@ -30,6 +30,10 @@ MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold'])
 MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
 MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
+MESSAGES_TO_RETRY = [
+    "Coordination::Exception: Connection loss",
+]
+
 
 def remove_control_characters(s):
     """
@@ -43,6 +47,52 @@ def remove_control_characters(s):
     s = re.sub(ur"&#[xX]([0-9a-fA-F]+);?", lambda c: str_to_int(c.group(1), c.group(0), base=16), s)
     s = re.sub(ur"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
     return s
+
+def run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file):
+    if ext == '.sql':
+        command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
+    else:
+        command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
+
+    proc = Popen(command, shell = True)
+    start_time = datetime.now()
+    while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
+        sleep(0.01)
+
+    stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
+    stdout = unicode(stdout, errors='replace', encoding='utf-8')
+    stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
+    stderr = unicode(stderr, errors='replace', encoding='utf-8')
+
+    return proc, stdout, stderr
+
+def need_retry(stderr):
+    return any(msg in stderr for msg in MESSAGES_TO_RETRY)
+
+def get_processlist(client_cmd):
+    try:
+        return subprocess.check_output("{} --query 'SHOW PROCESSLIST FORMAT Vertical'".format(client_cmd), shell=True)
+    except:
+        return "" #  server seems dead
+
+def get_stacktraces(server_pid):
+    cmd = "gdb -q -ex 'set pagination off' -ex 'backtrace' -ex 'thread apply all backtrace' -ex 'detach' -ex 'quit' --pid {} 2>/dev/null".format(server_pid)
+    try:
+        return subprocess.check_output(cmd, shell=True)
+    except Exception as ex:
+        return "Error occured while receiving stack traces {}".format(str(ex))
+
+def get_server_pid(server_tcp_port):
+    cmd = "lsof -i tcp:{port} | grep '*:{port}'".format(port=server_tcp_port)
+    try:
+        output = subprocess.check_output(cmd, shell=True)
+        if output:
+            columns = output.strip().split(' ')
+            return int(columns[1])
+        else:
+            return None # server dead
+    except Exception as ex:
+        return None
 
 def main(args):
 
@@ -75,7 +125,7 @@ def main(args):
 
     # Keep same default values as in queries/shell_config.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
-    os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
+    #os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
@@ -110,7 +160,21 @@ def main(args):
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
-    for suite in sorted(os.listdir(base_dir)):
+    def sute_key_func(item):
+       if args.order == 'random':
+             return random()
+
+       if -1 == item.find('_'):
+           return 99998
+
+       prefix, suffix = item.split('_', 1)
+
+       try:
+           return int(prefix), suffix
+       except ValueError:
+           return 99997
+
+    for suite in sorted(os.listdir(base_dir), key=sute_key_func):
         if SERVER_DIED:
             break
 
@@ -201,16 +265,7 @@ def main(args):
                                 stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
-                                if ext == '.sql':
-                                    command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
-                                else:
-                                    command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
-
-                                proc = Popen(command, shell = True)
-                                start_time = datetime.now()
-                                while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
-                                    sleep(0.01)
-
+                                proc, stdout, stderr = run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file)
                                 if proc.returncode is None:
                                     try:
                                         proc.kill()
@@ -224,10 +279,13 @@ def main(args):
                                     failures += 1
                                     print("{0} - Timeout!".format(MSG_FAIL))
                                 else:
-                                    stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
-                                    stdout = unicode(stdout, errors='replace', encoding='utf-8')
-                                    stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
-                                    stderr = unicode(stderr, errors='replace', encoding='utf-8')
+                                    counter = 1
+                                    while proc.returncode != 0 and need_retry(stderr):
+                                        proc, stdout, stderr = run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file)
+                                        sleep(2**counter)
+                                        counter += 1
+                                        if counter > 6:
+                                            break
 
                                     if proc.returncode != 0:
                                         failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
@@ -322,12 +380,28 @@ def main(args):
 
             failures_total = failures_total + failures
 
+    exit_code = 0
     if failures_total > 0:
         print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), "red", attrs=["bold"]))
-        sys.exit(1)
+        exit_code = 1
     else:
         print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), "green", attrs=["bold"]))
-        sys.exit(0)
+
+    if args.hung_check:
+        processlist = get_processlist(args.client)
+        if processlist:
+            server_pid = get_server_pid(os.getenv("CLICKHOUSE_PORT_TCP", '9000'))
+            print(colored("\nFound hung queries in processlist:", "red", attrs=["bold"]))
+            print(processlist)
+            if server_pid:
+                print("\nStacktraces of all threads:")
+                print(get_stacktraces(server_pid))
+            exit_code = 1
+        else:
+            print(colored("\nNo queries hung.", "green", attrs=["bold"]))
+
+    sys.exit(exit_code)
+
 
 def find_binary(name):
     paths = os.environ.get("PATH").split(':')
@@ -339,31 +413,32 @@ def find_binary(name):
     return os.access(os.path.join('/usr/bin', name), os.X_OK)
 
 if __name__ == '__main__':
-    parser = ArgumentParser(description = 'ClickHouse functional tests')
-    parser.add_argument('-q', '--queries', help = 'Path to queries dir')
-    parser.add_argument('--tmp', help = 'Path to tmp dir')
-    parser.add_argument('-b', '--binary', default = 'clickhouse', help = 'Main clickhouse binary')
-    parser.add_argument('-c', '--client', help = 'Client program')
-    parser.add_argument('--extract_from_config', help = 'extract-from-config program')
-    parser.add_argument('--configclient', help = 'Client config (if you use not default ports)')
-    parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help = 'Preprocessed server config')
-    parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
-    parser.add_argument('-t', '--timeout', type = int, default = 600, help = 'Timeout for each test case in seconds')
-    parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
-    parser.add_argument('-d', '--disabled', action = 'store_true', default = False, help = 'Also run disabled tests')
-    parser.add_argument('--stop', action = 'store_true', default = None, dest = 'stop', help = 'Stop on network errors')
-    parser.add_argument('--order', default = 'desc', help = 'Run order (asc, desc, random)')
-    parser.add_argument('--testname', action = 'store_true', default = None, dest = 'testname', help = 'Make query with test name before test run')
+    parser=ArgumentParser(description='ClickHouse functional tests')
+    parser.add_argument('-q', '--queries', help='Path to queries dir')
+    parser.add_argument('--tmp', help='Path to tmp dir')
+    parser.add_argument('-b', '--binary', default='clickhouse', help='Main clickhouse binary')
+    parser.add_argument('-c', '--client', help='Client program')
+    parser.add_argument('--extract_from_config', help='extract-from-config program')
+    parser.add_argument('--configclient', help='Client config (if you use not default ports)')
+    parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help='Preprocessed server config')
+    parser.add_argument('-o', '--output', help='Output xUnit compliant test report directory')
+    parser.add_argument('-t', '--timeout', type=int, default=600, help='Timeout for each test case in seconds')
+    parser.add_argument('test', nargs='?', help='Optional test case name regex')
+    parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
+    parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
+    parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
+    parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
+    parser.add_argument('--hung-check', action='store_true', default=False)
 
-    parser.add_argument('--no-stateless', action = 'store_true', help = 'Disable all stateless tests')
-    parser.add_argument('--skip', nargs='+', help = "Skip these tests")
-    parser.add_argument('--no-long', action = 'store_false', dest = 'no_long', help = 'Do not run long tests')
-    group = parser.add_mutually_exclusive_group(required = False)
-    group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
-    group.add_argument('--no-zookeeper', action = 'store_false', default = None, dest = 'zookeeper', help = 'Do not run zookeeper related tests')
-    group = parser.add_mutually_exclusive_group(required = False)
-    group.add_argument('--shard', action = 'store_true', default = None, dest = 'shard', help = 'Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
-    group.add_argument('--no-shard', action = 'store_false', default = None, dest = 'shard', help = 'Do not run shard related tests')
+    parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
+    parser.add_argument('--skip', nargs='+', help="Skip these tests")
+    parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
+    group=parser.add_mutually_exclusive_group(required=False)
+    group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
+    group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')
+    group=parser.add_mutually_exclusive_group(required=False)
+    group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
+    group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
     args = parser.parse_args()
 

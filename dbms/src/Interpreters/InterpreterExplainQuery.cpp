@@ -39,7 +39,7 @@ Block InterpreterExplainQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
-    const ASTExplainQuery & ast = typeid_cast<const ASTExplainQuery &>(*query);
+    const auto & ast = query->as<ASTExplainQuery &>();
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
