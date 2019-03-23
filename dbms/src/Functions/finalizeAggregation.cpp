@@ -43,6 +43,8 @@ public:
         return 1;
     }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
