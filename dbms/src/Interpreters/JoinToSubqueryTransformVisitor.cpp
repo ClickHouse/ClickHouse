@@ -90,18 +90,17 @@ struct ColumnAliasesMatcher
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr &)
     {
-        if (typeid_cast<const ASTQualifiedAsterisk *>(node.get()))
+        if (node->as<ASTQualifiedAsterisk>())
             return false;
         return true;
     }
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+        if (auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
 
-        if (typeid_cast<ASTAsterisk *>(ast.get()) ||
-            typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
+        if (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>())
             throw Exception("Multiple JOIN do not support asterisks yet", ErrorCodes::NOT_IMPLEMENTED);
     }
 
@@ -160,9 +159,9 @@ struct AppendSemanticVisitorData
 
         for (auto & child : select.select_expression_list->children)
         {
-            if (auto * node = typeid_cast<ASTAsterisk *>(child.get()))
+            if (auto * node = child->as<ASTAsterisk>())
                 AsteriskSemantic::setAliases(*node, rev_aliases);
-            if (auto * node = typeid_cast<ASTQualifiedAsterisk *>(child.get()))
+            if (auto * node = child->as<ASTQualifiedAsterisk>())
                 AsteriskSemantic::setAliases(*node, rev_aliases);
         }
 
@@ -196,7 +195,7 @@ bool needRewrite(ASTSelectQuery & select)
     if (!select.tables)
         return false;
 
-    auto tables = typeid_cast<const ASTTablesInSelectQuery *>(select.tables.get());
+    const auto * tables = select.tables->as<ASTTablesInSelectQuery>();
     if (!tables)
         return false;
 
@@ -206,17 +205,17 @@ bool needRewrite(ASTSelectQuery & select)
 
     for (size_t i = 1; i < tables->children.size(); ++i)
     {
-        auto table = typeid_cast<const ASTTablesInSelectQueryElement *>(tables->children[i].get());
+        const auto * table = tables->children[i]->as<ASTTablesInSelectQueryElement>();
         if (!table || !table->table_join)
             throw Exception("Multiple JOIN expects joined tables", ErrorCodes::LOGICAL_ERROR);
 
-        auto join = typeid_cast<const ASTTableJoin *>(table->table_join.get());
-        if (join->kind == ASTTableJoin::Kind::Comma)
-            throw Exception("Multiple COMMA JOIN is not supported", ErrorCodes::NOT_IMPLEMENTED);
+        const auto & join = table->table_join->as<ASTTableJoin &>();
+        if (isComma(join.kind))
+            throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
 
         /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
-        if (!join || !join->on_expression)
-            throw Exception("Multiple JOIN expects JOIN with ON section", ErrorCodes::NOT_IMPLEMENTED);
+        if (join.using_expression_list)
+            throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     return true;
@@ -233,7 +232,7 @@ using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 
 void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
+    if (auto * t = ast->as<ASTSelectQuery>())
         visit(*t, ast, data);
 }
 
@@ -261,11 +260,12 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Da
     /// JOIN sections
     for (auto & child : select.tables->children)
     {
-        auto table = typeid_cast<ASTTablesInSelectQueryElement *>(child.get());
+        auto * table = child->as<ASTTablesInSelectQueryElement>();
         if (table->table_join)
         {
-            auto * join = typeid_cast<ASTTableJoin *>(table->table_join.get());
-            ColumnAliasesVisitor(aliases_data).visit(join->on_expression);
+            auto & join = table->table_join->as<ASTTableJoin &>();
+            if (join.on_expression)
+                ColumnAliasesVisitor(aliases_data).visit(join.on_expression);
         }
     }
 
@@ -306,8 +306,8 @@ static ASTPtr makeSubqueryTemplate()
 
 ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTPtr ast_left, ASTPtr ast_right)
 {
-    auto left = typeid_cast<const ASTTablesInSelectQueryElement *>(ast_left.get());
-    auto right = typeid_cast<const ASTTablesInSelectQueryElement *>(ast_right.get());
+    const auto * left = ast_left->as<ASTTablesInSelectQueryElement>();
+    const auto * right = ast_right->as<ASTTablesInSelectQueryElement>();
     if (!left || !right)
         throw Exception("Two TablesInSelectQueryElements expected", ErrorCodes::LOGICAL_ERROR);
 

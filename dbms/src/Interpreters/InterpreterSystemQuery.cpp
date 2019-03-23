@@ -118,7 +118,7 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterSystemQuery::execute()
 {
-    auto & query = typeid_cast<ASTSystemQuery &>(*query_ptr);
+    auto & query = query_ptr->as<ASTSystemQuery &>();
 
     using Type = ASTSystemQuery::Type;
 
@@ -241,7 +241,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter(context.getCurrentQueryId());
+        auto table_lock = table->lockExclusively(context.getCurrentQueryId());
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);
@@ -250,7 +250,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
     /// Attach actions
     {
         /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-        auto & create = typeid_cast<ASTCreateQuery &>(*create_ast);
+        auto & create = create_ast->as<ASTCreateQuery &>();
         create.attach = true;
 
         std::string data_path = database->getDataPath();

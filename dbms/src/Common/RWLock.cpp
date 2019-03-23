@@ -169,8 +169,6 @@ RWLockImpl::LockHolderImpl::~LockHolderImpl()
         if (!parent_queue.empty())
             parent_queue.front().cv.notify_all();
     }
-
-    parent.reset();
 }
 
 
