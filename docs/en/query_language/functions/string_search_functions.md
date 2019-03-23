@@ -44,6 +44,10 @@ Note that the backslash symbol (`\`) is used for escaping in the regular express
 The regular expression works with the string as if it is a set of bytes. The regular expression can't contain null bytes.
 For patterns to search for substrings in a string, it is better to use LIKE or 'position', since they work much faster.
 
+## multiMatch(haystack, [pattern_1, pattern_2, ..., pattern_n])
+
+The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) algorithm. For patterns to search substrings in a string, it is better to use `multiSearch` since it works much faster.
+
 ## extract(haystack, pattern)
 
 Extracts a fragment of a string using a regular expression. If 'haystack' doesn't match the 'pattern' regex, an empty string is returned. If the regex doesn't contain subpatterns, it takes the fragment that matches the entire regex. Otherwise, it takes the fragment that matches the first subpattern.
