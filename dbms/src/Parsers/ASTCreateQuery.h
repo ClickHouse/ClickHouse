@@ -28,20 +28,6 @@ public:
 };
 
 
-class ASTColumnsElement : public IAST
-{
-public:
-    String prefix;
-    IAST * elem;
-
-    String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
-
-    ASTPtr clone() const override;
-
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-};
-
-
 class ASTExpressionList;
 
 class ASTColumns : public IAST
