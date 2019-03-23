@@ -89,7 +89,7 @@ UserPtr SecurityManager::authorizeAndGetUser(
         if (hash_hex != it->second->password_sha256_hex)
             on_wrong_password();
 #else
-        throw DB::Exception("Sha256 passwords support is disabled, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
+        throw DB::Exception("SHA256 passwords support is disabled, because ClickHouse was built without SSL library", DB::ErrorCodes::SUPPORT_IS_DISABLED);
 #endif
     }
     else if (password != it->second->password)
