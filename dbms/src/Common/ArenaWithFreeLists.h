@@ -17,7 +17,12 @@ namespace DB
   * When allocating, we take the head of the list of free blocks,
   *  or, if the list is empty - allocate a new block using Arena.
   */
-class ArenaWithFreeLists : private Allocator<false>, private boost::noncopyable
+template <
+    size_t arena_max_threshold_power = 16,
+    size_t min_allocation_unit_power = 3,
+    typename ArenaImpl = Arena,
+    typename FallbackAllocator = Allocator<false>>
+class ArenaWithFreeLists : private FallbackAllocator, private boost::noncopyable
 {
 private:
     /// If the block is free, then the pointer to the next free block is stored at its beginning, or nullptr, if there are no more free blocks.
@@ -28,21 +33,24 @@ private:
         char data[0];
     };
 
+    /// Allocation of blocks smaller than this size effectively allocates this size.
+    static constexpr size_t min_fixed_block_size = 1ULL << min_allocation_unit_power;
+
     /// The maximum size of a piece of memory that is allocated with Arena. Otherwise, we use Allocator directly.
-    static constexpr size_t max_fixed_block_size = 65536;
+    static constexpr size_t max_fixed_block_size = 1ULL << arena_max_threshold_power;
 
     /// Get the index in the freelist array for the specified size.
     static size_t findFreeListIndex(const size_t size)
     {
-        return size <= 8 ? 2 : bitScanReverse(size - 1);
+        return size <= min_fixed_block_size ? (min_allocation_unit_power - 1) : bitScanReverse(size - 1);
     }
 
     /// Arena is used to allocate blocks that are not too large.
-    Arena pool;
+    ArenaImpl pool;
 
     /// Lists of free blocks. Each element points to the head of the corresponding list, or is nullptr.
     /// The first two elements are not used, but are intended to simplify arithmetic.
-    Block * free_lists[16] {};
+    Block * free_lists[arena_max_threshold_power] {};
 
 public:
     ArenaWithFreeLists(
@@ -55,7 +63,7 @@ public:
     char * alloc(const size_t size)
     {
         if (size > max_fixed_block_size)
-            return static_cast<char *>(Allocator::alloc(size));
+            return static_cast<char *>(FallbackAllocator::alloc(size));
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
@@ -76,7 +84,7 @@ public:
     void free(char * ptr, const size_t size)
     {
         if (size > max_fixed_block_size)
-            return Allocator::free(ptr, size);
+            return FallbackAllocator::free(ptr, size);
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
