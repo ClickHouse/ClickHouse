@@ -2,21 +2,8 @@ option (ENABLE_SSL "Enable ssl" ON)
 
 if (ENABLE_SSL)
 
-if(NOT ARCH_32)
-    option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
-endif()
-
-if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/ssl/CMakeLists.txt")
-    if(USE_INTERNAL_SSL_LIBRARY)
-        message(WARNING "submodule contrib/ssl is missing. to fix try run: \n git submodule update --init --recursive")
-    endif()
-    set(USE_INTERNAL_SSL_LIBRARY 0)
-    set(MISSING_INTERNAL_SSL_LIBRARY 1)
-endif()
-
 set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 
-if (NOT USE_INTERNAL_SSL_LIBRARY)
     if (APPLE)
         set (OPENSSL_ROOT_DIR "/usr/local/opt/openssl" CACHE INTERNAL "")
         # https://rt.openssl.org/Ticket/Display.html?user=guest&pass=guest&id=2232
@@ -38,22 +25,6 @@ if (NOT USE_INTERNAL_SSL_LIBRARY)
             set (OPENSSL_FOUND 1)
         endif ()
     endif ()
-endif ()
-
-if (NOT OPENSSL_FOUND AND NOT MISSING_INTERNAL_SSL_LIBRARY)
-    set (USE_INTERNAL_SSL_LIBRARY 1)
-    set (OPENSSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/ssl")
-    set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
-    if (NOT USE_STATIC_LIBRARIES AND TARGET crypto-shared AND TARGET ssl-shared)
-        set (OPENSSL_CRYPTO_LIBRARY crypto-shared)
-        set (OPENSSL_SSL_LIBRARY ssl-shared)
-    else ()
-        set (OPENSSL_CRYPTO_LIBRARY crypto)
-        set (OPENSSL_SSL_LIBRARY ssl)
-    endif ()
-    set (OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
-    set (OPENSSL_FOUND 1)
-endif ()
 
 if(OPENSSL_FOUND)
     # we need keep OPENSSL_FOUND for many libs in contrib

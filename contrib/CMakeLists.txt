@@ -106,22 +106,6 @@ if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()
 
-if (USE_INTERNAL_SSL_LIBRARY)
-    if (NOT MAKE_STATIC_LIBRARIES)
-        set (BUILD_SHARED 1)
-    endif ()
-
-    # By default, ${CMAKE_INSTALL_PREFIX}/etc/ssl is selected - that is not what we need.
-    # We need to use system wide ssl directory.
-    set (OPENSSLDIR "/etc/ssl")
-
-    set (LIBRESSL_SKIP_INSTALL 1 CACHE INTERNAL "")
-    add_subdirectory (ssl)
-    target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
-    target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
-    set (POCO_SKIP_OPENSSL_FIND 1)
-endif ()
-
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
     add_subdirectory (mariadb-connector-c-cmake)
     target_include_directories(mysqlclient BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
