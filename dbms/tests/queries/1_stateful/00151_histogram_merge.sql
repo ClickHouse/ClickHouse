@@ -8,7 +8,7 @@ insert into test.test_histogram (a) SELECT * FROM numbers(10, 190)
 insert into test.test_histogram (a) SELECT * FROM numbers(0, 100)
 
 
---make sure upper_bound and lower_bound are correct 
+--make sure upper_bound=199
 --when merging AggregationState in both 1,2 and 2,1 order
 
 with
