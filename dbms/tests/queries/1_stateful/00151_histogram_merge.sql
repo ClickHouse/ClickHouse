@@ -15,18 +15,20 @@ with
 histogram(3)(a) AS hst,
 arrayJoin(hst) AS hst_array
 select
-round(hst_array.1) AS start, 
-round(hst_array.2) AS end,
-round(hst_array.3) AS cnt
+round(hst_array.2) AS upper_bound
 from remote('127.0.0.{1,2}', 'test', 'test_histogram')
+having upper_bound = 199
+order by upper_bound desc
+limit 1
 
 with
 histogram(3)(a) AS hst,
 arrayJoin(hst) AS hst_array
 select
-round(hst_array.1) AS start, 
-round(hst_array.2) AS end,
-round(hst_array.3) AS cnt
+round(hst_array.2) AS upper_bound
 from remote('127.0.0.{2,1}', 'test', 'test_histogram')
+having upper_bound = 199
+order by upper_bound desc
+limit 1
 
 drop table test.test_histogram
