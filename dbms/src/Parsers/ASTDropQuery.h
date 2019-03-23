@@ -22,6 +22,9 @@ public:
     Kind kind;
     bool if_exists{false};
 
+    /// Useful if we already have a DDL lock
+    bool no_ddl_lock{false};
+
     /** Get the text that identifies this element. */
     String getID(char) const override;
     ASTPtr clone() const override;

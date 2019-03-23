@@ -1,5 +1,8 @@
 add_executable (hashes_test hashes_test.cpp)
-target_link_libraries (hashes_test PRIVATE clickhouse_common_io ${OPENSSL_CRYPTO_LIBRARY} ${CITYHASH_LIBRARIES})
+target_link_libraries (hashes_test PRIVATE clickhouse_common_io ${CITYHASH_LIBRARIES})
+if(OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries (hashes_test PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
+endif()
 
 add_executable (sip_hash sip_hash.cpp)
 target_link_libraries (sip_hash PRIVATE clickhouse_common_io)

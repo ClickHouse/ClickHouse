@@ -1,6 +1,7 @@
 FROM ubuntu:18.04
 
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
+RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
 
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -24,6 +25,10 @@ RUN apt-get --allow-unauthenticated update -y \
             lld-7 \
             libclang-7-dev \
             liblld-7-dev \
+            clang-8 \
+            lld-8 \
+            libclang-8-dev \
+            liblld-8-dev \
             libicu-dev \
             libreadline-dev \
             ninja-build \

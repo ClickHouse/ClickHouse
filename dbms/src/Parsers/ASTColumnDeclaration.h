@@ -78,12 +78,6 @@ public:
             default_expression->formatImpl(settings, state, frame);
         }
 
-        if (codec)
-        {
-            settings.ostr << ' ';
-            codec->formatImpl(settings, state, frame);
-        }
-
         if (comment)
         {
             settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
@@ -94,6 +88,12 @@ public:
         {
             settings.ostr << " ";
             expr_list->formatImpl(settings, state, frame);
+        }
+
+        if (codec)
+        {
+            settings.ostr << ' ';
+            codec->formatImpl(settings, state, frame);
         }
     }
 };

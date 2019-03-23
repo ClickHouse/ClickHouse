@@ -42,6 +42,7 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
+    /// FIXME: try to prettify this cast using `as<>()`
     const auto & ast = dynamic_cast<const ASTQueryWithTableOrDictionaryAndOutput &>(*query_ptr);
 
     if (ast.temporary && !ast.database.empty())

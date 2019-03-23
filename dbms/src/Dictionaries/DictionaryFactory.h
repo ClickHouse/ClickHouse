@@ -3,28 +3,33 @@
 #include <ext/singleton.h>
 #include "IDictionary.h"
 
+<<<<<<< HEAD
 #include <Parsers/ASTCreateQuery.h>
+=======
+>>>>>>> 2a57e69111d0981c118645c905f7e92e3bd3f784
 
 namespace Poco
 {
+
 namespace Util
 {
     class AbstractConfiguration;
 }
 
 class Logger;
+
 }
+
 
 namespace DB
 {
+
 class Context;
 
 class DictionaryFactory : public ext::singleton<DictionaryFactory>
 {
 public:
-    DictionaryPtr
-    create(const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Context & context)
-        const;
+    DictionaryPtr create(const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Context & context) const;
 
     DictionaryPtr
     create(const String & name, const ASTCreateQuery & create, Context & context)
