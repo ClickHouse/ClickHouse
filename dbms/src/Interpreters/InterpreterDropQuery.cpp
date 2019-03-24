@@ -40,7 +40,7 @@ BlockIO InterpreterDropQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
 
     if (!drop.table.empty())
-        return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary);
+        return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     else if (!drop.dictionary.empty())
         return executeToDictionary(drop.database, drop.dictionary, drop.kind, drop.if_exists);
     else if (!drop.database.empty())

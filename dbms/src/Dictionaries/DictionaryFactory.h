@@ -2,11 +2,7 @@
 
 #include <ext/singleton.h>
 #include "IDictionary.h"
-
-<<<<<<< HEAD
 #include <Parsers/ASTCreateQuery.h>
-=======
->>>>>>> 2a57e69111d0981c118645c905f7e92e3bd3f784
 
 namespace Poco
 {

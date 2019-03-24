@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/Settings.h>
+// #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
