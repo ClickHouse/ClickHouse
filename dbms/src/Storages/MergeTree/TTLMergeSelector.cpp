@@ -18,22 +18,14 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
 
     for (size_t i = 0; i < partitions.size(); ++i)
     {
-        time_t cur_min_ttl = 0;
-        Iterator cur_best_begin;
         for (auto it = partitions[i].begin(); it != partitions[i].end(); ++it)
         {
-            if (it->min_ttl && (!cur_min_ttl || it->min_ttl < cur_min_ttl))
+            if (it->min_ttl && (partition_to_merge_index == -1 || it->min_ttl < partition_to_merge_min_ttl))
             {
-                cur_min_ttl = it->min_ttl;
-                cur_best_begin = it;
+                partition_to_merge_min_ttl = it->min_ttl;
+                partition_to_merge_index = i;
+                best_begin = it;
             }
-        }
-
-        if (cur_min_ttl && (partition_to_merge_index == -1 || cur_min_ttl < partition_to_merge_min_ttl))
-        {
-            partition_to_merge_min_ttl = cur_min_ttl;
-            partition_to_merge_index = i;
-            best_begin = cur_best_begin;
         }
     }
 
@@ -41,10 +33,10 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
         return {};
 
     const auto & best_partition = partitions[partition_to_merge_index];
-    Iterator best_end = best_begin;
+    Iterator best_end = best_begin + 1;
     size_t total_size = 0;
 
-    while (best_begin != best_partition.begin())
+    while (true)
     {
         if (!best_begin->min_ttl || best_begin->min_ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
@@ -54,6 +46,9 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
         }
 
         total_size += best_begin->size;
+        if (best_begin == best_partition.begin())
+            break;
+
         --best_begin;
     }
 
@@ -62,7 +57,6 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
         if (!best_end->min_ttl || best_end->min_ttl > current_time
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
             break;
-
 
         total_size += best_end->size;
         ++best_end;
