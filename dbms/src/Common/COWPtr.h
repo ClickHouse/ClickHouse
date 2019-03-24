@@ -236,7 +236,7 @@ public:
       * It will guarantee, that mutable object have all subobjects unshared.
       *
       * NOTE:
-      * If you override 'mutate' method in inherited classes, don't forget to make it virtual in base class.
+      * If you override 'mutate' method in inherited classes, don't forget to make it virtual in base class or to make it call a virtual method.
       * (COWPtr itself doesn't force any methods to be virtual).
       *
       * See example in "cow_compositions.cpp".
