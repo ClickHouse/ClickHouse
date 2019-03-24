@@ -175,12 +175,19 @@ public:
     Ptr getPtr() const { return static_cast<Ptr>(derived()); }
     MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
 
-    MutablePtr mutate() const &&
+protected:
+    MutablePtr shallowMutate() const
     {
         if (this->use_count() > 1)
             return derived()->clone();
         else
             return assumeMutable();
+    }
+
+public:
+    MutablePtr mutate() const &&
+    {
+        return shallowMutate();
     }
 
     MutablePtr assumeMutable() const
@@ -281,4 +288,7 @@ public:
     static MutablePtr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
 
     typename Base::MutablePtr clone() const override { return typename Base::MutablePtr(new Derived(*derived())); }
+
+protected:
+    MutablePtr shallowMutate() const { return MutablePtr(static_cast<Derived *>(Base::shallowMutate().get())); }
 };
