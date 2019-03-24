@@ -375,7 +375,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                         {
                             rpn.pop_back();
                             rpn.pop_back();
-                            if (rpn.back().range.empty()
+                            if (rpn.back().range.empty())
                             {
                                 rpn.back().function = RPNElement::ALWAYS_FALSE;
                             }
