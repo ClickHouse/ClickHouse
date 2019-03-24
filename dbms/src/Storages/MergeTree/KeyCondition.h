@@ -181,11 +181,21 @@ private:
     bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
     bool operatorFromAST(const ASTFunction * func, RPNElement & out);
 
-    /** Is node a key column
+    /** Is the given node a key column
       *  or expression in which a key column is wrapped by chain of functions,
       *  that can be monotonic on certain ranges?
-      * If these conditions are true, then returns number of column in key, type of resulting expression
-      *  and fills chain of possibly-monotonic functions.
+      * Returns the key column number, the type of the resulting expression
+      *  and fills the chain of possibly-monotonic functions if those conditions are met.
+      * Is the given node is an expression,
+      * which can be deduced from one of the key expressions by applying invertible functions?
+      * If found, returns the initial key column number, a chain of functions, which inverse needs to be applied,
+      * as well as a stack of corresponding argument indices.
+      * Those methods are combined:
+      * If our query is negate(y) < 5, whilst the key is (z, zCurve(x, y)) we would get:
+      * key column number = 1
+      * monotonic functions chain: [negate]
+      * invertible functions chain: [zCurve]
+      * argument stack: [1] (arguments are indexed from 0)
       */
     bool isColumnPossiblyAnArgumentOfInvertibleFunctionsInKeyExpr(
         const String & name,

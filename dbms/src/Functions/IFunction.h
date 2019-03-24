@@ -224,18 +224,6 @@ public:
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /* Lets you know if one can check, whether there exists a point X in a given parallelogram P,
-     * such that f(X) lies in a given range [L, R]. The number of arguments is not limited to one.
-     * This is used to work with the index in a sorted chunk of data and allows to efficiently
-     * use the index when the conditions are in the form `f(X) >= const`.
-     */
-    virtual bool hasInformationAboutRangeValuePossibilityOnDomainRange() const { return false; }
-
-    virtual bool canSatisfyRangeOnParallelogram(const std::vector<Range> & /*parallelogram*/, const Range & /*value range*/) const
-    {
-        throw Exception("Function " + getName() + " cannot perform such checks.", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     /** This is used to work with the index in a sorted chunk of data and allows to efficiently
       * use the index when the conditions are in the form `f(X) >= const`.
       */

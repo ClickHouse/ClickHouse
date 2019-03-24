@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/FieldRange.h>
 #include <sstream>
 #include <iostream>
+#include <Core/iostream_debug_helpers.h>
 
 
 namespace DB
@@ -9,6 +10,7 @@ namespace DB
     class IFunction;
     using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
+    /// Apply function to value
     void applyFunction(
             const FunctionBasePtr & func,
             const DataTypePtr & arg_type, const Field & arg_value,
@@ -59,6 +61,7 @@ namespace DB
     }
     RangeSet::RangeSet() {}
 
+    /// Sort and merge intersecting ranges
     void RangeSet::normalize()
     {
         if (data.size() <= 1)
@@ -78,6 +81,7 @@ namespace DB
         bool right_included = false;
         for (const auto& range : data)
         {
+            // Adding a new range, when it doesn't intersect the current rightmost range
             if (
                     !right_bounded ||
                     Range::less(right_border, range.left) ||
@@ -92,6 +96,7 @@ namespace DB
                 right_border = range.right;
                 right_included = range.right_included;
             }
+            // Adding an extension of the rightmost range
             else
             {
                 if (!range.right_bounded)
@@ -108,12 +113,15 @@ namespace DB
                 {
                     right_border = range.right;
                     right_included = range.right_included;
+                    normalized.back().right = range.right;
                 }
             }
+
         }
         data = std::move(normalized);
     }
 
+    /// Intersect two sets of ranges
     RangeSet & RangeSet::operator |= (const RangeSet & rhs)
     {
         if (this != &rhs)
@@ -124,7 +132,8 @@ namespace DB
             }
             else
             {
-                for (const auto &range : rhs.data) {
+                for (const auto &range : rhs.data)
+                {
                     data.push_back(range);
                 }
                 normalize();
@@ -140,11 +149,13 @@ namespace DB
         return tmp;
     }
 
+    /// Intersect a set of ranges with a single range
     RangeSet & RangeSet::operator |= (const Range &rhs)
     {
         return ((*this) |= RangeSet(rhs));
     }
 
+    /// Check whether a range intersects a set of ranges
     bool RangeSet::intersectsRange(const Range &rhs) const
     {
         auto cmp_left = [](const Range& element, const Range& value)
@@ -159,9 +170,11 @@ namespace DB
             }
             return false;
         };
+        // auto left_it = std::lower_bound(data.begin(), data.end(), rhs, cmp_left);
+
         /* This is a temporary fix, due to a bug in some versions of libc++
          * see fix at: http://llvm.org/viewvc/llvm-project?view=revision&revision=345434*/
-        // auto left_it = std::lower_bound(data.begin(), data.end(), rhs, cmp_left);
+
         int lp = -1, rp = static_cast<int>(data.size());
         while (rp - lp > 1)
         {
@@ -188,7 +201,9 @@ namespace DB
             }
             return true;
         };
+
         // auto right_it = std::lower_bound(data.begin(), data.end(), rhs, cmp_right);
+
         lp = -1;
         rp = static_cast<int>(data.size());
         while (rp - lp > 1)
@@ -207,15 +222,18 @@ namespace DB
         return left_it < right_it;
     }
 
+    /// Check whether range set is contained by a single range
     bool RangeSet::isContainedBy(const Range & rhs) const
     {
         if (data.empty())
         {
             return true;
         }
+
         return rhs.containsRange(*data.begin()) && rhs.containsRange(*data.rbegin());
     }
 
+    /// Apply a monotonic function to a set of ranges
     std::optional<RangeSet> RangeSet::applyMonotonicFunction(
             const FunctionBasePtr & func,
             DataTypePtr & arg_type,
@@ -258,6 +276,7 @@ namespace DB
         return RangeSet(result);
     }
 
+    /// Apply an invertible function to a set of ranges
     std::optional<RangeSet> RangeSet::applyInvertibleFunction(
             const FunctionBasePtr &func,
             size_t arg_index)
@@ -276,7 +295,6 @@ namespace DB
                 return {};
             }
         }
-        result.normalize();
         return result;
     }
 }

@@ -15,7 +15,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Core/iostream_debug_helpers.h>
 
 
 namespace DB
@@ -344,6 +343,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                 if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
                     rpn.emplace_back(std::move(element));
 
+                /* Combine statements like (x >= a) and (x <= b) into x in range [a, b] */
                 if (rpn.size() >= 3 && rpn.back().function == RPNElement::FUNCTION_AND)
                 {
                     auto to_modify = rpn.size() - 3;
@@ -1194,13 +1194,6 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
 
                 transformed_range_set = std::move(*new_range_set);
             }
-
-            /*std::cerr << "Element range: " << element.range.toString() << "\n";
-            std::cerr << "Key set: {";
-            for (const auto& range : transformed_range_set.data) {
-                std::cerr << range.toString() << ", ";
-            }
-            std::cerr << "}\n";*/
 
             bool intersects = transformed_range_set.intersectsRange(element.range);
             bool contains = transformed_range_set.isContainedBy(element.range);

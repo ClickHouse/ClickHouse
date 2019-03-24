@@ -31,9 +31,11 @@ namespace DB
         {
             for (const auto& type : arguments)
             {
-                if (type->getSizeOfValueInMemory() > sizeof(ResultType))
+                if (!type->isValueRepresentedByInteger() &&
+                    type->getTypeId() != TypeIndex::Float32 &&
+                    type->getTypeId() != TypeIndex::Float64)
                 {
-                    throw Exception("Size of type " + type->getName() + "is to big", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("Function " + getName() + " cannot take arguments of type " + type->getName(), ErrorCodes::LOGICAL_ERROR);
                 }
             }
             return std::make_shared<DataTypeNumber<ResultType>>();
@@ -55,7 +57,11 @@ namespace DB
                 for (size_t j = 0; j < input_rows_count; ++j)
                 {
                     out_data[j] >>= 1;
-                    out_data[j] |= zShiftElement(column_data.data + j * size_per_element, size_per_element, number_of_elements, arg.type);
+                    out_data[j] |= zShiftElement(
+                            column_data.data + j * size_per_element,
+                            size_per_element,
+                            number_of_elements,
+                            arg.type);
                 }
 
             }
@@ -90,7 +96,7 @@ namespace DB
             }
             auto minmax = getMinMaxPossibleBitValueOfArgument(left, right, arg_index, arg_types.size());
             auto type = arg_types[arg_index];
-            size_t significant_digits = sizeof(ResultType) / arg_types.size();
+            size_t significant_digits = (sizeof(ResultType) << 3) / arg_types.size();
             if (arg_types.size() - arg_index <= sizeof(ResultType) % arg_types.size())
             {
                 ++significant_digits;
@@ -109,15 +115,20 @@ namespace DB
                     ranges.push_back(range);
                 }
             }
+            /* The segments are already sorted and not intersecting in the current implementations of decode Range.
+             * If this is changed, you should put result = RangeSet(ranges) here
+             */
             result.data = ranges;
             return true;
         }
 
 
     private:
+        /// Extract the i-th argument from given z value,
+        /// which is just taking every arity-th bit starting from some position
         ResultType extractArgument(ResultType z_value, size_t argument_index, size_t arity) const
         {
-            size_t number_of_bits = (sizeof(ResultType) << 3);
+            const size_t number_of_bits = (sizeof(ResultType) << 3);
             ResultType result = 0;
             ResultType res_bit = 1ull << (number_of_bits - 1);
             for (ResultType bit = 1ull << (number_of_bits - (arity - argument_index)); bit; bit >>= arity)
@@ -130,7 +141,21 @@ namespace DB
             }
             return result;
         }
-        // Get maximal and minimal possible bit representation of a given argument the values fall in a given range.
+        /// Get maximal and minimal possible bit representation of a given argument
+        /// when the values fall in a given range of z values.
+        /* For the i-th argument of a fucntion with arity k in the range [L, R] we do roughly the following:
+         * Consider L and R as blocks of k bits, such that the bit corresponding to out argument
+         * is the last bit of every block. The first block (highest-order bits) can be smaller than k.
+         * We try to find the maximum value for the last bit of each block, going from the highest bits.
+         * If the current blocks are L_b and R_b we are basically choosing between L_b and L_b + 1, since
+         * it's useless to pick a higher value. Out of those two we want the one, that is odd
+         * (and thus ends with a set bit, which would increase the value of our argument),
+         * while bearing in mind that the value shouldn't be greater than R_b
+         * (this means only that we can't choose L_b + 1 when L_b = R_b)
+         * If the value L_x we choose is strictly (!) less than R_b, then we should set the remainder of R to ones,
+         * since we can put any bits in the next blocks, without R being a constraint.
+         * We proceed similarly when calculating the minimum possible value.
+         */
         std::pair<ResultType, ResultType> getMinMaxPossibleBitValueOfArgument(
                 ResultType left,
                 ResultType right,
@@ -148,7 +173,7 @@ namespace DB
 
             ResultType left_block_min, left_block_max, right_block_min, right_block_max;
 
-            // First step for max
+            // Handling the first block for MAX
             left_block_max = left_max & get_first_block;
             right_block_max = right_max & get_first_block;
             bool is_left_best = static_cast<bool>(left_block_max & first_plus_one);
@@ -166,7 +191,7 @@ namespace DB
                 }
             }
 
-            // First step for min
+            // Handling the first block for MIN
             left_block_min = left_min & get_first_block;
             right_block_min = right_min & get_first_block;
             bool is_right_worse = static_cast<bool>(right_block_min & first_plus_one);
@@ -193,7 +218,7 @@ namespace DB
 
                 for (size_t i = 0; i <= initial_shift / arity; ++i)
                 {
-                    // Step for max
+                    // Handling the next block for MAX
                     left_block_max = left_max & get_block;
                     right_block_max = right_max & get_block;
                     is_left_best = static_cast<bool>(left_block_max & plus_one);
@@ -216,7 +241,7 @@ namespace DB
                         left_max |= right_block_max;
                     }
 
-                    // Step for min
+                    // Handling the next block for MIN
                     left_block_min = left_min & get_block;
                     right_block_min = right_min & get_block;
                     is_right_worse = static_cast<bool>(right_block_min & plus_one);
@@ -246,6 +271,7 @@ namespace DB
             return {extractArgument(right_min, argument_index, arity),
                     extractArgument(left_max, argument_index, arity)};
         }
+        /// Put the bits of argument at every arity-th position in the resulting number
         ResultType zShiftElement(
                 const char * argument,
                 size_t argument_size,

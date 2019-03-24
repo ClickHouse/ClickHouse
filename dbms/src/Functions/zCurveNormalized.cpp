@@ -31,101 +31,106 @@ namespace DB
             num += (leading_zeroes << bit_diff);
         }
 
-        template <typename T>
-        static std::string binary(T x) {
-            std::string res;
-            for (int i = (sizeof(T) << 3) - 1; i >= 0; --i) {
-                if (x & (1ull << i)) {
-                    res += "1";
-                } else {
-                    res += "0";
-                }
+        using Segment = std::pair<ResultType, ResultType>;
+        static inline void append(std::vector<Segment> & v, ResultType L, ResultType R, size_t shift)
+        {
+            L >>= shift;
+            R >>= shift;
+            if (!v.empty() && R + 1 >= v.back().first)
+            {
+                v.back().first = L;
             }
-            return res;
+            else
+            {
+                v.emplace_back(L, R);
+            }
         }
 
-        static std::vector<std::pair<ResultType, ResultType>> decodeRange(
+        static std::vector<Segment> decodeRange(
                 ResultType left,
                 ResultType right,
                 const DataTypePtr & type,
-                size_t significant_digits) {
-            std::tie(left, right) = ZCurveOpImpl::decodeRange(left, right, type, significant_digits)[0];
-            /*std::cerr << "L: " << binary(left) << "\n";
-            std::cerr << "R: " << binary(right) << "\n";*/
-            size_t bitsz = sizeof(ResultType) << 3;
-            std::vector<std::pair<ResultType, ResultType>> ranges;
+                size_t significant_digits)
+        {
+            size_t bits = sizeof(ResultType) << 3;
+            size_t type_bits = (type->getSizeOfValueInMemory() << 3);
+            size_t diff_bits = bits - type_bits;
+
+            left >>= diff_bits;
+            right >>= diff_bits;
+
+            std::vector<Segment> ranges;
             ranges.emplace_back(left, right);
+
             size_t lcp = __builtin_clzll(left ^ right);
-            const ResultType MX = std::numeric_limits<ResultType>::max();
-            ResultType clear_suf = (MX << 1);
-            size_t previous_size = 0;
-            for (size_t nbits = 1; nbits < (type->getSizeOfValueInMemory() << 3); ++nbits, clear_suf <<= 1)
+            ResultType clear_suf = (std::numeric_limits<ResultType>::max() << 1);
+
+            for (ResultType nbits = 1; nbits < type_bits; ++nbits, clear_suf <<= 1)
             {
-                ResultType suffix = nbits;
-                if (lcp + nbits >= bitsz)
+                if (lcp + nbits >= bits)
                 {
-                    ResultType suf_val = (left & clear_suf) | suffix;
+                    ResultType suf_val = (left & clear_suf) | nbits;
                     if (left <= suf_val && suf_val <= right)
                     {
-                        ranges.emplace_back(suf_val, suf_val);
+                        append(ranges, suf_val, suf_val, nbits);
                     }
                 }
-                else if (lcp + nbits + 1 == bitsz)
+                else if (lcp + nbits + 1 == bits)
                 {
-                    ResultType suf_min = (left & clear_suf) | suffix;
-                    ResultType suf_max = (right & clear_suf) | suffix;
-                    if (left <= suf_min && suf_min <= right)
-                    {
-                        ranges.emplace_back(suf_min, suf_min);
-                    }
+                    ResultType suf_min = (left & clear_suf) | nbits;
+                    ResultType suf_max = (right & clear_suf) | nbits;
                     if (left <= suf_max && suf_max <= right)
                     {
-                        ranges.emplace_back(suf_max, suf_max);
+                        append(ranges, suf_max, suf_max, nbits);
+                    }
+                    if (left <= suf_min && suf_min <= right)
+                    {
+                        append(ranges, suf_min, suf_min, nbits);
                     }
                 }
                 else
                 {
                     ResultType middle = (((clear_suf) << (lcp + 1)) >> (lcp + 1));
-                    ResultType left_middle = left & middle;
-                    ResultType right_middle = right & middle;
-                    ResultType left_suf = left & (~clear_suf);
-                    ResultType right_suf = right & (~clear_suf);
-                    std::pair<ResultType, ResultType> range;
+                    ResultType left_middle = left & middle, right_middle = right & middle;
+                    ResultType left_suf = left & (~clear_suf), right_suf = right & (~clear_suf);
+                    ResultType range_left, range_right;
                     ResultType inc = (static_cast<ResultType>(1) << nbits);
-                    if (left_suf <= suffix)
+                    if (left_suf <= nbits)
                     {
-                        range.first = (left & clear_suf) | suffix;
+                        range_left = (left & clear_suf) | nbits;
                     }
                     else
                     {
                         auto new_middle = left_middle + inc;
-                        range.first = (((left & (~middle)) | new_middle) & clear_suf) | suffix;
-                        if (range.first > right) {
+                        range_left = (((left & (~middle)) | new_middle) & clear_suf) | nbits;
+                        if (range_left > right) {
                             continue;
                         }
                     }
-                    if (suffix <= right_suf)
+                    if (nbits <= right_suf)
                     {
-                        range.second = (right & clear_suf) | suffix;
+                        range_right = (right & clear_suf) | nbits;
                     }
                     else
                     {
                         auto new_middle = right_middle - inc;
-                        range.second = (((right & (~middle)) | new_middle) & clear_suf) | suffix;
-                        if (range.second < left)
+                        range_right = (((right & (~middle)) | new_middle) & clear_suf) | nbits;
+                        if (range_right < left)
                         {
                             continue;
                         }
                     }
-                    ranges.push_back(range);
-                }
-                while (previous_size < ranges.size()) {
-                    ranges[previous_size].first >>= nbits;
-                    ranges[previous_size].second >>= nbits;
-                    ++previous_size;
+                    append(ranges, range_left, range_right, nbits);
                 }
             }
             std::reverse(ranges.begin(), ranges.end());
+            for (auto& range : ranges)
+            {
+                range.first <<= diff_bits;
+                range.second <<= diff_bits;
+                range.first = ZCurveOpImpl::decode(range.first, type, true, significant_digits);
+                range.second = ZCurveOpImpl::decode(range.second, type, false, significant_digits);
+            }
             return ranges;
         }
     };
