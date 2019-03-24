@@ -6,7 +6,9 @@ class IColumn : public COWPtr<IColumn>
 {
 private:
     friend class COWPtr<IColumn>;
+
     virtual MutablePtr clone() const = 0;
+    virtual MutablePtr deepMutate() const { return shallowMutate(); }
 
 public:
     IColumn() = default;
@@ -16,7 +18,7 @@ public:
     virtual int get() const = 0;
     virtual void set(int value) = 0;
 
-    virtual MutablePtr mutate() const && { return std::move(*this).template COWPtr<IColumn>::mutate(); }
+    MutablePtr mutate() const && { return deepMutate(); }
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -39,7 +41,6 @@ public:
 class ColumnComposition : public COWPtrHelper<IColumn, ColumnComposition>
 {
 private:
-    using Base = COWPtrHelper<IColumn, ColumnComposition>;
     friend class COWPtrHelper<IColumn, ColumnComposition>;
 
     ConcreteColumn::WrappedPtr wrapped;
@@ -47,17 +48,17 @@ private:
     ColumnComposition(int data) : wrapped(ConcreteColumn::create(data)) {}
     ColumnComposition(const ColumnComposition &) = default;
 
+    IColumn::MutablePtr deepMutate() const override
+    {
+        std::cerr << "Mutating\n";
+        auto res = shallowMutate();
+        res->wrapped = std::move(*wrapped).mutate();
+        return res;
+    }
+
 public:
     int get() const override { return wrapped->get(); }
     void set(int value) override { wrapped->set(value); }
-
-    IColumn::MutablePtr mutate() const && override
-    {
-        std::cerr << "Mutating\n";
-        auto res = std::move(*this).Base::mutate();
-        static_cast<ColumnComposition *>(res.get())->wrapped = std::move(*wrapped).mutate();
-        return res;
-    }
 };
 
 
