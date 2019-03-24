@@ -78,3 +78,4 @@ select 2 = multiMatchAnyIndex(materialize('gogleuedeyandexgoogle'), ['google1', 
 select 0 != multiMatchAnyIndex(materialize('gogleuedeyandexgoogle'), ['.*goo.*', '.*yan.*']) from system.numbers limit 10;;
 select 5 = multiMatchAnyIndex(materialize('vladizlvav dabe don\'t heart me no more'), ['what', 'is', 'love', 'baby', 'no mo??', 'dont', 'h.rt me']) from system.numbers limit 10;;
 
+SELECT multiMatchAny(materialize('/odezhda-dlya-bega/'), ['/odezhda-dlya-bega/', 'kurtki-i-vetrovki-dlya-bega', 'futbolki-i-mayki-dlya-bega']);
