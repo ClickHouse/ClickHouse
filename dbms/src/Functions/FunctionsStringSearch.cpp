@@ -666,13 +666,8 @@ struct MultiMatchAnyImpl
             {
                 if constexpr (FindAny)
                     res[i] |= accum[i];
-                else
-                {
-                    if (accum[i])
-                    {
-                        res[i] = j + 1;
-                    }
-                }
+                else if (accum[i])
+                    res[i] = j + 1;
             }
         }
 #endif // __SSSE3__
