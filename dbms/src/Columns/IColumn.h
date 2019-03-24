@@ -272,8 +272,8 @@ public:
 
     MutablePtr mutate() const &&
     {
-        MutablePtr res = COWPtr<IColumn>::mutate();
-        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = (*std::move(subcolumn)).mutate(); });
+        MutablePtr res = std::move(*this).template COWPtr<IColumn>::mutate();
+        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = std::move(*subcolumn).mutate(); });
         return res;
     }
 

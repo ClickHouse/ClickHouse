@@ -50,7 +50,7 @@
     /// Change value of x.
     {
         /// Creating mutable ptr. It can clone an object under the hood if it was shared.
-        Column::MutablePtr mutate_x = x->mutate();
+        Column::MutablePtr mutate_x = std::move(*x).mutate();
         /// Using non-const methods of an object.
         mutate_x->set(2);
         /// Assigning pointer 'x' to mutated object.
@@ -175,7 +175,7 @@ public:
     Ptr getPtr() const { return static_cast<Ptr>(derived()); }
     MutablePtr getPtr() { return static_cast<MutablePtr>(derived()); }
 
-    MutablePtr mutate() const
+    MutablePtr mutate() const &&
     {
         if (this->use_count() > 1)
             return derived()->clone();
@@ -192,6 +192,49 @@ public:
     {
         return const_cast<Derived &>(*derived());
     }
+
+protected:
+    /// It works as immutable_ptr if it is const and as mutable_ptr if it is non const.
+    template <typename T>
+    class chameleon_ptr
+    {
+    private:
+        immutable_ptr<T> value;
+
+    public:
+        template <typename... Args>
+        chameleon_ptr(Args &&... args) : value(std::forward<Args>(args)...) {}
+
+        template <typename U>
+        chameleon_ptr(std::initializer_list<U> && arg) : value(std::forward<std::initializer_list<U>>(arg)) {}
+
+        const T * get() const { return value.get(); }
+        T * get() { return value->assumeMutable().get(); }
+
+        const T * operator->() const { return get(); }
+        T * operator->() { return get(); }
+
+        const T & operator*() const { return *value; }
+        T & operator*() { return value->assumeMutableRef(); }
+
+        operator bool() const { return value; }
+    };
+
+public:
+    /** Use this type in class members for compositions.
+      *
+      * NOTE:
+      * For classes with WrappedPtr members,
+      * you must reimplement 'mutate' method, so it will call 'mutate' of all subobjects (do deep mutate).
+      * It will guarantee, that mutable object have all subobjects unshared.
+      *
+      * NOTE:
+      * If you override 'mutate' method in inherited classes, don't forget to make it virtual in base class.
+      * (COWPtr itself doesn't force any methods to be virtual).
+      *
+      * See example in "cow_compositions.cpp".
+      */
+    using WrappedPtr = chameleon_ptr<Derived>;
 };
 
 
@@ -217,6 +260,8 @@ public:
   *   IColumn
   *    CowPtr<IColumn>
   *     boost::intrusive_ref_counter<IColumn>
+  *
+  * See example in "cow_columns.cpp".
   */
 template <typename Base, typename Derived>
 class COWPtrHelper : public Base
@@ -237,24 +282,3 @@ public:
 
     typename Base::MutablePtr clone() const override { return typename Base::MutablePtr(new Derived(*derived())); }
 };
-
-
-/** Compositions.
-  *
-  * Sometimes your objects contain another objects, and you have tree-like structure.
-  * And you want non-const methods of your object to also modify your subobjects.
-  *
-  * There are the following possible solutions:
-  *
-  * 1. Store subobjects as immutable ptrs. Call mutate method of subobjects inside non-const methods of your objects; modify them and assign back.
-  * Drawback: additional checks inside methods: CPU overhead on atomic ops.
-  *
-  * 2. Store subobjects as mutable ptrs. Subobjects cannot be shared in another objects.
-  * Drawback: it's not possible to share subobjects.
-  *
-  * 3. Store subobjects as immutable ptrs. Implement copy-constructor to do shallow copy.
-  * But reimplement 'mutate' method, so it will call 'mutate' of all subobjects (do deep mutate).
-  * It will guarantee, that mutable object have all subobjects unshared.
-  * From non-const method, you can modify subobjects with 'assumeMutableRef' method.
-  * Drawback: it's more complex than other solutions.
-  */

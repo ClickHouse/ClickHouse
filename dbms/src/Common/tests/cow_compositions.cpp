@@ -16,7 +16,7 @@ public:
     virtual int get() const = 0;
     virtual void set(int value) = 0;
 
-    virtual MutablePtr test() const = 0;
+    virtual MutablePtr mutate() const && { return std::move(*this).template COWPtr<IColumn>::mutate(); }
 };
 
 using ColumnPtr = IColumn::Ptr;
@@ -31,22 +31,40 @@ private:
     ConcreteColumn(int data) : data(data) {}
     ConcreteColumn(const ConcreteColumn &) = default;
 
-    MutableColumnPtr test() const override
-    {
-        MutableColumnPtr res = create(123);
-        return res;
-    }
-
 public:
     int get() const override { return data; }
     void set(int value) override { data = value; }
 };
 
+class ColumnComposition : public COWPtrHelper<IColumn, ColumnComposition>
+{
+private:
+    using Base = COWPtrHelper<IColumn, ColumnComposition>;
+    friend class COWPtrHelper<IColumn, ColumnComposition>;
+
+    ConcreteColumn::WrappedPtr wrapped;
+
+    ColumnComposition(int data) : wrapped(ConcreteColumn::create(data)) {}
+    ColumnComposition(const ColumnComposition &) = default;
+
+public:
+    int get() const override { return wrapped->get(); }
+    void set(int value) override { wrapped->set(value); }
+
+    IColumn::MutablePtr mutate() const && override
+    {
+        std::cerr << "Mutating\n";
+        auto res = std::move(*this).Base::mutate();
+        static_cast<ColumnComposition *>(res.get())->wrapped = std::move(*wrapped).mutate();
+        return res;
+    }
+};
+
 
 int main(int, char **)
 {
-    ColumnPtr x = ConcreteColumn::create(1);
-    ColumnPtr y = x;//x->test();
+    ColumnPtr x = ColumnComposition::create(1);
+    ColumnPtr y = x;
 
     std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
     std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
@@ -65,7 +83,7 @@ int main(int, char **)
     std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
     std::cerr << "addresses: " << x.get() << ", " << y.get() << "\n";
 
-    x = ConcreteColumn::create(0);
+    x = ColumnComposition::create(0);
 
     std::cerr << "values:    " << x->get() << ", " << y->get() << "\n";
     std::cerr << "refcounts: " << x->use_count() << ", " << y->use_count() << "\n";
