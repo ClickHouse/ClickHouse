@@ -15,7 +15,8 @@ namespace DB
 
     struct NameZCurveNormalized { static constexpr auto name = "zCurveN"; };
 
-    struct ZCurveNormalizedOpImpl {
+    struct ZCurveNormalizedOpImpl
+    {
         using ResultType = UInt64;
         static void encode(ResultType& num, const DataTypePtr & type)
         {
@@ -103,7 +104,8 @@ namespace DB
                     {
                         auto new_middle = left_middle + inc;
                         range_left = (((left & (~middle)) | new_middle) & clear_suf) | nbits;
-                        if (range_left > right) {
+                        if (range_left > right)
+                        {
                             continue;
                         }
                     }

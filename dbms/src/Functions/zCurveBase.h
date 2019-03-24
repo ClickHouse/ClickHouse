@@ -134,7 +134,8 @@ namespace DB
         void writeField(const DataTypePtr & type, ResultType src, Field& field) const
         {
             auto type_id = type->getTypeId();
-            if (type->isValueRepresentedByUnsignedInteger()) {
+            if (type->isValueRepresentedByUnsignedInteger())
+            {
                 field = Field(src);
             }
             else if (type_id == TypeIndex::Float32)
