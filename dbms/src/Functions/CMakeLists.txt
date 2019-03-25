@@ -19,6 +19,7 @@ target_link_libraries(clickhouse_functions
         ${FARMHASH_LIBRARIES}
         ${METROHASH_LIBRARIES}
         murmurhash
+        m
         ${BASE64_LIBRARY}
         ${OPENSSL_CRYPTO_LIBRARY})
 
@@ -59,4 +60,9 @@ endif()
 if (USE_XXHASH)
     target_link_libraries(clickhouse_functions PRIVATE ${XXHASH_LIBRARY})
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${XXHASH_INCLUDE_DIR})
+endif()
+
+if (USE_H3)
+    target_link_libraries(clickhouse_functions PRIVATE ${H3_LIBRARY})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${H3_INCLUDE_DIR})
 endif()
