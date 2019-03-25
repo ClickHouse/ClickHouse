@@ -85,12 +85,13 @@ public:
         bool isFinished() const { return current_mark >= last_mark; }
 
         size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
-        size_t numPendingRowsInCurrentGranule() const { return current_mark_index_granularity - numReadRowsInCurrentGranule(); }
+        size_t numPendingRowsInCurrentGranule() const {
+            return current_mark_index_granularity - numReadRowsInCurrentGranule();
+        }
         size_t numPendingGranules() const { return last_mark - current_mark; }
         size_t numPendingRows() const;
 
         size_t current_mark_index_granularity = 0;
-    private:
         size_t current_mark = 0;
         /// Invariant: offset_after_current_mark + skipped_rows_after_offset < index_granularity
         size_t offset_after_current_mark = 0;

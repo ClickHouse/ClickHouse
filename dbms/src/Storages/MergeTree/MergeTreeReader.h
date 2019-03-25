@@ -52,6 +52,11 @@ public:
     size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
     MergeTreeData::DataPartPtr data_part;
+
+    size_t getFirstMarkToRead() const
+    {
+        return all_mark_ranges.back().begin;
+    }
 private:
     using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 

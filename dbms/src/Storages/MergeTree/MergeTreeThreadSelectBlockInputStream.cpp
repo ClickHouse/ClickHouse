@@ -30,6 +30,7 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     if (max_block_size_rows)
     {
         size_t avg_granularity = pool->getAvgGranularityForReadingParts();
+        std::cerr << "AVG GRANULARITY:" << avg_granularity << std::endl;
         min_marks_to_read = (min_marks_to_read_ * avg_granularity + max_block_size_rows - 1)
                             / max_block_size_rows * max_block_size_rows / avg_granularity;
     }
