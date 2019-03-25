@@ -1,6 +1,7 @@
 #pragma once
 
 #include <thread>
+#include <atomic>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <Core/Types.h>
@@ -66,9 +67,9 @@ struct SystemLogs
     SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config);
     ~SystemLogs();
 
-    std::unique_ptr<QueryLog> query_log;                /// Used to log queries.
-    std::unique_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
-    std::unique_ptr<PartLog> part_log;                  /// Used to log operations with parts
+    std::shared_ptr<QueryLog> query_log;                /// Used to log queries.
+    std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
+    std::shared_ptr<PartLog> part_log;                  /// Used to log operations with parts
 
     String part_log_database;
 };
@@ -78,7 +79,6 @@ template <typename LogElement>
 class SystemLog : private boost::noncopyable
 {
 public:
-
     using Self = SystemLog;
 
     /** Parameter: table name where to write log.
@@ -103,13 +103,23 @@ public:
       */
     void add(const LogElement & element)
     {
+        if (is_shutdown)
+            return;
+
         /// Without try we could block here in case of queue overflow.
         if (!queue.tryPush({false, element}))
             LOG_ERROR(log, "SystemLog queue is full");
     }
 
     /// Flush data in the buffer to disk
-    void flush(bool quiet = false);
+    void flush()
+    {
+        if (!is_shutdown)
+            flushImpl(false);
+    }
+
+    /// Stop the background flush thread before destructor. No more data will be written.
+    void shutdown();
 
 protected:
     Context & context;
@@ -118,6 +128,7 @@ protected:
     const String storage_def;
     StoragePtr table;
     const size_t flush_interval_milliseconds;
+    std::atomic<bool> is_shutdown{false};
 
     using QueueItem = std::pair<bool, LogElement>;        /// First element is shutdown flag for thread.
 
@@ -145,6 +156,8 @@ protected:
       */
     bool is_prepared = false;
     void prepareTable();
+
+    void flushImpl(bool quiet);
 };
 
 
@@ -166,11 +179,22 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 
 
 template <typename LogElement>
-SystemLog<LogElement>::~SystemLog()
+void SystemLog<LogElement>::shutdown()
 {
+    bool old_val = false;
+    if (!is_shutdown.compare_exchange_strong(old_val, true))
+        return;
+
     /// Tell thread to shutdown.
     queue.push({true, {}});
     saving_thread.join();
+}
+
+
+template <typename LogElement>
+SystemLog<LogElement>::~SystemLog()
+{
+    shutdown();
 }
 
 
@@ -236,7 +260,7 @@ void SystemLog<LogElement>::threadFunction()
             if (milliseconds_elapsed >= flush_interval_milliseconds)
             {
                 /// Write data to a table.
-                flush(true);
+                flushImpl(true);
                 time_after_last_write.restart();
             }
         }
@@ -251,7 +275,7 @@ void SystemLog<LogElement>::threadFunction()
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flush(bool quiet)
+void SystemLog<LogElement>::flushImpl(bool quiet)
 {
     std::unique_lock lock(data_mutex);
 

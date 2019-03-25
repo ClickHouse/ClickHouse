@@ -15,23 +15,29 @@ The same as `position`, but the position is returned in Unicode code points. Wor
 
 For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
-## multiPosition(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchAllPositions(haystack, [needle_1, needle_2, ..., needle_n])
 
 The same as `position`, but returns `Array` of the `position`s for all `needle_i`.
 
-For a case-insensitive search or/and in UTF-8 format use functions `multiPositionCaseInsensitive, multiPositionUTF8, multiPositionCaseInsensitiveUTF8`.
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAllPositionsCaseInsensitive, multiSearchAllPositionsUTF8, multiSearchAllPositionsCaseInsensitiveUTF8`.
 
-## firstMatch(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchFirstPosition(haystack, [needle_1, needle_2, ..., needle_n])
 
-Returns the index `i` (starting from 1) of the first found `needle_i` in the string `haystack` and 0 otherwise.
+The same as `position` but returns the leftmost offset of the string `haystack` that is matched to some of the needles.
 
-For a case-insensitive search or/and in UTF-8 format use functions `firstMatchCaseInsensitive, firstMatchUTF8, firstMatchCaseInsensitiveUTF8`.
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchFirstPositionCaseInsensitive, multiSearchFirstPositionUTF8, multiSearchFirstPositionCaseInsensitiveUTF8`.
 
-## multiSearch(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchFirstIndex(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns the index `i` (starting from 1) of the leftmost found `needle_i` in the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
+
+## multiSearchAny(haystack, [needle_1, needle_2, ..., needle_n])
 
 Returns 1, if at least one string `needle_i` matches the string `haystack` and 0 otherwise.
 
-For a case-insensitive search or/and in UTF-8 format use functions `multiSearchCaseInsensitive, multiSearchUTF8, multiSearchCaseInsensitiveUTF8`.
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
 ## match(haystack, pattern)
 
@@ -43,6 +49,16 @@ Note that the backslash symbol (`\`) is used for escaping in the regular express
 
 The regular expression works with the string as if it is a set of bytes. The regular expression can't contain null bytes.
 For patterns to search for substrings in a string, it is better to use LIKE or 'position', since they work much faster.
+
+## multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
+
+The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) algorithm. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
+
+Note: this function is in experimental mode because of some [issues](https://github.com/intel/hyperscan/issues/141).
+
+## multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
+
+The same as `multiMatchAny`, but returns any index that matches the haystack.
 
 ## extract(haystack, pattern)
 
