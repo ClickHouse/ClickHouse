@@ -5,7 +5,7 @@
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/SizeLimits.h>
 #include <IO/Progress.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 #include <Storages/TableStructureLockHolder.h>
 
 #include <atomic>

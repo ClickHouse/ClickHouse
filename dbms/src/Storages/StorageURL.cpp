@@ -176,10 +176,10 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()));
 
 
-    const ColumnsDescription & columns = getColumns();
-    if (columns.defaults.empty())
+    auto column_defaults = getColumns().getDefaults();
+    if (column_defaults.empty())
         return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns.defaults, context)};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
 void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
@@ -202,12 +202,12 @@ void registerStorageURL(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
-        String url = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         Poco::URI uri(url);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageURL::create(uri, args.table_name, format_name, args.columns, args.context);
     });

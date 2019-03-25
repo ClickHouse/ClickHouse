@@ -136,50 +136,53 @@ Here, the sample of 10% is taken from the second half of data.
 
 ### ARRAY JOIN Clause {#select-array-join-clause}
 
-Allows executing JOIN with an array or nested data structure. The intent is similar to the 'arrayJoin' function, but its functionality is broader.
+Allows executing `JOIN` with an array or nested data structure. Allows you to perform `JOIN` both with the external array and with the inner array in the table. The intent is similar to the [arrayJoin](functions/array_functions.md#array_functions-join) function, but its functionality is broader.
 
-`ARRAY JOIN` is essentially `INNER JOIN` with an array. Example:
-
+``` sql
+SELECT <expr_list>
+FROM <left_subquery>
+[LEFT] ARRAY JOIN <array>
+[WHERE|PREWHERE <expr>]
+...
 ```
-:) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
+You can specify only a single `ARRAY JOIN` clause in a query.
+
+When running the `ARRAY JOIN`, there is an optimization of the query execution order. Although the `ARRAY JOIN` must be always specified before the `WHERE/PREWHERE` clause, it can be performed as before the `WHERE/PREWHERE` (if its result is needed in this clause), as after completing it (to reduce the volume of calculations). The processing order is controlled by the query optimizer.
+
+Supported types of `ARRAY JOIN` are listed below:
+
+- `ARRAY JOIN` - Executing `JOIN` with an array or nested data structure. Empty arrays are not included in the result.
+- `LEFT ARRAY JOIN` - Unlike `ARRAY JOIN`, when using the `LEFT ARRAY JOIN` the result contains the rows with empty arrays. The value for an empty array is set to default value for an array element type (usually 0, empty string or NULL).
+
+Examples below demonstrate the usage of the `ARRAY JOIN` clause. Let's create a table with an [Array](../data_types/array.md) type column and insert values into it:
+
+``` sql
 CREATE TABLE arrays_test
 (
     s String,
     arr Array(UInt8)
-) ENGINE = Memory
+) ENGINE = Memory;
 
-Ok.
+INSERT INTO arrays_test
+VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
+```
+```
+┌─s───────────┬─arr─────┐
+│ Hello       │ [1,2]   │
+│ World       │ [3,4,5] │
+│ Goodbye     │ []      │
+└─────────────┴─────────┘
+```
 
-0 rows in set. Elapsed: 0.001 sec.
+The first example shows using the `ARRAY JOIN` clause:
 
-:) INSERT INTO arrays_test VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', [])
-
-INSERT INTO arrays_test VALUES
-
-Ok.
-
-3 rows in set. Elapsed: 0.001 sec.
-
-:) SELECT * FROM arrays_test
-
-SELECT *
-FROM arrays_test
-
-┌─s───────┬─arr─────┐
-│ Hello   │ [1,2]   │
-│ World   │ [3,4,5] │
-│ Goodbye │ []      │
-└─────────┴─────────┘
-
-3 rows in set. Elapsed: 0.001 sec.
-
-:) SELECT s, arr FROM arrays_test ARRAY JOIN arr
-
+``` sql
 SELECT s, arr
 FROM arrays_test
-ARRAY JOIN arr
-
+ARRAY JOIN arr;
+```
+```
 ┌─s─────┬─arr─┐
 │ Hello │   1 │
 │ Hello │   2 │
@@ -187,19 +190,59 @@ ARRAY JOIN arr
 │ World │   4 │
 │ World │   5 │
 └───────┴─────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-An alias can be specified for an array in the ARRAY JOIN clause. In this case, an array item can be accessed by this alias, but the array itself by the original name. Example:
+The second example shows using the `LEFT ARRAY JOIN` clause:
+
+``` sql
+SELECT s, arr
+FROM arrays_test 
+LEFT ARRAY JOIN arr;
+```
+``` 
+┌─s───────────┬─arr─┐
+│ Hello       │   1 │
+│ Hello       │   2 │
+│ World       │   3 │
+│ World       │   4 │
+│ World       │   5 │
+│ Goodbye     │   0 │
+└─────────────┴─────┘
+``` 
+
+The next example demonstrates using the `ARRAY JOIN` with the external array:
+
+``` sql
+SELECT s, arr_external
+FROM arrays_test 
+ARRAY JOIN [1, 2, 3] AS arr_external;
+```
 
 ```
-:) SELECT s, arr, a FROM arrays_test ARRAY JOIN arr AS a
+┌─s───────────┬─arr_external─┐
+│ Hello       │            1 │
+│ Hello       │            2 │
+│ Hello       │            3 │
+│ World       │            1 │
+│ World       │            2 │
+│ World       │            3 │
+│ Goodbye     │            1 │
+│ Goodbye     │            2 │
+│ Goodbye     │            3 │
+└─────────────┴──────────────┘
+```
 
+#### Using Aliases
+
+An alias can be specified for an array in the `ARRAY JOIN` clause. In this case, an array item can be accessed by this alias, but the array itself by the original name. Example:
+
+``` sql
 SELECT s, arr, a
 FROM arrays_test
-ARRAY JOIN arr AS a
+ARRAY JOIN arr AS a;
+```
 
+``` 
 ┌─s─────┬─arr─────┬─a─┐
 │ Hello │ [1,2]   │ 1 │
 │ Hello │ [1,2]   │ 2 │
@@ -207,19 +250,17 @@ ARRAY JOIN arr AS a
 │ World │ [3,4,5] │ 4 │
 │ World │ [3,4,5] │ 5 │
 └───────┴─────────┴───┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-Multiple arrays of the same size can be comma-separated in the ARRAY JOIN clause. In this case, JOIN is performed with them simultaneously (the direct sum, not the direct product). Example:
+Multiple arrays of the same size can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the cartesian product). Example:
 
-```
-:) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
-
+``` sql
 SELECT s, arr, a, num, mapped
 FROM arrays_test
-ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(lambda(tuple(x), plus(x, 1)), arr) AS mapped
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped;
+```
 
+```
 ┌─s─────┬─arr─────┬─a─┬─num─┬─mapped─┐
 │ Hello │ [1,2]   │ 1 │   1 │      2 │
 │ Hello │ [1,2]   │ 2 │   2 │      3 │
@@ -227,15 +268,15 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(lambda(tuple(x), plus(
 │ World │ [3,4,5] │ 4 │   2 │      5 │
 │ World │ [3,4,5] │ 5 │   3 │      6 │
 └───────┴─────────┴───┴─────┴────────┘
+```
 
-5 rows in set. Elapsed: 0.002 sec.
-
-:) SELECT s, arr, a, num, arrayEnumerate(arr) FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
-
+``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
 FROM arrays_test
-ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
+```
 
+```
 ┌─s─────┬─arr─────┬─a─┬─num─┬─arrayEnumerate(arr)─┐
 │ Hello │ [1,2]   │ 1 │   1 │ [1,2]               │
 │ Hello │ [1,2]   │ 2 │   2 │ [1,2]               │
@@ -243,54 +284,40 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
 │ World │ [3,4,5] │ 4 │   2 │ [1,2,3]             │
 │ World │ [3,4,5] │ 5 │   3 │ [1,2,3]             │
 └───────┴─────────┴───┴─────┴─────────────────────┘
-
-5 rows in set. Elapsed: 0.002 sec.
 ```
 
-ARRAY JOIN also works with nested data structures. Example:
+#### ARRAY JOIN With Nested Data Structure
 
-```
-:) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
+`ARRAY JOIN` also works with [nested data structure](../data_types/nested_data_structures/nested.md). Example:
 
+``` sql
 CREATE TABLE nested_test
 (
     s String,
     nest Nested(
     x UInt8,
     y UInt32)
-) ENGINE = Memory
+) ENGINE = Memory;
 
-Ok.
+INSERT INTO nested_test
+VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], []);
+```
 
-0 rows in set. Elapsed: 0.006 sec.
-
-:) INSERT INTO nested_test VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], [])
-
-INSERT INTO nested_test VALUES
-
-Ok.
-
-3 rows in set. Elapsed: 0.001 sec.
-
-:) SELECT * FROM nested_test
-
-SELECT *
-FROM nested_test
-
+``` 
 ┌─s───────┬─nest.x──┬─nest.y─────┐
 │ Hello   │ [1,2]   │ [10,20]    │
 │ World   │ [3,4,5] │ [30,40,50] │
 │ Goodbye │ []      │ []         │
 └─────────┴─────────┴────────────┘
+```
 
-3 rows in set. Elapsed: 0.001 sec.
-
-:) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest
-
+``` sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
-ARRAY JOIN nest
+ARRAY JOIN nest;
+```
 
+``` 
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -298,19 +325,17 @@ ARRAY JOIN nest
 │ World │      4 │     40 │
 │ World │      5 │     50 │
 └───────┴────────┴────────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-When specifying names of nested data structures in ARRAY JOIN, the meaning is the same as ARRAY JOIN with all the array elements that it consists of. Example:
+When specifying names of nested data structures in `ARRAY JOIN`, the meaning is the same as `ARRAY JOIN` with all the array elements that it consists of. Examples are listed below:
 
-```
-:) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
-
+``` sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
-ARRAY JOIN `nest.x`, `nest.y`
+ARRAY JOIN `nest.x`, `nest.y`;
+```
 
+``` 
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -318,19 +343,17 @@ ARRAY JOIN `nest.x`, `nest.y`
 │ World │      4 │     40 │
 │ World │      5 │     50 │
 └───────┴────────┴────────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
 This variation also makes sense:
 
-```
-:) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x
-
+``` sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
-ARRAY JOIN `nest.x`
+ARRAY JOIN `nest.x`;
+```
 
+``` 
 ┌─s─────┬─nest.x─┬─nest.y─────┐
 │ Hello │      1 │ [10,20]    │
 │ Hello │      2 │ [10,20]    │
@@ -338,19 +361,17 @@ ARRAY JOIN `nest.x`
 │ World │      4 │ [30,40,50] │
 │ World │      5 │ [30,40,50] │
 └───────┴────────┴────────────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-An alias may be used for a nested data structure, in order to select either the JOIN result or the source array. Example:
+An alias may be used for a nested data structure, in order to select either the `JOIN` result or the source array. Example:
 
-```
-:) SELECT s, n.x, n.y, nest.x, nest.y FROM nested_test ARRAY JOIN nest AS n
-
+``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
 FROM nested_test
-ARRAY JOIN nest AS n
+ARRAY JOIN nest AS n;
+```
 
+``` 
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
@@ -358,19 +379,17 @@ ARRAY JOIN nest AS n
 │ World │   4 │  40 │ [3,4,5] │ [30,40,50] │
 │ World │   5 │  50 │ [3,4,5] │ [30,40,50] │
 └───────┴─────┴─────┴─────────┴────────────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-Example of using the arrayEnumerate function:
+The example of using the [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate) function:
 
-```
-:) SELECT s, n.x, n.y, nest.x, nest.y, num FROM nested_test ARRAY JOIN nest AS n, arrayEnumerate(nest.x) AS num
-
+``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
 FROM nested_test
-ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
+ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
+```
 
+``` 
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │   2 │
@@ -378,14 +397,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 │ World │   4 │  40 │ [3,4,5] │ [30,40,50] │   2 │
 │ World │   5 │  50 │ [3,4,5] │ [30,40,50] │   3 │
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
-
-5 rows in set. Elapsed: 0.002 sec.
 ```
-
-The query can only specify a single ARRAY JOIN clause.
-
-The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
-
 
 ### JOIN Clause {#select-join}
 

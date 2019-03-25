@@ -77,7 +77,7 @@
         </default>
 
         <!-- Example of user with readonly access. -->
-        <readonly>
+        <!-- <readonly>
             <password></password>
             <networks incl="networks" replace="replace">
                 <ip>::1</ip>
@@ -85,7 +85,7 @@
             </networks>
             <profile>readonly</profile>
             <quota>default</quota>
-        </readonly>
+        </readonly> -->
     </users>
 
     <!-- Quotas. -->

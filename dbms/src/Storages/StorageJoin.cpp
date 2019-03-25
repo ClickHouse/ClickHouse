@@ -2,6 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Join.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
 #include <DataStreams/IBlockInputStream.h>

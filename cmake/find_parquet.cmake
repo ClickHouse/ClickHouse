@@ -1,3 +1,7 @@
+option (ENABLE_PARQUET "Enable parquet" ON)
+
+if (ENABLE_PARQUET)
+
 if (NOT OS_FREEBSD) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
     option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
 endif()
@@ -59,6 +63,8 @@ elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
 
     set(USE_PARQUET 1)
    endif()
+endif()
+
 endif()
 
 if(USE_PARQUET)
