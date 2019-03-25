@@ -11,29 +11,6 @@
 namespace DB
 {
 
-class DatabaseSnapshotDictionariesIterator final : public IDatabaseIterator
-{
-private:
-    DictionariesMap dictionaries;
-    DictionariesMap::iterator it;
-    mutable StoragePtr storage_ptr = {};
-
-public:
-    explicit DatabaseSnapshotDictionariesIterator(DictionariesMap & dictionaries_)
-        : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-
-    void next() override { ++it; }
-
-    bool isValid() const override { return it != dictionaries.end(); }
-
-    const String & name() const override { return it->first; }
-
-    DictionaryPtr & dictionary() const override { return it->second; }
-
-    StoragePtr & table() const override { return storage_ptr; }
-};
-
-
 /** Default engine of databases.
   * It stores tables list in filesystem using list of .sql files,
   *  that contain declaration of table represented by SQL ATTACH TABLE query.

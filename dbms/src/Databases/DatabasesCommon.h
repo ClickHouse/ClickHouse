@@ -6,6 +6,7 @@
 #include <Databases/IDatabase.h>
 
 #include <tuple>
+#include <unordered_map>
 
 
 /// General functionality for several different database engines.
@@ -15,8 +16,32 @@ namespace DB
 
 class Context;
 
-
 using DictionariesMap = std::unordered_map<std::string, DictionaryPtr>;
+
+class DatabaseSnapshotDictionariesIterator final : public IDatabaseIterator
+{
+private:
+    DictionariesMap dictionaries;
+    DictionariesMap::iterator it;
+    mutable StoragePtr storage_ptr = {};
+
+public:
+    explicit DatabaseSnapshotDictionariesIterator(const DictionariesMap & dictionaries_)
+        : dictionaries(dictionaries_), it(dictionaries.begin()) {}
+
+    explicit DatabaseSnapshotDictionariesIterator(DictionariesMap && dictionaries_)
+        : dictionaries(std::move(dictionaries_)), it(dictionaries.begin()) {}
+
+    void next() override { ++it; }
+
+    bool isValid() const override { return it != dictionaries.end(); }
+
+    const String & name() const override { return it->first; }
+
+    DictionaryPtr & dictionary() const override { return it->second; }
+
+    StoragePtr & table() const override { return storage_ptr; }
+};
 
 
 /** Get the row with the table definition based on the CREATE query.
@@ -110,7 +135,10 @@ public:
         Context & context,
         ThreadPool * thread_pool) override;
 
-    DatabaseIteratorPtr getDictionaryIterator(const Context&) override { return {}; }
+    DatabaseIteratorPtr getDictionaryIterator(const Context&) override
+    {
+        return std::make_unique<DatabaseSnapshotDictionariesIterator>(DictionariesMap());
+    }
 
     bool empty(const Context & context) const override;
 

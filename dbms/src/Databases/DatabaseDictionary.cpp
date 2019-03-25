@@ -1,5 +1,6 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseDictionary.h>
+#include <Databases/DatabaseOrdinary.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Storages/StorageDictionary.h>
@@ -123,7 +124,7 @@ DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & context)
 
 DatabaseIteratorPtr DatabaseDictionary::getDictionaryIterator(const Context & /*context*/)
 {
-    throw Exception("DatabaseDictionary: getDictionaryIterator() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    return std::make_unique<DatabaseSnapshotDictionariesIterator>(DictionariesMap());
 }
 
 bool DatabaseDictionary::empty(const Context & context) const

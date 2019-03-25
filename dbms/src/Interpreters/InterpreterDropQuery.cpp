@@ -172,7 +172,6 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
                 executeToTable(database_name, current_table_name, kind, false, false, false);
             }
 
-
             for (auto iterator = database->getDictionaryIterator(context); iterator->isValid(); iterator->next())
             {
                 String current_dictionary_name = iterator->dictionary()->getName();
