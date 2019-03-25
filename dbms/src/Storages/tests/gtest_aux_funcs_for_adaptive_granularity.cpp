@@ -118,3 +118,33 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
     }
 
 }
+
+TEST(AdaptiveIndexGranularity, TestIndexGranularityClass)
+{
+    {
+        IndexGranularity index_granularity;
+        size_t sum_rows = 0;
+        size_t sum_marks = 0;
+        for (size_t i = 10; i <= 100; i+=10)
+        {
+            sum_rows += i;
+            sum_marks++;
+            index_granularity.appendMark(i);
+        }
+        EXPECT_EQ(index_granularity.getMarksCount(), sum_marks);
+        EXPECT_EQ(index_granularity.getTotalRows(), sum_rows);
+        EXPECT_EQ(index_granularity.getLastMarkRows(), 100);
+        EXPECT_EQ(index_granularity.getAvgGranularity(), sum_rows / sum_marks);
+        EXPECT_EQ(index_granularity.getMarkStartingRow(0), 0);
+        EXPECT_EQ(index_granularity.getMarkStartingRow(1), 10);
+        EXPECT_EQ(index_granularity.getMarkStartingRow(2), 30);
+        EXPECT_EQ(index_granularity.getMarkStartingRow(3), 60);
+
+        EXPECT_EQ(index_granularity.getRowsCountInRange({0, 10}), sum_rows);
+        EXPECT_EQ(index_granularity.getRowsCountInRange({0, 1}), 10);
+        EXPECT_EQ(index_granularity.getRowsCountInRange({2, 5}), 30 + 40 + 50);
+
+
+        EXPECT_EQ(index_granularity.getRowsCountInRanges({{2, 5}, {0, 1}, {0, 10}}), 10 + 30 + 40 + 50 + sum_rows);
+    }
+}

@@ -178,6 +178,7 @@ size_t MergeTreeRangeReader::Stream::read(Block & block, size_t num_rows, bool s
         checkNotFinished();
 
         size_t read_rows = readRows(block, num_rows);
+
         offset_after_current_mark += num_rows;
 
         /// Start new granule; skipped_rows_after_offset is already zero.
@@ -209,6 +210,7 @@ void MergeTreeRangeReader::Stream::skip(size_t num_rows)
         checkNotFinished();
         checkEnoughSpaceInCurrentGranule(num_rows);
 
+        //std::cerr << "SKIP CALLED WITH: " << num_rows << std::endl;
         offset_after_current_mark += num_rows;
 
         if (offset_after_current_mark == current_mark_index_granularity)
@@ -440,8 +442,17 @@ size_t MergeTreeRangeReader::numPendingRowsInCurrentGranule() const
         return prev_reader->numPendingRowsInCurrentGranule();
 
     auto pending_rows = stream.numPendingRowsInCurrentGranule();
+
+    if (pending_rows)
+        return pending_rows;
+
     /// If pending_rows is zero, than stream is not initialized.
-    return pending_rows ? pending_rows : stream.current_mark_index_granularity;
+    if (stream.current_mark_index_granularity)
+        return stream.current_mark_index_granularity;
+
+    /// We haven't read anything, return first
+    size_t first_mark = merge_tree_reader->getFirstMarkToRead();
+    return merge_tree_reader->data_part->index_granularity.getMarkRows(first_mark);
 }
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const {
@@ -575,7 +586,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             }
 
             auto rows_to_read = std::min(space_left, stream.numPendingRowsInCurrentGranule());
-            //std::cerr << "Rows To Read:" << rows_to_read << std::endl;
+            //std::cerr << "Rows To Read:" << rows_to_read << " OFFSET:" <<  stream.offset_after_current_mark << " currentmarkig:" << stream.current_mark_index_granularity  << " spaceleft:" << space_left << std::endl;
             bool last = rows_to_read == space_left;
             result.addRows(stream.read(result.block, rows_to_read, !last));
             result.addGranule(rows_to_read);

@@ -516,7 +516,7 @@ void MergeTreeDataPart::loadIndexGranularity()
     size_t marks_file_size = Poco::File(marks_file_path).getSize();
 
     /// old version of marks with static index granularity
-    if (granularity_info.is_adaptive)
+    if (!granularity_info.is_adaptive)
     {
         std::cerr << "(1)SET MARKS SIZE FOR:" << marks_file_path  << " TO:" << granularity_info.mark_size_in_bytes << std::endl;
         /// TODO(alesap) Replace hardcoded numbers to something better
@@ -527,7 +527,6 @@ void MergeTreeDataPart::loadIndexGranularity()
     else
     {
         std::cerr << "(2)SET MARKS SIZE FOR:" << marks_file_path << " TO:" <<  granularity_info.mark_size_in_bytes << std::endl;
-        size_t marks_count = marks_file_size / granularity_info.mark_size_in_bytes;
         ReadBufferFromFile buffer(marks_file_path, marks_file_size, -1);
         while (!buffer.eof())
         {
@@ -543,7 +542,7 @@ void MergeTreeDataPart::loadIndexGranularity()
 
 void MergeTreeDataPart::loadIndex()
 {
-    if (!index_granularity.empty())
+    if (index_granularity.empty())
         throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
 
     size_t key_size = storage.primary_key_columns.size();

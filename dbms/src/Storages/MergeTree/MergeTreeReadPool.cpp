@@ -28,6 +28,9 @@ MergeTreeReadPool::MergeTreeReadPool(
       column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks},
       predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}, parts_ranges{parts}
 {
+    std::cerr << "PARTS SIZE:" << parts.size() << std::endl;
+    avg_parts_granularity = getAvgGranularityForAllPartsRanges(parts);
+
     /// reverse from right-to-left to left-to-right
     /// because 'reverse' was done in MergeTreeDataSelectExecutor
     for (auto & part_ranges : parts_ranges)
@@ -36,7 +39,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     /// parts don't contain duplicate MergeTreeDataPart's.
     const auto per_part_sum_marks = fillPerPartInfo(parts, check_columns);
     fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
-    avg_parts_granularity = getAvgGranularityForAllPartsRanges(parts);
 }
 
 

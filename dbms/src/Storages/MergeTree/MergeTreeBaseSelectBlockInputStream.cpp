@@ -107,10 +107,13 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
         }
 
         UInt64 unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
+        std::cerr << "NUMPENDING:" << unread_rows_in_current_granule << std::endl;
+        std::cerr << "ROWSTOREAD:" << rows_to_read << std::endl;
         if (unread_rows_in_current_granule >= rows_to_read)
             return rows_to_read;
 
         UInt64 granule_to_read = (rows_to_read + current_reader.numReadRowsInCurrentGranule() + avg_index_granularity / 2) / avg_index_granularity;
+        std::cerr << "AVG GRANULARITY:" << avg_index_granularity << " ROWS TO READ:" << rows_to_read << "  GRANULE TO READ:" << granule_to_read  << " NUM READS in CURRENT GRANULE:" <<   current_reader.numReadRowsInCurrentGranule()<< std::endl;
         return avg_index_granularity * granule_to_read - current_reader.numReadRowsInCurrentGranule();
     };
 
