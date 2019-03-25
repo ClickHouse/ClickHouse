@@ -18,6 +18,7 @@ protected:
     Chunk current_chunk;
     bool has_input = false;
     bool transformed = false;
+    bool no_more_data_needed = false;
     const bool skip_empty_chunks;
 
     /// Set input port NotNeeded after chunk was pulled.
@@ -26,6 +27,7 @@ protected:
     bool set_input_not_needed_after_read = false;
 
     virtual void transform(Chunk & chunk) = 0;
+    void stopReading() { no_more_data_needed = true; }
 
 public:
     ISimpleTransform(Block input_header, Block output_header, bool skip_empty_chunks);
