@@ -36,6 +36,14 @@ ISimpleTransform::Status ISimpleTransform::prepare()
         transformed = false;
     }
 
+    /// Stop if don't need more data.
+    if (no_more_data_needed)
+    {
+        input.close();
+        output.finish();
+        return Status::Finished;
+    }
+
     /// Check can input.
     if (!has_input)
     {
