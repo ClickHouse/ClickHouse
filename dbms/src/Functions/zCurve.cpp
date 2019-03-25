@@ -24,23 +24,27 @@ namespace DB
         }
 
         auto type_id = type->getTypeId();
-        if (type_id == TypeIndex::Int8)
+        if (type->isValueRepresentedByUnsignedInteger())
+        {
+            return num;
+        }
+        else if (type_id == TypeIndex::Int8)
         {
             num ^= static_cast<UInt8>(std::numeric_limits<Int8>::min());
         }
-        if (type_id == TypeIndex::Int16)
+        else if (type_id == TypeIndex::Int16)
         {
             num ^= static_cast<UInt16>(std::numeric_limits<Int16>::min());
         }
-        if (type_id == TypeIndex::Int32)
+        else if (type_id == TypeIndex::Int32)
         {
             num ^= static_cast<UInt32>(std::numeric_limits<Int32>::min());
         }
-        if (type_id == TypeIndex::Int64)
+        else if (type_id == TypeIndex::Int64)
         {
             num ^= static_cast<UInt64>(std::numeric_limits<Int64>::min());
         }
-        if (type_id == TypeIndex::Float32)
+        else if (type_id == TypeIndex::Float32)
         {
             /* Deals with the fact that when
              * the number is too big or too small it is transformed to "nan" and not +inf or -inf.
@@ -58,7 +62,7 @@ namespace DB
             }
             num = RadixSortFloatTransform<UInt32>::backward(static_cast<UInt32>(num));
         }
-        if (type_id == TypeIndex::Float64)
+        else if (type_id == TypeIndex::Float64)
         {
             /* Deals with the fact that when
              * the number is too big or too small it is transformed to "nan" and not +inf or -inf.

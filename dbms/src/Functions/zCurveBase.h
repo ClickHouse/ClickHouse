@@ -106,12 +106,6 @@ namespace DB
             //auto type_size = type->getSizeOfValueInMemory();
             for (auto & [left_point, right_point] : plain_ranges)
             {
-                //auto res = type->createColumn();
-                //auto tmp = Field(left_point);
-
-                //res->insertData(reinterpret_cast<char*>(&left_point), type_size);
-                //res->insertData(reinterpret_cast<char*>(&right_point), type_size);
-                //auto range = Range((*res)[0], true, (*res)[1], true);
                 Field left_field, right_field;
                 writeField(type, left_point, left_field);
                 writeField(type, right_point, right_field);
