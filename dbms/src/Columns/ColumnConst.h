@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -188,6 +189,13 @@ public:
     void forEachSubcolumn(ColumnCallback callback) override
     {
         callback(data);
+    }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
+            return data->structureEquals(*rhs_concrete->data);
+        return false;
     }
 
     bool onlyNull() const override { return data->isNullAt(0); }

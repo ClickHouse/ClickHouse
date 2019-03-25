@@ -357,7 +357,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     /// Children must be functions 'equals' with string literal as left argument and numeric literal as right argument.
     for (const ASTPtr & child : arguments->children)
     {
-        const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
+        const auto * func = child->as<ASTFunction>();
         if (!func
             || func->name != "equals"
             || func->parameters
@@ -366,8 +366,8 @@ static DataTypePtr create(const ASTPtr & arguments)
             throw Exception("Elements of Enum data type must be of form: 'name' = number, where name is string literal and number is an integer",
                 ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-        const ASTLiteral * name_literal = typeid_cast<const ASTLiteral *>(func->arguments->children[0].get());
-        const ASTLiteral * value_literal = typeid_cast<const ASTLiteral *>(func->arguments->children[1].get());
+        const auto * name_literal = func->arguments->children[0]->as<ASTLiteral>();
+        const auto * value_literal = func->arguments->children[1]->as<ASTLiteral>();
 
         if (!name_literal
             || !value_literal
