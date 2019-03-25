@@ -74,7 +74,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
             IdentifierSemantic::setMembership(identifier, best_table_pos + 1);
 
         /// In case if column from the joined table are in source columns, change it's name to qualified.
-        if (best_table_pos && data.source_columns.count(identifier.shortName()))
+        if (best_table_pos && !data.source_columns.empty() && data.source_columns.count(identifier.shortName()))
             IdentifierSemantic::setNeedLongName(identifier, true);
         if (!data.tables.empty())
             IdentifierSemantic::setColumnNormalName(identifier, data.tables[best_table_pos].first);
