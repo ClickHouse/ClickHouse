@@ -30,8 +30,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static const std::initializer_list<String> supported_functions = std::vector<String>(
-    {"any", "anyLast", "min", "max", "sum"});
+static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum"};
 
 
 String DataTypeDomainSimpleAggregateFunction::doGetName() const
