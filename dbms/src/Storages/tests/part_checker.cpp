@@ -1,6 +1,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/DirectoryIterator.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/IndexGranularity.h>
 #include <Common/Exception.h>
 
 using namespace DB;
@@ -20,9 +21,10 @@ Poco::Path getMarksFile(const std::string & part_path)
     throw Exception("Cannot find any mark file in directory " + part_path, DB::ErrorCodes::METRIKA_OTHER_ERROR);
 }
 
-std::vector<size_t> readGranularity(const Poco::Path & mrk_file_path, size_t fixed_granularity)
+IndexGranularity readGranularity(const Poco::Path & mrk_file_path, size_t fixed_granularity)
 {
-    std::vector<size_t> result;
+
+    IndexGranularity result;
     auto extension = mrk_file_path.getExtension();
 
     DB::ReadBufferFromFile mrk_in(mrk_file_path.toString());
@@ -41,7 +43,7 @@ std::vector<size_t> readGranularity(const Poco::Path & mrk_file_path, size_t fix
         }
         else
             index_granularity_rows = fixed_granularity;
-        result.push_back(index_granularity_rows);
+        result.appendMark(index_granularity_rows);
     }
     return result;
 }
@@ -66,10 +68,10 @@ int main(int argc, char ** argv)
         auto mrk_file_path = getMarksFile(full_path);
         size_t fixed_granularity{parse<size_t>(argv[3])};
         auto adaptive_granularity = readGranularity(mrk_file_path, fixed_granularity);
-        std::cerr << "adaptive size:" << adaptive_granularity.size() << std::endl;
-        for (size_t i : adaptive_granularity)
+        std::cerr << "adaptive size:" << adaptive_granularity.getMarksCount() << std::endl;
+        for (size_t i = 0; i < adaptive_granularity.getMarksCount(); ++i)
         {
-            std::cerr << "Granularity:" <<    i <<    std::endl;
+            std::cerr << "Granularity:" << adaptive_granularity.getMarkRows(i) <<    std::endl;
         }
         auto marks_file_extension = "." + mrk_file_path.getExtension();
         bool require_checksums = parse<bool>(argv[2]);

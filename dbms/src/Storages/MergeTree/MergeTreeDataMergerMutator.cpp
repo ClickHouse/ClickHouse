@@ -536,7 +536,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
 
-    size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
+    /// TODO(alesap) fixme to sum of all index_granularity
+    size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity_info.fixed_index_granularity;
 
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate);
 
@@ -955,7 +956,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             {
                 String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
                 files_to_skip.insert(stream_name + ".bin");
-                files_to_skip.insert(stream_name + new_data_part->marks_file_extension);
+                files_to_skip.insert(stream_name + data.index_granularity_info.marks_file_extension);
             };
 
             IDataType::SubstreamPath stream_path;
@@ -985,7 +986,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             compression_codec,
             /* skip_offsets = */ false,
             unused_written_offsets,
-            source_part->marks_index_granularity
+            source_part->index_granularity
         );
 
         in->readPrefix();
@@ -1029,9 +1030,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
         new_data_part->rows_count = source_part->rows_count;
-        new_data_part->marks_count = source_part->marks_count;
-        new_data_part->marks_index_granularity = source_part->marks_index_granularity;
-        new_data_part->mark_size_in_bytes = source_part->mark_size_in_bytes;
+        new_data_part->index_granularity = source_part->index_granularity;
         new_data_part->index = source_part->index;
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;

@@ -104,8 +104,7 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : global_context(context_),
-    index_granularity(settings_.index_granularity),
-    index_granularity_bytes(settings_.index_granularity_bytes),
+    index_granularity_info(settings_),
     merging_params(merging_params_),
     settings(settings_),
     partition_by_ast(partition_by_ast_),
@@ -195,6 +194,26 @@ MergeTreeData::MergeTreeData(
                 ErrorCodes::METADATA_MISMATCH);
     }
 
+}
+
+
+MergeTreeData::IndexGranularityInfo::IndexGranularityInfo(const MergeTreeSettings & settings)
+    : fixed_index_granularity(settings.index_granularity)
+    , index_granularity_bytes(settings.index_granularity_bytes)
+{
+    /// Granularity is fixed
+    if (index_granularity_bytes == 0)
+    {
+        is_adaptive = false;
+        mark_size_in_bytes = sizeof(UInt64) * 2;
+        marks_file_extension = ".mrk";
+    }
+    else
+    {
+        is_adaptive = true;
+        mark_size_in_bytes = sizeof(UInt64) * 3;
+        marks_file_extension = ".mrk2";
+    }
 }
 
 
@@ -1186,7 +1205,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
             if (!new_indices_set.count(index.name))
             {
                 out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-                out_rename_map["skp_idx_" + index.name + part->marks_file_extension] = ""; //TODO(alesap) How to deal with it?
+                out_rename_map["skp_idx_" + index.name + index_granularity_info.marks_file_extension] = "";
             }
         }
     }
@@ -1216,7 +1235,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     if (--stream_counts[file_name] == 0)
                     {
                         out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + part->marks_file_extension] = "";
+                        out_rename_map[file_name + index_granularity_info.marks_file_extension] = "";
                     }
                 }, {});
             }
@@ -1295,7 +1314,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                         //std::cerr << "PART IS NULL:" << (part == nullptr) << std::endl;
                         //std::cerr << "PART MARKS FILE_EXTENSION:" << part->marks_file_extension << std::endl;
                         out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                        out_rename_map[temporary_file_name + part->marks_file_extension] = original_file_name + part->marks_file_extension;
+                        out_rename_map[temporary_file_name + index_granularity_info.marks_file_extension] = original_file_name + index_granularity_info.marks_file_extension;
                     }, {});
             }
         }
@@ -1422,7 +1441,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             compression_codec,
             true /* skip_offsets */,
             unused_written_offsets,
-            part->marks_index_granularity);
+            part->index_granularity);
 
         in.readPrefix();
         out.writePrefix();

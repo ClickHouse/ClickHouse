@@ -29,8 +29,9 @@ MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     /// round min_marks_to_read up to nearest multiple of block_size expressed in marks
     if (max_block_size_rows)
     {
-        min_marks_to_read = (min_marks_to_read_ * storage.index_granularity + max_block_size_rows - 1)
-                            / max_block_size_rows * max_block_size_rows / storage.index_granularity;
+        size_t avg_granularity = pool->getAvgGranularityForReadingParts();
+        min_marks_to_read = (min_marks_to_read_ * avg_granularity + max_block_size_rows - 1)
+                            / max_block_size_rows * max_block_size_rows / avg_granularity;
     }
     else
         min_marks_to_read = min_marks_to_read_;

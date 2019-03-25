@@ -21,7 +21,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
 MergeTreeData::DataPart::Checksums checkDataPart(
     const String & full_path,
-    const std::vector<size_t> adaptive_index_granularity,
+    const IndexGranularity & index_granularity,
     const size_t fixed_granularity,
     const String marks_file_extension,
     bool require_checksums,

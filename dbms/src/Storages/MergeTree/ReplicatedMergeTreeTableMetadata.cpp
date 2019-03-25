@@ -28,7 +28,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
     sampling_expression = formattedAST(data.sample_by_ast);
-    index_granularity = data.index_granularity;
+    index_granularity = data.index_granularity_info.fixed_index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
 

@@ -28,44 +28,44 @@ TEST(AdaptiveIndexGranularity, FillGranularityToyTests)
     auto block1 = getBlockWithSize(80, 8);
     EXPECT_EQ(block1.bytes(), 80);
     { /// Granularity bytes are not set. Take default index_granularity.
-        std::vector<size_t> index_granularity;
+        IndexGranularity index_granularity;
         fillIndexGranularityImpl(block1, 0, 100, false, 0, index_granularity);
-        EXPECT_EQ(index_granularity.size(), 1);
-        EXPECT_EQ(index_granularity[0], 100);
+        EXPECT_EQ(index_granularity.getMarksCount(), 1);
+        EXPECT_EQ(index_granularity.getMarkRows(0), 100);
     }
 
     { /// Granule size is less than block size. Block contains multiple granules.
-        std::vector<size_t> index_granularity;
+        IndexGranularity index_granularity;
         fillIndexGranularityImpl(block1, 16, 100, false, 0, index_granularity);
-        EXPECT_EQ(index_granularity.size(), 5); /// First granule with 8 rows, and second with 1 row
-        for (auto granule_size : index_granularity)
-            EXPECT_EQ(granule_size, 2);
+        EXPECT_EQ(index_granularity.getMarksCount(), 5); /// First granule with 8 rows, and second with 1 row
+        for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
+            EXPECT_EQ(index_granularity.getMarkRows(i), 2);
     }
 
     { /// Granule size is more than block size. Whole block (and maybe more) can be placed in single granule.
 
-        std::vector<size_t> index_granularity;
+        IndexGranularity index_granularity;
         fillIndexGranularityImpl(block1, 512, 100, false, 0, index_granularity);
-        EXPECT_EQ(index_granularity.size(), 1);
-        for (auto granule_size : index_granularity)
-            EXPECT_EQ(granule_size, 64);
+        EXPECT_EQ(index_granularity.getMarksCount(), 1);
+        for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
+            EXPECT_EQ(index_granularity.getMarkRows(i), 64);
     }
 
     { /// Blocks with granule size
 
-        std::vector<size_t> index_granularity;
+        IndexGranularity index_granularity;
         fillIndexGranularityImpl(block1, 1, 1, true, 0, index_granularity);
-        EXPECT_EQ(index_granularity.size(), 1);
-        for (auto granule_size : index_granularity)
-            EXPECT_EQ(granule_size, block1.rows());
+        EXPECT_EQ(index_granularity.getMarksCount(), 1);
+        for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
+            EXPECT_EQ(index_granularity.getMarkRows(i), block1.rows());
     }
 
     { /// Shift in index offset
-        std::vector<size_t> index_granularity;
+        IndexGranularity index_granularity;
         fillIndexGranularityImpl(block1, 16, 100, false, 6, index_granularity);
-        EXPECT_EQ(index_granularity.size(), 2);
-        for (auto granule_size : index_granularity)
-            EXPECT_EQ(granule_size, 2);
+        EXPECT_EQ(index_granularity.getMarksCount(), 2);
+        for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
+            EXPECT_EQ(index_granularity.getMarkRows(i), 2);
     }
 }
 
@@ -76,26 +76,26 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
         auto block1 = getBlockWithSize(65536, 8);
         auto block2 = getBlockWithSize(65536, 8);
         auto block3 = getBlockWithSize(65536, 8);
-        std::vector<size_t> index_granularity;
+        IndexGranularity index_granularity;
         for (const auto & block : {block1, block2, block3})
             fillIndexGranularityImpl(block, 1024, 0, false, 0, index_granularity);
 
-        EXPECT_EQ(index_granularity.size(), 192); /// granules
-        for (auto granule_size_in_rows : index_granularity)
-            EXPECT_EQ(granule_size_in_rows, 128);
+        EXPECT_EQ(index_granularity.getMarksCount(), 192); /// granules
+        for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
+            EXPECT_EQ(index_granularity.getMarkRows(i), 128);
     }
     { /// Three blocks of different size
         auto block1 = getBlockWithSize(65536, 32);
         auto block2 = getBlockWithSize(32768, 32);
         auto block3 = getBlockWithSize(2048, 32);
         EXPECT_EQ(block1.rows() + block2.rows() + block3.rows(), 3136);
-        std::vector<size_t> index_granularity;
+        IndexGranularity index_granularity;
         for (const auto & block : {block1, block2, block3})
             fillIndexGranularityImpl(block, 1024, 0, false, 0, index_granularity);
 
-        EXPECT_EQ(index_granularity.size(), 98); /// granules
-        for (auto granule_size_in_rows : index_granularity)
-            EXPECT_EQ(granule_size_in_rows, 32);
+        EXPECT_EQ(index_granularity.getMarksCount(), 98); /// granules
+        for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
+            EXPECT_EQ(index_granularity.getMarkRows(i), 32);
 
     }
     { /// Three small blocks
@@ -105,16 +105,16 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
 
         EXPECT_EQ(block1.rows() + block2.rows() + block3.rows(), (2048 + 4096 + 8192) / 32);
 
-        std::vector<size_t> index_granularity;
+        IndexGranularity index_granularity;
         size_t index_offset = 0;
         for (const auto & block : {block1, block2, block3})
         {
             fillIndexGranularityImpl(block, 16384, 0, false, index_offset, index_granularity);
-            index_offset = index_granularity.back() - block.rows();
+            index_offset = index_granularity.getLastMarkRows() - block.rows();
         }
-        EXPECT_EQ(index_granularity.size(), 1); /// granules
-        for (auto granule_size_in_rows : index_granularity)
-            EXPECT_EQ(granule_size_in_rows, 512);
+        EXPECT_EQ(index_granularity.getMarksCount(), 1); /// granules
+        for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
+            EXPECT_EQ(index_granularity.getMarkRows(i), 512);
     }
 
 }

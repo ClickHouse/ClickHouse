@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/IndexGranularity.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
@@ -23,7 +24,7 @@ public:
         CompressionCodecPtr default_codec_,
         size_t aio_threshold_,
         bool blocks_are_granules_size_,
-        const std::vector<size_t> & index_granularity_);
+        const IndexGranularity & index_granularity_);
 
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -118,7 +119,7 @@ protected:
     const size_t mark_size_in_bytes;
     const bool blocks_are_granules_size;
 
-    std::vector<size_t> index_granularity;
+    IndexGranularity index_granularity;
 
     const bool compute_granularity;
     CompressionCodecPtr codec;
@@ -136,8 +137,7 @@ public:
         String part_path_,
         const NamesAndTypesList & columns_list_,
         CompressionCodecPtr default_codec_,
-        bool blocks_are_granules_size_ = false,
-        const std::vector<size_t> & index_granularity_ = {});
+        bool blocks_are_granules_size_ = false);
 
     MergedBlockOutputStream(
         MergeTreeData & storage_,
@@ -146,8 +146,7 @@ public:
         CompressionCodecPtr default_codec_,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
         size_t aio_threshold_,
-        bool blocks_are_granules_size_ = false,
-        const std::vector<size_t> & index_granularity_ = {});
+        bool blocks_are_granules_size_ = false);
 
     std::string getPartPath() const;
 
@@ -169,7 +168,7 @@ public:
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
-    const std::vector<size_t> & getIndexGranularity() const
+    const IndexGranularity & getIndexGranularity() const
     {
         return index_granularity;
     }
@@ -210,7 +209,7 @@ public:
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
         CompressionCodecPtr default_codec_, bool skip_offsets_,
         WrittenOffsetColumns & already_written_offset_columns,
-        const std::vector<size_t> & index_granularity_);
+        const IndexGranularity & index_granularity_);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

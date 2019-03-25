@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/IndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -91,7 +92,6 @@ struct MergeTreeDataPart
     mutable String relative_path;
 
     size_t rows_count = 0;
-    size_t marks_count = 0;
     std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
                                             /// Is used from several threads without locks (it is changed with ALTER).
                                             /// May not contain size of checksums.txt and columns.txt
@@ -180,12 +180,7 @@ struct MergeTreeDataPart
 
     /// Amount of rows between marks
     /// As index always loaded into memory
-    using MarksIndexGranularity = std::vector<size_t>;
-    MarksIndexGranularity marks_index_granularity;
-    size_t rows_approx = 0;
-
-    std::string marks_file_extension;
-    size_t mark_size_in_bytes;
+    IndexGranularity index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
@@ -272,6 +267,7 @@ struct MergeTreeDataPart
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
+    UInt64 getMarksCount() const;
 
 private:
     /// Reads columns names and types from columns.txt
@@ -281,7 +277,7 @@ private:
     void loadChecksums(bool require);
 
     /// Loads marks index granularity into memory
-    void loadMarksIndexGranularity();
+    void loadIndexGranularity();
 
     /// Loads index file.
     void loadIndex();
