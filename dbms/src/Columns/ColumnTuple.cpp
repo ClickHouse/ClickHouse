@@ -58,6 +58,18 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
     return column_tuple;
 }
 
+ColumnTuple::Ptr ColumnTuple::create(const TupleColumns & columns)
+{
+    for (const auto & column : columns)
+        if (column->isColumnConst())
+            throw Exception{"ColumnTuple cannot have ColumnConst as its element", ErrorCodes::ILLEGAL_COLUMN};
+
+    auto column_tuple = ColumnTuple::create(MutableColumns());
+    column_tuple->columns = columns;
+
+    return column_tuple;
+}
+
 MutableColumnPtr ColumnTuple::cloneEmpty() const
 {
     const size_t tuple_size = columns.size();
