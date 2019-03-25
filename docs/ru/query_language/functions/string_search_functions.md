@@ -13,20 +13,26 @@
 
 Для поиска без учета регистра используйте функцию `positionCaseInsensitiveUTF8`.
 
-## multiPosition(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchAllPositions(haystack, [needle_1, needle_2, ..., needle_n])
 Так же, как и `position`, только возвращает `Array` первых вхождений.
 
-Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiPositionCaseInsensitive, multiPositionUTF8, multiPositionCaseInsensitiveUTF8`.
+Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchAllPositionsCaseInsensitive, multiSearchAllPositionsUTF8, multiSearchAllPositionsCaseInsensitiveUTF8`.
 
-## firstMatch(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchFirstPosition(haystack, [needle_1, needle_2, ..., needle_n])
+
+Так же, как и `position`, только возвращает оффсет первого вхождения любого из needles.
+
+Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchFirstPositionCaseInsensitive, multiSearchFirstPositionUTF8, multiSearchFirstPositionCaseInsensitiveUTF8`.
+
+## multiSearchFirstIndex(haystack, [needle_1, needle_2, ..., needle_n])
 Возвращает индекс `i` (нумерация с единицы) первой найденной строки `needle_i` в строке `haystack` и 0 иначе.
 
-Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `firstMatchCaseInsensitive, firstMatchUTF8, firstMatchCaseInsensitiveUTF8`.
+Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
 
-## multiSearch(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchAny(haystack, [needle_1, needle_2, ..., needle_n])
 Возвращает 1, если хотя бы одна подстрока `needle_i` нашлась в строке `haystack` и 0 иначе.
 
-Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchCaseInsensitive, multiSearchUTF8, multiSearchCaseInsensitiveUTF8`.
+Для поиска без учета регистра и/или в кодировке UTF-8 используйте функции `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
 ## match(haystack, pattern)
 Проверка строки на соответствие регулярному выражению pattern. Регулярное выражение **re2**. Синтаксис регулярных выражений **re2** является более ограниченным по сравнению с регулярными выражениями **Perl** ([подробнее](https://github.com/google/re2/wiki/Syntax)).
@@ -36,6 +42,16 @@
 
 Регулярное выражение работает со строкой как с набором байт. Регулярное выражение не может содержать нулевые байты.
 Для шаблонов на поиск подстроки в строке, лучше используйте LIKE или position, так как они работают существенно быстрее.
+
+## multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
+
+То же, что и `match`, но возвращает ноль, если ни одно регулярное выражение не подошло и один, если хотя бы одно. Используется алгоритм [hyperscan](https://github.com/intel/hyperscan) для соответствия регулярных выражений. Для шаблонов на поиск многих подстрок в строке, лучше используйте `multiSearchAny`, так как она работает существенно быстрее.
+
+Примечание: эта функция находится пока в экспериментальном режиме из-за некоторых [проблем](https://github.com/intel/hyperscan/issues/141).
+
+## multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
+
+То же, что `multiMatchAny`, только возвращает любой индекс подходящего регулярного выражения.
 
 ## extract(haystack, pattern)
 Извлечение фрагмента строки по регулярному выражению. Если haystack не соответствует регулярному выражению pattern, то возвращается пустая строка. Если регулярное выражение не содержит subpattern-ов, то вынимается фрагмент, который подпадает под всё регулярное выражение. Иначе вынимается фрагмент, который подпадает под первый subpattern.

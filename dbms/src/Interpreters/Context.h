@@ -4,7 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
@@ -402,12 +402,12 @@ public:
     void initializeSystemLogs();
 
     /// Nullptr if the query log is not ready for this moment.
-    QueryLog * getQueryLog();
-    QueryThreadLog * getQueryThreadLog();
+    std::shared_ptr<QueryLog> getQueryLog();
+    std::shared_ptr<QueryThreadLog> getQueryThreadLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & part_database);
+    std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
 
