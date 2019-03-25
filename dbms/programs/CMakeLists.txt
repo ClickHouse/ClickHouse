@@ -154,7 +154,7 @@ else ()
         clickhouse_target_link_split_lib(clickhouse obfuscator)
     endif ()
     if (USE_EMBEDDED_COMPILER)
-        clickhouse_target_link_split_lib(clickhouse compiler)
+        target_link_libraries(clickhouse PRIVATE clickhouse-compiler-lib)
     endif ()
 
     set (CLICKHOUSE_BUNDLE)

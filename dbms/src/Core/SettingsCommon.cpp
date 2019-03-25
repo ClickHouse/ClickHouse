@@ -1,12 +1,11 @@
-#include <Core/Field.h>
+#include "SettingsCommon.h"
 
+#include <Core/Field.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/FieldVisitors.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Interpreters/SettingsCommon.h>
 
 
 namespace DB

@@ -223,8 +223,8 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
 
 void MergeTreeData::setPrimaryKeyIndicesAndColumns(
-        const ASTPtr &new_order_by_ast, ASTPtr new_primary_key_ast,
-        const ColumnsDescription &new_columns, const IndicesDescription &indices_description, bool only_check)
+    const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
+    const ColumnsDescription & new_columns, const IndicesDescription & indices_description, bool only_check)
 {
     if (!new_order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -2517,14 +2517,22 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
+        {
             if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
-
+            for (const auto & index : skip_indices)
+                if (index->mayBenefitFromIndexForIn(item))
+                    return true;
+        }
         /// The tuple itself may be part of the primary key, so check that as a last resort.
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
     else
     {
+        for (const auto & index : skip_indices)
+            if (index->mayBenefitFromIndexForIn(left_in_operand))
+                return true;
+
         return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
 }
