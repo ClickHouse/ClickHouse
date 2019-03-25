@@ -51,7 +51,7 @@ String DataTypeDomainSimpleAggregateFunction::doGetName() const
         stream << ")";
     }
 
-    for (const auto &argument_type : argument_types)
+    for (const auto & argument_type : argument_types)
         stream << ", " << argument_type->getName();
 
     stream << ")";
