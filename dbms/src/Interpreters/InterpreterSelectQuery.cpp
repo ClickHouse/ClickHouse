@@ -896,17 +896,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                     prewhere_info->remove_prewhere_column = false;
 
             /// Remove columns which will be added by prewhere.
-            size_t next_req_column_pos = 0;
-            for (size_t i = 0; i < required_columns.size(); ++i)
+            required_columns.erase(std::remove_if(required_columns.begin(), required_columns.end(), [&](const String & name)
             {
-                if (!additional_source_columns_set.count(required_columns[i]))
-                {
-                    if (next_req_column_pos < i)
-                        std::swap(required_columns[i], required_columns[next_req_column_pos]);
-                    ++next_req_column_pos;
-                }
-            }
-            required_columns.resize(next_req_column_pos);
+                return !!additional_source_columns_set.count(name);
+            }), required_columns.end());
 
             if (prewhere_info)
             {
