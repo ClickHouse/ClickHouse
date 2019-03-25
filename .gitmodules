@@ -76,3 +76,6 @@
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli.git
+[submodule "contrib/h3"]
+	path = contrib/h3
+	url = https://github.com/uber/h3
