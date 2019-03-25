@@ -30,7 +30,8 @@ set the following environment variables:
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
 * `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and
   `users.xml`) are taken.
-  
+
+
 ### Running with runner script
 
 The only requirement is fresh docker configured docker.
