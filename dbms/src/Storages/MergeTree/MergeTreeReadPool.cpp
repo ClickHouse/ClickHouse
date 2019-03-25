@@ -36,8 +36,14 @@ MergeTreeReadPool::MergeTreeReadPool(
     /// parts don't contain duplicate MergeTreeDataPart's.
     const auto per_part_sum_marks = fillPerPartInfo(parts, check_columns);
     fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
+    avg_parts_granularity = getAvgGranularityForAllPartsRanges(parts);
 }
 
+
+size_t MergeTreeReadPool::getAvgGranularityForReadingParts() const
+{
+    return avg_parts_granularity;
+}
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names)
 {

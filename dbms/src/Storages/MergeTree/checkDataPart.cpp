@@ -4,6 +4,7 @@
 #include <Poco/File.h>
 #include <Poco/DirectoryIterator.h>
 
+#include <Storages/MergeTree/IndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataStreams/MarkInCompressedFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -42,7 +43,7 @@ public:
     String mrk_file_path;
 private:
     String marks_file_extension;
-    const std::vector<size_t> & index_granularity;
+    const IndexGranularity & index_granularity;
     ReadBufferFromFile file_buf;
     HashingReadBuffer compressed_hashing_buf;
     CompressedReadBuffer uncompressing_buf;
@@ -55,7 +56,7 @@ private:
 public:
     HashingReadBuffer mrk_hashing_buf;
 
-        Stream(const String & path, const String & base_name, const String & bin_file_extension_, const String & mrk_file_extension_, const std::vector<size_t> & index_granularity_)
+        Stream(const String & path, const String & base_name, const String & bin_file_extension_, const String & mrk_file_extension_, const IndexGranularity & index_granularity_)
         :
         base_name(base_name),
         bin_file_path(path + base_name + bin_file_extension_),
@@ -81,7 +82,7 @@ public:
         if (marks_file_extension == ".mrk2")
             readIntBinary(mrk_rows, mrk_hashing_buf);
         else
-            mrk_rows = index_granularity[mark_position];
+            mrk_rows = index_granularity.getMarkRows(mark_position);
 
         //std::cerr << "MRK ROWS:" << mrk_rows << std::endl;
         bool has_alternative_mark = false;
@@ -117,8 +118,8 @@ public:
         data_mark.offset_in_compressed_file = compressed_hashing_buf.count() - uncompressing_buf.getSizeCompressed();
         data_mark.offset_in_decompressed_block = uncompressed_hashing_buf.offset();
 
-        if (mrk_mark != data_mark || mrk_rows != index_granularity[mark_position])
-            throw Exception("Incorrect mark: " + data_mark.toStringWithRows(index_granularity[mark_position]) +
+        if (mrk_mark != data_mark || mrk_rows != index_granularity.getMarkRows(mark_position))
+            throw Exception("Incorrect mark: " + data_mark.toStringWithRows(index_granularity.getMarkRows(mark_position)) +
                 (has_alternative_mark ? " or " + alternative_data_mark.toString() : "") + " in data, " +
                 mrk_mark.toStringWithRows(mrk_rows) + " in " + mrk_file_path + " file", ErrorCodes::INCORRECT_MARK);
 
@@ -157,7 +158,7 @@ public:
 
 MergeTreeData::DataPart::Checksums checkDataPart(
     const String & full_path,
-    const std::vector<size_t> adaptive_index_granularity,
+    const IndexGranularity & adaptive_index_granularity,
     const size_t fixed_granularity,
     const String marks_file_extension,
     bool require_checksums,
@@ -344,7 +345,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                     }
                 }, settings.path);
 
-            size_t rows_after_mark = adaptive_index_granularity[mark_num];
+            size_t rows_after_mark = adaptive_index_granularity.getMarkRows(mark_num);
             std::cerr << "rows after mark:" << rows_after_mark << std::endl;
             std::cerr << "mark_num:" << mark_num << std::endl;
             ++mark_num;
@@ -369,7 +370,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             size_t read_size = tmp_column->size();
             column_size += read_size;
 
-            if (read_size < rows_after_mark || mark_num == adaptive_index_granularity.size())
+            if (read_size < rows_after_mark || mark_num == adaptive_index_granularity.getMarksCount())
                 break;
             else if (marks_eof)
                 throw Exception("Unexpected end of mrk file while reading column " + name_type.name, ErrorCodes::CORRUPTED_DATA);
@@ -407,18 +408,11 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
     if (!primary_key_data_types.empty())
     {
-        size_t expected_marks = adaptive_index_granularity.size();
+        size_t expected_marks = adaptive_index_granularity.getMarksCount();
         if (expected_marks != marks_in_primary_key)
         {
-            String info_about_granularity;
-            if (std::all_of(adaptive_index_granularity.begin(), adaptive_index_granularity.end(), [&fixed_granularity](size_t i) { return i == fixed_granularity; } ))
-                info_about_granularity = "fixed=" + toString(fixed_granularity);
-            else
-                info_about_granularity = "adaptive";
-
             throw Exception("Size of primary key doesn't match expected number of marks."
                 " Number of rows in columns: " + toString(*rows)
-                + ", index_granularity: " + info_about_granularity
                 + ", expected number of marks: " + toString(expected_marks)
                 + ", size of primary key: " + toString(marks_in_primary_key),
                 ErrorCodes::CORRUPTED_DATA);
@@ -449,9 +443,9 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 {
     return checkDataPart(
         data_part->getFullPath(),
-        data_part->marks_index_granularity,
-        data_part->storage.index_granularity,
-        data_part->marks_file_extension,
+        data_part->index_granularity,
+        data_part->storage.index_granularity_info.fixed_index_granularity,
+        data_part->storage.index_granularity_info.marks_file_extension,
         require_checksums,
         primary_key_data_types,
         indices,

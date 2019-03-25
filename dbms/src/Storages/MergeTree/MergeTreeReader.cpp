@@ -173,11 +173,11 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
+            path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             aio_threshold, max_read_buffer_size,
-            data_part->marks_file_extension, data_part->mark_size_in_bytes,
+            storage.index_granularity_info.marks_file_extension, storage.index_granularity_info.mark_size_in_bytes,
             profile_callback, clock_type));
     };
 

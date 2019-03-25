@@ -21,10 +21,6 @@ namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
-constexpr auto FIXED_MARKS_FILE_EXTENSION = ".mrk";
-constexpr auto ADAPTIVE_MARKS_FILE_EXTENSION = ".mrk2";
-constexpr auto FIXED_MARK_BYTE_SIZE = sizeof(MarkInCompressedFile);
-constexpr auto ADAPTIVE_MARK_BYTE_SIZE = sizeof(MarkInCompressedFile) + sizeof(size_t);
 constexpr auto INDEX_FILE_EXTENSION = ".idx";
 
 }
@@ -39,13 +35,13 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     CompressionCodecPtr codec_,
     size_t aio_threshold_,
     bool blocks_are_granules_size_,
-    const std::vector<size_t> & index_granularity_)
+    const IndexGranularity & index_granularity_)
     : storage(storage_)
     , min_compress_block_size(min_compress_block_size_)
     , max_compress_block_size(max_compress_block_size_)
     , aio_threshold(aio_threshold_)
-    , marks_file_extension(storage.index_granularity_bytes == 0 ? FIXED_MARKS_FILE_EXTENSION : ADAPTIVE_MARKS_FILE_EXTENSION)
-    , mark_size_in_bytes(storage.index_granularity_bytes == 0 ? FIXED_MARK_BYTE_SIZE : ADAPTIVE_MARK_BYTE_SIZE)
+    , marks_file_extension(storage.index_granularity_info.marks_file_extension)
+    , mark_size_in_bytes(storage.index_granularity_info.mark_size_in_bytes)
     , blocks_are_granules_size(blocks_are_granules_size_)
     , index_granularity(index_granularity_)
     , compute_granularity(index_granularity.empty())
@@ -112,15 +108,15 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
 void fillIndexGranularityImpl(
     const Block & block,
     size_t index_granularity_bytes,
-    size_t index_granularity_rows,
+    size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
     size_t index_offset,
-    std::vector<size_t> & index_granularity)
+    IndexGranularity & index_granularity)
 {
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
     if (index_granularity_bytes == 0)
-        index_granularity_for_block = index_granularity_rows;
+        index_granularity_for_block = fixed_index_granularity_rows;
     else
     {
         size_t block_size_in_memory = block.bytes();
@@ -144,15 +140,15 @@ void fillIndexGranularityImpl(
     //std::cerr << "GRANULARITY SIZE IN ROWS:"<< index_granularity_for_block << std::endl;
 
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
-        index_granularity.push_back(index_granularity_for_block);
+        index_granularity.appendMark(index_granularity_for_block);
 }
 
 void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
 {
     fillIndexGranularityImpl(
         block,
-        storage.index_granularity_bytes,
-        storage.index_granularity,
+        storage.index_granularity_info.index_granularity_bytes,
+        storage.index_granularity_info.fixed_index_granularity,
         blocks_are_granules_size,
         index_offset,
         index_granularity);
@@ -193,7 +189,7 @@ size_t IMergedBlockOutputStream::writeSingleGranule(
 
             writeIntBinary(stream.plain_hashing.count(), stream.marks);
             writeIntBinary(stream.compressed.offset(), stream.marks);
-            if (stream.marks_file_extension != FIXED_MARKS_FILE_EXTENSION)
+            if (storage.index_granularity_info.is_adaptive)
                 writeIntBinary(number_of_rows, stream.marks);
         }, serialize_settings.path);
     }
@@ -251,12 +247,12 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
         }
         else
         {
-            if (index_granularity.size() <= current_column_mark)
+            if (index_granularity.getMarksCount() <= current_column_mark)
                 throw Exception(
-                    "Incorrect size of index granularity expect mark " + toString(current_column_mark) + " totally have marks " + toString(index_granularity.size()),
+                    "Incorrect size of index granularity expect mark " + toString(current_column_mark) + " totally have marks " + toString(index_granularity.getMarksCount()),
                     ErrorCodes::LOGICAL_ERROR);
 
-            rows_to_write = index_granularity[current_column_mark];
+            rows_to_write = index_granularity.getMarkRows(current_column_mark);
         }
 
         current_row = writeSingleGranule(
@@ -349,14 +345,13 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     String part_path_,
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec_,
-    bool blocks_are_granules_size_,
-    const std::vector<size_t> & index_granularity_)
+    bool blocks_are_granules_size_)
     : IMergedBlockOutputStream(
         storage_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
         storage_.global_context.getSettings().min_bytes_to_use_direct_io,
         blocks_are_granules_size_,
-        index_granularity_),
+        {}),
     columns_list(columns_list_), part_path(part_path_)
 {
     init();
@@ -374,12 +369,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     CompressionCodecPtr default_codec_,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
     size_t aio_threshold_,
-    bool blocks_are_granules_size_,
-    const std::vector<size_t> & index_granularity_)
+    bool blocks_are_granules_size_)
     : IMergedBlockOutputStream(
         storage_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
-        aio_threshold_, blocks_are_granules_size_, index_granularity_),
+        aio_threshold_, blocks_are_granules_size_, {}),
     columns_list(columns_list_), part_path(part_path_)
 {
     init();
@@ -523,15 +517,12 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     new_part->rows_count = rows_count;
     //std::cerr << "SETTING CURRENT MARK FOR PART:" << part_path << " to " << current_mark << std::endl;
-    new_part->marks_count = current_mark;
     new_part->modification_time = time(nullptr);
     new_part->columns = *total_column_list;
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     new_part->checksums = checksums;
     new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
-    new_part->marks_file_extension = marks_file_extension;
-    new_part->marks_index_granularity.swap(index_granularity);
-    new_part->mark_size_in_bytes = mark_size_in_bytes;
+    new_part->index_granularity = index_granularity;
 }
 
 void MergedBlockOutputStream::init()
@@ -684,6 +675,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
 
+            size_t current_mark = 0;
             while (prev_pos < rows)
             {
                 UInt64 limit = 0;
@@ -693,7 +685,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
                 else
                 {
-                    limit = storage.index_granularity;
+                    limit = index_granularity.getMarkRows(current_mark); /// TODO(alesap)
                     if (skip_indices_aggregators[i]->empty())
                     {
                         skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -722,6 +714,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                     }
                 }
                 prev_pos = pos;
+                current_mark++;
             }
         }
     }
@@ -753,8 +746,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             //std::cerr << "I:" << i << " Total rows:" << rows << std::endl;
             //std::cerr << "Increment current mark:" << current_mark << std::endl;
             ++current_mark;
-            if (current_mark < index_granularity.size())
-                i += index_granularity[current_mark];
+            if (current_mark < index_granularity.getMarksCount())
+                i += index_granularity.getMarkRows(current_mark);
             else
                 break;
         }
@@ -772,7 +765,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
     CompressionCodecPtr default_codec_, bool skip_offsets_,
     WrittenOffsetColumns & already_written_offset_columns,
-    const std::vector<size_t> & index_granularity_)
+    const IndexGranularity & index_granularity_)
     : IMergedBlockOutputStream(
         storage_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,

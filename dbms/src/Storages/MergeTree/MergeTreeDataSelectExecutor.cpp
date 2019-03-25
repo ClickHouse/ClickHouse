@@ -93,7 +93,7 @@ static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     const MergeTreeData::DataPartsVector & parts, const KeyCondition & key_condition, const Settings & settings) const
 {
-    size_t full_marks_count = 0;
+    size_t rows_count = 0;
 
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
@@ -101,7 +101,7 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     for (size_t i = 0; i < parts.size(); ++i)
     {
         const MergeTreeData::DataPartPtr & part = parts[i];
-        MarkRanges ranges = markRangesFromPKRange(part->index, key_condition, settings);
+        MarkRanges ranges = markRangesFromPKRange(part, key_condition, settings);
 
         /** In order to get a lower bound on the number of rows that match the condition on PK,
           *  consider only guaranteed full marks.
@@ -109,10 +109,11 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
           */
         for (size_t j = 0; j < ranges.size(); ++j)
             if (ranges[j].end - ranges[j].begin > 2)
-                full_marks_count += ranges[j].end - ranges[j].begin - 2;
+                rows_count += part->index_granularity.getRowsCountInRange({ranges[j].begin + 1, ranges[j].end - 1});
+
     }
 
-    return full_marks_count * data.index_granularity;
+    return rows_count;
 }
 
 
@@ -159,9 +160,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     std::cerr << "START READING FROM PARTS\n";
-    for (auto part : parts) {
-        std::cerr << "PartMarks:" << part->marks_file_extension << std::endl;
-    }
     size_t part_index = 0;
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
@@ -537,9 +535,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         RangesInDataPart ranges(part, part_index++);
 
         if (data.hasPrimaryKey())
-            ranges.ranges = markRangesFromPKRange(part->index, key_condition, settings);
+            ranges.ranges = markRangesFromPKRange(part, key_condition, settings);
         else
-            ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
+            ranges.ranges = MarkRanges{MarkRange{0, part->getMarksCount()}};
 
         for (const auto & index_and_condition : useful_indices)
             ranges.ranges = filterMarksUsingIndex(
@@ -631,16 +629,17 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const Names & virt_columns,
     const Settings & settings) const
 {
+    size_t average_index_granularity = getAvgGranularityForAllPartsRanges(parts);
     const size_t min_marks_for_concurrent_read =
-        (settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
-    const size_t max_marks_to_use_cache =
-        (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
+        (settings.merge_tree_min_rows_for_concurrent_read + average_index_granularity - 1) / average_index_granularity;
 
     /// Count marks for each part.
     std::vector<size_t> sum_marks_in_parts(parts.size());
     size_t sum_marks = 0;
+    size_t total_rows = 0;
     for (size_t i = 0; i < parts.size(); ++i)
     {
+        total_rows += parts[i].getRowsCount();
         /// Let the ranges be listed from right to left so that the leftmost range can be dropped using `pop_back()`.
         std::reverse(parts[i].ranges.begin(), parts[i].ranges.end());
 
@@ -650,7 +649,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         sum_marks += sum_marks_in_parts[i];
     }
 
-    if (sum_marks > max_marks_to_use_cache)
+    if (total_rows > settings.merge_tree_max_rows_to_use_cache)
         use_uncompressed_cache = false;
 
     BlockInputStreams res;
@@ -666,7 +665,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
 
         /// Let's estimate total number of rows for progress bar.
-        const size_t total_rows = data.index_granularity * sum_marks;
         LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
 
         for (size_t i = 0; i < num_streams; ++i)
@@ -773,15 +771,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     const Names & virt_columns,
     const Settings & settings) const
 {
-    const size_t max_marks_to_use_cache =
-        (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
-
-    size_t sum_marks = 0;
+    size_t sum_rows = 0;
     for (size_t i = 0; i < parts.size(); ++i)
-        for (size_t j = 0; j < parts[i].ranges.size(); ++j)
-            sum_marks += parts[i].ranges[j].end - parts[i].ranges[j].begin;
+        sum_rows += parts[i].getRowsCount();
 
-    if (sum_marks > max_marks_to_use_cache)
+    if (sum_rows > settings.merge_tree_max_rows_to_use_cache)
         use_uncompressed_cache = false;
 
     BlockInputStreams to_merge;
@@ -874,11 +868,12 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
-    const MergeTreeData::DataPart::Index & index, const KeyCondition & key_condition, const Settings & settings) const
+    const MergeTreeData::DataPartPtr & part, const KeyCondition & key_condition, const Settings & settings) const
 {
     MarkRanges res;
 
-    size_t marks_count = index.at(0)->size();
+    size_t marks_count = part->index_granularity.getMarksCount();
+    const auto & index = part->index;
     if (marks_count == 0)
         return res;
 
@@ -890,7 +885,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     else
     {
         size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
-        size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+        size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + part->index_granularity.getAvgGranularity() - 1) / part->index_granularity.getAvgGranularity();
 
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
             * At each step, take the left segment and check if it fits.
@@ -972,13 +967,14 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         return ranges;
     }
 
-    const size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+    const size_t avg_granularity =part->index_granularity.getAvgGranularity();
+    const size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + avg_granularity - 1) / avg_granularity;
 
     size_t granules_dropped = 0;
 
     MergeTreeIndexReader reader(
             index, part,
-            ((part->marks_count + index->granularity - 1) / index->granularity),
+            ((part->getMarksCount() + index->granularity - 1) / index->granularity),
             ranges);
 
     MarkRanges res;

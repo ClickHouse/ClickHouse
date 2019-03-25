@@ -28,7 +28,7 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
         std::shared_lock<std::shared_mutex> part_lock(source_part->columns_lock);
 
         total_size_bytes_compressed += source_part->bytes_on_disk;
-        total_size_marks += source_part->marks_count;
+        total_size_marks += source_part->getMarksCount();
     }
 
     if (!future_part.parts.empty())
