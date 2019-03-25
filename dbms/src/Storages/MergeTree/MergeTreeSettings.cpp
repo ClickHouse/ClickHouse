@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
 
 

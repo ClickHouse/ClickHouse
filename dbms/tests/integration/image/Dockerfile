@@ -19,6 +19,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes -
     tzdata \
     libreadline-dev \
     libicu-dev \
+    bsdutils \
     curl
 
 ENV TZ=Europe/Moscow

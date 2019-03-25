@@ -5,7 +5,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/AggregationCommon.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
