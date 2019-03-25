@@ -206,53 +206,42 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
     createActions(list, root);
 }
 
+kj::Array<capnp::word> CapnProtoRowInputStream::readMessage()
+{
+    uint32_t segment_count;
+    istr.readStrict(reinterpret_cast<char*>(&segment_count), sizeof(uint32_t));
+
+    // one for segmentCount and one because segmentCount starts from 0
+    const auto prefix_size = (2 + segment_count) * sizeof(uint32_t);
+    const auto words_prefix_size = (segment_count + 1) / 2 + 1;
+    auto prefix = kj::heapArray<capnp::word>(words_prefix_size);
+    auto prefix_chars = prefix.asChars();
+    ::memcpy(prefix_chars.begin(), &segment_count, sizeof(uint32_t));
+
+    // read size of each segment
+    for (size_t i = 0; i <= segment_count; ++i)
+        istr.readStrict(prefix_chars.begin() + ((i + 1) * sizeof(uint32_t)), sizeof(uint32_t));
+
+    // calculate size of message
+    const auto expected_words = capnp::expectedSizeInWordsFromPrefix(prefix);
+    const auto expected_bytes = expected_words * sizeof(capnp::word);
+    const auto data_size = expected_bytes - prefix_size;
+    auto msg = kj::heapArray<capnp::word>(expected_words);
+    auto msg_chars = msg.asChars();
+
+    // read full message
+    ::memcpy(msg_chars.begin(), prefix_chars.begin(), prefix_size);
+    istr.readStrict(msg_chars.begin() + prefix_size, data_size);
+
+    return msg;
+}
 
 bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     if (istr.eof())
         return false;
 
-    // Read from underlying buffer directly
-    auto& buf = istr.buffer();
-    auto base = reinterpret_cast<const capnp::word *>(istr.position());
-
-    // Check if there's enough bytes in the buffer to read the full message
-    kj::Array<capnp::word> heap_array;
-    kj::ArrayPtr<const capnp::word> array;
-
-    size_t bytes_size = buf.size() - istr.offset();
-    size_t remaining_bytes = 0;
-    if (bytes_size < sizeof(capnp::word)) // case when we read less than 8 bytes (capnp::word)
-    {
-        char edge_bytes[sizeof(capnp::word)];
-        while (bytes_size + remaining_bytes < sizeof(capnp::word))
-        {
-            istr.readStrict(edge_bytes + remaining_bytes, bytes_size);
-            remaining_bytes += bytes_size;
-            istr.next();
-            bytes_size = buf.size();
-        }
-
-        auto words_size = bytes_size / sizeof(capnp::word) + 1;
-        heap_array = kj::heapArray<capnp::word>(words_size + 1);
-        auto chars_heap_array = heap_array.asChars();
-        ::memcpy(chars_heap_array.begin(), edge_bytes, remaining_bytes);
-        ::memcpy(chars_heap_array.begin() + remaining_bytes, buf.begin(), buf.size());
-        array = heap_array.asPtr();
-    }
-    else
-    {
-        auto words_size = bytes_size / sizeof(capnp::word);
-        array = kj::arrayPtr(base, words_size);
-        auto expected_words = capnp::expectedSizeInWordsFromPrefix(array);
-        if (expected_words * sizeof(capnp::word) > array.size())
-        {
-            // We'll need to reassemble the message in a contiguous buffer
-            heap_array = kj::heapArray<capnp::word>(expected_words);
-            istr.readStrict(heap_array.asChars().begin(), heap_array.asChars().size());
-            array = heap_array.asPtr();
-        }
-    }
+    auto array = readMessage();
 
 #if CAPNP_VERSION >= 8000
     capnp::UnalignedFlatArrayMessageReader msg(array);
@@ -304,19 +293,6 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
                 stack.push_back(stack.back().get(action.field).as<capnp::DynamicStruct>());
                 break;
         }
-    }
-
-    // Advance buffer position if used directly
-    if (heap_array.size() == 0)
-    {
-        auto parsed = (msg.getEnd() - base) * sizeof(capnp::word);
-        istr.ignore(parsed);
-    }
-    // Advance buffer position if used with remaining bytes from previous buffer
-    else if (remaining_bytes != 0)
-    {
-        auto parsed = (msg.getEnd() - heap_array.begin()) * sizeof(capnp::word) - remaining_bytes;
-        istr.ignore(parsed);
     }
 
     return true;
