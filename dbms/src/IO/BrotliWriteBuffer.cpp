@@ -72,7 +72,7 @@ void BrotliWriteBuffer::nextImpl()
 
         if (result == 0)
         {
-            throw Exception(std::string("brotli compress failed: "), ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+            throw Exception(std::string("brotli compress failed"), ErrorCodes::BROTLI_WRITE_FAILED);
         }
     }
     while (in_available > 0 || out_capacity == 0);
@@ -110,7 +110,7 @@ void BrotliWriteBuffer::finish()
 
         if (result == 0)
         {
-            throw Exception(std::string("brotli compress failed: "), ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+            throw Exception(std::string("brotli compress failed"), ErrorCodes::BROTLI_WRITE_FAILED);
         }
     }
 }
