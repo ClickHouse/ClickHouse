@@ -12,15 +12,15 @@ INSERT INTO test.zero_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1
 
 SELECT COUNT(*) FROM test.zero_rows_per_granule;
 
-SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule' and database='test' and active=1;
+
+INSERT INTO test.zero_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-19', 8, 7000, 8000);
+
 OPTIMIZE TABLE test.zero_rows_per_granule FINAL;
-
-
-INSERT INTO test.zero_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 7, 7000, 8000);
 
 SELECT COUNT(*) FROM test.zero_rows_per_granule;
 
-SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule' and database='test' and active=1;
 
 DROP TABLE IF EXISTS test.zero_rows_per_granule;
 
@@ -39,16 +39,15 @@ INSERT INTO test.two_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 10
 
 SELECT COUNT(*) FROM test.two_rows_per_granule;
 
-SELECT distinct(marks) from system.parts WHERE table = 'two_rows_per_granule' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'two_rows_per_granule' and database='test' and active=1;
+
+INSERT INTO test.two_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-19', 8, 7000, 8000);
 
 OPTIMIZE TABLE test.two_rows_per_granule FINAL;
 
-
-INSERT INTO test.two_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 7, 7000, 8000);
-
 SELECT COUNT(*) FROM test.two_rows_per_granule;
 
-SELECT distinct(marks) from system.parts WHERE table = 'two_rows_per_granule' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'two_rows_per_granule' and database='test' and active=1;
 
 DROP TABLE IF EXISTS test.two_rows_per_granule;
 
@@ -67,13 +66,13 @@ INSERT INTO test.four_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1
 
 SELECT COUNT(*) FROM test.four_rows_per_granule;
 
-SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule' and database='test';
-DETACH TABLE test.four_rows_per_granule; 
+SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule' and database='test' and active=1;
+DETACH TABLE test.four_rows_per_granule;
 ATTACH TABLE test.four_rows_per_granule;
 
 OPTIMIZE TABLE test.four_rows_per_granule FINAL;
 
-INSERT INTO test.four_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 7, 7000, 8000);
+INSERT INTO test.four_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-19', 8, 7000, 8000);
 
 
 DETACH TABLE test.four_rows_per_granule;
@@ -82,7 +81,7 @@ ATTACH TABLE test.four_rows_per_granule;
 
 SELECT COUNT(*) FROM test.four_rows_per_granule;
 
-SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule' and database='test' and active=1;
 
 DROP TABLE IF EXISTS test.four_rows_per_granule;
 
@@ -102,7 +101,7 @@ INSERT INTO test.huge_granularity_small_blocks (p, k, v1, v2) VALUES ('2018-05-1
 
 SELECT COUNT(*) FROM test.huge_granularity_small_blocks;
 
-SELECT distinct(marks) from system.parts WHERE table = 'huge_granularity_small_blocks' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'huge_granularity_small_blocks' and database='test' and active=1;
 
 INSERT INTO test.huge_granularity_small_blocks (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 7, 7000, 8000);
 
@@ -114,7 +113,7 @@ OPTIMIZE TABLE test.huge_granularity_small_blocks FINAL;
 
 SELECT COUNT(*) FROM test.huge_granularity_small_blocks;
 
-SELECT distinct(marks) from system.parts WHERE table = 'huge_granularity_small_blocks' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'huge_granularity_small_blocks' and database='test' and active=1;
 
 DROP TABLE IF EXISTS test.huge_granularity_small_blocks;
 
@@ -133,7 +132,7 @@ INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15',
 
 SELECT COUNT(*) FROM test.adaptive_granularity_alter;
 
-SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test' and active=1;
 
 OPTIMIZE TABLE test.adaptive_granularity_alter FINAL;
 
@@ -145,13 +144,13 @@ ATTACH TABLE test.adaptive_granularity_alter;
 
 SELECT COUNT(*) FROM test.adaptive_granularity_alter;
 
-SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test' and active=1;
 
 INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 5, 3000, 4000), ('2018-05-17', 6, 5000, 6000), ('2018-05-19', 42, 42, 42);
 
 SELECT COUNT(*) FROM test.adaptive_granularity_alter;
 
-SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
+SELECT distinct(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test' and active=1;
 
 ALTER TABLE test.adaptive_granularity_alter MODIFY COLUMN v2 String;
 
@@ -165,6 +164,6 @@ OPTIMIZE TABLE test.adaptive_granularity_alter FINAL;
 
 SELECT k, v2 FROM test.adaptive_granularity_alter WHERE k >= 100 OR k = 42;
 
-SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test';
+SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter' and database='test' and active=1;
 
 DROP TABLE IF EXISTS test.adaptive_granularity_alter;

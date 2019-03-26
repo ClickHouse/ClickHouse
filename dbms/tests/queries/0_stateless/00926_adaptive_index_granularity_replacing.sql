@@ -6,21 +6,25 @@ CREATE TABLE test.zero_rows_per_granule (
   k UInt64,
   v1 UInt64,
   v2 Int64
-) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k SETTINGS index_granularity_bytes = 20;
+) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k
+  SETTINGS index_granularity_bytes=20,
+           enable_vertical_merge_algorithm=1,
+           vertical_merge_algorithm_min_rows_to_activate=0,
+           vertical_merge_algorithm_min_columns_to_activate=0;
 
 INSERT INTO test.zero_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
 
-SELECT COUNT(*) FROM test.zero_rows_per_granule ;
+SELECT COUNT(*) FROM test.zero_rows_per_granule;
 
-SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule' and database='test';
-OPTIMIZE TABLE test.zero_rows_per_granule FINAL;
-
+SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule' and database='test' and active=1;
 
 INSERT INTO test.zero_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-19', 8, 7000, 8000);
 
+OPTIMIZE TABLE test.zero_rows_per_granule FINAL;
+
 SELECT COUNT(*) FROM test.zero_rows_per_granule FINAL;
 
-SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule' and database='test';
+SELECT sum(marks) from system.parts WHERE table = 'zero_rows_per_granule' and database='test' and active=1;
 
 DROP TABLE IF EXISTS test.zero_rows_per_granule;
 
@@ -33,7 +37,11 @@ CREATE TABLE test.two_rows_per_granule (
   k UInt64,
   v1 UInt64,
   v2 Int64
-) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k SETTINGS index_granularity_bytes = 40;
+) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k
+  SETTINGS index_granularity_bytes=40,
+           enable_vertical_merge_algorithm=1,
+           vertical_merge_algorithm_min_rows_to_activate=0,
+           vertical_merge_algorithm_min_columns_to_activate=0;
 
 INSERT INTO test.two_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
 
@@ -60,7 +68,11 @@ CREATE TABLE test.four_rows_per_granule (
   k UInt64,
   v1 UInt64,
   v2 Int64
-) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k SETTINGS index_granularity_bytes = 110;
+) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k
+  SETTINGS index_granularity_bytes = 110,
+           enable_vertical_merge_algorithm=1,
+           vertical_merge_algorithm_min_rows_to_activate=0,
+           vertical_merge_algorithm_min_columns_to_activate=0;
 
 INSERT INTO test.four_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
 
@@ -100,7 +112,11 @@ CREATE TABLE test.huge_granularity_small_blocks (
   k UInt64,
   v1 UInt64,
   v2 Int64
-) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k SETTINGS index_granularity_bytes = 1000000;
+) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k
+  SETTINGS index_granularity_bytes=1000000,
+           enable_vertical_merge_algorithm=1,
+           vertical_merge_algorithm_min_rows_to_activate=0,
+           vertical_merge_algorithm_min_columns_to_activate=0;
 
 INSERT INTO test.huge_granularity_small_blocks (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
 
@@ -116,7 +132,7 @@ ATTACH TABLE test.huge_granularity_small_blocks;
 
 OPTIMIZE TABLE test.huge_granularity_small_blocks FINAL;
 
-SELECT COUNT(*) FROM test.huge_granularity_small_blocks;
+SELECT COUNT(*) FROM test.huge_granularity_small_blocks FINAL;
 
 SELECT distinct(marks) from system.parts WHERE table = 'huge_granularity_small_blocks' and database='test' and active=1;
 
@@ -132,7 +148,11 @@ CREATE TABLE test.adaptive_granularity_alter (
   k UInt64,
   v1 UInt64,
   v2 Int64
-) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k SETTINGS index_granularity_bytes = 110;
+) ENGINE ReplacingMergeTree() PARTITION BY toYYYYMM(p) ORDER BY k
+  SETTINGS index_granularity_bytes=110,
+           enable_vertical_merge_algorithm=1,
+           vertical_merge_algorithm_min_rows_to_activate=0,
+           vertical_merge_algorithm_min_columns_to_activate=0;
 
 INSERT INTO test.adaptive_granularity_alter (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
 
