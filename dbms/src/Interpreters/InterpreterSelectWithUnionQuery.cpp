@@ -11,6 +11,9 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
 
+#include <Processors/Sources/NullSource.h>
+#include <Processors/QueryPipeline.h>
+
 
 namespace DB
 {
@@ -220,6 +223,33 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     BlockIO res;
     res.in = result_stream;
     return res;
+}
+
+
+QueryPipeline InterpreterSelectWithUnionQuery::executeWithProcessors()
+{
+    QueryPipeline main_pipeline;
+    std::vector<QueryPipeline> pipelines;
+    bool has_main_pipeline = false;
+
+    for (auto & interpreter : nested_interpreters)
+    {
+        if (!has_main_pipeline)
+        {
+            has_main_pipeline = true;
+            main_pipeline = interpreter->executeWithProcessors();
+        }
+        else
+            pipelines.emplace_back(interpreter->executeWithProcessors());
+    }
+
+    if (!has_main_pipeline)
+        main_pipeline.init({ std::make_shared<NullSource>(getSampleBlock()) });
+
+    if (!pipelines.empty())
+        main_pipeline.unitePipelines(std::move(pipelines), context);
+
+    return main_pipeline;
 }
 
 

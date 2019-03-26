@@ -31,6 +31,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Compression/CompressionFactory.h>
 
+#include <Processors/Formats/LazyOutputFormat.h>
+
 #include "TCPHandler.h"
 
 
@@ -198,6 +200,8 @@ void TCPHandler::runImpl()
             /// Does the request require receive data from client?
             if (state.need_receive_data_for_insert)
                 processInsertQuery(global_settings);
+            else if (state.io.pipeline.initialized())
+                processOrdinaryQueryWithProcessors(query_context.getSettingsRef().max_threads);
             else
                 processOrdinaryQuery();
 
@@ -435,9 +439,9 @@ void TCPHandler::processOrdinaryQuery()
               */
             if (!block && !isQueryCancelled())
             {
-                sendTotals();
-                sendExtremes();
-                sendProfileInfo();
+                sendTotals(state.io.in->getTotals());
+                sendExtremes(state.io.in->getExtremes());
+                sendProfileInfo(state.io.in->getProfileInfo());
                 sendProgress();
                 sendLogs();
             }
@@ -449,6 +453,84 @@ void TCPHandler::processOrdinaryQuery()
 
         async_in.readSuffix();
     }
+
+    state.io.onFinish();
+}
+
+void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
+{
+    auto & pipeline = state.io.pipeline;
+
+    /// Send header-block, to allow client to prepare output format for data to send.
+    {
+        auto & header = pipeline.getHeader();
+
+        if (header)
+            sendData(header);
+    }
+
+    auto lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
+    pipeline.setOutput(lazy_format);
+
+    ThreadPool pool(1, 1, 1);
+    pool.schedule([&]()
+    {
+        pipeline.execute(num_threads);
+    });
+
+    while (true)
+    {
+        Block block;
+
+        while (true)
+        {
+            if (isQueryCancelled())
+            {
+                /// A packet was received requesting to stop execution of the request.
+                /// TODO
+                break;
+            }
+            else
+            {
+                if (after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+                {
+                    /// Some time passed and there is a progress.
+                    after_send_progress.restart();
+                    sendProgress();
+                }
+
+                sendLogs();
+
+                if ((block = lazy_format->getBlock(query_context.getSettingsRef().interactive_delay / 1000)))
+                    break;
+
+                if (lazy_format->isFinished())
+                    break;
+            }
+        }
+
+        /** If data has run out, we will send the profiling data and total values to
+          * the last zero block to be able to use
+          * this information in the suffix output of stream.
+          * If the request was interrupted, then `sendTotals` and other methods could not be called,
+          *  because we have not read all the data yet,
+          *  and there could be ongoing calculations in other threads at the same time.
+          */
+        if (!block && !isQueryCancelled())
+        {
+            sendTotals(lazy_format->getTotals());
+            sendExtremes(lazy_format->getExtremes());
+            sendProfileInfo(lazy_format->getProfileInfo());
+            sendProgress();
+            sendLogs();
+        }
+
+        sendData(block);
+        if (!block)
+            break;
+    }
+
+    async_in.readSuffix();
 
     state.io.onFinish();
 }
@@ -483,18 +565,16 @@ void TCPHandler::processTablesStatusRequest()
 }
 
 
-void TCPHandler::sendProfileInfo()
+void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
-    state.io.in->getProfileInfo().write(*out);
+    info.write(*out);
     out->next();
 }
 
 
-void TCPHandler::sendTotals()
+void TCPHandler::sendTotals(const Block & totals)
 {
-    const Block & totals = state.io.in->getTotals();
-
     if (totals)
     {
         initBlockOutput(totals);
@@ -509,10 +589,8 @@ void TCPHandler::sendTotals()
 }
 
 
-void TCPHandler::sendExtremes()
+void TCPHandler::sendExtremes(const Block & extremes)
 {
-    Block extremes = state.io.in->getExtremes();
-
     if (extremes)
     {
         initBlockOutput(extremes);

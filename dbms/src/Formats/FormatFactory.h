@@ -23,6 +23,9 @@ class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 
+class IProcessor;
+using ProcessorPtr = std::shared_ptr<IProcessor>;
+
 class IInputFormat;
 class IOutputFormat;
 
