@@ -340,6 +340,7 @@ template <typename Impl>
 struct MultiSearchImpl
 {
     using ResultType = UInt8;
+    static constexpr bool is_using_hyperscan = false;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
@@ -355,6 +356,7 @@ template <typename Impl>
 struct MultiSearchFirstPositionImpl
 {
     using ResultType = UInt64;
+    static constexpr bool is_using_hyperscan = false;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
@@ -374,6 +376,7 @@ template <typename Impl>
 struct MultiSearchFirstIndexImpl
 {
     using ResultType = UInt64;
+    static constexpr bool is_using_hyperscan = false;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
@@ -610,6 +613,7 @@ struct MultiMatchAnyImpl
 {
     static_assert(static_cast<int>(FindAny) + static_cast<int>(FindAnyIndex) == 1);
     using ResultType = Type;
+    static constexpr bool is_using_hyperscan = true;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
