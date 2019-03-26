@@ -656,18 +656,17 @@ void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added,
 };
 
 template <typename Map>
-void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset [[maybe_unused]], Join::ASOFTimeType asof_key)
+bool addFoundRowAsof(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset [[maybe_unused]], Join::ASOFTimeType asof_key)
 {
-    if ( auto v = mapped.find_asof(asof_key) ) {
+    if ( auto v = mapped.find_asof(asof_key) )
+    {
         std::pair<Join::ASOFTimeType, Join::RowRef> res = *v;
 //            std::cout << "Adder::addFound" << " to_add" << num_columns_to_add << " i=" << i << " asof_key=" << asof_key << " found=" << res.first << std::endl;
         added.appendFromBlock(*res.second.block, res.second.row_num);
+        return true;
     }
-    else
-    {
-//            std::cout << "Adder::addFound" << " not found in map" << num_columns_to_add << " i=" << i << " asof_key=" << asof_key << std::endl;
-        added.appendDefaultRow();
-    }
+//    std::cout << "Adder::addFound" << " not found in map" << num_columns_to_add << " i=" << i << " asof_key=" << asof_key << std::endl;
+    return false;
 }
 
 template <bool _add_missing>
@@ -679,6 +678,7 @@ void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & cur
         ++current_offset;
     }
 }
+
 
 /// Joins right table columns which indexes are present in right_indexes using specified map.
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
@@ -710,17 +710,24 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
             if (find_result.isFound())
             {
-
                 auto & mapped = find_result.getMapped();
 
-                if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof) {
-                    assert(!spl.asof_columns.empty());
-                    assert(!spl.asof_sizes.empty());
+                if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+                {
                     Join::AsofGetterType asof_getter(spl.asof_columns, spl.asof_sizes, nullptr);
                     auto asof_key = asof_getter.getKey(i, pool);
+                    bool actually_found = addFoundRowAsof<Map>(mapped, added_columns, current_offset, asof_key);
 
-                    addFoundRow<STRICTNESS, Map>(mapped, added_columns, current_offset, asof_key);
-                } else {
+                    if (actually_found)
+                    {
+                        filter[i] = 1;
+                        mapped.setUsed();
+                    }
+                    else
+                        addNotFoundRow<_add_missing>(added_columns, current_offset);
+                }
+                else
+                {
                     filter[i] = 1;
                     mapped.setUsed();
                     addFoundRow<STRICTNESS, Map>(mapped, added_columns, current_offset);
