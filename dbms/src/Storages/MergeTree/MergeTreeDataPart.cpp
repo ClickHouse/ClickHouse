@@ -519,7 +519,6 @@ void MergeTreeDataPart::loadIndexGranularity()
     if (!granularity_info.is_adaptive)
     {
         std::cerr << "(1)SET MARKS SIZE FOR:" << marks_file_path  << " TO:" << granularity_info.mark_size_in_bytes << std::endl;
-        /// TODO(alesap) Replace hardcoded numbers to something better
         size_t marks_count = marks_file_size / granularity_info.mark_size_in_bytes;
         std::cerr << "Marks file size:" << marks_file_size << " Marks count:" << marks_count << std::endl;
         index_granularity.resizeWithFixedGranularity(marks_count, granularity_info.fixed_index_granularity); /// all the same
@@ -538,11 +537,13 @@ void MergeTreeDataPart::loadIndexGranularity()
         if (index_granularity.getMarksCount() * granularity_info.mark_size_in_bytes != marks_file_size)
             throw Exception("Cannot read all marks from file " + marks_file_path, ErrorCodes::CANNOT_READ_ALL_DATA);
     }
+    index_granularity.setInitialized();
 }
 
 void MergeTreeDataPart::loadIndex()
 {
-    if (index_granularity.empty())
+    /// It can be empty in case of mutations
+    if (!index_granularity.isInitialized())
         throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
 
     size_t key_size = storage.primary_key_columns.size();

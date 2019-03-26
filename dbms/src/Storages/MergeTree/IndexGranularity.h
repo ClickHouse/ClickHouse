@@ -10,6 +10,7 @@ class IndexGranularity
 private:
     std::vector<size_t> marks_to_rows;
     size_t total_rows = 0;
+    bool initialized = false;
 
 public:
     IndexGranularity() = default;
@@ -34,7 +35,15 @@ public:
     {
         return marks_to_rows.empty();
     }
+    bool isInitialized() const
+    {
+        return initialized;
+    }
 
+    void setInitialized()
+    {
+        initialized = true;
+    }
     void appendMark(size_t rows_count);
     void resizeWithFixedGranularity(size_t size, size_t fixed_granularity);
 };
