@@ -265,6 +265,8 @@ public:
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
+    OutputFormatPtr getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const;
+
     InterserverIOHandler & getInterserverIOHandler();
 
     /// How other servers can access this for downloading replicated data.

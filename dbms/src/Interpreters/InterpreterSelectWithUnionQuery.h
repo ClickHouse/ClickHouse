@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
 
+#include <Processors/QueryPipeline.h>
 
 namespace DB
 {
@@ -30,6 +31,9 @@ public:
 
     /// Execute the query without union of streams.
     BlockInputStreams executeWithMultipleStreams();
+
+    QueryPipeline executeWithProcessors() override;
+    bool canExecuteWithProcessors() const override { return true; }
 
     Block getSampleBlock();
 

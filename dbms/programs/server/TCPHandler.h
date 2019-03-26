@@ -140,6 +140,8 @@ private:
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
 
+    void processOrdinaryQueryWithProcessors(size_t num_threads);
+
     void processTablesStatusRequest();
 
     void sendHello();
@@ -150,9 +152,9 @@ private:
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
-    void sendProfileInfo();
-    void sendTotals();
-    void sendExtremes();
+    void sendProfileInfo(const BlockStreamProfileInfo & info);
+    void sendTotals(const Block & totals);
+    void sendExtremes(const Block & extremes);
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();

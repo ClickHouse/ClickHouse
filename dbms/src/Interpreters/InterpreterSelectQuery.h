@@ -10,6 +10,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <Processors/QueryPipeline.h>
 
 namespace Poco { class Logger; }
 
@@ -78,6 +79,9 @@ public:
     /// Execute the query and return multuple streams for parallel processing.
     BlockInputStreams executeWithMultipleStreams();
 
+    QueryPipeline executeWithProcessors() override;
+    bool canExecuteWithProcessors() const override { return true; }
+
     Block getSampleBlock();
 
     void ignoreWithTotals();
@@ -129,6 +133,7 @@ private:
 
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
+    void executeImpl(QueryPipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
     struct AnalysisResult
     {
@@ -179,6 +184,9 @@ private:
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
                              const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
 
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPipeline & pipeline,
+                             const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
+
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
@@ -196,6 +204,22 @@ private:
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
+    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
+    void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
+    void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
+    void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeOrder(QueryPipeline & pipeline);
+    void executeMergeSorted(QueryPipeline & pipeline);
+    void executePreLimit(QueryPipeline & pipeline);
+    void executeLimitBy(QueryPipeline & pipeline);
+    void executeLimit(QueryPipeline & pipeline);
+    void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
+    void executeExtremes(QueryPipeline & pipeline);
+    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+
     /// If pipeline has several streams with different headers, add ConvertingBlockInputStream to first header.
     void unifyStreams(Pipeline & pipeline);
 
@@ -206,6 +230,8 @@ private:
     };
 
     void executeRollupOrCube(Pipeline & pipeline, Modificator modificator);
+
+    void executeRollupOrCube(QueryPipeline & pipeline, Modificator modificator);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *

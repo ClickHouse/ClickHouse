@@ -3,6 +3,8 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
+#include <Processors/QueryPipeline.h>
+
 
 namespace DB
 {
@@ -19,6 +21,8 @@ struct BlockIO
 
     BlockInputStreamPtr in;
     BlockOutputStreamPtr out;
+
+    QueryPipeline pipeline;
 
     /// Callbacks for query logging could be set here.
     std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
