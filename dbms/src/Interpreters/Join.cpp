@@ -120,7 +120,8 @@ Join::Type Join::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_siz
 }
 
 
-struct ASOFSplit {
+struct ASOFSplit
+{
     ColumnRawPtrs key_columns;
     Sizes key_sizes;
 
@@ -129,12 +130,14 @@ struct ASOFSplit {
 };
 
 template<ASTTableJoin::Strictness STRICTNESS>
-ASOFSplit split_asof_columns(const ColumnRawPtrs & key_columns, const Sizes & key_sizes) {
+ASOFSplit split_asof_columns(const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
+{
     ASOFSplit spl;
     spl.key_columns = key_columns;
     spl.key_sizes = key_sizes;
 
-    if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof) {
+    if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+    {
         spl.asof_columns.push_back(spl.key_columns.back());
         spl.key_columns.pop_back();
 
@@ -277,19 +280,23 @@ void Join::setSampleBlock(const Block & block)
             key_columns[i] = &static_cast<const ColumnNullable &>(*key_columns[i]).getNestedColumn();
     }
 
-    if(strictness == ASTTableJoin::Strictness::Asof) {
-        if( kind != ASTTableJoin::Kind::Left) {
+    if (strictness == ASTTableJoin::Strictness::Asof)
+    {
+        if (kind != ASTTableJoin::Kind::Left)
+        {
             throw Exception("ASOF only supports LEFT as base join", ErrorCodes::NOT_IMPLEMENTED);
         }
 
-        if( key_columns.back()->sizeOfValueIfFixed() != sizeof(ASOFTimeType)) {
+        if (key_columns.back()->sizeOfValueIfFixed() != sizeof(ASOFTimeType))
+        {
             std::string msg = "ASOF join columns need to have size ";
             msg += std::to_string(sizeof(ASOFTimeType));
             throw Exception(msg, ErrorCodes::BAD_TYPE_OF_FIELD);
         }
         key_columns.pop_back();
 
-        if( key_columns.empty() ) {
+        if (key_columns.empty())
+        {
             throw Exception("ASOF join cannot be done without a joining column", ErrorCodes::LOGICAL_ERROR);
         }
 
@@ -341,11 +348,13 @@ void Join::setSampleBlock(const Block & block)
             convertColumnToNullable(sample_block_with_columns_to_add.getByPosition(i));
 }
 
-void Join::TSRowRef::insert(Join::ASOFTimeType t, const Block * block, size_t row_num) {
+void Join::TSRowRef::insert(Join::ASOFTimeType t, const Block * block, size_t row_num)
+{
     ts.insert(std::pair(t, RowRef(block, row_num)));
 }
 
-std::string Join::TSRowRef::dumpStructure() const {
+std::string Join::TSRowRef::dumpStructure() const
+{
     std::stringstream ss;
 
     for (auto const& x : ts)
@@ -355,14 +364,15 @@ std::string Join::TSRowRef::dumpStructure() const {
 
     return ss.str();
 }
-size_t Join::TSRowRef::size() const {
+size_t Join::TSRowRef::size() const
+{
     return ts.size();
 }
-std::optional<std::pair<Join::ASOFTimeType, Join::RowRef>> Join::TSRowRef::find_asof(Join::ASOFTimeType t) const {
+std::optional<std::pair<Join::ASOFTimeType, Join::RowRef>> Join::TSRowRef::find_asof(Join::ASOFTimeType t) const
+{
     auto it = ts.upper_bound(t);
-    if(it == ts.cbegin()) {
+    if (it == ts.cbegin())
         return {};
-    }
     return *(--it);
 }
 
@@ -422,7 +432,8 @@ namespace
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
             typename Map::mapped_type * time_series_map = &emplace_result.getMapped();
 
-            if (emplace_result.isInserted()) {
+            if (emplace_result.isInserted())
+            {
                 time_series_map = new (time_series_map) typename Map::mapped_type();
             }
             auto k = asof_getter.getKey(i, pool);
@@ -445,12 +456,13 @@ namespace
             if (has_null_map && (*null_map)[i])
                 continue;
 
-            if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof) {
+            if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+            {
                 Join::AsofGetterType asof_getter(spl.asof_columns, spl.asof_sizes, nullptr);
                 Inserter<STRICTNESS, Map, KeyGetter>::insert(map, key_getter, asof_getter, stored_block, i, pool);
-            } else {
-                Inserter<STRICTNESS, Map, KeyGetter>::insert(map, key_getter, stored_block, i, pool);
             }
+            else
+                Inserter<STRICTNESS, Map, KeyGetter>::insert(map, key_getter, stored_block, i, pool);
         }
     }
 
@@ -658,7 +670,7 @@ void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added,
 template <typename Map>
 bool addFoundRowAsof(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset [[maybe_unused]], Join::ASOFTimeType asof_key)
 {
-    if ( auto v = mapped.find_asof(asof_key) )
+    if (auto v = mapped.find_asof(asof_key))
     {
         std::pair<Join::ASOFTimeType, Join::RowRef> res = *v;
 //            std::cout << "Adder::addFound" << " to_add" << num_columns_to_add << " i=" << i << " asof_key=" << asof_key << " found=" << res.first << std::endl;
