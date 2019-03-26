@@ -19,12 +19,6 @@
     #include <emmintrin.h>
 #endif
 
-// Allow std::pair copying
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
-
 namespace DB
 {
 
@@ -355,7 +349,4 @@ template class ColumnVector<Int64>;
 template class ColumnVector<Int128>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
-#pragma GCC diagnostic pop
-#endif
 }
