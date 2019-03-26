@@ -116,6 +116,26 @@ protected:
         size_t size() const { return empty() ? 0 : columns->size(); }
     };
 
+    struct MergeStopCondition
+    {
+        std::unordered_map<size_t, size_t> blocks_granularity;
+        bool count_average;
+        size_t max_block_size;
+
+        MergeStopCondition(bool count_average_, size_t max_block_size_)
+            : count_average(count_average_)
+            , max_block_size(max_block_size_)
+        {}
+
+        void incrementRowsCountFromGranularity(size_t granularity)
+        {
+            blocks_granularity[granularity]++;
+        }
+
+        bool checkStop(size_t total_rows) const;
+        bool checkStop() const;
+    };
+
 
     Block readImpl() override;
 

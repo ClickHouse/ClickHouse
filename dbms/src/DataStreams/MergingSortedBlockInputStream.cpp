@@ -133,20 +133,33 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
     }
 }
 
-namespace
+
+bool MergingSortedBlockInputStream::MergeStopCondition::checkStop() const
 {
-size_t getAvgGranularity(const std::unordered_map<size_t, size_t> & rows_granularity, size_t total_rows)
-{
+    size_t total_rows = 0;
     size_t sum = 0;
-    for (const auto & [granularity, rows_num] : rows_granularity)
+    for (const auto & [granularity, rows_count] : blocks_granularity)
     {
-        //std::cerr << "Granularity:" << granularity << " Rows Num:" << rows_num << std::endl;
-        sum += granularity * rows_num;
+        total_rows += rows_count;
+        sum += granularity * rows_count;
     }
-    //std::cerr << "SUM:" << sum << std::endl;
-    //std::cerr << "ANSWER:" << sum / total_rows << std::endl;
-    return sum / total_rows;
+    if (!count_average)
+        return total_rows == max_block_size;
+
+    size_t average = sum / total_rows;
+    return total_rows >= average;
 }
+
+bool MergingSortedBlockInputStream::MergeStopCondition::checkStop(size_t total_rows) const
+{
+    if (!count_average)
+        return total_rows == max_block_size;
+
+    size_t sum = 0;
+    for (const auto & [granularity, rows_count] : blocks_granularity)
+        sum += granularity * rows_count;
+    size_t average = sum / total_rows;
+    return total_rows >= average;
 }
 
 template
@@ -161,7 +174,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 {
     size_t merged_rows = 0;
 
-    std::unordered_map<size_t, size_t> rows_granularity;
+    MergeStopCondition stop_condition(average_block_sizes, max_block_size);
     /** Increase row counters.
       * Return true if it's time to finish generating the current data block.
       */
@@ -176,14 +189,9 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             return true;
         }
 
-        rows_granularity[current_granularity]++;
         ++merged_rows;
-        if (!average_block_sizes)
-            return merged_rows == max_block_size;
-        else
-            return merged_rows >= getAvgGranularity(rows_granularity, merged_rows);
-
-        return false;
+        stop_condition.incrementRowsCountFromGranularity(current_granularity);
+        return stop_condition.checkStop(merged_rows);
     };
 
     /// Take rows in required order and put them into `merged_columns`, while the rows are no more than `max_block_size`
