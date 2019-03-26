@@ -684,7 +684,7 @@ private:
 
         for (size_t i = 0; i < fallback_size; ++i)
             if (auto pos = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end); pos != haystack_end)
-                ans = std::min(ans, callback(haystack, pos));
+                ans = std::min<size_t>(ans, callback(haystack, pos));
 
         /// check if we have one non empty volnitsky searcher
         if (step != std::numeric_limits<size_t>::max())
@@ -700,7 +700,7 @@ private:
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
                         if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
-                            ans = std::min(ans, callback(haystack, res));
+                            ans = std::min<size_t>(ans, callback(haystack, res));
                     }
                 }
             }
