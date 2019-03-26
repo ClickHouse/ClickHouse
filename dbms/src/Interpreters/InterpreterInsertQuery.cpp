@@ -128,7 +128,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.select)
     {
         /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, {}, QueryProcessingStage::Complete, 1};
+        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
 
         res.in = interpreter_select.execute().in;
 

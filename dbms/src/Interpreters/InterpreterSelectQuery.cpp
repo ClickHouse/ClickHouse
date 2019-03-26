@@ -78,13 +78,9 @@ namespace ErrorCodes
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const Names & required_result_column_names,
-    QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_,
-    bool only_analyze_,
-    bool modify_inplace)
-    : InterpreterSelectQuery(
-          query_ptr_, context_, nullptr, nullptr, required_result_column_names, to_stage_, subquery_depth_, only_analyze_, modify_inplace)
+    const SelectQueryOptions & options,
+    const Names & required_result_column_names)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, options, required_result_column_names)
 {
 }
 
@@ -92,23 +88,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const BlockInputStreamPtr & input_,
-    QueryProcessingStage::Enum to_stage_,
-    bool only_analyze_,
-    bool modify_inplace)
-    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, Names{}, to_stage_, 0, only_analyze_, modify_inplace)
-{
-}
+    const SelectQueryOptions & options)
+    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, options.copy().noSubquery())
+{}
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
     const StoragePtr & storage_,
-    QueryProcessingStage::Enum to_stage_,
-    bool only_analyze_,
-    bool modify_inplace)
-    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, Names{}, to_stage_, 0, only_analyze_, modify_inplace)
-{
-}
+    const SelectQueryOptions & options)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, storage_, options.copy().noSubquery())
+{}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
@@ -133,17 +123,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const Context & context_,
     const BlockInputStreamPtr & input_,
     const StoragePtr & storage_,
-    const Names & required_result_column_names,
-    QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_,
-    bool only_analyze_,
-    bool modify_inplace)
+    const SelectQueryOptions & options_,
+    const Names & required_result_column_names)
+    : options(options_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
-    : query_ptr(modify_inplace ? query_ptr_ : query_ptr_->clone())
+    , query_ptr(options.modify_inplace ? query_ptr_ : query_ptr_->clone())
     , context(context_)
-    , to_stage(to_stage_)
-    , subquery_depth(subquery_depth_)
-    , only_analyze(only_analyze_)
     , storage(storage_)
     , input(input_)
     , log(&Logger::get("InterpreterSelectQuery"))
@@ -151,7 +136,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     initSettings();
     const Settings & settings = context.getSettingsRef();
 
-    if (settings.max_subquery_depth && subquery_depth > settings.max_subquery_depth)
+    if (settings.max_subquery_depth && options.subquery_depth > settings.max_subquery_depth)
         throw Exception("Too deep subqueries. Maximum: " + settings.max_subquery_depth.toString(),
             ErrorCodes::TOO_DEEP_SUBQUERIES);
 
@@ -189,7 +174,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         /// Read from subquery.
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze, modify_inplace);
+            table_expression, getSubqueryContext(context), options.subquery(), required_columns);
 
         source_header = interpreter_subquery->getSampleBlock();
     }
@@ -215,13 +200,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         table_lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
 
-    syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
+    syntax_analyzer_result = SyntaxAnalyzer(context, options).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
         query_ptr, syntax_analyzer_result, context, NamesAndTypesList(),
-        NameSet(required_result_column_names.begin(), required_result_column_names.end()), subquery_depth, !only_analyze);
+        NameSet(required_result_column_names.begin(), required_result_column_names.end()),
+        options.subquery_depth, !options.only_analyze);
 
-    if (!only_analyze)
+    if (!options.only_analyze)
     {
         if (query.sample_size() && (input || !storage || !storage->supportsSampling()))
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
@@ -238,7 +224,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 context.addExternalTable(it.first, it.second);
     }
 
-    if (!only_analyze || modify_inplace)
+    if (!options.only_analyze || options.modify_inplace)
     {
         if (query_analyzer->isRewriteSubqueriesPredicate())
         {
@@ -247,11 +233,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                     table_expression,
                     getSubqueryContext(context),
-                    required_columns,
-                    QueryProcessingStage::Complete,
-                    subquery_depth + 1,
-                    only_analyze,
-                    modify_inplace);
+                    options.subquery(),
+                    required_columns);
         }
     }
 
@@ -304,7 +287,7 @@ Block InterpreterSelectQuery::getSampleBlock()
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, only_analyze);
+    executeImpl(pipeline, input, options.only_analyze);
     executeUnion(pipeline);
 
     BlockIO res;
@@ -315,7 +298,7 @@ BlockIO InterpreterSelectQuery::execute()
 BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, only_analyze);
+    executeImpl(pipeline, input, options.only_analyze);
     return pipeline.streams;
 }
 
@@ -325,10 +308,10 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     res.first_stage = from_stage < QueryProcessingStage::WithMergeableState
-        && to_stage >= QueryProcessingStage::WithMergeableState;
+        && options.to_stage >= QueryProcessingStage::WithMergeableState;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
     res.second_stage = from_stage <= QueryProcessingStage::WithMergeableState
-        && to_stage > QueryProcessingStage::WithMergeableState;
+        && options.to_stage > QueryProcessingStage::WithMergeableState;
 
     /** First we compose a chain of actions and remember the necessary steps from it.
         *  Regardless of from_stage and to_stage, we will compose a complete sequence of actions to perform optimization and
@@ -553,16 +536,16 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         expressions = analyzeExpressions(from_stage, false);
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
-            to_stage == QueryProcessingStage::WithMergeableState)
+            options.to_stage == QueryProcessingStage::WithMergeableState)
             throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
 
-        LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
+        LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(options.to_stage));
     }
 
-    if (to_stage > QueryProcessingStage::FetchColumns)
+    if (options.to_stage > QueryProcessingStage::FetchColumns)
     {
         /// Do I need to aggregate in a separate row rows that have not passed max_rows_to_group_by.
         bool aggregate_overflow_row =
@@ -575,7 +558,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         /// Do I need to immediately finalize the aggregate functions after the aggregation?
         bool aggregate_final =
             expressions.need_aggregate &&
-            to_stage > QueryProcessingStage::WithMergeableState &&
+            options.to_stage > QueryProcessingStage::WithMergeableState &&
             !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
         if (expressions.first_stage)
@@ -938,7 +921,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     /// Limitation on the number of columns to read.
     /// It's not applied in 'only_analyze' mode, because the query could be analyzed without removal of unnecessary columns.
-    if (!only_analyze && settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
+    if (!options.only_analyze && settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
         throw Exception("Limit for number of columns to read exceeded. "
             "Requested: " + toString(required_columns.size())
             + ", maximum: " + settings.max_columns_to_read.toString(),
@@ -1000,7 +983,8 @@ void InterpreterSelectQuery::executeFetchColumns(
                 throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
 
             interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                subquery, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+                subquery, getSubqueryContext(context),
+                options.copy().subquery().noModify(), required_columns);
 
             if (query_analyzer->hasAggregation())
                 interpreter_subquery->ignoreWithTotals();
@@ -1057,7 +1041,7 @@ void InterpreterSelectQuery::executeFetchColumns(
               *  additionally on each remote server, because these limits are checked per block of data processed,
               *  and remote servers may process way more blocks of data than are received by initiator.
               */
-            if (to_stage == QueryProcessingStage::Complete)
+            if (options.to_stage == QueryProcessingStage::Complete)
             {
                 limits.min_execution_speed = settings.min_execution_speed;
                 limits.max_execution_speed = settings.max_execution_speed;
@@ -1072,7 +1056,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             {
                 stream->setLimits(limits);
 
-                if (to_stage == QueryProcessingStage::Complete)
+                if (options.to_stage == QueryProcessingStage::Complete)
                     stream->setQuota(quota);
             });
         }
