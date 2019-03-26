@@ -556,6 +556,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
+    std::cerr << "BLOCK ROWS:" << rows << std::endl;
     if (!rows)
         return;
 
@@ -775,8 +776,6 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns)
 {
-    if (index_granularity.empty())
-        throw Exception("Can't write column without information about part index granularity", ErrorCodes::LOGICAL_ERROR);
 }
 
 void MergedColumnOnlyOutputStream::write(const Block & block)

@@ -768,7 +768,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
-            std::cerr << "TOINDEXGRANULARITY EMPTY:" << to.getIndexGranularity().getMarksCount() << std::endl;
+            std::cerr << "TOINDEXGRANULARITY MARKS COUNT:" << to.getIndexGranularity().getMarksCount() << std::endl;
             MergedColumnOnlyOutputStream column_to(
                 data,
                 column_gathered_stream.getHeader(),
