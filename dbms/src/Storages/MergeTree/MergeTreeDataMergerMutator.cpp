@@ -536,8 +536,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
 
-    /// TODO(alesap) fixme to sum of all index_granularity
-    size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity_info.fixed_index_granularity;
+    size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
 
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate);
 

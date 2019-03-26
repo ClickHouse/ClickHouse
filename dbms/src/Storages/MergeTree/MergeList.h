@@ -36,6 +36,7 @@ struct MergeInfo
     UInt64 num_parts;
     UInt64 total_size_bytes_compressed;
     UInt64 total_size_marks;
+    UInt64 total_rows_count;
     UInt64 bytes_read_uncompressed;
     UInt64 bytes_written_uncompressed;
     UInt64 rows_read;
@@ -67,6 +68,7 @@ struct MergeListElement : boost::noncopyable
 
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_marks{};
+    UInt64 total_rows_count{};
     std::atomic<UInt64> bytes_read_uncompressed{};
     std::atomic<UInt64> bytes_written_uncompressed{};
 
