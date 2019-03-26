@@ -19,6 +19,11 @@
     #include <emmintrin.h>
 #endif
 
+// Allow std::pair copying
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
 
 namespace DB
 {
@@ -338,10 +343,6 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
 template class ColumnVector<UInt32>;
