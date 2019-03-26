@@ -420,6 +420,8 @@ namespace ErrorCodes
     extern const int NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA = 443;
     extern const int UNKNOWN_PROTOBUF_FORMAT = 444;
     extern const int CANNOT_MPROTECT = 445;
+    extern const int BROTLI_READ_FAILED = 446;
+    extern const int BROTLI_WRITE_FAILED = 447;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
