@@ -1,8 +1,6 @@
-#include <Functions/FunctionsStringSearch.h>
+#include "FunctionsStringSearch.h"
 
 #include <Columns/ColumnFixedString.h>
-#include <Common/config.h>
-
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/Regexps.h>
@@ -11,12 +9,16 @@
 #include <re2/stringpiece.h>
 #include <Poco/UTF8String.h>
 #include <Common/Volnitsky.h>
-
 #include <algorithm>
 #include <memory>
 
-#ifdef __SSSE3__
-#    include <hs.h>
+#include <Common/config.h>
+#if USE_HYPERSCAN
+#   if __has_include(<hs/hs.h>)
+#       include <hs/hs.h>
+#   else
+#       include <hs.h>
+#   endif
 #endif
 
 #if USE_RE2_ST
@@ -617,7 +619,7 @@ struct MultiMatchAnyImpl
     {
         (void)FindAny;
         (void)FindAnyIndex;
-#ifdef __SSSE3__
+#if USE_HYPERSCAN
         using ScratchPtr = std::unique_ptr<hs_scratch_t, DB::MultiRegexps::HyperscanDeleter<decltype(&hs_free_scratch), &hs_free_scratch>>;
 
         const auto & hyperscan_regex = MultiRegexps::get<FindAnyIndex>(needles);
@@ -670,7 +672,7 @@ struct MultiMatchAnyImpl
                     res[i] = j + 1;
             }
         }
-#endif // __SSSE3__
+#endif // USE_HYPERSCAN
     }
 };
 
