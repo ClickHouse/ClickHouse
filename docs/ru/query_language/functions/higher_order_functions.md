@@ -61,6 +61,7 @@ SELECT
 Вернуть первый элемент массива arr1, для которого функция func возвращает не 0.
 
 ### arrayFirstIndex(func, arr1, ...)
+
 Вернуть индекс первого элемента массива arr1, для которого функция func возвращает не 0.
 
 ### arrayCumSum(\[func,\] arr1, ...)
@@ -98,8 +99,31 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 └────────────────────┘
 ```
 
+`NULL` и `NaN` будут последними в массиве (при этом `NaN` будет перед `NULL`). Например:
+
+``` sql
+SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
+```
+```
+┌─arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
+│ [1,2,3,4,nan,nan,NULL,NULL]                   │
+└───────────────────────────────────────────────┘
+```
+
 ### arrayReverseSort(\[func,\] arr1, ...)
 
 Возвращает отсортированный в нисходящем порядке массив `arr1`. Если задана функция `func`, то порядок сортировки определяется результатом применения функции `func` на элементы массива (массивов).  
+
+`NULL` и `NaN` будут последними в массиве (при этом `NaN` будет перед `NULL`). Например:
+ 
+``` sql
+SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
+```
+```
+┌─arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
+│ [4,3,2,1,nan,nan,NULL,NULL]                          │
+└──────────────────────────────────────────────────────┘
+```
+
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/higher_order_functions/) <!--hide-->
