@@ -195,6 +195,11 @@ struct RadixSortPairIntKeyTraits
 };
 
 
+// Allow std::pair copying
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wclass-memaccess"
+#endif
 template <typename Traits>
 struct RadixSort
 {
@@ -289,7 +294,9 @@ public:
         allocator.deallocate(swap_buffer, size * sizeof(Element));
     }
 };
-
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
+#pragma GCC diagnostic pop
+#endif
 
 template <typename T>
 std::enable_if_t<std::is_unsigned_v<T> && std::is_integral_v<T>, void>
