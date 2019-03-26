@@ -29,7 +29,7 @@ public:
 BrotliReadBuffer::BrotliReadBuffer(ReadBuffer &in_, size_t buf_size, char *existing_memory, size_t alignment)
         : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
         , in(in_)
-        , brotli(new BrotliStateWrapper())
+        , brotli(std::make_unique<BrotliStateWrapper>())
         , in_available(0)
         , in_data(nullptr)
         , out_capacity(0)

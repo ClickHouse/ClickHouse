@@ -26,7 +26,7 @@ public:
 
 BrotliWriteBuffer::BrotliWriteBuffer(WriteBuffer & out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
         : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
-        , brotli(new BrotliStateWrapper())
+        , brotli(std::make_unique<BrotliStateWrapper>())
         , in_available(0)
         , in_data(nullptr)
         , out_capacity(0)
@@ -34,6 +34,7 @@ BrotliWriteBuffer::BrotliWriteBuffer(WriteBuffer & out_, int compression_level, 
         , out(out_)
 {
     BrotliEncoderSetParameter(brotli->state, BROTLI_PARAM_QUALITY, static_cast<uint32_t>(compression_level));
+    // Set LZ77 window size. According to brotli sources default value is 24 (c/tools/brotli.c:81)
     BrotliEncoderSetParameter(brotli->state, BROTLI_PARAM_LGWIN, 24);
 }
 
