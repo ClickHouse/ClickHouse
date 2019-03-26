@@ -556,7 +556,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
-    std::cerr << "BLOCK ROWS:" << rows << std::endl;
+    //std::cerr << "BLOCK ROWS:" << rows << std::endl;
     if (!rows)
         return;
 
@@ -686,7 +686,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
                 else
                 {
-                    limit = index_granularity.getMarkRows(current_mark); /// TODO(alesap)
+                    limit = index_granularity.getMarkRows(current_mark);
                     if (skip_indices_aggregators[i]->empty())
                     {
                         skip_indices_aggregators[i] = index->createIndexAggregator();
@@ -697,6 +697,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
                         writeIntBinary(stream.plain_hashing.count(), stream.marks);
                         writeIntBinary(stream.compressed.offset(), stream.marks);
+                        /// Actually this numbers is redundant, but we have to store them
+                        /// to be compatible with normal .mrk2 file format
+                        if (storage.index_granularity_info.is_adaptive)
+                            writeIntBinary(1UL, stream.marks);
                     }
                 }
 
