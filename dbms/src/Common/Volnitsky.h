@@ -516,7 +516,7 @@ public:
     template <typename ResultType, typename CountCharsCallback>
     void searchFirstPosition(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets, const CountCharsCallback & count_chars_callback, ResultType & ans)
     {
-        auto callback = [this, &count_chars_callback](const UInt8 * haystack, const UInt8 * haystack_end) -> size_t
+        auto callback = [this, &count_chars_callback](const UInt8 * haystack, const UInt8 * haystack_end) -> UInt64
         {
             return this->searchOneFirstPosition(haystack, haystack_end, count_chars_callback);
         };
@@ -676,11 +676,11 @@ private:
     }
 
     template <typename CountCharsCallback>
-    inline size_t searchOneFirstPosition(const UInt8 * haystack, const UInt8 * haystack_end, const CountCharsCallback & callback) const
+    inline UInt64 searchOneFirstPosition(const UInt8 * haystack, const UInt8 * haystack_end, const CountCharsCallback & callback) const
     {
         const size_t fallback_size = fallback_needles.size();
 
-        size_t ans = std::numeric_limits<size_t>::max();
+        UInt64 ans = std::numeric_limits<UInt64>::max();
 
         for (size_t i = 0; i < fallback_size; ++i)
             if (auto pos = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end); pos != haystack_end)
@@ -705,7 +705,7 @@ private:
                 }
             }
         }
-        if (ans == std::numeric_limits<size_t>::max())
+        if (ans == std::numeric_limits<UInt64>::max())
             return 0;
         return ans;
     }

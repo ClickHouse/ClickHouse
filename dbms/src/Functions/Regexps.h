@@ -5,13 +5,17 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
 #include <common/StringRef.h>
-
 #include <memory>
 #include <string>
 #include <vector>
 
-#ifdef __SSSE3__
-#    include <hs.h>
+#include <Common/config.h>
+#if USE_HYPERSCAN
+#   if __has_include(<hs/hs.h>)
+#       include <hs/hs.h>
+#   else
+#       include <hs.h>
+#   endif
 #endif
 
 namespace ProfileEvents
@@ -63,7 +67,7 @@ namespace Regexps
     }
 }
 
-#ifdef __SSSE3__
+#if USE_HYPERSCAN
 
 namespace MultiRegexps
 {
@@ -139,6 +143,6 @@ namespace MultiRegexps
     }
 }
 
-#endif // __SSSE3__
+#endif // USE_HYPERSCAN
 
 }
