@@ -120,56 +120,6 @@ Join::Type Join::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_siz
 }
 
 
-template <typename Maps>
-static void initImpl(Maps & maps, Join::Type type)
-{
-    switch (type)
-    {
-        case Join::Type::EMPTY:            break;
-        case Join::Type::CROSS:            break;
-
-    #define M(TYPE) \
-        case Join::Type::TYPE: maps.TYPE = std::make_unique<typename decltype(maps.TYPE)::element_type>(); break;
-        APPLY_FOR_JOIN_VARIANTS(M)
-    #undef M
-    }
-}
-
-template <typename Maps>
-static size_t getTotalRowCountImpl(const Maps & maps, Join::Type type)
-{
-    switch (type)
-    {
-        case Join::Type::EMPTY:            return 0;
-        case Join::Type::CROSS:            return 0;
-
-    #define M(NAME) \
-        case Join::Type::NAME: return maps.NAME ? maps.NAME->size() : 0;
-        APPLY_FOR_JOIN_VARIANTS(M)
-    #undef M
-    }
-
-    __builtin_unreachable();
-}
-
-template <typename Maps>
-static size_t getTotalByteCountImpl(const Maps & maps, Join::Type type)
-{
-    switch (type)
-    {
-        case Join::Type::EMPTY:            return 0;
-        case Join::Type::CROSS:            return 0;
-
-    #define M(NAME) \
-        case Join::Type::NAME: return maps.NAME ? maps.NAME->getBufferSizeInBytes() : 0;
-        APPLY_FOR_JOIN_VARIANTS(M)
-    #undef M
-    }
-
-    __builtin_unreachable();
-}
-
-
 template <Join::Type type, typename Value, typename Mapped>
 struct KeyGetterForTypeImpl;
 
@@ -227,7 +177,7 @@ void Join::init(Type type_)
     if (kind == ASTTableJoin::Kind::Cross)
         return;
     dispatch(MapInitTag());
-    dispatch([&](auto, auto, auto & map) { initImpl(map, type); });
+    dispatch([&](auto, auto, auto & map) { map.create(type); });
 }
 
 size_t Join::getTotalRowCount() const
@@ -241,7 +191,7 @@ size_t Join::getTotalRowCount() const
     }
     else
     {
-        dispatch([&](auto, auto, auto & map) { res += getTotalRowCountImpl(map, type); });
+        dispatch([&](auto, auto, auto & map) { res += map.getTotalRowCount(type); });
     }
 
     return res;
@@ -258,7 +208,7 @@ size_t Join::getTotalByteCount() const
     }
     else
     {
-        dispatch([&](auto, auto, auto & map) { res += getTotalByteCountImpl(map, type); });
+        dispatch([&](auto, auto, auto & map) { res += map.getTotalByteCountImpl(type); });
         res += pool.size();
     }
 
@@ -526,159 +476,177 @@ bool Join::insertFromBlock(const Block & block)
 
 namespace
 {
-    template <bool fill_left, ASTTableJoin::Strictness STRICTNESS, typename Map>
-    struct Adder;
 
-    template <typename Map>
-    struct Adder<true, ASTTableJoin::Strictness::Any, Map>
+class AddedColumns
+{
+public:
+    using TypeAndNames = std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>>;
+
+    AddedColumns(const Block & sample_block_with_columns_to_add,
+                 const Block & block_with_columns_to_add,
+                 const Block & block, size_t num_columns_to_skip)
     {
-        static void addFound(const typename Map::mapped_type & mapped, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter & filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
-            const std::vector<size_t> & right_indexes)
+        size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
+
+        columns.reserve(num_columns_to_add);
+        type_name.reserve(num_columns_to_add);
+        right_indexes.reserve(num_columns_to_add);
+
+        for (size_t i = 0; i < num_columns_to_add; ++i)
         {
-            filter[i] = 1;
+            const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
 
-            for (size_t j = 0; j < num_columns_to_add; ++j)
-                added_columns[j]->insertFrom(*mapped.block->getByPosition(right_indexes[j]).column, mapped.row_num);
-        }
-
-        static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter & filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/)
-        {
-            filter[i] = 0;
-
-            for (size_t j = 0; j < num_columns_to_add; ++j)
-                added_columns[j]->insertDefault();
-        }
-    };
-
-    template <typename Map>
-    struct Adder<false, ASTTableJoin::Strictness::Any, Map>
-    {
-        static void addFound(const typename Map::mapped_type & mapped, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter & filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
-            const std::vector<size_t> & right_indexes)
-        {
-            filter[i] = 1;
-
-            for (size_t j = 0; j < num_columns_to_add; ++j)
-                added_columns[j]->insertFrom(*mapped.block->getByPosition(right_indexes[j]).column, mapped.row_num);
-        }
-
-        static void addNotFound(size_t /*num_columns_to_add*/, MutableColumns & /*added_columns*/,
-            size_t i, IColumn::Filter & filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/)
-        {
-            filter[i] = 0;
-        }
-    };
-
-    template <bool fill_left, typename Map>
-    struct Adder<fill_left, ASTTableJoin::Strictness::All, Map>
-    {
-        static void addFound(const typename Map::mapped_type & mapped, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter & filter, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
-            const std::vector<size_t> & right_indexes)
-        {
-            filter[i] = 1;
-
-            size_t rows_joined = 0;
-            for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(mapped); current != nullptr; current = current->next)
-            {
-                for (size_t j = 0; j < num_columns_to_add; ++j)
-                    added_columns[j]->insertFrom(*current->block->getByPosition(right_indexes[j]).column.get(), current->row_num);
-
-                ++rows_joined;
-            }
-
-            current_offset += rows_joined;
-            (*offsets)[i] = current_offset;
-        }
-
-        static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter & filter, IColumn::Offset & current_offset, IColumn::Offsets * offsets)
-        {
-            filter[i] = 0;
-
-            if (!fill_left)
-            {
-                (*offsets)[i] = current_offset;
-            }
-            else
-            {
-                ++current_offset;
-                (*offsets)[i] = current_offset;
-
-                for (size_t j = 0; j < num_columns_to_add; ++j)
-                    added_columns[j]->insertDefault();
-            }
-        }
-    };
-
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
-    void NO_INLINE joinBlockImplTypeCase(
-        const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
-        MutableColumns & added_columns, ConstNullMapPtr null_map, IColumn::Filter & filter,
-        std::unique_ptr<IColumn::Offsets> & offsets_to_replicate,
-        const std::vector<size_t> & right_indexes)
-    {
-        IColumn::Offset current_offset = 0;
-        size_t num_columns_to_add = right_indexes.size();
-
-        Arena pool;
-        KeyGetter key_getter(key_columns, key_sizes, nullptr);
-
-        for (size_t i = 0; i < rows; ++i)
-        {
-            if (has_null_map && (*null_map)[i])
-            {
-                Adder<Join::KindTrait<KIND>::fill_left, STRICTNESS, Map>::addNotFound(
-                    num_columns_to_add, added_columns, i, filter, current_offset, offsets_to_replicate.get());
-            }
-            else
-            {
-                auto find_result = key_getter.findKey(map, i, pool);
-
-                if (find_result.isFound())
-                {
-                    auto & mapped = find_result.getMapped();
-                    mapped.setUsed();
-                    Adder<Join::KindTrait<KIND>::fill_left, STRICTNESS, Map>::addFound(
-                        mapped, num_columns_to_add, added_columns, i, filter, current_offset, offsets_to_replicate.get(), right_indexes);
-                }
-                else
-                    Adder<Join::KindTrait<KIND>::fill_left, STRICTNESS, Map>::addNotFound(
-                        num_columns_to_add, added_columns, i, filter, current_offset, offsets_to_replicate.get());
-            }
+            /// Don't insert column if it's in left block or not explicitly required.
+            if (!block.has(src_column.name) && block_with_columns_to_add.has(src_column.name))
+                addColumn(src_column, num_columns_to_skip + i);
         }
     }
 
-    using BlockFilterData = std::pair<
-        std::unique_ptr<IColumn::Filter>,
-        std::unique_ptr<IColumn::Offsets>>;
+    size_t size() const { return columns.size(); }
 
-    template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
-    BlockFilterData joinBlockImplType(
-        const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
-        MutableColumns & added_columns, ConstNullMapPtr null_map, const std::vector<size_t> & right_indexes)
+    ColumnWithTypeAndName moveColumn(size_t i)
     {
-        std::unique_ptr<IColumn::Filter> filter = std::make_unique<IColumn::Filter>(rows);
-        std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
+        return ColumnWithTypeAndName(std::move(columns[i]), type_name[i].first, type_name[i].second);
+    }
 
-        if (STRICTNESS == ASTTableJoin::Strictness::All)
-            offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
+    void appendFromBlock(const Block & block, size_t row_num)
+    {
+        for (size_t j = 0; j < right_indexes.size(); ++j)
+            columns[j]->insertFrom(*block.getByPosition(right_indexes[j]).column, row_num);
+    }
 
-        if (null_map)
-            joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, true>(
-                map, rows, key_columns, key_sizes, added_columns, null_map, *filter,
-                offsets_to_replicate, right_indexes);
-        else
-            joinBlockImplTypeCase<KIND, STRICTNESS, KeyGetter, Map, false>(
-                map, rows, key_columns, key_sizes, added_columns, null_map, *filter,
-                offsets_to_replicate, right_indexes);
+    void appendDefaultRow()
+    {
+        for (size_t j = 0; j < right_indexes.size(); ++j)
+            columns[j]->insertDefault();
+    }
 
-        return {std::move(filter), std::move(offsets_to_replicate)};
+private:
+    TypeAndNames type_name;
+    MutableColumns columns;
+    std::vector<size_t> right_indexes;
+
+    void addColumn(const ColumnWithTypeAndName & src_column, size_t idx)
+    {
+        columns.push_back(src_column.column->cloneEmpty());
+        columns.back()->reserve(src_column.column->size());
+        type_name.emplace_back(src_column.type, src_column.name);
+        right_indexes.push_back(idx);
+    }
+};
+
+template <ASTTableJoin::Strictness STRICTNESS, typename Map>
+void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset [[maybe_unused]])
+{
+    if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
+    {
+        added.appendFromBlock(*mapped.block, mapped.row_num);
+    }
+
+    if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
+    {
+        for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(mapped); current != nullptr; current = current->next)
+        {
+            added.appendFromBlock(*current->block, current->row_num);
+            ++current_offset;
+        }
+    }
+};
+
+template <bool _add_missing>
+void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & current_offset [[maybe_unused]])
+{
+    if constexpr (_add_missing)
+    {
+        added.appendDefaultRow();
+        ++current_offset;
     }
 }
+
+/// Joins right table columns which indexes are present in right_indexes using specified map.
+/// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
+template <bool _add_missing, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool _has_null_map>
+std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
+    const Map & map, size_t rows, KeyGetter & key_getter,
+    AddedColumns & added_columns, ConstNullMapPtr null_map, IColumn::Filter & filter)
+{
+    std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
+    if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
+        offsets_to_replicate = std::make_unique<IColumn::Offsets>(rows);
+
+    IColumn::Offset current_offset = 0;
+    Arena pool;
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (_has_null_map && (*null_map)[i])
+        {
+            addNotFoundRow<_add_missing>(added_columns, current_offset);
+        }
+        else
+        {
+            auto find_result = key_getter.findKey(map, i, pool);
+
+            if (find_result.isFound())
+            {
+                filter[i] = 1;
+                auto & mapped = find_result.getMapped();
+                mapped.setUsed();
+                addFoundRow<STRICTNESS, Map>(mapped, added_columns, current_offset);
+            }
+            else
+                addNotFoundRow<_add_missing>(added_columns, current_offset);
+        }
+
+        if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
+            (*offsets_to_replicate)[i] = current_offset;
+    }
+
+    return offsets_to_replicate;
+}
+
+template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
+IColumn::Filter joinRightColumns(
+    const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
+    AddedColumns & added_columns, ConstNullMapPtr null_map, std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
+{
+    constexpr bool left_or_full = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
+
+    IColumn::Filter filter(rows, 0);
+    KeyGetter key_getter(key_columns, key_sizes, nullptr);
+
+    if (null_map)
+        offsets_to_replicate = joinRightIndexedColumns<left_or_full, STRICTNESS, KeyGetter, Map, true>(
+            map, rows, key_getter, added_columns, null_map, filter);
+    else
+        offsets_to_replicate = joinRightIndexedColumns<left_or_full, STRICTNESS, KeyGetter, Map, false>(
+            map, rows, key_getter, added_columns, null_map, filter);
+
+    return filter;
+}
+
+template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
+IColumn::Filter switchJoinRightColumns(
+    Join::Type type,
+    const Maps & maps_, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
+    AddedColumns & added_columns, ConstNullMapPtr null_map,
+    std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
+{
+    switch (type)
+    {
+    #define M(TYPE) \
+        case Join::Type::TYPE: \
+            return joinRightColumns<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
+                *maps_.TYPE, rows, key_columns, key_sizes, added_columns, null_map, offsets_to_replicate);
+        APPLY_FOR_JOIN_VARIANTS(M)
+    #undef M
+
+        default:
+            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
+    }
+}
+
+} /// nameless
 
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
@@ -714,7 +682,8 @@ void Join::joinBlockImpl(
       * Because if they are constants, then in the "not joined" rows, they may have different values
       *  - default values, which can differ from the values of these constants.
       */
-    if (isRightOrFull(kind))
+    constexpr bool right_or_full = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
+    if constexpr (right_or_full)
     {
         for (size_t i = 0; i < existing_columns; ++i)
         {
@@ -734,68 +703,33 @@ void Join::joinBlockImpl(
       *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
       */
     size_t num_columns_to_skip = 0;
-    if (isRightOrFull(kind))
+    if constexpr (right_or_full)
         num_columns_to_skip = keys_size;
 
     /// Add new columns to the block.
-    size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
-    MutableColumns added_columns;
-    added_columns.reserve(num_columns_to_add);
 
-    std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>> added_type_name;
-    added_type_name.reserve(num_columns_to_add);
+    AddedColumns added(sample_block_with_columns_to_add, block_with_columns_to_add, block, num_columns_to_skip);
 
-    std::vector<size_t> right_indexes;
-    right_indexes.reserve(num_columns_to_add);
-
-    for (size_t i = 0; i < num_columns_to_add; ++i)
-    {
-        const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
-
-        /// Don't insert column if it's in left block or not explicitly required.
-        if (!block.has(src_column.name) && block_with_columns_to_add.has(src_column.name))
-        {
-            added_columns.push_back(src_column.column->cloneEmpty());
-            added_columns.back()->reserve(src_column.column->size());
-            added_type_name.emplace_back(src_column.type, src_column.name);
-            right_indexes.push_back(num_columns_to_skip + i);
-        }
-    }
-
-    std::unique_ptr<IColumn::Filter> filter;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
-    switch (type)
-    {
-    #define M(TYPE) \
-        case Join::Type::TYPE: \
-            std::tie(filter, offsets_to_replicate) = \
-                joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
-                *maps_.TYPE, block.rows(), key_columns, key_sizes, added_columns, null_map, right_indexes); \
-            break;
-        APPLY_FOR_JOIN_VARIANTS(M)
-    #undef M
+    IColumn::Filter filter = switchJoinRightColumns<KIND, STRICTNESS>(
+        type, maps_, block.rows(), key_columns, key_sizes, added, null_map, offsets_to_replicate);
 
-        default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
-    }
+    for (size_t i = 0; i < added.size(); ++i)
+        block.insert(added.moveColumn(i));
 
-    const auto added_columns_size = added_columns.size();
-    for (size_t i = 0; i < added_columns_size; ++i)
-        block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), added_type_name[i].first, added_type_name[i].second));
-
-    if (!filter)
-        throw Exception("No data to filter columns", ErrorCodes::LOGICAL_ERROR);
+    /// Filter & insert missing rows
 
     NameSet needed_key_names_right = requiredRightKeys(key_names_right, columns_added_by_join);
 
-    if (strictness == ASTTableJoin::Strictness::Any)
+    if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
     {
-        if (isInnerOrRight(kind))
+        constexpr bool inner_or_right = static_in_v<KIND, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Right>;
+        if constexpr (inner_or_right)
         {
             /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
             for (size_t i = 0; i < existing_columns; ++i)
-                block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(*filter, -1);
+                block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(filter, -1);
 
             /// Add join key columns from right block if they has different name.
             for (size_t i = 0; i < key_names_right.size(); ++i)
@@ -821,13 +755,13 @@ void Join::joinBlockImpl(
                 if (needed_key_names_right.count(right_name) && !block.has(right_name))
                 {
                     const auto & col = block.getByName(left_name);
-                    auto & column = col.column;
+                    ColumnPtr column = col.column->convertToFullColumnIfConst();
                     MutableColumnPtr mut_column = column->cloneEmpty();
 
-                    for (size_t col_no = 0; col_no < filter->size(); ++col_no)
+                    for (size_t row = 0; row < filter.size(); ++row)
                     {
-                        if ((*filter)[col_no])
-                            mut_column->insertFrom(*column, col_no);
+                        if (filter[row])
+                            mut_column->insertFrom(*column, row);
                         else
                             mut_column->insertDefault();
                     }
@@ -851,22 +785,22 @@ void Join::joinBlockImpl(
             if (needed_key_names_right.count(right_name) && !block.has(right_name))
             {
                 const auto & col = block.getByName(left_name);
-                auto & column = col.column;
+                ColumnPtr column = col.column->convertToFullColumnIfConst();
                 MutableColumnPtr mut_column = column->cloneEmpty();
 
                 size_t last_offset = 0;
-                for (size_t col_no = 0; col_no < column->size(); ++col_no)
+                for (size_t row = 0; row < column->size(); ++row)
                 {
-                    if (size_t to_insert = (*offsets_to_replicate)[col_no] - last_offset)
+                    if (size_t to_insert = (*offsets_to_replicate)[row] - last_offset)
                     {
-                        if (!(*filter)[col_no])
+                        if (!filter[row])
                             mut_column->insertDefault();
                         else
                             for (size_t dup = 0; dup < to_insert; ++dup)
-                                mut_column->insertFrom(*column, col_no);
+                                mut_column->insertFrom(*column, row);
                     }
 
-                    last_offset = (*offsets_to_replicate)[col_no];
+                    last_offset = (*offsets_to_replicate)[row];
                 }
 
                 block.insert({std::move(mut_column), col.type, right_name});
