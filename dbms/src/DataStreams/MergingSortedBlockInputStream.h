@@ -134,6 +134,10 @@ protected:
 
         bool checkStop(size_t total_rows) const;
         bool checkStop() const;
+        bool empty() const
+        {
+            return blocks_granularity.empty();
+        }
     };
 
 
