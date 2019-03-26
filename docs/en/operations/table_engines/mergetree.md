@@ -191,9 +191,7 @@ added dimensions.
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient
 range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER of the sorting key](../../query_language/alter.md) is a
-lightweight operation because when a new column is simultaneously added to the table and to the sorting key
-data parts need not be changed (they remain sorted by the new sorting key expression).
+[ALTER of the sorting key](../../query_language/alter.md) is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts don't need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the just added column, the data at the moment of table modification is sorted by both the old and the new sorting key. 
 
 ### Use of Indexes and Partitions in Queries
 
