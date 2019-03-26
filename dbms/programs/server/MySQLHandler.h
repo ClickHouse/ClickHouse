@@ -2,6 +2,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Core/MySQLProtocol.h>
 #include "IServer.h"
 
 
@@ -22,21 +23,13 @@ public:
 
     void run() final;
 
-    /** Reads one packet, incrementing sequence-id, and returns its payload.
-      *  Currently, whole payload is loaded into memory.
-      */
-    String readPayload();
+    void comQuery(String payload);
 
-    /// Writes packet payload, incrementing sequence-id.
-    void writePayload(std::string_view payload);
-
-    void comQuery(const String & payload);
-
-    void comFieldList(const String & payload);
+    void comFieldList(String payload);
 
     void comPing();
 
-    void comInitDB(const String & payload);
+    void comInitDB(String payload);
 private:
     IServer & server;
     Poco::Logger * log;
@@ -45,8 +38,7 @@ private:
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
-    /// Packet sequence id
-    unsigned char sequence_id = 0;
+    MySQLProtocol::PacketSender packet_sender;
 
     uint32_t connection_id = 0;
 

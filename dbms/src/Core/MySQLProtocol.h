@@ -1,32 +1,48 @@
 #pragma once
 
+#include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <IO/copyData.h>
+#include <Core/Types.h>
 #include <random>
 #include <sstream>
 
 /// Implementation of MySQL wire protocol
 
-namespace DB {
-namespace MySQLProtocol {
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
+}
+
+namespace MySQLProtocol
+{
 
 const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
 const size_t SCRAMBLE_LENGTH = 20;
 const size_t AUTH_PLUGIN_DATA_PART_1_LENGTH = 8;
 const size_t MYSQL_ERRMSG_SIZE = 512;
 
-namespace Authentication {
-    const std::string Native41 = "mysql_native_password";
+namespace Authentication
+{
+    const String ClearText = "mysql_clear_password";
 }
 
-enum CharacterSet {
-    UTF8 = 33
+enum CharacterSet
+{
+    utf8_general_ci = 33,
+    binary = 63
 };
 
-enum StatusFlags {
+enum StatusFlags
+{
     SERVER_SESSION_STATE_CHANGED = 0x4000
 };
 
-enum Capability {
+enum Capability
+{
     CLIENT_CONNECT_WITH_DB = 0x00000008,
     CLIENT_PROTOCOL_41 = 0x00000200,
     CLIENT_TRANSACTIONS = 0x00002000, // TODO
@@ -37,7 +53,8 @@ enum Capability {
     CLIENT_DEPRECATE_EOF = 0x01000000,
 };
 
-enum Command {
+enum Command
+{
     COM_SLEEP = 0x0,
     COM_QUIT = 0x1,
     COM_INIT_DB = 0x2,
@@ -60,7 +77,8 @@ enum Command {
     COM_DAEMON = 0x1d
 };
 
-enum ColumnType {
+enum ColumnType
+{
     MYSQL_TYPE_DECIMAL = 0x00,
     MYSQL_TYPE_TINY = 0x01,
     MYSQL_TYPE_SHORT = 0x02,
@@ -89,63 +107,184 @@ enum ColumnType {
     MYSQL_TYPE_GEOMETRY = 0xff
 };
 
-uint64_t readLenenc(std::istringstream &ss);
 
-std::string writeLenenc(uint64_t x);
-
-void writeLenencStr(std::string &payload, const std::string &s);
-
-
-class ProtocolError : public DB::Exception {
+class ProtocolError : public DB::Exception
+{
 public:
     using Exception::Exception;
 };
 
 
-/// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html
+class WritePacket
+{
+public:
+    virtual String getPayload() const = 0;
+
+    virtual ~WritePacket() = default;
+};
 
 
-class Handshake {
+class ReadPacket
+{
+public:
+    virtual void readPayload(String payload) = 0;
+
+    virtual ~ReadPacket() = default;
+};
+
+
+/* Writes and reads packets, keeping sequence-id.
+ * Throws ProtocolError, if packet with incorrect sequence-id was received.
+ */
+class PacketSender
+{
+public:
+    PacketSender()
+    {}
+
+    PacketSender(std::shared_ptr<ReadBuffer> in, std::shared_ptr<WriteBuffer> out)
+        : in(std::move(in)), out(std::move(out)), sequence_id(0), log(&Poco::Logger::get("MySQLHandler"))
+    {
+    }
+
+    String receivePacketPayload()
+    {
+        WriteBufferFromOwnString buf;
+
+        size_t payload_length = 0;
+        size_t packet_sequence_id = 0;
+
+        // packets which are larger than or equal to 16MB are splitted
+        do
+        {
+            LOG_TRACE(log, "Reading from buffer");
+
+            in->readStrict(reinterpret_cast<char *>(&payload_length), 3);
+
+            if (payload_length > MAX_PACKET_LENGTH)
+            {
+                std::ostringstream tmp;
+                tmp << "Received packet with payload larger than MAX_PACKET_LENGTH: " << payload_length;
+                throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+            }
+
+            in->readStrict(reinterpret_cast<char *>(&packet_sequence_id), 1);
+
+            if (packet_sequence_id != sequence_id)
+            {
+                std::ostringstream tmp;
+                tmp << "Received packet with wrong sequence-id: " << packet_sequence_id << ". Expected: " << sequence_id << '.';
+                throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+            }
+            sequence_id++;
+
+            LOG_TRACE(log, "Received packet. Sequence-id: " << packet_sequence_id << ", payload length: " << payload_length);
+
+            copyData(*in, static_cast<WriteBuffer &>(buf), payload_length);
+        } while (payload_length == MAX_PACKET_LENGTH);
+
+        return std::move(buf.str());
+    }
+
+    template<typename T>
+    T receivePacket()
+    {
+        static_assert(std::is_base_of<ReadPacket, T>());
+        T packet;
+        packet.readPayload(std::move(receivePacketPayload()));
+        return packet;
+    }
+
+    template<class T>
+    void sendPacket(const T & packet, bool flush = false)
+    {
+        static_assert(std::is_base_of<WritePacket, T>());
+        String payload = packet.getPayload();
+        size_t pos = 0;
+        do
+        {
+            size_t payload_length = std::min(payload.length() - pos, MAX_PACKET_LENGTH);
+
+            LOG_TRACE(log, "Writing packet of size " << payload_length << " with sequence-id " << static_cast<int>(sequence_id));
+            LOG_TRACE(log, packetToText(payload));
+
+            out->write(reinterpret_cast<const char *>(&payload_length), 3);
+            out->write(reinterpret_cast<const char *>(&sequence_id), 1);
+            out->write(payload.data() + pos, payload_length);
+
+            pos += payload_length;
+            sequence_id++;
+        } while (pos < payload.length());
+
+        LOG_TRACE(log, "Packet was sent.");
+
+        if (flush)
+        {
+            out->next();
+        }
+    }
+
+    /// Sets sequence-id to 0. Must be called before each command phase.
+    void resetSequenceId();
+
+private:
+    /// Converts packet to text. Is used for debug output.
+    static String packetToText(String payload);
+
+    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<WriteBuffer> out;
+    size_t sequence_id;
+    Poco::Logger * log;
+};
+
+
+uint64_t readLengthEncodedNumber(std::istringstream & ss);
+
+String writeLengthEncodedNumber(uint64_t x);
+
+void writeLengthEncodedString(String & payload, const String & s);
+
+void writeNulTerminatedString(String & payload, const String & s);
+
+
+class Handshake : public WritePacket
+{
     int protocol_version = 0xa;
-    std::string server_version;
+    String server_version;
     uint32_t connection_id;
     uint32_t capability_flags;
     uint8_t character_set;
     uint32_t status_flags;
-    std::string auth_plugin_data;
+    String auth_plugin_data;
 public:
-    explicit Handshake(uint32_t connection_id, std::string server_version)
-        : protocol_version(0xa)
-        , server_version(std::move(server_version))
-        , connection_id(connection_id)
-        , capability_flags(
-            CLIENT_PROTOCOL_41
-            | CLIENT_SECURE_CONNECTION
-            | CLIENT_PLUGIN_AUTH
-            | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
-            | CLIENT_CONNECT_WITH_DB
-            | CLIENT_DEPRECATE_EOF)
-        , character_set(63)
-        , status_flags(0) {
+    explicit Handshake(uint32_t connection_id, String server_version)
+        : protocol_version(0xa), server_version(std::move(server_version)), connection_id(connection_id), capability_flags(
+        CLIENT_PROTOCOL_41
+        | CLIENT_SECURE_CONNECTION
+        | CLIENT_PLUGIN_AUTH
+        | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
+        | CLIENT_CONNECT_WITH_DB
+        | CLIENT_DEPRECATE_EOF), character_set(63), status_flags(0)
+    {
         auth_plugin_data.resize(SCRAMBLE_LENGTH);
 
         auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-        std::default_random_engine generator (static_cast<unsigned int>(seed));
+        std::default_random_engine generator(static_cast<unsigned int>(seed));
 
         std::uniform_int_distribution<char> distribution(0);
-        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++) {
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+        {
             auth_plugin_data[i] = distribution(generator);
         }
     }
 
-    std::string getPayload() {
-        std::string result;
+    String getPayload() const override
+    {
+        String result;
         result.append(1, protocol_version);
-        result.append(server_version);
-        result.append(1, 0x0);
+        writeNulTerminatedString(result, server_version);
         result.append(reinterpret_cast<const char *>(&connection_id), 4);
-        result.append(auth_plugin_data.substr(0, AUTH_PLUGIN_DATA_PART_1_LENGTH));
-        result.append(1, 0x0);
+        writeNulTerminatedString(result, auth_plugin_data.substr(0, AUTH_PLUGIN_DATA_PART_1_LENGTH));
         result.append(reinterpret_cast<const char *>(&capability_flags), 2);
         result.append(reinterpret_cast<const char *>(&character_set), 1);
         result.append(reinterpret_cast<const char *>(&status_flags), 2);
@@ -154,23 +293,25 @@ public:
         result.append(1, 0x0);
         result.append(10, 0x0);
         result.append(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, SCRAMBLE_LENGTH - AUTH_PLUGIN_DATA_PART_1_LENGTH));
-        result.append(Authentication::Native41);
+        result.append(Authentication::ClearText);
         result.append(1, 0x0);
         return result;
     }
 };
 
-class HandshakeResponse {
+class HandshakeResponse : public ReadPacket
+{
 public:
     uint32_t capability_flags;
     uint32_t max_packet_size;
     uint8_t character_set;
-    std::string username;
-    std::string auth_response;
-    std::string database;
-    std::string auth_plugin_name;
+    String username;
+    String auth_response;
+    String database;
+    String auth_plugin_name;
 
-    void readPayload(const std::string & s) {
+    void readPayload(String s) override
+    {
         std::istringstream ss(s);
 
         ss.readsome(reinterpret_cast<char *>(&capability_flags), 4);
@@ -180,86 +321,137 @@ public:
 
         std::getline(ss, username, static_cast<char>(0x0));
 
-        if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA) {
-            auto len = readLenenc(ss);
+        if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
+        {
+            auto len = readLengthEncodedNumber(ss);
             auth_response.resize(len);
             ss.read(auth_response.data(), static_cast<std::streamsize>(len));
-        } else if (capability_flags & CLIENT_SECURE_CONNECTION) {
+        }
+        else if (capability_flags & CLIENT_SECURE_CONNECTION)
+        {
             uint8_t len;
             ss.read(reinterpret_cast<char *>(&len), 1);
             auth_response.resize(len);
             ss.read(auth_response.data(), len);
-        } else {
+        }
+        else
+        {
             std::getline(ss, auth_response, static_cast<char>(0x0));
         }
 
-        if (capability_flags & CLIENT_CONNECT_WITH_DB) {
+        if (capability_flags & CLIENT_CONNECT_WITH_DB)
+        {
             std::getline(ss, database, static_cast<char>(0x0));
         }
 
-        if (capability_flags & CLIENT_PLUGIN_AUTH) {
+        if (capability_flags & CLIENT_PLUGIN_AUTH)
+        {
             std::getline(ss, auth_plugin_name, static_cast<char>(0x0));
         }
     }
 };
 
-class OK_Packet {
+class AuthSwitchRequest : public WritePacket
+{
+    String plugin_name;
+    String auth_plugin_data;
+public:
+    AuthSwitchRequest(String plugin_name, String auth_plugin_data)
+        : plugin_name(std::move(plugin_name)), auth_plugin_data(std::move(auth_plugin_data))
+    {
+    }
+
+    String getPayload() const override
+    {
+        String result;
+        result.append(1, 0xfe);
+        result.append(plugin_name);
+        result.append(auth_plugin_data);
+        return result;
+    }
+};
+
+/// Packet with a single null-terminated string. Is used for clear text authentication.
+class NullTerminatedString : public ReadPacket
+{
+public:
+    String value;
+
+    void readPayload(String s) override
+    {
+        if (s.length() == 0 || s.back() != 0)
+        {
+            throw ProtocolError("String is not null terminated.", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+        }
+        value = s;
+        value.pop_back();
+    }
+};
+
+class OK_Packet : public WritePacket
+{
     uint8_t header;
     uint32_t capabilities;
     uint64_t affected_rows;
     uint64_t last_insert_id;
     int16_t warnings = 0;
     uint32_t status_flags;
-    std::string info;
-    std::string session_state_changes;
+    String info;
+    String session_state_changes;
 public:
     OK_Packet(uint8_t header, uint32_t capabilities, uint64_t affected_rows, uint64_t last_insert_id, uint32_t status_flags,
-              int16_t warnings, std::string session_state_changes)
-        : header(header)
-        , capabilities(capabilities)
-        , affected_rows(affected_rows)
-        , last_insert_id(last_insert_id)
-        , warnings(warnings)
-        , status_flags(status_flags)
-        , session_state_changes(std::move(session_state_changes))
+              int16_t warnings, String session_state_changes)
+        : header(header), capabilities(capabilities), affected_rows(affected_rows), last_insert_id(last_insert_id), warnings(warnings),
+          status_flags(status_flags), session_state_changes(std::move(session_state_changes))
     {
     }
 
-    std::string getPayload() {
-        std::string result;
+    String getPayload() const override
+    {
+        String result;
         result.append(1, header);
-        result.append(writeLenenc(affected_rows));
-        result.append(writeLenenc(last_insert_id));
+        result.append(writeLengthEncodedNumber(affected_rows));
+        result.append(writeLengthEncodedNumber(last_insert_id));
 
-        if (capabilities & CLIENT_PROTOCOL_41) {
+        if (capabilities & CLIENT_PROTOCOL_41)
+        {
             result.append(reinterpret_cast<const char *>(&status_flags), 2);
             result.append(reinterpret_cast<const char *>(&warnings), 2);
-        } else if (capabilities & CLIENT_TRANSACTIONS) {
+        }
+        else if (capabilities & CLIENT_TRANSACTIONS)
+        {
             result.append(reinterpret_cast<const char *>(&status_flags), 2);
         }
 
-        if (capabilities & CLIENT_SESSION_TRACK) {
-            result.append(writeLenenc(info.length()));
+        if (capabilities & CLIENT_SESSION_TRACK)
+        {
+            result.append(writeLengthEncodedNumber(info.length()));
             result.append(info);
-            if (status_flags & SERVER_SESSION_STATE_CHANGED) {
-                result.append(writeLenenc(session_state_changes.length()));
+            if (status_flags & SERVER_SESSION_STATE_CHANGED)
+            {
+                result.append(writeLengthEncodedNumber(session_state_changes.length()));
                 result.append(session_state_changes);
             }
-        } else {
+        }
+        else
+        {
             result.append(info);
         }
         return result;
     }
 };
 
-class EOF_Packet {
+class EOF_Packet : public WritePacket
+{
     int warnings;
     int status_flags;
 public:
-    EOF_Packet(int warnings, int status_flags): warnings(warnings), status_flags(status_flags) {}
+    EOF_Packet(int warnings, int status_flags) : warnings(warnings), status_flags(status_flags)
+    {}
 
-    std::string getPayload() {
-        std::string result;
+    String getPayload() const override
+    {
+        String result;
         result.append(1, 0xfe); // EOF header
         result.append(reinterpret_cast<const char *>(&warnings), 2);
         result.append(reinterpret_cast<const char *>(&status_flags), 2);
@@ -267,21 +459,20 @@ public:
     }
 };
 
-class ERR_Packet {
+class ERR_Packet : public WritePacket
+{
     int error_code;
-    std::string sql_state;
-    std::string error_message;
+    String sql_state;
+    String error_message;
 public:
-    ERR_Packet(int error_code, std::string sql_state, std::string error_message)
-        : error_code(error_code)
-        , sql_state(std::move(sql_state))
-        , error_message(std::move(error_message))
+    ERR_Packet(int error_code, String sql_state, String error_message)
+        : error_code(error_code), sql_state(std::move(sql_state)), error_message(std::move(error_message))
     {
     }
 
-    std::string getPayload()
+    String getPayload() const override
     {
-        std::string result;
+        String result;
         result.append(1, 0xff);
         result.append(reinterpret_cast<const char *>(&error_code), 2);
         result.append("#", 1);
@@ -291,12 +482,13 @@ public:
     }
 };
 
-class ColumnDefinition {
-    std::string schema;
-    std::string table;
-    std::string org_table;
-    std::string name;
-    std::string org_name;
+class ColumnDefinition : public WritePacket
+{
+    String schema;
+    String table;
+    String org_table;
+    String name;
+    String org_name;
     size_t next_length = 0x0c;
     uint16_t character_set;
     uint32_t column_length;
@@ -304,40 +496,46 @@ class ColumnDefinition {
     uint16_t flags;
     uint8_t decimals = 0x00;
 public:
-    explicit ColumnDefinition(
-        std::string schema,
-        std::string table,
-        std::string org_table,
-        std::string name,
-        std::string org_name,
+    ColumnDefinition(
+        String schema,
+        String table,
+        String org_table,
+        String name,
+        String org_name,
         uint16_t character_set,
         uint32_t column_length,
         ColumnType column_type,
         uint16_t flags,
         uint8_t decimals)
 
-        : schema(std::move(schema))
-        , table(std::move(table))
-        , org_table(std::move(org_table))
-        , name(std::move(name))
-        , org_name(std::move(org_name))
-        , character_set(character_set)
-        , column_length(column_length)
-        , column_type(column_type)
-        , flags(flags)
-        , decimals(decimals)
+        : schema(std::move(schema)), table(std::move(table)), org_table(std::move(org_table)), name(std::move(name)),
+          org_name(std::move(org_name)), character_set(character_set), column_length(column_length), column_type(column_type), flags(flags),
+          decimals(decimals)
     {
     }
 
-    std::string getPayload() {
-        std::string result;
-        writeLenencStr(result, "def"); // always "def"
-        writeLenencStr(result, schema);
-        writeLenencStr(result, table);
-        writeLenencStr(result, org_table);
-        writeLenencStr(result, name);
-        writeLenencStr(result, org_name);
-        result.append(writeLenenc(next_length));
+    /// Should be used when column metadata (original name, table, original table, database) is unknown.
+    ColumnDefinition(
+        String name,
+        uint16_t character_set,
+        uint32_t column_length,
+        ColumnType column_type,
+        uint16_t flags,
+        uint8_t decimals)
+        : ColumnDefinition("", "", "", std::move(name), "", character_set, column_length, column_type, flags, decimals)
+    {
+    }
+
+    String getPayload() const override
+    {
+        String result;
+        writeLengthEncodedString(result, "def"); /// always "def"
+        writeLengthEncodedString(result, ""); /// schema
+        writeLengthEncodedString(result, ""); /// table
+        writeLengthEncodedString(result, ""); /// org_table
+        writeLengthEncodedString(result, name);
+        writeLengthEncodedString(result, ""); /// org_name
+        result.append(writeLengthEncodedNumber(next_length));
         result.append(reinterpret_cast<const char *>(&character_set), 2);
         result.append(reinterpret_cast<const char *>(&column_length), 4);
         result.append(reinterpret_cast<const char *>(&column_type), 1);
@@ -348,11 +546,12 @@ public:
     }
 };
 
-class ComFieldList {
+class ComFieldList : public ReadPacket
+{
 public:
-    std::string table, field_wildcard;
+    String table, field_wildcard;
 
-    void readPayload(const std::string & payload)
+    void readPayload(String payload)
     {
         std::istringstream ss(payload);
         ss.ignore(1); // command byte
@@ -361,6 +560,43 @@ public:
     }
 };
 
+class LengthEncodedNumber : public WritePacket
+{
+    uint64_t value;
+public:
+    LengthEncodedNumber(uint64_t value): value(value)
+    {
+    }
+
+    String getPayload() const override
+    {
+        return writeLengthEncodedNumber(value);
+    }
+};
+
+class ResultsetRow : public WritePacket
+{
+    std::vector<String> columns;
+public:
+    ResultsetRow()
+    {
+    }
+
+    void appendColumn(String value)
+    {
+        columns.emplace_back(std::move(value));
+    }
+
+    String getPayload() const override
+    {
+        String result;
+        for (const String & column : columns)
+        {
+            writeLengthEncodedString(result, column);
+        }
+        return result;
+    }
+};
 
 }
 }
