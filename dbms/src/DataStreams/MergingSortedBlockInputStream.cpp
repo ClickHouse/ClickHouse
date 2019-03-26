@@ -146,6 +146,9 @@ bool MergingSortedBlockInputStream::MergeStopCondition::checkStop() const
     if (!count_average)
         return total_rows == max_block_size;
 
+    if (total_rows == 0)
+        return false;
+
     size_t average = sum / total_rows;
     return total_rows >= average;
 }
@@ -154,6 +157,9 @@ bool MergingSortedBlockInputStream::MergeStopCondition::checkStop(size_t total_r
 {
     if (!count_average)
         return total_rows == max_block_size;
+
+    if (total_rows == 0)
+        return false;
 
     size_t sum = 0;
     for (const auto & [granularity, rows_count] : blocks_granularity)
