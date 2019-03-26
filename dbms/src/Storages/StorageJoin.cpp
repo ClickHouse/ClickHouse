@@ -333,7 +333,8 @@ private:
                         columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
                 ++rows_added;
             }
-            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof) {
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+            {
                 throw Exception("ASOF join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
             }
             else
