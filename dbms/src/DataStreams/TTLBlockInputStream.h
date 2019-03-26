@@ -2,6 +2,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Core/Block.h>
 
 #include <common/DateLUT.h>
 
@@ -43,6 +44,13 @@ private:
     size_t rows_removed = 0;
     Logger * log;
     DateLUTImpl date_lut;
+
+    struct DefaultWithResultColumn
+    {
+        ExpressionActionsPtr expression;
+        String result_column;
+    };
+    std::unordered_map<String, DefaultWithResultColumn> default_expressions;
 
 private:
     /// Removes values with expired ttl and computes new min_ttl and empty_columns for part

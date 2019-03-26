@@ -1,5 +1,8 @@
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
+#include <Interpreters/evaluateMissingDefaults.h>
+#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 
 namespace DB
 {
@@ -24,12 +27,21 @@ TTLBlockInputStream::TTLBlockInputStream(
 {
     children.push_back(input_);
 
+    const auto & column_defaults = storage.getColumns().getDefaults();
     for (const auto & [name, ttl_info] : old_ttl_infos.columns_ttl)
     {
         if (ttl_info.min <= current_time)
         {
             new_ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
+
+            if (column_defaults.count(name))
+            {
+                auto ast = column_defaults.at(name).expression;
+                auto syntax_result = SyntaxAnalyzer(storage.global_context).analyze(ast, storage.getColumns().getAllPhysical());
+                auto expr = ExpressionAnalyzer{ast, syntax_result, storage.global_context}.getActions(true);
+                default_expressions.emplace(name, DefaultWithResultColumn{expr, ast->getColumnName()});
+            }
         }
         else
             new_ttl_infos.columns_ttl.emplace(name, ttl_info);
@@ -132,6 +144,15 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         if (!block.has(ttl_entry.result_column))
             ttl_entry.expression->execute(block);
 
+        const IColumn * default_column = nullptr;
+        auto it = default_expressions.find(name);
+        if (it != default_expressions.end())
+        {
+            if (!block.has(it->second.result_column))
+                it->second.expression->execute(block);
+            default_column = block.getByName(it->second.result_column).column.get();
+        }
+
         auto & column_with_type = block.getByName(name);
         const IColumn * values_column = column_with_type.column.get();
         MutableColumnPtr result_column = values_column->cloneEmpty();
@@ -145,7 +166,12 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
             UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
 
             if (cur_ttl <= current_time)
-                result_column->insertDefault();
+            {
+                if (default_column)
+                    result_column->insertFrom(*default_column, i);
+                else
+                    result_column->insertDefault();
+            }
             else
             {
                 new_ttl_info.update(cur_ttl);
@@ -157,6 +183,10 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
     }
 
     for (const auto & elem : storage.ttl_entries_by_name)
+        if (block.has(elem.second.result_column))
+            block.erase(elem.second.result_column);
+
+    for (const auto & elem : default_expressions)
         if (block.has(elem.second.result_column))
             block.erase(elem.second.result_column);
 }

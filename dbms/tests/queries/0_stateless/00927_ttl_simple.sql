@@ -4,7 +4,7 @@ create table test.ttl (d DateTime, a Int ttl d + interval 1 second, b Int ttl d 
 insert into test.ttl values (now(), 1, 2);
 insert into test.ttl values (now(), 3, 4);
 select sleep(1.1);
-optimize table test.ttl;
+optimize table test.ttl final;
 select a, b from test.ttl;
 
 drop table if exists test.ttl;
@@ -13,7 +13,7 @@ create table test.ttl (d DateTime, a Int ttl d + interval 1 DAY) engine = MergeT
 insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 1);
 insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 2);
 insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 3);
-optimize table test.ttl;
+optimize table test.ttl final;
 select * from test.ttl order by d;
 
 drop table if exists test.ttl;
@@ -22,7 +22,7 @@ create table test.ttl (d DateTime, a Int) engine = MergeTree order by tuple() pa
 insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 1);
 insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 2);
 insert into test.ttl values (toDateTime('2100-10-10 00:00:00'), 3);
-optimize table test.ttl;
+optimize table test.ttl final;
 select * from test.ttl order by d;
 
 drop table if exists test.ttl;
@@ -30,7 +30,7 @@ drop table if exists test.ttl;
 create table test.ttl (d Date, a Int) engine = MergeTree order by a partition by toDayOfMonth(d) ttl d + interval 1 day;
 insert into test.ttl values (toDate('2000-10-10'), 1);
 insert into test.ttl values (toDate('2100-10-10'), 2);
-optimize table test.ttl;
+optimize table test.ttl final;
 select * from test.ttl order by d;
 
 set send_logs_level = 'none';
