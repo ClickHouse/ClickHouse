@@ -22,8 +22,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 MergeTreeData::DataPart::Checksums checkDataPart(
     const String & full_path,
     const IndexGranularity & index_granularity,
-    const size_t fixed_granularity,
-    const String marks_file_extension,
+    const String & marks_file_extension,
     bool require_checksums,
     const DataTypes & primary_key_data_types,    /// Check the primary key. If it is not necessary, pass an empty array.
     const MergeTreeIndices & indices = {}, /// Check skip indices

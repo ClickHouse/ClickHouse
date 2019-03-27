@@ -297,11 +297,11 @@ public:
         /// Is stride in rows between marks non fixed?
         bool is_adaptive;
 
-        /// Approximate bytes size of one granule
-        size_t index_granularity_bytes;
-
         /// Fixed size in rows of one granule if index_granularity_bytes is zero
         size_t fixed_index_granularity;
+
+        /// Approximate bytes size of one granule
+        size_t index_granularity_bytes;
 
         IndexGranularityInfo(const MergeTreeSettings & settings);
 

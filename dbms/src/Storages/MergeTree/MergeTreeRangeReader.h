@@ -98,11 +98,12 @@ public:
 
         size_t last_mark = 0;
 
-        DelayedStream stream;
         MergeTreeReader * merge_tree_reader = nullptr;
         const IndexGranularity * index_granularity = nullptr;
 
         size_t current_mark_index_granularity = 0;
+
+        DelayedStream stream;
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;

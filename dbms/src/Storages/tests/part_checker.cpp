@@ -76,7 +76,7 @@ int main(int argc, char ** argv)
         auto marks_file_extension = "." + mrk_file_path.getExtension();
         bool require_checksums = parse<bool>(argv[2]);
 
-        checkDataPart(full_path, adaptive_granularity, fixed_granularity, marks_file_extension, require_checksums, {});
+        checkDataPart(full_path, adaptive_granularity, marks_file_extension, require_checksums, {});
     }
     catch (...)
     {
