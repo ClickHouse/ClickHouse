@@ -819,21 +819,28 @@ void InterpreterSelectQuery::executeFetchColumns(
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
 
-    /// Assumes `storage` is set and table filter is not empty.
-    auto getFilterActions = [&](ExpressionActionsPtr & actions) -> String
+    /// Assumes `storage` is set and the table filter is not empty.
+    auto getFilterActions = [&](ExpressionActionsPtr & actions, const Names & required_columns_after_filter) -> String
     {
         ParserSelectQuery parser;
         const auto & db_name = storage->getDatabaseName();
         const auto & table_name = storage->getTableName();
         const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
-        String query_str = "select " + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
+
+        /// Keep columns that are required after the filter actions.
+        String columns;
+        for (const auto & column_name : required_columns_after_filter)
+        {
+            columns += column_name + ',';
+        }
+
+        String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
         auto query_ast = parseQuery(parser, query_str, 0);
 
         auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
         ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
         ExpressionActionsChain chain(context);
         analyzer.appendSelect(chain, false);
-        // analyzer.appendProjectResult(chain);
         chain.finalize();
         actions = chain.getLastActions();
 
@@ -842,13 +849,15 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     if (storage)
     {
+        auto initial_required_columns = required_columns;
+
         /// Populate initial required columns with the columns from filter expression.
         /// Setup `prewhere_info` with filter actions.
         /// XXX: looks like PREWHERE required columns are prepopulated somewhere else.
         if (context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
         {
             prewhere_info = std::make_shared<PrewhereInfo>();
-            prewhere_info->prewhere_column_name = getFilterActions(prewhere_info->prewhere_actions);
+            prewhere_info->prewhere_column_name = getFilterActions(prewhere_info->prewhere_actions, initial_required_columns);
             prewhere_info->remove_prewhere_column = true;
             auto required_columns_from_filter = prewhere_info->prewhere_actions->getRequiredColumns();
 
