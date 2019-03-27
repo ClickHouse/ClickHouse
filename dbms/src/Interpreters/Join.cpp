@@ -47,6 +47,39 @@ static std::unordered_map<String, DataTypePtr> requiredRightKeys(const Names & k
     return required;
 }
 
+static void convertColumnToNullable(ColumnWithTypeAndName & column)
+{
+    if (column.type->isNullable())
+        return;
+
+    column.type = makeNullable(column.type);
+    if (column.column)
+        column.column = makeNullable(column.column);
+}
+
+/// Converts column to nullable if needed. No backward convertion.
+static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable)
+{
+    if (nullable)
+        convertColumnToNullable(column);
+    return std::move(column);
+}
+
+static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable, const ColumnUInt8 & negative_null_map)
+{
+    if (nullable)
+    {
+        convertColumnToNullable(column);
+        if (negative_null_map.size())
+        {
+            MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
+            static_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
+            column.column = std::move(mutable_column);
+        }
+    }
+    return std::move(column);
+}
+
 
 Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
     ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_)
@@ -212,26 +245,6 @@ size_t Join::getTotalByteCount() const
 
     return res;
 }
-
-
-static void convertColumnToNullable(ColumnWithTypeAndName & column)
-{
-    if (column.type->isNullable())
-        return;
-
-    column.type = makeNullable(column.type);
-    if (column.column)
-        column.column = makeNullable(column.column);
-}
-
-/// Converts column to nullable if needed. No backward convertion.
-ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable)
-{
-    if (nullable)
-        convertColumnToNullable(column);
-    return std::move(column);
-}
-
 
 void Join::setSampleBlock(const Block & block)
 {
@@ -721,7 +734,7 @@ void Join::joinBlockImpl(
 
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
-    IColumn::Filter filter = switchJoinRightColumns<KIND, STRICTNESS>(
+    IColumn::Filter row_filter = switchJoinRightColumns<KIND, STRICTNESS>(
         type, maps_, block.rows(), key_columns, key_sizes, added, null_map, offsets_to_replicate);
 
     for (size_t i = 0; i < added.size(); ++i)
@@ -733,6 +746,12 @@ void Join::joinBlockImpl(
 
     if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
     {
+        /// Some trash to represent IColumn::Filter as ColumnUInt8 needed for ColumnNullable::applyNullMap()
+        auto null_map_filter_ptr = ColumnUInt8::create();
+        ColumnUInt8 & null_map_filter = static_cast<ColumnUInt8 &>(*null_map_filter_ptr);
+        null_map_filter.getData().swap(row_filter);
+        const IColumn::Filter & filter = null_map_filter.getData();
+
         constexpr bool inner_or_right = static_in_v<KIND, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Right>;
         if constexpr (inner_or_right)
         {
@@ -779,7 +798,7 @@ void Join::joinBlockImpl(
                     }
 
                     bool is_nullable = use_nulls || it->second->isNullable();
-                    block.insert(correctNullability({std::move(mut_column), col.type, right_name}, is_nullable));
+                    block.insert(correctNullability({std::move(mut_column), col.type, right_name}, is_nullable, null_map_filter));
                 }
             }
         }
@@ -808,7 +827,7 @@ void Join::joinBlockImpl(
                 {
                     if (size_t to_insert = (*offsets_to_replicate)[row] - last_offset)
                     {
-                        if (!filter[row])
+                        if (!row_filter[row])
                             mut_column->insertDefault();
                         else
                             for (size_t dup = 0; dup < to_insert; ++dup)
@@ -818,6 +837,7 @@ void Join::joinBlockImpl(
                     last_offset = (*offsets_to_replicate)[row];
                 }
 
+                /// TODO: null_map_filter
                 bool is_nullable = (use_nulls && left_or_full) || it->second->isNullable();
                 block.insert(correctNullability({std::move(mut_column), col.type, right_name}, is_nullable));
             }
