@@ -90,13 +90,13 @@ INSERT INTO test.four_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 5, 1
 
 INSERT INTO test.four_rows_per_granule (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-19', 8, 7000, 8000);
 
+SELECT sleep(0.5) Format Null;
+
 OPTIMIZE TABLE test.four_rows_per_granule FINAL;
 
 DETACH TABLE test.four_rows_per_granule;
 
 ATTACH TABLE test.four_rows_per_granule;
-
-SELECT sleep(1) Format Null;
 
 SELECT COUNT(*) FROM test.four_rows_per_granule FINAL;
 

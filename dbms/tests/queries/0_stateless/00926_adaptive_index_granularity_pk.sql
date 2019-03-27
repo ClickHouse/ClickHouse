@@ -6,7 +6,6 @@ CREATE TABLE test.pk (d Date DEFAULT '2000-01-01', x DateTime, y UInt64, z UInt6
 
 INSERT INTO test.pk (x, y, z) VALUES (1, 11, 1235), (2, 11, 4395), (3, 22, 3545), (4, 22, 6984), (5, 33, 4596), (61, 11, 4563), (62, 11, 4578), (63, 11, 3572), (64, 22, 5786), (65, 22, 5786), (66, 22, 2791), (67, 22, 2791), (121, 33, 2791), (122, 33, 2791), (123, 33, 1235), (124, 44, 4935), (125, 44, 4578), (126, 55, 5786), (127, 55, 2791), (128, 55, 1235);
 
-SET min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
 SET max_block_size = 1;
 
 -- Test inferred limit
@@ -30,6 +29,7 @@ SELECT toUInt32(x), y, z FROM test.pk WHERE x BETWEEN toDateTime(60) AND toDateT
 
 DROP TABLE test.pk;
 
+SET max_block_size = 8192;
 SELECT '----00607----';
 
 SET max_rows_to_read = 0;
@@ -52,7 +52,6 @@ DROP TABLE test.merge_tree;
 
 SELECT '----00804----';
 
-SET max_rows_to_read = 0;
 DROP TABLE IF EXISTS test.large_alter_table;
 DROP TABLE IF EXISTS test.store_of_hash;
 
@@ -60,7 +59,7 @@ CREATE TABLE test.large_alter_table (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
     id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
     data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4)
-) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity_bytes=19;
+) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity_bytes=40;
 
 INSERT INTO test.large_alter_table SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
 
@@ -82,4 +81,3 @@ SELECT COUNT(DISTINCT hash) FROM test.store_of_hash;
 
 DROP TABLE IF EXISTS test.large_alter_table;
 DROP TABLE IF EXISTS test.store_of_hash;
-
