@@ -66,7 +66,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 - `SAMPLE BY` — 用于抽样的表达式。
 
     如果要用抽样表达式，主键中必须包含这个表达式。例如：
-    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))` 。
 
 - `SETTINGS` — 影响 `MergeTree` 性能的额外参数：
     - `index_granularity` — 索引粒度。即索引中相邻『标记』间的数据行数。默认值，8192 。该列表中所有可用的参数可以从这里查看 [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h) 。
@@ -119,11 +119,11 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 
 表由按主键排序的数据 *分片* 组成。
 
-当数据被插入到表中时，会分成数据分片并按主键的字典序排序。例如，如果主键是 `(CounterID, Date)` ，分片中的数据按 `CounterID` 排序，具有相同 `CounterID` 的部分按 `Date` 排序。
+当数据被插入到表中时，会分成数据分片并按主键的字典序排序。例如，主键是 `(CounterID, Date)` 时，分片中数据按 `CounterID` 排序，具有相同 `CounterID` 的部分按 `Date` 排序。
 
-属于不同分区的数据还会被分成不同的分片，ClickHouse 通过在后台合并数据分片以便更高效存储。属于不同分区的数据分片不会合并。这个合并机制并不保证相同主键的所有行都会合并到同一个数据分片中。
+不同分区的数据会被分成不同的分片，ClickHouse 在后台合并数据分片以便更高效存储。不会合并来自不同分区的数据分片。这个合并机制并不保证相同主键的所有行都会合并到同一个数据分片中。
 
-对于每个数据分片，ClickHouse会创建一个索引文件，索引文件包含每个索引行（『标记』）的主键值。索引行号定义为 `n * index_granularity` 。最大的 `n` 等于总行数除以 `index_granularity` 的值的整数部分。对于每列，跟主键相同的索引行处也会写入『标记』。这些『标记』让你可以直接找到数据所在的列。
+ClickHouse 会为每个数据分片创建一个索引文件，索引文件包含每个索引行（『标记』）的主键值。索引行号定义为 `n * index_granularity` 。最大的 `n` 等于总行数除以 `index_granularity` 的值的整数部分。对于每列，跟主键相同的索引行处也会写入『标记』。这些『标记』让你可以直接找到数据所在的列。
 
 你可以只用一单一大表并不断地一块块往里面加入数据 – `MergeTree` 引擎的就是为了这样的场景。
 
@@ -150,7 +150,7 @@ Date:           [111111122222223333123321111122222233321111111212222222311111222
 
 稀疏索引会引起额外的数据读取。当读取主键单个区间范围的数据时，每个数据块中最多会多读 `index_granularity * 2` 行额外的数据。大部分情况下，当 `index_granularity = 8192` 时，ClickHouse的性能并不会降级。
 
-稀疏索引让你能操作有巨量行数的表。因为这些索引是常驻内存（RAM）的。
+稀疏索引让你能操作有巨量行的表。因为这些索引是常驻内存（RAM）的。
 
 ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主键的行。
 
@@ -161,8 +161,8 @@ ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主
 - 改善索引的性能。
 
     如果当前主键是 `(a, b)` ，然后加入另一个 `c` 列，满足下面条件时，则可以改善性能：
-    - 有些查询带有列 `c` 的条件。
-    - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这种的情况很普遍。换言之，就是加入另一列时，可以让你的查询略过很长的数据范围。
+    - 有带有 `c` 列条件的查询。
+    - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这种的情况很普遍。换言之，就是加入另一列后，可以让你的查询略过很长的数据范围。
 
 - 改善数据压缩.
 
@@ -178,7 +178,7 @@ ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主
 ### 选择跟排序键不一样主键
 
 指定一个跟排序键（用于排序数据分片中行的表达式）
-不一样的主键（用于计算每个写到索引文件的标记值的表达式）是可以的。
+不一样的主键（用于计算写到索引文件的每个标记值的表达式）是可以的。
 这种情况下，主键表达式元组必须是排序键表达式元组的一个前缀。
 
 当使用 [SummingMergeTree](summingmergetree.md) 和
@@ -194,13 +194,13 @@ ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主
 
 [排序键的修改](../../query_language/alter.md) 是轻量级的操作，
 因为当一个新列同时被加入到表里和排序键后时，
-数据分片并不需要修改（他们在新的排序键表达式上依然保持有序）
+数据分片并不需要修改（他们在新的排序键表达式上依然保持有序）。
 
 ### 索引和分区在查询中的应用
 
 对于 `SELECT` 查询，ClickHouse 分析是否可以使用索引。如果 `WHERE/PREWHERE` 子句具有下面这些表达式（作为谓词链接一子项或整个）则可以使用索引：基于主键或分区键的列或表达式的部分的等式或比较运算表达式；基于主键或分区键的列或表达式的固定前缀的 `IN` 或 `LIKE` 表达式；基于主键或分区键的列的某些函数；基于主键或分区键的表达式的逻辑表达式。 <!-- It is too hard for me to translate this section as the original text completely. So I did it with my own understanding. If you have good idea, please help me. -->
 
-因为，在索引键的一个或多个区间上快速地跑查询都是可能的。这个例子中，在指定的跟踪标签；指定的标签和日期范围；指定的标签和日期；指定多个标签和日期范围等运行查询，都会非常快。
+因此，在索引键的一个或多个区间上快速地跑查询都是可能的。下面例子中，指定标签；指定标签和日期范围；指定标签和日期；指定多个标签和日期范围等运行查询，都会非常快。
 
 当引擎配置如下时：
 
@@ -216,9 +216,9 @@ SELECT count() FROM table WHERE EventDate = toDate(now()) AND (CounterID = 34 OR
 SELECT count() FROM table WHERE ((EventDate >= toDate('2014-01-01') AND EventDate <= toDate('2014-01-31')) OR EventDate = toDate('2014-05-01')) AND CounterID IN (101500, 731962, 160656) AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
 ```
 
-ClickHouse 会依据主键索引剪掉不符合的数据，依据按月分区的分区键剪掉那些没有符合数据的分区。
+ClickHouse 会依据主键索引剪掉不符合的数据，依据按月分区的分区键剪掉那些不包含符合数据的分区。
 
-上文这个查询展示了，即使在复杂表达式的情况下，索引依然被使用了。但因为读表的操作是组织有序的，所以，这样使用索引并不会比全表扫描慢。
+上文的查询显示，即使索引用于复杂表达式。因为读表操作是组织好的，所以，使用索引不会比完整扫描慢。
 
 下面这个例子中，不会使用索引。
 
@@ -226,9 +226,9 @@ ClickHouse 会依据主键索引剪掉不符合的数据，依据按月分区的
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-要检查 ClickHouse 执行一个查询时能是用索引，使用设置 [force_index_by_date](../settings/settings.md#settings-force_index_by_date) 和 [force_primary_key](../settings/settings.md) 。
+要检查 ClickHouse 执行一个查询时能否使用索引，可设置 [force_index_by_date](../settings/settings.md#settings-force_index_by_date) 和 [force_primary_key](../settings/settings.md) 。
 
-按月分区的键使得只需读取那些包含了符合范围数据的数据块。这种情况下，数据块会包含很多日期（最多一整月）的数据。在数据块中，数据按主键排序，主键第一列可能并不是日期。因此，查询时只有指定日期条件，不指定主键前缀的相关条件会使得读取超过这个日期范围的数据。
+按月分区的分区键是只能读取包含适当范围日期的数据块。这种情况下，数据块会包含很多天（最多整月）的数据。在块中，数据按主键排序，主键第一列可能不包含日期。因此，仅使用日期而没有带主键前缀条件的查询将会导致读取超过这个日期范围。
 
 
 ### 跳数索引（分段汇总索引，实验性的）
@@ -242,8 +242,8 @@ INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 
 `*MergeTree` 家族的表都能指定跳数索引。
 
-这些索引汇总一些关于块上的指定表达式的信息，这些信息由 `granularity_value` 颗粒组成（粒度大小用表引擎里 `index_granularity` 的指定）。
-之后，这些汇总信息有助于跳过那些 `where` 语句里不能满足的大数据块，从而降低 `SELECT` 查询时从磁盘读取的总数据量，
+这些索引是由数据块按粒度分割后的每部分在指定表达式上汇总信息 `granularity_value` 组成（粒度大小用表引擎里 `index_granularity` 的指定）。
+这些汇总信息有助于用 `where` 语句跳过大片不满足的数据，从而减少 `SELECT` 查询从磁盘读取的数据量，
 
 
 示例
@@ -260,7 +260,7 @@ CREATE TABLE table_name
 ...
 ```
 
-ClickHouse 可以使用示例中的索引来减少在以下查询中从磁盘读取的数据量。
+上例中的索引能让 ClickHouse 执行下面这些查询时减少读取数据量。
 ```sql
 SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
@@ -269,21 +269,21 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 #### 索引的可用类型
 
 * `minmax`
-存储指定表达式的极值（如果表达式是 `tuple` ，那么会存储 `tuple` 中每个元素的极值），使用这样的存储信息来跳过数据块的方式跟主键类似。
+存储指定表达式的极值（如果表达式是 `tuple` ，则存储 `tuple` 中每个元素的极值），这些信息用于跳过数据块，类似主键。
 
 * `set(max_rows)`
-存储指定表达式的惟一值（不超过 `max_rows` 个，`max_rows=0` 则表示『没有限制』）。使用这些可以检查 `WHERE` 表达式是否满足某个数据块。
+存储指定表达式的惟一值（不超过 `max_rows` 个，`max_rows=0` 则表示『无限制』）。这些信息可用于检查 `WHERE` 表达式是否满足某个数据块。
 
 * `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
-存储包含数据块中所有 n 元短语的 [布隆过滤器](https://en.wikipedia.org/wiki/Bloom_filter) 。可能在字符串上使用。
-可以用于优化 `equals` ， `like` 和 `in` 表达式的性能。
+存储包含数据块中所有 n 元短语的 [布隆过滤器](https://en.wikipedia.org/wiki/Bloom_filter) 。只可用在字符串上。
+可用于优化 `equals` ， `like` 和 `in` 表达式的性能。
 `n` -- 短语长度。
-`size_of_bloom_filter_in_bytes` -- 布隆过滤器大小，单位字节。（这里可以指定一个比较大的值，例如256或512，因为它会被压缩得很好）
-`number_of_hash_functions` -- 用在布隆过滤器中的哈希函数的个数。
-`random_seed` -- hash函数的随机种子。
+`size_of_bloom_filter_in_bytes` -- 布隆过滤器大小，单位字节。（因为压缩得好，可以指定比较大的值，如256或512）。
+`number_of_hash_functions` -- 布隆过滤器中使用的 hash 函数的个数。
+`random_seed` -- hash 函数的随机种子。
 
 * `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
-跟 `ngrambf_v1` 差不多，不同于 ngrams 存储任意指定长度的短词。它存储被字母数据分割的序列。
+跟 `ngrambf_v1` 类似，不同于 ngrams 存储字符串指定长度的所有片段。它只存储被非字母数据字符分割的片段。
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -294,7 +294,7 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 ## 并发数据访问
 
-对于表的并发访问，我们使用多版本机制。换言之，当同时读和更新表时，从查询时当前的一组分片中读取数据。没有冗长的的锁。插入不会妨碍读取操作。
+应对表的并发访问，我们使用多版本机制。换言之，当同时读和更新表时，数据从当前查询到的一组分片中读取。没有冗长的的锁。插入不会阻碍读取。
 
 对表的读操作是自动并行的。
 
