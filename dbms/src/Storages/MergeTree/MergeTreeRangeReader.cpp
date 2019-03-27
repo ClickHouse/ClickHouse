@@ -16,6 +16,7 @@ MergeTreeRangeReader::DelayedStream::DelayedStream(
         size_t from_mark, MergeTreeReader * merge_tree_reader)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
         , merge_tree_reader(merge_tree_reader)
+        , index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , continue_reading(false), is_finished(false)
 {
 }
@@ -24,7 +25,7 @@ size_t MergeTreeRangeReader::DelayedStream::position() const
 {
     size_t num_rows_before_current_mark = 0;
     for (size_t i = 0; i < current_mark; ++i)
-        num_rows_before_current_mark += merge_tree_reader->data_part->index_granularity.getMarkRows(i);
+        num_rows_before_current_mark += index_granularity->getMarkRows(i);
 
     return num_rows_before_current_mark + current_offset + num_delayed_rows;
 }
@@ -55,7 +56,7 @@ size_t MergeTreeRangeReader::DelayedStream::read(Block & block, size_t from_mark
 {
     size_t num_rows_before_from_mark = 0;
     for (size_t i = 0; i < from_mark; ++i)
-        num_rows_before_from_mark += merge_tree_reader->data_part->index_granularity.getMarkRows(i);
+        num_rows_before_from_mark += index_granularity->getMarkRows(i);
 
     /// We already stand accurately in required position,
     /// so because stream is lazy, we don't read anything
@@ -83,9 +84,9 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Block & block)
     /// We need to skip some rows before reading
     if (current_offset && !continue_reading)
     {
-        for (size_t mark_num : ext::range(current_mark, merge_tree_reader->data_part->getMarksCount()))
+        for (size_t mark_num : ext::range(current_mark, index_granularity->getMarksCount()))
         {
-            size_t mark_index_granularity = merge_tree_reader->data_part->index_granularity.getMarkRows(mark_num);
+            size_t mark_index_granularity = index_granularity->getMarkRows(mark_num);
             if (current_offset >= mark_index_granularity)
             {
                 current_offset -= mark_index_granularity;
@@ -119,10 +120,11 @@ MergeTreeRangeReader::Stream::Stream(
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
         , merge_tree_reader(merge_tree_reader)
-        , current_mark_index_granularity(merge_tree_reader->data_part->index_granularity.getMarkRows(from_mark))
+        , index_granularity(&(merge_tree_reader->data_part->index_granularity))
+        , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
         , stream(from_mark, merge_tree_reader)
 {
-    size_t marks_count = merge_tree_reader->data_part->index_granularity.getMarksCount();
+    size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
         throw Exception("Trying create stream to read from mark №"+ toString(current_mark) + " but total marks count is "
             + toString(marks_count), ErrorCodes::LOGICAL_ERROR);
@@ -158,13 +160,13 @@ void MergeTreeRangeReader::Stream::toNextMark()
 {
     ++current_mark;
 
-    size_t total_marks_count = merge_tree_reader->data_part->index_granularity.getMarksCount();
-    /// TODO(alesap) clumsy logic, fixme
+    size_t total_marks_count = index_granularity->getMarksCount();
     if (current_mark < total_marks_count)
-        current_mark_index_granularity = merge_tree_reader->data_part->index_granularity.getMarkRows(current_mark);
-    else
+        current_mark_index_granularity = index_granularity->getMarkRows(current_mark);
+    else if (current_mark == total_marks_count)
         current_mark_index_granularity = 0; /// HACK?
-        ///throw Exception("Trying to read from mark " + toString(current_mark) + ", but total marks count " + toString(total_marks_count), ErrorCodes::LOGICAL_ERROR);
+    else
+        throw Exception("Trying to read from mark " + toString(current_mark) + ", but total marks count " + toString(total_marks_count), ErrorCodes::LOGICAL_ERROR);
 
     offset_after_current_mark = 0;
 }
@@ -419,7 +421,7 @@ MergeTreeRangeReader::MergeTreeRangeReader(
         ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
         const String * prewhere_column_name, const Names * ordered_names,
         bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain)
-        : merge_tree_reader(merge_tree_reader)
+        : merge_tree_reader(merge_tree_reader), index_granularity(&(merge_tree_reader->data_part->index_granularity))
         , prev_reader(prev_reader), prewhere_column_name(prewhere_column_name)
         , ordered_names(ordered_names), alias_actions(alias_actions), prewhere_actions(std::move(prewhere_actions))
         , always_reorder(always_reorder), remove_prewhere_column(remove_prewhere_column)
@@ -452,13 +454,13 @@ size_t MergeTreeRangeReader::numPendingRowsInCurrentGranule() const
 
     /// We haven't read anything, return first
     size_t first_mark = merge_tree_reader->getFirstMarkToRead();
-    return merge_tree_reader->data_part->index_granularity.getMarkRows(first_mark);
+    return index_granularity->getMarkRows(first_mark);
 }
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const {
     size_t rows_between_marks = 0;
     for(size_t mark = current_mark; mark < last_mark; ++mark)
-        rows_between_marks += merge_tree_reader->data_part->index_granularity.getMarkRows(mark);
+        rows_between_marks += index_granularity->getMarkRows(mark);
     return rows_between_marks - offset_after_current_mark;
 }
 
@@ -579,6 +581,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         {
             if (stream.isFinished())
             {
+                std::cerr << "STREAM IS FINISHED\n";
+                std::cerr << "MAKRSCOUNT:" << merge_tree_reader->data_part->index_granularity.getMarksCount() << std::endl;
                 result.addRows(stream.finalize(result.block));
                 stream = Stream(ranges.back().begin, ranges.back().end, merge_tree_reader);
                 result.addRange(ranges.back());

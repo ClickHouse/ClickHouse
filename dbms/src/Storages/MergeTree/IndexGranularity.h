@@ -25,7 +25,10 @@ public:
     size_t getAvgGranularity() const;
     size_t getMarksCount() const;
     size_t getTotalRows() const;
-    size_t getMarkRows(size_t mark_index) const;
+    inline size_t getMarkRows(size_t mark_index) const
+    {
+        return marks_to_rows[mark_index];
+    }
     size_t getMarkStartingRow(size_t mark_index) const;
     size_t getLastMarkRows() const
     {

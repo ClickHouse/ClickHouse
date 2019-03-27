@@ -57,13 +57,13 @@ void IndexGranularity::appendMark(size_t rows_count)
     marks_to_rows.push_back(rows_count);
 }
 
-size_t IndexGranularity::getMarkRows(size_t mark_index) const
-{
-
-    if (mark_index >= marks_to_rows.size())
-        throw Exception("Trying to get mark rows for mark " + toString(mark_index) + " while marks count is " + toString(marks_to_rows.size()), ErrorCodes::LOGICAL_ERROR);
-    return marks_to_rows[mark_index];
-}
+//size_t IndexGranularity::getMarkRows(size_t mark_index) const
+//{
+//
+//    if (mark_index >= marks_to_rows.size())
+//        throw Exception("Trying to get mark rows for mark " + toString(mark_index) + " while marks count is " + toString(marks_to_rows.size()), ErrorCodes::LOGICAL_ERROR);
+//    return marks_to_rows[mark_index];
+//}
 
 
 size_t IndexGranularity::getRowsCountInRange(const MarkRange & range) const

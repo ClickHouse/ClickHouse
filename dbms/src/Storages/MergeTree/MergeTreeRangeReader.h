@@ -60,6 +60,7 @@ public:
 
         /// Actual reader of data from disk
         MergeTreeReader * merge_tree_reader = nullptr;
+        const IndexGranularity * index_granularity = nullptr;
         bool continue_reading = false;
         bool is_finished = true;
 
@@ -91,7 +92,6 @@ public:
         size_t numPendingGranules() const { return last_mark - current_mark; }
         size_t numPendingRows() const;
 
-        size_t current_mark_index_granularity = 0;
         size_t current_mark = 0;
         /// Invariant: offset_after_current_mark + skipped_rows_after_offset < index_granularity
         size_t offset_after_current_mark = 0;
@@ -100,6 +100,9 @@ public:
 
         DelayedStream stream;
         MergeTreeReader * merge_tree_reader = nullptr;
+        const IndexGranularity * index_granularity = nullptr;
+
+        size_t current_mark_index_granularity = 0;
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
@@ -184,6 +187,7 @@ private:
     void filterBlock(Block & block, const IColumn::Filter & filter) const;
 
     MergeTreeReader * merge_tree_reader = nullptr;
+    const IndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
 
     const String * prewhere_column_name = nullptr;
