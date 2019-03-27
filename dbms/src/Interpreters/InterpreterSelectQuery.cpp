@@ -861,8 +861,6 @@ void InterpreterSelectQuery::executeFetchColumns(
             prewhere_info->remove_prewhere_column = true;
             auto required_columns_from_filter = prewhere_info->prewhere_actions->getRequiredColumns();
 
-            std::cout << "Filter actions: " << prewhere_info->prewhere_actions->dumpActions() << std::endl;
-
             for (const auto & column : required_columns_from_filter)
             {
                 if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
@@ -875,8 +873,6 @@ void InterpreterSelectQuery::executeFetchColumns(
         const ColumnsDescription & storage_columns = storage->getColumns();
         for (const auto & column_name : required_columns)
         {
-            std::cout << "Required columns: " << column_name << std::endl;
-
             auto column_default = storage_columns.getDefault(column_name);
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
@@ -967,9 +963,6 @@ void InterpreterSelectQuery::executeFetchColumns(
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
 
-            for (const auto & column_name : required_columns)
-                std::cout << "New required column: " << column_name << std::endl;
-
             /// Do not remove prewhere filter if it is a column which is used as alias.
             if (prewhere_info && prewhere_info->remove_prewhere_column)
                 if (required_columns.end()
@@ -993,16 +986,12 @@ void InterpreterSelectQuery::executeFetchColumns(
                         new_actions->add(action);
                 }
 
-                std::cout << "Old actions: " << prewhere_info->prewhere_actions->dumpActions() << std::endl;
                 prewhere_info->prewhere_actions = std::move(new_actions);
-                std::cout << "New actions: " << prewhere_info->prewhere_actions->dumpActions() << std::endl;
 
                 auto analyzed_result
                     = SyntaxAnalyzer(context).analyze(required_columns_from_prewhere_expr, storage->getColumns().getAllPhysical());
                 prewhere_info->alias_actions
                     = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, context).getActions(true, false);
-
-                std::cout << "ALIAS actions: " << prewhere_info->alias_actions->dumpActions() << std::endl;
 
                 /// Add (physical?) columns required by alias actions.
                 auto required_columns_from_alias = prewhere_info->alias_actions->getRequiredColumns();
@@ -1018,9 +1007,6 @@ void InterpreterSelectQuery::executeFetchColumns(
                         if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
                             required_columns.push_back(column);
             }
-
-            for (const auto & column_name : required_columns)
-                std::cout << "Final required column: " << column_name << std::endl;
         }
     }
 
