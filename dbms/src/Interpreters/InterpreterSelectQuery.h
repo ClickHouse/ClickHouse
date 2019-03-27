@@ -3,12 +3,13 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreter.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -23,6 +24,7 @@ class InterpreterSelectWithUnionQuery;
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
+
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
 class InterpreterSelectQuery : public IInterpreter
@@ -31,14 +33,6 @@ public:
     /**
      * query_ptr
      * - A query AST to interpret.
-     *
-     * to_stage
-     * - the stage to which the query is to be executed. By default - till to the end.
-     *   You can perform till the intermediate aggregation state, which are combined from different servers for distributed query processing.
-     *
-     * subquery_depth
-     * - to control the limit on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
-     *   for INSERT SELECT, a value 1 is passed instead of 0.
      *
      * required_result_column_names
      * - don't calculate all columns except the specified ones from the query
@@ -49,29 +43,22 @@ public:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
-        const Names & required_result_column_names = Names{},
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        size_t subquery_depth_ = 0,
-        bool only_analyze_ = false,
-        bool modify_inplace = false);
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = Names{});
 
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
         const BlockInputStreamPtr & input_,
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        bool only_analyze_ = false,
-        bool modify_inplace = false);
+        const SelectQueryOptions & = {});
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         const Context & context_,
         const StoragePtr & storage_,
-        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        bool only_analyze_ = false,
-        bool modify_inplace = false);
+        const SelectQueryOptions & = {});
 
     ~InterpreterSelectQuery() override;
 
@@ -93,11 +80,8 @@ private:
         const Context & context_,
         const BlockInputStreamPtr & input_,
         const StoragePtr & storage_,
-        const Names & required_result_column_names,
-        QueryProcessingStage::Enum to_stage_,
-        size_t subquery_depth_,
-        bool only_analyze_,
-        bool modify_inplace);
+        const SelectQueryOptions &,
+        const Names & required_result_column_names = {});
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
@@ -223,19 +207,15 @@ private:
       */
     void initSettings();
 
+    const SelectQueryOptions options;
     ASTPtr query_ptr;
     Context context;
-    QueryProcessingStage::Enum to_stage;
-    size_t subquery_depth = 0;
     NamesAndTypesList source_columns;
     SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
     size_t max_streams = 1;
-
-    /// The object was created only for query analysis.
-    bool only_analyze = false;
 
     /// List of columns to read to execute the query.
     Names required_columns;
