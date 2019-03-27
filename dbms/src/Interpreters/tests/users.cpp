@@ -1,5 +1,5 @@
 #include <Common/Config/ConfigProcessor.h>
-#include <Interpreters/SecurityManager.h>
+#include <Interpreters/UsersManager.h>
 #include <boost/filesystem.hpp>
 #include <vector>
 #include <string>
