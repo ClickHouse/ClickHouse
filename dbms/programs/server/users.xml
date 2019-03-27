@@ -85,7 +85,7 @@
 
                     <!-- Complex expression filter -->
                     <filtered_table2>
-                        <filter>max(a + b, c - d) > 5</filter>
+                        <filter>a + b &lt; 1 or c - d &gt; 5</filter>
                     </filtered_table2>
 
                     <!-- Filter with ALIAS column -->
