@@ -584,6 +584,11 @@ ConfigurationPtr Context::getUsersConfig()
 bool Context::hasUserProperty(const String & database, const String & table, const String & name) const
 {
     auto lock = getLock();
+
+    // No user - no properties.
+    if (client_info.current_user.empty())
+        return false;
+
     const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
 
     auto table_props = props.find(database + "." + table);
