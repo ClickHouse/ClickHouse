@@ -9,7 +9,6 @@ class IndexGranularity
 {
 private:
     std::vector<size_t> marks_to_rows;
-    size_t total_rows = 0;
     bool initialized = false;
 
 public:
