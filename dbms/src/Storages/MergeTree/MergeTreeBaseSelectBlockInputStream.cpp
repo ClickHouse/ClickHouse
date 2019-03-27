@@ -132,7 +132,7 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
         {
             if (reader->getColumns().empty())
             {
-                std::cerr << "EMPTY COLUMNS\n";
+                //std::cerr << "EMPTY COLUMNS\n";
                 task->range_reader = MergeTreeRangeReader(
                     pre_reader.get(), nullptr,
                     prewhere_info->alias_actions, prewhere_info->prewhere_actions,
@@ -141,12 +141,12 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
             }
             else
             {
-                std::cerr << "MORE INTERESTING COLUMNS\n";
+                //std::cerr << "MORE INTERESTING COLUMNS\n";
                 MergeTreeRangeReader * pre_reader_ptr = nullptr;
                 if (pre_reader != nullptr)
                 {
-                    std::cerr << "SETTING PREREADER\n";
-                    std::cerr << "PreReader is NULL:" << (pre_reader == nullptr) << std::endl;
+                    //std::cerr << "SETTING PREREADER\n";
+                    //std::cerr << "PreReader is NULL:" << (pre_reader == nullptr) << std::endl;
                     task->pre_range_reader = MergeTreeRangeReader(
                         pre_reader.get(), nullptr,
                         prewhere_info->alias_actions, prewhere_info->prewhere_actions,
@@ -155,7 +155,7 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
                     pre_reader_ptr = &task->pre_range_reader;
                 }
 
-                std::cerr << "Reader is NULL:" << (reader == nullptr) << std::endl;
+                //std::cerr << "Reader is NULL:" << (reader == nullptr) << std::endl;
                 task->range_reader = MergeTreeRangeReader(
                     reader.get(), pre_reader_ptr, nullptr, nullptr,
                     nullptr, &task->ordered_names, true, false, true);

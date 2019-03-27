@@ -195,7 +195,7 @@ void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, st
     }
 
     /// Write data for last primary key.
-    insertRows(merged_columns, current_block_granularity, stop_condition);
+    insertRows(merged_columns, /*some_granularity*/ 0, stop_condition);
 
     finished = true;
 }

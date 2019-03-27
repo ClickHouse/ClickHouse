@@ -581,8 +581,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         {
             if (stream.isFinished())
             {
-                std::cerr << "STREAM IS FINISHED\n";
-                std::cerr << "MAKRSCOUNT:" << merge_tree_reader->data_part->index_granularity.getMarksCount() << std::endl;
+                //std::cerr << "STREAM IS FINISHED\n";
+                //std::cerr << "MAKRSCOUNT:" << merge_tree_reader->data_part->index_granularity.getMarksCount() << std::endl;
                 result.addRows(stream.finalize(result.block));
                 stream = Stream(ranges.back().begin, ranges.back().end, merge_tree_reader);
                 result.addRange(ranges.back());

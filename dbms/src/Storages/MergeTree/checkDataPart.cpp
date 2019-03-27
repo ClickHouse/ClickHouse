@@ -345,8 +345,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 }, settings.path);
 
             size_t rows_after_mark = adaptive_index_granularity.getMarkRows(mark_num);
-            std::cerr << "rows after mark:" << rows_after_mark << std::endl;
-            std::cerr << "mark_num:" << mark_num << std::endl;
+            //std::cerr << "rows after mark:" << rows_after_mark << std::endl;
+            //std::cerr << "mark_num:" << mark_num << std::endl;
             ++mark_num;
 
             /// Read index_granularity rows from column.
