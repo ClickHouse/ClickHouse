@@ -123,23 +123,68 @@ bool hasArrayJoin(const ASTPtr & ast)
     return false;
 }
 
+/// Keep number of columns for 'GLOBAL IN (SELECT 1 AS a, a)'
+void renameDuplicatedColumns(const ASTSelectQuery * select_query)
+{
+    ASTs & elements = select_query->select_expression_list->children;
+
+    std::set<String> all_column_names;
+    std::set<String> assigned_column_names;
+
+    for (auto & expr : elements)
+        all_column_names.insert(expr->getAliasOrColumnName());
+
+    for (auto & expr : elements)
+    {
+        auto name = expr->getAliasOrColumnName();
+
+        if (!assigned_column_names.insert(name).second)
+        {
+            size_t i = 1;
+            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+                ++i;
+
+            name = name + "_" + toString(i);
+            expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
+            expr->setAlias(name);
+
+            all_column_names.insert(name);
+            assigned_column_names.insert(name);
+        }
+    }
+}
+
 /// Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
-void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns)
+/// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are inpossible.
+void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
-    if (required_result_columns.empty())
-        return;
-
     ASTs & elements = select_query->select_expression_list->children;
+
+    std::map<String, size_t> required_columns_with_duplicate_count;
+
+    if (!required_result_columns.empty())
+    {
+        /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
+        for (const auto & name : required_result_columns)
+        {
+            if (remove_dups)
+                required_columns_with_duplicate_count[name] = 1;
+            else
+                ++required_columns_with_duplicate_count[name];
+        }
+    }
+    else if (remove_dups)
+    {
+        /// Even if we have no requirements there could be duplicates cause of asterisks. SELECT *, t.*
+        for (const auto & elem : elements)
+            required_columns_with_duplicate_count.emplace(elem->getAliasOrColumnName(), 1);
+    }
+    else
+        return;
 
     ASTs new_elements;
     new_elements.reserve(elements.size());
-
-    /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
-    /// In that case we keep them exactly same number of times.
-    std::map<String, size_t> required_columns_with_duplicate_count;
-    for (const auto & name : required_result_columns)
-        ++required_columns_with_duplicate_count[name];
 
     for (const auto & elem : elements)
     {
@@ -645,6 +690,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     if (select_query)
     {
+        if (remove_duplicates)
+            renameDuplicatedColumns(select_query);
+
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
             if (settings.enable_optimize_predicate_expression)
@@ -688,7 +736,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
     if (select_query)
-        removeUnneededColumnsFromSelectClause(select_query, required_result_columns);
+        removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth);

@@ -57,7 +57,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int -Wempty-init-stmt")
     endif ()
 
     if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
