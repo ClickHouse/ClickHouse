@@ -11,7 +11,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <common/StringRef.h>
+
 
 namespace DB
 {
@@ -67,6 +69,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 template <typename Impl, typename Name>
@@ -285,7 +288,13 @@ class FunctionsMultiStringSearch : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionsMultiStringSearch>(); }
+    static FunctionPtr create(const Context & context)
+    {
+        if (Impl::is_using_hyperscan && !context.getSettingsRef().allow_hyperscan)
+            throw Exception("Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+
+        return std::make_shared<FunctionsMultiStringSearch>();
+    }
 
     String getName() const override { return name; }
 
