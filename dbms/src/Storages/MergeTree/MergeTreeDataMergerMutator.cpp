@@ -767,7 +767,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
-            std::cerr << "TOINDEXGRANULARITY MARKS COUNT:" << to.getIndexGranularity().getMarksCount() << std::endl;
+            //std::cerr << "TOINDEXGRANULARITY MARKS COUNT:" << to.getIndexGranularity().getMarksCount() << std::endl;
             MergedColumnOnlyOutputStream column_to(
                 data,
                 column_gathered_stream.getHeader(),
@@ -878,7 +878,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     new_data_part->is_temp = true;
 
     String new_part_tmp_path = new_data_part->getFullPath();
-    std::cerr << "NEW TEMP PART:" << new_part_tmp_path << std::endl;
+    //std::cerr << "NEW TEMP PART:" << new_part_tmp_path << std::endl;
 
     /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
     /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock

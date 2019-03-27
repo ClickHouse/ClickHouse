@@ -51,6 +51,8 @@ SELECT count() FROM test.merge_tree WHERE toUInt64(x) IN (0, 0);
 DROP TABLE test.merge_tree;
 
 SELECT '----00804----';
+SET max_rows_to_read = 0;
+SET force_primary_key = 0;
 
 DROP TABLE IF EXISTS test.large_alter_table;
 DROP TABLE IF EXISTS test.store_of_hash;
