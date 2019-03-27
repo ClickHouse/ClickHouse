@@ -23,10 +23,7 @@ MergeTreeRangeReader::DelayedStream::DelayedStream(
 
 size_t MergeTreeRangeReader::DelayedStream::position() const
 {
-    size_t num_rows_before_current_mark = 0;
-    for (size_t i = 0; i < current_mark; ++i)
-        num_rows_before_current_mark += index_granularity->getMarkRows(i);
-
+    size_t num_rows_before_current_mark = index_granularity->getMarkPositionInRows(current_mark);
     return num_rows_before_current_mark + current_offset + num_delayed_rows;
 }
 
@@ -54,10 +51,7 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Block & block, size_t num_r
 
 size_t MergeTreeRangeReader::DelayedStream::read(Block & block, size_t from_mark, size_t offset, size_t num_rows)
 {
-    size_t num_rows_before_from_mark = 0;
-    for (size_t i = 0; i < from_mark; ++i)
-        num_rows_before_from_mark += index_granularity->getMarkRows(i);
-
+    size_t num_rows_before_from_mark = index_granularity->getMarkPositionInRows(from_mark);
     /// We already stand accurately in required position,
     /// so because stream is lazy, we don't read anything
     /// and only increment amount delayed_rows
