@@ -567,11 +567,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
 
-        /// At this point the effective depth of pipeline should be 1.
-        /// The actual depth may be 2, because of alias actions' ExpressionBlockInputStream.
-
-        /// TODO: Apply table filters, if present.
-
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
     }
 
@@ -985,7 +980,6 @@ void InterpreterSelectQuery::executeFetchColumns(
                         || required_columns.end() == std::find(required_columns.begin(), required_columns.end(), action.source_name))
                         new_actions->add(action);
                 }
-
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
                 auto analyzed_result
