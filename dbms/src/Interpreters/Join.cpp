@@ -32,21 +32,52 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-static NameSet requiredRightKeys(const Names & key_names, const NamesAndTypesList & columns_added_by_join)
-{
-    NameSet required;
 
+static std::unordered_map<String, DataTypePtr> requiredRightKeys(const Names & key_names, const NamesAndTypesList & columns_added_by_join)
+{
     NameSet right_keys;
     for (const auto & name : key_names)
         right_keys.insert(name);
 
+    std::unordered_map<String, DataTypePtr> required;
     for (const auto & column : columns_added_by_join)
-    {
         if (right_keys.count(column.name))
-            required.insert(column.name);
-    }
+            required.insert({column.name, column.type});
 
     return required;
+}
+
+static void convertColumnToNullable(ColumnWithTypeAndName & column)
+{
+    if (column.type->isNullable())
+        return;
+
+    column.type = makeNullable(column.type);
+    if (column.column)
+        column.column = makeNullable(column.column);
+}
+
+/// Converts column to nullable if needed. No backward convertion.
+static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable)
+{
+    if (nullable)
+        convertColumnToNullable(column);
+    return std::move(column);
+}
+
+static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column, bool nullable, const ColumnUInt8 & negative_null_map)
+{
+    if (nullable)
+    {
+        convertColumnToNullable(column);
+        if (negative_null_map.size())
+        {
+            MutableColumnPtr mutable_column = (*std::move(column.column)).mutate();
+            static_cast<ColumnNullable &>(*mutable_column).applyNegatedNullMap(negative_null_map);
+            column.column = std::move(mutable_column);
+        }
+    }
+    return std::move(column);
 }
 
 
@@ -214,15 +245,6 @@ size_t Join::getTotalByteCount() const
 
     return res;
 }
-
-
-static void convertColumnToNullable(ColumnWithTypeAndName & column)
-{
-    column.type = makeNullable(column.type);
-    if (column.column)
-        column.column = makeNullable(column.column);
-}
-
 
 void Join::setSampleBlock(const Block & block)
 {
@@ -712,7 +734,7 @@ void Join::joinBlockImpl(
 
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
-    IColumn::Filter filter = switchJoinRightColumns<KIND, STRICTNESS>(
+    IColumn::Filter row_filter = switchJoinRightColumns<KIND, STRICTNESS>(
         type, maps_, block.rows(), key_columns, key_sizes, added, null_map, offsets_to_replicate);
 
     for (size_t i = 0; i < added.size(); ++i)
@@ -720,10 +742,16 @@ void Join::joinBlockImpl(
 
     /// Filter & insert missing rows
 
-    NameSet needed_key_names_right = requiredRightKeys(key_names_right, columns_added_by_join);
+    auto right_keys = requiredRightKeys(key_names_right, columns_added_by_join);
 
     if constexpr (STRICTNESS == ASTTableJoin::Strictness::Any)
     {
+        /// Some trash to represent IColumn::Filter as ColumnUInt8 needed for ColumnNullable::applyNullMap()
+        auto null_map_filter_ptr = ColumnUInt8::create();
+        ColumnUInt8 & null_map_filter = static_cast<ColumnUInt8 &>(*null_map_filter_ptr);
+        null_map_filter.getData().swap(row_filter);
+        const IColumn::Filter & filter = null_map_filter.getData();
+
         constexpr bool inner_or_right = static_in_v<KIND, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Right>;
         if constexpr (inner_or_right)
         {
@@ -737,10 +765,12 @@ void Join::joinBlockImpl(
                 auto & right_name = key_names_right[i];
                 auto & left_name = key_names_left[i];
 
-                if (needed_key_names_right.count(right_name) && !block.has(right_name))
+                auto it = right_keys.find(right_name);
+                if (it != right_keys.end() && !block.has(right_name))
                 {
                     const auto & col = block.getByName(left_name);
-                    block.insert({col.column, col.type, right_name});
+                    bool is_nullable = it->second->isNullable();
+                    block.insert(correctNullability({col.column, col.type, right_name}, is_nullable));
                 }
             }
         }
@@ -752,7 +782,8 @@ void Join::joinBlockImpl(
                 auto & right_name = key_names_right[i];
                 auto & left_name = key_names_left[i];
 
-                if (needed_key_names_right.count(right_name) && !block.has(right_name))
+                auto it = right_keys.find(right_name);
+                if (it != right_keys.end() && !block.has(right_name))
                 {
                     const auto & col = block.getByName(left_name);
                     ColumnPtr column = col.column->convertToFullColumnIfConst();
@@ -766,13 +797,15 @@ void Join::joinBlockImpl(
                             mut_column->insertDefault();
                     }
 
-                    block.insert({std::move(mut_column), col.type, right_name});
+                    bool is_nullable = use_nulls || it->second->isNullable();
+                    block.insert(correctNullability({std::move(mut_column), col.type, right_name}, is_nullable, null_map_filter));
                 }
             }
         }
     }
     else
     {
+        constexpr bool left_or_full = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
         if (!offsets_to_replicate)
             throw Exception("No data to filter columns", ErrorCodes::LOGICAL_ERROR);
 
@@ -782,7 +815,8 @@ void Join::joinBlockImpl(
             auto & right_name = key_names_right[i];
             auto & left_name = key_names_left[i];
 
-            if (needed_key_names_right.count(right_name) && !block.has(right_name))
+            auto it = right_keys.find(right_name);
+            if (it != right_keys.end() && !block.has(right_name))
             {
                 const auto & col = block.getByName(left_name);
                 ColumnPtr column = col.column->convertToFullColumnIfConst();
@@ -793,7 +827,7 @@ void Join::joinBlockImpl(
                 {
                     if (size_t to_insert = (*offsets_to_replicate)[row] - last_offset)
                     {
-                        if (!filter[row])
+                        if (!row_filter[row])
                             mut_column->insertDefault();
                         else
                             for (size_t dup = 0; dup < to_insert; ++dup)
@@ -803,7 +837,9 @@ void Join::joinBlockImpl(
                     last_offset = (*offsets_to_replicate)[row];
                 }
 
-                block.insert({std::move(mut_column), col.type, right_name});
+                /// TODO: null_map_filter
+                bool is_nullable = (use_nulls && left_or_full) || it->second->isNullable();
+                block.insert(correctNullability({std::move(mut_column), col.type, right_name}, is_nullable));
             }
         }
 
@@ -997,11 +1033,8 @@ struct AdderNonJoined;
 template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::Any, Mapped>
 {
-    static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_left, MutableColumns & columns_right)
+    static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
     {
-        for (size_t j = 0; j < columns_left.size(); ++j)
-            columns_left[j]->insertDefault();
-
         for (size_t j = 0; j < columns_right.size(); ++j)
             columns_right[j]->insertFrom(*mapped.block->getByPosition(j).column.get(), mapped.row_num);
 
@@ -1012,13 +1045,10 @@ struct AdderNonJoined<ASTTableJoin::Strictness::Any, Mapped>
 template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 {
-    static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_left, MutableColumns & columns_right)
+    static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
     {
         for (auto current = &static_cast<const typename Mapped::Base_t &>(mapped); current != nullptr; current = current->next)
         {
-            for (size_t j = 0; j < columns_left.size(); ++j)
-                columns_left[j]->insertDefault();
-
             for (size_t j = 0; j < columns_right.size(); ++j)
                 columns_right[j]->insertFrom(*current->block->getByPosition(j).column.get(), current->row_num);
 
@@ -1040,53 +1070,51 @@ public:
           * result_sample_block - keys, "left" columns, and "right" columns.
           */
 
-        std::unordered_map<String, String> key_renames;
-        makeResultSampleBlock(left_sample_block, key_names_left, columns_added_by_join, key_renames);
-
-        const Block & right_sample_block = parent.sample_block_with_columns_to_add;
-
-        size_t num_keys = key_names_left.size();
-        size_t num_columns_left = left_sample_block.columns() - num_keys;
-        size_t num_columns_right = right_sample_block.columns();
-
-        column_indices_left.reserve(num_columns_left);
-        column_indices_keys_and_right.reserve(num_keys + num_columns_right);
-
         std::vector<bool> is_left_key(left_sample_block.columns(), false);
+        std::vector<size_t> key_positions_left;
+        key_positions_left.reserve(key_names_left.size());
 
         for (const std::string & key : key_names_left)
         {
             size_t key_pos = left_sample_block.getPositionByName(key);
+            key_positions_left.push_back(key_pos);
             is_left_key[key_pos] = true;
+        }
+
+        const Block & right_sample_block = parent.sample_block_with_columns_to_add;
+
+        std::unordered_map<size_t, size_t> left_to_right_key_map;
+        makeResultSampleBlock(left_sample_block, right_sample_block, columns_added_by_join,
+                              key_positions_left, is_left_key, left_to_right_key_map);
+
+        column_indices_left.reserve(left_sample_block.columns() - key_names_left.size());
+        column_indices_keys_and_right.reserve(key_names_left.size() + right_sample_block.columns());
+
+        /// Use right key columns if present. @note left & right key columns could have different nullability.
+        for (size_t key_pos : key_positions_left)
+        {
             /// Here we establish the mapping between key columns of the left- and right-side tables.
             /// key_pos index is inserted in the position corresponding to key column in parent.blocks
             /// (saved blocks of the right-side table) and points to the same key column
             /// in the left_sample_block and thus in the result_sample_block.
-            column_indices_keys_and_right.push_back(key_pos);
 
-            auto it = key_renames.find(key);
-            if (it != key_renames.end())
-                key_renames_indices[key_pos] = result_sample_block.getPositionByName(it->second);
-        }
-
-        size_t num_src_columns = left_sample_block.columns() + right_sample_block.columns();
-
-        for (size_t i = 0; i < result_sample_block.columns(); ++i)
-        {
-            if (i < left_sample_block.columns())
+            auto it = left_to_right_key_map.find(key_pos);
+            if (it != left_to_right_key_map.end())
             {
-                if (!is_left_key[i])
-                {
-                    column_indices_left.emplace_back(i);
-
-                    /// If use_nulls, convert left columns to Nullable.
-                    if (parent.use_nulls)
-                        convertColumnToNullable(result_sample_block.getByPosition(i));
-                }
+                column_indices_keys_and_right.push_back(it->second);
+                column_indices_left.push_back(key_pos);
             }
-            else if (i < num_src_columns)
-                column_indices_keys_and_right.emplace_back(i);
+            else
+                column_indices_keys_and_right.push_back(key_pos);
         }
+
+        for (size_t i = 0; i < left_sample_block.columns(); ++i)
+            if (!is_left_key[i])
+                column_indices_left.emplace_back(i);
+
+        size_t num_additional_keys = left_to_right_key_map.size();
+        for (size_t i = left_sample_block.columns(); i < result_sample_block.columns() - num_additional_keys; ++i)
+            column_indices_keys_and_right.emplace_back(i);
     }
 
     String getName() const override { return "NonJoined"; }
@@ -1118,17 +1146,24 @@ private:
     /// Indices of key columns in result_sample_block or columns that come from the right-side table.
     /// Order is significant: it is the same as the order of columns in the blocks of the right-side table that are saved in parent.blocks.
     ColumnNumbers column_indices_keys_and_right;
-    std::unordered_map<size_t, size_t> key_renames_indices;
 
     std::unique_ptr<void, std::function<void(void *)>> position;    /// type erasure
 
 
-    void makeResultSampleBlock(const Block & left_sample_block, const Names & key_names_left,
-                               const NamesAndTypesList & columns_added_by_join, std::unordered_map<String, String> & key_renames)
+    void makeResultSampleBlock(const Block & left_sample_block, const Block & right_sample_block,
+                               const NamesAndTypesList & columns_added_by_join,
+                               const std::vector<size_t> & key_positions_left, const std::vector<bool> & is_left_key,
+                               std::unordered_map<size_t, size_t> & left_to_right_key_map)
     {
-        const Block & right_sample_block = parent.sample_block_with_columns_to_add;
-
         result_sample_block = materializeBlock(left_sample_block);
+
+        /// Convert left columns to Nullable if allowed
+        if (parent.use_nulls)
+        {
+            for (size_t i = 0; i < result_sample_block.columns(); ++i)
+                if (!is_left_key[i])
+                    convertColumnToNullable(result_sample_block.getByPosition(i));
+        }
 
         /// Add columns from the right-side table to the block.
         for (size_t i = 0; i < right_sample_block.columns(); ++i)
@@ -1139,20 +1174,23 @@ private:
         }
 
         const auto & key_names_right = parent.key_names_right;
-        NameSet needed_key_names_right = requiredRightKeys(key_names_right, columns_added_by_join);
+        auto right_keys = requiredRightKeys(key_names_right, columns_added_by_join);
 
         /// Add join key columns from right block if they has different name.
         for (size_t i = 0; i < key_names_right.size(); ++i)
         {
             auto & right_name = key_names_right[i];
-            auto & left_name = key_names_left[i];
+            size_t left_key_pos = key_positions_left[i];
 
-            if (needed_key_names_right.count(right_name) && !result_sample_block.has(right_name))
+            auto it = right_keys.find(right_name);
+            if (it != right_keys.end() && !result_sample_block.has(right_name))
             {
-                const auto & col = result_sample_block.getByName(left_name);
-                result_sample_block.insert({col.column, col.type, right_name});
+                const auto & col = result_sample_block.getByPosition(left_key_pos);
+                bool is_nullable = (parent.use_nulls && isFull(parent.kind)) || it->second->isNullable();
+                result_sample_block.insert(correctNullability({col.column, col.type, right_name}, is_nullable));
 
-                key_renames[left_name] = right_name;
+                size_t right_key_pos = result_sample_block.getPositionByName(right_name);
+                left_to_right_key_map[left_key_pos] = right_key_pos;
             }
         }
     }
@@ -1169,7 +1207,7 @@ private:
         {
         #define M(TYPE) \
             case Join::Type::TYPE: \
-                rows_added = fillColumns<STRICTNESS>(*maps.TYPE, columns_left, columns_keys_and_right); \
+                rows_added = fillColumns<STRICTNESS>(*maps.TYPE, columns_keys_and_right); \
                 break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -1183,32 +1221,12 @@ private:
 
         Block res = result_sample_block.cloneEmpty();
 
+        /// @note it's possible to make ColumnConst here and materialize it later
         for (size_t i = 0; i < columns_left.size(); ++i)
-            res.getByPosition(column_indices_left[i]).column = std::move(columns_left[i]);
+            res.getByPosition(column_indices_left[i]).column = columns_left[i]->cloneResized(rows_added);
 
-        if (key_renames_indices.empty())
-        {
-            for (size_t i = 0; i < columns_keys_and_right.size(); ++i)
-                res.getByPosition(column_indices_keys_and_right[i]).column = std::move(columns_keys_and_right[i]);
-        }
-        else
-        {
-            for (size_t i = 0; i < columns_keys_and_right.size(); ++i)
-            {
-                size_t key_idx = column_indices_keys_and_right[i];
-
-                auto it = key_renames_indices.find(key_idx);
-                if (it != key_renames_indices.end())
-                {
-                    auto & key_column = res.getByPosition(key_idx).column;
-                    if (key_column->empty())
-                        key_column = key_column->cloneResized(columns_keys_and_right[i]->size());
-                    res.getByPosition(it->second).column = std::move(columns_keys_and_right[i]);
-                }
-                else
-                    res.getByPosition(key_idx).column = std::move(columns_keys_and_right[i]);
-            }
-        }
+        for (size_t i = 0; i < columns_keys_and_right.size(); ++i)
+            res.getByPosition(column_indices_keys_and_right[i]).column = std::move(columns_keys_and_right[i]);
 
         return res;
     }
@@ -1230,7 +1248,7 @@ private:
     }
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Map>
-    size_t fillColumns(const Map & map, MutableColumns & columns_left, MutableColumns & columns_keys_and_right)
+    size_t fillColumns(const Map & map, MutableColumns & columns_keys_and_right)
     {
         size_t rows_added = 0;
 
@@ -1247,7 +1265,7 @@ private:
             if (it->getSecond().getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->getSecond(), rows_added, columns_left, columns_keys_and_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->getSecond(), rows_added, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
             {
