@@ -23,12 +23,13 @@
 #include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserSelectQuery.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -508,7 +509,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
     /// PREWHERE optimization
-    if (storage)
+    /// Turn off, if the table filter is applied.
+    if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
     {
         if (!dry_run)
             from_stage = storage->getQueryProcessingStage(context);
@@ -555,6 +557,12 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             to_stage == QueryProcessingStage::WithMergeableState)
             throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+        if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+        {
+            if (expressions.prewhere_info)
+                throw Exception("PREWHERE is not supported with the table filtering", ErrorCodes::ILLEGAL_PREWHERE);
+        }
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
@@ -803,21 +811,63 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
-        const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
+        PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
 
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
-    /// Are ALIAS columns required for query execution?
-    auto alias_columns_required = false;
+
+    /// Assumes `storage` is set and table filter is not empty.
+    auto getFilterActions = [&](ExpressionActionsPtr & actions) -> String
+    {
+        ParserSelectQuery parser;
+        const auto & db_name = storage->getDatabaseName();
+        const auto & table_name = storage->getTableName();
+        const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
+        String query_str = "select " + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
+        auto query_ast = parseQuery(parser, query_str, 0);
+
+        auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
+        ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
+        ExpressionActionsChain chain(context);
+        analyzer.appendSelect(chain, false);
+        // analyzer.appendProjectResult(chain);
+        chain.finalize();
+        actions = chain.getLastActions();
+
+        return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
+    };
 
     if (storage)
     {
+        /// Populate initial required columns with the columns from filter expression.
+        /// Setup `prewhere_info` with filter actions.
+        /// XXX: looks like PREWHERE required columns are prepopulated somewhere else.
+        if (context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+        {
+            prewhere_info = std::make_shared<PrewhereInfo>();
+            prewhere_info->prewhere_column_name = getFilterActions(prewhere_info->prewhere_actions);
+            prewhere_info->remove_prewhere_column = true;
+            auto required_columns_from_filter = prewhere_info->prewhere_actions->getRequiredColumns();
+
+            std::cout << "Filter actions: " << prewhere_info->prewhere_actions->dumpActions() << std::endl;
+
+            for (const auto & column : required_columns_from_filter)
+            {
+                if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
+                    required_columns.push_back(column);
+            }
+        }
+
+        /// Detect, if ALIAS columns are required for query execution
+        auto alias_columns_required = false;
         const ColumnsDescription & storage_columns = storage->getColumns();
         for (const auto & column_name : required_columns)
         {
+            std::cout << "Required columns: " << column_name << std::endl;
+
             auto column_default = storage_columns.getDefault(column_name);
             if (column_default && column_default->kind == ColumnDefaultKind::Alias)
             {
@@ -874,7 +924,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     required_columns_all_expr->children.emplace_back(std::move(column_expr));
             }
 
-            /// Columns, which we will get after prewhere execution.
+            /// Columns, which we will get after prewhere and filter executions.
             NamesAndTypesList required_columns_after_prewhere;
             NameSet required_columns_after_prewhere_set;
 
@@ -908,6 +958,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
 
+            for (const auto & column_name : required_columns)
+                std::cout << "New required column: " << column_name << std::endl;
+
             /// Do not remove prewhere filter if it is a column which is used as alias.
             if (prewhere_info && prewhere_info->remove_prewhere_column)
                 if (required_columns.end()
@@ -930,12 +983,17 @@ void InterpreterSelectQuery::executeFetchColumns(
                         || required_columns.end() == std::find(required_columns.begin(), required_columns.end(), action.source_name))
                         new_actions->add(action);
                 }
+
+                std::cout << "Old actions: " << prewhere_info->prewhere_actions->dumpActions() << std::endl;
                 prewhere_info->prewhere_actions = std::move(new_actions);
+                std::cout << "New actions: " << prewhere_info->prewhere_actions->dumpActions() << std::endl;
 
                 auto analyzed_result
                     = SyntaxAnalyzer(context).analyze(required_columns_from_prewhere_expr, storage->getColumns().getAllPhysical());
                 prewhere_info->alias_actions
                     = ExpressionAnalyzer(required_columns_from_prewhere_expr, analyzed_result, context).getActions(true, false);
+
+                std::cout << "ALIAS actions: " << prewhere_info->alias_actions->dumpActions() << std::endl;
 
                 /// Add (physical?) columns required by alias actions.
                 auto required_columns_from_alias = prewhere_info->alias_actions->getRequiredColumns();
@@ -951,6 +1009,9 @@ void InterpreterSelectQuery::executeFetchColumns(
                         if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
                             required_columns.push_back(column);
             }
+
+            for (const auto & column_name : required_columns)
+                std::cout << "Final required column: " << column_name << std::endl;
         }
     }
 

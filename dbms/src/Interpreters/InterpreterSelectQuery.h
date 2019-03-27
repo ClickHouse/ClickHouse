@@ -185,7 +185,7 @@ private:
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
-                             const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
+                             PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
