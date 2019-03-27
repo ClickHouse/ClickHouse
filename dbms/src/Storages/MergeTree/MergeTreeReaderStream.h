@@ -36,14 +36,15 @@ private:
 
     std::string path_prefix;
     std::string data_file_extension;
-    std::string marks_file_extension;
 
     size_t marks_count;
-    size_t one_mark_bytes_size;
 
     MarkCache * mark_cache;
     bool save_marks_in_cache;
     MarkCache::MappedPtr marks;
+
+    std::string marks_file_extension;
+    size_t one_mark_bytes_size;
 
     std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
     std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;

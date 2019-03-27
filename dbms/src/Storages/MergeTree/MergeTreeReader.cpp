@@ -39,7 +39,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
     size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback,
     clockid_t clock_type)
-    : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
+    : data_part(data_part), avg_value_size_hints(avg_value_size_hints), path(path), columns(columns)
     , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
     , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {

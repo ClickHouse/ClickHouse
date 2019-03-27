@@ -39,10 +39,10 @@ class Stream
 public:
     String base_name;
     String bin_file_extension;
+    String mrk_file_extension;
     String bin_file_path;
     String mrk_file_path;
 private:
-    String marks_file_extension;
     const IndexGranularity & index_granularity;
     ReadBufferFromFile file_buf;
     HashingReadBuffer compressed_hashing_buf;
@@ -59,10 +59,10 @@ public:
         Stream(const String & path, const String & base_name, const String & bin_file_extension_, const String & mrk_file_extension_, const IndexGranularity & index_granularity_)
         :
         base_name(base_name),
-        bin_file_path(path + base_name + bin_file_extension_),
-        mrk_file_path(path + base_name + mrk_file_extension_),
         bin_file_extension(bin_file_extension_),
-        marks_file_extension(mrk_file_extension_),
+        mrk_file_extension(mrk_file_extension_),
+        bin_file_path(path + base_name + bin_file_extension),
+        mrk_file_path(path + base_name + mrk_file_extension),
         index_granularity(index_granularity_),
         file_buf(bin_file_path),
         compressed_hashing_buf(file_buf),
@@ -79,7 +79,7 @@ public:
         readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
         size_t mrk_rows;
         //std::cerr << "File path:" << mrk_file_path << std::endl;
-        if (marks_file_extension == ".mrk2")
+        if (mrk_file_extension == ".mrk2")
             readIntBinary(mrk_rows, mrk_hashing_buf);
         else
             mrk_rows = index_granularity.getMarkRows(mark_position);
@@ -148,7 +148,7 @@ public:
             compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
             uncompressed_hashing_buf.count(), uncompressed_hashing_buf.getHash());
 
-        checksums.files[base_name + marks_file_extension] = MergeTreeData::DataPart::Checksums::Checksum(
+        checksums.files[base_name + mrk_file_extension] = MergeTreeData::DataPart::Checksums::Checksum(
             mrk_hashing_buf.count(), mrk_hashing_buf.getHash());
     }
 };
@@ -159,8 +159,7 @@ public:
 MergeTreeData::DataPart::Checksums checkDataPart(
     const String & full_path,
     const IndexGranularity & adaptive_index_granularity,
-    const size_t fixed_granularity,
-    const String marks_file_extension,
+    const String & mrk_file_extension,
     bool require_checksums,
     const DataTypes & primary_key_data_types,
     const MergeTreeIndices & indices,
@@ -271,7 +270,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     /// Read and check skip indices.
     for (const auto & index : indices)
     {
-        Stream stream(path, index->getFileName(), ".idx", marks_file_extension, adaptive_index_granularity);
+        Stream stream(path, index->getFileName(), ".idx", mrk_file_extension, adaptive_index_granularity);
         size_t mark_num = 0;
 
         while (!stream.uncompressed_hashing_buf.eof())
@@ -328,7 +327,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
-                    auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", marks_file_extension, adaptive_index_granularity).first->second;
+                    auto & stream = streams.try_emplace(file_name, path, file_name, ".bin", mrk_file_extension, adaptive_index_granularity).first->second;
                     try
                     {
                         if (!stream.mrk_hashing_buf.eof())
@@ -419,15 +418,6 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         }
     }
 
-    for (auto & [fname, checksum] : checksums_data.files)
-    {
-        std::cerr << "FILE NAME IN DATA:" << fname << std::endl;
-    }
-
-    for (auto & [fname, checksum] : checksums_txt.files)
-    {
-        std::cerr << "FILE NAME IN TXT:" << fname << std::endl;
-    }
     if (require_checksums || !checksums_txt.files.empty())
         checksums_txt.checkEqual(checksums_data, true);
 
@@ -444,7 +434,6 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     return checkDataPart(
         data_part->getFullPath(),
         data_part->index_granularity,
-        data_part->storage.index_granularity_info.fixed_index_granularity,
         data_part->storage.index_granularity_info.marks_file_extension,
         require_checksums,
         primary_key_data_types,
