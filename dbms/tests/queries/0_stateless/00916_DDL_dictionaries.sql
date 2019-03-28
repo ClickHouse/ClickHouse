@@ -47,7 +47,13 @@ LIFETIME(MIN 1, MAX 10);
 SHOW CREATE DICTIONARY test.dict1;
 SHOW CREATE test.dict1; -- { serverError 107 }
 
-SELECT * FROM system.dictionaries WHERE database = 'test';
+SELECT
+    name, database, definition_type,
+    origin, type, key,
+    attribute.names, attribute.types,
+    query_count, hit_rate, element_count,
+    load_factor, source, last_exception
+FROM system.dictionaries WHERE database = 'test';
 
 CREATE TABLE test.table
  (
