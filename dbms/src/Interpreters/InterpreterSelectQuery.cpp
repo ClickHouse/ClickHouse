@@ -319,6 +319,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
         */
 
+    bool has_filter = false;
     bool has_prewhere = false;
     bool has_where = false;
     size_t where_step_num;
@@ -351,10 +352,15 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
             res.columns_to_remove_after_prewhere = std::move(columns_to_remove);
         }
+        else if (has_filter)
+        {
+            /// Can't have prewhere and filter set simultaneously
+            res.filter_info->do_remove_column = chain.steps.at(0).can_remove_required_output.at(0);
+        }
         if (has_where)
             res.remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
 
-        has_prewhere = has_where = false;
+        has_filter = has_prewhere = has_where = false;
 
         chain.clear();
     };
@@ -377,6 +383,55 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             Names columns_for_final = storage->getColumnsRequiredForFinal();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
                 columns_for_final.begin(), columns_for_final.end());
+        }
+
+        if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+        {
+            has_filter = true;
+
+            /// Assumes `storage` is set and the table filter is not empty.
+            auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String {
+                ParserSelectQuery parser;
+                const auto & db_name = storage->getDatabaseName();
+                const auto & table_name = storage->getTableName();
+                const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
+
+                /// Keep columns that are required after the filter actions.
+                String columns;
+                for (const auto & column_name : required_columns_before_filter)
+                {
+                    columns += column_name + ',';
+                }
+
+                /// Using separate expression analyzer to prevent any possible alias injection
+                String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
+                auto query_ast = parseQuery(parser, query_str, 0);
+
+                auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
+                ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
+                ExpressionActionsChain new_chain(context);
+                analyzer.appendSelect(new_chain, false);
+                actions = new_chain.getLastActions();
+
+                return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
+            };
+
+            /// XXX: aggregated copy-paste from ExpressionAnalyzer::appendSmth()
+            if (chain.steps.empty())
+            {
+                chain.steps.emplace_back(std::make_shared<ExpressionActions>(source_columns, context));
+            }
+            ExpressionActionsChain::Step & step = chain.steps.back();
+
+            res.filter_info = std::make_shared<FilterInfo>();
+            res.filter_info->column_name = getFilterActions(step.actions, required_columns);
+            res.filter_info->actions = chain.getLastActions();
+            step.required_output.push_back(res.filter_info->column_name);
+            step.can_remove_required_output = {true};
+
+            std::cout << "filter actions: " << res.filter_info->actions->dumpActions() << std::endl;
+
+            chain.addStep();
         }
 
         if (query_analyzer->appendPrewhere(chain, !res.first_stage, additional_required_columns_after_prewhere))
@@ -442,10 +497,16 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         query_analyzer->appendProjectResult(chain);
         res.final_projection = chain.getLastActions();
 
+        std::cout << "before finalize: " << chain.dumpChain() << std::endl;
+
         finalizeChain(chain);
+
+        std::cout << "after finalize: " << chain.dumpChain() << std::endl;
     }
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
+    if (res.filter_info)
+        res.filter_info->actions->prependProjectInput();
     if (res.has_where)
         res.before_where->prependProjectInput();
     if (res.has_having)
@@ -520,10 +581,48 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
     AnalysisResult expressions;
 
+    if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+    {
+        /// Assumes `storage` is set and the table filter is not empty.
+        auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String {
+            ParserSelectQuery parser;
+            const auto & db_name = storage->getDatabaseName();
+            const auto & table_name = storage->getTableName();
+            const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
+
+            /// Keep columns that are required after the filter actions.
+            String columns;
+            for (const auto & column_name : required_columns_before_filter)
+            {
+                columns += column_name + ',';
+            }
+
+            /// Using separate expression analyzer to prevent any possible alias injection
+            String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
+            auto query_ast = parseQuery(parser, query_str, 0);
+
+            auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
+            ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
+            ExpressionActionsChain new_chain(context);
+            analyzer.appendSelect(new_chain, false);
+            actions = new_chain.getLastActions();
+
+            return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
+        };
+
+        ExpressionActionsPtr actions;
+        getFilterActions(actions, required_columns);
+        source_header = storage->getSampleBlockForColumns(actions->getRequiredColumns());
+    }
+
     if (dry_run)
     {
         pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
+        std::cout << "source header: " << source_header.dumpStructure() << std::endl;
         expressions = analyzeExpressions(QueryProcessingStage::FetchColumns, true);
+
+        if (storage && expressions.filter_info && expressions.prewhere_info)
+            throw Exception("PREWHERE is not supported with the table filtering", ErrorCodes::ILLEGAL_PREWHERE);
 
         if (expressions.prewhere_info)
             pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
@@ -541,11 +640,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             options.to_stage == QueryProcessingStage::WithMergeableState)
             throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
-        if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
-        {
-            if (expressions.prewhere_info)
-                throw Exception("PREWHERE is not supported with the table filtering", ErrorCodes::ILLEGAL_PREWHERE);
-        }
+        if (storage && expressions.filter_info && expressions.prewhere_info)
+            throw Exception("PREWHERE is not supported with the table filtering", ErrorCodes::ILLEGAL_PREWHERE);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
@@ -571,6 +667,22 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
         if (expressions.first_stage)
         {
+            if (expressions.filter_info)
+            {
+                pipeline.transform([&](auto & stream)
+                {
+                    std::cout << "transform actions: " << expressions.filter_info->actions->dumpActions() << std::endl;
+
+                    /// Always remove the filter column so user can't figure out filter expression by optimization.
+                    std::cout << "stream before filter: " << stream->getHeader().dumpStructure() << std::endl;
+                    stream = std::make_shared<FilterBlockInputStream>(
+                        stream,
+                        expressions.filter_info->actions,
+                        expressions.filter_info->column_name,
+                        expressions.filter_info->do_remove_column);
+                });
+            }
+
             if (expressions.hasJoin())
             {
                 const auto & join = query.join()->table_join->as<ASTTableJoin &>();
@@ -797,47 +909,41 @@ void InterpreterSelectQuery::executeFetchColumns(
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
 
-    /// Assumes `storage` is set and the table filter is not empty.
-    auto getFilterActions = [&](ExpressionActionsPtr & actions, const Names & required_columns_after_filter) -> String
-    {
-        ParserSelectQuery parser;
-        const auto & db_name = storage->getDatabaseName();
-        const auto & table_name = storage->getTableName();
-        const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
-
-        /// Keep columns that are required after the filter actions.
-        String columns;
-        for (const auto & column_name : required_columns_after_filter)
-        {
-            columns += column_name + ',';
-        }
-
-        String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
-        auto query_ast = parseQuery(parser, query_str, 0);
-
-        auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-        ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
-        ExpressionActionsChain chain(context);
-        analyzer.appendSelect(chain, false);
-        chain.finalize();
-        actions = chain.getLastActions();
-
-        return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
-    };
-
     if (storage)
     {
-        auto initial_required_columns = required_columns;
-
-        /// Populate initial required columns with the columns from filter expression.
-        /// Setup `prewhere_info` with filter actions.
-        /// XXX: looks like PREWHERE required columns are prepopulated somewhere else.
         if (context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
         {
-            prewhere_info = std::make_shared<PrewhereInfo>();
-            prewhere_info->prewhere_column_name = getFilterActions(prewhere_info->prewhere_actions, initial_required_columns);
-            prewhere_info->remove_prewhere_column = true;
-            auto required_columns_from_filter = prewhere_info->prewhere_actions->getRequiredColumns();
+            /// Assumes `storage` is set and the table filter is not empty.
+            auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String {
+                ParserSelectQuery parser;
+                const auto & db_name = storage->getDatabaseName();
+                const auto & table_name = storage->getTableName();
+                const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
+
+                /// Keep columns that are required after the filter actions.
+                String columns;
+                for (const auto & column_name : required_columns_before_filter)
+                {
+                    columns += column_name + ',';
+                }
+
+                /// Using separate expression analyzer to prevent any possible alias injection
+                String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
+                auto query_ast = parseQuery(parser, query_str, 0);
+
+                auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
+                ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
+                ExpressionActionsChain new_chain(context);
+                analyzer.appendSelect(new_chain, false);
+                actions = new_chain.getLastActions();
+
+                return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
+            };
+
+            auto initial_required_columns = required_columns;
+            ExpressionActionsPtr actions;
+            getFilterActions(actions, initial_required_columns);
+            auto required_columns_from_filter = actions->getRequiredColumns();
 
             for (const auto & column : required_columns_from_filter)
             {
@@ -1152,6 +1258,9 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 {
     pipeline.transform([&](auto & stream)
     {
+        std::cout << "transform actions: " << expression->dumpActions() << std::endl;
+
+        std::cout << "stream before filter: " << stream->getHeader().dumpStructure() << std::endl;
         stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where_expression->getColumnName(), remove_fiter);
     });
 }

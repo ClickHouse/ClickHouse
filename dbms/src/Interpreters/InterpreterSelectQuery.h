@@ -154,6 +154,7 @@ private:
 
         SubqueriesForSets subqueries_for_sets;
         PrewhereInfoPtr prewhere_info;
+        FilterInfoPtr filter_info;
     };
 
     AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run);
