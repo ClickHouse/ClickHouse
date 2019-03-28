@@ -82,13 +82,13 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     }
     catch (const Exception & e)
     {
-        stream << "(" << getVersion() << ") " << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace);
+        stream << "(version " << getVersion() << ") " << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace);
     }
     catch (const Poco::Exception & e)
     {
         try
         {
-            stream << "(" << getVersion() << ") " << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+            stream << "(version " << getVersion() << ") " << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", e.displayText() = " << e.displayText();
         }
         catch (...) {}
@@ -103,7 +103,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "(" << getVersion() << ") " << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what();
+            stream << "(version " << getVersion() << ") " << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what();
         }
         catch (...) {}
     }
@@ -117,7 +117,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "(" << getVersion() << ") " << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name;
+            stream << "(version " << getVersion() << ") " << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name;
         }
         catch (...) {}
     }
