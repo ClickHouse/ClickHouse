@@ -246,7 +246,7 @@ public:
 
         if (src_arr.size() > std::numeric_limits<UInt8>::max())
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
+                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(src_arr.size())
                     + ", should be at most 255",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
@@ -337,7 +337,7 @@ public:
 
         if (src_arr.size() > LimitArgs)
             throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
+                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(src_arr.size())
                     + ", should be at most " + std::to_string(LimitArgs),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
