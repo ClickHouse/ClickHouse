@@ -14,7 +14,6 @@
 #include <Interpreters/Context.h>
 #include <common/StringRef.h>
 
-
 namespace DB
 {
 /** Search and replace functions in strings:
@@ -215,12 +214,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() + 1 >= std::numeric_limits<UInt8>::max())
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
-                    + ", should be at most 255.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         if (!isString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -229,7 +222,6 @@ public:
         if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -251,6 +243,12 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
 
         Array src_arr = col_const_arr->getValue<Array>();
+
+        if (src_arr.size() > std::numeric_limits<UInt8>::max())
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
+                    + ", should be at most 255",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         std::vector<StringRef> refs;
         for (const auto & el : src_arr)
@@ -306,12 +304,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() + 1 >= LimitArgs)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
-                    + ", should be at most " + std::to_string(LimitArgs) + ".",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         if (!isString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -342,6 +334,12 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
 
         Array src_arr = col_const_arr->getValue<Array>();
+
+        if (src_arr.size() > LimitArgs)
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
+                    + ", should be at most " + std::to_string(LimitArgs),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         std::vector<StringRef> refs;
         refs.reserve(src_arr.size());
