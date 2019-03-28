@@ -136,21 +136,7 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 
 bool MergingSortedBlockInputStream::MergeStopCondition::checkStop() const
 {
-    size_t total_rows = 0;
-    size_t sum = 0;
-    for (const auto & [granularity, rows_count] : blocks_granularity)
-    {
-        total_rows += rows_count;
-        sum += granularity * rows_count;
-    }
-    if (!count_average)
-        return total_rows == max_block_size;
-
-    if (total_rows == 0)
-        return false;
-
-    size_t average = sum / total_rows;
-    return total_rows >= average;
+    return checkStop(sum_rows_count);
 }
 
 bool MergingSortedBlockInputStream::MergeStopCondition::checkStop(size_t total_rows) const
@@ -161,10 +147,7 @@ bool MergingSortedBlockInputStream::MergeStopCondition::checkStop(size_t total_r
     if (total_rows == 0)
         return false;
 
-    size_t sum = 0;
-    for (const auto & [granularity, rows_count] : blocks_granularity)
-        sum += granularity * rows_count;
-    size_t average = sum / total_rows;
+    size_t average = sum_blocks_granularity / total_rows;
     return total_rows >= average;
 }
 
@@ -196,7 +179,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         }
 
         ++merged_rows;
-        stop_condition.incrementRowsCountFromGranularity(current_granularity);
+        stop_condition.addRowWithGranularity(current_granularity);
         return stop_condition.checkStop(merged_rows);
     };
 

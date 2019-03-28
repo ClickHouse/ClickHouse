@@ -118,7 +118,8 @@ protected:
 
     struct MergeStopCondition
     {
-        std::unordered_map<size_t, size_t> blocks_granularity;
+        size_t sum_blocks_granularity = 0;
+        size_t sum_rows_count = 0;
         bool count_average;
         size_t max_block_size;
 
@@ -127,16 +128,17 @@ protected:
             , max_block_size(max_block_size_)
         {}
 
-        void incrementRowsCountFromGranularity(size_t granularity)
+        void addRowWithGranularity(size_t granularity)
         {
-            blocks_granularity[granularity]++;
+            sum_blocks_granularity += granularity;
+            sum_rows_count++;
         }
 
         bool checkStop(size_t total_rows) const;
         bool checkStop() const;
         bool empty() const
         {
-            return blocks_granularity.empty();
+            return sum_blocks_granularity == 0;
         }
     };
 

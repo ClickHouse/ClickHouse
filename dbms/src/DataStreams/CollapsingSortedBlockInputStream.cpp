@@ -52,7 +52,7 @@ void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_column
     {
         if (count_positive <= count_negative)
         {
-            condition.incrementRowsCountFromGranularity(block_size);
+            condition.addRowWithGranularity(block_size);
             for (size_t i = 0; i < num_columns; ++i)
                 merged_columns[i]->insertFrom(*(*first_negative.columns)[i], first_negative.row_num);
 
@@ -62,7 +62,7 @@ void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_column
 
         if (count_positive >= count_negative)
         {
-            condition.incrementRowsCountFromGranularity(block_size);
+            condition.addRowWithGranularity(block_size);
             for (size_t i = 0; i < num_columns; ++i)
                 merged_columns[i]->insertFrom(*(*last_positive.columns)[i], last_positive.row_num);
 
