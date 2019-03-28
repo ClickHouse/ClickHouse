@@ -119,33 +119,24 @@ Join::Type Join::chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_siz
     return Type::hashed;
 }
 
-
-struct ASOFSplit
+static const IColumn * extractAsofColumn(const ColumnRawPtrs & key_columns)
 {
-    ColumnRawPtrs key_columns;
-    Sizes key_sizes;
+    return key_columns.back();
+}
 
-    ColumnRawPtrs asof_columns;
-    Sizes asof_sizes;
-};
-
-template<ASTTableJoin::Strictness STRICTNESS>
-ASOFSplit split_asof_columns(const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
+template<typename KeyGetter, ASTTableJoin::Strictness STRICTNESS>
+static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
 {
-    ASOFSplit spl;
-    spl.key_columns = key_columns;
-    spl.key_sizes = key_sizes;
-
     if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
     {
-        spl.asof_columns.push_back(spl.key_columns.back());
-        spl.key_columns.pop_back();
-
-        spl.asof_sizes.push_back(spl.key_sizes.back());
-        spl.key_sizes.pop_back();
+        auto key_column_copy = key_columns;
+        auto key_size_copy = key_sizes;
+        key_column_copy.pop_back();
+        key_size_copy.pop_back();
+        return KeyGetter(key_column_copy, key_size_copy, nullptr);
     }
-
-    return spl;
+    else
+        return KeyGetter(key_columns, key_sizes, nullptr);
 }
 
 template <Join::Type type, typename Value, typename Mapped>
@@ -283,9 +274,7 @@ void Join::setSampleBlock(const Block & block)
     if (strictness == ASTTableJoin::Strictness::Asof)
     {
         if (kind != ASTTableJoin::Kind::Left)
-        {
             throw Exception("ASOF only supports LEFT as base join", ErrorCodes::NOT_IMPLEMENTED);
-        }
 
         if (key_columns.back()->sizeOfValueIfFixed() != sizeof(ASOFTimeType))
         {
@@ -296,9 +285,7 @@ void Join::setSampleBlock(const Block & block)
         key_columns.pop_back();
 
         if (key_columns.empty())
-        {
             throw Exception("ASOF join cannot be done without a joining column", ErrorCodes::LOGICAL_ERROR);
-        }
 
         /// this is going to set up the appropriate hash table for the direct lookup part of the join
         /// However, this does not depend on the size of the asof join key (as that goes into the BST)
@@ -438,7 +425,7 @@ namespace
             }
             auto k = asof_getter.getKey(i, pool);
             time_series_map->insert(k, stored_block, i);
-            std::cout << "inserted key into time series map=" << k << " result=" << time_series_map->dumpStructure() << std::endl;
+//            std::cout << "inserted key into time series map=" << k << " result=" << time_series_map->dumpStructure() << std::endl;
         }
     };
 
@@ -448,8 +435,11 @@ namespace
         Map & map, size_t rows, const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
-        auto spl = split_asof_columns<STRICTNESS>(key_columns, key_sizes);
-        KeyGetter key_getter(spl.key_columns, spl.key_sizes, nullptr);
+        const IColumn * asof_column [[maybe_unused]] = nullptr;
+        if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+            asof_column = extractAsofColumn(key_columns);
+
+        auto key_getter = createKeyGetter<KeyGetter, STRICTNESS>(key_columns, key_sizes);
 
         for (size_t i = 0; i < rows; ++i)
         {
@@ -458,10 +448,9 @@ namespace
 
             if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
             {
-                Join::AsofGetterType asof_getter(spl.asof_columns, spl.asof_sizes, nullptr);
+                auto asof_getter = Join::AsofGetterType(asof_column);
                 Inserter<STRICTNESS, Map, KeyGetter>::insert(map, key_getter, asof_getter, stored_block, i, pool);
-            }
-            else
+            } else
                 Inserter<STRICTNESS, Map, KeyGetter>::insert(map, key_getter, stored_block, i, pool);
         }
     }
@@ -705,8 +694,11 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
     Arena pool;
 
-    auto spl = split_asof_columns<STRICTNESS>(key_columns, key_sizes);
-    KeyGetter key_getter(spl.key_columns, spl.key_sizes, nullptr);
+    const IColumn * asof_column [[maybe_unused]] = nullptr;
+    if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+        asof_column = extractAsofColumn(key_columns);
+    auto key_getter = createKeyGetter<KeyGetter, STRICTNESS>(key_columns, key_sizes);
+
 
     IColumn::Offset current_offset = 0;
 
@@ -726,7 +718,7 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
                 if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
                 {
-                    Join::AsofGetterType asof_getter(spl.asof_columns, spl.asof_sizes, nullptr);
+                    Join::AsofGetterType asof_getter(asof_column);
                     auto asof_key = asof_getter.getKey(i, pool);
                     bool actually_found = addFoundRowAsof<Map>(mapped, added_columns, current_offset, asof_key);
 
