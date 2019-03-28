@@ -36,6 +36,9 @@ SELECT a FROM test.filtered_table3 WHERE c = 1;
 SELECT c = 1 FROM test.filtered_table3;
 SELECT a + b = 1 FROM test.filtered_table3;
 
+SELECT * FROM test.filtered_table1 as t1 ANY LEFT JOIN test.filtered_table1 as t2 ON t1.a = t2.b;
+SELECT * FROM test.filtered_table1 as t2 ANY RIGHT JOIN test.filtered_table1 as t1 ON t2.b = t1.a;
+
 DROP TABLE test.filtered_table1;
 DROP TABLE test.filtered_table2;
 DROP TABLE test.filtered_table3;
