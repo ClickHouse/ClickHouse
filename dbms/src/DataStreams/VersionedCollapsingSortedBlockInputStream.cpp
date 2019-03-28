@@ -155,7 +155,7 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
 
             current_keys.popFront();
 
-            stop_condition.incrementRowsCountFromGranularity(current_block_granularity);
+            stop_condition.addRowWithGranularity(current_block_granularity);
             --rows_to_merge;
 
             if (stop_condition.checkStop())

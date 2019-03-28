@@ -74,7 +74,7 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
         {
             /// Write the data for the previous primary key.
             insertRow(merged_columns);
-            stop_condition.incrementRowsCountFromGranularity(current_block_granularity);
+            stop_condition.addRowWithGranularity(current_block_granularity);
             selected_row.reset();
             current_key.swap(next_key);
         }
