@@ -383,7 +383,7 @@ WHERE changed
 
 Contains metadata of each table that the server knows about. Detached tables are not shown in `system.table`.
 
-This table contains the following columns (the type of corresponding column is shown in brackets):
+This table contains the following columns (the type of the corresponding column is shown in brackets):
 
 - `database` (String) — The name of database the table is in.
 - `name` (String) — Table name.
