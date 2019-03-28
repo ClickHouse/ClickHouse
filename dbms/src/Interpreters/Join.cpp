@@ -1201,9 +1201,9 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::Asof, Mapped>
 {
-    static void add(const Mapped & /*mapped*/, size_t & /*rows_added*/, MutableColumns & /*columns_left*/, MutableColumns & /*columns_right*/)
+    static void add(const Mapped & /*mapped*/, size_t & /*rows_added*/, MutableColumns & /*columns_right*/)
     {
-        // If we have a leftover match in the right hand side, not required to join because we are doing asof left
+        // If we have a leftover match in the right hand side, not required to join because we are only support asof left/inner
     }
 };
 
