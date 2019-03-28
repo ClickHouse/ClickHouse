@@ -355,7 +355,7 @@ size_t Join::TSRowRef::size() const
 {
     return ts.size();
 }
-std::optional<std::pair<Join::ASOFTimeType, Join::RowRef>> Join::TSRowRef::find_asof(Join::ASOFTimeType t) const
+std::optional<std::pair<Join::ASOFTimeType, Join::RowRef>> Join::TSRowRef::findAsof(Join::ASOFTimeType t) const
 {
     auto it = ts.upper_bound(t);
     if (it == ts.cbegin())
@@ -659,7 +659,7 @@ void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added,
 template <typename Map>
 bool addFoundRowAsof(const typename Map::mapped_type & mapped, AddedColumns & added, IColumn::Offset & current_offset [[maybe_unused]], Join::ASOFTimeType asof_key)
 {
-    if (auto v = mapped.find_asof(asof_key))
+    if (auto v = mapped.findAsof(asof_key))
     {
         std::pair<Join::ASOFTimeType, Join::RowRef> res = *v;
 //            std::cout << "Adder::addFound" << " to_add" << num_columns_to_add << " i=" << i << " asof_key=" << asof_key << " found=" << res.first << std::endl;
