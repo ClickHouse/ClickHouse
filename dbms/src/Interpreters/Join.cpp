@@ -273,12 +273,12 @@ void Join::setSampleBlock(const Block & block)
 
     if (strictness == ASTTableJoin::Strictness::Asof)
     {
-        if (kind != ASTTableJoin::Kind::Left)
-            throw Exception("ASOF only supports LEFT as base join", ErrorCodes::NOT_IMPLEMENTED);
+        if (kind != ASTTableJoin::Kind::Left and kind != ASTTableJoin::Kind::Inner)
+            throw Exception("ASOF only supports LEFT and INNER as base joins", ErrorCodes::NOT_IMPLEMENTED);
 
         if (key_columns.back()->sizeOfValueIfFixed() != sizeof(ASOFTimeType))
         {
-            std::string msg = "ASOF join columns need to have size ";
+            std::string msg = "ASOF join column needs to have size ";
             msg += std::to_string(sizeof(ASOFTimeType));
             throw Exception(msg, ErrorCodes::BAD_TYPE_OF_FIELD);
         }
