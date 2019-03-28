@@ -76,6 +76,39 @@ namespace ErrorCodes
     extern const int INVALID_LIMIT_EXPRESSION;
 }
 
+namespace
+{
+
+/// Assumes `storage` is set and the table filter is not empty.
+String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & storage, const Context & context, const Names & prerequisite_columns = {})
+{
+    ParserSelectQuery parser;
+    const auto & db_name = storage->getDatabaseName();
+    const auto & table_name = storage->getTableName();
+    const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
+
+    /// Keep columns that are required after the filter actions.
+    String columns;
+    for (const auto & column_name : prerequisite_columns)
+    {
+        columns += column_name + ',';
+    }
+
+    /// Using separate expression analyzer to prevent any possible alias injection
+    String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
+    auto query_ast = parseQuery(parser, query_str, 0);
+
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
+    ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
+    ExpressionActionsChain new_chain(context);
+    analyzer.appendSelect(new_chain, false);
+    actions = new_chain.getLastActions();
+
+    return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
+}
+
+} // namespace
+
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
@@ -389,34 +422,6 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         {
             has_filter = true;
 
-            /// Assumes `storage` is set and the table filter is not empty.
-            auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String
-            {
-                ParserSelectQuery parser;
-                const auto & db_name = storage->getDatabaseName();
-                const auto & table_name = storage->getTableName();
-                const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
-
-                /// Keep columns that are required after the filter actions.
-                String columns;
-                for (const auto & column_name : required_columns_before_filter)
-                {
-                    columns += column_name + ',';
-                }
-
-                /// Using separate expression analyzer to prevent any possible alias injection
-                String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
-                auto query_ast = parseQuery(parser, query_str, 0);
-
-                auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-                ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
-                ExpressionActionsChain new_chain(context);
-                analyzer.appendSelect(new_chain, false);
-                actions = new_chain.getLastActions();
-
-                return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
-            };
-
             /// XXX: aggregated copy-paste from ExpressionAnalyzer::appendSmth()
             if (chain.steps.empty())
             {
@@ -425,7 +430,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             ExpressionActionsChain::Step & step = chain.steps.back();
 
             res.filter_info = std::make_shared<FilterInfo>();
-            res.filter_info->column_name = getFilterActions(step.actions, required_columns);
+            res.filter_info->column_name = generateFilterActions(step.actions, storage, context, required_columns);
             res.filter_info->actions = chain.getLastActions();
             step.required_output.push_back(res.filter_info->column_name);
             step.can_remove_required_output = {true};
@@ -584,36 +589,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
     if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
     {
-        /// Assumes `storage` is set and the table filter is not empty.
-        auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String
-        {
-            ParserSelectQuery parser;
-            const auto & db_name = storage->getDatabaseName();
-            const auto & table_name = storage->getTableName();
-            const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
-
-            /// Keep columns that are required after the filter actions.
-            String columns;
-            for (const auto & column_name : required_columns_before_filter)
-            {
-                columns += column_name + ',';
-            }
-
-            /// Using separate expression analyzer to prevent any possible alias injection
-            String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
-            auto query_ast = parseQuery(parser, query_str, 0);
-
-            auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-            ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
-            ExpressionActionsChain new_chain(context);
-            analyzer.appendSelect(new_chain, false);
-            actions = new_chain.getLastActions();
-
-            return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
-        };
-
         ExpressionActionsPtr actions;
-        getFilterActions(actions, required_columns);
+        generateFilterActions(actions, storage, context, required_columns);
         source_header = storage->getSampleBlockForColumns(actions->getRequiredColumns());
     }
 
@@ -913,39 +890,12 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     if (storage)
     {
+        /// Append columns from the table filter to required
         if (context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
         {
-            /// Assumes `storage` is set and the table filter is not empty.
-            auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String
-            {
-                ParserSelectQuery parser;
-                const auto & db_name = storage->getDatabaseName();
-                const auto & table_name = storage->getTableName();
-                const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
-
-                /// Keep columns that are required after the filter actions.
-                String columns;
-                for (const auto & column_name : required_columns_before_filter)
-                {
-                    columns += column_name + ',';
-                }
-
-                /// Using separate expression analyzer to prevent any possible alias injection
-                String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
-                auto query_ast = parseQuery(parser, query_str, 0);
-
-                auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
-                ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
-                ExpressionActionsChain new_chain(context);
-                analyzer.appendSelect(new_chain, false);
-                actions = new_chain.getLastActions();
-
-                return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
-            };
-
             auto initial_required_columns = required_columns;
             ExpressionActionsPtr actions;
-            getFilterActions(actions, initial_required_columns);
+            generateFilterActions(actions, storage, context, initial_required_columns);
             auto required_columns_from_filter = actions->getRequiredColumns();
 
             for (const auto & column : required_columns_from_filter)
