@@ -39,7 +39,7 @@ Returns 1, if at least one string `needle_i` matches the string `haystack` and 0
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
-Note: in all `multiSearch*` functions the number of needles should be less than 2<sub>8</sub> because of implementation specification.
+Note: in all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.
 
 ## match(haystack, pattern)
 
