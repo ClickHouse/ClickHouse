@@ -86,7 +86,8 @@ public:
         bool isFinished() const { return current_mark >= last_mark; }
 
         size_t numReadRowsInCurrentGranule() const { return offset_after_current_mark; }
-        size_t numPendingRowsInCurrentGranule() const {
+        size_t numPendingRowsInCurrentGranule() const
+        {
             return current_mark_index_granularity - numReadRowsInCurrentGranule();
         }
         size_t numPendingGranules() const { return last_mark - current_mark; }

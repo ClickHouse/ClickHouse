@@ -65,13 +65,20 @@ size_t IndexGranularity::getMarkPositionInRows(const size_t mark_index) const
     return marks_to_rows[mark_index - 1];
 }
 
-size_t IndexGranularity::getRowsCountInRange(const MarkRange & range) const
+
+size_t IndexGranularity::getRowsCountInRange(size_t begin, size_t end) const
 {
     size_t subtrahend = 0;
-    if (range.begin != 0)
-        subtrahend = marks_to_rows[range.begin - 1];
-    return marks_to_rows[range.end - 1] - subtrahend;
+    if (begin != 0)
+        subtrahend = marks_to_rows[begin - 1];
+    return marks_to_rows[end - 1] - subtrahend;
 }
+
+size_t IndexGranularity::getRowsCountInRange(const MarkRange & range) const
+{
+    return getRowsCountInRange(range.begin, range.end);
+}
+
 size_t IndexGranularity::getRowsCountInRanges(const MarkRanges & ranges) const
 {
     size_t total = 0;
@@ -91,7 +98,6 @@ void IndexGranularity::resizeWithFixedGranularity(size_t size, size_t fixed_gran
     {
         marks_to_rows[i] = fixed_granularity + prev;
         prev = marks_to_rows[i];
-
     }
 }
 

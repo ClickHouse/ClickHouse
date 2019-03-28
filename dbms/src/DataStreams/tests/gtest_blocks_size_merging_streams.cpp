@@ -19,7 +19,8 @@ Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, si
 
     ColumnsWithTypeAndName cols;
     size_t size_of_row_in_bytes = columns.size() * sizeof(UInt64);
-    for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; i++) {
+    for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; i++)
+    {
         auto column = ColumnUInt64::create(rows, 0);
         for (size_t j = 0; j < rows; ++j)
         {
@@ -35,11 +36,11 @@ Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, si
 BlockInputStreams getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
     BlockInputStreams result;
-    for(auto [block_size_in_bytes, blocks_count, stride]: block_sizes)
+    for(auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
     {
         BlocksList blocks;
         size_t start = stride;
-        while(blocks_count--)
+        while (blocks_count--)
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
         result.push_back(std::make_shared<BlocksListBlockInputStream>(std::move(blocks)));
     }
@@ -52,11 +53,11 @@ BlockInputStreams getInputStreamsEqualStride(const std::vector<std::string> & co
 {
     BlockInputStreams result;
     size_t i = 0;
-    for(auto [block_size_in_bytes, blocks_count, stride]: block_sizes)
+    for(auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
     {
         BlocksList blocks;
         size_t start = i;
-        while(blocks_count--)
+        while (blocks_count--)
             blocks.push_back(getBlockWithSize(column_names, block_size_in_bytes, stride, start));
         result.push_back(std::make_shared<BlocksListBlockInputStream>(std::move(blocks)));
         i++;
@@ -84,7 +85,7 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
 
     EXPECT_EQ(streams.size(), 3);
 
-    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE);
+    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
 
     size_t total_rows = 0;
     auto block1 = stream.read();
@@ -93,9 +94,8 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
 
     EXPECT_EQ(stream.read(), Block());
 
-    for (auto & block : {block1, block2, block3 }) {
+    for (auto & block : {block1, block2, block3})
         total_rows += block.rows();
-    }
     /**
       * First block consists of 1 row from block3 with 21 rows + 2 rows from block2 with 10 rows
       * + 5 rows from block 1 with 5 rows granularity
@@ -122,7 +122,7 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
 
     EXPECT_EQ(streams.size(), 3);
 
-    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE);
+    MergingSortedBlockInputStream stream(streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, nullptr, false, true);
 
     auto block1 = stream.read();
     auto block2 = stream.read();
