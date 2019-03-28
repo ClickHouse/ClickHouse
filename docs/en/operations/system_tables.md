@@ -31,16 +31,24 @@ user String — The name of the user for connecting to the server.
 ## system.columns
 
 Contains information about the columns in all tables.
+
 You can use this table to get information similar to `DESCRIBE TABLE`, but for multiple tables at once.
 
-```
-database String — The name of the database the table is in.
-table String – Table name.
-name String — Column name.
-type String — Column type.
-default_type String — Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined.
-default_expression String — Expression for the default value, or an empty string if it is not defined.
-```
+- `database` (String) — Database name.
+- `table` (String) — Table name.
+- `name` (String) — Column name.
+- `type` (String) — Column type.
+- `default_kind` (String) — Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined.
+- `default_expression` (String) — Expression for the default value, or an empty string if it is not defined.
+- `data_compressed_bytes` (UInt64) — The amount of compressed data, in bytes.
+- `data_uncompressed_bytes` (UInt64) — The amount of decompressed data, in bytes.
+- `marks_bytes` (UInt64) — The size of marks, in bytes.
+- `comment` (String) — The comment about column, or an empty string if it is not defined.
+- `is_in_partition_key` (UInt8) — Flag that indicates whether the column is in partition expression.
+- `is_in_sorting_key` (UInt8) — Flag that indicates whether the column is in sorting key expression.
+- `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in primary key expression.
+- `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in sampling key expression.
+
 
 ## system.databases
 
@@ -374,10 +382,27 @@ WHERE changed
 
 ## system.tables
 
-This table contains the String columns 'database', 'name', and 'engine'.
-The table also contains three virtual columns: metadata_modification_time (DateTime type), create_table_query, and engine_full (String type).
-Each table that the server knows about is entered in the 'system.tables' table.
-This system table is used for implementing SHOW TABLES queries.
+Contains metadata of each table that the server knows about. Detached tables are not shown in `system.table` table.
+
+This table contains the following columns (the type of corresponding column is shown in brackets):
+
+- `database` (String) — Name of the database the table is in.
+- `name` (String) — Table name.
+- `engine` (String) — Name of the table engine (without parameters).
+- `is_temporary` (UInt8) - Flag that indicates whether the table is temporary.
+- `data_path` (String) - Path to the table data in the file system.
+- `metadata_path` (String) - Path to the table metadata in the file system. 
+- `metadata_modification_time` (DateTime) - Time of latest modification of the table metadata.
+- `dependencies_database` (Array(String)) - Database dependencies.
+- `dependencies_table` - (Array(String)) - Table dependencies.
+- `create_table_query` (String) - The query that was used to create the table.
+- `engine_full` (String) - Name of the table engine with parameters.
+- `partition_key` (String) - The partition key expression specified in the table. 
+- `sorting_key` (String) - The sorting key expression specified in the table.
+- `primary_key` (String) - The primary key expression specified in the table.
+- `sampling_key` (String) - The sampling key expression specified in the table.
+
+The `system.tables` table is used for implementing `SHOW TABLES` queries.
 
 ## system.zookeeper
 
