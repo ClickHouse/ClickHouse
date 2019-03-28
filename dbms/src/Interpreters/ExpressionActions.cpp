@@ -943,36 +943,29 @@ void ExpressionActions::finalize(const Names & output_columns)
         }
     }
 
+/*    std::cerr << "\n";
+    for (const auto & action : actions)
+        std::cerr << action.toString() << "\n";
+    std::cerr << "\n";*/
+
     /// Deletes unnecessary temporary columns.
 
     /// If the column after performing the function `refcount = 0`, it can be deleted.
     std::map<String, int> columns_refcount;
 
     for (const auto & name : final_columns)
-    {
         ++columns_refcount[name];
-        std::cout << "final ++refcount: " << name << " " << columns_refcount[name] << std::endl;
-    }
 
     for (const auto & action : actions)
     {
         if (!action.source_name.empty())
-        {
             ++columns_refcount[action.source_name];
-            std::cout << "source ++refcount: " << action.source_name << " " << columns_refcount[action.source_name] << std::endl;
-        }
 
         for (const auto & name : action.argument_names)
-        {
             ++columns_refcount[name];
-            std::cout << "arg ++refcount: " << name << " " << columns_refcount[name] << std::endl;
-        }
 
         for (const auto & name_alias : action.projection)
-        {
             ++columns_refcount[name_alias.first];
-            std::cout << "project ++refcount: " << name_alias.first << " " << columns_refcount[name_alias.first] << std::endl;
-        }
     }
 
     Actions new_actions;
@@ -985,10 +978,8 @@ void ExpressionActions::finalize(const Names & output_columns)
         auto process = [&] (const String & name)
         {
             auto refcount = --columns_refcount[name];
-            std::cout << "--refcount: " << name << " " << columns_refcount[name] << std::endl;
             if (refcount <= 0)
             {
-                std::cout << "removing " << name << std::endl;
                 new_actions.push_back(ExpressionAction::removeColumn(name));
                 if (sample_block.has(name))
                     sample_block.erase(name);
@@ -1006,7 +997,10 @@ void ExpressionActions::finalize(const Names & output_columns)
 
     actions.swap(new_actions);
 
-    std::cout << "new actions: " << dumpActions() << std::endl;
+/*    std::cerr << "\n";
+    for (const auto & action : actions)
+        std::cerr << action.toString() << "\n";
+    std::cerr << "\n";*/
 
     optimizeArrayJoin();
     checkLimits(sample_block);

@@ -565,8 +565,6 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
         DatabaseAndTableWithAlias database_table(table_to_join.database_and_table_name);
         StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
 
-        /// TODO: here we get the table to join! Apply some filtering also.
-
         if (table)
         {
             auto * storage_join = dynamic_cast<StorageJoin *>(table.get());
@@ -723,7 +721,6 @@ bool ExpressionAnalyzer::appendWhere(ExpressionActionsChain & chain, bool only_t
     step.can_remove_required_output = {true};
 
     getRootActions(select_query->where_expression, only_types, step.actions);
-    std::cout << "where actions: " << step.actions->dumpActions() << std::endl;
 
     return true;
 }

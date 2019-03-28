@@ -435,8 +435,6 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             step.required_output.push_back(res.filter_info->column_name);
             step.can_remove_required_output = {true};
 
-            std::cout << "filter actions: " << res.filter_info->actions->dumpActions() << std::endl;
-
             chain.addStep();
         }
 
@@ -503,11 +501,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         query_analyzer->appendProjectResult(chain);
         res.final_projection = chain.getLastActions();
 
-        std::cout << "before finalize: " << chain.dumpChain() << std::endl;
-
         finalizeChain(chain);
-
-        std::cout << "after finalize: " << chain.dumpChain() << std::endl;
     }
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
@@ -597,7 +591,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     if (dry_run)
     {
         pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
-        std::cout << "source header: " << source_header.dumpStructure() << std::endl;
         expressions = analyzeExpressions(QueryProcessingStage::FetchColumns, true);
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
@@ -650,10 +643,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             {
                 pipeline.transform([&](auto & stream)
                 {
-                    std::cout << "transform actions: " << expressions.filter_info->actions->dumpActions() << std::endl;
-
-                    /// Always remove the filter column so user can't figure out filter expression by optimization.
-                    std::cout << "stream before filter: " << stream->getHeader().dumpStructure() << std::endl;
                     stream = std::make_shared<FilterBlockInputStream>(
                         stream,
                         expressions.filter_info->actions,
@@ -880,7 +869,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
-        PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
+        const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
@@ -1211,9 +1200,6 @@ void InterpreterSelectQuery::executeWhere(Pipeline & pipeline, const ExpressionA
 {
     pipeline.transform([&](auto & stream)
     {
-        std::cout << "transform actions: " << expression->dumpActions() << std::endl;
-
-        std::cout << "stream before filter: " << stream->getHeader().dumpStructure() << std::endl;
         stream = std::make_shared<FilterBlockInputStream>(stream, expression, getSelectQuery().where_expression->getColumnName(), remove_fiter);
     });
 }
