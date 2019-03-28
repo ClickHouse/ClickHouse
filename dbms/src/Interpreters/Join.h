@@ -228,6 +228,52 @@ public:
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
         std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
+
+        void create(Type which)
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            break;
+                case Type::CROSS:            break;
+
+            #define M(NAME) \
+                case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
+            }
+        }
+
+        size_t getTotalRowCount(Type which) const
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
+            #define M(NAME) \
+                case Type::NAME: return NAME ? NAME->size() : 0;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
+            }
+
+            __builtin_unreachable();
+        }
+
+        size_t getTotalByteCountImpl(Type which) const
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
+            #define M(NAME) \
+                case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
+            }
+
+            __builtin_unreachable();
+        }
     };
 
     using MapsAny = MapsTemplate<WithFlags<false, false, RowRef>>;
