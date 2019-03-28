@@ -208,7 +208,9 @@ private:
 };
 
 
-/// Surrounds an identifier by back quotes if it is necessary.
+/// Quote the identifier with backquotes, if required.
 String backQuoteIfNeed(const String & x);
+/// Quote the identifier with backquotes.
+String backQuote(const String & x);
 
 }
