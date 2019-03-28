@@ -174,9 +174,8 @@ protected:
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
-                const auto table = context.tryGetTable(database_name, table_name);
-                if (!table)
-                    continue;
+                const StoragePtr & table = tables_it->table();
+                auto lock = table->lockStructureForShare(false, context.getCurrentQueryId());
 
                 ++rows_count;
 
@@ -190,13 +189,13 @@ protected:
                     res_columns[res_index++]->insert(table_name);
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it->table()->getName());
+                    res_columns[res_index++]->insert(table->getName());
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(0u);  // is_temporary
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it->table()->getDataPath());
+                    res_columns[res_index++]->insert(table->getDataPath());
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(database->getTableMetadataPath(table_name));
