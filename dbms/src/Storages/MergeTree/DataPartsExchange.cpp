@@ -9,6 +9,7 @@
 #include <ext/scope_guard.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/NetException.h>
 
 
 namespace CurrentMetrics
@@ -186,15 +187,28 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         creds.setPassword(password);
     }
 
-    PooledReadWriteBufferFromHTTP in{
-        uri,
-        Poco::Net::HTTPRequest::HTTP_POST,
-        {},
-        timeouts,
-        creds,
-        DBMS_DEFAULT_BUFFER_SIZE,
-        data.settings.replicated_max_parallel_fetches_for_host
-    };
+    std::unique_ptr<PooledReadWriteBufferFromHTTP> in;
+
+    for (;;)
+    {
+        try {
+            in = std::make_unique<PooledReadWriteBufferFromHTTP>(
+                    uri,
+                    Poco::Net::HTTPRequest::HTTP_POST,
+                    std::function<void(std::ostream &)>(),
+                    timeouts,
+                    creds,
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    data.settings.replicated_max_parallel_fetches_for_host
+            );
+
+            break;
+        }
+        catch (const Poco::Net::NoMessageException &)
+        {
+            LOG_TRACE(log, "Retrying NoMessageException");
+        }
+    }
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
@@ -215,19 +229,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     new_data_part->is_temp = true;
 
     size_t files;
-    readBinary(files, in);
+    readBinary(files, *in);
     MergeTreeData::DataPart::Checksums checksums;
     for (size_t i = 0; i < files; ++i)
     {
         String file_name;
         UInt64 file_size;
 
-        readStringBinary(file_name, in);
-        readBinary(file_size, in);
+        readStringBinary(file_name, *in);
+        readBinary(file_size, *in);
 
         WriteBufferFromFile file_out(absolute_part_path + file_name);
         HashingWriteBuffer hashing_out(file_out);
-        copyData(in, hashing_out, file_size, blocker.getCounter());
+        copyData(*in, hashing_out, file_size, blocker.getCounter());
 
         if (blocker.isCancelled())
         {
@@ -238,7 +252,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         }
 
         MergeTreeDataPartChecksum::uint128 expected_hash;
-        readPODBinary(expected_hash, in);
+        readPODBinary(expected_hash, *in);
 
         if (expected_hash != hashing_out.getHash())
             throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path,
@@ -249,7 +263,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
-    assertEOF(in);
+    assertEOF(*in);
 
     new_data_part->modification_time = time(nullptr);
     new_data_part->loadColumnsChecksumsIndexes(true, false);
