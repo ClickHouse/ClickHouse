@@ -228,6 +228,10 @@ protected:
         operator immutable_ptr<T> & () { return value; }
 
         operator bool() const { return value != nullptr; }
+        bool operator! () const { return value == nullptr; }
+
+        bool operator== (const chameleon_ptr & rhs) const { return value == rhs.value; }
+        bool operator!= (const chameleon_ptr & rhs) const { return value != rhs.value; }
     };
 
 public:
