@@ -94,7 +94,7 @@ void IndexGranularity::resizeWithFixedGranularity(size_t size, size_t fixed_gran
     marks_to_rows.resize(size);
 
     size_t prev = 0;
-    for(size_t i = 0; i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
         marks_to_rows[i] = fixed_granularity + prev;
         prev = marks_to_rows[i];
