@@ -101,7 +101,7 @@ Block flatten(const Block & block)
                 const ColumnPtr & column_offsets = column_array->getOffsetsPtr();
 
                 const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(column_array->getData());
-                const Columns & element_columns = column_tuple.getColumns();
+                const auto & element_columns = column_tuple.getColumns();
 
                 for (size_t i = 0; i < tuple_size; ++i)
                 {

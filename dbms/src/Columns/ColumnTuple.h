@@ -17,7 +17,8 @@ class ColumnTuple final : public COWPtrHelper<IColumn, ColumnTuple>
 private:
     friend class COWPtrHelper<IColumn, ColumnTuple>;
 
-    Columns columns;
+    using TupleColumns = std::vector<WrappedPtr>;
+    TupleColumns columns;
 
     template <bool positive>
     struct Less;
@@ -31,6 +32,7 @@ public:
       */
     using Base = COWPtrHelper<IColumn, ColumnTuple>;
     static Ptr create(const Columns & columns);
+    static Ptr create(const TupleColumns & columns);
     static Ptr create(Columns && arg) { return create(arg); }
 
     template <typename Arg, typename = typename std::enable_if<std::is_rvalue_reference<Arg &&>::value>::type>
@@ -78,9 +80,10 @@ public:
     size_t tupleSize() const { return columns.size(); }
 
     const IColumn & getColumn(size_t idx) const { return *columns[idx]; }
-    IColumn & getColumn(size_t idx) { return columns[idx]->assumeMutableRef(); }
+    IColumn & getColumn(size_t idx) { return *columns[idx]; }
 
-    const Columns & getColumns() const { return columns; }
+    const TupleColumns & getColumns() const { return columns; }
+    Columns getColumnsCopy() const { return {columns.begin(), columns.end()}; }
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
 };
