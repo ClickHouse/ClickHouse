@@ -761,11 +761,12 @@ DISTINCT is not supported if SELECT has at least one array column.
 ### LIMIT Clause
 
 `LIMIT m` allows you to select the first `m` rows from the result.
-`LIMIT n`, m allows you to select the first `m` rows from the result after skipping the first `n` rows.
+
+`LIMIT n, m` allows you to select the first `m` rows from the result after skipping the first `n` rows. The `LIMIT m OFFSET n` syntax is also supported.
 
 `n` and `m` must be non-negative integers.
 
-If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
+If there isn't an `ORDER BY` clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
 
 ### UNION ALL Clause
 

@@ -25,6 +25,8 @@
 #include <Poco/Ext/ThreadNumber.h>
 
 #include <ext/range.h>
+#include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/ExpressionBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -221,7 +223,21 @@ BlockInputStreams StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query_info.query, context, stream, processed_stage).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, stream, SelectQueryOptions(processed_stage)).execute().in;
+
+    if (query_info.prewhere_info)
+    {
+        for (auto & stream : streams_from_buffers)
+            stream = std::make_shared<FilterBlockInputStream>(stream, query_info.prewhere_info->prewhere_actions,
+                    query_info.prewhere_info->prewhere_column_name, query_info.prewhere_info->remove_prewhere_column);
+
+        if (query_info.prewhere_info->alias_actions)
+        {
+            for (auto & stream : streams_from_buffers)
+                stream = std::make_shared<ExpressionBlockInputStream>(stream, query_info.prewhere_info->alias_actions);
+
+        }
+    }
 
     streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams_from_dst;

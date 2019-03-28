@@ -23,27 +23,27 @@ The possible values are:
 
 ## enable_optimize_predicate_expression
 
-Turns on the predicate pushdown in `SELECT` queries.
+Turns on predicate pushdown in `SELECT` queries.
 
-Predicate pushdown may significantly reduce the network traffic for distributed queries.
+Predicate pushdown may significantly reduce network traffic for distributed queries.
 
 Possible values:
 
-- 0 — The functionality is turned off.
-- 1 — The functionality is turned on.
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
 
 Default value: 0.
 
 **Usage**
 
-Let's consider the following queries:
+Consider the following queries:
 
 1. `SELECT count() FROM test_table WHERE date = '2018-10-10'`
 2. `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
 
-If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse apply `WHERE` to subquery when processing it.
+If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse applies `WHERE` to the subquery when processing it.
 
-If `enable_optimize_predicate_expression = 0`, then the second query is executed much slower, because the `WHERE` clause applies to all the data after the subquery finishes.
+If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer, because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
@@ -78,6 +78,41 @@ If `force_primary_key=1`, ClickHouse checks to see if the query has a primary ke
 Enable or disable fsync when writing .sql files. Enabled by default.
 
 It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
+
+## enable_http_compression {#settings-enable_http_compression}
+
+Enables/disables compression of the data in the response to an HTTP request.
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — The functionality is disabled.
+- 1 — The functionality is enabled.
+
+Default value: 0.
+
+## http_zlib_compression_level {#settings-http_zlib_compression_level}
+
+Sets the level of the compression of the data in the response to an HTTP request if [enable_http_compression = 1](#settings-enable_http_compression).
+
+Possible values: numbers from 1 to 9.
+
+Default value: 3.
+
+
+## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
+
+Enables/disables the verification of the checksum when uncompressing the HTTP POST data from the client. Used only for ClickHouse native format of compression (neither `gzip` nor `deflate`).
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — The functionality is disabled.
+- 1 — The functionality is enabled.
+
+Default value: 0.
 
 ## input_format_allow_errors_num
 
