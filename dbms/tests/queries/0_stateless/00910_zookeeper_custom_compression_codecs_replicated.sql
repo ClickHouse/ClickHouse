@@ -1,6 +1,7 @@
 SET send_logs_level = 'none';
 
-DROP TABLE IF EXISTS test.compression_codec_replicated;
+DROP TABLE IF EXISTS test.compression_codec_replicated1;
+DROP TABLE IF EXISTS test.compression_codec_replicated2;
 
 CREATE TABLE test.compression_codec_replicated1(
     id UInt64 CODEC(LZ4),
