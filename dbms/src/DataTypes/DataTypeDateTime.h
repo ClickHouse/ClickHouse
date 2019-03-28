@@ -28,14 +28,15 @@ namespace DB
   * Server time zone is the time zone specified in 'timezone' parameter in configuration file,
   *  or system time zone at the moment of server startup.
   */
-class DataTypeDateTime final : public DataTypeNumberBase<UInt32>
+template<typename NumberBase>
+class DataTypeDateTimeBase : public DataTypeNumberBase<NumberBase>
 {
 public:
-    DataTypeDateTime(const std::string & time_zone_name = "");
+    DataTypeDateTimeBase(const std::string & time_zone_name = "");
 
-    const char * getFamilyName() const override { return "DateTime"; }
+    const char * getFamilyName() const override;
     std::string doGetName() const override;
-    TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
+    TypeIndex getTypeId() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
@@ -62,4 +63,13 @@ private:
     const DateLUTImpl & utc_time_zone;
 };
 
+struct DataTypeDateTime : DataTypeDateTimeBase<UInt32> {
+    using DataTypeDateTimeBase::DataTypeDateTimeBase;
+};
+
+struct DataTypeDateTime64 : DataTypeDateTimeBase<UInt64> {
+    using DataTypeDateTimeBase::DataTypeDateTimeBase;
+};
+
 }
+
