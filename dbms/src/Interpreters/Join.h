@@ -162,7 +162,7 @@ public:
 
         TSRowRef() {}
         void insert(ASOFTimeType t, const Block * block, size_t row_num);
-        std::optional<std::pair<ASOFTimeType, RowRef>> find_asof(ASOFTimeType t) const;
+        std::optional<std::pair<ASOFTimeType, RowRef>> findAsof(ASOFTimeType t) const;
         std::string dumpStructure() const;
         size_t size() const;
     };
