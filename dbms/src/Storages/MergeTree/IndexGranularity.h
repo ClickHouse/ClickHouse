@@ -22,10 +22,12 @@ public:
     size_t getRowsCountInRanges(const MarkRanges & ranges) const;
     size_t getMarkPositionInRows(const size_t mark_index) const;
 
+    size_t countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows=0) const;
 
     size_t getAvgGranularity() const;
     size_t getMarksCount() const;
     size_t getTotalRows() const;
+
     inline size_t getMarkRows(size_t mark_index) const
     {
         if (mark_index == 0)
@@ -33,12 +35,15 @@ public:
         else
             return marks_to_rows[mark_index] - marks_to_rows[mark_index - 1];
     }
+
     size_t getMarkStartingRow(size_t mark_index) const;
+
     size_t getLastMarkRows() const
     {
         size_t last = marks_to_rows.size() - 1;
         return getMarkRows(last);
     }
+
     bool empty() const
     {
         return marks_to_rows.empty();
