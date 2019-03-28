@@ -36,7 +36,7 @@ Block getBlockWithSize(const std::vector<std::string> & columns, size_t rows, si
 BlockInputStreams getInputStreams(const std::vector<std::string> & column_names, const std::vector<std::tuple<size_t, size_t, size_t>> & block_sizes)
 {
     BlockInputStreams result;
-    for(auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
+    for (auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
     {
         BlocksList blocks;
         size_t start = stride;
@@ -53,7 +53,7 @@ BlockInputStreams getInputStreamsEqualStride(const std::vector<std::string> & co
 {
     BlockInputStreams result;
     size_t i = 0;
-    for(auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
+    for (auto [block_size_in_bytes, blocks_count, stride] : block_sizes)
     {
         BlocksList blocks;
         size_t start = i;
