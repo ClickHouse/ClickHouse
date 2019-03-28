@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_MANY_BYTES;
 }
 
 
@@ -340,6 +341,7 @@ template <typename Impl>
 struct MultiSearchImpl
 {
     using ResultType = UInt8;
+    static constexpr bool is_using_hyperscan = false;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
@@ -355,6 +357,7 @@ template <typename Impl>
 struct MultiSearchFirstPositionImpl
 {
     using ResultType = UInt64;
+    static constexpr bool is_using_hyperscan = false;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
@@ -374,6 +377,7 @@ template <typename Impl>
 struct MultiSearchFirstIndexImpl
 {
     using ResultType = UInt64;
+    static constexpr bool is_using_hyperscan = false;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
@@ -610,6 +614,7 @@ struct MultiMatchAnyImpl
 {
     static_assert(static_cast<int>(FindAny) + static_cast<int>(FindAnyIndex) == 1);
     using ResultType = Type;
+    static constexpr bool is_using_hyperscan = true;
 
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
@@ -642,14 +647,17 @@ struct MultiMatchAnyImpl
             return 0;
         };
         const size_t haystack_offsets_size = haystack_offsets.size();
-        size_t offset = 0;
+        UInt64 offset = 0;
         for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
+            UInt64 length = haystack_offsets[i] - offset - 1;
+            if (length > std::numeric_limits<UInt32>::max())
+                throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
             res[i] = 0;
             hs_scan(
                 hyperscan_regex->get(),
                 reinterpret_cast<const char *>(haystack_data.data()) + offset,
-                haystack_offsets[i] - offset - 1,
+                length,
                 0,
                 smart_scratch.get(),
                 on_match,
@@ -657,7 +665,7 @@ struct MultiMatchAnyImpl
             offset = haystack_offsets[i];
         }
 #else
-        /// Fallback if not an intel processor
+        /// Fallback if do not use hyperscan
         PaddedPODArray<UInt8> accum(res.size());
         memset(res.data(), 0, res.size() * sizeof(res.front()));
         memset(accum.data(), 0, accum.size());
