@@ -651,7 +651,7 @@ struct MultiMatchAnyImpl
         for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
             UInt64 length = haystack_offsets[i] - offset - 1;
-            if (length >= std::numeric_limits<UInt32>::max())
+            if (length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
             res[i] = 0;
             hs_scan(
