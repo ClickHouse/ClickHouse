@@ -84,6 +84,9 @@ size_t IndexGranularity::getRowsCountInRanges(const MarkRanges & ranges) const
 
 void IndexGranularity::resizeWithFixedGranularity(size_t size, size_t fixed_granularity)
 {
+    if (size == 0)
+        return;
+
     if (marks_to_rows.empty())
     {
         marks_to_rows.push_back(fixed_granularity);
