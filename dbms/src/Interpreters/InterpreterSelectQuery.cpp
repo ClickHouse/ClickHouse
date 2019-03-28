@@ -390,7 +390,8 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             has_filter = true;
 
             /// Assumes `storage` is set and the table filter is not empty.
-            auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String {
+            auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String
+            {
                 ParserSelectQuery parser;
                 const auto & db_name = storage->getDatabaseName();
                 const auto & table_name = storage->getTableName();
@@ -584,7 +585,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
     {
         /// Assumes `storage` is set and the table filter is not empty.
-        auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String {
+        auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String
+        {
             ParserSelectQuery parser;
             const auto & db_name = storage->getDatabaseName();
             const auto & table_name = storage->getTableName();
@@ -914,7 +916,8 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
         {
             /// Assumes `storage` is set and the table filter is not empty.
-            auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String {
+            auto getFilterActions = [this](ExpressionActionsPtr & actions, const Names & required_columns_before_filter) -> String
+            {
                 ParserSelectQuery parser;
                 const auto & db_name = storage->getDatabaseName();
                 const auto & table_name = storage->getTableName();
