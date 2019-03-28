@@ -74,6 +74,7 @@ enum class TypeIndex
     Float64,
     Date,
     DateTime,
+    DateTime64,
     String,
     FixedString,
     Enum8,
