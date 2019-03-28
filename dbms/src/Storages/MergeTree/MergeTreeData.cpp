@@ -1195,18 +1195,16 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 
     /// Remove old indices
-    if (part) {
-        std::set<String> new_indices_set;
-        for (const auto & index_decl : new_indices)
-            new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
-        for (const auto & index_decl : old_indices)
+    std::set<String> new_indices_set;
+    for (const auto & index_decl : new_indices)
+        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
+    for (const auto & index_decl : old_indices)
+    {
+        const auto & index = index_decl->as<ASTIndexDeclaration &>();
+        if (!new_indices_set.count(index.name))
         {
-            const auto & index = index_decl->as<ASTIndexDeclaration &>();
-            if (!new_indices_set.count(index.name))
-            {
-                out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-                out_rename_map["skp_idx_" + index.name + index_granularity_info.marks_file_extension] = "";
-            }
+            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
+            out_rename_map["skp_idx_" + index.name + index_granularity_info.marks_file_extension] = "";
         }
     }
 
@@ -1225,7 +1223,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_types.count(column.name))
         {
             /// The column was deleted.
-            if (part && part->hasColumnFiles(column.name))
+            if (!part || part->hasColumnFiles(column.name))
             {
                 column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
@@ -1299,24 +1297,19 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
             /// After conversion, we need to rename temporary files into original.
 
-            if (part)
-            {
-                new_types[source_and_expression.first]->enumerateStreams(
-                    [&](const IDataType::SubstreamPath & substream_path)
-                    {
-                        /// Skip array sizes, because they cannot be modified in ALTER.
-                        if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
-                            return;
+            new_types[source_and_expression.first]->enumerateStreams(
+                [&](const IDataType::SubstreamPath & substream_path)
+                {
+                    /// Skip array sizes, because they cannot be modified in ALTER.
+                    if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
+                        return;
 
-                        String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
-                        String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
+                    String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
+                    String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
-                        //std::cerr << "PART IS NULL:" << (part == nullptr) << std::endl;
-                        //std::cerr << "PART MARKS FILE_EXTENSION:" << part->marks_file_extension << std::endl;
-                        out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                        out_rename_map[temporary_file_name + index_granularity_info.marks_file_extension] = original_file_name + index_granularity_info.marks_file_extension;
-                    }, {});
-            }
+                    out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
+                    out_rename_map[temporary_file_name + index_granularity_info.marks_file_extension] = original_file_name + index_granularity_info.marks_file_extension;
+                }, {});
         }
 
         out_expression->add(ExpressionAction::project(projection));

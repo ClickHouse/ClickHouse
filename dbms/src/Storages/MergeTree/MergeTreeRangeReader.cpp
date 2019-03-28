@@ -451,10 +451,9 @@ size_t MergeTreeRangeReader::numPendingRowsInCurrentGranule() const
     return index_granularity->getMarkRows(first_mark);
 }
 
-size_t MergeTreeRangeReader::Stream::numPendingRows() const {
-    size_t rows_between_marks = 0;
-    for(size_t mark = current_mark; mark < last_mark; ++mark)
-        rows_between_marks += index_granularity->getMarkRows(mark);
+size_t MergeTreeRangeReader::Stream::numPendingRows() const
+{
+    size_t rows_between_marks = index_granularity->getRowsCountInRange(current_mark, last_mark);
     return rows_between_marks - offset_after_current_mark;
 }
 

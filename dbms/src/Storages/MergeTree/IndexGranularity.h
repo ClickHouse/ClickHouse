@@ -18,6 +18,7 @@ public:
 
 
     size_t getRowsCountInRange(const MarkRange & range) const;
+    size_t getRowsCountInRange(size_t begin, size_t end) const;
     size_t getRowsCountInRanges(const MarkRanges & ranges) const;
     size_t getMarkPositionInRows(const size_t mark_index) const;
 

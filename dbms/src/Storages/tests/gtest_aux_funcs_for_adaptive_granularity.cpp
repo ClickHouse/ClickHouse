@@ -16,7 +16,8 @@ Block getBlockWithSize(size_t required_size_in_bytes, size_t size_of_row_in_byte
 
     ColumnsWithTypeAndName cols;
     size_t rows = required_size_in_bytes / size_of_row_in_bytes;
-    for (size_t i = 0; i < size_of_row_in_bytes; i += sizeof(UInt64)) {
+    for (size_t i = 0; i < size_of_row_in_bytes; i += sizeof(UInt64))
+    {
         auto column = ColumnUInt64::create(rows, 0);
         cols.emplace_back(std::move(column), std::make_shared<DataTypeUInt64>(), "column" + std::to_string(i));
     }
