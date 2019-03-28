@@ -30,6 +30,8 @@ public:
 
     size_t numReadRowsInCurrentGranule() const;
     size_t numPendingRowsInCurrentGranule() const;
+    size_t numRowsInCurrentGranule() const;
+    size_t currentMark() const;
 
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
@@ -92,6 +94,7 @@ public:
         }
         size_t numPendingGranules() const { return last_mark - current_mark; }
         size_t numPendingRows() const;
+        size_t currentMark() const { return current_mark; }
 
         size_t current_mark = 0;
         /// Invariant: offset_after_current_mark + skipped_rows_after_offset < index_granularity

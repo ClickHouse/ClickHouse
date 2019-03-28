@@ -76,11 +76,11 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
     const auto current_max_block_size_rows = max_block_size_rows;
     const auto current_preferred_block_size_bytes = preferred_block_size_bytes;
     const auto current_preferred_max_column_in_block_size_bytes = preferred_max_column_in_block_size_bytes;
-    const auto avg_index_granularity = task->data_part->index_granularity.getAvgGranularity();
+    const auto & index_granularity = task->data_part->index_granularity;
     const double min_filtration_ratio = 0.00001;
 
     auto estimateNumRows = [current_preferred_block_size_bytes, current_max_block_size_rows,
-        avg_index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
+        index_granularity, current_preferred_max_column_in_block_size_bytes, min_filtration_ratio](
         MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader)
     {
         if (!current_task.size_predictor)
@@ -91,7 +91,8 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
         UInt64 rows_to_read = current_task.size_predictor->estimateNumRows(current_preferred_block_size_bytes);
         if (!rows_to_read)
             return rows_to_read;
-        rows_to_read = std::max<UInt64>(avg_index_granularity, rows_to_read);
+        UInt64 total_row_in_current_granule = current_reader.numRowsInCurrentGranule();
+        rows_to_read = std::max<UInt64>(total_row_in_current_granule, rows_to_read);
 
         if (current_preferred_max_column_in_block_size_bytes)
         {
@@ -102,29 +103,16 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
             auto rows_to_read_for_max_size_column_with_filtration
                 = static_cast<UInt64>(rows_to_read_for_max_size_column / filtration_ratio);
 
-            /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than avg_index_granularity.
+            /// If preferred_max_column_in_block_size_bytes is used, number of rows to read can be less than current_index_granularity.
             rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
         }
 
         UInt64 unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
-        //std::cerr << "NUMPENDING:" << unread_rows_in_current_granule << std::endl;
-        //std::cerr << "ROWSTOREAD:" << rows_to_read << std::endl;
         if (unread_rows_in_current_granule >= rows_to_read)
             return rows_to_read;
 
-        UInt64 granule_to_read = (rows_to_read + current_reader.numReadRowsInCurrentGranule() + avg_index_granularity / 2) / avg_index_granularity;
-        //std::cerr << "AVG GRANULARITY:" << avg_index_granularity << " ROWS TO READ:" << rows_to_read << "  GRANULE TO READ:" << granule_to_read  << " NUM READS in CURRENT GRANULE:" <<   current_reader.numReadRowsInCurrentGranule()<< std::endl;
-        return avg_index_granularity * granule_to_read - current_reader.numReadRowsInCurrentGranule();
+        return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
     };
-
-    //if (reader == nullptr) {
-    //    std::cerr << "=====STACK TRACE WITH NULL READER=====\n";
-    //    std::cerr << StackTrace().toString() << std::endl;
-    //}
-    //if (pre_reader == nullptr) {
-    //    std::cerr << "=====STACK TRACE WITH NULL PREREADER=====\n";
-    //    std::cerr << StackTrace().toString() << std::endl;
-    //}
 
     if (!task->range_reader.isInitialized())
     {

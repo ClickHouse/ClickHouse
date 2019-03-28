@@ -89,6 +89,21 @@ size_t IndexGranularity::getRowsCountInRanges(const MarkRanges & ranges) const
 }
 
 
+size_t IndexGranularity::countMarksForRows(size_t from_mark, size_t number_of_rows, size_t offset_in_rows) const
+{
+    size_t rows_before_mark = getMarkStartingRow(from_mark);
+    size_t last_row_pos = rows_before_mark + offset_in_rows + number_of_rows;
+    auto position = std::upper_bound(marks_to_rows.begin(), marks_to_rows.end(), last_row_pos);
+    size_t to_mark;
+    if (position == marks_to_rows.end())
+        to_mark = marks_to_rows.size();
+    else
+        to_mark = position - marks_to_rows.begin();
+
+    return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
+
+}
+
 void IndexGranularity::resizeWithFixedGranularity(size_t size, size_t fixed_granularity)
 {
     marks_to_rows.resize(size);
@@ -100,5 +115,6 @@ void IndexGranularity::resizeWithFixedGranularity(size_t size, size_t fixed_gran
         prev = marks_to_rows[i];
     }
 }
+
 
 }

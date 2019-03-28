@@ -442,6 +442,12 @@ size_t MergeTreeRangeReader::numPendingRowsInCurrentGranule() const
     if (pending_rows)
         return pending_rows;
 
+    return numRowsInCurrentGranule();
+}
+
+
+size_t MergeTreeRangeReader::numRowsInCurrentGranule() const
+{
     /// If pending_rows is zero, than stream is not initialized.
     if (stream.current_mark_index_granularity)
         return stream.current_mark_index_granularity;
@@ -449,6 +455,11 @@ size_t MergeTreeRangeReader::numPendingRowsInCurrentGranule() const
     /// We haven't read anything, return first
     size_t first_mark = merge_tree_reader->getFirstMarkToRead();
     return index_granularity->getMarkRows(first_mark);
+}
+
+size_t MergeTreeRangeReader::currentMark() const
+{
+    return stream.currentMark();
 }
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const
