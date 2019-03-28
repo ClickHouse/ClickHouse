@@ -63,7 +63,8 @@ Block ColumnGathererStream::readImpl()
     MutableColumnPtr output_column = column.column->cloneEmpty();
     output_block = Block{column.cloneEmpty()};
     output_column->gather(*this);
-    output_block.getByPosition(0).column = std::move(output_column);
+    if (!output_column->empty())
+        output_block.getByPosition(0).column = std::move(output_column);
     return output_block;
 }
 
