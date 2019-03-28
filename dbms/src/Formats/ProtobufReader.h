@@ -72,6 +72,7 @@ public:
     bool readUUID(UUID & uuid) { return current_converter->readUUID(uuid); }
     bool readDate(DayNum & date) { return current_converter->readDate(date); }
     bool readDateTime(time_t & tm) { return current_converter->readDateTime(tm); }
+    bool readDateTime(UInt64 & tm) { return current_converter->readUInt64(tm); }
 
     bool readDecimal(Decimal32 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal32(decimal, precision, scale); }
     bool readDecimal(Decimal64 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal64(decimal, precision, scale); }
