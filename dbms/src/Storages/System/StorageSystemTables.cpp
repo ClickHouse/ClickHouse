@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int TABLE_IS_DROPPED;
 }
 
 
@@ -175,7 +176,19 @@ protected:
             {
                 auto table_name = tables_it->name();
                 const StoragePtr & table = tables_it->table();
-                auto lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+
+                TableStructureReadLockHolder lock;
+
+                try
+                {
+                    lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                        continue;
+                    throw;
+                }
 
                 ++rows_count;
 
