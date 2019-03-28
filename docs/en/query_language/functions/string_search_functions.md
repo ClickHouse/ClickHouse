@@ -39,6 +39,8 @@ Returns 1, if at least one string `needle_i` matches the string `haystack` and 0
 
 For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
 
+Note: in all `multiSearch*` functions the number of needles should be less than 2<sub>8</sub> because of implementation specification.
+
 ## match(haystack, pattern)
 
 Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
@@ -52,7 +54,7 @@ For patterns to search for substrings in a string, it is better to use LIKE or '
 
 ## multiMatchAny(haystack, [pattern_1, pattern_2, ..., pattern_n])
 
-The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) algorithm. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
+The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) library. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
 
 Note: this function is in experimental mode because of some [issues](https://github.com/intel/hyperscan/issues/141). The length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.
 
