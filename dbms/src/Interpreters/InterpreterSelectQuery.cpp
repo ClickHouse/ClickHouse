@@ -336,7 +336,8 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
     return pipeline.streams;
 }
 
-InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run)
+InterpreterSelectQuery::AnalysisResult
+InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run, const FilterInfoPtr & filter_info)
 {
     AnalysisResult res;
 
@@ -429,9 +430,9 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             }
             ExpressionActionsChain::Step & step = chain.steps.back();
 
-            res.filter_info = std::make_shared<FilterInfo>();
-            res.filter_info->column_name = generateFilterActions(step.actions, storage, context, required_columns);
-            res.filter_info->actions = chain.getLastActions();
+            // FIXME: assert(filter_info);
+            res.filter_info = filter_info;
+            step.actions = filter_info->actions;
             step.required_output.push_back(res.filter_info->column_name);
             step.can_remove_required_output = {true};
 
@@ -551,10 +552,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     const Settings & settings = context.getSettingsRef();
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
+    const auto has_filter = context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter");
 
     /// PREWHERE optimization
     /// Turn off, if the table filter is applied.
-    if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+    if (storage && !has_filter)
     {
         if (!dry_run)
             from_stage = storage->getQueryProcessingStage(context);
@@ -580,18 +582,20 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     }
 
     AnalysisResult expressions;
+    FilterInfoPtr filter_info;
 
-    if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
+    /// We need proper `source_header` for `NullBlockInputStream` in dry-run.
+    if (storage && has_filter)
     {
-        ExpressionActionsPtr actions;
-        generateFilterActions(actions, storage, context, required_columns);
-        source_header = storage->getSampleBlockForColumns(actions->getRequiredColumns());
+        filter_info = std::make_shared<FilterInfo>();
+        filter_info->column_name = generateFilterActions(filter_info->actions, storage, context, required_columns);
+        source_header = storage->getSampleBlockForColumns(filter_info->actions->getRequiredColumns());
     }
 
     if (dry_run)
     {
         pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
-        expressions = analyzeExpressions(QueryProcessingStage::FetchColumns, true);
+        expressions = analyzeExpressions(QueryProcessingStage::FetchColumns, true, filter_info);
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported with the table filtering", ErrorCodes::ILLEGAL_PREWHERE);
@@ -606,7 +610,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         if (prepared_input)
             pipeline.streams.push_back(prepared_input);
 
-        expressions = analyzeExpressions(from_stage, false);
+        expressions = analyzeExpressions(from_stage, false, filter_info);
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             options.to_stage == QueryProcessingStage::WithMergeableState)

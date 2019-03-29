@@ -157,7 +157,7 @@ private:
         FilterInfoPtr filter_info;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run);
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run, const FilterInfoPtr & filter_info);
 
 
     /** From which table to read. With JOIN, the "left" table is returned.
