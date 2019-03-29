@@ -5,45 +5,46 @@
 Kafka позволяет:
 
 - Публиковать/подписываться на потоки данных.
-- Организовать отказо-устойчивое хранилище.
+- Организовать отказоустойчивое хранилище.
 - Обрабатывать потоки по мере их появления.
 
-Старый формат:
+## Создание таблицы {#table_engine-kafka-creating-a-table}
 
 ```
-Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
-      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers])
-```
-
-Новый формат:
-
-```
-Kafka SETTINGS
-  kafka_broker_list = 'localhost:9092',
-  kafka_topic_list = 'topic1,topic2',
-  kafka_group_name = 'group1',
-  kafka_format = 'JSONEachRow',
-  kafka_row_delimiter = '\n',
-  kafka_schema = '',
-  kafka_num_consumers = 2
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'host:port',
+    kafka_topic_list = 'topic1,topic2,...',
+    kafka_group_name = 'group_name',
+    kafka_format = 'data_format'[,]
+    [kafka_row_delimiter = 'delimiter_symbol',]
+    [kafka_schema = '',]
+    [kafka_num_consumers = N,]
+    [kafka_skip_broken_messages = <0|1>]
 ```
 
 Обязательные параметры:
 
-- `kafka_broker_list` - Перечень брокеров, разделенный запятыми (`localhost:9092`).
-- `kafka_topic_list` - Перечень необходимых топиков Kafka (`my_topic`).
-- `kafka_group_name` - Группа потребителя Kafka (`group1`). Отступы для чтения отслеживаются для каждой группы отдельно. Если необходимо, чтобы сообщения не повторялись на кластере, используйте везде одно имя группы.
-- `kafka_format` - Формат сообщений. Имеет те же обозначения, что выдает SQL-выражение `FORMAT`, например, `JSONEachRow`. Подробнее смотрите в разделе "Форматы".
+- `kafka_broker_list` – перечень брокеров, разделенный запятыми (`localhost:9092`).
+- `kafka_topic_list` – перечень необходимых топиков Kafka.
+- `kafka_group_name` – группа потребителя Kafka. Отступы для чтения отслеживаются для каждой группы отдельно. Если необходимо, чтобы сообщения не повторялись на кластере, используйте везде одно имя группы.
+- `kafka_format` – формат сообщений. Названия форматов должны быть теми же, что можно использовать в секции `FORMAT`, например, `JSONEachRow`. Подробнее читайте в разделе [Форматы](../../interfaces/formats.md).
 
 Опциональные параметры:
 
-- `kafka_row_delimiter` - Символ-разделитель записей (строк), которым завершается сообщение.
-- `kafka_schema` - Опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap'n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
-- `kafka_num_consumers` - Количество потребителей (consumer) на таблицу. По умолчанию `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна. Общее число потребителей не должно превышать количество партиций в топике, так как на одну партицию может быть назначено не более одного потребителя.
+- `kafka_row_delimiter` – символ-разделитель записей (строк), которым завершается сообщение.
+- `kafka_schema` – опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap'n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
+- `kafka_num_consumers` – количество потребителей (consumer) на таблицу. По умолчанию: `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна. Общее число потребителей не должно превышать количество партиций в топике, так как на одну партицию может быть назначено не более одного потребителя.
+- `kafka_skip_broken_messages` – режим обработки сообщений Kafka. Если `kafka_skip_broken_messages = 1`, то движок отбрасывает сообщения Кафки, которые не получилось обработать. Одно сообщение в точности соответствует одной записи (строке).
 
-Примеры:
+Примеры
 
-``` sql
+```sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -71,6 +72,20 @@ Kafka SETTINGS
                        kafka_num_consumers = 4;
 ```
 
+<details markdown="1"><summary>Устаревший способ создания таблицы</summary>
+
+!!! attention
+    Не используйте этот метод в новых проектах. По возможности переключите старые проекты на метод, описанный выше.
+
+```
+Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
+      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_skip_broken_messages])
+```
+
+</details>
+
+## Описание
+
 Полученные сообщения отслеживаются автоматически, поэтому из одной группы каждое сообщение считывается только один раз. Если необходимо получить данные дважды, то создайте копию таблицы с другим именем группы.
 
 Группы пластичны и синхронизированы на кластере. Например, если есть 10 топиков и 5 копий таблицы в кластере, то в каждую копию попадет по 2 топика. Если количество копий изменится, то распределение топиков по копиям изменится автоматически. Подробно читайте об этом на [http://kafka.apache.org/intro](http://kafka.apache.org/intro).
@@ -85,7 +100,7 @@ Kafka SETTINGS
 
 Пример:
 
-``` sql
+```sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -116,10 +131,9 @@ Kafka SETTINGS
 
 Если необходимо изменить целевую таблицу с помощью `ALTER`, то материализованное представление рекомендуется отключить, чтобы избежать несостыковки между целевой таблицей и данными от представления.
 
-
 ## Конфигурация
 
-Аналогично GraphiteMergeTree, движок Kafka поддерживает расширенную конфигурацию с помощью конфигурационного файла ClickHouse. Существует два конфигурационных ключа, которые можно использовать - глобальный (`kafka`) и по топикам (`kafka_*`). Сначала применяется глобальная конфигурация, затем конфигурация по топикам (если она существует).
+Аналогично GraphiteMergeTree, движок Kafka поддерживает расширенную конфигурацию с помощью конфигурационного файла ClickHouse. Существует два конфигурационных ключа, которые можно использовать: глобальный (`kafka`) и по топикам (`kafka_topic_*`). Сначала применяется глобальная конфигурация, затем конфигурация по топикам (если она существует).
 
 ```xml
   <!-- Global configuration options for all tables of Kafka engine type -->
@@ -135,6 +149,6 @@ Kafka SETTINGS
   </kafka_logs>
 ```
 
-В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчёркивания (`_`) вместо точек в конфигурации ClickHouse, например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.
+В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчеркивание (`_`) вместо точки в конфигурации ClickHouse. Например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/kafka/) <!--hide-->

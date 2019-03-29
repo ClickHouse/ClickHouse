@@ -33,7 +33,7 @@ namespace
 
         data.resize(hash_map.size());
         for (auto val : hash_map)
-            data[val.second] = val.first;
+            data[val.getSecond()] = val.getFirst();
 
         for (auto & ind : index)
             ind = hash_map[ind];
@@ -363,7 +363,6 @@ ColumnPtr ColumnLowCardinality::countKeys() const
 }
 
 
-
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
 ColumnLowCardinality::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))
@@ -523,7 +522,7 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
     while (position > getMaxPositionForCurrentType())
         expandType();
 
-    positions->assumeMutableRef().insert(position);
+    positions->insert(position);
     checkSizeOfType();
 }
 
@@ -541,7 +540,7 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
             convertPositions<ColumnType>();
 
         if (size_of_type == sizeof(ColumnType))
-            positions->assumeMutableRef().insertRangeFrom(column, offset, limit);
+            positions->insertRangeFrom(column, offset, limit);
         else
         {
             auto copy = [&](auto cur_type)

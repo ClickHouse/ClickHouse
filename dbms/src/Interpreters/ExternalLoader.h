@@ -19,8 +19,6 @@
 namespace DB
 {
 
-class Context;
-
 struct ExternalLoaderUpdateSettings
 {
     UInt64 check_period_sec = 5;

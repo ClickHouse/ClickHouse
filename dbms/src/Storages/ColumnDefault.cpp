@@ -50,7 +50,8 @@ std::string toString(const ColumnDefaultKind kind)
 
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
 {
-    return lhs.kind == rhs.kind && queryToString(lhs.expression) == queryToString(rhs.expression);
+    auto expression_str = [](const ASTPtr & expr) { return expr ? queryToString(expr) : String(); };
+    return lhs.kind == rhs.kind && expression_str(lhs.expression) == expression_str(rhs.expression);
 }
 
 }

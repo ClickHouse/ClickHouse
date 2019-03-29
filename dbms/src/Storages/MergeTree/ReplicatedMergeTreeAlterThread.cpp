@@ -33,8 +33,6 @@ ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicated
 
 void ReplicatedMergeTreeAlterThread::run()
 {
-    bool force_recheck_parts = true;
-
     try
     {
         /** We have a description of columns in ZooKeeper, common for all replicas (Example: /clickhouse/tables/02-06/visits/columns),
@@ -108,7 +106,7 @@ void ReplicatedMergeTreeAlterThread::run()
 
             LOG_INFO(log, "Version of metadata nodes in ZooKeeper changed. Waiting for structure write lock.");
 
-            auto table_lock = storage.lockStructureForAlter();
+            auto table_lock = storage.lockExclusively(RWLockImpl::NO_QUERY);
 
             if (columns_in_zk == storage.getColumns() && metadata_diff.empty())
             {
@@ -134,7 +132,7 @@ void ReplicatedMergeTreeAlterThread::run()
         /// Update parts.
         if (changed_columns_version || force_recheck_parts)
         {
-            auto table_lock = storage.lockStructure(false);
+            auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
             if (changed_columns_version)
                 LOG_INFO(log, "ALTER-ing parts");

@@ -5,16 +5,7 @@
 namespace DB
 {
 
-TableStructureReadLock::TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data)
-    : storage(storage_)
-{
-    if (lock_data)
-        data_lock = storage->data_lock->getLock(RWLockImpl::Read);
-    if (lock_structure)
-        structure_lock = storage->structure_lock->getLock(RWLockImpl::Read);
-}
-
-void IStorage::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void IStorage::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     for (const auto & param : params)
     {
@@ -22,7 +13,7 @@ void IStorage::alter(const AlterCommands & params, const String & database_name,
             throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    auto lock = lockStructureForAlter();
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     auto new_columns = getColumns();
     auto new_indices = getIndicesDescription();
     params.apply(new_columns);

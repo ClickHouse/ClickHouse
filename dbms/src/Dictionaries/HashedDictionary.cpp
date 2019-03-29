@@ -83,7 +83,7 @@ void HashedDictionary::isInImpl(const ChildType & child_ids, const AncestorType 
         {
             auto it = attr.find(id);
             if (it != std::end(attr))
-                id = it->second;
+                id = it->getSecond();
             else
                 break;
         }
@@ -605,7 +605,7 @@ void HashedDictionary::getItemsImpl(
     for (const auto i : ext::range(0, rows))
     {
         const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(it->second) : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(it->getSecond()) : get_default(i));
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
@@ -707,7 +707,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute &
     PaddedPODArray<Key> ids;
     ids.reserve(attr.size());
     for (const auto & value : attr)
-        ids.push_back(value.first);
+        ids.push_back(value.getFirst());
 
     return ids;
 }

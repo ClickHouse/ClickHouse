@@ -69,7 +69,7 @@ void DataTypeFixedString::deserializeBinary(IColumn & column, ReadBuffer & istr)
     data.resize(old_size + n);
     try
     {
-        istr.readStrict(reinterpret_cast<char *>(&data[old_size]), n);
+        istr.readStrict(reinterpret_cast<char *>(data.data() + old_size), n);
     }
     catch (...)
     {
@@ -273,7 +273,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (!arguments || arguments->children.size() != 1)
         throw Exception("FixedString data type family must have exactly one argument - size in bytes", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral * argument = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const auto * argument = arguments->children[0]->as<ASTLiteral>();
     if (!argument || argument->value.getType() != Field::Types::UInt64 || argument->value.get<UInt64>() == 0)
         throw Exception("FixedString data type family must have a number (positive integer) as its argument", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 

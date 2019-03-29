@@ -26,17 +26,19 @@ namespace
 }
 
 
+/// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
 ExternalDictionaries::ExternalDictionaries(
     std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+    const Poco::Util::AbstractConfiguration & config,
     Context & context,
     bool throw_on_error)
-        : ExternalLoader(context.getConfigRef(),
+        : ExternalLoader(config,
                          externalDictionariesUpdateSettings,
                          getExternalDictionariesConfigSettings(),
                          std::move(config_repository),
                          &Logger::get("ExternalDictionaries"),
                          "external dictionary"),
-          context(context)
+        context(context)
 {
     init(throw_on_error);
 }
