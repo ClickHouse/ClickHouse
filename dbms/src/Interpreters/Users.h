@@ -68,8 +68,9 @@ struct User
 
     /// Table properties.
     using PropertyMap = std::unordered_map<std::string /* name */, std::string /* value */>;
-    using TableMap = std::unordered_map<std::string /* database.table */, PropertyMap /* properties */>;
-    TableMap table_props;
+    using TableMap = std::unordered_map<std::string /* table */, PropertyMap /* properties */>;
+    using DatabaseMap = std::unordered_map<std::string /* database */, TableMap /* tables */>;
+    DatabaseMap table_props;
 
     User(const String & name_, const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 };

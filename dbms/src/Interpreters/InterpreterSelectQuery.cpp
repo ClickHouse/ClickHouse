@@ -82,29 +82,50 @@ namespace
 /// Assumes `storage` is set and the table filter is not empty.
 String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & storage, const Context & context, const Names & prerequisite_columns = {})
 {
-    ParserSelectQuery parser;
     const auto & db_name = storage->getDatabaseName();
     const auto & table_name = storage->getTableName();
     const auto & filter_str = context.getUserProperty(db_name, table_name, "filter");
 
-    /// Keep columns that are required after the filter actions.
-    String columns;
-    for (const auto & column_name : prerequisite_columns)
+    /// TODO: implement some AST builders for this kind of stuff
+    ASTPtr query_ast = std::make_shared<ASTSelectQuery>();
+    auto * select_ast = query_ast->as<ASTSelectQuery>();
+
+    auto expr_list = std::make_shared<ASTExpressionList>();
+    select_ast->children.push_back(expr_list);
+    select_ast->select_expression_list = select_ast->children.back();
+
+    auto parseExpression = [] (const String & expr)
     {
-        columns += column_name + ',';
-    }
+        ParserExpression expr_parser;
+        return parseQuery(expr_parser, expr, 0);
+    };
+
+    // The first column is our filter expression.
+    expr_list->children.push_back(parseExpression(filter_str));
+
+    /// Keep columns that are required after the filter actions.
+    for (const auto & column_str : prerequisite_columns)
+        expr_list->children.push_back(parseExpression(column_str));
+
+    auto tables = std::make_shared<ASTTablesInSelectQuery>();
+    auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto table_expr = std::make_shared<ASTTableExpression>();
+    select_ast->children.push_back(tables);
+    select_ast->tables = select_ast->children.back();
+    tables->children.push_back(tables_elem);
+    tables_elem->table_expression = table_expr;
+    tables_elem->children.push_back(table_expr);
+    table_expr->database_and_table_name = createTableIdentifier(db_name, table_name);
+    table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
-    String query_str = "select " + columns + filter_str + " from " + db_name + "." + table_name + " where " + filter_str;
-    auto query_ast = parseQuery(parser, query_str, 0);
-
     auto syntax_result = SyntaxAnalyzer(context).analyze(query_ast, storage->getColumns().getAllPhysical());
     ExpressionAnalyzer analyzer(query_ast, syntax_result, context);
     ExpressionActionsChain new_chain(context);
     analyzer.appendSelect(new_chain, false);
     actions = new_chain.getLastActions();
 
-    return query_ast->as<ASTSelectQuery>()->where_expression->getColumnName();
+    return expr_list->children.at(0)->getColumnName();
 }
 
 } // namespace
@@ -552,11 +573,10 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     const Settings & settings = context.getSettingsRef();
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
-    const auto has_filter = context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter");
 
     /// PREWHERE optimization
     /// Turn off, if the table filter is applied.
-    if (storage && !has_filter)
+    if (storage && !context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
     {
         if (!dry_run)
             from_stage = storage->getQueryProcessingStage(context);
@@ -585,7 +605,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     FilterInfoPtr filter_info;
 
     /// We need proper `source_header` for `NullBlockInputStream` in dry-run.
-    if (storage && has_filter)
+    if (storage && context.hasUserProperty(storage->getDatabaseName(), storage->getTableName(), "filter"))
     {
         filter_info = std::make_shared<FilterInfo>();
         filter_info->column_name = generateFilterActions(filter_info->actions, storage, context, required_columns);

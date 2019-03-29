@@ -338,7 +338,7 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
                 if (config.has(config_filter))
                 {
                     const auto filter_query = config.getString(config_filter);
-                    table_props[database + "." + table]["filter"] = filter_query;
+                    table_props[database][table]["filter"] = filter_query;
                 }
             }
         }

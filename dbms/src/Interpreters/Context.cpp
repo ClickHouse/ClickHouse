@@ -591,8 +591,12 @@ bool Context::hasUserProperty(const String & database, const String & table, con
 
     const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
 
-    auto table_props = props.find(database + "." + table);
-    if (table_props == props.end())
+    auto db = props.find(database);
+    if (db == props.end())
+        return false;
+
+    auto table_props = db->second.find(table);
+    if (table_props == db->second.end())
         return false;
 
     auto prop = table_props->second.find(name);
@@ -603,7 +607,7 @@ const String & Context::getUserProperty(const String & database, const String & 
 {
     auto lock = getLock();
     const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
-    return props.at(database + "." + table).at(name);
+    return props.at(database).at(table).at(name);
 }
 
 void Context::calculateUserSettings()
