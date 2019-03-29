@@ -1,7 +1,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnTuple.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
 

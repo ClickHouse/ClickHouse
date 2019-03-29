@@ -4,7 +4,6 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
 
-
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -117,24 +116,10 @@ public:
         throw Exception("Method gather is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void forEachSubcolumn(ColumnCallback callback) override
-    {
-        callback(captured_columns);
-    }
-
-    bool structureEquals(const IColumn & rhs) const override
-    {
-        if (auto rhs_concrete = typeid_cast<const ColumnFunction *>(&rhs))
-            return captured_columns->structureEquals(*rhs_concrete->captured_columns)
-                && function->getName() == rhs_concrete->function->getName();
-        return false;
-    }
-
 private:
     size_t size_;
     FunctionBasePtr function;
-    WrappedPtr captured_columns; /// ColumnTuple
-    DataTypes captured_types;
+    ColumnsWithTypeAndName captured_columns;
 
     void appendArgument(const ColumnWithTypeAndName & column);
 };
