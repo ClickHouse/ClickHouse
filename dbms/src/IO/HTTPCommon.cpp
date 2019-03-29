@@ -44,13 +44,14 @@ namespace ErrorCodes
 
 namespace
 {
-    void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
     {
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
         session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
 #else
         session.setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
 #endif
+        session.setKeepAliveTimeout(timeouts.http_keep_alive_timeout);
     }
 
     bool isHTTPS(const Poco::URI & uri)
@@ -98,7 +99,6 @@ namespace
         const UInt16 port;
         bool https;
         using Base = PoolBase<Poco::Net::HTTPClientSession>;
-
         ObjectPtr allocObject() override
         {
             return makeHTTPSessionImpl(host, port, https, true);
@@ -139,7 +139,10 @@ namespace
         HTTPSessionPool() = default;
 
     public:
-        Entry getSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t max_connections_per_endpoint)
+        Entry getSession(
+            const Poco::URI & uri,
+            const ConnectionTimeouts & timeouts,
+            size_t max_connections_per_endpoint)
         {
             std::unique_lock lock(mutex);
             const std::string & host = uri.getHost();
@@ -155,6 +158,7 @@ namespace
             auto session = pool_ptr->second->get(retry_timeout);
 
             setTimeouts(*session, timeouts);
+
             return session;
         }
     };

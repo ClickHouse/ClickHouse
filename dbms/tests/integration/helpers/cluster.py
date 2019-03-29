@@ -464,6 +464,15 @@ class ClickHouseInstance:
             raise Exception('Cmd "{}" failed! Return code {}. Output: {}'.format(' '.join(cmd), exit_code, output))
         return output
 
+    def contains_in_log(self, substring):
+        result = self.exec_in_container(["bash", "-c", "grep '{}' /var/log/clickhouse-server/clickhouse-server.log || true".format(substring)])
+        return len(result) > 0
+
+    def copy_file_to_container(self, local_path, dest_path):
+        with open(local_path, 'r') as fdata:
+            data = fdata.read()
+            encoded_data = base64.b64encode(data)
+            self.exec_in_container(["bash", "-c", "echo {} | base64 --decode > {}".format(encoded_data, dest_path)])
 
     def get_docker_handle(self):
         return self.docker_client.containers.get(self.docker_id)
