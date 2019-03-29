@@ -4,6 +4,7 @@
 #include <Common/COWPtr.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeCustom.h>
 
 
 namespace DB
@@ -11,9 +12,6 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
-
-class IDataTypeDomain;
-using DataTypeDomainPtr = std::unique_ptr<const IDataTypeDomain>;
 
 class IDataType;
 struct FormatSettings;
@@ -461,19 +459,19 @@ public:
 
 private:
     friend class DataTypeFactory;
-    /** Sets domain on existing DataType or append it to existing domain, can be considered as second phase
-      * of construction explicitly done by DataTypeFactory.
+    /** Customize this DataType
       */
-    void appendDomain(DataTypeDomainPtr new_domain) const;
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
 private:
-    /** This is mutable to allow setting domain on `const IDataType` post construction,
-     * simplifying creation of domains for all types, without them even knowing
-     * of domain existence.
+    /** This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
      */
-    mutable DataTypeDomainPtr domain;
+    mutable DataTypeCustomNamePtr custom_name;
+    mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
+
 public:
-    const IDataTypeDomain * getDomain() const { return domain.get(); }
+    const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
+    const IDataTypeCustomTextSerialization * getCustomTextSerialization() const { return custom_text_serialization.get(); }
 };
 
 

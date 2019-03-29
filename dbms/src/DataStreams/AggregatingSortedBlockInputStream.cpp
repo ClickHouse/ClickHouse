@@ -2,7 +2,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeDomainSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
         ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
         /// We leave only states of aggregate functions.
-        if (!dynamic_cast<const DataTypeAggregateFunction *>(column.type.get()) && !findSimpleAggregateFunction(column.type))
+        if (!dynamic_cast<const DataTypeAggregateFunction *>(column.type.get()) && !dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
         {
             column_numbers_not_to_aggregate.push_back(i);
             continue;
@@ -42,7 +42,7 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
             continue;
         }
 
-        if (auto simple_aggr = findSimpleAggregateFunction(column.type))
+        if (auto simple_aggr = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
         {
             // simple aggregate function
             SimpleAggregateDescription desc{simple_aggr->getFunction(), i};
