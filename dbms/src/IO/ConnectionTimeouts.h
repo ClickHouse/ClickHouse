@@ -6,6 +6,9 @@
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Interpreters/Context.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
 namespace DB
 {
 
