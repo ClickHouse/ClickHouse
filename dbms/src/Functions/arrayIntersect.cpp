@@ -277,7 +277,7 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
     const auto & return_type = block.getByPosition(result).type;
     auto return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
 
-    if (!return_type)
+    if (!return_type_array)
         throw Exception{"Return type for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
     const auto & nested_return_type = return_type_array->getNestedType();
@@ -393,6 +393,11 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         {
             bool current_has_nullable = false;
             size_t off = (*arrays.offsets[arg])[row];
+            // const array has only one row
+            bool const_arg = arrays.is_const[arg];
+            if (const_arg)
+                off = (*arrays.offsets[arg])[0];
+
             for (auto i : ext::range(prev_off[arg], off))
             {
                 if (arrays.null_maps[arg] && (*arrays.null_maps[arg])[i])
@@ -412,6 +417,9 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             }
 
             prev_off[arg] = off;
+            if (const_arg)
+                prev_off[arg] = 0;
+
             if (!current_has_nullable)
                 all_has_nullable = false;
         }
