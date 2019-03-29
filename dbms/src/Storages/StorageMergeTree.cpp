@@ -690,7 +690,11 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
             data.clearOldPartsFromFilesystem();
-            data.clearOldTemporaryDirectories();
+            {
+                /// TODO: Implement tryLockStructureForShare.
+                auto lock_structure = lockStructureForShare(false, "");
+                data.clearOldTemporaryDirectories();
+            }
             clearOldMutations();
         }
 
