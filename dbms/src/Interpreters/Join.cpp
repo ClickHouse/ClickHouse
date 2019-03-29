@@ -1236,8 +1236,12 @@ public:
         makeResultSampleBlock(left_sample_block, right_sample_block, columns_added_by_join,
                               key_positions_left, is_left_key, left_to_right_key_map);
 
+        auto nullability_changes = getNullabilityChanges(parent.sample_block_with_keys, result_sample_block,
+                                                         key_positions_left, left_to_right_key_map);
+
         column_indices_left.reserve(left_sample_block.columns() - key_names_left.size());
         column_indices_keys_and_right.reserve(key_names_left.size() + right_sample_block.columns());
+        key_nullability_changes.reserve(key_positions_left.size());
 
         /// Use right key columns if present. @note left & right key columns could have different nullability.
         for (size_t key_pos : key_positions_left)
@@ -1250,11 +1254,12 @@ public:
             auto it = left_to_right_key_map.find(key_pos);
             if (it != left_to_right_key_map.end())
             {
-                column_indices_keys_and_right.push_back(it->second);
                 column_indices_left.push_back(key_pos);
+                key_pos = it->second;
             }
-            else
-                column_indices_keys_and_right.push_back(key_pos);
+
+            column_indices_keys_and_right.push_back(key_pos);
+            key_nullability_changes.push_back(nullability_changes.count(key_pos));
         }
 
         for (size_t i = 0; i < left_sample_block.columns(); ++i)
@@ -1281,7 +1286,7 @@ protected:
         if (parent.dispatch([&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
             ;
         else
-            throw Exception("Logical error: unknown JOIN strictness (must be ANY or ALL)", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: unknown JOIN strictness (must be on of: ANY, ALL, ASOF)", ErrorCodes::LOGICAL_ERROR);
         return block;
     }
 
@@ -1290,11 +1295,13 @@ private:
     UInt64 max_block_size;
 
     Block result_sample_block;
-    /// Indices of columns in result_sample_block that come from the left-side table (except key columns).
+    /// Indices of columns in result_sample_block that come from the left-side table (except shared right+left key columns).
     ColumnNumbers column_indices_left;
     /// Indices of key columns in result_sample_block or columns that come from the right-side table.
     /// Order is significant: it is the same as the order of columns in the blocks of the right-side table that are saved in parent.blocks.
     ColumnNumbers column_indices_keys_and_right;
+    /// Which key columns need change nullability (right is nullable and left is not or vice versa)
+    std::vector<bool> key_nullability_changes;
 
     std::unique_ptr<void, std::function<void(void *)>> position;    /// type erasure
 
@@ -1350,6 +1357,9 @@ private:
         MutableColumns columns_left = columnsForIndex(result_sample_block, column_indices_left);
         MutableColumns columns_keys_and_right = columnsForIndex(result_sample_block, column_indices_keys_and_right);
 
+        /// Temporary change destination key columns' nullability according to mapped block
+        changeNullability(columns_keys_and_right, key_nullability_changes);
+
         size_t rows_added = 0;
 
         switch (parent.type)
@@ -1367,6 +1377,9 @@ private:
 
         if (!rows_added)
             return {};
+
+        /// Revert columns nullability
+        changeNullability(columns_keys_and_right, key_nullability_changes);
 
         Block res = result_sample_block.cloneEmpty();
 
@@ -1424,6 +1437,47 @@ private:
         }
 
         return rows_added;
+    }
+
+    static std::unordered_set<size_t> getNullabilityChanges(const Block & sample_block_with_keys, const Block & out_block,
+                                                            const std::vector<size_t> & key_positions,
+                                                            const std::unordered_map<size_t, size_t> & left_to_right_key_map)
+    {
+        std::unordered_set<size_t> nullability_changes;
+
+        for (size_t i = 0; i < key_positions.size(); ++i)
+        {
+            size_t key_pos = key_positions[i];
+
+            auto it = left_to_right_key_map.find(key_pos);
+            if (it != left_to_right_key_map.end())
+                key_pos = it->second;
+
+            const auto & dst = out_block.getByPosition(key_pos).column;
+            const auto & src = sample_block_with_keys.getByPosition(i).column;
+            if (dst->isColumnNullable() != src->isColumnNullable())
+                nullability_changes.insert(key_pos);
+        }
+
+        return nullability_changes;
+    }
+
+    static void changeNullability(MutableColumns & columns, const std::vector<bool> & changes_bitmap)
+    {
+        /// @note changes_bitmap.size() <= columns.size()
+        for (size_t i = 0; i < changes_bitmap.size(); ++i)
+        {
+            if (changes_bitmap[i])
+            {
+                ColumnPtr column = std::move(columns[i]);
+                if (column->isColumnNullable())
+                    column = static_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
+                else
+                    column = makeNullable(column);
+
+                columns[i] = (*std::move(column)).mutate();
+            }
+        }
     }
 };
 
