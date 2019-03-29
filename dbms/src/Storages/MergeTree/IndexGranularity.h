@@ -8,12 +8,12 @@ namespace DB
 class IndexGranularity
 {
 private:
-    std::vector<size_t> marks_to_rows;
+    std::vector<size_t> marks_rows_partial_sums;
     bool initialized = false;
 
 public:
     IndexGranularity() = default;
-    explicit IndexGranularity(const std::vector<size_t> & marks_to_rows_);
+    explicit IndexGranularity(const std::vector<size_t> & marks_rows_partial_sums_);
     IndexGranularity(size_t marks_count, size_t fixed_granularity);
 
 
@@ -31,22 +31,22 @@ public:
     inline size_t getMarkRows(size_t mark_index) const
     {
         if (mark_index == 0)
-            return marks_to_rows[0];
+            return marks_rows_partial_sums[0];
         else
-            return marks_to_rows[mark_index] - marks_to_rows[mark_index - 1];
+            return marks_rows_partial_sums[mark_index] - marks_rows_partial_sums[mark_index - 1];
     }
 
     size_t getMarkStartingRow(size_t mark_index) const;
 
     size_t getLastMarkRows() const
     {
-        size_t last = marks_to_rows.size() - 1;
+        size_t last = marks_rows_partial_sums.size() - 1;
         return getMarkRows(last);
     }
 
     bool empty() const
     {
-        return marks_to_rows.empty();
+        return marks_rows_partial_sums.empty();
     }
     bool isInitialized() const
     {
