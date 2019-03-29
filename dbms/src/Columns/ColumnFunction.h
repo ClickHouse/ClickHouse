@@ -35,8 +35,7 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
-    void insertDefault() override;
-    void popBack(size_t n) override;
+
     std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns,
                                           const IColumn::Selector & selector) const override;
 
@@ -65,7 +64,12 @@ public:
 
     void insert(const Field &) override
     {
-        throw Exception("Cannot get insert into " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Cannot insert into " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void insertDefault() override
+    {
+        throw Exception("Cannot insert into " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void insertRangeFrom(const IColumn &, size_t, size_t) override
@@ -91,6 +95,11 @@ public:
     void updateHashWithValue(size_t, SipHash &) const override
     {
         throw Exception("updateHashWithValue is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void popBack(size_t) override
+    {
+        throw Exception("popBack is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     int compareAt(size_t, size_t, const IColumn &, int) const override
