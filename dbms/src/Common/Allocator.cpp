@@ -8,7 +8,12 @@
 #include <algorithm>
 #include <sys/mman.h>
 
+#include <Core/Defines.h>
+#ifdef THREAD_SANITIZER
+    #define DISABLE_MREMAP 1
+#endif
 #include <common/mremap.h>
+
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
