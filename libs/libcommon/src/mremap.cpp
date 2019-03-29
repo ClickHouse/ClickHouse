@@ -1,14 +1,12 @@
 #include <common/mremap.h>
 
-#if DISABLE_MREMAP
-
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <errno.h>
 
 
-void * mremap(
+void * mremap_fallback(
     void * old_address, size_t old_size, size_t new_size, int flags, int mmap_prot, int mmap_flags, int mmap_fd, off_t mmap_offset)
 {
     /// No actual shrink
@@ -40,5 +38,3 @@ void * mremap(
 
     return new_address;
 }
-
-#endif

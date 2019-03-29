@@ -6,9 +6,17 @@
 #include <sys/mman.h>
 #endif
 
+
+#ifdef MREMAP_MAYMOVE
+    #define HAS_MREMAP 1
+#else
+    #define HAS_MREMAP 0
+#endif
+
+
 /// You can forcely disable mremap by defining DISABLE_MREMAP to 1 before including this file.
-#if !defined(DISABLE_MREMAP)
-    #if defined(MREMAP_MAYMOVE) && defined(MREMAP_MAYMOVE)
+#ifndef DISABLE_MREMAP
+    #if HAS_MREMAP
         #define DISABLE_MREMAP 0
     #else
         #define DISABLE_MREMAP 1
@@ -16,11 +24,22 @@
 #endif
 
 
-#if DISABLE_MREMAP
+/// Implement mremap with mmap/memcpy/munmap.
+void * mremap_fallback(
+    void * old_address,
+    size_t old_size,
+    size_t new_size,
+    int flags,
+    int mmap_prot,
+    int mmap_flags,
+    int mmap_fd,
+    off_t mmap_offset);
+
+
+#if !HAS_MREMAP
     #define MREMAP_MAYMOVE 1
 
-    /// Implement mremap with mmap/memcpy/munmap.
-    void * mremap(
+    inline void * mremap(
         void * old_address,
         size_t old_size,
         size_t new_size,
@@ -28,7 +47,10 @@
         int mmap_prot = 0,
         int mmap_flags = 0,
         int mmap_fd = -1,
-        off_t mmap_offset = 0);
+        off_t mmap_offset = 0)
+    {
+        return mremap_fallback(old_address, old_size, new_size, flags, mmap_prot, mmap_flags, mmap_fd, mmap_offset);
+    }
 #endif
 
 
