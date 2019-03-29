@@ -79,3 +79,6 @@ target_link_libraries (parse_date_time_best_effort PRIVATE clickhouse_common_io)
 
 add_executable (zlib_ng_bug zlib_ng_bug.cpp)
 target_link_libraries (zlib_ng_bug PRIVATE ${Poco_Foundation_LIBRARY})
+if(NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories(zlib_ng_bug SYSTEM BEFORE PRIVATE ${Poco_INCLUDE_DIRS})
+endif()
