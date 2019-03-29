@@ -177,10 +177,8 @@ public:
     void setSharedDictionary(const ColumnPtr & column_unique);
     bool isSharedDictionary() const { return dictionary.isShared(); }
 
-    /// Create column new dictionary with only keys that are mentioned in index.
-    MutablePtr compact();
-
-    /// Cut + compact.
+    /// Create column with new dictionary from column part.
+    /// Dictionary will have only keys that are mentioned in index.
     MutablePtr cutAndCompact(size_t start, size_t length) const;
 
     struct DictionaryEncodedColumn
