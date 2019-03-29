@@ -197,7 +197,8 @@ struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkS
 
     /// If dictionary should be updated.
     /// Can happen is some granules was skipped while reading from MergeTree.
-    /// We should store this flag in State because in case of long block of empty arrays, when we read nothing.
+    /// We should store this flag in State because
+    ///   in case of long block of empty arrays we may not need read dictionary at first reading.
     bool need_update_dictionary = false;
 
     explicit DeserializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
@@ -693,7 +694,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
     if (!settings.continuous_reading)
     {
-        /// Remember in state that some granules was skipped and we need to update dictionary.
+        /// Remember in state that some granules were skipped and we need to update dictionary.
         low_cardinality_state->need_update_dictionary = true;
     }
 
