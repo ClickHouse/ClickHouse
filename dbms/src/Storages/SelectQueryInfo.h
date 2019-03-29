@@ -25,6 +25,7 @@ struct PrewhereInfo
         : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}
 };
 
+/// Helper struct to store all the information about the filter expression.
 struct FilterInfo
 {
     ExpressionActionsPtr actions;

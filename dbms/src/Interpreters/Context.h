@@ -188,6 +188,7 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
+    // User property is a key-value pair from the configuration entry: users.<username>.databases.<db_name>.<table_name>.<key_name>
     bool hasUserProperty(const String & database, const String & table, const String & name) const;
     const String & getUserProperty(const String & database, const String & table, const String & name) const;
 

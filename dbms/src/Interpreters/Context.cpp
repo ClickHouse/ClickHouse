@@ -599,8 +599,7 @@ bool Context::hasUserProperty(const String & database, const String & table, con
     if (table_props == db->second.end())
         return false;
 
-    auto prop = table_props->second.find(name);
-    return prop != table_props->second.end();
+    return !!table_props->second.count(name);
 }
 
 const String & Context::getUserProperty(const String & database, const String & table, const String & name) const

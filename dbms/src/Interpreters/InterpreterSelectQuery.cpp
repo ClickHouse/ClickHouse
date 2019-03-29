@@ -618,7 +618,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         expressions = analyzeExpressions(QueryProcessingStage::FetchColumns, true, filter_info);
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
-            throw Exception("PREWHERE is not supported with the table filtering", ErrorCodes::ILLEGAL_PREWHERE);
+            throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         if (expressions.prewhere_info)
             pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
@@ -637,7 +637,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
-            throw Exception("PREWHERE is not supported with the table filtering", ErrorCodes::ILLEGAL_PREWHERE);
+            throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
         executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
