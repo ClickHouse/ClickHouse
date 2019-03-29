@@ -522,7 +522,7 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
     while (position > getMaxPositionForCurrentType())
         expandType();
 
-    positions->assumeMutableRef().insert(position);
+    positions->insert(position);
     checkSizeOfType();
 }
 
@@ -540,7 +540,7 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
             convertPositions<ColumnType>();
 
         if (size_of_type == sizeof(ColumnType))
-            positions->assumeMutableRef().insertRangeFrom(column, offset, limit);
+            positions->insertRangeFrom(column, offset, limit);
         else
         {
             auto copy = [&](auto cur_type)

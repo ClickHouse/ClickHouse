@@ -318,32 +318,32 @@ struct NgramDistanceImpl
 };
 
 
-struct NgramDistanceName
+struct NameNgramDistance
 {
     static constexpr auto name = "ngramDistance";
 };
 
-struct NgramDistanceCaseInsensitiveName
+struct NameNgramDistanceCaseInsensitive
 {
     static constexpr auto name = "ngramDistanceCaseInsensitive";
 };
 
-struct NgramDistanceUTF8Name
+struct NameNgramDistanceUTF8
 {
     static constexpr auto name = "ngramDistanceUTF8";
 };
 
-struct NgramDistanceUTF8CaseInsensitiveName
+struct NameNgramDistanceUTF8CaseInsensitive
 {
     static constexpr auto name = "ngramDistanceCaseInsensitiveUTF8";
 };
 
-using FunctionNgramDistance = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false>, NgramDistanceName>;
+using FunctionNgramDistance = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, false>, NameNgramDistance>;
 using FunctionNgramDistanceCaseInsensitive
-    = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true>, NgramDistanceCaseInsensitiveName>;
-using FunctionNgramDistanceUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false>, NgramDistanceUTF8Name>;
+    = FunctionsStringSimilarity<NgramDistanceImpl<4, UInt8, false, true>, NameNgramDistanceCaseInsensitive>;
+using FunctionNgramDistanceUTF8 = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, false>, NameNgramDistanceUTF8>;
 using FunctionNgramDistanceCaseInsensitiveUTF8
-    = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true>, NgramDistanceUTF8CaseInsensitiveName>;
+    = FunctionsStringSimilarity<NgramDistanceImpl<3, UInt32, true, true>, NameNgramDistanceUTF8CaseInsensitive>;
 
 void registerFunctionsStringSimilarity(FunctionFactory & factory)
 {

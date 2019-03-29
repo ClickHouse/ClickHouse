@@ -31,6 +31,7 @@ MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUAR
 MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
 MESSAGES_TO_RETRY = [
+    "DB::Exception: ZooKeeper session has been expired",
     "Coordination::Exception: Connection loss",
 ]
 
