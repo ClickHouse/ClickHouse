@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name, size_t LimitArgs>
-class FunctionsMultiStringSearchEditDistance : public IFunction
+class FunctionsMultiStringFuzzySearch : public IFunction
 {
     static_assert(LimitArgs > 0);
 
@@ -41,7 +41,7 @@ public:
             throw Exception(
                 "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
 
-        return std::make_shared<FunctionsMultiStringSearchEditDistance>();
+        return std::make_shared<FunctionsMultiStringFuzzySearch>();
     }
 
     String getName() const override { return name; }
