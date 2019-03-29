@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/IDataTypeDomain.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/FieldVisitors.h>
 
@@ -21,10 +21,10 @@ namespace DB
  * SimpleAggregateFunction(anyLast, LowCardinality(Nullable(String)))
  * SimpleAggregateFunction(anyLast, IPv4)
  *
- * Technically, a standard IDataType is instanciated and a DataTypeDomainSimpleAggregateFunction is added as domain.
+ * Technically, a standard IDataType is instanciated and customized with IDataTypeCustomName and DataTypeCustomDesc.
   */
 
-class DataTypeDomainSimpleAggregateFunction : public IDataTypeDomain
+class DataTypeCustomSimpleAggregateFunction : public IDataTypeCustomName
 {
 private:
     const AggregateFunctionPtr function;
@@ -32,14 +32,11 @@ private:
     const Array parameters;
 
 public:
-    DataTypeDomainSimpleAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
+    DataTypeCustomSimpleAggregateFunction(const AggregateFunctionPtr & function_, const DataTypes & argument_types_, const Array & parameters_)
             : function(function_), argument_types(argument_types_), parameters(parameters_) {}
 
     const AggregateFunctionPtr getFunction() const { return function; }
-    String doGetName() const override;
+    String getName() const override;
 };
-
-/// recursively follow data type domain to find a DataTypeDomainSimpleAggregateFunction
-const DataTypeDomainSimpleAggregateFunction * findSimpleAggregateFunction(DataTypePtr dataType);
 
 }

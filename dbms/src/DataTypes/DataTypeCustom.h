@@ -1,8 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <cstddef>
 #include <Core/Types.h>
-#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -12,45 +12,21 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 
-/** Allow to customize an existing data type and set a different name. Derived class IDataTypeDomainCustomSerialization allows
- * further customization of serialization/deserialization methods. See use in IPv4 and IPv6 data type domains.
- *
- * IDataTypeDomain can be chained for further delegation (only for getName for the moment).
+/** Allow to customize an existing data type and set a different name and/or text serialization/deserialization methods.
+ * See use in IPv4 and IPv6 data types, and also in SimpleAggregateFunction.
   */
-class IDataTypeDomain
+class IDataTypeCustomName
 {
-private:
-    mutable DataTypeDomainPtr delegate;
-
 public:
-    virtual ~IDataTypeDomain() {}
+    virtual ~IDataTypeCustomName() {}
 
-    String getName() const
-    {
-        if (delegate)
-            return delegate->getName();
-        else
-            return doGetName();
-    }
-
-    void appendDomain(DataTypeDomainPtr delegate_) const
-    {
-        if (delegate == nullptr)
-            delegate = std::move(delegate_);
-        else
-            delegate->appendDomain(std::move(delegate_));
-    }
-
-    const IDataTypeDomain * getDomain() const { return delegate.get(); }
-
-protected:
-    virtual String doGetName() const = 0;
+    virtual String getName() const = 0;
 };
 
-class IDataTypeDomainCustomSerialization : public IDataTypeDomain
+class IDataTypeCustomTextSerialization
 {
 public:
-    virtual ~IDataTypeDomainCustomSerialization() {}
+    virtual ~IDataTypeCustomTextSerialization() {}
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
@@ -80,6 +56,33 @@ public:
     /** Text serialization for putting into the XML format.
       */
     virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const = 0;
+};
+
+using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
+using DataTypeCustomTextSerializationPtr = std::unique_ptr<const IDataTypeCustomTextSerialization>;
+
+/** Describe a data type customization
+ */
+struct DataTypeCustomDesc
+{
+    DataTypeCustomNamePtr name;
+    DataTypeCustomTextSerializationPtr text_serialization;
+
+    DataTypeCustomDesc(DataTypeCustomNamePtr name_, DataTypeCustomTextSerializationPtr text_serialization_)
+            : name(std::move(name_)), text_serialization(std::move(text_serialization_)) {}
+};
+
+using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
+
+/** A simple implementation of IDataTypeCustomName
+ */
+class DataTypeCustomFixedName : public IDataTypeCustomName
+{
+private:
+    String name;
+public:
+    DataTypeCustomFixedName(String name_) : name(name_) {}
+    String getName() const override { return name; }
 };
 
 } // namespace DB

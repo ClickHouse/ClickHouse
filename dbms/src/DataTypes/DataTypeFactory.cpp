@@ -1,5 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/IDataTypeDomain.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -115,20 +115,20 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerDataTypeDomain(const String & family_name, CreatorWithDomain creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerDataTypeCustom(const String & family_name, CreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
     registerDataType(family_name, [creator](const ASTPtr & ast)
     {
         auto res = creator(ast);
-        res.first->appendDomain(std::move(res.second));
+        res.first->setCustomization(std::move(res.second));
 
         return res.first;
     }, case_sensitiveness);
 }
 
-void DataTypeFactory::registerDataTypeDomain(const String & name, SimpleCreatorWithDomain creator, CaseSensitiveness case_sensitiveness)
+void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCreatorWithCustom creator, CaseSensitiveness case_sensitiveness)
 {
-    registerDataTypeDomain(name, [creator](const ASTPtr & /*ast*/)
+    registerDataTypeCustom(name, [creator](const ASTPtr & /*ast*/)
     {
         return creator();
     }, case_sensitiveness);

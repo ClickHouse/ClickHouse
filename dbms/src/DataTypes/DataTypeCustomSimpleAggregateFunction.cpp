@@ -5,7 +5,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
-#include <DataTypes/DataTypeDomainSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -33,7 +33,7 @@ namespace ErrorCodes
 static const std::vector<String> supported_functions{"any", "anyLast", "min", "max", "sum"};
 
 
-String DataTypeDomainSimpleAggregateFunction::doGetName() const
+String DataTypeCustomSimpleAggregateFunction::getName() const
 {
     std::stringstream stream;
     stream << "SimpleAggregateFunction(" << function->getName();
@@ -58,7 +58,7 @@ String DataTypeDomainSimpleAggregateFunction::doGetName() const
 }
 
 
-static std::pair<DataTypePtr, DataTypeDomainPtr> create(const ASTPtr & arguments)
+static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
 {
     String function_name;
     AggregateFunctionPtr function;
@@ -117,7 +117,6 @@ static std::pair<DataTypePtr, DataTypeDomainPtr> create(const ASTPtr & arguments
     }
 
     DataTypePtr storage_type = DataTypeFactory::instance().get(argument_types[0]->getName());
-    DataTypeDomainPtr domain = std::make_unique<DataTypeDomainSimpleAggregateFunction>(function, argument_types, params_row);
 
     if (!function->getReturnType()->equals(*removeLowCardinality(storage_type)))
     {
@@ -125,32 +124,14 @@ static std::pair<DataTypePtr, DataTypeDomainPtr> create(const ASTPtr & arguments
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
-    return std::make_pair(storage_type, std::move(domain));
+    DataTypeCustomNamePtr custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, argument_types, params_row);
+
+    return std::make_pair(storage_type, std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
 }
-
-static const DataTypeDomainSimpleAggregateFunction * findSimpleAggregateFunction(const IDataTypeDomain * domain)
-{
-    if (domain == nullptr)
-        return nullptr;
-
-    if (auto simple_aggr = dynamic_cast<const DataTypeDomainSimpleAggregateFunction *>(domain))
-        return simple_aggr;
-
-    if (domain->getDomain() != nullptr)
-        return findSimpleAggregateFunction(domain->getDomain());
-
-    return nullptr;
-}
-
-const DataTypeDomainSimpleAggregateFunction * findSimpleAggregateFunction(DataTypePtr dataType)
-{
-    return findSimpleAggregateFunction(dataType->getDomain());
-}
-
 
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
 {
-    factory.registerDataTypeDomain("SimpleAggregateFunction", create);
+    factory.registerDataTypeCustom("SimpleAggregateFunction", create);
 }
 
 }
