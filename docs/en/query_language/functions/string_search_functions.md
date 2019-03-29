@@ -64,11 +64,11 @@ The same as `multiMatchAny`, but returns any index that matches the haystack.
 
 ## multiFuzzyMatchAny(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
 
-The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function is also in an experimental mode and can be extremely slow. For more information see [hyperscan documentation](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
+The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function is also in an experimental mode and can be extremely slow. For more information see [hyperscan documentation](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
 
 ## multiFuzzyMatchAnyIndex(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
 
-The same as `multiFuzzyMatchAny`, but returns any index that matches the haystack within constant edit distance.
+The same as `multiFuzzyMatchAny`, but returns any index that matches the haystack within a constant edit distance.
 
 **Note: to turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.**
 
