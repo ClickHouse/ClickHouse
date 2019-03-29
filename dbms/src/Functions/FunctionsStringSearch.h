@@ -46,7 +46,7 @@ namespace DB
   * multiSearchAllPositionsUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchAllPositionsCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchAllPositionsCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
-
+  *
   * multiSearchFirstPosition(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- returns the first position of the haystack matched by strings or zero if nothing was found
   * multiSearchFirstPositionUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchFirstPositionCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
@@ -291,7 +291,8 @@ public:
     static FunctionPtr create(const Context & context)
     {
         if (Impl::is_using_hyperscan && !context.getSettingsRef().allow_hyperscan)
-            throw Exception("Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+            throw Exception(
+                "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
 
         return std::make_shared<FunctionsMultiStringSearch>();
     }
@@ -355,7 +356,6 @@ public:
 
         vec_res.resize(column_haystack_size);
 
-        /// TODO support constant_constant version
         if (col_haystack_vector)
             Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
         else
