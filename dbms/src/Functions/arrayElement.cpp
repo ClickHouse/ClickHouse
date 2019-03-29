@@ -678,7 +678,7 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
     if (!col_nested)
         return false;
 
-    const Columns & tuple_columns = col_nested->getColumns();
+    const auto & tuple_columns = col_nested->getColumns();
     size_t tuple_size = tuple_columns.size();
 
     const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(

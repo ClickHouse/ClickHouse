@@ -156,7 +156,7 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
             throw Exception{"Cannot cast tuple column to type "
                             + data_type->getName() + " in function " + getName(), ErrorCodes::LOGICAL_ERROR};
 
-        auto columns_number = column_tuple->getColumns().size();
+        auto columns_number = column_tuple->tupleSize();
         Columns columns(columns_number);
 
         const auto & types = tuple_type->getElements();

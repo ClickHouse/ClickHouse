@@ -295,7 +295,7 @@ private:
             if (column_with_null[i])
             {
                 if (key_pos == i)
-                    res.getByPosition(i).column = makeNullable(std::move(columns[i]))->assumeMutable();
+                    res.getByPosition(i).column = makeNullable(std::move(columns[i]));
                 else
                 {
                     const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
