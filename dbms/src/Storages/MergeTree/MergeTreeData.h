@@ -533,9 +533,6 @@ public:
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
-    /// Returns the size of partition in bytes.
-    size_t getPartitionSize(const std::string & partition_id) const;
-
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();
