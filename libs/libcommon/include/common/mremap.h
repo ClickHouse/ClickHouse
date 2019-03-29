@@ -64,6 +64,10 @@ inline void * clickhouse_mremap(
     [[maybe_unused]] int mmap_fd = -1,
     [[maybe_unused]] off_t mmap_offset = 0)
 {
+#if DISABLE_MREMAP
+    return mremap_fallback(old_address, old_size, new_size, flags, mmap_prot, mmap_flags, mmap_fd, mmap_offset);
+#else
+
     return mremap(
         old_address,
         old_size,
@@ -77,4 +81,5 @@ inline void * clickhouse_mremap(
         mmap_offset
 #endif
         );
+#endif
 }
