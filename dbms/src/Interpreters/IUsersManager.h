@@ -5,15 +5,17 @@
 namespace DB
 {
 
-/** Duties of security manager:
+/** Duties of users manager:
   * 1) Authenticate users
   * 2) Provide user settings (profile, quota, ACLs)
   * 3) Grant access to databases
   */
-class ISecurityManager
+class IUsersManager
 {
 public:
     using UserPtr = std::shared_ptr<const User>;
+
+    virtual ~IUsersManager() = default;
 
     virtual void loadFromConfig(const Poco::Util::AbstractConfiguration & config) = 0;
 
@@ -28,8 +30,6 @@ public:
 
     /// Check if the user has access to the database.
     virtual bool hasAccessToDatabase(const String & user_name, const String & database_name) const = 0;
-
-    virtual ~ISecurityManager() {}
 };
 
 }
