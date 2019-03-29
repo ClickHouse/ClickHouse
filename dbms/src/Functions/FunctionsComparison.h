@@ -932,12 +932,12 @@ private:
         if (x_const)
             x_columns = convertConstTupleToConstantElements(*x_const);
         else
-            x_columns = static_cast<const ColumnTuple &>(*c0.column).getColumns();
+            x_columns = static_cast<const ColumnTuple &>(*c0.column).getColumnsCopy();
 
         if (y_const)
             y_columns = convertConstTupleToConstantElements(*y_const);
         else
-            y_columns = static_cast<const ColumnTuple &>(*c1.column).getColumns();
+            y_columns = static_cast<const ColumnTuple &>(*c1.column).getColumnsCopy();
 
         for (size_t i = 0; i < tuple_size; ++i)
         {

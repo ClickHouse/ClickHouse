@@ -576,7 +576,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
 
     /// Make temporary arrays for each components of Tuple, then filter and collect back.
 
-    size_t tuple_size = tuple.getColumns().size();
+    size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
         throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);
@@ -941,7 +941,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 
     /// Make temporary arrays for each components of Tuple. In the same way as for Nullable.
 
-    size_t tuple_size = tuple.getColumns().size();
+    size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
         throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);
