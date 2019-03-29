@@ -103,6 +103,7 @@ namespace MultiRegexps
 
         return known_regexps.get({str_patterns, edit_distance}, [&str_patterns, edit_distance]
         {
+            (void)edit_distance;
             /// Common pointers
             std::vector<const char *> ptrns;
             std::vector<unsigned int> flags;
