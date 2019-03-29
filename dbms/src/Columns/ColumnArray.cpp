@@ -809,7 +809,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
 
     for (size_t i = 0; i < col_size; ++i)
     {
-        /// How much to replicate the array.
+        /// How many times to replicate the array.
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
         /// The number of strings in the array.
         size_t value_size = src_offsets[i] - prev_src_offset;
