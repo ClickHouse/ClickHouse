@@ -217,8 +217,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     if (aggressive)
         merge_settings.base = 1;
 
-    time_t merge_with_ttl_timeout = data.global_context.getConfigRef().getInt("merge_with_ttl_timeout", 3600);
-    bool can_merge_with_ttl = (current_time - last_merge_with_ttl > merge_with_ttl_timeout);
+    bool can_merge_with_ttl =
+        (current_time - last_merge_with_ttl > data.settings.merge_with_ttl_timeout);
 
     /// NOTE Could allow selection of different merge strategy.
     if (can_merge_with_ttl && has_part_with_expired_ttl)
