@@ -1,9 +1,9 @@
-CREATE TABLE test.compression_codec_log ( id UInt64 CODEC(LZ4),  data String CODEC(ZSTD(1)),  ddd Date CODEC(NONE),  somenum Float64 CODEC(ZSTD(2)),  somestr FixedString(3) CODEC(LZ4HC(7)),  othernum Int64 CODEC(Delta(8))) ENGINE = Log()
+CREATE TABLE test.compression_codec_log (`id` UInt64 CODEC(LZ4), `data` String CODEC(ZSTD(1)), `ddd` Date CODEC(NONE), `somenum` Float64 CODEC(ZSTD(2)), `somestr` FixedString(3) CODEC(LZ4HC(7)), `othernum` Int64 CODEC(Delta(8))) ENGINE = Log()
 1	hello	2018-12-14	1.1	aaa	5
 2	world	2018-12-15	2.2	bbb	6
 3	!	2018-12-16	3.3	ccc	7
 2
-CREATE TABLE test.compression_codec_multiple_log ( id UInt64 CODEC(LZ4, ZSTD(1), NONE, LZ4HC(0), Delta(4)),  data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC(0), LZ4, LZ4, Delta(8)),  ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD(1), LZ4HC(0), LZ4HC(0)),  somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD(1))) ENGINE = Log()
+CREATE TABLE test.compression_codec_multiple_log (`id` UInt64 CODEC(LZ4, ZSTD(1), NONE, LZ4HC(0), Delta(4)), `data` String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC(0), LZ4, LZ4, Delta(8)), `ddd` Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD(1), LZ4HC(0), LZ4HC(0)), `somenum` Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD(1))) ENGINE = Log()
 1	world	2018-10-05	1.1
 2	hello	2018-10-01	2.2
 3	buy	2018-10-11	3.3
@@ -11,12 +11,12 @@ CREATE TABLE test.compression_codec_multiple_log ( id UInt64 CODEC(LZ4, ZSTD(1),
 10003
 274972506.6
 9175437371954010821
-CREATE TABLE test.compression_codec_tiny_log ( id UInt64 CODEC(LZ4),  data String CODEC(ZSTD(1)),  ddd Date CODEC(NONE),  somenum Float64 CODEC(ZSTD(2)),  somestr FixedString(3) CODEC(LZ4HC(7)),  othernum Int64 CODEC(Delta(8))) ENGINE = TinyLog()
+CREATE TABLE test.compression_codec_tiny_log (`id` UInt64 CODEC(LZ4), `data` String CODEC(ZSTD(1)), `ddd` Date CODEC(NONE), `somenum` Float64 CODEC(ZSTD(2)), `somestr` FixedString(3) CODEC(LZ4HC(7)), `othernum` Int64 CODEC(Delta(8))) ENGINE = TinyLog()
 1	hello	2018-12-14	1.1	aaa	5
 2	world	2018-12-15	2.2	bbb	6
 3	!	2018-12-16	3.3	ccc	7
 2
-CREATE TABLE test.compression_codec_multiple_tiny_log ( id UInt64 CODEC(LZ4, ZSTD(1), NONE, LZ4HC(0), Delta(4)),  data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC(0), LZ4, LZ4, Delta(8)),  ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD(1), LZ4HC(0), LZ4HC(0)),  somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD(1))) ENGINE = TinyLog()
+CREATE TABLE test.compression_codec_multiple_tiny_log (`id` UInt64 CODEC(LZ4, ZSTD(1), NONE, LZ4HC(0), Delta(4)), `data` String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC(0), LZ4, LZ4, Delta(8)), `ddd` Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD(1), LZ4HC(0), LZ4HC(0)), `somenum` Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD(1))) ENGINE = TinyLog()
 1	world	2018-10-05	1.1
 2	hello	2018-10-01	2.2
 3	buy	2018-10-11	3.3

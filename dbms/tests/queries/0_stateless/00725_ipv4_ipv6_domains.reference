@@ -1,4 +1,4 @@
-CREATE TABLE test.ipv4_test ( ipv4_ IPv4) ENGINE = Memory
+CREATE TABLE test.ipv4_test (`ipv4_` IPv4) ENGINE = Memory
 0.0.0.0	00
 8.8.8.8	08080808
 127.0.0.1	7F000001
@@ -10,7 +10,7 @@ CREATE TABLE test.ipv4_test ( ipv4_ IPv4) ENGINE = Memory
 > 127.0.0.1	255.255.255.255
 = 127.0.0.1	127.0.0.1
 euqality of IPv4-mapped IPv6 value and IPv4 promoted to IPv6 with function:	1
-CREATE TABLE test.ipv6_test ( ipv6_ IPv6) ENGINE = Memory
+CREATE TABLE test.ipv6_test (`ipv6_` IPv6) ENGINE = Memory
 ::	00000000000000000000000000000000
 ::	00000000000000000000000000000000
 ::ffff:8.8.8.8	00000000000000000000FFFF08080808
