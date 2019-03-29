@@ -151,20 +151,59 @@ public:
         RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
     };
 
-    /// Map for a time series
-    using ASOFTimeType = UInt32;
-    using AsofGetterType = ColumnsHashing::HashMethodOneNumber<ASOFTimeType, ASOFTimeType, ASOFTimeType, false>;
-    struct TSRowRef
+    struct AsofRowRefs
     {
-        // TODO use the arena allocator to get memory for this
-        // This would require ditching std::map because std::allocator is incompatible with the arena allocator
-        std::map<ASOFTimeType, RowRef> ts;
+        /// Different types of asof join keys
+        #define APPLY_FOR_ASOF_JOIN_VARIANTS(M) \
+            M(key32, UInt32)                    \
+            M(key64, UInt64)
 
-        TSRowRef() {}
-        void insert(ASOFTimeType t, const Block * block, size_t row_num);
-        std::optional<std::pair<ASOFTimeType, RowRef>> findAsof(ASOFTimeType t) const;
-        std::string dumpStructure() const;
-        size_t size() const;
+        enum class AsofType
+        {
+        #define M(NAME, TYPE) NAME,
+            APPLY_FOR_ASOF_JOIN_VARIANTS(M)
+        #undef M
+        };
+
+        static std::optional<AsofType> getType(const IColumn * asof_column);
+        static size_t getSize(AsofType type);
+
+        template<typename T>
+        struct AsofEntry
+        {
+            T asof_value;
+            RowRef row_ref;
+
+            AsofEntry(T v) : asof_value(v) {}
+            AsofEntry(T v, RowRef rr) : asof_value(v), row_ref(rr) {}
+
+            bool operator< (const AsofEntry& o) const
+            {
+                return asof_value < o.asof_value;
+            }
+        };
+
+        struct AsofLookups
+        {
+            #define M(NAME, TYPE) \
+            std::unique_ptr<PODArray<AsofEntry<TYPE>>> NAME;
+                APPLY_FOR_ASOF_JOIN_VARIANTS(M)
+            #undef M
+
+            void create(AsofType which);
+        };
+
+        AsofRowRefs() {}
+
+        void create(AsofType which);
+        void insert(const IColumn * asof_column, const Block * block, size_t row_num, Arena & pool);
+
+        const RowRef * findAsof(const IColumn * asof_column, size_t row_num, Arena & pool) const;
+
+    private:
+        AsofType type;
+        mutable AsofLookups lookups;
+        mutable bool sorted = false;
     };
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
@@ -297,7 +336,7 @@ public:
     using MapsAnyFull = MapsTemplate<WithFlags<true, false, RowRef>>;
     using MapsAnyFullOverwrite = MapsTemplate<WithFlags<true, true, RowRef>>;
     using MapsAllFull = MapsTemplate<WithFlags<true, false, RowRefList>>;
-    using MapsAsof = MapsTemplate<WithFlags<false, false, TSRowRef>>;
+    using MapsAsof = MapsTemplate<WithFlags<false, false, AsofRowRefs>>;
 
     template <ASTTableJoin::Kind KIND>
     struct KindTrait
@@ -400,6 +439,7 @@ private:
 
 private:
     Type type = Type::EMPTY;
+    AsofRowRefs::AsofType asof_type;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
