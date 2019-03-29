@@ -310,7 +310,7 @@ ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t star
 {
     auto sub_positions = (*idx.getPositions()->cut(start, length)).mutate();
     /// Create column with new indexes and old dictionary.
-    /// Dictionary is shared, but wil be recreated after compactInplace call.
+    /// Dictionary is shared, but will be recreated after compactInplace call.
     auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
     /// Will create new dictionary.
     column->compactInplace();
