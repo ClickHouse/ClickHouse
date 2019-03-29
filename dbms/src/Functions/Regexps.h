@@ -1,21 +1,23 @@
 #pragma once
 
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 #include <Functions/likePatternToRegexp.h>
 #include <Common/ObjectPool.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
 #include <common/StringRef.h>
-#include <memory>
-#include <string>
-#include <vector>
 
 #include <Common/config.h>
 #if USE_HYPERSCAN
-#   if __has_include(<hs/hs.h>)
-#       include <hs/hs.h>
-#   else
-#       include <hs.h>
-#   endif
+#    if __has_include(<hs/hs.h>)
+#        include <hs/hs.h>
+#    else
+#        include <hs.h>
+#    endif
 #endif
 
 namespace ProfileEvents
@@ -81,12 +83,15 @@ namespace MultiRegexps
         }
     };
 
+    using CompilerError = std::unique_ptr<hs_compile_error_t, HyperscanDeleter<decltype(&hs_free_compile_error), &hs_free_compile_error>>;
+    using ScratchPtr = std::unique_ptr<hs_scratch_t, DB::MultiRegexps::HyperscanDeleter<decltype(&hs_free_scratch), &hs_free_scratch>>;
     using Regexps = std::unique_ptr<hs_database_t, HyperscanDeleter<decltype(&hs_free_database), &hs_free_database>>;
 
-    using Pool = ObjectPoolMap<Regexps, std::vector<String>>;
+    using Pool = ObjectPoolMap<Regexps, std::pair<std::vector<String>, std::optional<UInt32>>>;
 
-    template <bool FindAnyIndex>
-    inline Pool::Pointer get(const std::vector<StringRef> & patterns)
+    /// If CompileForEditDistance is False, edit_distance must be nullopt
+    template <bool FindAnyIndex, bool CompileForEditDistance>
+    inline Pool::Pointer get(const std::vector<StringRef> & patterns, std::optional<UInt32> edit_distance)
     {
         /// C++11 has thread-safe function-local statics on most modern compilers.
         static Pool known_regexps; /// Different variables for different pattern parameters.
@@ -96,16 +101,37 @@ namespace MultiRegexps
         for (const StringRef & ref : patterns)
             str_patterns.push_back(ref.toString());
 
-        return known_regexps.get(str_patterns, [&str_patterns]
+        return known_regexps.get({str_patterns, edit_distance}, [&str_patterns, edit_distance]
         {
+            (void)edit_distance;
+            /// Common pointers
             std::vector<const char *> ptrns;
             std::vector<unsigned int> flags;
+
+            /// Pointer for external edit distance compilation
+            std::vector<hs_expr_ext> ext_exprs;
+            std::vector<const hs_expr_ext *> ext_exprs_ptrs;
+
             ptrns.reserve(str_patterns.size());
             flags.reserve(str_patterns.size());
+
+            if constexpr (CompileForEditDistance)
+            {
+                ext_exprs.reserve(str_patterns.size());
+                ext_exprs_ptrs.reserve(str_patterns.size());
+            }
+
             for (const StringRef ref : str_patterns)
             {
                 ptrns.push_back(ref.data);
                 flags.push_back(HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_SINGLEMATCH);
+                if constexpr (CompileForEditDistance)
+                {
+                    ext_exprs.emplace_back();
+                    ext_exprs.back().flags = HS_EXT_FLAG_EDIT_DISTANCE;
+                    ext_exprs.back().edit_distance = edit_distance.value();
+                    ext_exprs_ptrs.push_back(&ext_exprs.back());
+                }
             }
             hs_database_t * db = nullptr;
             hs_compile_error_t * compile_error;
@@ -120,13 +146,32 @@ namespace MultiRegexps
                     ids[i] = i + 1;
             }
 
-            hs_error_t err
-                = hs_compile_multi(ptrns.data(), flags.data(), ids.get(), ptrns.size(), HS_MODE_BLOCK, nullptr, &db, &compile_error);
+            hs_error_t err;
+            if constexpr (!CompileForEditDistance)
+                err = hs_compile_multi(
+                    ptrns.data(),
+                    flags.data(),
+                    ids.get(),
+                    ptrns.size(),
+                    HS_MODE_BLOCK,
+                    nullptr,
+                    &db,
+                    &compile_error);
+            else
+                err = hs_compile_ext_multi(
+                    ptrns.data(),
+                    flags.data(),
+                    ids.get(),
+                    ext_exprs_ptrs.data(),
+                    ptrns.size(),
+                    HS_MODE_BLOCK,
+                    nullptr,
+                    &db,
+                    &compile_error);
+
             if (err != HS_SUCCESS)
             {
-                std::unique_ptr<
-                    hs_compile_error_t,
-                    HyperscanDeleter<decltype(&hs_free_compile_error), &hs_free_compile_error>> error(compile_error);
+                CompilerError error(compile_error);
 
                 if (error->expression < 0)
                     throw Exception(String(error->message), ErrorCodes::LOGICAL_ERROR);
