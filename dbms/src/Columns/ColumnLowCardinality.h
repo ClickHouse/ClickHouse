@@ -149,10 +149,10 @@ public:
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
-    /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique->assumeMutable()); }
+    /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }
 
-    /// IColumn & getIndexes() { return idx.getPositions()->assumeMutableRef(); }
+    /// IColumn & getIndexes() { return *idx.getPositions(); }
     const IColumn & getIndexes() const { return *idx.getPositions(); }
     const ColumnPtr & getIndexesPtr() const { return idx.getPositions(); }
     size_t getSizeOfIndexType() const { return idx.getSizeOfIndexType(); }
@@ -202,13 +202,13 @@ public:
         explicit Index(ColumnPtr positions);
 
         const ColumnPtr & getPositions() const { return positions; }
-        ColumnPtr & getPositionsPtr() { return positions; }
+        WrappedPtr & getPositionsPtr() { return positions; }
         size_t getPositionAt(size_t row) const;
         void insertPosition(UInt64 position);
         void insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit);
 
-        void popBack(size_t n) { positions->assumeMutableRef().popBack(n); }
-        void reserve(size_t n) { positions->assumeMutableRef().reserve(n); }
+        void popBack(size_t n) { positions->popBack(n); }
+        void reserve(size_t n) { positions->reserve(n); }
 
         UInt64 getMaxPositionForCurrentType() const;
 
@@ -224,7 +224,7 @@ public:
         void countKeys(ColumnUInt64::Container & counts) const;
 
     private:
-        ColumnPtr positions;
+        WrappedPtr positions;
         size_t size_of_type = 0;
 
         void updateSizeOfType() { size_of_type = getSizeOfIndexType(*positions, size_of_type); }
@@ -252,10 +252,10 @@ private:
         explicit Dictionary(ColumnPtr column_unique, bool is_shared);
 
         const ColumnPtr & getColumnUniquePtr() const { return column_unique; }
-        ColumnPtr & getColumnUniquePtr() { return column_unique; }
+        WrappedPtr & getColumnUniquePtr() { return column_unique; }
 
         const IColumnUnique & getColumnUnique() const { return static_cast<const IColumnUnique &>(*column_unique); }
-        IColumnUnique & getColumnUnique() { return static_cast<IColumnUnique &>(column_unique->assumeMutableRef()); }
+        IColumnUnique & getColumnUnique() { return static_cast<IColumnUnique &>(*column_unique); }
 
         /// Dictionary may be shared for several mutable columns.
         /// Immutable columns may have the same column unique, which isn't necessarily shared dictionary.
@@ -266,7 +266,7 @@ private:
         void compact(ColumnPtr & positions);
 
     private:
-        ColumnPtr column_unique;
+        WrappedPtr column_unique;
         bool shared = false;
 
         void checkColumn(const IColumn & column);

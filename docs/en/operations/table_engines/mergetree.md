@@ -103,7 +103,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 - `date-column` — The name of a column of the type [Date](../../data_types/date.md). ClickHouse automatically creates partitions by month on the basis of this column. The partition names are in the `"YYYYMM"` format.
 - `sampling_expression` — an expression for sampling.
-- `(primary, key)` — primary key. Type — [Tuple()](../../data_types/tuple.md- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
+- `(primary, key)` — primary key. Type — [Tuple()](../../data_types/tuple.md)
+- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
@@ -147,7 +148,7 @@ If the data query specifies:
 
 The examples above show that it is always more effective to use an index than a full scan.
 
-A sparse index allows extra strings to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read. In most cases, ClickHouse performance does not degrade when `index_granularity = 8192`.
+A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read. In most cases, ClickHouse performance does not degrade when `index_granularity = 8192`.
 
 Sparse indexes allow you to work with a very large number of table rows, because such indexes are always stored in the computer's RAM.
 
