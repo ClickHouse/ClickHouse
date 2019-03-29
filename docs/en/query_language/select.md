@@ -54,15 +54,15 @@ The features of data sampling are listed below:
 - Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the `IN` clause, as well as manually correlate results of different queries with samples.
 - Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table).
 
-For the `SAMPLE` clause is supported the following syntax:
+For the `SAMPLE` clause the following syntax is supported:
 
-- `SAMPLE k`, where `k` is a decimal number from 0 to 1. The query is executed on `k` percent of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#select-sample-k)
+- `SAMPLE k`, where `k` is a decimal number from 0 to 1. The query is executed on `k` fraction of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#select-sample-k)
 - `SAMPLE n`, where `n` is a sufficiently large integer. The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#select-sample-n)
 - `SAMPLE k OFFSET m` where `k` and `m` are numbers from 0 to 1. The query is executed on a sample of `k` percent of the data. The data used for the sample is offset by `m` percent. [Read more](#select-sample-offset)
 
 #### SAMPLE k {#select-sample-k}
 
-In a `SAMPLE k` clause, `k` is the percent of data that the sample is taken from. The example is shown below:
+In a `SAMPLE k` clause, the sample is taken from the `k` fraction of data. The example is shown below:
 
 ``` sql
 SELECT
@@ -84,9 +84,9 @@ In this case, the query is executed on a sample of at least `n` rows, where `n` 
 
 Since the minimum unit for data reading is one granule (its size is set by the `index_granularity` setting), it makes sense to set a sample that is much larger than the size of the granule.
 
-When using the `SAMPLE n` clause, the relative coefficient is calculated dynamically. Since you do not know which relative percent of data was processed, you do not know the coefficient the aggregate functions should be multiplied by (for example, you do not know if `SAMPLE 1000000` was taken from a set of 10,000,000 rows or from a set of 1,000,000,000 rows). In this case, use the `_sample_factor` column to get the approximate result.
+When using the `SAMPLE n` clause, the relative coefficient is calculated dynamically. Since you do not know which relative percent of data was processed, you do not know the coefficient the aggregate functions should be multiplied by (for example, you do not know if `SAMPLE 1000000` was taken from a set of 10,000,000 rows or from a set of 1,000,000,000 rows). In this case, use the `_sample_factor` virtual column to get the approximate result.
 
-The `_sample_factor` column is a virtual column that ClickHouse stores relative coefficients in. This column is created automatically when you create a table with the specified sampling key. The usage example is shown below:
+The `_sample_factor` column is where ClickHouse stores relative coefficients. This column is created automatically when you create a table with the specified sampling key. The usage example is shown below:
 
 ``` sql
 SELECT sum(Duration * _sample_factor)
@@ -94,7 +94,7 @@ FROM visits
 SAMPLE 10000000
 ```   
 
-If you need to get the approximate count of rows in a `SELECT .. SAMPLE n` query, get the sum() of the `_sample_factor` column instead of counting the `count(column * _sample_factor)` value. For example:
+If you need to get the approximate count of rows in a `SELECT .. SAMPLE n` query, get the sum() of the `_sample_factor` column instead of counting the `count(*) * _sample_factor` value. For example:
 
 ``` sql
 SELECT sum(_sample_factor)

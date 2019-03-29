@@ -34,14 +34,16 @@ Contains information about the columns in all the tables.
 
 You can use this table to get information similar to the [DESCRIBE TABLE](../query_language/misc.md#misc-describe-table) query, but for multiple tables at once.
 
+The `system.columns` table contains the following columns (the type of the corresponding column is shown in brackets):
+
 - `database` (String) — Database name.
 - `table` (String) — Table name.
 - `name` (String) — Column name.
 - `type` (String) — Column type.
 - `default_kind` (String) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or an empty string if it is not defined.
 - `default_expression` (String) — Expression for the default value, or an empty string if it is not defined.
-- `data_compressed_bytes` (UInt64) — The amount of compressed data, in bytes.
-- `data_uncompressed_bytes` (UInt64) — The amount of decompressed data, in bytes.
+- `data_compressed_bytes` (UInt64) — The size of compressed data, in bytes.
+- `data_uncompressed_bytes` (UInt64) — The size of decompressed data, in bytes.
 - `marks_bytes` (UInt64) — The size of marks, in bytes.
 - `comment` (String) — The comment about column, or an empty string if it is not defined.
 - `is_in_partition_key` (UInt8) — Flag that indicates whether the column is in partition expression.
@@ -381,7 +383,7 @@ WHERE changed
 
 ## system.tables
 
-Contains metadata of each table that the server knows about. Detached tables are not shown in `system.table`.
+Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
 
 This table contains the following columns (the type of the corresponding column is shown in brackets):
 
@@ -401,7 +403,7 @@ This table contains the following columns (the type of the corresponding column 
 - `primary_key` (String) - The primary key expression specified in the table.
 - `sampling_key` (String) - The sampling key expression specified in the table.
 
-The `system.tables` is used for implementing `SHOW TABLES` queries.
+The `system.tables` is used in `SHOW TABLES` query implementation.
 
 ## system.zookeeper
 
