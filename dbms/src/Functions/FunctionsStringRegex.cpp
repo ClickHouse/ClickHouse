@@ -863,14 +863,13 @@ struct NameMultiMatchAnyIndex
 {
     static constexpr auto name = "multiMatchAnyIndex";
 };
-/// FunctionsStringSimilarity or Regex?
-struct NameMultiMatchAnyEditDistance
+struct NameMultiFuzzyMatchAny
 {
-    static constexpr auto name = "multiMatchAnyEditDistance";
+    static constexpr auto name = "multiFuzzyMatchAny";
 };
-struct NameMultiMatchAnyIndexEditDistance
+struct NameMultiFuzzyMatchAnyIndex
 {
-    static constexpr auto name = "multiMatchAnyIndexEditDistance";
+    static constexpr auto name = "multiFuzzyMatchAnyIndex";
 };
 struct NameExtract
 {
@@ -906,14 +905,14 @@ using FunctionMultiMatchAnyIndex = FunctionsMultiStringSearch<
     NameMultiMatchAnyIndex,
     std::numeric_limits<UInt32>::max()>;
 
-using FunctionMultiMatchAnyEditDistance = FunctionsMultiStringSearchEditDistance<
+using FunctionMultiFuzzyMatchAny = FunctionsMultiStringFuzzySearch<
     MultiMatchAnyImpl<UInt8, true, false, true>,
-    NameMultiMatchAnyEditDistance,
+    NameMultiFuzzyMatchAny,
     std::numeric_limits<UInt32>::max()>;
 
-using FunctionMultiMatchAnyIndexEditDistance = FunctionsMultiStringSearchEditDistance<
+using FunctionMultiFuzzyMatchAnyIndex = FunctionsMultiStringFuzzySearch<
     MultiMatchAnyImpl<UInt64, false, true, true>,
-    NameMultiMatchAnyIndexEditDistance,
+    NameMultiFuzzyMatchAnyIndex,
     std::numeric_limits<UInt32>::max()>;
 
 using FunctionLike = FunctionsStringSearch<MatchImpl<true>, NameLike>;
@@ -938,8 +937,8 @@ void registerFunctionsStringRegex(FunctionFactory & factory)
 
     factory.registerFunction<FunctionMultiMatchAny>();
     factory.registerFunction<FunctionMultiMatchAnyIndex>();
-    factory.registerFunction<FunctionMultiMatchAnyEditDistance>();
-    factory.registerFunction<FunctionMultiMatchAnyIndexEditDistance>();
+    factory.registerFunction<FunctionMultiFuzzyMatchAny>();
+    factory.registerFunction<FunctionMultiFuzzyMatchAnyIndex>();
     factory.registerAlias("replace", NameReplaceAll::name, FunctionFactory::CaseInsensitive);
 }
 }

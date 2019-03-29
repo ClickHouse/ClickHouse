@@ -55,13 +55,13 @@
 
 То же, что и `multiMatchAny`, только возвращает любой индекс подходящего регулярного выражения.
 
-## multiMatchAnyEditDistance(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
+## multiFuzzyMatchAny(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
 
 То же, что и `multiMatchAny`, но возвращает 1 если любой pattern соответствует haystack в пределах константного [редакционного расстояния](https://en.wikipedia.org/wiki/Edit_distance). Эта функция также находится в экспериментальном режиме и может быть очень медленной. За подробностями обращайтесь к [документации hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
 
-## multiMatchAnyIndexEditDistance(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
+## multiFuzzyMatchAnyIndex(haystack, distance, [pattern_1, pattern_2, ..., pattern_n])
 
-То же, что и `multiMatchAnyEditDistance`, только возвращает любой индекс подходящего регулярного выражения в пределах константного редакционного расстояния.
+То же, что и `multiFuzzyMatchAny`, только возвращает любой индекс подходящего регулярного выражения в пределах константного редакционного расстояния.
 
 **Примечание: чтобы выключить все функции, использующие hyperscan, используйте настройку `SET allow_hyperscan = 0;`.**
 
