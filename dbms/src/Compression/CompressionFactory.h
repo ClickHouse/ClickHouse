@@ -40,7 +40,7 @@ public:
     /// Get codec by AST and possible column_type
     /// some codecs can use information about type to improve inner settings
     /// but every codec should be able to work without information about type
-    CompressionCodecPtr get(const ASTPtr & ast, DataTypePtr column_type=nullptr) const;
+    CompressionCodecPtr get(const ASTPtr & ast, DataTypePtr column_type = nullptr) const;
 
     /// Get codec by method byte (no params available)
     CompressionCodecPtr get(const UInt8 byte_code) const;
