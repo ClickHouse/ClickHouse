@@ -6,6 +6,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/RowRefs.h>
 #include <Core/SettingsCommon.h>
 
 #include <Common/Arena.h>
@@ -130,88 +131,7 @@ public:
     size_t getTotalByteCount() const;
 
     ASTTableJoin::Kind getKind() const { return kind; }
-
-
-    /// Reference to the row in block.
-    struct RowRef
-    {
-        const Block * block = nullptr;
-        size_t row_num = 0;
-
-        RowRef() {}
-        RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
-    };
-
-    /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
-    struct RowRefList : RowRef
-    {
-        RowRefList * next = nullptr;
-
-        RowRefList() {}
-        RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
-    };
-
-    struct AsofRowRefs
-    {
-        /// Different types of asof join keys
-        #define APPLY_FOR_ASOF_JOIN_VARIANTS(M) \
-            M(key32, UInt32)                    \
-            M(key64, UInt64)                    \
-            M(keyf32, Float32)                  \
-            M(keyf64, Float64)
-
-        enum class AsofType
-        {
-            EMPTY,
-        #define M(NAME, TYPE) NAME,
-            APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-        #undef M
-        };
-
-        static std::optional<std::pair<AsofType, size_t>> getTypeSize(const IColumn * asof_column);
-
-        template<typename T>
-        struct Entry
-        {
-            T asof_value;
-            RowRef row_ref;
-
-            Entry(T v) : asof_value(v) {}
-            Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) {}
-
-            bool operator< (const Entry& o) const
-            {
-                return asof_value < o.asof_value;
-            }
-        };
-
-        struct Lookups
-        {
-            #define M(NAME, TYPE) \
-            std::unique_ptr<PODArray<Entry<TYPE>>> NAME;
-                APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-            #undef M
-
-            void create(AsofType which);
-        };
-
-        AsofRowRefs() : type(AsofType::EMPTY) {}
-        AsofRowRefs(AsofType t) : type(t)
-        {
-            lookups.create(t);
-        }
-
-        void insert(const IColumn * asof_column, const Block * block, size_t row_num, Arena & pool);
-        const RowRef * findAsof(const IColumn * asof_column, size_t row_num, Arena & pool) const;
-
-    private:
-        const AsofType type;
-        mutable Lookups lookups;
-        mutable bool sorted = false;
-    };
-
-    AsofRowRefs::AsofType getAsofType() const { return asof_type; }
-
+    AsofRowRefs::Type getAsofType() const { return asof_type; }
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
       * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
@@ -446,7 +366,7 @@ private:
 
 private:
     Type type = Type::EMPTY;
-    AsofRowRefs::AsofType asof_type = AsofRowRefs::AsofType::EMPTY;
+    AsofRowRefs::Type asof_type = AsofRowRefs::Type::EMPTY;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
