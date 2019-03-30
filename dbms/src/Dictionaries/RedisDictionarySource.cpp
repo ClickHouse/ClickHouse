@@ -17,9 +17,9 @@ namespace DB
                                      Block & sample_block,
                                      const Context & /* context */) -> DictionarySourcePtr {
 #if USE_POCO_REDIS
-            return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
+        return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
 #else
-            (void)dict_struct;
+        (void)dict_struct;
         (void)config;
         (void)config_prefix;
         (void)sample_block;
@@ -122,7 +122,7 @@ namespace DB
 
         Poco::Redis::Array keys;
 
-        for (const UInt64 id : ids)
+        for (UInt64 id : ids)
             keys << static_cast<Int64>(id);
 
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
