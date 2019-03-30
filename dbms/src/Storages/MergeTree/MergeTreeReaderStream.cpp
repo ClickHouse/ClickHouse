@@ -21,11 +21,11 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         MarkCache * mark_cache_, bool save_marks_in_cache_,
         UncompressedCache * uncompressed_cache,
         size_t file_size, size_t aio_threshold, size_t max_read_buffer_size,
-        const std::string & marks_file_extension_, size_t one_mark_bytes_size_,
+        const GranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
         : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
         , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)
-        , marks_file_extension(marks_file_extension_), one_mark_bytes_size(one_mark_bytes_size_)
+        , index_granularity_info(index_granularity_info_)
 {
     /// Compute the size of the buffer.
     size_t max_mark_range_bytes = 0;
@@ -112,7 +112,7 @@ const MarkInCompressedFile & MergeTreeReaderStream::getMark(size_t index)
 
 void MergeTreeReaderStream::loadMarks()
 {
-    std::string mrk_path = path_prefix + marks_file_extension;
+    std::string mrk_path = index_granularity_info->getMarksFilePath(path_prefix);
 
     auto load = [&]() -> MarkCache::MappedPtr
     {
@@ -120,7 +120,7 @@ void MergeTreeReaderStream::loadMarks()
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(mrk_path).getSize();
-        size_t expected_file_size = one_mark_bytes_size * marks_count;
+        size_t expected_file_size = index_granularity_info->mark_size_in_bytes * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
                 "Bad size of marks file '" + mrk_path + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
@@ -128,7 +128,7 @@ void MergeTreeReaderStream::loadMarks()
 
         auto res = std::make_shared<MarksInCompressedFile>(marks_count);
 
-        if (one_mark_bytes_size == sizeof(MarkInCompressedFile))
+        if (!index_granularity_info->is_adaptive)
         {
             /// Read directly to marks.
             ReadBufferFromFile buffer(mrk_path, file_size, -1, reinterpret_cast<char *>(res->data()));
@@ -147,7 +147,7 @@ void MergeTreeReaderStream::loadMarks()
                 buffer.seek(sizeof(size_t), SEEK_CUR);
                 ++i;
             }
-            if (i * one_mark_bytes_size != file_size)
+            if (i * index_granularity_info->mark_size_in_bytes != file_size)
                 throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
         }
         res->protect();

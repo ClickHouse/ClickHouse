@@ -37,10 +37,7 @@ MergeTreeIndexGranularity readGranularity(const Poco::Path & mrk_file_path, size
         DB::readBinary(offset_in_decompressed_block, mrk_in);
         UInt64 index_granularity_rows = 0;
         if (extension == "mrk2")
-        {
             DB::readBinary(index_granularity_rows, mrk_in);
-            std::cerr << "Readed rows:" << index_granularity_rows << std::endl;
-        }
         else
             index_granularity_rows = fixed_granularity;
         result.appendMark(index_granularity_rows);
@@ -68,11 +65,6 @@ int main(int argc, char ** argv)
         auto mrk_file_path = getMarksFile(full_path);
         size_t fixed_granularity{parse<size_t>(argv[3])};
         auto adaptive_granularity = readGranularity(mrk_file_path, fixed_granularity);
-        std::cerr << "adaptive size:" << adaptive_granularity.getMarksCount() << std::endl;
-        for (size_t i = 0; i < adaptive_granularity.getMarksCount(); ++i)
-        {
-            std::cerr << "Granularity:" << adaptive_granularity.getMarkRows(i) <<    std::endl;
-        }
         auto marks_file_extension = "." + mrk_file_path.getExtension();
         bool require_checksums = parse<bool>(argv[2]);
 

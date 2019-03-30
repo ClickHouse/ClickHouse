@@ -1472,7 +1472,6 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         transaction->new_columns.writeText(columns_file);
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
     }
-    //std::cerr << "ALTER FINISHED\n";
 
     return transaction;
 }
