@@ -62,7 +62,7 @@ public:
 
         /// Actual reader of data from disk
         MergeTreeReader * merge_tree_reader = nullptr;
-        const IndexGranularity * index_granularity = nullptr;
+        const MergeTreeIndexGranularity * index_granularity = nullptr;
         bool continue_reading = false;
         bool is_finished = true;
 
@@ -103,7 +103,7 @@ public:
         size_t last_mark = 0;
 
         MergeTreeReader * merge_tree_reader = nullptr;
-        const IndexGranularity * index_granularity = nullptr;
+        const MergeTreeIndexGranularity * index_granularity = nullptr;
 
         size_t current_mark_index_granularity = 0;
 
@@ -192,7 +192,7 @@ private:
     void filterBlock(Block & block, const IColumn::Filter & filter) const;
 
     MergeTreeReader * merge_tree_reader = nullptr;
-    const IndexGranularity * index_granularity = nullptr;
+    const MergeTreeIndexGranularity * index_granularity = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
 
     const String * prewhere_column_name = nullptr;

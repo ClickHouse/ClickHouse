@@ -35,7 +35,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     CompressionCodecPtr codec_,
     size_t aio_threshold_,
     bool blocks_are_granules_size_,
-    const IndexGranularity & index_granularity_)
+    const MergeTreeIndexGranularity & index_granularity_)
     : storage(storage_)
     , min_compress_block_size(min_compress_block_size_)
     , max_compress_block_size(max_compress_block_size_)
@@ -111,7 +111,7 @@ void fillIndexGranularityImpl(
     size_t fixed_index_granularity_rows,
     bool blocks_are_granules,
     size_t index_offset,
-    IndexGranularity & index_granularity)
+    MergeTreeIndexGranularity & index_granularity)
 {
     size_t rows_in_block = block.rows();
     size_t index_granularity_for_block;
@@ -770,7 +770,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
     CompressionCodecPtr default_codec_, bool skip_offsets_,
     WrittenOffsetColumns & already_written_offset_columns,
-    const IndexGranularity & index_granularity_)
+    const MergeTreeIndexGranularity & index_granularity_)
     : IMergedBlockOutputStream(
         storage_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
