@@ -17,6 +17,8 @@
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
 
+#include <Parsers/queryToString.h>
+
 
 namespace DB
 {
@@ -163,13 +165,20 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_TTL)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_TTL;
+        command.ttl = command_ast->ttl;
+        return command;
+    }
     else
         return {};
 }
 
 
 void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-        ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
+        ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const
 {
     if (type == ADD_COLUMN)
     {
@@ -181,6 +190,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
         }
         column.comment = comment;
         column.codec = codec;
+        column.ttl = ttl;
 
         columns_description.add(column, after_column);
 
@@ -203,6 +213,9 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
             column.comment = comment;
             return;
         }
+
+        if (ttl)
+            column.ttl = ttl;
 
         column.type = data_type;
 
@@ -278,6 +291,10 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
 
         indices_description.indices.erase(erase_it);
     }
+    else if (type == MODIFY_TTL)
+    {
+        ttl_table_ast = ttl;
+    }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
@@ -293,20 +310,23 @@ bool AlterCommand::is_mutable() const
 }
 
 void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-        ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
+        ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const
 {
     auto new_columns_description = columns_description;
     auto new_indices_description = indices_description;
     auto new_order_by_ast = order_by_ast;
     auto new_primary_key_ast = primary_key_ast;
+    auto new_ttl_table_ast = ttl_table_ast;
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(new_columns_description, new_indices_description, new_order_by_ast, new_primary_key_ast);
+            command.apply(new_columns_description, new_indices_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
     columns_description = std::move(new_columns_description);
     indices_description = std::move(new_indices_description);
     order_by_ast = std::move(new_order_by_ast);
     primary_key_ast = std::move(new_primary_key_ast);
+    ttl_table_ast = std::move(new_ttl_table_ast);
+
 }
 
 void AlterCommands::validate(const IStorage & table, const Context & context)
@@ -493,7 +513,8 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
     IndicesDescription indices_description;
     ASTPtr out_order_by;
     ASTPtr out_primary_key;
-    apply(out_columns_description, indices_description, out_order_by, out_primary_key);
+    ASTPtr out_ttl_table;
+    apply(out_columns_description, indices_description, out_order_by, out_primary_key, out_ttl_table);
 
     if (out_order_by)
         throw Exception("Storage doesn't support modifying ORDER BY expression", ErrorCodes::NOT_IMPLEMENTED);
@@ -501,6 +522,8 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
         throw Exception("Storage doesn't support modifying PRIMARY KEY expression", ErrorCodes::NOT_IMPLEMENTED);
     if (!indices_description.indices.empty())
         throw Exception("Storage doesn't support modifying indices", ErrorCodes::NOT_IMPLEMENTED);
+    if (out_ttl_table)
+        throw Exception("Storage doesn't support modifying TTL expression", ErrorCodes::NOT_IMPLEMENTED);
 
     columns_description = std::move(out_columns_description);
 }

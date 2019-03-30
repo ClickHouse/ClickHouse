@@ -1145,7 +1145,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     auto new_indices = getIndicesDescription();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
-    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
+    ASTPtr new_ttl_table_ast = ttl_table_ast;
+    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
     if (getIndicesDescription().empty() && !new_indices.empty() &&
             !context.getSettingsRef().allow_experimental_data_skipping_indices)
@@ -1230,6 +1231,9 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
 
     setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast,
             new_columns, new_indices, /* only_check = */ true);
+
+    ttl_table_ast = std::move(new_ttl_table_ast);
+    initTTLExpressions();
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;

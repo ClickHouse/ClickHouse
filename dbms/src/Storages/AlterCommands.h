@@ -24,6 +24,7 @@ struct AlterCommand
         MODIFY_ORDER_BY,
         ADD_INDEX,
         DROP_INDEX,
+        MODIFY_TTL,
         UKNOWN_TYPE,
     };
 
@@ -40,7 +41,6 @@ struct AlterCommand
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
     String comment;
-    ASTPtr ttl;
 
     /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
     String after_column;
@@ -61,6 +61,9 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
+    /// For MODIFY TTL
+    ASTPtr ttl;
+
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
 
@@ -80,7 +83,7 @@ struct AlterCommand
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-            ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
+            ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
     /// Checks that not only metadata touched by that command
     bool is_mutable() const;
 };
@@ -92,7 +95,7 @@ class AlterCommands : public std::vector<AlterCommand>
 {
 public:
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
-            ASTPtr & primary_key_ast) const;
+            ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
 
     /// For storages that don't support MODIFY_ORDER_BY.
     void apply(ColumnsDescription & columns_description) const;
