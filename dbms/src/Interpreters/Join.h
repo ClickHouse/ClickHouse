@@ -156,7 +156,9 @@ public:
         /// Different types of asof join keys
         #define APPLY_FOR_ASOF_JOIN_VARIANTS(M) \
             M(key32, UInt32)                    \
-            M(key64, UInt64)
+            M(key64, UInt64)                    \
+            M(keyf32, Float32)                  \
+            M(keyf64, Float64)
 
         enum class AsofType
         {
@@ -166,8 +168,7 @@ public:
         #undef M
         };
 
-        static std::optional<AsofType> getType(const IColumn * asof_column);
-        static size_t getSize(AsofType type);
+        static std::optional<std::pair<AsofType, size_t>> getTypeSize(const IColumn * asof_column);
 
         template<typename T>
         struct Entry
