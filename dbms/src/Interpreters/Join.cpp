@@ -299,9 +299,10 @@ void Join::setSampleBlock(const Block & block)
             throw Exception("ASOF only supports LEFT and INNER as base joins", ErrorCodes::NOT_IMPLEMENTED);
 
         const IColumn * asof_column = key_columns.back();
+        size_t asof_size;
 
-        if (auto t = AsofRowRefs::getType(asof_column))
-            asof_type = *t;
+        if (auto t = AsofRowRefs::getTypeSize(asof_column))
+            std::tie(asof_type, asof_size) = *t;
         else
         {
             std::string msg = "ASOF join not supported for type";
@@ -319,7 +320,7 @@ void Join::setSampleBlock(const Block & block)
         /// Therefore, add it back in such that it can be extracted appropriately from the full stored
         /// key_columns and key_sizes
         init(chooseMethod(key_columns, key_sizes));
-        key_sizes.push_back(AsofRowRefs::getSize(asof_type));
+        key_sizes.push_back(asof_size);
     }
     else
     {
@@ -430,27 +431,14 @@ const Join::RowRef * Join::AsofRowRefs::findAsof(const IColumn * asof_column, si
     __builtin_unreachable();
 }
 
-std::optional<Join::AsofRowRefs::AsofType> Join::AsofRowRefs::getType(const IColumn * asof_column)
+std::optional<std::pair<Join::AsofRowRefs::AsofType, size_t>> Join::AsofRowRefs::getTypeSize(const IColumn * asof_column)
 {
     #define M(NAME, TYPE) \
     if (strcmp(#TYPE, asof_column->getFamilyName()) == 0) \
-        return AsofType::NAME;
+        return std::make_pair(AsofType::NAME,sizeof(TYPE));
     APPLY_FOR_ASOF_JOIN_VARIANTS(M)
     #undef M
     return {};
-}
-
-size_t Join::AsofRowRefs::getSize(Join::AsofRowRefs::AsofType type)
-{
-    switch (type)
-    {
-        case AsofType::EMPTY: return 0;
-    #define M(NAME, TYPE) \
-        case AsofType::NAME: return sizeof(TYPE);
-        APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-    #undef M
-    }
-    __builtin_unreachable();
 }
 
 
