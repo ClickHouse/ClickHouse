@@ -1,6 +1,3 @@
-// #include <Parsers/IAST.h>
-
-// #include <Core/Types.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>

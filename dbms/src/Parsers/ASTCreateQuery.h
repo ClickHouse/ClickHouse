@@ -1,17 +1,11 @@
 #pragma once
 
-/*
-<<<<<<< HEAD
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
-=======
-*/
-#include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
-// >>>>>>> 976ee8a7cadb97b5d73ba95a09419dfcb03f2c2b
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
