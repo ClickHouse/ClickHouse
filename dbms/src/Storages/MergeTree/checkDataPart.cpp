@@ -87,7 +87,6 @@ public:
         else
             mrk_rows = index_granularity.getMarkRows(mark_position);
 
-        //std::cerr << "MRK ROWS:" << mrk_rows << std::endl;
         bool has_alternative_mark = false;
         MarkInCompressedFile alternative_data_mark = {};
         MarkInCompressedFile data_mark = {};
@@ -127,7 +126,6 @@ public:
                 mrk_mark.toStringWithRows(mrk_rows) + " in " + mrk_file_path + " file", ErrorCodes::INCORRECT_MARK);
 
         mark_position++;
-        //std::cerr << "FINISHED\n";
     }
 
     void assertEnd()
@@ -142,7 +140,6 @@ public:
             throw Exception("EOF expected in " + mrk_file_path + " file"
                 + " at position "
                 + toString(mrk_hashing_buf.count()), ErrorCodes::CORRUPTED_DATA);
-        //std::cerr << "GOOD END\n";
     }
 
     void saveChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -348,8 +345,6 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 }, settings.path);
 
             size_t rows_after_mark = adaptive_index_granularity.getMarkRows(mark_num);
-            //std::cerr << "rows after mark:" << rows_after_mark << std::endl;
-            //std::cerr << "mark_num:" << mark_num << std::endl;
             ++mark_num;
 
             /// Read index_granularity rows from column.

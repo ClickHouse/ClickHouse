@@ -142,7 +142,6 @@ public:
         /// Filter you need to apply to newly-read columns in order to add them to block.
         const ColumnUInt8 * getFilter() const { return filter; }
 
-
         void addGranule(size_t num_rows);
         void adjustLastGranule();
         void addRows(size_t rows) { num_read_rows += rows; }

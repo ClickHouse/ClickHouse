@@ -159,7 +159,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const unsigned num_streams,
     const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
-    //std::cerr << "START READING FROM PARTS\n";
     size_t part_index = 0;
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.

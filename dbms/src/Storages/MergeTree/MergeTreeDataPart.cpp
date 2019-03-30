@@ -217,15 +217,10 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 
     for (const auto & column : storage_columns)
     {
-        //std::cerr << "Searching for column:" << column.name << std::endl;
         if (!hasColumnFiles(column.name))
-        {
-            //std::cerr << "No column files:" << column.name << std::endl;
             continue;
-        }
 
         const auto size = getColumnSize(column.name, *column.type).data_compressed;
-        //std::cerr << "Column size:" <<size<<std::endl;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -503,7 +498,6 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
 
 void MergeTreeDataPart::loadIndexGranularity()
 {
-    //std::cerr << "LOADING MARKS FOR PART:" << getFullPath() << std::endl;
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
     const auto & granularity_info = storage.index_granularity_info;
@@ -518,14 +512,11 @@ void MergeTreeDataPart::loadIndexGranularity()
     /// old version of marks with static index granularity
     if (!granularity_info.is_adaptive)
     {
-        //std::cerr << "(1)SET MARKS SIZE FOR:" << marks_file_path  << " TO:" << granularity_info.mark_size_in_bytes << std::endl;
         size_t marks_count = marks_file_size / granularity_info.mark_size_in_bytes;
-        //std::cerr << "Marks file size:" << marks_file_size << " Marks count:" << marks_count << std::endl;
         index_granularity.resizeWithFixedGranularity(marks_count, granularity_info.fixed_index_granularity); /// all the same
     }
     else
     {
-        //std::cerr << "(2)SET MARKS SIZE FOR:" << marks_file_path << " TO:" <<  granularity_info.mark_size_in_bytes << std::endl;
         ReadBufferFromFile buffer(marks_file_path, marks_file_size, -1);
         while (!buffer.eof())
         {
@@ -842,12 +833,8 @@ bool MergeTreeDataPart::hasColumnFiles(const String & column) const
     /// That's Ok under assumption that files exist either for all or for no streams.
 
     String prefix = getFullPath();
-    //std::cerr << "ColumnPrefix:" << prefix << std::endl;
-
 
     String escaped_column = escapeForFileName(column);
-    //std::cerr << "Escaped name:" << escaped_column << std::endl;
-    //std::cerr << "Marks file extension:" << storage.index_granularity_info.marks_file_extension << std::endl;
     return Poco::File(prefix + escaped_column + ".bin").exists()
         && Poco::File(prefix + escaped_column + storage.index_granularity_info.marks_file_extension).exists();
 }
