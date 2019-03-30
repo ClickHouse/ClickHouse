@@ -809,12 +809,12 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
 
     for (size_t i = 0; i < col_size; ++i)
     {
-        /// How much to replicate the array.
+        /// How many times to replicate the array.
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-        /// The number of rows in the array.
+        /// The number of strings in the array.
         size_t value_size = src_offsets[i] - prev_src_offset;
-        /// Number of characters in rows of the array, including zero/null bytes.
-        size_t sum_chars_size = value_size == 0 ? 0 : (src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset);
+        /// Number of characters in strings of the array, including zero bytes.
+        size_t sum_chars_size = src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
 
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
@@ -824,7 +824,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
             size_t prev_src_string_offset_local = prev_src_string_offset;
             for (size_t k = 0; k < value_size; ++k)
             {
-                /// Size of one string.
+                /// Size of single string.
                 size_t chars_size = src_string_offsets[k + prev_src_offset] - prev_src_string_offset_local;
 
                 current_res_string_offset += chars_size;
