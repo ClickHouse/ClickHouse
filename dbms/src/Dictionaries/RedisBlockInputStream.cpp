@@ -210,7 +210,7 @@ namespace DB
 
         while (num_rows < max_block_size)
         {
-            if (cursor == keys.size())
+            if (cursor >= keys.size())
             {
                 all_read = true;
                 break;
