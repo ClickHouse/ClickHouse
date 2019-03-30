@@ -515,6 +515,10 @@ class ClickHouseInstance:
             raise Exception('Cmd "{}" failed! Return code {}. Output: {}'.format(' '.join(cmd), exit_code, output))
         return output
 
+    def contains_in_log(self, substring):
+        result = self.exec_in_container(["bash", "-c", "grep '{}' /var/log/clickhouse-server/clickhouse-server.log || true".format(substring)])
+        return len(result) > 0
+
     def copy_file_to_container(self, local_path, dest_path):
         with open(local_path, 'r') as fdata:
             data = fdata.read()

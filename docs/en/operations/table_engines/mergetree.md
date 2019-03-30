@@ -70,8 +70,8 @@ For a description of request parameters, see [request description](../../query_l
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
+    - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information refer the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in the "Server configuration parameters" chapter.
     - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation required for using of the direct I/O access to the storage disk. During the merging of the data parts, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, thеn ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk. If `min_merge_bytes_to_use_direct_io = 0`, then the direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
-
 
 **Example of sections setting**
 
@@ -103,7 +103,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 - `date-column` — The name of a column of the type [Date](../../data_types/date.md). ClickHouse automatically creates partitions by month on the basis of this column. The partition names are in the `"YYYYMM"` format.
 - `sampling_expression` — an expression for sampling.
-- `(primary, key)` — primary key. Type — [Tuple()](../../data_types/tuple.md- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
+- `(primary, key)` — primary key. Type — [Tuple()](../../data_types/tuple.md)
+- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
@@ -147,7 +148,7 @@ If the data query specifies:
 
 The examples above show that it is always more effective to use an index than a full scan.
 
-A sparse index allows extra strings to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read. In most cases, ClickHouse performance does not degrade when `index_granularity = 8192`.
+A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read. In most cases, ClickHouse performance does not degrade when `index_granularity = 8192`.
 
 Sparse indexes allow you to work with a very large number of table rows, because such indexes are always stored in the computer's RAM.
 
@@ -191,9 +192,7 @@ added dimensions.
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient
 range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER of the sorting key](../../query_language/alter.md) is a
-lightweight operation because when a new column is simultaneously added to the table and to the sorting key
-data parts need not be changed (they remain sorted by the new sorting key expression).
+[ALTER of the sorting key](../../query_language/alter.md) is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts don't need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the just added column, the data at the moment of table modification is sorted by both the old and the new sorting key. 
 
 ### Use of Indexes and Partitions in Queries
 
@@ -241,7 +240,7 @@ INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 
 For tables from the `*MergeTree` family data skipping indices can be specified.
 
-These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules,
+These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (size of the granule is specified using `index_granularity` setting in the table engine),
 then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where `where` query cannot be satisfied.
 
 
@@ -273,9 +272,21 @@ Stores extremes of the specified expression (if the expression is `tuple`, then 
 * `set(max_rows)`
 Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"), use them to check if the `WHERE` expression is not satisfiable on a block of the data.  
 
+* `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
+Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from block of data. Works only with strings.
+Can be used for optimization of `equals`, `like` and `in` expressions.
+`n` -- ngram size,
+`size_of_bloom_filter_in_bytes` -- bloom filter size in bytes (you can use big values here, for example, 256 or 512, because it can be compressed well),
+`number_of_hash_functions` -- number of hash functions used in bloom filter,
+`random_seed` -- seed for bloom filter hash functions.
+
+* `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
+The same as `ngrambf_v1`, but instead of ngrams stores tokens, which are sequences separated by non-alphanumeric characters.
+
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
-INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
+INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
+INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 ```
 
 
