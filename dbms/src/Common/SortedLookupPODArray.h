@@ -2,7 +2,8 @@
 
 #include <Common/PODArray.h>
 
-namespace DB {
+namespace DB
+{
 
 /**
  * This class is intended to push sortable data into.
