@@ -196,7 +196,8 @@ public:
         };
 
         AsofRowRefs() : type(AsofType::EMPTY) {}
-        AsofRowRefs(AsofType t) : type(t) {
+        AsofRowRefs(AsofType t) : type(t)
+        {
             lookups.create(t);
         }
 
@@ -210,7 +211,7 @@ public:
     };
 
     AsofRowRefs::AsofType getAsofType() const { return asof_type; }
-    
+
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
       * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
