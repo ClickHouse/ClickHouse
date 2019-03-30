@@ -160,6 +160,7 @@ public:
 
         enum class AsofType
         {
+            EMPTY,
         #define M(NAME, TYPE) NAME,
             APPLY_FOR_ASOF_JOIN_VARIANTS(M)
         #undef M
@@ -169,42 +170,46 @@ public:
         static size_t getSize(AsofType type);
 
         template<typename T>
-        struct AsofEntry
+        struct Entry
         {
             T asof_value;
             RowRef row_ref;
 
-            AsofEntry(T v) : asof_value(v) {}
-            AsofEntry(T v, RowRef rr) : asof_value(v), row_ref(rr) {}
+            Entry(T v) : asof_value(v) {}
+            Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) {}
 
-            bool operator< (const AsofEntry& o) const
+            bool operator< (const Entry& o) const
             {
                 return asof_value < o.asof_value;
             }
         };
 
-        struct AsofLookups
+        struct Lookups
         {
             #define M(NAME, TYPE) \
-            std::unique_ptr<PODArray<AsofEntry<TYPE>>> NAME;
+            std::unique_ptr<PODArray<Entry<TYPE>>> NAME;
                 APPLY_FOR_ASOF_JOIN_VARIANTS(M)
             #undef M
 
             void create(AsofType which);
         };
 
-        AsofRowRefs() {}
+        AsofRowRefs() : type(AsofType::EMPTY) {}
+        AsofRowRefs(AsofType t) : type(t) {
+            lookups.create(t);
+        }
 
-        void create(AsofType which);
         void insert(const IColumn * asof_column, const Block * block, size_t row_num, Arena & pool);
-
         const RowRef * findAsof(const IColumn * asof_column, size_t row_num, Arena & pool) const;
 
     private:
-        AsofType type;
-        mutable AsofLookups lookups;
+        const AsofType type;
+        mutable Lookups lookups;
         mutable bool sorted = false;
     };
+
+    AsofRowRefs::AsofType getAsofType() const { return asof_type; }
+    
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
       * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
