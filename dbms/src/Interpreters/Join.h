@@ -446,7 +446,7 @@ private:
 
 private:
     Type type = Type::EMPTY;
-    AsofRowRefs::AsofType asof_type;
+    AsofRowRefs::AsofType asof_type = AsofRowRefs::AsofType::EMPTY;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
