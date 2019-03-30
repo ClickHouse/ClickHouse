@@ -576,7 +576,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
 
     /// Make temporary arrays for each components of Tuple, then filter and collect back.
 
-    size_t tuple_size = tuple.getColumns().size();
+    size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
         throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);
@@ -824,7 +824,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
             size_t prev_src_string_offset_local = prev_src_string_offset;
             for (size_t k = 0; k < value_size; ++k)
             {
-                /// Size of one row.
+                /// Size of one string.
                 size_t chars_size = src_string_offsets[k + prev_src_offset] - prev_src_string_offset_local;
 
                 current_res_string_offset += chars_size;
@@ -835,7 +835,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
 
             if (sum_chars_size)
             {
-                /// Copies the characters of the array of rows.
+                /// Copies the characters of the array of strings.
                 res_chars.resize(res_chars.size() + sum_chars_size);
                 memcpySmallAllowReadWriteOverflow15(
                     &res_chars[res_chars.size() - sum_chars_size], &src_chars[prev_src_string_offset], sum_chars_size);
@@ -941,7 +941,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 
     /// Make temporary arrays for each components of Tuple. In the same way as for Nullable.
 
-    size_t tuple_size = tuple.getColumns().size();
+    size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
         throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);

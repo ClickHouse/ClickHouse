@@ -274,7 +274,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     if (!storage)
         return BlockInputStreams{
             InterpreterSelectQuery(modified_query_info.query, modified_context, std::make_shared<OneBlockInputStream>(header),
-                                   processed_stage, true).execute().in};
+                                   SelectQueryOptions(processed_stage).analyze()).execute().in};
 
     BlockInputStreams source_streams;
 
@@ -295,7 +295,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
         modified_context.getSettingsRef().max_threads = UInt64(streams_num);
         modified_context.getSettingsRef().max_streams_to_max_threads_ratio = 1;
 
-        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, Names{}, processed_stage};
+        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
         BlockInputStreamPtr interpreter_stream = interpreter.execute().in;
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
@@ -429,7 +429,7 @@ Block StorageMerge::getQueryHeader(
         case QueryProcessingStage::Complete:
             return materializeBlock(InterpreterSelectQuery(
                 query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
-                                       processed_stage, true).getSampleBlock());
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }

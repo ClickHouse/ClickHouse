@@ -79,12 +79,10 @@ public:
     void shutdown() override;
     ~StorageReplicatedMergeTree() override;
 
-    std::string getName() const override
-    {
-        return "Replicated" + data.merging_params.getModeName() + "MergeTree";
-    }
-
+    std::string getName() const override { return "Replicated" + data.merging_params.getModeName() + "MergeTree"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
+
     bool supportsSampling() const override { return data.supportsSampling(); }
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }

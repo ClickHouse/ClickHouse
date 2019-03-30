@@ -420,8 +420,9 @@ namespace ErrorCodes
     extern const int NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA = 443;
     extern const int UNKNOWN_PROTOBUF_FORMAT = 444;
     extern const int CANNOT_MPROTECT = 445;
-    extern const int BAD_TTL_EXPRESSION = 446;
-    extern const int BAD_TTL_FILE = 447;
+    extern const int FUNCTION_NOT_ALLOWED = 446;
+    extern const int BAD_TTL_EXPRESSION = 447;
+    extern const int BAD_TTL_FILE = 448;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
