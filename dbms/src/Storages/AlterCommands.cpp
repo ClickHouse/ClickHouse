@@ -205,7 +205,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (!primary_key_ast)
+        if (!primary_key_ast && order_by_ast)
         {
             /// Primary and sorting key become independent after this ALTER so we have to
             /// save the old ORDER BY expression as the new primary key.

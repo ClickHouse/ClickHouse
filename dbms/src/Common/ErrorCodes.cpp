@@ -420,12 +420,13 @@ namespace ErrorCodes
     extern const int NO_COMMON_COLUMNS_WITH_PROTOBUF_SCHEMA = 443;
     extern const int UNKNOWN_PROTOBUF_FORMAT = 444;
     extern const int CANNOT_MPROTECT = 445;
-    extern const int DICTIONARY_ALREADY_EXISTS = 446;
-    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 447;
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 448;
-    extern const int UNKNOWN_DICTIONARY = 449;
-    extern const int STORAGE_IS_NOT_READY = 450;
-    extern const int EXTERNAL_LOADABLE_IS_MISSING = 451;
+    extern const int FUNCTION_NOT_ALLOWED = 446;
+    extern const int DICTIONARY_ALREADY_EXISTS = 447;
+    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 448;
+    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 449;
+    extern const int UNKNOWN_DICTIONARY = 450;
+    extern const int STORAGE_IS_NOT_READY = 451;
+    extern const int EXTERNAL_LOADABLE_IS_MISSING = 452;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
