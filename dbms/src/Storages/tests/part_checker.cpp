@@ -1,7 +1,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/DirectoryIterator.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Storages/MergeTree/IndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Common/Exception.h>
 
 using namespace DB;
@@ -21,10 +21,10 @@ Poco::Path getMarksFile(const std::string & part_path)
     throw Exception("Cannot find any mark file in directory " + part_path, DB::ErrorCodes::METRIKA_OTHER_ERROR);
 }
 
-IndexGranularity readGranularity(const Poco::Path & mrk_file_path, size_t fixed_granularity)
+MergeTreeIndexGranularity readGranularity(const Poco::Path & mrk_file_path, size_t fixed_granularity)
 {
 
-    IndexGranularity result;
+    MergeTreeIndexGranularity result;
     auto extension = mrk_file_path.getExtension();
 
     DB::ReadBufferFromFile mrk_in(mrk_file_path.toString());

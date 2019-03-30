@@ -4,7 +4,7 @@
 #include <Poco/File.h>
 #include <Poco/DirectoryIterator.h>
 
-#include <Storages/MergeTree/IndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <DataStreams/MarkInCompressedFile.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -43,7 +43,7 @@ public:
     String bin_file_path;
     String mrk_file_path;
 private:
-    const IndexGranularity & index_granularity;
+    const MergeTreeIndexGranularity & index_granularity;
     ReadBufferFromFile file_buf;
     HashingReadBuffer compressed_hashing_buf;
     CompressedReadBuffer uncompressing_buf;
@@ -56,20 +56,24 @@ private:
 public:
     HashingReadBuffer mrk_hashing_buf;
 
-        Stream(const String & path, const String & base_name, const String & bin_file_extension_, const String & mrk_file_extension_, const IndexGranularity & index_granularity_)
-        :
-        base_name(base_name),
-        bin_file_extension(bin_file_extension_),
-        mrk_file_extension(mrk_file_extension_),
-        bin_file_path(path + base_name + bin_file_extension),
-        mrk_file_path(path + base_name + mrk_file_extension),
-        index_granularity(index_granularity_),
-        file_buf(bin_file_path),
-        compressed_hashing_buf(file_buf),
-        uncompressing_buf(compressed_hashing_buf),
-        uncompressed_hashing_buf(uncompressing_buf),
-        mrk_file_buf(mrk_file_path),
-        mrk_hashing_buf(mrk_file_buf)
+        Stream(
+            const String & path,
+            const String & base_name,
+            const String & bin_file_extension_,
+            const String & mrk_file_extension_,
+            const MergeTreeIndexGranularity & index_granularity_)
+        : base_name(base_name)
+        , bin_file_extension(bin_file_extension_)
+        , mrk_file_extension(mrk_file_extension_)
+        , bin_file_path(path + base_name + bin_file_extension)
+        , mrk_file_path(path + base_name + mrk_file_extension)
+        , index_granularity(index_granularity_)
+        , file_buf(bin_file_path)
+        , compressed_hashing_buf(file_buf)
+        , uncompressing_buf(compressed_hashing_buf)
+        , uncompressed_hashing_buf(uncompressing_buf)
+        , mrk_file_buf(mrk_file_path)
+        , mrk_hashing_buf(mrk_file_buf)
     {}
 
     void assertMark()
@@ -78,7 +82,6 @@ public:
         readIntBinary(mrk_mark.offset_in_compressed_file, mrk_hashing_buf);
         readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
         size_t mrk_rows;
-        //std::cerr << "File path:" << mrk_file_path << std::endl;
         if (mrk_file_extension == ".mrk2")
             readIntBinary(mrk_rows, mrk_hashing_buf);
         else
@@ -158,7 +161,7 @@ public:
 
 MergeTreeData::DataPart::Checksums checkDataPart(
     const String & full_path,
-    const IndexGranularity & adaptive_index_granularity,
+    const MergeTreeIndexGranularity & adaptive_index_granularity,
     const String & mrk_file_extension,
     bool require_checksums,
     const DataTypes & primary_key_data_types,

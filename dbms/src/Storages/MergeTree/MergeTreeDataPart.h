@@ -4,7 +4,7 @@
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
-#include <Storages/MergeTree/IndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -180,7 +180,7 @@ struct MergeTreeDataPart
 
     /// Amount of rows between marks
     /// As index always loaded into memory
-    IndexGranularity index_granularity;
+    MergeTreeIndexGranularity index_granularity;
 
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
