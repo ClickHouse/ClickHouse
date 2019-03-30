@@ -173,13 +173,13 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()));
+        ConnectionTimeouts::getHTTPTimeouts(context));
 
 
-    const ColumnsDescription & columns = getColumns();
-    if (columns.defaults.empty())
+    auto column_defaults = getColumns().getDefaults();
+    if (column_defaults.empty())
         return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns.defaults, context)};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
 void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
@@ -187,7 +187,7 @@ void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
+        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
 }
 
 void registerStorageURL(StorageFactory & factory)

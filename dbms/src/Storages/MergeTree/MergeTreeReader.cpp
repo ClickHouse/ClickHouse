@@ -300,7 +300,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
             if (!has_column)
             {
                 should_reorder = true;
-                if (storage.getColumns().defaults.count(requested_column.name) != 0)
+                if (storage.getColumns().hasDefault(requested_column.name))
                 {
                     should_evaluate_missing_defaults = true;
                     continue;
@@ -367,7 +367,7 @@ void MergeTreeReader::evaluateMissingDefaults(Block & res)
 {
     try
     {
-        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.global_context);
+        DB::evaluateMissingDefaults(res, columns, storage.getColumns().getDefaults(), storage.global_context);
     }
     catch (Exception & e)
     {

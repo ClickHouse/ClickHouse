@@ -1,11 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <shared_mutex>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/AggregationCommon.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 
 #include <Common/Arena.h>
 #include <Common/ColumnsHashing.h>
@@ -134,8 +135,8 @@ public:
     /// Reference to the row in block.
     struct RowRef
     {
-        const Block * block;
-        size_t row_num;
+        const Block * block = nullptr;
+        size_t row_num = 0;
 
         RowRef() {}
         RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
@@ -150,6 +151,21 @@ public:
         RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
     };
 
+    /// Map for a time series
+    using ASOFTimeType = UInt32;
+    using AsofGetterType = ColumnsHashing::HashMethodOneNumber<ASOFTimeType, ASOFTimeType, ASOFTimeType, false>;
+    struct TSRowRef
+    {
+        // TODO use the arena allocator to get memory for this
+        // This would require ditching std::map because std::allocator is incompatible with the arena allocator
+        std::map<ASOFTimeType, RowRef> ts;
+
+        TSRowRef() {}
+        void insert(ASOFTimeType t, const Block * block, size_t row_num);
+        std::optional<std::pair<ASOFTimeType, RowRef>> findAsof(ASOFTimeType t) const;
+        std::string dumpStructure() const;
+        size_t size() const;
+    };
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
       * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
@@ -180,7 +196,6 @@ public:
         void setUsed() const {}
         bool getUsed() const { return true; }
     };
-
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
@@ -228,6 +243,52 @@ public:
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>                     keys128;
         std::unique_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>                     keys256;
         std::unique_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>                   hashed;
+
+        void create(Type which)
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            break;
+                case Type::CROSS:            break;
+
+            #define M(NAME) \
+                case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
+            }
+        }
+
+        size_t getTotalRowCount(Type which) const
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
+            #define M(NAME) \
+                case Type::NAME: return NAME ? NAME->size() : 0;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
+            }
+
+            __builtin_unreachable();
+        }
+
+        size_t getTotalByteCountImpl(Type which) const
+        {
+            switch (which)
+            {
+                case Type::EMPTY:            return 0;
+                case Type::CROSS:            return 0;
+
+            #define M(NAME) \
+                case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
+                APPLY_FOR_JOIN_VARIANTS(M)
+            #undef M
+            }
+
+            __builtin_unreachable();
+        }
     };
 
     using MapsAny = MapsTemplate<WithFlags<false, false, RowRef>>;
@@ -236,6 +297,7 @@ public:
     using MapsAnyFull = MapsTemplate<WithFlags<true, false, RowRef>>;
     using MapsAnyFullOverwrite = MapsTemplate<WithFlags<true, true, RowRef>>;
     using MapsAllFull = MapsTemplate<WithFlags<true, false, RowRefList>>;
+    using MapsAsof = MapsTemplate<WithFlags<false, false, TSRowRef>>;
 
     template <ASTTableJoin::Kind KIND>
     struct KindTrait
@@ -254,7 +316,7 @@ public:
     template <ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness, bool overwrite>
     using Map = typename MapGetterImpl<KindTrait<kind>::fill_right, strictness, overwrite>::Map;
 
-    static constexpr std::array<ASTTableJoin::Strictness, 2> STRICTNESSES = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All};
+    static constexpr std::array<ASTTableJoin::Strictness, 3> STRICTNESSES = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All, ASTTableJoin::Strictness::Asof};
     static constexpr std::array<ASTTableJoin::Kind, 4> KINDS
         = {ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Full, ASTTableJoin::Kind::Right};
 
@@ -331,7 +393,7 @@ private:
       */
     BlocksList blocks;
 
-    std::variant<MapsAny, MapsAnyOverwrite, MapsAll, MapsAnyFull, MapsAnyFullOverwrite, MapsAllFull> maps;
+    std::variant<MapsAny, MapsAnyOverwrite, MapsAll, MapsAnyFull, MapsAnyFullOverwrite, MapsAllFull, MapsAsof> maps;
 
     /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
     Arena pool;
@@ -406,6 +468,12 @@ template <>
 struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::All, false>
 {
     using Map = MapsAllFull;
+};
+
+template <bool fill_right>
+struct Join::MapGetterImpl<fill_right, ASTTableJoin::Strictness::Asof, false>
+{
+    using Map = MapsAsof;
 };
 
 }
