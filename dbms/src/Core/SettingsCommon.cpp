@@ -533,12 +533,6 @@ void SettingString::write(WriteBuffer & buf) const
 }
 
 
-void SettingChar::checkStringIsACharacter(const String & x) const
-{
-    if (x.size() != 1)
-        throw Exception("A setting's value string has to be an exactly one character long", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
-}
-
 String SettingChar::toString() const
 {
     return String(1, value);
@@ -552,9 +546,10 @@ void SettingChar::set(char x)
 
 void SettingChar::set(const String & x)
 {
-    checkStringIsACharacter(x);
-    value = x[0];
-    changed = true;
+    if (x.size() > 1)
+        throw Exception("A setting's value string has to be an exactly one character long", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
+    char c = (x.size() == 1) ? x[0] : '\0';
+    set(c);
 }
 
 void SettingChar::set(const Field & x)
@@ -565,10 +560,9 @@ void SettingChar::set(const Field & x)
 
 void SettingChar::set(ReadBuffer & buf)
 {
-    String x;
-    readBinary(x, buf);
-    checkStringIsACharacter(x);
-    set(x);
+    String s;
+    readBinary(s, buf);
+    set(s);
 }
 
 void SettingChar::write(WriteBuffer & buf) const

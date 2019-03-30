@@ -38,7 +38,7 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
         "Protobuf", [](WriteBuffer & buf, const Block & header, const Context & context, const FormatSettings &)
         {
             return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-                std::make_shared<ProtobufRowOutputStream>(buf, header, FormatSchemaInfo(context, "proto")), header);
+                std::make_shared<ProtobufRowOutputStream>(buf, header, FormatSchemaInfo(context, "Protobuf")), header);
         });
 }
 

@@ -797,14 +797,33 @@ private:
         written_progress_chars = 0;
         written_first_block = false;
 
-        connection->forceConnected();
+        {
+            /// Temporarily apply query settings to context.
+            std::optional<Settings> old_settings;
+            SCOPE_EXIT({ if (old_settings) context.setSettings(*old_settings); });
+            auto apply_query_settings = [&](const IAST & settings_ast)
+            {
+                if (!old_settings)
+                    old_settings.emplace(context.getSettingsRef());
+                for (const auto & change : settings_ast.as<ASTSetQuery>()->changes)
+                    context.setSetting(change.name, change.value);
+            };
+            const auto * insert = parsed_query->as<ASTInsertQuery>();
+            if (insert && insert->settings_ast)
+                apply_query_settings(*insert->settings_ast);
+            /// FIXME: try to prettify this cast using `as<>()`
+            const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+            if (with_output && with_output->settings_ast)
+                apply_query_settings(*with_output->settings_ast);
 
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
-        if (insert_query && !insert_query->select)
-            processInsertQuery();
-        else
-            processOrdinaryQuery();
+            connection->forceConnected();
+
+            /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
+            if (insert && !insert->select)
+                processInsertQuery();
+            else
+                processOrdinaryQuery();
+        }
 
         /// Do not change context (current DB, settings) in case of an exception.
         if (!got_exception)
@@ -964,8 +983,6 @@ private:
         {
             if (!insert->format.empty())
                 current_format = insert->format;
-            if (insert->settings_ast)
-                InterpreterSetQuery(insert->settings_ast, context).executeForCurrentContext();
         }
 
         BlockInputStreamPtr block_input = context.getInputFormat(
@@ -1247,10 +1264,6 @@ private:
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = query_with_output->format->as<ASTIdentifier &>();
                     current_format = id.name;
-                }
-                if (query_with_output->settings_ast)
-                {
-                    InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
                 }
             }
 
