@@ -330,6 +330,7 @@ void Join::setSampleBlock(const Block & block)
 
 
     sample_block_with_columns_to_add = materializeBlock(block);
+    LOG_DEBUG(log, "setSampleBlock sample_block_with_columns_to_add " << sample_block_with_columns_to_add.dumpStructure());
 
     /// Move from `sample_block_with_columns_to_add` key columns to `sample_block_with_keys`, keeping the order.
     size_t pos = 0;
@@ -361,6 +362,9 @@ void Join::setSampleBlock(const Block & block)
     if (use_nulls && isLeftOrFull(kind))
         for (size_t i = 0; i < num_columns_to_add; ++i)
             convertColumnToNullable(sample_block_with_columns_to_add.getByPosition(i));
+
+    LOG_DEBUG(log, "setSampleBlock sample_block_with_keys " << sample_block_with_keys.dumpStructure());
+    LOG_DEBUG(log, "setSampleBlock sample_block_with_columns_to_add " << sample_block_with_columns_to_add.dumpStructure());
 }
 
 namespace
@@ -618,6 +622,7 @@ public:
 
     void fillRightIndices(const Block& rhs_block)
     {
+        std::cout << "rhs_block=" << rhs_block.dumpStructure() << std::endl;
         for(auto& tn : type_name) {
             right_indexes.push_back(rhs_block.getPositionByName(tn.second));
         }
@@ -861,8 +866,9 @@ void Join::joinBlockImpl(
 
     AddedColumns added(sample_block_with_columns_to_add, block_with_columns_to_add, block);
 
+    // the last column in the key names is the asof column
     if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
-        added.addColumn(sample_block_with_keys.safeGetByPosition(sample_block_with_keys.columns()-1));
+        added.addColumn(sample_block_with_keys.getByName(key_names_right.back()));
 
     if(!blocks.empty()) {
         added.fillRightIndices(*blocks.begin());
