@@ -104,7 +104,9 @@ namespace MultiRegexps
 
     struct Pool
     {
+        /// Mutex for finding in map
         std::mutex mutex;
+        /// Patterns + possible edit_distance to database and scratch
         std::map<std::pair<std::vector<String>, std::optional<UInt32>>, Regexps> storage;
     };
 
@@ -219,7 +221,7 @@ namespace MultiRegexps
             it = known_regexps.storage.emplace(
                 std::pair{str_patterns, edit_distance},
                 constructRegexps<FindAnyIndex, CompileForEditDistance>(str_patterns, edit_distance)).first;
-
+        lock.unlock();
         return &it->second;
     }
 }
