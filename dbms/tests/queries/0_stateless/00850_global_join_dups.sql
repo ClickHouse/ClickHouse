@@ -35,49 +35,49 @@ GLOBAL INNER JOIN
 ) USING dummy;
 
 
--- SET asterisk_left_columns_only = 0;
---
--- SELECT * FROM remote('127.0.0.2', system.one)
--- GLOBAL INNER JOIN
--- (
---    SELECT *, dummy
---    FROM ( SELECT dummy FROM remote('127.0.0.2', system.one) ) t1
---    GLOBAL INNER JOIN ( SELECT dummy FROM remote('127.0.0.3', system.one) ) t2
---    USING dummy
--- ) USING dummy;
---
--- SELECT * FROM remote('127.0.0.2', system.one)
--- GLOBAL INNER JOIN
--- (
---   SELECT *, t1.*, t2.*
---    FROM ( SELECT toUInt8(1) AS dummy ) t1
---    INNER JOIN ( SELECT toUInt8(1) AS dummy ) t2
---    USING dummy
--- ) USING dummy;
---
--- SELECT * FROM remote('127.0.0.2', system.one)
--- GLOBAL INNER JOIN
--- (
---    SELECT *, dummy
---    FROM ( SELECT toUInt8(1) AS dummy ) t1
---    INNER JOIN ( SELECT toUInt8(1) AS dummy ) t2
---    USING dummy
--- ) USING dummy;
---
--- SELECT * FROM remote('127.0.0.2', system.one)
--- GLOBAL INNER JOIN
--- (
---     SELECT *
---     FROM ( SELECT dummy FROM remote('127.0.0.3', system.one) ) t1
---     GLOBAL INNER JOIN ( SELECT toUInt8(1) AS dummy ) t2
---     USING dummy
--- ) USING dummy;
---
--- SELECT * FROM remote('127.0.0.2', system.one)
--- GLOBAL INNER JOIN
--- (
---     SELECT *
---     FROM ( SELECT toUInt8(1) AS dummy ) t1
---     GLOBAL INNER JOIN ( SELECT dummy FROM remote('127.0.0.3', system.one) ) t2
---     USING dummy
--- ) USING dummy;
+SET asterisk_left_columns_only = 0;
+
+SELECT * FROM remote('127.0.0.2', system.one)
+GLOBAL INNER JOIN
+(
+    SELECT *, dummy
+    FROM ( SELECT dummy FROM remote('127.0.0.2', system.one) ) t1
+    GLOBAL INNER JOIN ( SELECT dummy FROM remote('127.0.0.3', system.one) ) t2
+    USING dummy
+) USING dummy;
+
+SELECT * FROM remote('127.0.0.2', system.one)
+GLOBAL INNER JOIN
+(
+    SELECT *, t1.*, t2.*
+    FROM ( SELECT toUInt8(0) AS dummy ) t1
+    INNER JOIN ( SELECT toUInt8(0) AS dummy ) t2
+    USING dummy
+) USING dummy;
+
+SELECT * FROM remote('127.0.0.2', system.one)
+GLOBAL INNER JOIN
+(
+    SELECT *, dummy
+    FROM ( SELECT toUInt8(0) AS dummy ) t1
+    INNER JOIN ( SELECT toUInt8(0) AS dummy ) t2
+    USING dummy
+) USING dummy;
+
+SELECT * FROM remote('127.0.0.2', system.one)
+GLOBAL INNER JOIN
+(
+    SELECT *, dummy as other
+    FROM ( SELECT dummy FROM remote('127.0.0.3', system.one) ) t1
+    GLOBAL INNER JOIN ( SELECT toUInt8(0) AS dummy ) t2
+    USING dummy
+) USING dummy;
+
+SELECT * FROM remote('127.0.0.2', system.one)
+GLOBAL INNER JOIN
+(
+    SELECT *, dummy, dummy as other
+    FROM ( SELECT toUInt8(0) AS dummy ) t1
+    GLOBAL INNER JOIN ( SELECT dummy FROM remote('127.0.0.3', system.one) ) t2
+    USING dummy
+) USING dummy;

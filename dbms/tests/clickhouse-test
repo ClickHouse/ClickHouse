@@ -31,6 +31,7 @@ MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUAR
 MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
 MESSAGES_TO_RETRY = [
+    "DB::Exception: ZooKeeper session has been expired",
     "Coordination::Exception: Connection loss",
 ]
 
@@ -125,7 +126,7 @@ def main(args):
 
     # Keep same default values as in queries/shell_config.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
-    os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
+    #os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
@@ -404,6 +405,8 @@ def main(args):
 
 
 def find_binary(name):
+    if os.path.exists(name) and os.access(name, os.X_OK):
+        return True
     paths = os.environ.get("PATH").split(':')
     for path in paths:
         if os.access(os.path.join(path, name), os.X_OK):
@@ -416,7 +419,7 @@ if __name__ == '__main__':
     parser=ArgumentParser(description='ClickHouse functional tests')
     parser.add_argument('-q', '--queries', help='Path to queries dir')
     parser.add_argument('--tmp', help='Path to tmp dir')
-    parser.add_argument('-b', '--binary', default='clickhouse', help='Main clickhouse binary')
+    parser.add_argument('-b', '--binary', default='clickhouse', help='Path to clickhouse binary or name of binary in PATH')
     parser.add_argument('-c', '--client', help='Client program')
     parser.add_argument('--extract_from_config', help='extract-from-config program')
     parser.add_argument('--configclient', help='Client config (if you use not default ports)')

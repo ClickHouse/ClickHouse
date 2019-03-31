@@ -1,20 +1,21 @@
 # Syntax
 
 There are two types of parsers in the system: the full SQL parser (a recursive descent parser), and the data format parser (a fast stream parser).
-In all cases except the INSERT query, only the full SQL parser is used.
-The INSERT query uses both parsers:
+In all cases except the `INSERT` query, only the full SQL parser is used.
+The `INSERT` query uses both parsers:
 
 ``` sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
-The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser.
-Data can have any format. When a query is received, the server calculates no more than `max_query_size` bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
-This means the system doesn't have problems with large INSERT queries, like MySQL does.
+The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can turn on the full parser for the data too. Use the [input_format_values_interpret_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse tries to parse values with the fast stream parser and if it fails ClickHouse tries to use the full parser for the data supposing it as an SQL [expression](#syntax-expressions).
 
-When using the Values format in an INSERT query, it may seem that data is parsed the same as expressions in a SELECT query, but this is not true. The Values format is much more limited.
+Data can have any format. When a query is received, the server calculates no more than [max_query_size](../operations/settings/settings.md#settings-max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
+This means the system doesn't have problems with large `INSERT` queries, like MySQL does.
 
-Next we will cover the full parser. For more information about format parsers, see the section "Formats".
+When using the `Values` format in an `INSERT` query, it may seem that data is parsed the same as expressions in a `SELECT` query, but this is not true. The `Values` format is much more limited.
+
+Next we will cover the full parser. For more information about format parsers, see the [Formats](../interfaces/formats.md) section.
 
 ## Spaces
 
@@ -164,7 +165,7 @@ In this example, we declared table `t` with column `b`. Then, when selecting dat
 
 In a `SELECT` query, an asterisk can replace the expression. For more information, see the section "SELECT".
 
-## Expressions
+## Expressions {#syntax-expressions}
 
 An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
 A list of expressions is one or more expressions separated by commas.

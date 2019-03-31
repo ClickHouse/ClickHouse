@@ -42,6 +42,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -101,6 +102,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int CANNOT_READLINE;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -295,7 +297,6 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        stdin_is_not_tty = !isatty(STDIN_FILENO);
         if (stdin_is_not_tty || config().has("query"))
             is_interactive = false;
 
@@ -610,9 +611,6 @@ private:
 
                 try
                 {
-                    /// Determine the terminal size.
-                    ioctl(0, TIOCGWINSZ, &terminal_size);
-
                     if (!process(input))
                         break;
                 }
@@ -973,7 +971,7 @@ private:
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
-        const auto & column_defaults = columns_description.defaults;
+        const auto & column_defaults = columns_description.getDefaults();
         if (!column_defaults.empty())
             block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
 
@@ -1317,6 +1315,9 @@ private:
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
+
+        /// Restore progress bar after data block.
+        writeProgress();
     }
 
 
@@ -1356,8 +1357,8 @@ private:
 
     void clearProgress()
     {
-        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
         written_progress_chars = 0;
+        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1365,6 +1366,9 @@ private:
     {
         if (!need_render_progress)
             return;
+
+        /// Output all progress bar commands to stderr at once to avoid flicker.
+        WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
 
         static size_t increment = 0;
         static const char * indicators[8] =
@@ -1380,13 +1384,15 @@ private:
         };
 
         if (written_progress_chars)
-            clearProgress();
+            message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
         else
-            std::cerr << SAVE_CURSOR_POSITION;
+            message << SAVE_CURSOR_POSITION;
 
-        std::stringstream message;
+        message << DISABLE_LINE_WRAPPING;
+
+        size_t prefix_size = message.count();
+
         message << indicators[increment % 8]
-            << std::fixed << std::setprecision(3)
             << " Progress: ";
 
         message
@@ -1401,8 +1407,7 @@ private:
         else
             message << ". ";
 
-        written_progress_chars = message.str().size() - (increment % 8 == 7 ? 10 : 13);
-        std::cerr << DISABLE_LINE_WRAPPING << message.rdbuf();
+        written_progress_chars = message.count() - prefix_size - (increment % 8 == 7 ? 10 : 13);    /// Don't count invisible output (escape sequences).
 
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
         if (progress.total_rows > 0)
@@ -1424,19 +1429,21 @@ private:
                     if (width_of_progress_bar > 0)
                     {
                         std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, total_rows_corrected, width_of_progress_bar));
-                        std::cerr << "\033[0;32m" << bar << "\033[0m";
+                        message << "\033[0;32m" << bar << "\033[0m";
                         if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
-                        std::cerr << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+                            message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
                     }
                 }
             }
 
             /// Underestimate percentage a bit to avoid displaying 100%.
-            std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';
+            message << ' ' << (99 * progress.rows / total_rows_corrected) << '%';
         }
 
-        std::cerr << ENABLE_LINE_WRAPPING;
+        message << ENABLE_LINE_WRAPPING;
         ++increment;
+
+        message.next();
     }
 
 
@@ -1568,7 +1575,7 @@ public:
             }
         }
 
-        ioctl(0, TIOCGWINSZ, &terminal_size);
+        stdin_is_not_tty = !isatty(STDIN_FILENO);
 
         namespace po = boost::program_options;
 
@@ -1576,7 +1583,11 @@ public:
         unsigned min_description_length = line_length / 2;
         if (!stdin_is_not_tty)
         {
-            line_length = std::max(3U, static_cast<unsigned>(terminal_size.ws_col));
+            if (ioctl(STDIN_FILENO, TIOCGWINSZ, &terminal_size))
+                throwFromErrno("Cannot obtain terminal window size (ioctl TIOCGWINSZ)", ErrorCodes::SYSTEM_ERROR);
+            line_length = std::max(
+                static_cast<unsigned>(strlen("--http_native_compression_disable_checksumming_on_decompress ")),
+                static_cast<unsigned>(terminal_size.ws_col));
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
