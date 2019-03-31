@@ -56,6 +56,7 @@ private:
 
     struct UnpackedArrays
     {
+        size_t base_rows = 0;
         std::vector<char> is_const;
         std::vector<const NullMap *> null_maps;
         std::vector<const ColumnArray::ColumnOffsets::Container *> offsets;
@@ -246,6 +247,8 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(con
     arrays.offsets.resize(columns_number);
     arrays.nested_columns.resize(columns_number);
 
+    bool all_const = true;
+
     for (auto i : ext::range(0, columns_number))
     {
         auto argument_column = columns[i].get();
@@ -257,6 +260,9 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(con
 
         if (auto argument_column_array = typeid_cast<const ColumnArray *>(argument_column))
         {
+            if (!arrays.is_const[i])
+                all_const = false;
+
             arrays.offsets[i] = &argument_column_array->getOffsets();
             arrays.nested_columns[i] = &argument_column_array->getData();
             if (auto column_nullable = typeid_cast<const ColumnNullable *>(arrays.nested_columns[i]))
@@ -267,6 +273,24 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(con
         }
         else
             throw Exception{"Arguments for function " + getName() + " must be arrays.", ErrorCodes::LOGICAL_ERROR};
+    }
+
+    if (all_const)
+    {
+        arrays.base_rows = arrays.offsets.front()->size();
+    }
+    else
+    {
+        for (auto i : ext::range(0, columns_number))
+        {
+            if (arrays.is_const[i]) continue;
+            
+            size_t rows = arrays.offsets[i]->size();
+            if (arrays.base_rows == 0 && rows > 0)
+                arrays.base_rows = rows;
+            else if (arrays.base_rows != rows)
+            throw Exception("Non-const array columns in function " + getName() + "should have same rows", ErrorCodes::LOGICAL_ERROR);
+        }    
     }
 
     return arrays;
@@ -352,7 +376,7 @@ template <typename Map, typename ColumnType, bool is_numeric_column>
 ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr)
 {
     auto args = arrays.nested_columns.size();
-    auto rows = arrays.offsets.front()->size();
+    auto rows = arrays.base_rows;
 
     bool all_nullable = true;
 
@@ -392,11 +416,14 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         for (auto arg : ext::range(0, args))
         {
             bool current_has_nullable = false;
-            size_t off = (*arrays.offsets[arg])[row];
+
+            size_t off;
             // const array has only one row
             bool const_arg = arrays.is_const[arg];
             if (const_arg)
                 off = (*arrays.offsets[arg])[0];
+            else
+                off = (*arrays.offsets[arg])[row];
 
             for (auto i : ext::range(prev_off[arg], off))
             {
