@@ -377,6 +377,10 @@ private:
     /// Block with key columns in the same order they appear in the right-side table.
     Block sample_block_with_keys;
 
+    /// Block as it would appear in the BlockList
+    void prepareBlockListStructure(Block& stored_block);
+    Block blocklist_sample;
+
     Poco::Logger * log;
 
     /// Limits for maximum map size.
