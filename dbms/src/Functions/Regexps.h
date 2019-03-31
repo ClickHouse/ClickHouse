@@ -84,8 +84,20 @@ namespace MultiRegexps
     };
 
     using CompilerError = std::unique_ptr<hs_compile_error_t, HyperscanDeleter<decltype(&hs_free_compile_error), &hs_free_compile_error>>;
-    using ScratchPtr = std::unique_ptr<hs_scratch_t, DB::MultiRegexps::HyperscanDeleter<decltype(&hs_free_scratch), &hs_free_scratch>>;
-    using Regexps = std::unique_ptr<hs_database_t, HyperscanDeleter<decltype(&hs_free_database), &hs_free_database>>;
+    using ScratchPtr = std::unique_ptr<hs_scratch_t, HyperscanDeleter<decltype(&hs_free_scratch), &hs_free_scratch>>;
+    using DataBasePtr = std::unique_ptr<hs_database_t, HyperscanDeleter<decltype(&hs_free_database), &hs_free_database>>;
+
+    class Regexps
+    {
+    public:
+        Regexps(hs_database_t * db_, hs_scratch_t * scratch_) : db{db_}, scratch{scratch_} {}
+
+        hs_database_t * getDB() const { return db.get(); };
+        hs_scratch_t * getScratch() const { return scratch.get(); };
+    private:
+        DataBasePtr db;
+        ScratchPtr scratch;
+    };
 
     using Pool = ObjectPoolMap<Regexps, std::pair<std::vector<String>, std::optional<UInt32>>>;
 
@@ -183,7 +195,13 @@ namespace MultiRegexps
 
             ProfileEvents::increment(ProfileEvents::RegexpCreated);
 
-            return new Regexps{db};
+            hs_scratch_t * scratch = nullptr;
+            err = hs_alloc_scratch(db, &scratch);
+
+            if (err != HS_SUCCESS)
+                throw Exception("Could not allocate scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+            return new Regexps{db, scratch};
         });
     }
 }
