@@ -6,6 +6,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/RowRefs.h>
 #include <Core/SettingsCommon.h>
 
 #include <Common/Arena.h>
@@ -130,42 +131,7 @@ public:
     size_t getTotalByteCount() const;
 
     ASTTableJoin::Kind getKind() const { return kind; }
-
-
-    /// Reference to the row in block.
-    struct RowRef
-    {
-        const Block * block = nullptr;
-        size_t row_num = 0;
-
-        RowRef() {}
-        RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
-    };
-
-    /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
-    struct RowRefList : RowRef
-    {
-        RowRefList * next = nullptr;
-
-        RowRefList() {}
-        RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
-    };
-
-    /// Map for a time series
-    using ASOFTimeType = UInt32;
-    using AsofGetterType = ColumnsHashing::HashMethodOneNumber<ASOFTimeType, ASOFTimeType, ASOFTimeType, false>;
-    struct TSRowRef
-    {
-        // TODO use the arena allocator to get memory for this
-        // This would require ditching std::map because std::allocator is incompatible with the arena allocator
-        std::map<ASOFTimeType, RowRef> ts;
-
-        TSRowRef() {}
-        void insert(ASOFTimeType t, const Block * block, size_t row_num);
-        std::optional<std::pair<ASOFTimeType, RowRef>> findAsof(ASOFTimeType t) const;
-        std::string dumpStructure() const;
-        size_t size() const;
-    };
+    AsofRowRefs::Type getAsofType() const { return asof_type; }
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
       * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
@@ -297,7 +263,7 @@ public:
     using MapsAnyFull = MapsTemplate<WithFlags<true, false, RowRef>>;
     using MapsAnyFullOverwrite = MapsTemplate<WithFlags<true, true, RowRef>>;
     using MapsAllFull = MapsTemplate<WithFlags<true, false, RowRefList>>;
-    using MapsAsof = MapsTemplate<WithFlags<false, false, TSRowRef>>;
+    using MapsAsof = MapsTemplate<WithFlags<false, false, AsofRowRefs>>;
 
     template <ASTTableJoin::Kind KIND>
     struct KindTrait
@@ -400,6 +366,7 @@ private:
 
 private:
     Type type = Type::EMPTY;
+    AsofRowRefs::Type asof_type = AsofRowRefs::Type::EMPTY;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
