@@ -90,6 +90,7 @@ namespace MultiRegexps
     using ScratchPtr = std::unique_ptr<hs_scratch_t, HyperscanDeleter<decltype(&hs_free_scratch), &hs_free_scratch>>;
     using DataBasePtr = std::unique_ptr<hs_database_t, HyperscanDeleter<decltype(&hs_free_database), &hs_free_database>>;
 
+    /// Database is thread safe across multiple threads and Scratch is not but we can copy it whenever we use it in the searcher
     class Regexps
     {
     public:
@@ -216,12 +217,15 @@ namespace MultiRegexps
 
         std::unique_lock lock(known_regexps.mutex);
 
-        auto it = known_regexps.storage.find(std::pair{str_patterns, edit_distance});
+        auto it = known_regexps.storage.find({str_patterns, edit_distance});
+
         if (known_regexps.storage.end() == it)
             it = known_regexps.storage.emplace(
                 std::pair{str_patterns, edit_distance},
                 constructRegexps<FindAnyIndex, CompileForEditDistance>(str_patterns, edit_distance)).first;
+
         lock.unlock();
+
         return &it->second;
     }
 }
