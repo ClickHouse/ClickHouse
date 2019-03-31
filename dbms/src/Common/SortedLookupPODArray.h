@@ -18,7 +18,7 @@ class SortedLookupPODArray : private PaddedPODArray<T, INITIAL_SIZE, TAllocator>
 {
 public:
     using Base = PaddedPODArray<T, INITIAL_SIZE, TAllocator>;
-    using Base::PODArray;
+    using typename Base::PODArray;
     using Base::cbegin;
     using Base::cend;
 
@@ -44,6 +44,5 @@ private:
 
     bool sorted = false;
 };
-
 
 }
