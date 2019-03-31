@@ -1,6 +1,8 @@
 #pragma once
 
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -10,6 +12,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
 #include <common/StringRef.h>
+
 
 #include <Common/config.h>
 #if USE_HYPERSCAN
@@ -99,11 +102,107 @@ namespace MultiRegexps
         ScratchPtr scratch;
     };
 
-    using Pool = ObjectPoolMap<Regexps, std::pair<std::vector<String>, std::optional<UInt32>>>;
+    struct Pool
+    {
+        std::mutex mutex;
+        std::map<std::pair<std::vector<String>, std::optional<UInt32>>, Regexps> storage;
+    };
+
+    template <bool FindAnyIndex, bool CompileForEditDistance>
+    inline Regexps constructRegexps(const std::vector<String> & str_patterns, std::optional<UInt32> edit_distance)
+    {
+        (void)edit_distance;
+        /// Common pointers
+        std::vector<const char *> ptrns;
+        std::vector<unsigned int> flags;
+
+        /// Pointer for external edit distance compilation
+        std::vector<hs_expr_ext> ext_exprs;
+        std::vector<const hs_expr_ext *> ext_exprs_ptrs;
+
+        ptrns.reserve(str_patterns.size());
+        flags.reserve(str_patterns.size());
+
+        if constexpr (CompileForEditDistance)
+        {
+            ext_exprs.reserve(str_patterns.size());
+            ext_exprs_ptrs.reserve(str_patterns.size());
+        }
+
+        for (const StringRef ref : str_patterns)
+        {
+            ptrns.push_back(ref.data);
+            flags.push_back(HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_SINGLEMATCH);
+            if constexpr (CompileForEditDistance)
+            {
+                ext_exprs.emplace_back();
+                ext_exprs.back().flags = HS_EXT_FLAG_EDIT_DISTANCE;
+                ext_exprs.back().edit_distance = edit_distance.value();
+                ext_exprs_ptrs.push_back(&ext_exprs.back());
+            }
+        }
+        hs_database_t * db = nullptr;
+        hs_compile_error_t * compile_error;
+
+
+        std::unique_ptr<unsigned int[]> ids;
+
+        if constexpr (FindAnyIndex)
+        {
+            ids.reset(new unsigned int[ptrns.size()]);
+            for (size_t i = 0; i < ptrns.size(); ++i)
+                ids[i] = i + 1;
+        }
+
+        hs_error_t err;
+        if constexpr (!CompileForEditDistance)
+            err = hs_compile_multi(
+                ptrns.data(),
+                flags.data(),
+                ids.get(),
+                ptrns.size(),
+                HS_MODE_BLOCK,
+                nullptr,
+                &db,
+                &compile_error);
+        else
+            err = hs_compile_ext_multi(
+                ptrns.data(),
+                flags.data(),
+                ids.get(),
+                ext_exprs_ptrs.data(),
+                ptrns.size(),
+                HS_MODE_BLOCK,
+                nullptr,
+                &db,
+                &compile_error);
+
+        if (err != HS_SUCCESS)
+        {
+            CompilerError error(compile_error);
+
+            if (error->expression < 0)
+                throw Exception(String(error->message), ErrorCodes::LOGICAL_ERROR);
+            else
+                throw Exception(
+                    "Pattern '" + str_patterns[error->expression] + "' failed with error '" + String(error->message),
+                    ErrorCodes::LOGICAL_ERROR);
+        }
+
+        ProfileEvents::increment(ProfileEvents::RegexpCreated);
+
+        hs_scratch_t * scratch = nullptr;
+        err = hs_alloc_scratch(db, &scratch);
+
+        if (err != HS_SUCCESS)
+            throw Exception("Could not allocate scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+        return Regexps{db, scratch};
+    }
 
     /// If CompileForEditDistance is False, edit_distance must be nullopt
     template <bool FindAnyIndex, bool CompileForEditDistance>
-    inline Pool::Pointer get(const std::vector<StringRef> & patterns, std::optional<UInt32> edit_distance)
+    inline Regexps * get(const std::vector<StringRef> & patterns, std::optional<UInt32> edit_distance)
     {
         /// C++11 has thread-safe function-local statics on most modern compilers.
         static Pool known_regexps; /// Different variables for different pattern parameters.
@@ -113,96 +212,15 @@ namespace MultiRegexps
         for (const StringRef & ref : patterns)
             str_patterns.push_back(ref.toString());
 
-        return known_regexps.get({str_patterns, edit_distance}, [&str_patterns, edit_distance]
-        {
-            (void)edit_distance;
-            /// Common pointers
-            std::vector<const char *> ptrns;
-            std::vector<unsigned int> flags;
+        std::unique_lock lock(known_regexps.mutex);
 
-            /// Pointer for external edit distance compilation
-            std::vector<hs_expr_ext> ext_exprs;
-            std::vector<const hs_expr_ext *> ext_exprs_ptrs;
+        auto it = known_regexps.storage.find(std::pair{str_patterns, edit_distance});
+        if (known_regexps.storage.end() == it)
+            it = known_regexps.storage.emplace(
+                std::pair{str_patterns, edit_distance},
+                constructRegexps<FindAnyIndex, CompileForEditDistance>(str_patterns, edit_distance)).first;
 
-            ptrns.reserve(str_patterns.size());
-            flags.reserve(str_patterns.size());
-
-            if constexpr (CompileForEditDistance)
-            {
-                ext_exprs.reserve(str_patterns.size());
-                ext_exprs_ptrs.reserve(str_patterns.size());
-            }
-
-            for (const StringRef ref : str_patterns)
-            {
-                ptrns.push_back(ref.data);
-                flags.push_back(HS_FLAG_DOTALL | HS_FLAG_ALLOWEMPTY | HS_FLAG_SINGLEMATCH);
-                if constexpr (CompileForEditDistance)
-                {
-                    ext_exprs.emplace_back();
-                    ext_exprs.back().flags = HS_EXT_FLAG_EDIT_DISTANCE;
-                    ext_exprs.back().edit_distance = edit_distance.value();
-                    ext_exprs_ptrs.push_back(&ext_exprs.back());
-                }
-            }
-            hs_database_t * db = nullptr;
-            hs_compile_error_t * compile_error;
-
-
-            std::unique_ptr<unsigned int[]> ids;
-
-            if constexpr (FindAnyIndex)
-            {
-                ids.reset(new unsigned int[ptrns.size()]);
-                for (size_t i = 0; i < ptrns.size(); ++i)
-                    ids[i] = i + 1;
-            }
-
-            hs_error_t err;
-            if constexpr (!CompileForEditDistance)
-                err = hs_compile_multi(
-                    ptrns.data(),
-                    flags.data(),
-                    ids.get(),
-                    ptrns.size(),
-                    HS_MODE_BLOCK,
-                    nullptr,
-                    &db,
-                    &compile_error);
-            else
-                err = hs_compile_ext_multi(
-                    ptrns.data(),
-                    flags.data(),
-                    ids.get(),
-                    ext_exprs_ptrs.data(),
-                    ptrns.size(),
-                    HS_MODE_BLOCK,
-                    nullptr,
-                    &db,
-                    &compile_error);
-
-            if (err != HS_SUCCESS)
-            {
-                CompilerError error(compile_error);
-
-                if (error->expression < 0)
-                    throw Exception(String(error->message), ErrorCodes::LOGICAL_ERROR);
-                else
-                    throw Exception(
-                        "Pattern '" + str_patterns[error->expression] + "' failed with error '" + String(error->message),
-                        ErrorCodes::LOGICAL_ERROR);
-            }
-
-            ProfileEvents::increment(ProfileEvents::RegexpCreated);
-
-            hs_scratch_t * scratch = nullptr;
-            err = hs_alloc_scratch(db, &scratch);
-
-            if (err != HS_SUCCESS)
-                throw Exception("Could not allocate scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-            return new Regexps{db, scratch};
-        });
+        return &it->second;
     }
 }
 
