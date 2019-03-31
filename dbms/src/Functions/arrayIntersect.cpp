@@ -283,13 +283,14 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(con
     {
         for (auto i : ext::range(0, columns_number))
         {
-            if (arrays.is_const[i]) continue;
-            
+            if (arrays.is_const[i]) 
+                continue;     
+
             size_t rows = arrays.offsets[i]->size();
             if (arrays.base_rows == 0 && rows > 0)
                 arrays.base_rows = rows;
             else if (arrays.base_rows != rows)
-            throw Exception("Non-const array columns in function " + getName() + "should have same rows", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Non-const array columns in function " + getName() + "should have same rows", ErrorCodes::LOGICAL_ERROR);
         }    
     }
 
