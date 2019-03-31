@@ -283,7 +283,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(con
     {
         for (auto i : ext::range(0, columns_number))
         {
-            if (arrays.is_const[i]) 
+            if (arrays.is_const[i])
                 continue;
 
             size_t rows = arrays.offsets[i]->size();
