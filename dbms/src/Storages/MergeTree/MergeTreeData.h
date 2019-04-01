@@ -303,7 +303,7 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const String & full_path_,
+                  const Strings & full_paths_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
                   Context & context_,
@@ -363,7 +363,7 @@ public:
 
     String getTableName() const { return table_name; }
 
-    String getFullPath() const { return full_path; }
+    String getFullPathForPart(UInt64 expected_size) const;
 
     String getLogName() const { return log_name; }
 
@@ -525,7 +525,7 @@ public:
     Names getColumnsRequiredForSampling() const { return columns_required_for_sampling; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
+    MutableDataPartPtr loadPartAndFixMetadata(const String & path, const String & relative_path);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -633,7 +633,7 @@ private:
 
     String database_name;
     String table_name;
-    String full_path;
+    Strings full_paths;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;

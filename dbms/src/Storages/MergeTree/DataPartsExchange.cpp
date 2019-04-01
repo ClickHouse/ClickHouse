@@ -100,7 +100,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         {
             String file_name = it.first;
 
-            String path = data.getFullPath() + part_name + "/" + file_name;
+            String path = part->getFullPath() + part_name + "/" + file_name;
 
             UInt64 size = Poco::File(path).getSize();
 
@@ -200,7 +200,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String absolute_part_path = data.getFullPath() + relative_part_path + "/";
+    String part_path = data.getFullPathForPart(0);
+    String absolute_part_path = part_path + relative_part_path + "/";  ///@TODO_IGR ASK path for file
     Poco::File part_file(absolute_part_path);
 
     if (part_file.exists())
@@ -210,7 +211,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_name);
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_path, part_name);
     new_data_part->relative_path = relative_part_path;
     new_data_part->is_temp = true;
 

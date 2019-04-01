@@ -3,8 +3,7 @@
 namespace DB
 {
 
-UInt64 DiskSpaceMonitor::reserved_bytes;
-UInt64 DiskSpaceMonitor::reservation_count;
+std::map<String, DiskSpaceMonitor::DiskReserve> DiskSpaceMonitor::reserved;
 std::mutex DiskSpaceMonitor::mutex;
 
 }

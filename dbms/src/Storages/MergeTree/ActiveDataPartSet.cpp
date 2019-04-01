@@ -5,15 +5,15 @@
 namespace DB
 {
 
-ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names)
+ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const ActiveDataPartSet::PartPathNames & names)
     : format_version(format_version_)
 {
-    for (const auto & name : names)
-        add(name);
+    for (const auto & path_name : names)
+        add(path_name.path, path_name.name);
 }
 
 
-bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
+bool ActiveDataPartSet::add(const String & path, const String & name, PartPathNames * out_replaced_parts)
 {
     auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
 
@@ -52,12 +52,12 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
         part_info_to_name.erase(it++);
     }
 
-    part_info_to_name.emplace(part_info, name);
+    part_info_to_name.emplace(part_info, PartPathName{path, name});
     return true;
 }
 
 
-String ActiveDataPartSet::getContainingPart(const MergeTreePartInfo & part_info) const
+ActiveDataPartSet::PartPathName ActiveDataPartSet::getContainingPart(const MergeTreePartInfo & part_info) const
 {
     auto it = getContainingPartImpl(part_info);
     if (it != part_info_to_name.end())
@@ -66,7 +66,7 @@ String ActiveDataPartSet::getContainingPart(const MergeTreePartInfo & part_info)
 }
 
 
-String ActiveDataPartSet::getContainingPart(const String & name) const
+ActiveDataPartSet::PartPathName ActiveDataPartSet::getContainingPart(const String & name) const
 {
     auto it = getContainingPartImpl(MergeTreePartInfo::fromPartName(name, format_version));
     if (it != part_info_to_name.end())
@@ -75,7 +75,7 @@ String ActiveDataPartSet::getContainingPart(const String & name) const
 }
 
 
-std::map<MergeTreePartInfo, String>::const_iterator
+std::map<MergeTreePartInfo, ActiveDataPartSet::PartPathName>::const_iterator
 ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) const
 {
     /// A part can only be covered/overlapped by the previous or next one in `part_info_to_name`.
@@ -97,7 +97,8 @@ ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) co
     return part_info_to_name.end();
 }
 
-Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
+ActiveDataPartSet::PartPathNames
+ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
 {
     auto it_middle = part_info_to_name.lower_bound(part_info);
     auto begin = it_middle;
@@ -128,16 +129,16 @@ Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info
         ++end;
     }
 
-    Strings covered;
+    PartPathNames covered;
     for (auto it = begin; it != end; ++it)
         covered.push_back(it->second);
 
     return covered;
 }
 
-Strings ActiveDataPartSet::getParts() const
+ActiveDataPartSet::PartPathNames ActiveDataPartSet::getParts() const
 {
-    Strings res;
+    PartPathNames res;
     res.reserve(part_info_to_name.size());
     for (const auto & kv : part_info_to_name)
         res.push_back(kv.second);
