@@ -136,19 +136,14 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 
 bool MergingSortedBlockInputStream::MergeStopCondition::checkStop() const
 {
-    return checkStop(sum_rows_count);
-}
-
-bool MergingSortedBlockInputStream::MergeStopCondition::checkStop(size_t total_rows) const
-{
     if (!count_average)
-        return total_rows == max_block_size;
+        return sum_rows_count == max_block_size;
 
-    if (total_rows == 0)
+    if (sum_rows_count == 0)
         return false;
 
-    size_t average = sum_blocks_granularity / total_rows;
-    return total_rows >= average;
+    size_t average = sum_blocks_granularity / sum_rows_count;
+    return sum_rows_count >= average;
 }
 
 template
@@ -180,7 +175,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
         ++merged_rows;
         stop_condition.addRowWithGranularity(current_granularity);
-        return stop_condition.checkStop(merged_rows);
+        return stop_condition.checkStop();
     };
 
     /// Take rows in required order and put them into `merged_columns`, while the rows are no more than `max_block_size`
