@@ -89,7 +89,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Block & block)
 
         }
 
-        /// Skip some rows from begging of granule
+        /// Skip some rows from beging of granule
         /// We don't know size of rows in compressed granule,
         /// so have to read them and throw out
         if (current_offset)
