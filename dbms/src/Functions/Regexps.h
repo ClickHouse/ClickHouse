@@ -96,8 +96,8 @@ namespace MultiRegexps
     public:
         Regexps(hs_database_t * db_, hs_scratch_t * scratch_) : db{db_}, scratch{scratch_} {}
 
-        hs_database_t * getDB() const { return db.get(); };
-        hs_scratch_t * getScratch() const { return scratch.get(); };
+        hs_database_t * getDB() const { return db.get(); }
+        hs_scratch_t * getScratch() const { return scratch.get(); }
     private:
         DataBasePtr db;
         ScratchPtr scratch;
