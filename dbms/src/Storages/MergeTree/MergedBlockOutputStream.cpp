@@ -124,9 +124,7 @@ void fillIndexGranularityImpl(
             index_granularity_for_block = rows_in_block;
         else if (block_size_in_memory >= index_granularity_bytes)
         {
-            //std::cerr << "BLOCK SIZE In MEMORY:" << block_size_in_memory << std::endl;
             size_t granules_in_block = block_size_in_memory / index_granularity_bytes;
-            //std::cerr << "GRANULES IN  BLOCK:" << granules_in_block << std::endl;
             index_granularity_for_block = rows_in_block / granules_in_block;
         }
         else
@@ -232,7 +230,6 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
 
     size_t total_rows = column.size();
     size_t current_row = 0;
-    //std::cerr << "FROM MARK:" << from_mark << std::endl;
     size_t current_column_mark = from_mark;
     while (current_row < total_rows)
     {
@@ -270,9 +267,7 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
 
         if (write_marks)
             current_column_mark++;
-        //std::cerr << "current column mark (loop):" << current_column_mark << std::endl;
     }
-    //std::cerr << "Current column mark:" << current_column_mark << std::endl;
 
     /// Memoize offsets for Nested types, that are already written. They will not be written again for next columns of Nested structure.
     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
@@ -516,7 +511,6 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     }
 
     new_part->rows_count = rows_count;
-    //std::cerr << "SETTING CURRENT MARK FOR PART:" << part_path << " to " << current_mark << std::endl;
     new_part->modification_time = time(nullptr);
     new_part->columns = *total_column_list;
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
@@ -556,7 +550,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
-    //std::cerr << "BLOCK ROWS:" << rows << std::endl;
     if (!rows)
         return;
 
@@ -734,8 +727,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
-        //std::cerr << "Index Granularity size:" << index_granularity.size() << std::endl;
-        //std::cerr << "Index Granularity first elem:" << index_granularity[0] << std::endl;
         for (size_t i = index_offset; i < rows;)
         {
             if (storage.hasPrimaryKey())
@@ -748,8 +739,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
             }
 
-            //std::cerr << "I:" << i << " Total rows:" << rows << std::endl;
-            //std::cerr << "Increment current mark:" << current_mark << std::endl;
             ++current_mark;
             if (current_mark < index_granularity.getMarksCount())
                 i += index_granularity.getMarkRows(current_mark);
@@ -757,8 +746,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 break;
         }
     }
-    //std::cerr << "Index granularity size:" << index_granularity.size() << std::endl;
-    //std::cerr << "block written, total marks:" << current_mark << std::endl;
 
     index_offset = new_index_offset;
 }

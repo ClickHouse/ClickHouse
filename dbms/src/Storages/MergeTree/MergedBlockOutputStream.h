@@ -87,6 +87,7 @@ protected:
         size_t from_mark
     );
 
+    /// Write single granule of one column (rows between 2 marks)
     size_t writeSingleGranule(
         const String & name,
         const IDataType & type,
@@ -99,6 +100,7 @@ protected:
         size_t number_of_rows,
         bool write_marks);
 
+    /// Count index_granularity for block and store in `index_granularity`
     void fillIndexGranularity(const Block & block);
 
     MergeTreeData & storage;
