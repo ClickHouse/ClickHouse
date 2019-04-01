@@ -16,6 +16,7 @@
 
 #include <Parsers/ASTLiteral.h>
 
+#include <iomanip>
 
 namespace DB
 {
@@ -47,6 +48,23 @@ DataTypeDateTimeBase<NumberBase>::DataTypeDateTimeBase(const std::string & time_
 {
 }
 
+DataTypeDateTime64::Precision parsePrecision(const std::string & precision_name)
+{
+    if (precision_name == "MILLI")
+        return DataTypeDateTime64::Precision::Millis;
+    else if (precision_name == "MICRO")
+        return DataTypeDateTime64::Precision::Micros;
+    return DataTypeDateTime64::Precision::Nanos;
+}
+
+DataTypeDateTime64::DataTypeDateTime64(const std::string & time_zone_name, const std::string & precision_name)
+    : DataTypeDateTimeBase(time_zone_name),
+    precision(parsePrecision(precision_name))
+{
+}
+
+
+
 template<typename NumberBase>
 const char * DataTypeDateTimeBase<NumberBase>::getFamilyName() const
 {
@@ -74,6 +92,43 @@ template<typename NumberBase>
 void DataTypeDateTimeBase<NumberBase>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeDateTimeText(static_cast<const typename TypeGetter<NumberBase>::Column &>(column).getData()[row_num], ostr, time_zone);
+}
+
+void DataTypeDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    time_t base_time;
+    auto full_time = static_cast<const ColumnUInt64 &>(column).getData()[row_num];
+    UInt32 time_fraction;
+    int pad_length = 0;
+
+    switch(precision) {
+        case DataTypeDateTime64::Precision::Millis: {
+            base_time = full_time / MILLIS_PER_SECOND;
+            time_fraction = full_time % MILLIS_PER_SECOND;
+            pad_length = 3;
+            break;
+        }
+        case DataTypeDateTime64::Precision::Micros: {
+            base_time = full_time / MICROS_PER_SECOND;
+            time_fraction = full_time % MICROS_PER_SECOND;
+            pad_length = 6;
+            break;
+        }
+        case DataTypeDateTime64::Precision::Nanos: {
+            base_time = full_time / NANOS_PER_SECOND;
+            time_fraction = full_time % NANOS_PER_SECOND;
+            pad_length = 9;
+            break;
+        }
+    }
+
+    writeDateTimeText(base_time, ostr, time_zone);
+    writeText(".", 1, ostr);
+
+    /// TODO make this efficient
+    std::stringstream ss;
+    ss << std::setfill('0') << std::setw(pad_length) << time_fraction;
+    writeText(ss.str(), ostr);
 }
 
 template<typename NumberBase>
@@ -258,14 +313,18 @@ static DataTypePtr create64(const ASTPtr & arguments)
     if (!arguments)
         return std::make_shared<DataTypeDateTime64>();
 
-    if (arguments->children.size() != 1)
-        throw Exception("DateTime64 data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (arguments->children.size() != 2)
+        throw Exception("DateTime64 data type can optionally have 2 arguments - precision and time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const auto * arg = arguments->children[0]->as<ASTLiteral>();
-    if (!arg || arg->value.getType() != Field::Types::String)
-        throw Exception("Parameter for DateTime64 data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    const auto * timezone_arg = arguments->children[0]->as<ASTLiteral>();
+    if (!timezone_arg || timezone_arg->value.getType() != Field::Types::String)
+        throw Exception("Timezone parameter for DateTime64 data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<DataTypeDateTime>(arg->value.get<String>());
+    const auto * precision_arg = arguments->children[1]->as<ASTLiteral>();
+    if (!precision_arg || precision_arg->value.getType() != Field::Types::String)
+        throw Exception("Precision parameter for DateTime64 data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return std::make_shared<DataTypeDateTime64>(timezone_arg->value.get<String>(), precision_arg->value.get<String>());
 }
 
 void registerDataTypeDateTime(DataTypeFactory & factory)
