@@ -485,7 +485,7 @@ namespace
     }
 }
 
-void Join::prepareBlockListStructure(Block& stored_block)
+void Join::prepareBlockListStructure(Block & stored_block)
 {
     if (isRightOrFull(kind))
     {
@@ -597,7 +597,7 @@ public:
                  const Block & block_with_columns_to_add,
                  const Block & block,
                  const Block & blocklist_sample,
-                 const ColumnsWithTypeAndName& extras)
+                 const ColumnsWithTypeAndName & extras)
     {
         size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 
@@ -614,10 +614,10 @@ public:
                 addColumn(src_column);
         }
 
-        for (auto& extra : extras)
+        for (auto & extra : extras)
             addColumn(extra);
 
-        for (auto& tn : type_name)
+        for (auto & tn : type_name)
             right_indexes.push_back(blocklist_sample.getPositionByName(tn.second));
     }
 
