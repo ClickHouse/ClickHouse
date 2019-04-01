@@ -109,9 +109,9 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else if (use_none)
             method_family = "NONE";
 
-        int level;
+        std::optional<int> level = std::nullopt;
         if (options.count("level"))
-            levels = options["level"].as<int>();
+            level = options["level"].as<int>();
 
 
         DB::CompressionCodecPtr codec;
@@ -124,7 +124,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             codec = DB::CompressionCodecFactory::instance().get(ast, nullptr);
         }
         else
-            codec = DB::CompressionCodecFactory::instance().get(method_family, levels.empty() ? std::nullopt : std::optional<int>(level));
+            codec = DB::CompressionCodecFactory::instance().get(method_family, level);
 
 
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
