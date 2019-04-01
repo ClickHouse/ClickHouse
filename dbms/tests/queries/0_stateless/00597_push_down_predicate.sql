@@ -18,6 +18,23 @@ SELECT 1 AS id WHERE id = 1;
 SELECT arrayJoin([1,2,3]) AS id WHERE id = 1;
 SELECT * FROM test.test WHERE id = 1;
 
+SELECT '-------Forbid push down-------';
+
+-- LEFT JOIN
+ANALYZE SELECT a, b FROM (SELECT 1 AS a) ANY LEFT JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+SELECT a, b FROM (SELECT 1 AS a) ANY LEFT JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+
+-- RIGHT JOIN
+ANALYZE SELECT a, b FROM (SELECT 1 AS a, 1 as b) ANY RIGHT JOIN (SELECT 1 AS a) USING (a) WHERE b = 0;
+SELECT a, b FROM (SELECT 1 AS a, 1 as b) ANY RIGHT JOIN (SELECT 1 AS a) USING (a) WHERE b = 0;
+
+-- FULL JOIN
+ANALYZE SELECT a, b FROM (SELECT 1 AS a) ANY FULL JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+SELECT a, b FROM (SELECT 1 AS a) ANY FULL JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+
+ANALYZE SELECT a, b FROM (SELECT 1 AS a, 1 AS b) ANY FULL JOIN (SELECT 1 AS a) USING (a) WHERE b = 0;
+SELECT a, b FROM (SELECT 1 AS a) ANY FULL JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+
 SELECT '-------Need push down-------';
 
 -- Optimize predicate expressions without tables
