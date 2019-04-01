@@ -10,14 +10,12 @@ namespace DB
 {
 
 /// Handler for MySQL wire protocol connections. Allows to connect to ClickHouse using MySQL client.
-class MySQLHandler : public Poco::Net::TCPServerConnection {
+class MySQLHandler : public Poco::Net::TCPServerConnection
+{
 public:
-    MySQLHandler(IServer &server_, const Poco::Net::StreamSocket &socket_)
-        : Poco::Net::TCPServerConnection(socket_)
-        , server(server_)
-        , log(&Poco::Logger::get("MySQLHandler"))
-        , connection_context(server.context())
-        , connection_id(last_connection_id++)
+    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
+        : Poco::Net::TCPServerConnection(socket_), server(server_), log(&Poco::Logger::get("MySQLHandler")),
+          connection_context(server.context()), connection_id(last_connection_id++)
     {
     }
 
@@ -30,6 +28,7 @@ public:
     void comPing();
 
     void comInitDB(String payload);
+
 private:
     IServer & server;
     Poco::Logger * log;
