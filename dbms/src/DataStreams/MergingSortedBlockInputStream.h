@@ -116,6 +116,10 @@ protected:
         size_t size() const { return empty() ? 0 : columns->size(); }
     };
 
+    /// Simple class, which allows to check stop condition during merge process
+    /// in simple case it just compare amount of merged rows with max_block_size
+    /// in `count_average` case it compares amount of merged rows with linear combination
+    /// of block sizes from which these rows were taken.
     struct MergeStopCondition
     {
         size_t sum_blocks_granularity = 0;
@@ -128,14 +132,16 @@ protected:
             , max_block_size(max_block_size_)
         {}
 
+        /// add single row from block size `granularity`
         void addRowWithGranularity(size_t granularity)
         {
             sum_blocks_granularity += granularity;
             sum_rows_count++;
         }
 
-        bool checkStop(size_t total_rows) const;
+        /// check that sum_rows_count is enough
         bool checkStop() const;
+
         bool empty() const
         {
             return sum_blocks_granularity == 0;
