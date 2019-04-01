@@ -377,6 +377,9 @@ private:
     /// Block with key columns in the same order they appear in the right-side table.
     Block sample_block_with_keys;
 
+    /// Block as it would appear in the BlockList
+    Block blocklist_sample;
+
     Poco::Logger * log;
 
     /// Limits for maximum map size.
@@ -392,6 +395,11 @@ private:
     mutable std::shared_mutex rwlock;
 
     void init(Type type_);
+
+    /** Take an inserted block and discard everything that does not need to be stored
+     *  Example, remove the keys as they come from the LHS block, but do keep the ASOF timestamps
+     */
+    void prepareBlockListStructure(Block & stored_block);
 
     /// Throw an exception if blocks have different types of key columns.
     void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right) const;
