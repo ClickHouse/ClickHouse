@@ -628,9 +628,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const Names & virt_columns,
     const Settings & settings) const
 {
-    size_t average_index_granularity = getAvgGranularityForAllPartsRanges(parts);
-    const size_t min_marks_for_concurrent_read =
-        (settings.merge_tree_min_rows_for_concurrent_read + average_index_granularity - 1) / average_index_granularity;
+    const size_t min_marks_for_concurrent_read = getMinMarksForConcurrentRead(settings, data.index_granularity_info);
 
     /// Count marks for each part.
     std::vector<size_t> sum_marks_in_parts(parts.size());
@@ -884,7 +882,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     else
     {
         size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
-        size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + part->index_granularity.getAvgGranularity() - 1) / part->index_granularity.getAvgGranularity();
+        size_t min_marks_for_seek = getMinMarksForSeek(settings, data.index_granularity_info);
 
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
             * At each step, take the left segment and check if it fits.
@@ -966,8 +964,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         return ranges;
     }
 
-    const size_t avg_granularity =part->index_granularity.getAvgGranularity();
-    const size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + avg_granularity - 1) / avg_granularity;
+    const size_t min_marks_for_seek = getMinMarksForSeek(settings, data.index_granularity_info);
 
     size_t granules_dropped = 0;
 
@@ -1018,6 +1015,36 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     LOG_DEBUG(log, "Index `" << index->name << "` has dropped " << granules_dropped << " granules.");
 
     return res;
+}
+size_t MergeTreeDataSelectExecutor::getMinMarksForConcurrentRead(
+    const Settings & settings,
+    const MergeTreeData::IndexGranularityInfo & granularity_info) const
+{
+    if (!granularity_info.is_adaptive)
+    {
+        size_t fixed_index_granularity = granularity_info.fixed_index_granularity;
+        return  (settings.merge_tree_min_rows_for_concurrent_read + fixed_index_granularity - 1) / fixed_index_granularity;
+    }
+    else
+    {
+        size_t index_granularity_bytes = granularity_info.index_granularity_bytes;
+        return (settings.merge_tree_min_bytes_for_concurrent_read + index_granularity_bytes - 1) / index_granularity_bytes;
+    }
+}
+size_t MergeTreeDataSelectExecutor::getMinMarksForSeek(
+    const Settings & settings,
+    const MergeTreeData::IndexGranularityInfo & granularity_info) const
+{
+    if (!granularity_info.is_adaptive)
+    {
+        size_t fixed_index_granularity = granularity_info.fixed_index_granularity;
+        return  (settings.merge_tree_min_rows_for_seek + fixed_index_granularity - 1) / fixed_index_granularity;
+    }
+    else
+    {
+        size_t index_granularity_bytes = granularity_info.index_granularity_bytes;
+        return (settings.merge_tree_min_bytes_for_seek + index_granularity_bytes - 1) / index_granularity_bytes;
+    }
 }
 
 }

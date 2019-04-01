@@ -135,7 +135,6 @@ TEST(AdaptiveIndexGranularity, TestIndexGranularityClass)
         EXPECT_EQ(index_granularity.getMarksCount(), sum_marks);
         EXPECT_EQ(index_granularity.getTotalRows(), sum_rows);
         EXPECT_EQ(index_granularity.getLastMarkRows(), 100);
-        EXPECT_EQ(index_granularity.getAvgGranularity(), sum_rows / sum_marks);
         EXPECT_EQ(index_granularity.getMarkStartingRow(0), 0);
         EXPECT_EQ(index_granularity.getMarkStartingRow(1), 10);
         EXPECT_EQ(index_granularity.getMarkStartingRow(2), 30);

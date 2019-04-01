@@ -83,8 +83,6 @@ public:
     /// This method tells which mark ranges we have to read if we start from @from mark range
     MarkRanges getRestMarks(const std::string & part_path, const MarkRange & from) const;
 
-    size_t getAvgGranularityForReadingParts() const;
-
     Block getHeader() const;
 
 private:
@@ -106,7 +104,6 @@ private:
     std::vector<char> per_part_should_reorder;
     std::vector<MergeTreeBlockSizePredictorPtr> per_part_size_predictor;
     PrewhereInfoPtr prewhere_info;
-    size_t avg_parts_granularity;
 
     struct Part
     {
