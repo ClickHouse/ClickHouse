@@ -48,8 +48,6 @@ public:
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
-    CompressionCodecPtr get(const std::vector<CodecNameWithLevel> & codecs) const;
-
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<UInt8> byte_code, CreatorWithType creator);
     /// Register codec with parameters
