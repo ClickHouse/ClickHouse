@@ -83,7 +83,7 @@ public:
     const RowRef * findAsof(const IColumn * asof_column, size_t row_num, Arena & pool) const;
 
 private:
-    const std::optional<Type> type;
+    const std::optional<Type> type = {};
     mutable Lookups lookups;
 
     void createLookup(Type which);
