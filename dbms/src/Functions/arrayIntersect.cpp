@@ -432,15 +432,20 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     current_has_nullable = true;
                 else
                 {
+                    typename Map::mapped_type * value = nullptr;
+
                     if constexpr (is_numeric_column)
-                        ++map[columns[arg]->getElement(i)];
+                        value = &map[columns[arg]->getElement(i)];
                     else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
-                        ++map[columns[arg]->getDataAt(i)];
+                        value = &map[columns[arg]->getDataAt(i)];
                     else
                     {
                         const char * data = nullptr;
-                        ++map[columns[arg]->serializeValueIntoArena(i, arena, data)];
+                        value = &map[columns[arg]->serializeValueIntoArena(i, arena, data)];
                     }
+
+                    if (*value == arg)
+                        ++(*value);
                 }
             }
 
