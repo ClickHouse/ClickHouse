@@ -82,12 +82,12 @@ struct ASTTableJoin : public IAST
     /// Join method.
     enum class Kind
     {
-        Inner,    /// Leave ony rows that was JOINed.
-        Left,    /// If in "right" table there is no corresponding rows, use default values instead.
+        Inner, /// Leave only rows that was JOINed.
+        Left, /// If in "right" table there is no corresponding rows, use default values instead.
         Right,
         Full,
-        Cross,    /// Direct product. Strictness and condition doesn't matter.
-        Comma    /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
+        Cross, /// Direct product. Strictness and condition doesn't matter.
+        Comma /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
     };
 
     Locality locality = Locality::Unspecified;

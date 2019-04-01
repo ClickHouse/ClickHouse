@@ -37,10 +37,6 @@ SELECT a, b FROM (SELECT 1 AS a) ANY FULL JOIN (SELECT 1 AS a, 1 AS b) USING (a)
 
 SELECT '-------Need push down-------';
 
--- Optimize predicate expressions without tables
-ANALYZE SELECT * FROM system.one ANY LEFT JOIN (SELECT 0 AS dummy) USING dummy WHERE 1;
-SELECT * FROM system.one ANY LEFT JOIN (SELECT 0 AS dummy) USING dummy WHERE 1;
-
 ANALYZE SELECT toString(value) AS value FROM (SELECT 1 AS value) WHERE value = '1';
 SELECT toString(value) AS value FROM (SELECT 1 AS value) WHERE value = '1';
 

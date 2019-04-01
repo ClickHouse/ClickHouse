@@ -293,9 +293,41 @@ PredicateExpressionsOptimizer::SubqueriesProjectionColumns PredicateExpressionsO
 {
     SubqueriesProjectionColumns projection_columns;
 
+    const auto * ast_join = ast_select->join();
+
+    /// XXX: very hacky code based on the order and availability of AST children
+    const auto * left_table_expr = ast_join ? ast_select->tables->as<ASTTablesInSelectQuery>()
+                                                  ->children[0]
+                                                  ->as<ASTTablesInSelectQueryElement>()
+                                                  ->table_expression->as<ASTTableExpression>()
+                                            : nullptr;
+    const auto * right_table_expr = ast_join ? ast_select->tables->as<ASTTablesInSelectQuery>()
+                                                   ->children[1]
+                                                   ->as<ASTTablesInSelectQueryElement>()
+                                                   ->table_expression->as<ASTTableExpression>()
+                                             : nullptr;
+
+    if (ast_join && ast_join->table_join->as<ASTTableJoin>()->kind == ASTTableJoin::Kind::Full)
+    {
+        /// Forbid optimization on both sides for FULL JOIN
+        return projection_columns;
+    }
+
     for (const auto & table_expression : getSelectTablesExpression(*ast_select))
         if (table_expression->subquery)
+        {
+            if (ast_join)
+            {
+                /// Don't optimize right side for LEFT JOIN
+                if (ast_join->table_join->as<ASTTableJoin>()->kind == ASTTableJoin::Kind::Left && right_table_expr == table_expression)
+                    continue;
+
+                /// Don't optimize left side for RIGHT JOIN
+                if (ast_join->table_join->as<ASTTableJoin>()->kind == ASTTableJoin::Kind::Right && left_table_expr == table_expression)
+                    continue;
+            }
             getSubqueryProjectionColumns(table_expression->subquery, projection_columns);
+        }
 
     return projection_columns;
 }
