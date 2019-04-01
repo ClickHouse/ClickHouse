@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
-#include <Interpreters/IRuntimeComponentsFactory.h>
 #include <Interpreters/ExternalLoaderConfigRepository.h>
-#include <Interpreters/SecurityManager.h>
+#include <Interpreters/IRuntimeComponentsFactory.h>
+#include <Interpreters/UsersManager.h>
 
 namespace DB
 {
@@ -14,9 +14,9 @@ namespace DB
 class RuntimeComponentsFactory : public IRuntimeComponentsFactory
 {
 public:
-    std::unique_ptr<ISecurityManager> createSecurityManager() override
+    std::unique_ptr<IUsersManager> createUsersManager() override
     {
-        return std::make_unique<SecurityManager>();
+        return std::make_unique<UsersManager>();
     }
 
     std::unique_ptr<IGeoDictionariesLoader> createGeoDictionariesLoader() override
