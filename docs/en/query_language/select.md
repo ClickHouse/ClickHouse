@@ -89,7 +89,7 @@ When using the `SAMPLE n` clause, the relative coefficient is calculated dynamic
 The `_sample_factor` is a virtual column that ClickHouse stores relative coefficients in. This column is created automatically when you create a table with the specified sampling key. The usage example is shown below:
 
 ``` sql
-SELECT sum(Duration * _sample_factor)
+SELECT sum(PageViews * _sample_factor)
 FROM visits
 SAMPLE 10000000
 ```   
