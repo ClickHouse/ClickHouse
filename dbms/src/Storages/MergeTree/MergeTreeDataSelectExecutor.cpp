@@ -617,7 +617,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     return res;
 }
 
-namespace {
+namespace
+{
 
 size_t roundRowsOrBytesToMarks(
     size_t rows_setting,
