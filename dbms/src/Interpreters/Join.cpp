@@ -301,9 +301,8 @@ void Join::setSampleBlock(const Block & block)
         const IColumn * asof_column = key_columns.back();
         size_t asof_size;
 
-        if (auto t = AsofRowRefs::getTypeSize(asof_column))
-            std::tie(asof_type, asof_size) = *t;
-        else
+        asof_type = AsofRowRefs::getTypeSize(asof_column, asof_size);
+        if (!asof_type)
         {
             std::string msg = "ASOF join not supported for type";
             msg += asof_column->getFamilyName();
