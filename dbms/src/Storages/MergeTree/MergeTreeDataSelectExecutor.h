@@ -88,6 +88,14 @@ private:
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const Settings & settings) const;
+
+    size_t getMinMarksForConcurrentRead(
+        const Settings & settings,
+        const MergeTreeData::IndexGranularityInfo & granularity_info) const;
+
+    size_t getMinMarksForSeek(
+        const Settings & settings,
+        const MergeTreeData::IndexGranularityInfo & granularity_info) const;
 };
 
 }

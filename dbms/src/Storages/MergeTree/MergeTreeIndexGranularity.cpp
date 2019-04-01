@@ -21,15 +21,6 @@ MergeTreeIndexGranularity::MergeTreeIndexGranularity(size_t marks_count, size_t 
 {
 }
 
-size_t MergeTreeIndexGranularity::getAvgGranularity() const
-{
-    if (marks_rows_partial_sums.empty())
-        throw Exception("Trying to compute average index granularity with zero marks", ErrorCodes::LOGICAL_ERROR);
-
-    return marks_rows_partial_sums.back() / marks_rows_partial_sums.size();
-}
-
-
 size_t MergeTreeIndexGranularity::getMarkStartingRow(size_t mark_index) const
 {
     if (mark_index == 0)
@@ -56,15 +47,6 @@ void MergeTreeIndexGranularity::appendMark(size_t rows_count)
     else
         marks_rows_partial_sums.push_back(marks_rows_partial_sums.back() + rows_count);
 }
-
-
-size_t MergeTreeIndexGranularity::getMarkPositionInRows(const size_t mark_index) const
-{
-    if (mark_index == 0)
-        return 0;
-    return marks_rows_partial_sums[mark_index - 1];
-}
-
 
 size_t MergeTreeIndexGranularity::getRowsCountInRange(size_t begin, size_t end) const
 {
