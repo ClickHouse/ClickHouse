@@ -1,5 +1,11 @@
 #!/bin/sh
 
+# Helper for split build mode.
+# Allows to run commands like
+# clickhouse client
+# clickhouse server
+# ...
+
 set -e
 CMD=$1
 shift
