@@ -14,7 +14,6 @@
 #include <Interpreters/Context.h>
 #include <common/StringRef.h>
 
-
 namespace DB
 {
 /** Search and replace functions in strings:
@@ -47,7 +46,7 @@ namespace DB
   * multiSearchAllPositionsUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchAllPositionsCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchAllPositionsCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
-
+  *
   * multiSearchFirstPosition(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- returns the first position of the haystack matched by strings or zero if nothing was found
   * multiSearchFirstPositionUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiSearchFirstPositionCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
@@ -215,12 +214,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() + 1 >= std::numeric_limits<UInt8>::max())
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
-                    + ", should be at most 255.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         if (!isString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -229,7 +222,6 @@ public:
         if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
 
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
@@ -251,6 +243,12 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
 
         Array src_arr = col_const_arr->getValue<Array>();
+
+        if (src_arr.size() > std::numeric_limits<UInt8>::max())
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(src_arr.size())
+                    + ", should be at most 255",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         std::vector<StringRef> refs;
         for (const auto & el : src_arr)
@@ -293,7 +291,8 @@ public:
     static FunctionPtr create(const Context & context)
     {
         if (Impl::is_using_hyperscan && !context.getSettingsRef().allow_hyperscan)
-            throw Exception("Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+            throw Exception(
+                "Hyperscan functions are disabled, because setting 'allow_hyperscan' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
 
         return std::make_shared<FunctionsMultiStringSearch>();
     }
@@ -306,12 +305,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() + 1 >= LimitArgs)
-            throw Exception(
-                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(arguments.size())
-                    + ", should be at most " + std::to_string(LimitArgs) + ".",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         if (!isString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -343,6 +336,12 @@ public:
 
         Array src_arr = col_const_arr->getValue<Array>();
 
+        if (src_arr.size() > LimitArgs)
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + std::to_string(src_arr.size())
+                    + ", should be at most " + std::to_string(LimitArgs),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         std::vector<StringRef> refs;
         refs.reserve(src_arr.size());
 
@@ -357,7 +356,6 @@ public:
 
         vec_res.resize(column_haystack_size);
 
-        /// TODO support constant_constant version
         if (col_haystack_vector)
             Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
         else
