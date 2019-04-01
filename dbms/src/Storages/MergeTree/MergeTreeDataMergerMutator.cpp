@@ -119,6 +119,14 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         name = part_info.getPartName();
 }
 
+    UInt64 FutureMergedMutatedPart::expectedSize() const {  ///TODO_IGR ASK sum size?
+    size_t size = 0;
+    for (auto &part : parts) {
+        size += part->getFileSizeOrZero(""); ///@TODO_IGR ASK file name?
+    }
+    return size;
+}
+
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
     : data(data_), pool(pool_), log(&Logger::get(data.getLogName() + " (MergerMutator)"))
 {
@@ -150,7 +158,8 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_
             data.settings.max_bytes_to_merge_at_max_space_in_pool,
             static_cast<double>(free_entries) / data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge);
 
-    return std::min(max_size, static_cast<UInt64>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_SELECT));
+    ///@TODO_IGR ASK what path?
+    return std::min(max_size, static_cast<UInt64>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_paths[0]) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 
@@ -290,8 +299,8 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
             LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name
                 << " because not enough free space: "
                 << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved "
-                << "(" << formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getReservedSpace()) << " reserved in "
-                << DiskSpaceMonitor::getReservationCount() << " chunks), "
+                << "(" << formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getReservedSpace("")) << " reserved in " ///@TODO_IGR ASK RESERVED SPACE ON ALL DISKS?
+                << DiskSpaceMonitor::getReservationCount("") << " chunks), "
                 << formatReadableSizeWithBinarySuffix(sum_bytes)
                 << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
                 << "% on overhead); suppressing similar warnings for the next hour");
@@ -513,7 +522,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
               << parts.front()->name << " to " << parts.back()->name
               << " into " << TMP_PREFIX + future_part.name);
 
-    String new_part_tmp_path = data.getFullPath() + TMP_PREFIX + future_part.name + "/";
+    size_t expected_size = future_part.expectedSize();
+    String part_path = data.getFullPathForPart(expected_size); ///@TODO_IGR ASK EXPECTED SIZE
+
+    String new_part_tmp_path = part_path + TMP_PREFIX + future_part.name + "/";
     if (Poco::File(new_part_tmp_path).exists())
         throw Exception("Directory " + new_part_tmp_path + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
 
@@ -531,7 +543,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-            data, future_part.name, future_part.part_info);
+            data, part_path, future_part.name, future_part.part_info);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
@@ -853,8 +865,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
+    size_t expected_size = future_part.expectedSize();
+    String part_path = data.getFullPathForPart(expected_size); ///@TODO_IGR ASK EXPECTED_SIZE
+
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-        data, future_part.name, future_part.part_info);
+        data, part_path, future_part.name, future_part.part_info);
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
 

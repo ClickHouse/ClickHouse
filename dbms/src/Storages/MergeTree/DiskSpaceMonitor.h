@@ -34,6 +34,11 @@ namespace ErrorCodes
 class DiskSpaceMonitor
 {
 public:
+    struct DiskReserve {
+        UInt64 reserved_bytes;
+        UInt64 reservation_count;
+    };
+
     class Reservation : private boost::noncopyable
     {
     public:
@@ -42,23 +47,23 @@ public:
             try
             {
                 std::lock_guard lock(DiskSpaceMonitor::mutex);
-                if (DiskSpaceMonitor::reserved_bytes < size)
+                if (reserves->reserved_bytes < size)
                 {
-                    DiskSpaceMonitor::reserved_bytes = 0;
+                    reserves->reserved_bytes = 0;
                     LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservations size; it's a bug");
                 }
                 else
                 {
-                    DiskSpaceMonitor::reserved_bytes -= size;
+                    reserves->reserved_bytes -= size;
                 }
 
-                if (DiskSpaceMonitor::reservation_count == 0)
+                if (reserves->reservation_count == 0)
                 {
                     LOG_ERROR(&Logger::get("DiskSpaceMonitor"), "Unbalanced reservation count; it's a bug");
                 }
                 else
                 {
-                    --DiskSpaceMonitor::reservation_count;
+                    --reserves->reservation_count;
                 }
             }
             catch (...)
@@ -71,9 +76,9 @@ public:
         void update(UInt64 new_size)
         {
             std::lock_guard lock(DiskSpaceMonitor::mutex);
-            DiskSpaceMonitor::reserved_bytes -= size;
+            reserves->reserved_bytes -= size;
             size = new_size;
-            DiskSpaceMonitor::reserved_bytes += size;
+            reserves->reserved_bytes += size;
         }
 
         UInt64 getSize() const
@@ -81,17 +86,18 @@ public:
             return size;
         }
 
-        Reservation(UInt64 size_)
-            : size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size)
+        Reservation(UInt64 size_, DiskReserve * reserves_)
+            : size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size), reserves(reserves_)
         {
             std::lock_guard lock(DiskSpaceMonitor::mutex);
-            DiskSpaceMonitor::reserved_bytes += size;
-            ++DiskSpaceMonitor::reservation_count;
+            reserves->reserved_bytes += size;
+            ++reserves->reservation_count;
         }
 
     private:
         UInt64 size;
         CurrentMetrics::Increment metric_increment;
+        DiskReserve * reserves;
     };
 
     using ReservationPtr = std::unique_ptr<Reservation>;
@@ -110,6 +116,8 @@ public:
 
         std::lock_guard lock(mutex);
 
+        auto & reserved_bytes = reserved[path].reserved_bytes;
+
         if (reserved_bytes > res)
             res = 0;
         else
@@ -118,16 +126,16 @@ public:
         return res;
     }
 
-    static UInt64 getReservedSpace()
+    static UInt64 getReservedSpace(const std::string & path)
     {
         std::lock_guard lock(mutex);
-        return reserved_bytes;
+        return reserved[path].reserved_bytes;
     }
 
-    static UInt64 getReservationCount()
+    static UInt64 getReservationCount(const std::string & path)
     {
         std::lock_guard lock(mutex);
-        return reservation_count;
+        return reserved[path].reservation_count;
     }
 
     /// If not enough (approximately) space, throw an exception.
@@ -137,12 +145,11 @@ public:
         if (free_bytes < size)
             throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(free_bytes) + " available, "
                 + formatReadableSizeWithBinarySuffix(size) + " requested", ErrorCodes::NOT_ENOUGH_SPACE);
-        return std::make_unique<Reservation>(size);
+        return std::make_unique<Reservation>(size, &reserved[path]);
     }
 
 private:
-    static UInt64 reserved_bytes;
-    static UInt64 reservation_count;
+    static std::map<String, DiskReserve> reserved;
     static std::mutex mutex;
 };
 

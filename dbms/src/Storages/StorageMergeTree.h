@@ -90,7 +90,7 @@ public:
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
 
-    String getDataPath() const override { return full_path; }
+    String getDataPath() const override { return full_paths[0]; } ///@TODO_IGR ASK WHAT PATH
 
     ASTPtr getPartitionKeyAST() const override { return data.partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return data.getSortingKeyAST(); }
@@ -107,7 +107,7 @@ private:
     String path;
     String database_name;
     String table_name;
-    String full_path;
+    Strings full_paths;
 
     Context global_context;
     BackgroundProcessingPool & background_pool;

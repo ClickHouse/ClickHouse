@@ -30,6 +30,8 @@ struct FutureMergedMutatedPart
     }
 
     void assign(MergeTreeData::DataPartsVector parts_);
+
+    UInt64 expectedSize() const;
 };
 
 /** Can select the parts to merge and merge them.
