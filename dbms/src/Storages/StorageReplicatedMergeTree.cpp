@@ -1786,7 +1786,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             String source_replica_path = zookeeper_path + "/replicas/" + part_desc->replica;
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-            auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context.getSettingsRef());
+            auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
             auto [user, password] = global_context.getInterserverCredentials();
             String interserver_scheme = global_context.getInterserverScheme();
 
@@ -2741,7 +2741,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     else
     {
         ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context.getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
         auto user_password = global_context.getInterserverCredentials();
         String interserver_scheme = global_context.getInterserverScheme();
 
