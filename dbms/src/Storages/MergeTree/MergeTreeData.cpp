@@ -635,7 +635,7 @@ String MergeTreeData::MergingParams::getModeName() const
 
 Int64 MergeTreeData::getMaxBlockNumber()
 {
-    std::lock_guard lock_all(data_parts_mutex);
+    auto lock = lockParts();
 
     Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
@@ -664,7 +664,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
-    std::lock_guard lock(data_parts_mutex);
+    auto lock = lockParts();
     data_parts_indexes.clear();
 
     for (const String & file_name : part_file_names)
@@ -890,7 +890,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
     std::vector<DataPartIteratorByStateAndInfo> parts_to_delete;
 
     {
-        std::lock_guard lock_parts(data_parts_mutex);
+        auto parts_lock = lockParts();
 
         auto outdated_parts_range = getDataPartsStateRange(DataPartState::Outdated);
         for (auto it = outdated_parts_range.begin(); it != outdated_parts_range.end(); ++it)
@@ -924,7 +924,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
 void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector & parts)
 {
-    std::lock_guard lock(data_parts_mutex);
+    auto lock = lockParts();
     for (auto & part : parts)
     {
         /// We should modify it under data_parts_mutex
@@ -936,7 +936,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
 void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts)
 {
     {
-        std::lock_guard lock(data_parts_mutex);
+        auto lock = lockParts();
 
         /// TODO: use data_parts iterators instead of pointers
         for (auto & part : parts)
@@ -1004,7 +1004,7 @@ void MergeTreeData::dropAllData()
 {
     LOG_TRACE(log, "dropAllData: waiting for locks.");
 
-    std::lock_guard lock(data_parts_mutex);
+    auto lock = lockParts();
 
     LOG_TRACE(log, "dropAllData: removing data from memory.");
 
@@ -1747,7 +1747,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
     DataPartsVector covered_parts;
     {
-        std::unique_lock lock(data_parts_mutex);
+        auto lock = lockParts();
         renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts);
     }
     return covered_parts;
@@ -1844,7 +1844,7 @@ restore_covered)
 {
     LOG_INFO(log, "Renaming " << part_to_detach->relative_path << " to " << prefix << part_to_detach->name << " and forgiving it.");
 
-    auto data_parts_lock = lockParts();
+    auto lock = lockParts();
 
     auto it_part = data_parts_by_info.find(part_to_detach->info);
     if (it_part == data_parts_by_info.end())
@@ -1961,7 +1961,7 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 {
     DataPartPtr part_to_delete;
     {
-        std::lock_guard lock_parts(data_parts_mutex);
+        auto lock = lockParts();
 
         LOG_TRACE(log, "Trying to immediately remove part " << part->getNameWithState());
 
@@ -1997,7 +1997,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
     size_t res = 0;
     {
-        std::lock_guard lock(data_parts_mutex);
+        auto lock = lockParts();
 
         for (auto & part : getDataPartsStateRange(DataPartState::Committed))
             res += part->bytes_on_disk;
@@ -2009,7 +2009,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 
 size_t MergeTreeData::getMaxPartsCountForPartition() const
 {
-    std::lock_guard lock(data_parts_mutex);
+    auto lock = lockParts();
 
     size_t res = 0;
     size_t cur_count = 0;
@@ -2036,7 +2036,7 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
 
 std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 {
-    std::lock_guard lock(data_parts_mutex);
+    auto lock = lockParts();
 
     std::optional<Int64> result;
     for (const DataPartPtr & part : getDataPartsStateRange(DataPartState::Committed))
@@ -2118,8 +2118,8 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
 {
-    DataPartsLock data_parts_lock(data_parts_mutex);
-    return getActiveContainingPart(part_info, DataPartState::Committed, data_parts_lock);
+    auto lock = lockParts();
+    return getActiveContainingPart(part_info, DataPartState::Committed, lock);
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
@@ -2133,7 +2133,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
 {
     DataPartStateAndPartitionID state_with_partition{state, partition_id};
 
-    std::lock_guard lock(data_parts_mutex);
+    auto lock = lockParts();
     return DataPartsVector(
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
@@ -2142,7 +2142,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
 
 MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
 {
-    std::lock_guard lock(data_parts_mutex);
+    auto lock = lockParts();
 
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
@@ -2277,30 +2277,6 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
         context);
 }
 
-size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
-{
-    size_t size = 0;
-
-    Poco::DirectoryIterator end;
-
-    for (Poco::DirectoryIterator it(full_path); it != end; ++it)
-    {
-        MergeTreePartInfo part_info;
-        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info, format_version))
-            continue;
-        if (part_info.partition_id != partition_id)
-            continue;
-
-        const auto part_path = it.path().absolute().toString();
-        for (Poco::DirectoryIterator it2(part_path); it2 != end; ++it2)
-        {
-            const auto part_file_path = it2.path().absolute().toString();
-            size += Poco::File(part_file_path).getSize();
-        }
-    }
-
-    return size;
-}
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context)
 {
@@ -2360,7 +2336,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
     String partition_id = partition.getID(*this);
 
     {
-        DataPartsLock data_parts_lock(data_parts_mutex);
+        auto data_parts_lock = lockParts();
         DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
@@ -2381,7 +2357,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
     DataPartsVector res;
     DataPartsVector buf;
     {
-        std::lock_guard lock(data_parts_mutex);
+        auto lock = lockParts();
 
         for (auto state : affordable_states)
         {
@@ -2407,7 +2383,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 {
     DataPartsVector res;
     {
-        std::lock_guard lock(data_parts_mutex);
+        auto lock = lockParts();
         res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
 
         if (out_states != nullptr)
@@ -2425,7 +2401,7 @@ MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affo
 {
     DataParts res;
     {
-        std::lock_guard lock(data_parts_mutex);
+        auto lock = lockParts();
         for (auto state : affordable_states)
         {
             auto range = getDataPartsStateRange(state);

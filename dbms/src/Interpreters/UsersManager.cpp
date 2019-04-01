@@ -1,4 +1,5 @@
-#include "SecurityManager.h"
+#include <Interpreters/UsersManager.h>
+
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
@@ -28,9 +29,9 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-using UserPtr = SecurityManager::UserPtr;
+using UserPtr = UsersManager::UserPtr;
 
-void SecurityManager::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
+void UsersManager::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     Container new_users;
 
@@ -46,7 +47,7 @@ void SecurityManager::loadFromConfig(const Poco::Util::AbstractConfiguration & c
     users = std::move(new_users);
 }
 
-UserPtr SecurityManager::authorizeAndGetUser(
+UserPtr UsersManager::authorizeAndGetUser(
     const String & user_name,
     const String & password,
     const Poco::Net::IPAddress & address) const
@@ -100,7 +101,7 @@ UserPtr SecurityManager::authorizeAndGetUser(
     return it->second;
 }
 
-UserPtr SecurityManager::getUser(const String & user_name) const
+UserPtr UsersManager::getUser(const String & user_name) const
 {
     auto it = users.find(user_name);
 
@@ -110,7 +111,7 @@ UserPtr SecurityManager::getUser(const String & user_name) const
     return it->second;
 }
 
-bool SecurityManager::hasAccessToDatabase(const std::string & user_name, const std::string & database_name) const
+bool UsersManager::hasAccessToDatabase(const std::string & user_name, const std::string & database_name) const
 {
     auto it = users.find(user_name);
 

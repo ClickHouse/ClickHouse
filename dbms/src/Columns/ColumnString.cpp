@@ -88,7 +88,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
     else
     {
         size_t old_size = offsets.size();
-        size_t prev_max_offset = old_size ? offsets.back() : 0;
+        size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
         offsets.resize(old_size + length);
 
         for (size_t i = 0; i < length; ++i)
