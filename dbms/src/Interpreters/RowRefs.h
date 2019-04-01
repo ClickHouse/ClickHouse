@@ -4,6 +4,7 @@
 #include <Common/SortedLookupPODArray.h>
 
 #include <optional>
+#include <variant>
 
 namespace DB
 {
@@ -32,23 +33,6 @@ struct RowRefList : RowRef
 class AsofRowRefs
 {
 public:
-    /// Different types of asof join keys
-    #define APPLY_FOR_ASOF_JOIN_VARIANTS(M) \
-            M(key32, UInt32)                    \
-            M(key64, UInt64)                    \
-            M(keyf32, Float32)                  \
-            M(keyf64, Float64)
-
-    enum class Type
-    {
-        EMPTY,
-    #define M(NAME, TYPE) NAME,
-        APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-    #undef M
-    };
-
-    static std::optional<std::pair<Type, size_t>> getTypeSize(const IColumn * asof_column);
-
     template<typename T>
     struct Entry
     {
@@ -64,28 +48,45 @@ public:
         }
     };
 
-    struct Lookups
+    template <typename T>
+    struct LookupTypes
     {
-    #define M(NAME, TYPE) \
-            std::unique_ptr<SortedLookupPODArray<Entry<TYPE>>> NAME;
-        APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-    #undef M
-
-        void create(Type which);
+        using ElementType = T;
+        using SearcherType = SortedLookupPODArray<Entry<T>>;
+        using Ptr = std::unique_ptr<SearcherType>;
     };
 
-    AsofRowRefs() : type(Type::EMPTY) {}
-    AsofRowRefs(Type t) : type(t)
+    using Lookups = std::variant<
+        LookupTypes<UInt32>::Ptr,
+        LookupTypes<UInt64>::Ptr,
+        LookupTypes<Float32>::Ptr,
+        LookupTypes<Float64>::Ptr>;
+
+    enum class Type
     {
-        lookups.create(t);
+        key32,
+        key64,
+        keyf32,
+        keyf64,
+    };
+
+    static std::optional<Type> getTypeSize(const IColumn * asof_column, size_t & type_size);
+
+    AsofRowRefs() = default;
+    AsofRowRefs(Type t)
+        : type(t)
+    {
+        createLookup(t);
     }
 
     void insert(const IColumn * asof_column, const Block * block, size_t row_num, Arena & pool);
     const RowRef * findAsof(const IColumn * asof_column, size_t row_num, Arena & pool) const;
 
 private:
-    const Type type;
+    const std::optional<Type> type;
     mutable Lookups lookups;
+
+    void createLookup(Type which);
 };
 
 }
