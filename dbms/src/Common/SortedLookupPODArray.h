@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/PODArray.h>
+#include <vector>
+//#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -17,7 +18,8 @@ template <typename T>
 class SortedLookupPODArray
 {
 public:
-    using Base = PaddedPODArray<T>;
+    using Base = std::vector<T>;
+    //using Base = PaddedPODArray<T>;
 
     template <typename U, typename ... TAllocatorParams>
     void insert(U && x, TAllocatorParams &&... allocator_params)
