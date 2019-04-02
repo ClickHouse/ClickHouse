@@ -18,10 +18,10 @@ void callWithType(AsofRowRefs::Type which, F && f)
 {
     switch (which)
     {
-        case AsofRowRefs::Type::key32:  return f(AsofRowRefs::LookupTypes<UInt32>());
-        case AsofRowRefs::Type::key64:  return f(AsofRowRefs::LookupTypes<UInt64>());
-        case AsofRowRefs::Type::keyf32: return f(AsofRowRefs::LookupTypes<Float32>());
-        case AsofRowRefs::Type::keyf64: return f(AsofRowRefs::LookupTypes<Float64>());
+        case AsofRowRefs::Type::key32:  return f(UInt32());
+        case AsofRowRefs::Type::key64:  return f(UInt64());
+        case AsofRowRefs::Type::keyf32: return f(Float32());
+        case AsofRowRefs::Type::keyf64: return f(Float64());
     }
 
     __builtin_unreachable();
@@ -32,52 +32,49 @@ void callWithType(AsofRowRefs::Type which, F && f)
 
 void AsofRowRefs::createLookup(AsofRowRefs::Type which)
 {
-    auto call = [&](const auto & types)
+    auto call = [&](const auto & t)
     {
-        using Types = std::decay_t<decltype(types)>;
-        using SearcherType = typename Types::SearcherType;
+        using T = std::decay_t<decltype(t)>;
+        using LookupType = typename Entry<T>::LookupType;
 
-        lookups = std::make_unique<SearcherType>();
+        lookups = std::make_unique<LookupType>();
     };
 
     callWithType(which, call);
 }
 
-template<typename T>
-using AsofGetterType = ColumnsHashing::HashMethodOneNumber<T, T, T, false>;
 
-void AsofRowRefs::insert(const IColumn * asof_column, const Block * block, size_t row_num, Arena & pool)
+void AsofRowRefs::insert(const IColumn * asof_column, const Block * block, size_t row_num)
 {
-    auto call = [&](const auto & types)
+    auto call = [&](const auto & t)
     {
-        using Types = std::decay_t<decltype(types)>;
-        using ElementType = typename Types::ElementType;
-        using SearcherPtr = typename Types::Ptr;
+        using T = std::decay_t<decltype(t)>;
+        using LookupPtr = typename Entry<T>::LookupPtr;
 
-        auto asof_getter = AsofGetterType<ElementType>(asof_column);
-        auto entry = Entry<ElementType>(asof_getter.getKey(row_num, pool), RowRef(block, row_num));
+        auto * column = typeid_cast<const ColumnVector<T> *>(asof_column);
+        T key = column->getElement(row_num);
+        auto entry = Entry<T>(key, RowRef(block, row_num));
 
-        std::get<SearcherPtr>(lookups)->insert(entry);
+        std::get<LookupPtr>(lookups)->insert(entry);
     };
 
     callWithType(*type, call);
 }
 
-const RowRef * AsofRowRefs::findAsof(const IColumn * asof_column, size_t row_num, Arena & pool) const
+const RowRef * AsofRowRefs::findAsof(const IColumn * asof_column, size_t row_num) const
 {
     const RowRef * out = nullptr;
 
-    auto call = [&](const auto & types)
+    auto call = [&](const auto & t)
     {
-        using Types = std::decay_t<decltype(types)>;
-        using ElementType = typename Types::ElementType;
-        using SearcherPtr = typename Types::Ptr;
+        using T = std::decay_t<decltype(t)>;
+        using LookupPtr = typename Entry<T>::LookupPtr;
 
-        auto asof_getter = AsofGetterType<ElementType>(asof_column);
-        ElementType key = asof_getter.getKey(row_num, pool);
-        auto & typed_lookup = std::get<SearcherPtr>(lookups);
+        auto * column = typeid_cast<const ColumnVector<T> *>(asof_column);
+        T key = column->getElement(row_num);
 
-        auto it = typed_lookup->upper_bound(Entry<ElementType>(key));
+        auto & typed_lookup = std::get<LookupPtr>(lookups);
+        auto it = typed_lookup->upper_bound(Entry<T>(key));
         if (it != typed_lookup->cbegin())
             out = &((--it)->row_ref);
     };

@@ -33,34 +33,29 @@ struct RowRefList : RowRef
 class AsofRowRefs
 {
 public:
-    template<typename T>
+    template <typename T>
     struct Entry
     {
+        using LookupType = SortedLookupPODArray<Entry<T>>;
+        using LookupPtr = std::unique_ptr<LookupType>;
+
         T asof_value;
         RowRef row_ref;
 
         Entry(T v) : asof_value(v) {}
         Entry(T v, RowRef rr) : asof_value(v), row_ref(rr) {}
 
-        bool operator< (const Entry& o) const
+        bool operator < (const Entry & o) const
         {
             return asof_value < o.asof_value;
         }
     };
 
-    template <typename T>
-    struct LookupTypes
-    {
-        using ElementType = T;
-        using SearcherType = SortedLookupPODArray<Entry<T>>;
-        using Ptr = std::unique_ptr<SearcherType>;
-    };
-
     using Lookups = std::variant<
-        LookupTypes<UInt32>::Ptr,
-        LookupTypes<UInt64>::Ptr,
-        LookupTypes<Float32>::Ptr,
-        LookupTypes<Float64>::Ptr>;
+        Entry<UInt32>::LookupPtr,
+        Entry<UInt64>::LookupPtr,
+        Entry<Float32>::LookupPtr,
+        Entry<Float64>::LookupPtr>;
 
     enum class Type
     {
@@ -79,8 +74,8 @@ public:
         createLookup(t);
     }
 
-    void insert(const IColumn * asof_column, const Block * block, size_t row_num, Arena & pool);
-    const RowRef * findAsof(const IColumn * asof_column, size_t row_num, Arena & pool) const;
+    void insert(const IColumn * asof_column, const Block * block, size_t row_num);
+    const RowRef * findAsof(const IColumn * asof_column, size_t row_num) const;
 
 private:
     const std::optional<Type> type = {};

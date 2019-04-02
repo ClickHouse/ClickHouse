@@ -422,7 +422,7 @@ namespace
 
             if (emplace_result.isInserted())
                 time_series_map = new (time_series_map) typename Map::mapped_type(join.getAsofType());
-            time_series_map->insert(asof_column, stored_block, i, pool);
+            time_series_map->insert(asof_column, stored_block, i);
         }
     };
 
@@ -719,7 +719,7 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
                 if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
                 {
-                    if (const RowRef * found = mapped.findAsof(asof_column, i, pool))
+                    if (const RowRef * found = mapped.findAsof(asof_column, i))
                     {
                         filter[i] = 1;
                         mapped.setUsed();
