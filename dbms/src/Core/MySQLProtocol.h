@@ -365,7 +365,7 @@ public:
     {
         String result;
         result.append(1, 0xfe);
-        result.append(plugin_name);
+        writeNulTerminatedString(result, plugin_name);
         result.append(auth_plugin_data);
         return result;
     }
