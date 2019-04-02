@@ -4,6 +4,8 @@
 1
 2000-01-01	1	test string 1	1
 -------Forbid push down-------
+SELECT count()\nFROM \n(\n    SELECT \n        [number] AS a, \n        [number * 2] AS b\n    FROM system.numbers \n    LIMIT 1\n) AS t \nARRAY JOIN \n    a, \n    b\nWHERE NOT ignore(a + b)
+1
 SELECT \n    a, \n    b\nFROM \n(\n    SELECT 1 AS a\n) \nANY LEFT JOIN \n(\n    SELECT \n        1 AS a, \n        1 AS b\n) USING (a)\nWHERE b = 0
 SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        1 AS a, \n        1 AS b\n) \nANY RIGHT JOIN \n(\n    SELECT 1 AS a\n) USING (a)\nWHERE b = 0
 SELECT \n    a, \n    b\nFROM \n(\n    SELECT 1 AS a\n) \nANY FULL OUTER JOIN \n(\n    SELECT \n        1 AS a, \n        1 AS b\n) USING (a)\nWHERE b = 0

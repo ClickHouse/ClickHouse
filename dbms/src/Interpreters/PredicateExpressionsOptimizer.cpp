@@ -51,6 +51,9 @@ bool PredicateExpressionsOptimizer::optimize()
     if (!ast_select->where_expression && !ast_select->prewhere_expression)
         return false;
 
+    if (ast_select->array_join_expression_list())
+        return false;
+
     SubqueriesProjectionColumns all_subquery_projection_columns = getAllSubqueryProjectionColumns();
 
     bool is_rewrite_subqueries = false;
