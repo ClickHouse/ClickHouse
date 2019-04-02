@@ -21,8 +21,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
-#include <Interpreters/JoinToSubqueryTransformVisitor.h>
-#include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -171,7 +169,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        auto * insert_query = dynamic_cast<ASTInsertQuery *>(ast.get());
+        auto * insert_query = ast->as<ASTInsertQuery>();
+
+        if (insert_query && insert_query->settings_ast)
+            InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
+
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;
@@ -200,22 +202,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
 
-        if (!internal && settings.allow_experimental_multiple_joins_emulation)
-        {
-            JoinToSubqueryTransformVisitor::Data join_to_subs_data;
-            JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
-            if (join_to_subs_data.done)
-                logQuery(queryToString(*ast), context, internal);
-        }
-
-        if (!internal && settings.allow_experimental_cross_to_join_conversion)
-        {
-            CrossToInnerJoinVisitor::Data cross_to_inner;
-            CrossToInnerJoinVisitor(cross_to_inner).visit(ast);
-            if (cross_to_inner.done)
-                logQuery(queryToString(*ast), context, internal);
-        }
-
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
 
@@ -226,7 +212,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         ProcessList::EntryPtr process_list_entry;
-        if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
+        if (!internal && !ast->as<ASTShowProcesslistQuery>())
         {
             process_list_entry = context.getProcessList().insert(query, ast.get(), context);
             context.setProcessListElement(&process_list_entry->get());
@@ -506,7 +492,8 @@ void executeQuery(
 
         if (streams.in)
         {
-            const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+            /// FIXME: try to prettify this cast using `as<>()`
+            const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
             std::optional<WriteBufferFromFile> out_file_buf;
@@ -515,7 +502,7 @@ void executeQuery(
                 if (!allow_into_outfile)
                     throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
 
-                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+                const auto & out_file = ast_query_with_output->out_file->as<ASTLiteral &>().value.safeGet<std::string>();
                 out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
                 out_buf = &*out_file_buf;
             }

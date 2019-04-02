@@ -33,7 +33,7 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 Columns convertConstTupleToConstantElements(const ColumnConst & column)
 {
     const ColumnTuple & src_tuple = static_cast<const ColumnTuple &>(column.getDataColumn());
-    const Columns & src_tuple_columns = src_tuple.getColumns();
+    const auto & src_tuple_columns = src_tuple.getColumns();
     size_t tuple_size = src_tuple_columns.size();
     size_t rows = column.size();
 

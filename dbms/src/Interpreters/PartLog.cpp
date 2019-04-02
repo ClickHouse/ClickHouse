@@ -104,7 +104,7 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
     if (parts.empty())
         return true;
 
-    PartLog * part_log = nullptr;
+    std::shared_ptr<PartLog> part_log;
 
     try
     {

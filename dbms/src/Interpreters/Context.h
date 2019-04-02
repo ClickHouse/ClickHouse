@@ -1,23 +1,24 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
+#include <Interpreters/ClientInfo.h>
+#include <Core/Settings.h>
+#include <Parsers/IAST_fwd.h>
+#include <Common/LRUCache.h>
+#include <Common/MultiVersion.h>
+#include <Common/ThreadPool.h>
+#include <Common/config.h>
+
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <thread>
-#include <atomic>
 #include <optional>
-
-#include <Common/config.h>
-#include <Common/MultiVersion.h>
-#include <Common/LRUCache.h>
-#include <Common/ThreadPool.h>
-#include <Core/Types.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/Block.h>
-#include <Interpreters/Settings.h>
-#include <Interpreters/ClientInfo.h>
+#include <thread>
 
 
 namespace Poco
@@ -68,8 +69,6 @@ class IStorage;
 class ITableFunction;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 class IBlockInputStream;
 class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -188,6 +187,10 @@ public:
       */
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
+
+    // User property is a key-value pair from the configuration entry: users.<username>.databases.<db_name>.<table_name>.<key_name>
+    bool hasUserProperty(const String & database, const String & table, const String & name) const;
+    const String & getUserProperty(const String & database, const String & table, const String & name) const;
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
@@ -403,12 +406,12 @@ public:
     void initializeSystemLogs();
 
     /// Nullptr if the query log is not ready for this moment.
-    QueryLog * getQueryLog();
-    QueryThreadLog * getQueryThreadLog();
+    std::shared_ptr<QueryLog> getQueryLog();
+    std::shared_ptr<QueryThreadLog> getQueryThreadLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & part_database);
+    std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
 

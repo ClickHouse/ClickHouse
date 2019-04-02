@@ -1,7 +1,7 @@
 #include "StorageSystemBuildOptions.h"
 
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 
 extern const char * auto_config_build[];
 

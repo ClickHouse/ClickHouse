@@ -199,8 +199,13 @@ public:
         for (auto & rhs_elem : rhs_set)
         {
             cur_set.emplace(rhs_elem.getValue(), it, inserted);
-            if (inserted && it->getValue().size)
-                it->getValueMutable().data = arena->insert(it->getValue().data, it->getValue().size);
+            if (inserted)
+            {
+                if (it->getValue().size)
+                    it->getValueMutable().data = arena->insert(it->getValue().data, it->getValue().size);
+                else
+                    it->getValueMutable().data = nullptr;
+            }
         }
     }
 

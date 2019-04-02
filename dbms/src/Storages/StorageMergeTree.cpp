@@ -126,9 +126,9 @@ BlockInputStreams StorageMergeTree::read(
     return reader.read(column_names, query_info, context, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<MergeTreeBlockOutputStream>(*this);
+    return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -235,7 +235,7 @@ void StorageMergeTree::alter(
 
     IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
     {
-        auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+        auto & storage_ast = ast.as<ASTStorage &>();
 
         if (new_order_by_ast.get() != data.order_by_ast.get())
             storage_ast.set(storage_ast.order_by, new_order_by_ast);
@@ -690,7 +690,11 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
             data.clearOldPartsFromFilesystem();
-            data.clearOldTemporaryDirectories();
+            {
+                /// TODO: Implement tryLockStructureForShare.
+                auto lock_structure = lockStructureForShare(false, "");
+                data.clearOldTemporaryDirectories();
+            }
             clearOldMutations();
         }
 
@@ -941,7 +945,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
     String partition_id;
 
     if (attach_part)
-        partition_id = typeid_cast<const ASTLiteral &>(*partition).value.safeGet<String>();
+        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
     else
         partition_id = data.getPartitionIDFromQuery(partition, context);
 
