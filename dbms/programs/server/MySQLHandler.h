@@ -34,9 +34,6 @@ private:
     Poco::Logger * log;
     Context connection_context;
 
-    std::shared_ptr<ReadBuffer> in;
-    std::shared_ptr<WriteBuffer> out;
-
     MySQLProtocol::PacketSender packet_sender;
 
     uint32_t connection_id = 0;

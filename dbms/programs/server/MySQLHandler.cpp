@@ -36,7 +36,7 @@ void MySQLHandler::run()
 
     try
     {
-        Handshake handshake(connection_id, VERSION_FULL);
+        Handshake handshake(connection_id, VERSION_STRING);
         packet_sender.sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
@@ -82,10 +82,24 @@ void MySQLHandler::run()
             packet.readPayload(std::move(handshake_response.auth_response));
             password = packet.value;
         }
-        connection_context.setUser(handshake_response.username, password, socket().address(), "");
-        connection_context.setCurrentDatabase(handshake_response.database);
-        connection_context.setCurrentQueryId("");
-        LOG_ERROR(log, "Authentication for user " << handshake_response.username << " succeeded.");
+        LOG_TRACE(log, "password: " << password);
+        try
+        {
+            connection_context.setUser(handshake_response.username, password, socket().address(), "");
+            connection_context.setCurrentDatabase(handshake_response.database);
+            connection_context.setCurrentQueryId("");
+            LOG_ERROR(log, "Authentication for user " << handshake_response.username << " succeeded.");
+        }
+        catch (const NetException &)
+        {
+            throw;
+        }
+        catch (const Exception & exc)
+        {
+            LOG_ERROR(log, "Authentication for user " << handshake_response.username << " failed.");
+            packet_sender.sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
+            throw;
+        }
 
         OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0, 0, "");
         packet_sender.sendPacket(ok_packet, true);
@@ -186,6 +200,10 @@ void MySQLHandler::comQuery(String payload)
         }
 
         LOG_TRACE(log, "Sent columns definitions.");
+
+        if (!(capabilities & Capability::CLIENT_DEPRECATE_EOF)) {
+            packet_sender.sendPacket(EOF_Packet(0, 0));
+        }
 
         while (Block block = res.in->read())
         {
