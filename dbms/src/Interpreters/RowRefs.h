@@ -5,6 +5,8 @@
 
 #include <optional>
 #include <variant>
+#include <list>
+#include <mutex>
 
 namespace DB
 {
@@ -37,7 +39,6 @@ public:
     struct Entry
     {
         using LookupType = SortedLookupPODArray<Entry<T>>;
-        using LookupPtr = std::unique_ptr<LookupType>;
 
         T asof_value;
         RowRef row_ref;
@@ -52,10 +53,16 @@ public:
     };
 
     using Lookups = std::variant<
-        Entry<UInt32>::LookupPtr,
-        Entry<UInt64>::LookupPtr,
-        Entry<Float32>::LookupPtr,
-        Entry<Float64>::LookupPtr>;
+        Entry<UInt32>::LookupType,
+        Entry<UInt64>::LookupType,
+        Entry<Float32>::LookupType,
+        Entry<Float64>::LookupType>;
+
+    struct LookupLists
+    {
+        mutable std::mutex mutex;
+        std::list<Lookups> lookups;
+    };
 
     enum class Type
     {
@@ -67,21 +74,11 @@ public:
 
     static std::optional<Type> getTypeSize(const IColumn * asof_column, size_t & type_size);
 
-    AsofRowRefs() = default;
-    AsofRowRefs(Type t)
-        : type(t)
-    {
-        createLookup(t);
-    }
-
-    void insert(const IColumn * asof_column, const Block * block, size_t row_num);
-    const RowRef * findAsof(const IColumn * asof_column, size_t row_num) const;
+    void insert(Type type, LookupLists &, const IColumn * asof_column, const Block * block, size_t row_num);
+    const RowRef * findAsof(Type type, const LookupLists &, const IColumn * asof_column, size_t row_num) const;
 
 private:
-    const std::optional<Type> type = {};
-    mutable Lookups lookups;
-
-    void createLookup(Type which);
+    Lookups * lookups = nullptr;
 };
 
 }
