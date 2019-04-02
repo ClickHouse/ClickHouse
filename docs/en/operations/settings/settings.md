@@ -306,9 +306,8 @@ ClickHouse uses this setting when reading data from tables. If the total storage
 
 **Possible values**
 
-Positive integer.
-
-0 — Direct I/O is disabled.
+- 0 — Direct I/O is disabled.
+- Positive integer.
 
 **Default value**: 0.
 
