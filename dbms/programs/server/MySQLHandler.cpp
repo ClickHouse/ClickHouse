@@ -201,7 +201,8 @@ void MySQLHandler::comQuery(String payload)
 
         LOG_TRACE(log, "Sent columns definitions.");
 
-        if (!(capabilities & Capability::CLIENT_DEPRECATE_EOF)) {
+        if (!(capabilities & Capability::CLIENT_DEPRECATE_EOF))
+        {
             packet_sender.sendPacket(EOF_Packet(0, 0));
         }
 
