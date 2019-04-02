@@ -1,12 +1,16 @@
 #pragma once
 
+
 #include <string.h>
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstdint>
 #include <type_traits>
+#include <vector>
 
 #include <ext/bit_cast.h>
 #include <Core/Types.h>
@@ -154,6 +158,23 @@ struct RadixSortUIntTraits
     }
 };
 
+template <typename UInt>
+struct RadixSortPairUIntKeyTraits
+{
+    using Element = std::pair<UInt, size_t>;
+    using Key = UInt;
+    using CountType = uint32_t;
+    using KeyBits = UInt;
+
+    static constexpr size_t PART_SIZE_BITS = 8;
+
+    using Transform = RadixSortIdentityTransform<KeyBits>;
+    using Allocator = RadixSortMallocAllocator;
+
+    /// The function to get the key from an array element.
+    static Key & extractKey(Element & elem) { return elem.first; }
+};
+
 template <typename _Element, typename _Key = _Element>
 struct RadixSortIntTraits
 {
@@ -293,6 +314,21 @@ public:
 
         allocator.deallocate(swap_buffer, size * sizeof(Element));
     }
+
+    // For floating point types
+    // Radix sort sometimes incorrectly handles NaNs
+    // Will move them to the right place
+    static void fixNanOrder(Element * arr, size_t size, int nan_direction_hint)
+    {
+        if (nan_direction_hint < 0)
+        {
+            size_t nans_count = std::count_if(arr, arr + size, [](Element d) {return std::isnan(Traits::extractKey(d));});
+            std::vector<Element> nans(nans_count);
+            std::copy(arr + size - nans_count, arr + size, nans.data());
+            std::copy_backward(arr, arr + size - nans_count, arr + size);
+            std::copy(nans.data(), nans.data() + nans_count, arr);
+        }
+    }
 };
 #if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ >= 8)
 #pragma GCC diagnostic pop
@@ -300,23 +336,24 @@ public:
 
 template <typename T>
 std::enable_if_t<std::is_unsigned_v<T> && std::is_integral_v<T>, void>
-radixSort(T * arr, size_t size)
+radixSort(T * arr, size_t size, int /*nan_direction_hint*/=1)
 {
-    return RadixSort<RadixSortUIntTraits<T>>::execute(arr, size);
+    RadixSort<RadixSortUIntTraits<T>>::execute(arr, size);
 }
 
 template <typename T>
 std::enable_if_t<std::is_signed_v<T> && std::is_integral_v<T>, void>
-radixSort(T * arr, size_t size)
+radixSort(T * arr, size_t size, int /*nan_direction_hint*/=1)
 {
-    return RadixSort<RadixSortIntTraits<T>>::execute(arr, size);
+    RadixSort<RadixSortIntTraits<T>>::execute(arr, size);
 }
 
 template <typename T>
 std::enable_if_t<std::is_floating_point_v<T>, void>
-radixSort(T * arr, size_t size)
+radixSort(T * arr, size_t size, int nan_direction_hint=1)
 {
-    return RadixSort<RadixSortFloatTraits<T>>::execute(arr, size);
+    RadixSort<RadixSortFloatTraits<T>>::execute(arr, size);
+    RadixSort<RadixSortFloatTraits<T>>::fixNanOrder(arr, size, nan_direction_hint);
 }
 
 template <typename _Element, typename _Key>
@@ -331,4 +368,26 @@ std::enable_if_t<std::is_floating_point_v<_Key>, void>
 radixSort(_Element * arr, size_t size)
 {
     return RadixSort<RadixSortFloatTraits<_Element, _Key>>::execute(arr, size);
+}
+
+template <typename T>
+std::enable_if_t<std::is_unsigned_v<T> && !std::is_floating_point_v<T>, void>
+radixSort(std::pair<T, size_t> * arr, size_t size, int /*nan_direction_hint*/=1)
+{
+    RadixSort<RadixSortPairUIntKeyTraits<T>>::execute(arr, size);
+}
+
+template <typename T>
+std::enable_if_t<std::is_signed_v<T> && !std::is_floating_point_v<T>, void>
+radixSort(std::pair<T, size_t> * arr, size_t size, int /*nan_direction_hint*/=1)
+{
+    RadixSort<RadixSortPairIntKeyTraits<T>>::execute(arr, size);
+}
+
+template <typename T>
+std::enable_if_t<std::is_floating_point_v<T>, void>
+radixSort(std::pair<T, size_t> * arr, size_t size, int nan_direction_hint=1)
+{
+    RadixSort<RadixSortPairFloatKeyTraits<T>>::execute(arr, size);
+    RadixSort<RadixSortPairFloatKeyTraits<T>>::fixNanOrder(arr, size, nan_direction_hint);
 }

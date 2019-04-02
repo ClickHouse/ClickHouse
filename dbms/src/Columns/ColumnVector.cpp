@@ -95,7 +95,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             for (size_t i = 0; i < s; ++i)
                 pairs[i] = {data[i], i};
 
-            radixSort(pairs.data(), s);
+            radixSort(pairs.data(), s, nan_direction_hint);
 
             if (reverse)
                 for (size_t i = 0; i < s; ++i)
