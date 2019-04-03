@@ -17,11 +17,11 @@ $ ./clickhouse-compressor --decompress < input_file > output_file
 Compress data with ZSTD at level 5:
 
 ```
-$ ./clickhouse-compressor --codec ZSTD --level 5 < input_file > output_file
+$ ./clickhouse-compressor --codec 'ZSTD(5)' < input_file > output_file
 ```
 
-Compress data with ZSTD level 10, LZ4HC level 7 and LZ4.
+Compress data with Delta of four bytes and ZSTD level 10.
 
 ```
-$ ./clickhouse-compressor --codec ZSTD --level 5 --codec LZ4HC --level 7 --codec LZ4 < input_file > output_file
+$ ./clickhouse-compressor --codec 'Delta(4)' --codec 'ZSTD(10)' < input_file > output_file
 ```
