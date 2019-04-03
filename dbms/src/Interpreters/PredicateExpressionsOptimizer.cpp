@@ -34,14 +34,24 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_AST;
 }
 
-static constexpr auto and_function_name = "and";
+namespace {
+
+constexpr auto and_function_name = "and";
+
+String qualifiedName(ASTIdentifier * identifier, const String & prefix)
+{
+    if (identifier->isShort())
+        return prefix + identifier->getAliasOrColumnName();
+    return identifier->getAliasOrColumnName();
+}
+
+} // namespace
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
     ASTSelectQuery * ast_select_, ExtractedSettings && settings_, const Context & context_)
         : ast_select(ast_select_), settings(settings_), context(context_)
 {
 }
-
 
 bool PredicateExpressionsOptimizer::optimize()
 {
@@ -86,7 +96,7 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
         for (const auto & [subquery, projection_columns] : subqueries_projection_columns)
         {
             OptimizeKind optimize_kind = OptimizeKind::NONE;
-            if (allowPushDown(subquery) && canPushDownOuterPredicate(projection_columns, outer_predicate_dependencies, optimize_kind))
+            if (allowPushDown(subquery, outer_predicate, projection_columns, outer_predicate_dependencies, optimize_kind))
             {
                 if (optimize_kind == OptimizeKind::NONE)
                     optimize_kind = expression_kind;
@@ -112,9 +122,16 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
     return is_rewrite_subquery;
 }
 
-bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquery)
+bool PredicateExpressionsOptimizer::allowPushDown(
+    const ASTSelectQuery * subquery,
+    const ASTPtr &,
+    const std::vector<ProjectionWithAlias> & projection_columns,
+    const std::vector<IdentifierWithQualifier> & dependencies,
+    OptimizeKind & optimize_kind)
 {
-    if (subquery && !subquery->final() && !subquery->limit_by_expression_list && !subquery->limit_length && !subquery->with_expression_list)
+    if (!subquery || subquery->final() || subquery->limit_by_expression_list || subquery->limit_length || subquery->with_expression_list)
+        return false;
+    else
     {
         ASTPtr expr_list = ast_select->select_expression_list;
         ExtractFunctionVisitor::Data extract_data;
@@ -124,15 +141,71 @@ bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquer
         {
             const auto & function = FunctionFactory::instance().tryGet(subquery_function->name, context);
 
-            /// Skip lambda、tuple and other special functions
+            /// Skip lambda, tuple and other special functions
             if (function && function->isStateful())
                 return false;
         }
-
-        return true;
     }
 
-    return false;
+    const auto * ast_join = ast_select->join();
+
+    /// XXX: code depends on the order and availability of AST children
+    const auto * left_table_expr = ast_join ? ast_select->tables->as<ASTTablesInSelectQuery>()
+                                                  ->children[0]
+                                                  ->as<ASTTablesInSelectQueryElement>()
+                                                  ->table_expression->as<ASTTableExpression>()
+                                            : nullptr;
+    const auto * right_table_expr = ast_join ? ast_select->tables->as<ASTTablesInSelectQuery>()
+                                                   ->children[1]
+                                                   ->as<ASTTablesInSelectQueryElement>()
+                                                   ->table_expression->as<ASTTableExpression>()
+                                             : nullptr;
+    const auto * left_subquery = (left_table_expr && left_table_expr->subquery)
+        ? left_table_expr->subquery->children[0]->as<ASTSelectWithUnionQuery>()->list_of_selects->children[0]->as<ASTSelectQuery>()
+        : nullptr;
+    const auto * right_subquery = (right_table_expr && right_table_expr->subquery)
+        ? right_table_expr->subquery->children[0]->as<ASTSelectWithUnionQuery>()->list_of_selects->children[0]->as<ASTSelectQuery>()
+        : nullptr;
+
+    if (ast_join)
+    {
+        /// Check right side for LEFT'o'FULL JOIN
+        if (isLeftOrFull(ast_join->table_join->as<ASTTableJoin>()->kind) && right_subquery == subquery)
+        {
+            return false;
+        }
+
+        /// Check left side for RIGHT'o'FULL JOIN
+        if (isRightOrFull(ast_join->table_join->as<ASTTableJoin>()->kind) && left_subquery == subquery)
+        {
+            return false;
+        }
+    }
+
+    for (const auto & [identifier, prefix] : dependencies)
+    {
+        bool is_found = false;
+        String qualified_name = qualifiedName(identifier, prefix);
+
+        for (const auto & [ast, alias] : projection_columns)
+        {
+            if (alias == qualified_name)
+            {
+                is_found = true;
+                ASTPtr projection_column = ast;
+                ExtractFunctionVisitor::Data extract_data;
+                ExtractFunctionVisitor(extract_data).visit(projection_column);
+
+                if (!extract_data.aggregate_functions.empty())
+                    optimize_kind = OptimizeKind::PUSH_TO_HAVING;
+            }
+        }
+
+        if (!is_found)
+            return false;
+    }
+
+    return true;
 }
 
 std::vector<ASTPtr> PredicateExpressionsOptimizer::splitConjunctionPredicate(ASTPtr & predicate_expression)
@@ -189,44 +262,6 @@ PredicateExpressionsOptimizer::getDependenciesAndQualifiers(ASTPtr & expression,
     }
 
     return dependencies;
-}
-
-static String qualifiedName(ASTIdentifier * identifier, const String & prefix)
-{
-    if (identifier->isShort())
-        return prefix + identifier->getAliasOrColumnName();
-    return identifier->getAliasOrColumnName();
-}
-
-bool PredicateExpressionsOptimizer::canPushDownOuterPredicate(
-    const std::vector<ProjectionWithAlias> & projection_columns,
-    const std::vector<IdentifierWithQualifier> & dependencies,
-    OptimizeKind & optimize_kind)
-{
-    for (const auto & [identifier, prefix] : dependencies)
-    {
-        bool is_found = false;
-        String qualified_name = qualifiedName(identifier, prefix);
-
-        for (const auto & [ast, alias] : projection_columns)
-        {
-            if (alias == qualified_name)
-            {
-                is_found = true;
-                ASTPtr projection_column = ast;
-                ExtractFunctionVisitor::Data extract_data;
-                ExtractFunctionVisitor(extract_data).visit(projection_column);
-
-                if (!extract_data.aggregate_functions.empty())
-                    optimize_kind = OptimizeKind::PUSH_TO_HAVING;
-            }
-        }
-
-        if (!is_found)
-            return false;
-    }
-
-    return true;
 }
 
 void PredicateExpressionsOptimizer::setNewAliasesForInnerPredicate(
@@ -296,41 +331,9 @@ PredicateExpressionsOptimizer::SubqueriesProjectionColumns PredicateExpressionsO
 {
     SubqueriesProjectionColumns projection_columns;
 
-    const auto * ast_join = ast_select->join();
-
-    /// XXX: very hacky code based on the order and availability of AST children
-    const auto * left_table_expr = ast_join ? ast_select->tables->as<ASTTablesInSelectQuery>()
-                                                  ->children[0]
-                                                  ->as<ASTTablesInSelectQueryElement>()
-                                                  ->table_expression->as<ASTTableExpression>()
-                                            : nullptr;
-    const auto * right_table_expr = ast_join ? ast_select->tables->as<ASTTablesInSelectQuery>()
-                                                   ->children[1]
-                                                   ->as<ASTTablesInSelectQueryElement>()
-                                                   ->table_expression->as<ASTTableExpression>()
-                                             : nullptr;
-
-    if (ast_join && ast_join->table_join->as<ASTTableJoin>()->kind == ASTTableJoin::Kind::Full)
-    {
-        /// Forbid optimization on both sides for FULL JOIN
-        return projection_columns;
-    }
-
     for (const auto & table_expression : getSelectTablesExpression(*ast_select))
         if (table_expression->subquery)
-        {
-            if (ast_join)
-            {
-                /// Don't optimize right side for LEFT JOIN
-                if (ast_join->table_join->as<ASTTableJoin>()->kind == ASTTableJoin::Kind::Left && right_table_expr == table_expression)
-                    continue;
-
-                /// Don't optimize left side for RIGHT JOIN
-                if (ast_join->table_join->as<ASTTableJoin>()->kind == ASTTableJoin::Kind::Right && left_table_expr == table_expression)
-                    continue;
-            }
             getSubqueryProjectionColumns(table_expression->subquery, projection_columns);
-        }
 
     return projection_columns;
 }
