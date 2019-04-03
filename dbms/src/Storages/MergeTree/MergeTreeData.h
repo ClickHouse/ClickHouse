@@ -15,6 +15,7 @@
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/DiskSpaceMonitor.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -286,7 +287,7 @@ public:
     };
 
 
-    /// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
+    /// Attach the table corresponding to the directory in full_path inside schema (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
     ///
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
@@ -303,7 +304,7 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const Strings & full_paths_,
+                  const Schema & schema_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
                   Context & context_,
@@ -363,7 +364,7 @@ public:
 
     String getTableName() const { return table_name; }
 
-    String getFullPathForPart(UInt64 expected_size) const;
+    DiskSpaceMonitor::ReservationPtr reserveSpaceForPart(UInt64 expected_size) const; ///@TODO_IGR ASK Is it realy const?
 
     String getLogName() const { return log_name; }
 
@@ -569,6 +570,17 @@ public:
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
                                                            const MergeTreePartInfo & dst_part_info);
 
+    DiskSpaceMonitor::ReservationPtr reserveSpaceAtDisk(UInt64 expected_size) const; ///@TODO_IGR ASK Maybe set this method as private?
+
+    Strings getFullPaths() const {
+        auto paths = schema.getFullPaths();
+        for (auto && path : paths) {
+            path += table_name + '/'; ///@TODO_IGR ASK It is too slow(
+                                      ///          Maybe store in full_paths variable?
+        }
+        return paths;
+    }
+
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;
@@ -633,7 +645,8 @@ private:
 
     String database_name;
     String table_name;
-    Strings full_paths;
+
+    Schema schema;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;

@@ -119,14 +119,6 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         name = part_info.getPartName();
 }
 
-    UInt64 FutureMergedMutatedPart::expectedSize() const {  ///TODO_IGR ASK sum size?
-    size_t size = 0;
-    for (auto &part : parts) {
-        size += part->getFileSizeOrZero(""); ///@TODO_IGR ASK file name?
-    }
-    return size;
-}
-
 MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_)
     : data(data_), pool(pool_), log(&Logger::get(data.getLogName() + " (MergerMutator)"))
 {
@@ -522,8 +514,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
               << parts.front()->name << " to " << parts.back()->name
               << " into " << TMP_PREFIX + future_part.name);
 
-    size_t expected_size = future_part.expectedSize();
-    String part_path = data.getFullPathForPart(expected_size); ///@TODO_IGR ASK EXPECTED SIZE
+    String part_path = disk_reservation->getPath();
 
     String new_part_tmp_path = part_path + TMP_PREFIX + future_part.name + "/";
     if (Poco::File(new_part_tmp_path).exists())
@@ -830,7 +821,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const FutureMergedMutatedPart & future_part,
     const std::vector<MutationCommand> & commands,
     MergeListEntry & merge_entry,
-    const Context & context)
+    const Context & context,
+    DiskSpaceMonitor::Reservation * disk_reservation)
 {
     auto check_not_cancelled = [&]()
     {
@@ -865,8 +857,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
-    size_t expected_size = future_part.expectedSize();
-    String part_path = data.getFullPathForPart(expected_size); ///@TODO_IGR ASK EXPECTED_SIZE
+    String part_path = disk_reservation->getPath();
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
         data, part_path, future_part.name, future_part.part_info);
