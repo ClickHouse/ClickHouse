@@ -162,8 +162,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value;
-                std::swap(it->second, value);
+                new(&it->getSecond()) Value;
+                std::swap(it->getSecond(), value);
                 INIT
             }
         }
@@ -193,8 +193,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value;
-                std::swap(it->second, value);
+                new(&it->getSecond()) Value;
+                std::swap(it->getSecond(), value);
                 INIT
             }
         }
@@ -225,8 +225,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value;
-                std::swap(it->second, value);
+                new(&it->getSecond()) Value;
+                std::swap(it->getSecond(), value);
                 INIT
             }
         }

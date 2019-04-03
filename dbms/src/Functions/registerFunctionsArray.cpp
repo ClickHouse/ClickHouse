@@ -26,8 +26,11 @@ void registerFunctionEmptyArrayToSingle(FunctionFactory &);
 void registerFunctionArrayEnumerate(FunctionFactory &);
 void registerFunctionArrayEnumerateUniq(FunctionFactory &);
 void registerFunctionArrayEnumerateDense(FunctionFactory &);
+void registerFunctionArrayEnumerateUniqRanked(FunctionFactory &);
+void registerFunctionArrayEnumerateDenseRanked(FunctionFactory &);
 void registerFunctionArrayUniq(FunctionFactory &);
 void registerFunctionArrayDistinct(FunctionFactory &);
+void registerFunctionFlatten(FunctionFactory &);
 void registerFunctionArrayWithConstant(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
@@ -55,8 +58,11 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayEnumerate(factory);
     registerFunctionArrayEnumerateUniq(factory);
     registerFunctionArrayEnumerateDense(factory);
+    registerFunctionArrayEnumerateUniqRanked(factory);
+    registerFunctionArrayEnumerateDenseRanked(factory);
     registerFunctionArrayUniq(factory);
     registerFunctionArrayDistinct(factory);
+    registerFunctionFlatten(factory);
     registerFunctionArrayWithConstant(factory);
 }
 

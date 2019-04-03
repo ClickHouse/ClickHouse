@@ -31,7 +31,7 @@ InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & 
 
 BlockIO InterpreterDropQuery::execute()
 {
-    ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
+    auto & drop = query_ptr->as<ASTDropQuery &>();
 
     checkAccess(drop);
 
@@ -39,7 +39,7 @@ BlockIO InterpreterDropQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
 
     if (!drop.table.empty())
-        return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary);
+        return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary, drop.no_ddl_lock);
     else if (!drop.database.empty())
         return executeToDatabase(drop.database, drop.kind, drop.if_exists);
     else
@@ -47,7 +47,7 @@ BlockIO InterpreterDropQuery::execute()
 }
 
 
-BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary)
+BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary, bool no_ddl_lock)
 {
     if (if_temporary || database_name_.empty())
     {
@@ -59,7 +59,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
     String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
 
-    auto ddl_guard = context.getDDLGuard(database_name, table_name);
+    auto ddl_guard = (!no_ddl_lock ? context.getDDLGuard(database_name, table_name) : nullptr);
 
     DatabaseAndTable database_and_table = tryGetDatabaseAndTable(database_name, table_name, if_exists);
 
@@ -69,7 +69,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         {
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockForAlter();
+            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Drop table from memory, don't touch data and metadata
             database_and_table.first->detachTable(database_and_table.second->getTableName());
         }
@@ -78,7 +78,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             database_and_table.second->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockForAlter();
+            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Drop table data, don't touch metadata
             database_and_table.second->truncate(query_ptr, context);
         }
@@ -89,7 +89,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
 
-            auto table_lock = database_and_table.second->lockForAlter();
+            auto table_lock = database_and_table.second->lockExclusively(context.getCurrentQueryId());
             /// Delete table metadata and table itself from memory
 
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
@@ -126,7 +126,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockForAlter();
+                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Drop table data, don't touch metadata
                 table->truncate(query_ptr, context);
             }
@@ -135,7 +135,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 context_handle.tryRemoveExternalTable(table_name);
                 table->shutdown();
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockForAlter();
+                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Delete table data
                 table->drop();
                 table->is_dropped = true;
@@ -166,7 +166,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
             for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
             {
                 String current_table_name = iterator->table()->getTableName();
-                executeToTable(database_name, current_table_name, kind, false, false);
+                executeToTable(database_name, current_table_name, kind, false, false, false);
             }
 
             auto context_lock = context.getLock();

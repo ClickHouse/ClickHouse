@@ -41,6 +41,7 @@ public:
 
     size_t getNumStreams() const { return streams.size(); }
     size_t getNumMainStreams() const { return streams.size() - (has_delayed_stream ? 1 : 0); }
+    bool hasMoreThanOneStream() const { return getNumStreams() > 1; }
 
     const Block & getHeader() const { return current_header; }
 

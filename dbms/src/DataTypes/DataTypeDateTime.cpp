@@ -140,9 +140,11 @@ void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
-void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeDateTime::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    protobuf.writeDateTime(static_cast<const ColumnUInt32 &>(column).getData()[row_num]);
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDateTime(static_cast<const ColumnUInt32 &>(column).getData()[row_num]));
 }
 
 void DataTypeDateTime::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
@@ -184,7 +186,7 @@ static DataTypePtr create(const ASTPtr & arguments)
     if (arguments->children.size() != 1)
         throw Exception("DateTime data type can optionally have only one argument - time zone name", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral * arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const auto * arg = arguments->children[0]->as<ASTLiteral>();
     if (!arg || arg->value.getType() != Field::Types::String)
         throw Exception("Parameter for DateTime data type must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

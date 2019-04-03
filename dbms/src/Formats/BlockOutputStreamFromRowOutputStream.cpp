@@ -12,26 +12,12 @@ BlockOutputStreamFromRowOutputStream::BlockOutputStreamFromRowOutputStream(RowOu
 void BlockOutputStreamFromRowOutputStream::write(const Block & block)
 {
     size_t rows = block.rows();
-    size_t columns = block.columns();
-
     for (size_t i = 0; i < rows; ++i)
     {
         if (!first_row)
             row_output->writeRowBetweenDelimiter();
         first_row = false;
-
-        row_output->writeRowStartDelimiter();
-
-        for (size_t j = 0; j < columns; ++j)
-        {
-            if (j != 0)
-                row_output->writeFieldDelimiter();
-
-            auto & col = block.getByPosition(j);
-            row_output->writeField(*col.column, *col.type, i);
-        }
-
-        row_output->writeRowEndDelimiter();
+        row_output->write(block, i);
     }
 }
 

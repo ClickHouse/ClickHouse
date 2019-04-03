@@ -20,12 +20,6 @@ SELECT -nan = toInt64(0), -nan != toInt64(0), -nan < toInt64(0), -nan > toInt64(
 SELECT -nan = toFloat32(0.0), -nan != toFloat32(0.0), -nan < toFloat32(0.0), -nan > toFloat32(0.0), -nan <= toFloat32(0.0), -nan >= toFloat32(0.0);
 SELECT -nan = toFloat64(0.0), -nan != toFloat64(0.0), -nan < toFloat64(0.0), -nan > toFloat64(0.0), -nan <= toFloat64(0.0), -nan >= toFloat64(0.0);
 
-SELECT nan = nan, nan != nan, nan = -nan, nan != -nan;
-SELECT nan < nan, nan <= nan, nan < -nan, nan <= -nan;
-SELECT nan > nan, nan >= nan, nan > -nan, nan >= -nan;
-SELECT -nan < -nan, -nan <= -nan, -nan < nan, -nan <= nan;
-SELECT -nan > -nan, -nan >= -nan, -nan > nan, -nan >= nan;
-
 --SELECT 1 % nan, nan % 1, pow(x, 1), pow(1, x); -- TODO
 SELECT 1 + nan, 1 - nan, nan - 1, 1 * nan, 1 / nan, nan / 1;
 SELECT nan AS x, exp(x), exp2(x), exp10(x), log(x), log2(x), log10(x), sqrt(x), cbrt(x);

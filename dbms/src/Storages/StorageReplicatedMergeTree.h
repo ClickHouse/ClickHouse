@@ -79,12 +79,10 @@ public:
     void shutdown() override;
     ~StorageReplicatedMergeTree() override;
 
-    std::string getName() const override
-    {
-        return "Replicated" + data.merging_params.getModeName() + "MergeTree";
-    }
-
+    std::string getName() const override { return "Replicated" + data.merging_params.getModeName() + "MergeTree"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
+
     bool supportsSampling() const override { return data.supportsSampling(); }
     bool supportsFinal() const override { return data.supportsFinal(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
@@ -112,11 +110,13 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
 
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & query_context) override;
+    void alter(
+        const AlterCommands & params, const String & database_name, const String & table_name,
+        const Context & query_context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
@@ -133,7 +133,10 @@ public:
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     bool supportsIndexForIn() const override { return true; }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & /* query_context */) const override
+    {
+        return data.mayBenefitFromIndexForIn(left_in_operand);
+    }
 
     void checkTableCanBeDropped() const override;
 

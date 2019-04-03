@@ -7,5 +7,5 @@ target_link_libraries (data_type_string PRIVATE dbms)
 
 if(USE_GTEST)
     add_executable(data_type_get_common_type data_type_get_common_type.cpp)
-    target_link_libraries(data_type_get_common_type PRIVATE dbms gtest_main)
+    target_link_libraries(data_type_get_common_type PRIVATE dbms ${GTEST_BOTH_LIBRARIES})
 endif()

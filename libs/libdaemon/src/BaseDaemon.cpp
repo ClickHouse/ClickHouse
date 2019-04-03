@@ -1,10 +1,8 @@
 #include <daemon/BaseDaemon.h>
 #include <daemon/OwnFormattingChannel.h>
 #include <daemon/OwnPatternFormatter.h>
-
 #include <Common/Config/ConfigProcessor.h>
 #include <daemon/OwnSplitChannel.h>
-
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -15,18 +13,6 @@
 #include <cxxabi.h>
 #include <execinfo.h>
 #include <unistd.h>
-
-#if USE_UNWIND
-    #define UNW_LOCAL_ONLY
-    #include <libunwind.h>
-#endif
-
-#ifdef __APPLE__
-// ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE
-#endif
-#include <ucontext.h>
-
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -67,6 +53,18 @@
 #include <daemon/OwnPatternFormatter.h>
 #include <Common/CurrentThread.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
+
+#if USE_UNWIND
+    #define UNW_LOCAL_ONLY
+    #include <libunwind.h>
+#endif
+
+#ifdef __APPLE__
+// ucontext is not available without _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
+#include <ucontext.h>
+
 
 /** For transferring information from signal handler to a separate thread.
   * If you need to do something serious in case of a signal (example: write a message to the log),
@@ -301,13 +299,13 @@ private:
 private:
     void onTerminate(const std::string & message, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "(from thread " << thread_num << ") " << message);
+        LOG_ERROR(log, "(version " << VERSION_STRING << ") (from thread " << thread_num << ") " << message);
     }
 
     void onFault(int sig, siginfo_t & info, ucontext_t & context, ThreadNumber thread_num) const
     {
         LOG_ERROR(log, "########################################");
-        LOG_ERROR(log, "(from thread " << thread_num << ") "
+        LOG_ERROR(log, "(version " << VERSION_STRING << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
         void * caller_address = nullptr;
@@ -695,7 +693,7 @@ static void checkRequiredInstructions(volatile InstructionFail & fail)
 
 #if __AVX__
     fail = InstructionFail::AVX;
-    __asm__ volatile ("vaddpd %%ymm0, %%ymm0" : : : "ymm0");
+    __asm__ volatile ("vaddpd %%ymm0, %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
 #if __AVX2__
@@ -1045,15 +1043,10 @@ void BaseDaemon::initialize(Application & self)
         /// 1 GiB by default. If more - it writes to disk too long.
         rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
 
-        if (setrlimit(RLIMIT_CORE, &rlim))
+        if (rlim.rlim_cur && setrlimit(RLIMIT_CORE, &rlim))
         {
-            std::string message = "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur);
-        #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(SANITIZER) && !defined(__APPLE__)
-            throw Poco::Exception(message);
-        #else
             /// It doesn't work under address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
-            std::cerr << message << std::endl;
-        #endif
+            std::cerr << "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur) << std::endl;
         }
     }
 

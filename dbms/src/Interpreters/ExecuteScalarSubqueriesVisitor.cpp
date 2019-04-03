@@ -41,32 +41,29 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
 bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
     /// Processed
-    if (typeid_cast<ASTSubquery *>(node.get()) ||
-        typeid_cast<ASTFunction *>(node.get()))
+    if (node->as<ASTSubquery>() || node->as<ASTFunction>())
         return false;
 
     /// Don't descend into subqueries in FROM section
-    if (typeid_cast<ASTTableExpression *>(node.get()))
+    if (node->as<ASTTableExpression>())
         return false;
 
-    if (typeid_cast<ASTSelectQuery *>(node.get()))
+    if (node->as<ASTSelectQuery>())
     {
         /// Do not go to FROM, JOIN, UNION.
-        if (typeid_cast<ASTTableExpression *>(child.get()) ||
-            typeid_cast<ASTSelectQuery *>(child.get()))
+        if (child->as<ASTTableExpression>() || child->as<ASTSelectQuery>())
             return false;
     }
 
     return true;
 }
 
-std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
+void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = typeid_cast<ASTSubquery *>(ast.get()))
+    if (const auto * t = ast->as<ASTSubquery>())
         visit(*t, ast, data);
-    if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
-        return visit(*t, ast, data);
-    return {};
+    if (const auto * t = ast->as<ASTFunction>())
+        visit(*t, ast, data);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
@@ -79,7 +76,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
     ASTPtr subquery_select = subquery.children.at(0);
     BlockIO res = InterpreterSelectWithUnionQuery(
-        subquery_select, subquery_context, {}, QueryProcessingStage::Complete, data.subquery_depth + 1).execute();
+        subquery_select, subquery_context, SelectQueryOptions(QueryProcessingStage::Complete, data.subquery_depth + 1)).execute();
 
     Block block;
     try
@@ -134,7 +131,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     }
 }
 
-std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
+void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
     /// Don't descend into subqueries in arguments of IN operator.
     /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
@@ -148,7 +145,7 @@ std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & 
                 out.push_back(&child);
             else
                 for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
-                    if (i != 1 || !typeid_cast<ASTSubquery *>(func.arguments->children[i].get()))
+                    if (i != 1 || !func.arguments->children[i]->as<ASTSubquery>())
                         out.push_back(&func.arguments->children[i]);
         }
     }
@@ -156,7 +153,8 @@ std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & 
         for (auto & child : ast->children)
             out.push_back(&child);
 
-    return out;
+    for (ASTPtr * add_node : out)
+        Visitor(data).visit(*add_node);
 }
 
 }

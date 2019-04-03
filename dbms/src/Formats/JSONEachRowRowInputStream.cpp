@@ -64,9 +64,9 @@ inline size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name, siz
 
     if (prev_positions.size() > key_index
         && prev_positions[key_index] != name_map.end()
-        && name == prev_positions[key_index]->first)
+        && name == prev_positions[key_index]->getFirst())
     {
-        return prev_positions[key_index]->second;
+        return prev_positions[key_index]->getSecond();
     }
     else
     {
@@ -77,7 +77,7 @@ inline size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name, siz
             if (key_index < prev_positions.size())
                 prev_positions[key_index] = it;
 
-            return it->second;
+            return it->getSecond();
         }
         else
             return UNKNOWN_FIELD;

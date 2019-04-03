@@ -20,24 +20,20 @@ public:
         Tables & external_tables;
     };
 
-    static constexpr const char * label = "ExternalTables";
-
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    static void visit(ASTPtr & ast, Data & data)
     {
-        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
-            return visit(*t, ast, data);
-        return {};
+        if (const auto * t = ast->as<ASTIdentifier>())
+            visit(*t, ast, data);
     }
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
 
 private:
-    static std::vector<ASTPtr *> visit(const ASTIdentifier & node, ASTPtr &, Data & data)
+    static void visit(const ASTIdentifier & node, ASTPtr &, Data & data)
     {
         if (auto opt_name = IdentifierSemantic::getTableName(node))
             if (StoragePtr external_storage = data.context.tryGetExternalTable(*opt_name))
                 data.external_tables[*opt_name] = external_storage;
-        return {};
     }
 };
 

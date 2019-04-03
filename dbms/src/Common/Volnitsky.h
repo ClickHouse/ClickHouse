@@ -437,10 +437,10 @@ public:
     }
 
     template <typename ResultType, typename AnsCallback>
-    void searchAll(
+    void searchAllPositions(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const AnsCallback & ansCallback,
+        const AnsCallback & ans_callback,
         ResultType & ans)
     {
         const size_t haystack_string_size = haystack_offsets.size();
@@ -461,7 +461,7 @@ public:
                 {
                     const UInt8 * ptr = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end);
                     if (ptr != haystack_end)
-                        ans[from + fallback_needles[i]] = ansCallback(haystack, ptr);
+                        ans[from + fallback_needles[i]] = ans_callback(haystack, ptr);
                 }
 
                 /// check if we have one non empty volnitsky searcher
@@ -481,7 +481,7 @@ public:
                                 {
                                     if (fallback_searchers[ind].compare(res))
                                     {
-                                        ans[from + ind] = ansCallback(haystack, res);
+                                        ans[from + ind] = ans_callback(haystack, res);
                                     }
                                 }
                             }
@@ -509,6 +509,16 @@ public:
         auto callback = [this](const UInt8 * haystack, const UInt8 * haystack_end) -> size_t
         {
             return this->searchOneIndex(haystack, haystack_end);
+        };
+        searchInternal(haystack_data, haystack_offsets, callback, ans);
+    }
+
+    template <typename ResultType, typename CountCharsCallback>
+    void searchFirstPosition(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets, const CountCharsCallback & count_chars_callback, ResultType & ans)
+    {
+        auto callback = [this, &count_chars_callback](const UInt8 * haystack, const UInt8 * haystack_end) -> UInt64
+        {
+            return this->searchOneFirstPosition(haystack, haystack_end, count_chars_callback);
         };
         searchInternal(haystack_data, haystack_offsets, callback, ans);
     }
@@ -582,7 +592,7 @@ private:
     inline void searchInternal(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const OneSearcher & searchFallback,
+        const OneSearcher & search_fallback,
         ResultType & ans)
     {
         const size_t haystack_string_size = haystack_offsets.size();
@@ -593,7 +603,7 @@ private:
             {
                 const auto * haystack = &haystack_data[prev_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                ans[j] = searchFallback(haystack, haystack_end);
+                ans[j] = search_fallback(haystack, haystack_end);
                 prev_offset = haystack_offsets[j];
             }
         }
@@ -663,6 +673,41 @@ private:
         * assign it into the result because we need to return the position starting with one
         */
         return ans + 1;
+    }
+
+    template <typename CountCharsCallback>
+    inline UInt64 searchOneFirstPosition(const UInt8 * haystack, const UInt8 * haystack_end, const CountCharsCallback & callback) const
+    {
+        const size_t fallback_size = fallback_needles.size();
+
+        UInt64 ans = std::numeric_limits<UInt64>::max();
+
+        for (size_t i = 0; i < fallback_size; ++i)
+            if (auto pos = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end); pos != haystack_end)
+                ans = std::min(ans, callback(haystack, pos));
+
+        /// check if we have one non empty volnitsky searcher
+        if (step != std::numeric_limits<size_t>::max())
+        {
+            const auto * pos = haystack + step - sizeof(VolnitskyTraits::Ngram);
+            for (; pos <= haystack_end - sizeof(VolnitskyTraits::Ngram); pos += step)
+            {
+                for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num].off;
+                     cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
+                {
+                    if (pos >= haystack + hash[cell_num].off - 1)
+                    {
+                        const auto res = pos - (hash[cell_num].off - 1);
+                        const size_t ind = hash[cell_num].id;
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
+                            ans = std::min(ans, callback(haystack, res));
+                    }
+                }
+            }
+        }
+        if (ans == std::numeric_limits<UInt64>::max())
+            return 0;
+        return ans;
     }
 
     void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset, const size_t num)

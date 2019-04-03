@@ -82,7 +82,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
         return false;
     ++pos;
 
-    ASTExpressionList & expr_list = typeid_cast<ASTExpressionList &>(*contents_node);
+    const auto & expr_list = contents_node->as<ASTExpressionList &>();
 
     /// empty expression in parentheses is not allowed
     if (expr_list.children.empty())
@@ -125,7 +125,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     node = std::make_shared<ASTSubquery>();
-    typeid_cast<ASTSubquery &>(*node).children.push_back(select_node);
+    node->children.push_back(select_node);
     return true;
 }
 
@@ -170,7 +170,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     String name;
     std::vector<String> parts;
-    const ASTExpressionList & list = static_cast<const ASTExpressionList &>(*id_list.get());
+    const auto & list = id_list->as<ASTExpressionList &>();
     for (const auto & child : list.children)
     {
         if (!name.empty())
@@ -1075,7 +1075,7 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         if (!literal_p.parse(pos, literal_node, expected))
             return false;
 
-        arr.push_back(typeid_cast<const ASTLiteral &>(*literal_node).value);
+        arr.push_back(literal_node->as<ASTLiteral &>().value);
     }
 
     expected.add(pos, "closing square bracket");
@@ -1113,6 +1113,7 @@ const char * ParserAlias::restricted_keywords[] =
     "INNER",
     "FULL",
     "CROSS",
+    "ASOF",
     "JOIN",
     "GLOBAL",
     "ANY",
@@ -1254,7 +1255,8 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ASTPtr alias_node;
     if (ParserAlias(allow_alias_without_as_keyword_now).parse(pos, alias_node, expected))
     {
-        if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
+        /// FIXME: try to prettify this cast using `as<>()`
+        if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
             getIdentifierName(alias_node, ast_with_alias->alias);
             ast_with_alias->prefer_alias_to_column_name = prefer_alias_to_column_name;
@@ -1325,4 +1327,3 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 }
 
 }
-
