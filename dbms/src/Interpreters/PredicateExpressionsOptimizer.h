@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include "DatabaseAndTableWithAlias.h"
+#include "ExpressionAnalyzer.h"
+#include <map>
 
 namespace DB
 {
@@ -70,11 +72,11 @@ private:
     std::vector<ASTPtr> splitConjunctionPredicate(ASTPtr & predicate_expression);
 
     std::vector<IdentifierWithQualifier> getDependenciesAndQualifiers(ASTPtr & expression,
-                                                                      std::vector<DatabaseAndTableWithAlias> & tables_with_aliases);
+                                                                      std::vector<TableWithColumnNames> & tables_with_aliases);
 
     bool optimizeExpression(const ASTPtr & outer_expression, ASTPtr & subquery_expression, ASTSelectQuery * subquery);
 
-    bool optimizeImpl(ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
+    bool optimizeImpl(ASTPtr & outer_expression, const SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
 
     bool allowPushDown(const ASTSelectQuery * subquery);
 

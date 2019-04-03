@@ -7,8 +7,8 @@ export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-cur_name=${BASH_SOURCE[0]}
-server_logs_file=$cur_name"_server.logs"
+cur_name=$(basename "${BASH_SOURCE[0]}")
+server_logs_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
 server_logs="--server_logs_file=$server_logs_file"
 rm -f "$server_logs_file"
 

@@ -161,6 +161,10 @@ public:
 
             const auto * column_function = typeid_cast<const ColumnFunction *>(column_with_type_and_name.column.get());
 
+            if (!column_function)
+                throw Exception("First argument for function " + getName() + " must be a function.",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
             ColumnPtr offsets_column;
 
             ColumnPtr column_first_array_ptr;

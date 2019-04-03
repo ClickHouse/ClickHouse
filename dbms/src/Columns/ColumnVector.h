@@ -163,6 +163,11 @@ public:
         return data.allocated_bytes();
     }
 
+    void protect() override
+    {
+        data.protect();
+    }
+
     void insertValue(const T value)
     {
         data.push_back(value);
@@ -245,6 +250,12 @@ public:
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
     StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
+
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnVector<T>);
+    }
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

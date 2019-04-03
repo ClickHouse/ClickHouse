@@ -25,7 +25,7 @@
 #include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
 

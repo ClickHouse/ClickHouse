@@ -23,7 +23,7 @@ std::string toString(const ColumnDefaultKind type);
 
 struct ColumnDefault
 {
-    ColumnDefaultKind kind;
+    ColumnDefaultKind kind = ColumnDefaultKind::Default;
     ASTPtr expression;
 };
 

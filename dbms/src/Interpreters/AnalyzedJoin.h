@@ -72,8 +72,7 @@ struct AnalyzedJoin
 
     Names getOriginalColumnNames(const NameSet & required_columns) const;
 
-    void calculateColumnsFromJoinedTable(const NameSet & source_columns, const DatabaseAndTableWithAlias & table,
-                                         const NamesAndTypesList & joined_columns);
+    void calculateColumnsFromJoinedTable(const NamesAndTypesList & columns, const Names & original_names);
     void calculateAvailableJoinedColumns(bool make_nullable);
 };
 
