@@ -492,8 +492,6 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    auto readonly_before_query = settings.readonly;
-
     for (auto it = params.begin(); it != params.end(); ++it)
     {
         if (it->first == "database")
@@ -510,18 +508,7 @@ void HTTPHandler::processQuery(
         else
         {
             /// All other query parameters are treated as settings.
-            String value;
-            /// Setting is skipped if value wasn't changed.
-            if (!settings.tryGet(it->first, value) || it->second != value)
-            {
-                if (readonly_before_query == 1)
-                    throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
-
-                if (readonly_before_query && it->first == "readonly")
-                    throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
-
-                context.setSetting(it->first, it->second);
-            }
+            context.setSetting(it->first, it->second);
         }
     }
 

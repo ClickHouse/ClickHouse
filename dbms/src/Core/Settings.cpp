@@ -2,8 +2,6 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Field.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <string.h>
@@ -32,34 +30,6 @@ void Settings::set(const String & name, const Field & value)
         throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
 
 #undef TRY_SET
-}
-
-/// Set the configuration by name. Read the binary serialized value from the buffer (for interserver interaction).
-void Settings::set(const String & name, ReadBuffer & buf)
-{
-#define TRY_SET(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    else if (name == #NAME) NAME.set(buf);
-
-    if (false) {}
-    APPLY_FOR_SETTINGS(TRY_SET)
-    else
-        throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
-
-#undef TRY_SET
-}
-
-/// Skip the binary-serialized value from the buffer.
-void Settings::ignore(const String & name, ReadBuffer & buf)
-{
-#define TRY_IGNORE(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    else if (name == #NAME) decltype(NAME)(DEFAULT).set(buf);
-
-    if (false) {}
-    APPLY_FOR_SETTINGS(TRY_IGNORE)
-    else
-        throw Exception("Unknown setting " + name, ErrorCodes::UNKNOWN_SETTING);
-
-    #undef TRY_IGNORE
 }
 
 /** Set the setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
@@ -94,6 +64,19 @@ bool Settings::tryGet(const String & name, String & value) const
 {
 #define TRY_GET(TYPE, NAME, DEFAULT, DESCRIPTION) \
     else if (name == #NAME) { value = NAME.toString(); return true; }
+
+    if (false) {}
+    APPLY_FOR_SETTINGS(TRY_GET)
+    else
+        return false;
+
+#undef TRY_GET
+}
+
+bool Settings::tryGet(const String & name, Field & value) const
+{
+#define TRY_GET(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    else if (name == #NAME) { value = NAME.toField(); return true; }
 
     if (false) {}
     APPLY_FOR_SETTINGS(TRY_GET)
@@ -139,45 +122,27 @@ void Settings::loadSettingsFromConfig(const String & path, const Poco::Util::Abs
     }
 }
 
-/// Read the settings from the buffer. They are written as a set of name-value pairs that go successively, ending with an empty `name`.
-/// If the `check_readonly` flag is set, `readonly` is set in the preferences, but some changes have occurred - throw an exception.
-void Settings::deserialize(ReadBuffer & buf)
+SettingsChanges Settings::changes() const
 {
-    auto before_readonly = readonly;
+    SettingsChanges changes;
+#define COLLECT_CHANGES(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    if (NAME.changed) \
+        changes.push_back(#NAME, NAME.toField());
 
-    while (true)
-    {
-        String name;
-        readBinary(name, buf);
-
-        /// An empty string is the marker for the end of the settings.
-        if (name.empty())
-            break;
-
-        /// If readonly = 2, then you can change the settings, except for the readonly setting.
-        if (before_readonly == 0 || (before_readonly == 2 && name != "readonly"))
-            set(name, buf);
-        else
-            ignore(name, buf);
-    }
+    APPLY_FOR_SETTINGS(COLLECT_CHANGES)
+#undef COLLECT_CHANGES
+    return changes;
 }
 
-/// Record the changed settings to the buffer. (For example, to send to a remote server.)
-void Settings::serialize(WriteBuffer & buf) const
+void Settings::applyChange(const SettingChange & change)
 {
-#define WRITE(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    if (NAME.changed) \
-    { \
-        writeStringBinary(#NAME, buf); \
-        NAME.write(buf); \
-    }
+    set(change.name, change.value);
+}
 
-    APPLY_FOR_SETTINGS(WRITE)
-
-    /// An empty string is a marker for the end of the settings.
-    writeStringBinary("", buf);
-
-#undef WRITE
+void Settings::applyChanges(const SettingsChanges & changes)
+{
+    for (const auto & change : changes)
+        applyChange(change);
 }
 
 void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_values_, bool changed_only)

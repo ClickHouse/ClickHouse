@@ -23,8 +23,6 @@ public:
       */
     BlockIO execute() override;
 
-    void checkAccess(const ASTSetQuery & ast);
-
     /** Set setting for current context (query context).
       * It is used for interpretation of SETTINGS clause in SELECT query.
       */

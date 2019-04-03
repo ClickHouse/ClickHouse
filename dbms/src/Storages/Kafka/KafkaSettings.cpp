@@ -17,7 +17,7 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
-        for (const ASTSetQuery::Change & setting : storage_def.settings->changes)
+        for (const SettingChange & setting : storage_def.settings->changes)
         {
 #define SET(TYPE, NAME, DEFAULT, DESCRIPTION) \
             else if (setting.name == #NAME) NAME.set(setting.value);

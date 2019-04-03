@@ -265,9 +265,8 @@ public:
 
     /// Set a setting by name.
     void setSetting(const String & name, const Field & value);
-
-    /// Set a setting by name. Read the value in text form from a string (for example, from a config, or from a URL parameter).
-    void setSetting(const String & name, const std::string & value);
+    void applySettingChange(const SettingChange & change);
+    void applySettingsChanges(const SettingsChanges & changes);
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionaries & getExternalDictionaries() const;

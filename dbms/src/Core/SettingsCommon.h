@@ -11,8 +11,6 @@ namespace DB
 {
 
 class Field;
-class ReadBuffer;
-class WriteBuffer;
 
 
 /** One setting for any type.
@@ -35,9 +33,7 @@ struct SettingNumber
 
     /// Serialize to a test string.
     String toString() const;
-
-    /// Serialize to binary stream suitable for transfer over network.
-    void write(WriteBuffer & buf) const;
+    Field toField() const;
 
     void set(T x);
 
@@ -46,9 +42,6 @@ struct SettingNumber
 
     /// Read from text string.
     void set(const String & x);
-
-    /// Read from binary stream.
-    void set(ReadBuffer & buf);
 };
 
 using SettingUInt64 = SettingNumber<UInt64>;
@@ -73,13 +66,11 @@ struct SettingMaxThreads
     SettingMaxThreads & operator= (UInt64 x) { set(x); return *this; }
 
     String toString() const;
+    Field toField() const;
 
     void set(UInt64 x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
 
     void setAuto();
     UInt64 getAutoValue() const;
@@ -102,15 +93,13 @@ struct SettingSeconds
     Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
 
     String toString() const;
+    Field toField() const;
 
     void set(const Poco::Timespan & x);
 
     void set(UInt64 x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -127,13 +116,12 @@ struct SettingMilliseconds
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
 
     String toString() const;
+    Field toField() const;
 
     void set(const Poco::Timespan & x);
     void set(UInt64 x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -162,13 +150,11 @@ struct SettingLoadBalancing
     static LoadBalancing getLoadBalancing(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(LoadBalancing x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -193,13 +179,11 @@ struct SettingJoinStrictness
     static JoinStrictness getJoinStrictness(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(JoinStrictness x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -228,13 +212,11 @@ struct SettingTotalsMode
     static TotalsMode getTotalsMode(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(TotalsMode x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -253,13 +235,11 @@ struct SettingOverflowMode
     static OverflowMode getOverflowMode(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(OverflowMode x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
 };
 
 /// The setting for executing distributed subqueries inside IN or JOIN sections.
@@ -284,12 +264,11 @@ struct SettingDistributedProductMode
     static DistributedProductMode getDistributedProductMode(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(DistributedProductMode x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -304,12 +283,10 @@ struct SettingString
     SettingString & operator= (const String & x) { set(x); return *this; }
 
     String toString() const;
+    Field toField() const;
 
     void set(const String & x);
     void set(const Field & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -325,13 +302,11 @@ public:
     SettingChar & operator= (char x) { set(x); return *this; }
 
     String toString() const;
+    Field toField() const;
 
     void set(char x);
     void set(const String & x);
     void set(const Field & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -350,12 +325,11 @@ struct SettingDateTimeInputFormat
     static Value getValue(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(Value x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
 };
 
 
@@ -385,12 +359,11 @@ public:
     static Value getValue(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(Value x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
 };
 
 }

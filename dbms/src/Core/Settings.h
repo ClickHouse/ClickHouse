@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SettingsCommon.h"
+#include "SettingsChanges.h"
 #include <Core/Defines.h>
 
 
@@ -321,12 +322,6 @@ struct Settings
     /// Set setting by name.
     void set(const String & name, const Field & value);
 
-    /// Set setting by name. Read value, serialized in binary form from buffer (for inter-server communication).
-    void set(const String & name, ReadBuffer & buf);
-
-    /// Skip value, serialized in binary form in buffer.
-    void ignore(const String & name, ReadBuffer & buf);
-
     /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
     void set(const String & name, const String & value);
 
@@ -334,6 +329,7 @@ struct Settings
     String get(const String & name) const;
 
     bool tryGet(const String & name, String & value) const;
+    bool tryGet(const String & name, Field & value) const;
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
       * The profile can also be set using the `set` functions, like the profile setting.
@@ -343,12 +339,12 @@ struct Settings
     /// Load settings from configuration file, at "path" prefix in configuration.
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
-    /// Read settings from buffer. They are serialized as list of contiguous name-value pairs, finished with empty name.
-    /// If readonly=1 is set, ignore read settings.
-    void deserialize(ReadBuffer & buf);
+    /// Collects the changes of all settings.
+    SettingsChanges changes() const;
 
-    /// Write changed settings to buffer. (For example, to be sent to remote server.)
-    void serialize(WriteBuffer & buf) const;
+    /// Applies changes to the settings.
+    void applyChange(const SettingChange & change);
+    void applyChanges(const SettingsChanges & changes);
 
     /// Dumps profile events to two columns of type Array(String)
     void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);

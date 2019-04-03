@@ -399,9 +399,9 @@ void Connection::sendQuery(
 
     /// Per query settings.
     if (settings)
-        settings->serialize(*out);
+        settings->changes().serialize(*out);
     else
-        writeStringBinary("", *out);
+        SettingsChanges().serialize(*out);
 
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);
