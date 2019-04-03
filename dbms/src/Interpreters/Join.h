@@ -131,7 +131,9 @@ public:
     size_t getTotalByteCount() const;
 
     ASTTableJoin::Kind getKind() const { return kind; }
-    AsofRowRefs::Type getAsofType() const { return asof_type; }
+    AsofRowRefs::Type getAsofType() const { return *asof_type; }
+    AsofRowRefs::LookupLists & getAsofData() { return asof_lookup_lists; }
+    const AsofRowRefs::LookupLists & getAsofData() const { return asof_lookup_lists; }
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
       * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
@@ -366,7 +368,8 @@ private:
 
 private:
     Type type = Type::EMPTY;
-    AsofRowRefs::Type asof_type = AsofRowRefs::Type::EMPTY;
+    std::optional<AsofRowRefs::Type> asof_type;
+    AsofRowRefs::LookupLists asof_lookup_lists;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
