@@ -50,7 +50,7 @@ Some additional configuration has to be done to actually make a new language liv
 * Brightly highlighted text starts with  `!!! info "Header"`, followed by 4 spaces on the next line and content. For a warning, replace `info` with `warning`.
 * Hidden block that opens on click: `<details markdown="1"> <summary>Header</summary> hidden content</details>`.
 * Colored text: `<span style="color: red;">text</span>`.
-* Additional anchor to be linked to: `<a name="my_anchor"></a>`, for headers fully in English they are created automatically like `"FoO Bar" -> "foo-bar"`.
+* Heading anchor to be linked to: `Title {#anchor-name}`. Anchors are created automatically for headings written fully in English: `"Title Name" -> "title-name"`.
 * Table:
 ```
 | Header    1 | Header    2 | Header    3 |
