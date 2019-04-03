@@ -65,7 +65,7 @@ StorageMergeTree::StorageMergeTree(
     : path(path_), database_name(database_name_), table_name(table_name_), full_paths{path + escapeForFileName(table_name) + '/', "/mnt/data/Data2/" + escapeForFileName(table_name) + '/'},
     global_context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
-         full_paths, columns_, indices_,
+         Schema(std::vector<Strings>{full_paths}), columns_, indices_, ///@TODO_IGR generate Schema from config
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
          sample_by_ast_, merging_params_, settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
@@ -273,12 +273,15 @@ public:
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
-        reserved_space = DiskSpaceMonitor::reserve(storage.full_paths[0], total_size); /// May throw. @TODO_IGR ASK WHERE TO RESERVE
+        reserved_space = storage.data.reserveSpaceForPart(total_size);
+        if (!reserved_space) {
+            throw Exception("Not enought space", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR Edit exception msg
+        }
 
         for (const auto & part : future_part.parts)
         {
             if (storage.currently_merging.count(part))
-                throw Exception("Tagging alreagy tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Tagging already tagged part " + part->name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
         }
         storage.currently_merging.insert(future_part.parts.begin(), future_part.parts.end());
     }
@@ -481,7 +484,8 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_paths[0]); ///@TODO_IGR ASK DISK OR DISKS
+            /// DataPArt can be store only at one disk. Get Max of free space at all disks
+            UInt64 disk_space = DiskSpaceMonitor::getMaxUnreservedFreeSpace();  ///@TODO_IGR ASK Maybe reserve max space at this disk there and then change to exactly space
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
@@ -570,7 +574,8 @@ bool StorageMergeTree::tryMutatePart()
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
-        auto disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_paths[0]); ///@TODO_IGR ASK DISK OR DISKS
+        /// DataPArt can be store only at one disk. Get Max of free space at all disks
+        UInt64 disk_space = DiskSpaceMonitor::getMaxUnreservedFreeSpace();  ///@TODO_IGR ASK Maybe reserve max space at this disk there and then change to exactly space
 
         std::lock_guard lock(currently_merging_mutex);
 
@@ -660,7 +665,8 @@ bool StorageMergeTree::tryMutatePart()
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, *merge_entry, global_context,
+                                                            tagger->reserved_space.get());
         data.renameTempPartAndReplace(new_part);
         tagger->is_successful = true;
         write_part_log({});
