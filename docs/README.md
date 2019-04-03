@@ -1,4 +1,4 @@
-# How to contribute to ClickHouse documentation
+# How to Contribute to ClickHouse Documentation
 
 ClickHouse uses the "documentation as code" approach, so you can edit Markdown files in this folder from the GitHub web interface. Alternatively, fork the ClickHouse repository, edit, commit, push, and open a pull request.
 
@@ -13,15 +13,15 @@ The master branch is then asynchronously published to the ClickHouse official we
 
 The infrastructure to build Markdown for publishing on the documentation website resides in the [tools](tools) folder. It has its own [README.md](tools/README.md) file with more details.
 
-# How to write content for ClickHouse documentation
+# How to Write Content for ClickHouse Documentation
 
-## Target audience
+## Target Audience
 
 When you write pretty much any text, the first thing you should think about is who will read it and which terms you should use for communicating with them.
 
 ClickHouse can be directly used by all sorts of analysts and engineers. For generic parts of documentation (like the query language, tutorials or overviews), assume that the reader only has a basic technical background. For more technical sections (like articles that describe ClickHouse internals, guides for operating ClickHouse clusters, or rules for contributing to C++ code), you can use specific technical language and concepts.
 
-## Specific recommendations
+## Specific Recommendations
 
 * Documentation should make sense when you read it through from beginning to end. If you add new content, try to place it where the necessary concepts have already been explained.
 * If a documentation section consists of many similar items, like functions or operators, try to order them from more generic (usable by a wide audience) to more specific (for specific use cases or application types). If several items are intended to be mostly used together, group them together in the documentation.
@@ -31,7 +31,7 @@ ClickHouse can be directly used by all sorts of analysts and engineers. For gene
 * Proofread your text before publishing. Look for typos, missing punctuation, or repetitions that could be avoided.
 * Try to avoid addressing the reader directly, although this is not strictly prohibited.
 
-# How to add a new language
+# How to Add a New Language
 
 1. Create a new docs subfolder named using the [ISO-639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
 2. Add Markdown files with the translation, mirroring the folder structure of other languages.
@@ -39,7 +39,7 @@ ClickHouse can be directly used by all sorts of analysts and engineers. For gene
 
 Some additional configuration has to be done to actually make a new language live on the official website, but it's not automated or documented yet, so we'll do it on our own after the pull request with the content is merged.
 
-# Markdown dialect cheatsheet
+# Markdown Dialect Cheatsheet
 
 * Headings are on a separate line starting with `# `, `## ` or `### `.
 * Bold is in `**asterisks**` or `__underlines__`.
