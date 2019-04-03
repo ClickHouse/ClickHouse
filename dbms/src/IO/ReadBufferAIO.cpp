@@ -187,7 +187,7 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
             pos = working_buffer.end();
             first_unread_pos_in_file = new_pos_in_file;
 
-            /// If we goes back, than it's not eof
+            /// If we go back, than it's not eof
             is_eof = false;
 
             /// We can not use the result of the current asynchronous request.
