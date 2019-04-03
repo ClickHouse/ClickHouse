@@ -1,74 +1,111 @@
 #include <Interpreters/RowRefs.h>
 
+#include <Common/typeid_cast.h>
 #include <Common/ColumnsHashing.h>
 #include <Core/Block.h>
 #include <Columns/IColumn.h>
 
-#include <optional>
 
 namespace DB
 {
 
-void AsofRowRefs::Lookups::create(AsofRowRefs::Type which)
+namespace
+{
+
+/// maps enum values to types
+template <typename F>
+void callWithType(AsofRowRefs::Type which, F && f)
 {
     switch (which)
     {
-        case Type::EMPTY: break;
-    #define M(NAME, TYPE) \
-        case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
-            APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-    #undef M
-    }
-}
-
-template<typename T>
-using AsofGetterType = ColumnsHashing::HashMethodOneNumber<T, T, T, false>;
-
-void AsofRowRefs::insert(const IColumn * asof_column, const Block * block, size_t row_num, Arena & pool)
-{
-    switch (type)
-    {
-        case Type::EMPTY: break;
-    #define M(NAME, TYPE) \
-        case Type::NAME: {  \
-            auto asof_getter = AsofGetterType<TYPE>(asof_column); \
-            auto entry = Entry<TYPE>(asof_getter.getKey(row_num, pool), RowRef(block, row_num));  \
-            lookups.NAME->insert(entry); \
-            break;    \
-        }
-            APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-    #undef M
-    }
-}
-
-const RowRef * AsofRowRefs::findAsof(const IColumn * asof_column, size_t row_num, Arena & pool) const
-{
-    switch (type)
-    {
-        case Type::EMPTY: return nullptr;
-    #define M(NAME, TYPE) \
-        case Type::NAME: {  \
-            auto asof_getter = AsofGetterType<TYPE>(asof_column); \
-            TYPE key = asof_getter.getKey(row_num, pool);   \
-            auto it = lookups.NAME->upper_bound(Entry<TYPE>(key));   \
-            if (it == lookups.NAME->cbegin())  \
-                return nullptr;  \
-            return &((--it)->row_ref); \
-        }
-            APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-    #undef M
+        case AsofRowRefs::Type::key32:  return f(UInt32());
+        case AsofRowRefs::Type::key64:  return f(UInt64());
+        case AsofRowRefs::Type::keyf32: return f(Float32());
+        case AsofRowRefs::Type::keyf64: return f(Float64());
     }
 
     __builtin_unreachable();
 }
 
-std::optional<std::pair<AsofRowRefs::Type, size_t>> AsofRowRefs::getTypeSize(const IColumn * asof_column)
+} // namespace
+
+
+void AsofRowRefs::insert(Type type, LookupLists & lookup_data, const IColumn * asof_column, const Block * block, size_t row_num)
 {
-    #define M(NAME, TYPE) \
-    if (strcmp(#TYPE, asof_column->getFamilyName()) == 0) \
-        return std::make_pair(Type::NAME,sizeof(TYPE));
-    APPLY_FOR_ASOF_JOIN_VARIANTS(M)
-    #undef M
+    auto call = [&](const auto & t)
+    {
+        using T = std::decay_t<decltype(t)>;
+        using LookupType = typename Entry<T>::LookupType;
+
+        auto * column = typeid_cast<const ColumnVector<T> *>(asof_column);
+        T key = column->getElement(row_num);
+        auto entry = Entry<T>(key, RowRef(block, row_num));
+
+        std::lock_guard<std::mutex> lock(lookup_data.mutex);
+
+        if (!lookups)
+        {
+            lookup_data.lookups.push_back(Lookups());
+            lookup_data.lookups.back() = LookupType();
+            lookups = &lookup_data.lookups.back();
+        }
+        std::get<LookupType>(*lookups).insert(entry);
+    };
+
+    callWithType(type, call);
+}
+
+const RowRef * AsofRowRefs::findAsof(Type type, const LookupLists & lookup_data, const IColumn * asof_column, size_t row_num) const
+{
+    const RowRef * out = nullptr;
+
+    auto call = [&](const auto & t)
+    {
+        using T = std::decay_t<decltype(t)>;
+        using LookupType = typename Entry<T>::LookupType;
+
+        auto * column = typeid_cast<const ColumnVector<T> *>(asof_column);
+        T key = column->getElement(row_num);
+
+        std::lock_guard<std::mutex> lock(lookup_data.mutex);
+
+        if (!lookups)
+            return;
+
+        auto & typed_lookup = std::get<LookupType>(*lookups);
+        auto it = typed_lookup.upper_bound(Entry<T>(key));
+        if (it != typed_lookup.cbegin())
+            out = &((--it)->row_ref);
+    };
+
+    callWithType(type, call);
+    return out;
+}
+
+std::optional<AsofRowRefs::Type> AsofRowRefs::getTypeSize(const IColumn * asof_column, size_t & size)
+{
+    if (typeid_cast<const ColumnVector<UInt32> *>(asof_column))
+    {
+        size = sizeof(UInt32);
+        return Type::key32;
+    }
+    else if (typeid_cast<const ColumnVector<UInt64> *>(asof_column))
+    {
+        size = sizeof(UInt64);
+        return Type::key64;
+    }
+    else if (typeid_cast<const ColumnVector<Float32> *>(asof_column))
+    {
+        size = sizeof(Float32);
+        return Type::keyf32;
+    }
+    else if (typeid_cast<const ColumnVector<Float64> *>(asof_column))
+    {
+        size = sizeof(Float64);
+        return Type::keyf64;
+    }
+
+    size = 0;
     return {};
 }
 

@@ -301,9 +301,8 @@ void Join::setSampleBlock(const Block & block)
         const IColumn * asof_column = key_columns.back();
         size_t asof_size;
 
-        if (auto t = AsofRowRefs::getTypeSize(asof_column))
-            std::tie(asof_type, asof_size) = *t;
-        else
+        asof_type = AsofRowRefs::getTypeSize(asof_column, asof_size);
+        if (!asof_type)
         {
             std::string msg = "ASOF join not supported for type";
             msg += asof_column->getFamilyName();
@@ -416,21 +415,22 @@ namespace
     template <typename Map, typename KeyGetter>
     struct Inserter<ASTTableJoin::Strictness::Asof, Map, KeyGetter>
     {
-        static ALWAYS_INLINE void insert(const Join & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool, const IColumn * asof_column)
+        static ALWAYS_INLINE void insert(Join & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool,
+                                         const IColumn * asof_column)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
             typename Map::mapped_type * time_series_map = &emplace_result.getMapped();
 
             if (emplace_result.isInserted())
-                time_series_map = new (time_series_map) typename Map::mapped_type(join.getAsofType());
-            time_series_map->insert(asof_column, stored_block, i, pool);
+                time_series_map = new (time_series_map) typename Map::mapped_type();
+            time_series_map->insert(join.getAsofType(), join.getAsofData(), asof_column, stored_block, i);
         }
     };
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool has_null_map>
     void NO_INLINE insertFromBlockImplTypeCase(
-        const Join & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
+        Join & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         const IColumn * asof_column [[maybe_unused]] = nullptr;
@@ -454,7 +454,7 @@ namespace
 
     template <ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
     void insertFromBlockImplType(
-        const Join & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
+        Join & join, Map & map, size_t rows, const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         if (null_map)
@@ -466,7 +466,7 @@ namespace
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Maps>
     void insertFromBlockImpl(
-        const Join & join, Join::Type type, Maps & maps, size_t rows, const ColumnRawPtrs & key_columns,
+        Join & join, Join::Type type, Maps & maps, size_t rows, const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes, Block * stored_block, ConstNullMapPtr null_map, Arena & pool)
     {
         switch (type)
@@ -687,7 +687,7 @@ void addNotFoundRow(AddedColumns & added [[maybe_unused]], IColumn::Offset & cur
 /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
 template <bool _add_missing, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map, bool _has_null_map>
 std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
-    const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
+    const Join & join, const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
     AddedColumns & added_columns, ConstNullMapPtr null_map, IColumn::Filter & filter)
 {
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
@@ -720,7 +720,7 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
                 if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
                 {
-                    if (const RowRef * found = mapped.findAsof(asof_column, i, pool))
+                    if (const RowRef * found = mapped.findAsof(join.getAsofType(), join.getAsofData(), asof_column, i))
                     {
                         filter[i] = 1;
                         mapped.setUsed();
@@ -749,7 +749,7 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename KeyGetter, typename Map>
 IColumn::Filter joinRightColumns(
-    const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
+    const Join & join, const Map & map, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
     AddedColumns & added_columns, ConstNullMapPtr null_map, std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
 {
     constexpr bool left_or_full = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
@@ -758,17 +758,17 @@ IColumn::Filter joinRightColumns(
 
     if (null_map)
         offsets_to_replicate = joinRightIndexedColumns<left_or_full, STRICTNESS, KeyGetter, Map, true>(
-            map, rows, key_columns, key_sizes, added_columns, null_map, filter);
+            join, map, rows, key_columns, key_sizes, added_columns, null_map, filter);
     else
         offsets_to_replicate = joinRightIndexedColumns<left_or_full, STRICTNESS, KeyGetter, Map, false>(
-            map, rows, key_columns, key_sizes, added_columns, null_map, filter);
+            join, map, rows, key_columns, key_sizes, added_columns, null_map, filter);
 
     return filter;
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
 IColumn::Filter switchJoinRightColumns(
-    Join::Type type,
+    Join::Type type, const Join & join,
     const Maps & maps_, size_t rows, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
     AddedColumns & added_columns, ConstNullMapPtr null_map,
     std::unique_ptr<IColumn::Offsets> & offsets_to_replicate)
@@ -778,7 +778,7 @@ IColumn::Filter switchJoinRightColumns(
     #define M(TYPE) \
         case Join::Type::TYPE: \
             return joinRightColumns<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
-                *maps_.TYPE, rows, key_columns, key_sizes, added_columns, null_map, offsets_to_replicate);
+                join, *maps_.TYPE, rows, key_columns, key_sizes, added_columns, null_map, offsets_to_replicate);
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
 
@@ -852,7 +852,7 @@ void Join::joinBlockImpl(
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
 
     IColumn::Filter row_filter = switchJoinRightColumns<KIND, STRICTNESS>(
-        type, maps_, block.rows(), key_columns, key_sizes, added, null_map, offsets_to_replicate);
+        type, *this, maps_, block.rows(), key_columns, key_sizes, added, null_map, offsets_to_replicate);
 
     for (size_t i = 0; i < added.size(); ++i)
         block.insert(added.moveColumn(i));
