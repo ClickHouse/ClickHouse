@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/PODArray.h>
+#include <vector>
+//#include <Common/PODArray.h>
 
 namespace DB
 {
@@ -13,36 +14,39 @@ namespace DB
  * This way the data only gets sorted once.
  */
 
-template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
-class SortedLookupPODArray : private PaddedPODArray<T, INITIAL_SIZE, TAllocator>
+template <typename T>
+class SortedLookupPODArray
 {
 public:
-    using Base = PaddedPODArray<T, INITIAL_SIZE, TAllocator>;
-    using typename Base::PODArray;
-    using Base::cbegin;
-    using Base::cend;
+    using Base = std::vector<T>;
+    //using Base = PaddedPODArray<T>;
 
     template <typename U, typename ... TAllocatorParams>
     void insert(U && x, TAllocatorParams &&... allocator_params)
     {
-        Base::push_back(std::forward<U>(x), std::forward<TAllocatorParams>(allocator_params)...);
+        array.push_back(std::forward<U>(x), std::forward<TAllocatorParams>(allocator_params)...);
         sorted = false;
     }
 
-    typename Base::const_iterator upper_bound (const T& k)
+    typename Base::const_iterator upper_bound(const T & k)
     {
         if (!sorted)
-            this->sort();
-        return std::upper_bound(this->cbegin(), this->cend(), k);
-    }
-private:
-    void sort()
-    {
-        std::sort(this->begin(), this->end());
-        sorted = true;
+            sort();
+        return std::upper_bound(array.cbegin(), array.cend(), k);
     }
 
+    typename Base::const_iterator cbegin() const { return array.cbegin(); }
+    typename Base::const_iterator cend() const { return array.cend(); }
+
+private:
+    Base array;
     bool sorted = false;
+
+    void sort()
+    {
+        std::sort(array.begin(), array.end());
+        sorted = true;
+    }
 };
 
 }
