@@ -30,8 +30,6 @@ struct FutureMergedMutatedPart
     }
 
     void assign(MergeTreeData::DataPartsVector parts_);
-
-    UInt64 expectedSize() const;
 };
 
 /** Can select the parts to merge and merge them.
@@ -98,7 +96,7 @@ public:
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FutureMergedMutatedPart & future_part,
         const std::vector<MutationCommand> & commands,
-        MergeListEntry & merge_entry, const Context & context);
+        MergeListEntry & merge_entry, const Context & context, DiskSpaceMonitor::Reservation * disk_reservation);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,

@@ -89,7 +89,7 @@ namespace ErrorCodes
 
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
-    const Strings & full_paths_, const ColumnsDescription & columns_,
+    const Schema & schema_, const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
     Context & context_,
     const String & date_column_name,
@@ -110,7 +110,7 @@ MergeTreeData::MergeTreeData(
     sample_by_ast(sample_by_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
-    full_paths(full_paths_),
+    schema(schema_),
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
@@ -159,7 +159,10 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
+    auto full_paths = getFullPaths();
+
     auto format_path = full_paths[0];  ///@TODO_IGR ASK What path should we use for format file?
+                                       ///          Use first disk. If format file not there move it.
     auto path_exists = Poco::File(format_path).exists();
 
     for (const String & path : full_paths) {
@@ -629,6 +632,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
     LOG_DEBUG(log, "Loading data parts");
 
+    const auto full_paths = getFullPaths();
+
     std::vector<std::pair<String, size_t>> part_file_names;
     Poco::DirectoryIterator end;
     for (size_t i = 0; i != full_paths.size(); ++i)
@@ -840,6 +845,8 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
         ? current_time - custom_directories_lifetime_seconds
         : current_time - settings.temporary_directories_lifetime.totalSeconds();
 
+    const auto full_paths = getFullPaths();
+
     /// Delete temporary directories older than a day.
     Poco::DirectoryIterator end;
     for (auto && full_path : full_paths)
@@ -1006,7 +1013,7 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
-    for (auto && full_path : full_paths) {
+    for (auto && full_path : getFullPaths()) {
         Poco::File(full_path).remove(true);
     }
 
@@ -2273,6 +2280,8 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
 
     Poco::DirectoryIterator end;
 
+    const auto full_paths = getFullPaths();
+
     for (const String & full_path : full_paths)
     {
         for (Poco::DirectoryIterator it(full_path); it != end; ++it)
@@ -2413,7 +2422,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
     return res;
 }
 
-String MergeTreeData::getFullPathForPart(UInt64 expected_size) const
+DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size) const
 {
     std::cerr << "Exp size " << expected_size << std::endl;
     constexpr UInt64 SIZE_100MB = 100ull << 20;
@@ -2422,16 +2431,14 @@ String MergeTreeData::getFullPathForPart(UInt64 expected_size) const
     if (expected_size < SIZE_100MB) {
         expected_size = SIZE_100MB;
     }
-    for (const String & path : full_paths) {
-        UInt64 free_space = DiskSpaceMonitor::getUnreservedFreeSpace(path); ///@TODO_IGR ASK reserve? YES, we are
-
-        if (free_space > expected_size * MAGIC_CONST) {
-            std::cerr << "Choosed " << free_space << "  " << path << std::endl;
-            return path;
-        }
+    auto reservation = reserveSpaceAtDisk(expected_size * MAGIC_CONST);
+    if (reservation) {
+        return reservation;
     }
-    std::cerr << "Choosed last " <<  full_paths[full_paths.size() - 1] << std::endl;
-    return full_paths[full_paths.size() - 1];
+
+    throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(expected_size) + " requested, "
+                    + formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getMaxUnreservedFreeSpace()) + " available",
+                    ErrorCodes::NOT_ENOUGH_SPACE);
 }
 
 MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affordable_states) const
@@ -2619,8 +2626,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    ///@TODO_IGR ASK Maybe flag that it is not recent part? Or choose same dir if it is possible
-    Poco::Path dst_part_absolute_path = Poco::Path(getFullPathForPart(src_part->bytes_on_disk) + tmp_dst_part_name).absolute();
+    auto reservation = reserveSpaceForPart(src_part->bytes_on_disk);
+    String dst_part_path = reservation->getPath();
+    Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
 
     if (Poco::File(dst_part_absolute_path).exists())
@@ -2629,13 +2637,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     LOG_DEBUG(log, "Cloning part " << src_part_absolute_path.toString() << " to " << dst_part_absolute_path.toString());
     localBackup(src_part_absolute_path, dst_part_absolute_path);
 
-    MergeTreeData::MutableDataPartPtr dst_data_part = std::make_shared<MergeTreeData::DataPart>(*this, dst_part_storage_path, dst_part_name, dst_part_info);
+    MergeTreeData::MutableDataPartPtr dst_data_part = std::make_shared<MergeTreeData::DataPart>(*this, dst_part_path, dst_part_name, dst_part_info);
     dst_data_part->relative_path = tmp_dst_part_name;
     dst_data_part->is_temp = true;
 
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = Poco::File(dst_part_absolute_path).getLastModified().epochTime();
     return dst_data_part;
+}
+
+DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(UInt64 expected_size) const {
+    auto reservation = schema.reserve(expected_size);
+    if (reservation) {
+        /// Add path to table at disk
+        reservation->addEnclosedDirToPath(table_name); ///@TODO_IGR ASK can we use table_name here? Could path be different?
+    }
+    return reservation;
 }
 
 void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
