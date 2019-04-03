@@ -287,7 +287,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         if (!parser_exp_elem.parse(pos, command->ttl, expected))
             return false;
-
         command->type = ASTAlterCommand::MODIFY_TTL;
     }
     else

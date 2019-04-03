@@ -594,7 +594,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             sample_by_ast = args.storage_def->sample_by->ptr();
 
-
         if (args.storage_def->ttl_table)
             ttl_table_ast = args.storage_def->ttl_table->ptr();
 

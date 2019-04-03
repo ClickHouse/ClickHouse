@@ -33,6 +33,12 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->comment);
     }
 
+    if (ttl)
+    {
+        res->ttl = ttl->clone();
+        res->children.push_back(res->ttl);
+    }
+
     return res;
 }
 
@@ -68,6 +74,12 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
     {
         settings.ostr << ' ';
         codec->formatImpl(settings, state, frame);
+    }
+
+    if (ttl)
+    {
+        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "TTL" << (settings.hilite ? hilite_none : "") << ' ';
+        ttl->formatImpl(settings, state, frame);
     }
 }
 

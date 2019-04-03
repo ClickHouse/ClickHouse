@@ -255,8 +255,7 @@ void StorageMergeTree::alter(
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
 
-    data.ttl_table_ast = std::move(new_ttl_table_ast);
-    data.initTTLExpressions();
+    data.setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();

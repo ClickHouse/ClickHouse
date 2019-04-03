@@ -23,6 +23,8 @@ ASTPtr ASTStorage::clone() const
         res->set(res->order_by, order_by->clone());
     if (sample_by)
         res->set(res->sample_by, sample_by->clone());
+    if (ttl_table)
+        res->set(res->ttl_table, ttl_table->clone());
 
     if (settings)
         res->set(res->settings, settings->clone());

@@ -162,7 +162,7 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    initTTLExpressions();
+    setTTLExpressions(columns_.getColumnTTLs(), ttl_table_ast_);
 
     auto path_exists = Poco::File(full_path).exists();
     /// Creating directories, if not exist.
@@ -537,7 +537,8 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 }
 
 
-void MergeTreeData::initTTLExpressions()
+void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
+        const ASTPtr & new_ttl_table_ast, bool only_check)
 {
     auto create_ttl_entry = [this](ASTPtr ttl_ast) -> TTLEntry
     {
@@ -550,8 +551,7 @@ void MergeTreeData::initTTLExpressions()
         return {expr, result_column};
     };
 
-    const auto & ttl_asts = getColumns().getColumnTTLs();
-    if (!ttl_asts.empty())
+    if (!new_column_ttls.empty())
     {
         NameSet columns_ttl_forbidden;
 
@@ -563,17 +563,28 @@ void MergeTreeData::initTTLExpressions()
             for (const auto & col : sorting_key_expr->getRequiredColumns())
                 columns_ttl_forbidden.insert(col);
 
-        for (const auto & [name, ast] : ttl_asts)
+        for (const auto & [name, ast] : new_column_ttls)
         {
             if (columns_ttl_forbidden.count(name))
                 throw Exception("Trying to set ttl for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
             else
-                ttl_entries_by_name.emplace(name, create_ttl_entry(ast));
+            {
+                auto new_ttl_entry = create_ttl_entry(ast);
+                if (!only_check)
+                    ttl_entries_by_name.emplace(name, new_ttl_entry);
+            }
         }
     }
 
-    if (ttl_table_ast)
-        ttl_table_entry = create_ttl_entry(ttl_table_ast);
+    if (new_ttl_table_ast)
+    {
+        auto new_ttl_table_entry = create_ttl_entry(new_ttl_table_ast);
+        if (!only_check)
+        {
+            ttl_table_ast = new_ttl_table_ast;
+            ttl_table_entry = new_ttl_table_entry;
+        }
+    }
 }
 
 
@@ -1232,8 +1243,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast,
             new_columns, new_indices, /* only_check = */ true);
 
-    ttl_table_ast = std::move(new_ttl_table_ast);
-    initTTLExpressions();
+    setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;

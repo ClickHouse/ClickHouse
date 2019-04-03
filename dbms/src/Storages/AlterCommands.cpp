@@ -326,7 +326,6 @@ void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescr
     order_by_ast = std::move(new_order_by_ast);
     primary_key_ast = std::move(new_primary_key_ast);
     ttl_table_ast = std::move(new_ttl_table_ast);
-
 }
 
 void AlterCommands::validate(const IStorage & table, const Context & context)
