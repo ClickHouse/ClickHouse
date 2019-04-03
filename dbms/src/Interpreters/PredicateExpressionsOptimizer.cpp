@@ -34,7 +34,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_AST;
 }
 
-namespace {
+namespace
+{
 
 constexpr auto and_function_name = "and";
 
