@@ -1,3 +1,8 @@
+## ClickHouse release 19.4.2.7, 2019-03-30
+
+### Bug Fixes
+* Fixed reading from `Array(LowCardinality)` column in rare case when column contained a long sequence of empty arrays. [#4850](https://github.com/yandex/ClickHouse/pull/4850) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+
 ## ClickHouse release 19.4.1.3, 2019-03-19
 
 ### Bug Fixes
