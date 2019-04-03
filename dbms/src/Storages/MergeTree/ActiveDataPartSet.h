@@ -16,6 +16,7 @@ class ActiveDataPartSet
 {
 public:
     struct PartPathName {
+        /// path + name is absolute path to DataPart
         String path;
         String name;
     };
