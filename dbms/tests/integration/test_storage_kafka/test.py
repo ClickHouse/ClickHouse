@@ -244,6 +244,11 @@ def test_kafka_json_without_delimiter(kafka_cluster):
         messages += json.dumps({'key': i, 'value': i}) + '\n'
     kafka_produce('json', [messages])
 
+    messages = ''
+    for i in range(25, 50):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+    kafka_produce('json', [messages])
+
     result = ''
     for i in range(50):
         result += instance.query('SELECT * FROM test.kafka')
