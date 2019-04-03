@@ -341,7 +341,7 @@ def main(args):
                                         if result_is_different:
                                             diff = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()[0]
                                             diff = unicode(diff, errors='replace', encoding='utf-8')
-                                            cat = Popen(['cat', '-A'], stdin=PIPE, stdout=PIPE).communicate(input=diff)[0]
+                                            cat = Popen(['cat', '-vet'], stdin=PIPE, stdout=PIPE).communicate(input=diff)[0]
 
                                             failure = et.Element("failure", attrib = {"message": "result differs with reference"})
                                             report_testcase.append(failure)
