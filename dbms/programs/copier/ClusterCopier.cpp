@@ -912,9 +912,8 @@ public:
 
         zookeeper->createAncestors(local_task_description_path);
         auto code = zookeeper->tryCreate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
-        if (code && force) {
+        if (code && force)
             zookeeper->createOrUpdate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
-        }
 
         LOG_DEBUG(log, "Task description " << ((code && !force) ? "not " : "") << "uploaded to " << local_task_description_path << " with result " << code << " ("<< zookeeper->error2string(code) << ")");
     }
