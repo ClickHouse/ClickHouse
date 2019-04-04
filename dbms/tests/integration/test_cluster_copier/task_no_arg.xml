@@ -1,0 +1,39 @@
+<yandex>
+    <remote_servers>   
+       <source_cluster>
+          <shard>
+              <weight>1</weight>
+              <replica>
+                  <host>s0_0_0</host>
+                  <port>9000</port>
+              </replica>
+          </shard>
+      </source_cluster>     
+      <default_cluster>
+      
+        <shard>
+          <weight>1</weight>
+          <replica>
+              <host>s1_1_0</host>
+              <port>9000</port>
+          </replica>
+        </shard>
+            
+      </default_cluster>     
+    </remote_servers>
+    <max_workers>1</max_workers>
+
+    <tables>
+      <table_crm_fin_account>
+        <cluster_pull>source_cluster</cluster_pull>
+        <database_pull>default</database_pull>
+        <table_pull>copier_test1</table_pull>
+
+        <cluster_push>default_cluster</cluster_push>
+        <database_push>default</database_push>
+        <table_push>copier_test1_1</table_push>
+        <engine>ENGINE = MergeTree PARTITION BY date ORDER BY date</engine>
+        <sharding_key>rand()</sharding_key>
+      </table_crm_fin_account>
+    </tables>
+</yandex>
