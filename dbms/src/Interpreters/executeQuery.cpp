@@ -21,8 +21,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
-#include <Interpreters/JoinToSubqueryTransformVisitor.h>
-#include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -63,18 +61,24 @@ static String joinLines(const String & query)
 
 
 /// Log query into text log (not into system table).
-static void logQuery(const String & query, const Context & context)
+static void logQuery(const String & query, const Context & context, bool internal)
 {
-    const auto & current_query_id = context.getClientInfo().current_query_id;
-    const auto & initial_query_id = context.getClientInfo().initial_query_id;
-    const auto & current_user = context.getClientInfo().current_user;
+    if (internal)
+    {
+        LOG_DEBUG(&Logger::get("executeQuery"), "(internal) " << joinLines(query));
+    }
+    else
+    {
+        const auto & current_query_id = context.getClientInfo().current_query_id;
+        const auto & initial_query_id = context.getClientInfo().initial_query_id;
+        const auto & current_user = context.getClientInfo().current_user;
 
-    LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
-    << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
-    << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
-    << ") "
-    << joinLines(query)
-    );
+        LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
+            << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
+            << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
+            << ") "
+            << joinLines(query));
+    }
 }
 
 
@@ -165,7 +169,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        auto * insert_query = dynamic_cast<ASTInsertQuery *>(ast.get());
+        auto * insert_query = ast->as<ASTInsertQuery>();
+
+        if (insert_query && insert_query->settings_ast)
+            InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
+
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;
@@ -176,13 +184,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     }
     catch (...)
     {
+        /// Anyway log the query.
+        String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
+        logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
+
         if (!internal)
-        {
-            /// Anyway log the query.
-            String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
-            logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
             onExceptionBeforeStart(query, context, current_time);
-        }
 
         throw;
     }
@@ -193,24 +200,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
-        if (!internal)
-            logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
-
-        if (!internal && settings.allow_experimental_multiple_joins_emulation)
-        {
-            JoinToSubqueryTransformVisitor::Data join_to_subs_data;
-            JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
-            if (join_to_subs_data.done)
-                logQuery(queryToString(*ast), context);
-        }
-
-        if (!internal && settings.allow_experimental_cross_to_join_conversion)
-        {
-            CrossToInnerJoinVisitor::Data cross_to_inner;
-            CrossToInnerJoinVisitor(cross_to_inner).visit(ast);
-            if (cross_to_inner.done)
-                logQuery(queryToString(*ast), context);
-        }
+        logQuery(query.substr(0, settings.log_queries_cut_to_length), context, internal);
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
@@ -222,7 +212,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         ProcessList::EntryPtr process_list_entry;
-        if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
+        if (!internal && !ast->as<ASTShowProcesslistQuery>())
         {
             process_list_entry = context.getProcessList().insert(query, ast.get(), context);
             context.setProcessListElement(&process_list_entry->get());
@@ -435,10 +425,11 @@ BlockIO executeQuery(
     const String & query,
     Context & context,
     bool internal,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    bool may_have_embedded_data)
 {
     BlockIO streams;
-    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, false);
+    std::tie(std::ignore, streams) = executeQueryImpl(query.data(), query.data() + query.size(), context, internal, stage, !may_have_embedded_data);
     return streams;
 }
 
@@ -461,12 +452,16 @@ void executeQuery(
 
     size_t max_query_size = context.getSettingsRef().max_query_size;
 
+    bool may_have_tail;
     if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         begin = istr.position();
         end = istr.buffer().end();
         istr.position() += end - begin;
+        /// Actually we don't know will query has additional data or not.
+        /// But we can't check istr.eof(), because begin and end pointers will became invalid
+        may_have_tail = true;
     }
     else
     {
@@ -478,12 +473,14 @@ void executeQuery(
 
         begin = parse_buf.data();
         end = begin + parse_buf.size();
+        /// Can check stream for eof, because we have copied data
+        may_have_tail = !istr.eof();
     }
 
     ASTPtr ast;
     BlockIO streams;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, !istr.eof());
+    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, may_have_tail);
 
     try
     {
@@ -495,7 +492,8 @@ void executeQuery(
 
         if (streams.in)
         {
-            const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+            /// FIXME: try to prettify this cast using `as<>()`
+            const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
             std::optional<WriteBufferFromFile> out_file_buf;
@@ -504,7 +502,7 @@ void executeQuery(
                 if (!allow_into_outfile)
                     throw Exception("INTO OUTFILE is not allowed", ErrorCodes::INTO_OUTFILE_NOT_ALLOWED);
 
-                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+                const auto & out_file = ast_query_with_output->out_file->as<ASTLiteral &>().value.safeGet<std::string>();
                 out_file_buf.emplace(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT);
                 out_buf = &*out_file_buf;
             }

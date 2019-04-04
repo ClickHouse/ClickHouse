@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 
@@ -87,6 +88,7 @@ public:
     size_t size() const override { return data.size(); }
     size_t byteSize() const override { return data.size() * sizeof(data[0]); }
     size_t allocatedBytes() const override { return data.allocated_bytes(); }
+    void protect() override { data.protect(); }
     void reserve(size_t n) override { data.reserve(n); }
 
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
@@ -101,7 +103,7 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     MutableColumnPtr cloneResized(size_t size) const override;
 
@@ -116,11 +118,11 @@ public:
     bool isDefaultAt(size_t n) const override { return data[n] == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-    ColumnPtr permute(const IColumn::Permutation & perm, UInt64 limit) const override;
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
+    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
     void getExtremes(Field & min, Field & max) const override;
@@ -131,6 +133,13 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnDecimal<T> *>(&rhs))
+            return scale == rhs_concrete->scale;
+        return false;
+    }
 
 
     void insert(const T value) { data.push_back(value); }
@@ -144,7 +153,7 @@ protected:
     UInt32 scale;
 
     template <typename U>
-    void permutation(bool reverse, UInt64 limit, PaddedPODArray<U> & res) const
+    void permutation(bool reverse, size_t limit, PaddedPODArray<U> & res) const
     {
         size_t s = data.size();
         res.resize(s);
@@ -164,9 +173,9 @@ protected:
 
 template <typename T>
 template <typename Type>
-ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
+ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    UInt64 size = indexes.size();
+    size_t size = indexes.size();
 
     if (limit == 0)
         limit = size;

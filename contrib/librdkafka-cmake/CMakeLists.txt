@@ -51,10 +51,6 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/snappy.c
   ${RDKAFKA_SOURCE_DIR}/tinycthread.c
   ${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c
-  ${RDKAFKA_SOURCE_DIR}/xxhash.c
-  ${RDKAFKA_SOURCE_DIR}/lz4.c
-  ${RDKAFKA_SOURCE_DIR}/lz4frame.c
-  ${RDKAFKA_SOURCE_DIR}/lz4hc.c
   ${RDKAFKA_SOURCE_DIR}/rdgz.c
 )
 
@@ -62,4 +58,7 @@ add_library(rdkafka ${LINK_MODE} ${SRCS})
 target_include_directories(rdkafka SYSTEM PUBLIC include)
 target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})         # Because weird logic with "include_next" is used.
 target_include_directories(rdkafka SYSTEM PRIVATE ${ZSTD_INCLUDE_DIR}/common)   # Because wrong path to "zstd_errors.h" is used.
-target_link_libraries(rdkafka PUBLIC ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+target_link_libraries(rdkafka PUBLIC ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY} ${LZ4_LIBRARY})
+if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries(rdkafka PUBLIC ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+endif()

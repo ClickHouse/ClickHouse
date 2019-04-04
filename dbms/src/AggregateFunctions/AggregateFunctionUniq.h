@@ -209,8 +209,8 @@ template <typename T, typename Data>
 class AggregateFunctionUniq final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>
 {
 public:
-    AggregateFunctionUniq(const DataTypes & argument_types)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types, {}) {}
+    AggregateFunctionUniq(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, Data>>(argument_types_, {}) {}
 
     String getName() const override { return Data::getName(); }
 

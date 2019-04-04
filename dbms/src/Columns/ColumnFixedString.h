@@ -1,8 +1,8 @@
 #pragma once
 
-#include <string.h> // memcmp
-
 #include <Common/PODArray.h>
+#include <Common/memcmpSmall.h>
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 
@@ -58,6 +58,11 @@ public:
         return chars.allocated_bytes() + sizeof(n);
     }
 
+    void protect() override
+    {
+        chars.protect();
+    }
+
     Field operator[](size_t index) const override
     {
         return String(reinterpret_cast<const char *>(&chars[n * index]), n);
@@ -98,21 +103,21 @@ public:
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {
         const ColumnFixedString & rhs = static_cast<const ColumnFixedString &>(rhs_);
-        return memcmp(&chars[p1 * n], &rhs.chars[p2 * n], n);
+        return memcmpSmallAllowOverflow15(chars.data() + p1 * n, rhs.chars.data() + p2 * n, n);
     }
 
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
@@ -130,6 +135,12 @@ public:
 
     void getExtremes(Field & min, Field & max) const override;
 
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
+            return n == rhs_concrete->n;
+        return false;
+    }
 
     bool canBeInsideNullable() const override { return true; }
 

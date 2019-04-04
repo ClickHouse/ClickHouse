@@ -12,6 +12,7 @@ namespace DB
 
 class Context;
 class ASTSelectQuery;
+struct DatabaseAndTableWithAlias;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -61,14 +62,8 @@ struct AnalyzedJoin
     /// It's columns_from_joined_table without duplicate columns and possibly modified types.
     JoinedColumnsList available_joined_columns;
 
-    void addSimpleKey(const ASTPtr & ast)
-    {
-        key_names_left.push_back(ast->getColumnName());
-        key_names_right.push_back(ast->getAliasOrColumnName());
-
-        key_asts_left.push_back(ast);
-        key_asts_right.push_back(ast);
-    }
+    void addUsingKey(const ASTPtr & ast);
+    void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
     ExpressionActionsPtr createJoinedBlockActions(
         const JoinedColumnsList & columns_added_by_join, /// Subset of available_joined_columns.
@@ -77,13 +72,8 @@ struct AnalyzedJoin
 
     Names getOriginalColumnNames(const NameSet & required_columns) const;
 
-    const JoinedColumnsList & getColumnsFromJoinedTable(const NameSet & source_columns,
-                                                        const Context & context,
-                                                        const ASTSelectQuery * select_query_with_join);
-    void calculateAvailableJoinedColumns(const NameSet & source_columns,
-                                         const Context & context,
-                                         const ASTSelectQuery * select_query_with_join,
-                                         bool make_nullable);
+    void calculateColumnsFromJoinedTable(const NamesAndTypesList & columns, const Names & original_names);
+    void calculateAvailableJoinedColumns(bool make_nullable);
 };
 
 struct ASTTableExpression;

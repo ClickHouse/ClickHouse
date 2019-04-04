@@ -18,7 +18,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
 #include <Compression/ICompressionCodec.h>

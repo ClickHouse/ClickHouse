@@ -6,7 +6,7 @@
 #include <Poco/Data/RecordSet.h>
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
-#include <Dictionaries/ExternalResultDescription.h>
+#include <Core/ExternalResultDescription.h>
 
 
 namespace DB

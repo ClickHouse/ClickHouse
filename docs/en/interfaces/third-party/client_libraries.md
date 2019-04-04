@@ -9,6 +9,7 @@
     - [clickhouse-client](https://github.com/yurial/clickhouse-client)
     - [aiochclient](https://github.com/maximdanilchenko/aiochclient)
 - PHP
+    - [SeasClick](https://github.com/SeasX/SeasClick)
     - [phpClickHouse](https://github.com/smi2/phpClickHouse)
     - [clickhouse-php-client](https://github.com/8bitov/clickhouse-php-client)
     - [clickhouse-client](https://github.com/bozerkins/clickhouse-client)
@@ -32,6 +33,7 @@
     - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
 - Java
     - [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
+    - [clickhouse-client](https://github.com/Ecwid/clickhouse-client)    
 - Scala
     - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 - Kotlin

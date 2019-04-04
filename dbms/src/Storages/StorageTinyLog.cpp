@@ -388,7 +388,7 @@ BlockInputStreams StorageTinyLog::read(
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const UInt64 max_block_size,
+    const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
     check(column_names);
@@ -398,7 +398,7 @@ BlockInputStreams StorageTinyLog::read(
 
 
 BlockOutputStreamPtr StorageTinyLog::write(
-    const ASTPtr & /*query*/, const Settings & /*settings*/)
+    const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<TinyLogBlockOutputStream>(*this);
 }

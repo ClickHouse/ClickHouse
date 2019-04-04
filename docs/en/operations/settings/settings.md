@@ -16,11 +16,34 @@ Restrictions:
 
 The possible values are:
 
-- `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
-- `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
-- `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
-- `allow`  — Allows the use of these types of subqueries.
+- `deny` — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
+- `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
+- `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
+- `allow` — Allows the use of these types of subqueries.
 
+## enable_optimize_predicate_expression
+
+Turns on predicate pushdown in `SELECT` queries.
+
+Predicate pushdown may significantly reduce network traffic for distributed queries.
+
+Possible values:
+
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
+
+Default value: 0.
+
+**Usage**
+
+Consider the following queries:
+
+1. `SELECT count() FROM test_table WHERE date = '2018-10-10'`
+2. `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
+
+If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse applies `WHERE` to the subquery when processing it.
+
+If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer, because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
@@ -56,6 +79,41 @@ Enable or disable fsync when writing .sql files. Enabled by default.
 
 It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
 
+## enable_http_compression {#settings-enable_http_compression}
+
+Enables/disables compression of the data in the response to an HTTP request.
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — The functionality is disabled.
+- 1 — The functionality is enabled.
+
+Default value: 0.
+
+## http_zlib_compression_level {#settings-http_zlib_compression_level}
+
+Sets the level of the compression of the data in the response to an HTTP request if [enable_http_compression = 1](#settings-enable_http_compression).
+
+Possible values: numbers from 1 to 9.
+
+Default value: 3.
+
+
+## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
+
+Enables/disables the verification of the checksum when uncompressing the HTTP POST data from the client. Used only for ClickHouse native format of compression (neither `gzip` nor `deflate`).
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — The functionality is disabled.
+- 1 — The functionality is enabled.
+
+Default value: 0.
+
 ## input_format_allow_errors_num
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
@@ -81,13 +139,78 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
-## insert_sample_with_metadata
+## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
-For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions. Disabled by default.
+Turns on the full SQL parser if the fast stream parser can't parse the data. This setting is used only for [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
 
-## join_default_strictness
+Possible values:
 
-Sets default strictness for [JOIN clauses](../../query_language/select.md).
+- 0 — The functionality is turned off.
+
+    In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
+
+- 1 — The functionality is turned on.
+
+    In this case, you can use an SQL expression as a value, but ClickHouse inserts the data much slower this way. If you insert only formatted data, then ClickHouse behaves as the setting value is 0.
+
+Default value: 1.
+
+**Example of Use**
+
+Let's try to insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
+
+```sql
+SET input_format_values_interpret_expressions = 0;
+INSERT INTO datetime_t VALUES (now())
+
+Exception on client:
+Code: 27. DB::Exception: Cannot parse input: expected ) before: now()): (at row 1)
+```
+
+```sql
+SET input_format_values_interpret_expressions = 1;
+INSERT INTO datetime_t VALUES (now())
+
+Ok.
+```
+
+The last query is equivalent to the following.
+
+```sql
+SET input_format_values_interpret_expressions = 0;
+INSERT INTO datetime_t SELECT now()
+
+Ok.
+```
+
+
+## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
+
+Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. The setting is applies for `INSERT` queries.
+
+When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+
+When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
+
+Operations where you may need the extended data exchange enabled:
+
+- Inserting the data of the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+
+For all other operations ClickHouse doesn't apply the setting.
+
+!!! note "Note"
+    The functionality of the extended data exchange consumes additional computing resources on the server and can reduce the performance.
+
+**Possible values**
+
+- 0 — Functionality is disabled.
+- 1 — Functionality is enabled.
+
+**Default value:** 0.
+
+## join_default_strictness {#settings-join_default_strictness}
+
+Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
 **Possible values**
 
@@ -96,6 +219,18 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md).
 - `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
 
 **Default value**: `ALL`
+
+
+## join_use_nulls {#settings-join_use_nulls}
+
+Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables the empty cells may appear. ClickHouse fills them differently based on setting.
+
+**Possible values**
+
+- 0 — The empty cells are filled with the default value of the corresponding field type.
+- 1 — `JOIN` behaves like in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+
+**Default value**: 0.
 
 
 ## max_block_size
@@ -162,6 +297,20 @@ If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in o
 Any positive integer.
 
 **Default value**: 1048576.
+
+## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
+
+The minimum data volume to be read from storage required for using of the direct I/O access to the storage disk.
+
+ClickHouse uses this setting when selecting the data from tables. If summary storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with `O_DIRECT` option.
+
+**Possible values**
+
+Positive integer.
+
+0 — The direct I/O is disabled.
+
+**Default value**: 0.
 
 ## log_queries
 
@@ -230,7 +379,7 @@ We are writing a URL column with the String type (average size of 60 bytes per v
 
 There usually isn't any reason to change this setting.
 
-## max_query_size
+## max_query_size {#settings-max_query_size}
 
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
 The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
@@ -380,19 +529,13 @@ The results of compilation are saved in the build directory in the form of .so f
 If the value is true, running INSERT skips input data from columns with unknown names. Otherwise, this situation will generate an exception.
 It works for JSONEachRow and TSKV formats.
 
-## output_format_json_quote_64bit_integers
+## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 
 ## format_csv_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
-
-## join_use_nulls
-
-Affects the behavior of [JOIN](../../query_language/select.md).
-
-With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
 ## insert_quorum {#settings-insert_quorum}
 

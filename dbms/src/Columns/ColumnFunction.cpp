@@ -70,7 +70,7 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
     return ColumnFunction::create(filtered_size, function, capture);
 }
 
-ColumnPtr ColumnFunction::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
 {
     if (limit == 0)
         limit = size_;
@@ -88,7 +88,7 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, UInt64 limit) const
     return ColumnFunction::create(limit, function, capture);
 }
 
-ColumnPtr ColumnFunction::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
 {
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -127,19 +127,6 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
     }
 
     return columns;
-}
-
-void ColumnFunction::insertDefault()
-{
-    for (auto & column : captured_columns)
-        column.column->assumeMutableRef().insertDefault();
-    ++size_;
-}
-void ColumnFunction::popBack(size_t n)
-{
-    for (auto & column : captured_columns)
-        column.column->assumeMutableRef().popBack(n);
-    size_ -= n;
 }
 
 size_t ColumnFunction::byteSize() const

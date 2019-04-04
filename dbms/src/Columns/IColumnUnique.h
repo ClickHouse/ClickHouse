@@ -99,7 +99,7 @@ public:
         throw Exception("Method deserializeAndInsertFromArena is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    ColumnPtr index(const IColumn &, UInt64) const override
+    ColumnPtr index(const IColumn &, size_t) const override
     {
         throw Exception("Method index is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -114,7 +114,7 @@ public:
         throw Exception("Method filter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    ColumnPtr permute(const IColumn::Permutation &, UInt64) const override
+    ColumnPtr permute(const IColumn::Permutation &, size_t) const override
     {
         throw Exception("Method permute is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -124,7 +124,7 @@ public:
         throw Exception("Method replicate is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void getPermutation(bool, UInt64, int, IColumn::Permutation &) const override
+    void getPermutation(bool, size_t, int, IColumn::Permutation &) const override
     {
         throw Exception("Method getPermutation is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }

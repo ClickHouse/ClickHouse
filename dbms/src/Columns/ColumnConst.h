@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -22,7 +23,7 @@ class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
 private:
     friend class COWPtrHelper<IColumn, ColumnConst>;
 
-    ColumnPtr data;
+    WrappedPtr data;
     size_t s;
 
     ColumnConst(const ColumnPtr & data, size_t s);
@@ -140,9 +141,8 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override
     {
-        auto & mutable_data = data->assumeMutableRef();
-        auto res = mutable_data.deserializeAndInsertFromArena(pos);
-        mutable_data.popBack(1);
+        auto res = data->deserializeAndInsertFromArena(pos);
+        data->popBack(1);
         ++s;
         return res;
     }
@@ -154,9 +154,9 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     size_t byteSize() const override
     {
@@ -190,6 +190,13 @@ public:
         callback(data);
     }
 
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnConst *>(&rhs))
+            return data->structureEquals(*rhs_concrete->data);
+        return false;
+    }
+
     bool onlyNull() const override { return data->isNullAt(0); }
     bool isColumnConst() const override { return true; }
     bool isNumeric() const override { return data->isNumeric(); }
@@ -200,11 +207,9 @@ public:
 
     /// Not part of the common interface.
 
-    IColumn & getDataColumn() { return data->assumeMutableRef(); }
+    IColumn & getDataColumn() { return *data; }
     const IColumn & getDataColumn() const { return *data; }
-    //MutableColumnPtr getDataColumnMutablePtr() { return data; }
     const ColumnPtr & getDataColumnPtr() const { return data; }
-    //ColumnPtr & getDataColumnPtr() { return data; }
 
     Field getField() const { return getDataColumn()[0]; }
 

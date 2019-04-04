@@ -2,9 +2,9 @@
 
 #include <cmath>
 #include <limits>
-
+#include "Defines.h"
+#include "Types.h"
 #include <Common/NaNUtils.h>
-#include <Core/Types.h>
 #include <Common/UInt128.h>
 
 /** Preceptually-correct number comparisons.

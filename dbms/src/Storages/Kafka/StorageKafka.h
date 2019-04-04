@@ -27,7 +27,7 @@ friend class KafkaBlockOutputStream;
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const { return database_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     void startup() override;
     void shutdown() override;
@@ -37,7 +37,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        UInt64 max_block_size,
+        size_t max_block_size,
         unsigned num_streams) override;
 
     void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name) override

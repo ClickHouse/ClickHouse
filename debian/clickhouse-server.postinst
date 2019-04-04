@@ -1,18 +1,19 @@
 #!/bin/sh
 set -e
 
-CLICKHOUSE_USER=${CLICKHOUSE_USER=clickhouse}
-CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP=${CLICKHOUSE_USER}}
-CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR=/etc/clickhouse-server}
-CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR=/var/lib/clickhouse}
-CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR=/var/log/clickhouse-server}
-CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR=/usr/bin}
-CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM=clickhouse}
+CLICKHOUSE_USER=${CLICKHOUSE_USER:=clickhouse}
+CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:=${CLICKHOUSE_USER}}
+CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR:=/etc/clickhouse-server}
+CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:=/var/lib/clickhouse}
+CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:=/var/log/clickhouse-server}
+CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR:=/usr/bin}
+CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
 EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 
-
 OS=${OS=`lsb_release -is 2>/dev/null || uname -s ||:`}
+
+. /usr/share/debconf/confmodule
 
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
 
@@ -75,7 +76,7 @@ Please fix this and reinstall this package." >&2
         CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path") ||:
         echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
     fi
-    CLICKHOUSE_DATADIR_FROM_CONFIG=${CLICKHOUSE_DATADIR_FROM_CONFIG=$CLICKHOUSE_DATADIR}
+    CLICKHOUSE_DATADIR_FROM_CONFIG=${CLICKHOUSE_DATADIR_FROM_CONFIG:=$CLICKHOUSE_DATADIR}
 
     if [ ! -d ${CLICKHOUSE_DATADIR_FROM_CONFIG} ]; then
         mkdir -p ${CLICKHOUSE_DATADIR_FROM_CONFIG}
@@ -84,6 +85,8 @@ Please fix this and reinstall this package." >&2
     fi
 
     if [ -d ${CLICKHOUSE_CONFDIR} ]; then
+        mkdir -p ${CLICKHOUSE_CONFDIR}/users.d
+        mkdir -p ${CLICKHOUSE_CONFDIR}/config.d
         rm -fv ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
     fi
 
@@ -119,4 +122,15 @@ Please fix this and reinstall this package." >&2
     if [ -d "${CLICKHOUSE_DATADIR_FROM_CONFIG}/build" ]; then
         rm -f ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.cpp ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.so ||:
     fi
+
+    db_get clickhouse-server/default-password
+    defaultpassword="$RET"
+    if [ -n "$defaultpassword" ]; then
+        echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+    fi
+
+    # everything went well, so now let's reset the password
+    db_set clickhouse-server/default-password ""
+    # ... done with debconf here
+    db_stop
 fi

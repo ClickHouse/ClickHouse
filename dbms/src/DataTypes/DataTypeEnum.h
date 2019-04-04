@@ -81,7 +81,7 @@ public:
         if (it == std::end(name_to_value_map))
             throw Exception{"Unknown element '" + field_name.toString() + "' for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
-        return it->second;
+        return it->getSecond();
     }
 
     Field castToName(const Field & value_or_name) const override;
@@ -102,10 +102,11 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
-    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const UInt64 offset, UInt64 limit) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, const UInt64 limit, const double avg_value_size_hint) const override;
+    void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, const size_t offset, size_t limit) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, const size_t limit, const double avg_value_size_hint) const override;
 
-    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
+    void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const override;
+    void deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const override;
 
     MutableColumnPtr createColumn() const override { return ColumnType::create(); }
 

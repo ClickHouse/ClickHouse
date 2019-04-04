@@ -51,6 +51,8 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c.`
 
+`a NOT BETWEEN b AND c` – The same as `a < b OR a > c.`
+
 ## Operators for Working With Data Sets
 
 *See the section [IN operators](select.md#select-in-operators).*

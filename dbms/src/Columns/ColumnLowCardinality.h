@@ -5,6 +5,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include "ColumnsNumber.h"
 
+
 namespace DB
 {
 
@@ -90,19 +91,19 @@ public:
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
     }
 
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().permute(perm, limit));
     }
 
-    ColumnPtr index(const IColumn & indexes_, UInt64 limit) const override
+    ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().index(indexes_, limit));
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     ColumnPtr replicate(const Offsets & offsets) const override
     {
@@ -132,6 +133,14 @@ public:
             callback(dictionary.getColumnUniquePtr());
     }
 
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&rhs))
+            return idx.getPositions()->structureEquals(*rhs_low_cardinality->idx.getPositions())
+                && dictionary.getColumnUnique().structureEquals(rhs_low_cardinality->dictionary.getColumnUnique());
+        return false;
+    }
+
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return false; }
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
@@ -140,10 +149,10 @@ public:
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
-    /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique->assumeMutable()); }
+    /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }
 
-    /// IColumn & getIndexes() { return idx.getPositions()->assumeMutableRef(); }
+    /// IColumn & getIndexes() { return *idx.getPositions(); }
     const IColumn & getIndexes() const { return *idx.getPositions(); }
     const ColumnPtr & getIndexesPtr() const { return idx.getPositions(); }
     size_t getSizeOfIndexType() const { return idx.getSizeOfIndexType(); }
@@ -168,10 +177,8 @@ public:
     void setSharedDictionary(const ColumnPtr & column_unique);
     bool isSharedDictionary() const { return dictionary.isShared(); }
 
-    /// Create column new dictionary with only keys that are mentioned in index.
-    MutablePtr compact();
-
-    /// Cut + compact.
+    /// Create column with new dictionary from column part.
+    /// Dictionary will have only keys that are mentioned in index.
     MutablePtr cutAndCompact(size_t start, size_t length) const;
 
     struct DictionaryEncodedColumn
@@ -193,13 +200,13 @@ public:
         explicit Index(ColumnPtr positions);
 
         const ColumnPtr & getPositions() const { return positions; }
-        ColumnPtr & getPositionsPtr() { return positions; }
+        WrappedPtr & getPositionsPtr() { return positions; }
         size_t getPositionAt(size_t row) const;
         void insertPosition(UInt64 position);
         void insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit);
 
-        void popBack(size_t n) { positions->assumeMutableRef().popBack(n); }
-        void reserve(size_t n) { positions->assumeMutableRef().reserve(n); }
+        void popBack(size_t n) { positions->popBack(n); }
+        void reserve(size_t n) { positions->reserve(n); }
 
         UInt64 getMaxPositionForCurrentType() const;
 
@@ -215,7 +222,7 @@ public:
         void countKeys(ColumnUInt64::Container & counts) const;
 
     private:
-        ColumnPtr positions;
+        WrappedPtr positions;
         size_t size_of_type = 0;
 
         void updateSizeOfType() { size_of_type = getSizeOfIndexType(*positions, size_of_type); }
@@ -243,10 +250,10 @@ private:
         explicit Dictionary(ColumnPtr column_unique, bool is_shared);
 
         const ColumnPtr & getColumnUniquePtr() const { return column_unique; }
-        ColumnPtr & getColumnUniquePtr() { return column_unique; }
+        WrappedPtr & getColumnUniquePtr() { return column_unique; }
 
         const IColumnUnique & getColumnUnique() const { return static_cast<const IColumnUnique &>(*column_unique); }
-        IColumnUnique & getColumnUnique() { return static_cast<IColumnUnique &>(column_unique->assumeMutableRef()); }
+        IColumnUnique & getColumnUnique() { return static_cast<IColumnUnique &>(*column_unique); }
 
         /// Dictionary may be shared for several mutable columns.
         /// Immutable columns may have the same column unique, which isn't necessarily shared dictionary.
@@ -257,7 +264,7 @@ private:
         void compact(ColumnPtr & positions);
 
     private:
-        ColumnPtr column_unique;
+        WrappedPtr column_unique;
         bool shared = false;
 
         void checkColumn(const IColumn & column);

@@ -1,0 +1,27 @@
+1	hello	2018-12-14	1.1	aaa	5
+2	world	2018-12-15	2.2	bbb	6
+3	!	2018-12-16	3.3	ccc	7
+1	hello	2018-12-14	1.1	aaa	5
+2	world	2018-12-15	2.2	bbb	6
+3	!	2018-12-16	3.3	ccc	7
+2
+2
+1	world	2018-10-05	1.1
+2	hello	2018-10-01	2.2
+3	buy	2018-10-11	3.3
+1	world	2018-10-05	1.1
+2	hello	2018-10-01	2.2
+3	buy	2018-10-11	3.3
+10003
+10003
+10003
+10003
+274972506.6
+274972506.6
+9175437371954010821
+9175437371954010821
+CREATE TABLE test.compression_codec_multiple_more_types_replicated (`id` Decimal(38, 13) CODEC(ZSTD(1), LZ4, ZSTD(1), ZSTD(1), Delta(2), Delta(4), Delta(1), LZ4HC(0)), `data` FixedString(12) CODEC(ZSTD(1), ZSTD(1), Delta(1), Delta(1), Delta(1), NONE, NONE, NONE, LZ4HC(0)), `ddd.age` Array(UInt8) CODEC(LZ4, LZ4HC(0), NONE, NONE, NONE, ZSTD(1), Delta(8)), `ddd.Name` Array(String) CODEC(LZ4, LZ4HC(0), NONE, NONE, NONE, ZSTD(1), Delta(8))) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/compression_codec_multiple_more_types_replicated\', \'1\') ORDER BY tuple() SETTINGS index_granularity = 8192
+1.5555555555555	hello world!	[77]	['John']
+7.1000000000000	xxxxxxxxxxxx	[127]	['Henry']
+!
+222

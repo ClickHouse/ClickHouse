@@ -80,7 +80,7 @@ void DataTypeNullable::deserializeBinaryBulkStatePrefix(
 void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
-    UInt64 limit,
+    size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -101,7 +101,7 @@ void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
 
 void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    UInt64 limit,
+    size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -311,11 +311,31 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
         nested_data_type->serializeAsTextXML(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void DataTypeNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
     if (!col.isNullAt(row_num))
-        nested_data_type->serializeProtobuf(col.getNestedColumn(), row_num, protobuf);
+        nested_data_type->serializeProtobuf(col.getNestedColumn(), row_num, protobuf, value_index);
+}
+
+void DataTypeNullable::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    ColumnNullable & col = static_cast<ColumnNullable &>(column);
+    IColumn & nested_column = col.getNestedColumn();
+    size_t old_size = nested_column.size();
+    try
+    {
+        nested_data_type->deserializeProtobuf(nested_column, protobuf, allow_add_row, row_added);
+        if (row_added)
+            col.getNullMapData().push_back(0);
+    }
+    catch (...)
+    {
+        nested_column.popBack(nested_column.size() - old_size);
+        col.getNullMapData().resize_assume_reserved(old_size);
+        row_added = false;
+        throw;
+    }
 }
 
 MutableColumnPtr DataTypeNullable::createColumn() const

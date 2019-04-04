@@ -4,6 +4,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
+#include <Common/memcmpSmall.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -54,7 +55,7 @@ void ColumnFixedString::insert(const Field & x)
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
-    memcpy(&chars[old_size], s.data(), s.size());
+    memcpy(chars.data() + old_size, s.data(), s.size());
 }
 
 void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
@@ -66,7 +67,7 @@ void ColumnFixedString::insertFrom(const IColumn & src_, size_t index)
 
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpySmallAllowReadWriteOverflow15(&chars[old_size], &src.chars[n * index], n);
+    memcpySmallAllowReadWriteOverflow15(chars.data() + old_size, &src.chars[n * index], n);
 }
 
 void ColumnFixedString::insertData(const char * pos, size_t length)
@@ -76,7 +77,7 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
 
     size_t old_size = chars.size();
     chars.resize_fill(old_size + n);
-    memcpy(&chars[old_size], pos, length);
+    memcpy(chars.data() + old_size, pos, length);
 }
 
 StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
@@ -90,7 +91,7 @@ const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpy(&chars[old_size], pos, n);
+    memcpy(chars.data() + old_size, pos, n);
     return pos + n;
 }
 
@@ -106,13 +107,12 @@ struct ColumnFixedString::less
     explicit less(const ColumnFixedString & parent_) : parent(parent_) {}
     bool operator()(size_t lhs, size_t rhs) const
     {
-        /// TODO: memcmp slows down.
-        int res = memcmp(&parent.chars[lhs * parent.n], &parent.chars[rhs * parent.n], parent.n);
+        int res = memcmpSmallAllowOverflow15(parent.chars.data() + lhs * parent.n, parent.chars.data() + rhs * parent.n, parent.n);
         return positive ? (res < 0) : (res > 0);
     }
 };
 
-void ColumnFixedString::getPermutation(bool reverse, UInt64 limit, int /*nan_direction_hint*/, Permutation & res) const
+void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
 {
     size_t s = size();
     res.resize(s);
@@ -151,7 +151,7 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
 
     size_t old_size = chars.size();
     chars.resize(old_size + length * n);
-    memcpy(&chars[old_size], &src_concrete.chars[start * n], length * n);
+    memcpy(chars.data() + old_size, &src_concrete.chars[start * n], length * n);
 }
 
 ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
@@ -231,7 +231,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     return res;
 }
 
-ColumnPtr ColumnFixedString::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
 {
     size_t col_size = size();
 
@@ -260,14 +260,14 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, UInt64 limit) con
 }
 
 
-ColumnPtr ColumnFixedString::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }
 
 
 template <typename Type>
-ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
+ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
     if (limit == 0)
         return ColumnFixedString::create(n);

@@ -6,7 +6,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOrdinary.h>

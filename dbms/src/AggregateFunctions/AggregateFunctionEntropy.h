@@ -54,7 +54,7 @@ struct EntropyData
     void merge(const EntropyData & rhs)
     {
         for (const auto & pair : rhs.map)
-            map[pair.first] += pair.second;
+            map[pair.getFirst()] += pair.getSecond();
     }
 
     void serialize(WriteBuffer & buf) const
@@ -68,7 +68,7 @@ struct EntropyData
         while (reader.next())
         {
             const auto & pair = reader.get();
-            map[pair.first] = pair.second;
+            map[pair.getFirst()] = pair.getSecond();
         }
     }
 
@@ -76,12 +76,12 @@ struct EntropyData
     {
         UInt64 total_value = 0;
         for (const auto & pair : map)
-            total_value += pair.second;
+            total_value += pair.getSecond();
 
         Float64 shannon_entropy = 0;
         for (const auto & pair : map)
         {
-            Float64 frequency = Float64(pair.second) / total_value;
+            Float64 frequency = Float64(pair.getSecond()) / total_value;
             shannon_entropy -= frequency * log2(frequency);
         }
 
@@ -97,9 +97,9 @@ private:
     size_t num_args;
 
 public:
-    AggregateFunctionEntropy(const DataTypes & argument_types)
-        : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types, {})
-        , num_args(argument_types.size())
+    AggregateFunctionEntropy(const DataTypes & argument_types_)
+        : IAggregateFunctionDataHelper<EntropyData<Value>, AggregateFunctionEntropy<Value>>(argument_types_, {})
+        , num_args(argument_types_.size())
     {
     }
 
