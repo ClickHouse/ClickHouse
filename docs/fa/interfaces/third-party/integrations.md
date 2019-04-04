@@ -36,11 +36,15 @@
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    - [Sematext](https://sematext.com/)
+        - [clickhouse ادغام](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - ثبت نام
     - [rsyslog](https://www.rsyslog.com/)
         - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (برای [Kubernetes](https://kubernetes.io))
+    - [logagent](https://www.sematext.com/logagent)
+        - [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
 
 ## اکوسیستم زبان برنامه نویسی
 
