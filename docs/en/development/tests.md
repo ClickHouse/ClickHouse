@@ -7,7 +7,7 @@ Functional tests are the most simple and convenient to use. Most of ClickHouse f
 
 Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
 
-Tests are located in `dbms/src/tests/queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and not available to general public. We tend to use only `stateless` tests and avoid adding new `stateful` tests.
+Tests are located in `dbms/tests/queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and not available to general public. We tend to use only `stateless` tests and avoid adding new `stateful` tests.
 
 Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself.
 
@@ -15,7 +15,7 @@ To run all tests, use `dbms/tests/clickhouse-test` tool. Look `--help` for the l
 
 The most simple way to invoke functional tests is to copy `clickhouse-client` to `/usr/bin/`, run `clickhouse-server` and then run `./clickhouse-test` from its own directory.
 
-To add new test, create a `.sql` or `.sh` file in `dbms/src/tests/queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+To add new test, create a `.sql` or `.sh` file in `dbms/tests/queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
 
 Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
 
@@ -26,7 +26,7 @@ Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zooke
 
 ## Known bugs
 
-If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `dbms/src/tests/queries/bugs` directory. These tests will be moved to `dbms/src/tests/queries/0_stateless` when bugs are fixed.
+If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `dbms/tests/queries/bugs` directory. These tests will be moved to `dbms/tests/queries/0_stateless` when bugs are fixed.
 
 
 ## Integration Tests
