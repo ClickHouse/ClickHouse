@@ -14,6 +14,24 @@
 namespace DB
 {
 
+void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
+{
+    key_names_left.push_back(ast->getColumnName());
+    key_names_right.push_back(ast->getAliasOrColumnName());
+
+    key_asts_left.push_back(ast);
+    key_asts_right.push_back(ast);
+}
+
+void AnalyzedJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
+{
+    key_names_left.push_back(left_table_ast->getColumnName());
+    key_names_right.push_back(right_table_ast->getAliasOrColumnName());
+
+    key_asts_left.push_back(left_table_ast);
+    key_asts_right.push_back(right_table_ast);
+}
+
 ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     const JoinedColumnsList & columns_added_by_join,
     const ASTSelectQuery * select_query_with_join,
@@ -27,7 +45,7 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     if (!join)
         return nullptr;
 
-    const auto & join_params = static_cast<const ASTTableJoin &>(*join->table_join);
+    const auto & join_params = join->table_join->as<ASTTableJoin &>();
 
     /// Create custom expression list with join keys from right table.
     auto expression_list = std::make_shared<ASTExpressionList>();
@@ -49,7 +67,7 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     ASTPtr query = expression_list;
     auto syntax_result = SyntaxAnalyzer(context).analyze(query, source_column_names, required_columns);
     ExpressionAnalyzer analyzer(query, syntax_result, context, {}, required_columns_set);
-    return analyzer.getActions(false);
+    return analyzer.getActions(true, false);
 }
 
 Names AnalyzedJoin::getOriginalColumnNames(const NameSet & required_columns_from_joined_table) const
@@ -61,47 +79,26 @@ Names AnalyzedJoin::getOriginalColumnNames(const NameSet & required_columns_from
     return original_columns;
 }
 
-const JoinedColumnsList & AnalyzedJoin::getColumnsFromJoinedTable(
-        const NameSet & source_columns, const Context & context, const ASTSelectQuery * select_query_with_join)
+void AnalyzedJoin::calculateColumnsFromJoinedTable(const NamesAndTypesList & columns, const Names & original_names)
 {
-    if (select_query_with_join && columns_from_joined_table.empty())
+    columns_from_joined_table.clear();
+
+    size_t i = 0;
+    for (auto & column : columns)
     {
-        if (const ASTTablesInSelectQueryElement * node = select_query_with_join->join())
-        {
-            const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
-            DatabaseAndTableWithAlias table_name_with_alias(table_expression, context.getCurrentDatabase());
+        JoinedColumn joined_column(column, original_names[i++]);
 
-            auto columns = getNamesAndTypeListFromTableExpression(table_expression, context);
-
-            for (auto & column : columns)
-            {
-                JoinedColumn joined_column(column, column.name);
-
-                if (source_columns.count(column.name))
-                {
-                    auto qualified_name = table_name_with_alias.getQualifiedNamePrefix() + column.name;
-                    joined_column.name_and_type.name = qualified_name;
-                }
-
-                /// We don't want to select duplicate columns from the joined subquery if they appear
-                if (std::find(columns_from_joined_table.begin(), columns_from_joined_table.end(), joined_column) == columns_from_joined_table.end())
-                    columns_from_joined_table.push_back(joined_column);
-
-            }
-        }
+        /// We don't want to select duplicate columns from the joined subquery if they appear
+        if (std::find(columns_from_joined_table.begin(), columns_from_joined_table.end(), joined_column) == columns_from_joined_table.end())
+            columns_from_joined_table.push_back(joined_column);
     }
-
-    return columns_from_joined_table;
 }
 
-void AnalyzedJoin::calculateAvailableJoinedColumns(
-        const NameSet & source_columns, const Context & context, const ASTSelectQuery * select_query_with_join, bool make_nullable)
+void AnalyzedJoin::calculateAvailableJoinedColumns(bool make_nullable)
 {
-    const auto & columns = getColumnsFromJoinedTable(source_columns, context, select_query_with_join);
-
     NameSet joined_columns;
 
-    for (auto & column : columns)
+    for (auto & column : columns_from_joined_table)
     {
         auto & column_name = column.name_and_type.name;
         auto & column_type = column.name_and_type.type;

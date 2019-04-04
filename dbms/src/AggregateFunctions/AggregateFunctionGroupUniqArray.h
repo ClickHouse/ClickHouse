@@ -94,7 +94,7 @@ public:
 
         size_t i = 0;
         for (auto it = set.begin(); it != set.end(); ++it, ++i)
-            data_to[old_size + i] = *it;
+            data_to[old_size + i] = it->getValue();
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -150,7 +150,7 @@ public:
 
         for (const auto & elem : set)
         {
-            writeStringBinary(elem, buf);
+            writeStringBinary(elem.getValue(), buf);
         }
     }
 
@@ -185,7 +185,7 @@ public:
         else
         {
             if (inserted)
-                it->data = arena->insert(str_serialized.data, str_serialized.size);
+                it->getValueMutable().data = arena->insert(str_serialized.data, str_serialized.size);
         }
     }
 
@@ -198,9 +198,14 @@ public:
         State::Set::iterator it;
         for (auto & rhs_elem : rhs_set)
         {
-            cur_set.emplace(rhs_elem, it, inserted);
-            if (inserted && it->size)
-                it->data = arena->insert(it->data, it->size);
+            cur_set.emplace(rhs_elem.getValue(), it, inserted);
+            if (inserted)
+            {
+                if (it->getValue().size)
+                    it->getValueMutable().data = arena->insert(it->getValue().data, it->getValue().size);
+                else
+                    it->getValueMutable().data = nullptr;
+            }
         }
     }
 
@@ -215,7 +220,7 @@ public:
 
         for (auto & elem : set)
         {
-            deserializeAndInsert(elem, data_to);
+            deserializeAndInsert(elem.getValue(), data_to);
         }
     }
 

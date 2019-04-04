@@ -175,7 +175,8 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
             path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
-            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+            uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+            aio_threshold, max_read_buffer_size, profile_callback, clock_type));
     };
 
     IDataType::SubstreamPath substream_path;
@@ -299,7 +300,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
             if (!has_column)
             {
                 should_reorder = true;
-                if (storage.getColumns().defaults.count(requested_column.name) != 0)
+                if (storage.getColumns().hasDefault(requested_column.name))
                 {
                     should_evaluate_missing_defaults = true;
                     continue;
@@ -366,7 +367,7 @@ void MergeTreeReader::evaluateMissingDefaults(Block & res)
 {
     try
     {
-        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.global_context);
+        DB::evaluateMissingDefaults(res, columns, storage.getColumns().getDefaults(), storage.global_context);
     }
     catch (Exception & e)
     {

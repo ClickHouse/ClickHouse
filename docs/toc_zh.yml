@@ -114,6 +114,7 @@ nav:
     - 'Working with Arrays': 'query_language/functions/array_functions.md'
     - 'Splitting and Merging Strings and Arrays': 'query_language/functions/splitting_merging_functions.md'
     - 'Bit': 'query_language/functions/bit_functions.md'
+    - 'Bitmap': 'query_language/functions/bitmap_functions.md'
     - 'Hash': 'query_language/functions/hash_functions.md'
     - 'Generating Pseudo-Random Numbers': 'query_language/functions/random_functions.md'
     - 'Encoding': 'query_language/functions/encoding_functions.md'
@@ -191,6 +192,7 @@ nav:
   - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
+  - '使用的第三方库': 'development/contrib.md'
 
 - '新功能特性':
   - '路线图': 'roadmap.md'

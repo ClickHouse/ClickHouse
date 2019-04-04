@@ -33,6 +33,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+template <typename> class QuantileTiming;
+
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -63,9 +65,7 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
 private:
     using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
 
-    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>)
-        && (!(std::is_same_v<Value, DataTypeDate::FieldType> || std::is_same_v<Value, DataTypeDateTime::FieldType>)
-            || std::is_same_v<Data, QuantileTiming<Value>>);
+    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static_assert(!IsDecimalNumber<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -82,6 +82,14 @@ public:
     {
         if (!returns_many && levels.size() > 1)
             throw Exception("Aggregate function " + getName() + " require one parameter or less", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
+        {
+            /// QuantileTiming only supports integers (it works only for unsigned integers but signed are also accepted for convenience).
+            if (!isInteger(argument_type))
+                throw Exception("Argument for function " + std::string(Name::name) + " must be integer, but it has type "
+                    + argument_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
     }
 
     String getName() const override { return Name::name; }
@@ -153,7 +161,7 @@ public:
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, &data_to[old_size]);
+                data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
             else
             {
@@ -161,7 +169,7 @@ public:
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                data.getMany(levels.levels.data(), levels.permutation.data(), size, &data_to[old_size]);
+                data.getMany(levels.levels.data(), levels.permutation.data(), size, data_to.data() + old_size);
             }
         }
         else
@@ -175,16 +183,16 @@ public:
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 
-    static void assertSecondArg(const DataTypes & argument_types)
+    static void assertSecondArg(const DataTypes & types)
     {
         if constexpr (has_second_arg)
         {
-            assertBinary(Name::name, argument_types);
-            if (!isUnsignedInteger(argument_types[1]))
-                throw Exception("Second argument (weight) for function " + std::string(Name::name) + " must be unsigned integer, but it has type " + argument_types[1]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            assertBinary(Name::name, types);
+            if (!isUnsignedInteger(types[1]))
+                throw Exception("Second argument (weight) for function " + std::string(Name::name) + " must be unsigned integer, but it has type " + types[1]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else
-            assertUnary(Name::name, argument_types);
+            assertUnary(Name::name, types);
     }
 };
 

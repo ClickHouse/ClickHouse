@@ -143,7 +143,7 @@ If ZooKeeper is unavailable during an `INSERT`, or an error occurs when interact
 
 After connecting to ZooKeeper, the system checks whether the set of data in the local file system matches the expected set of data (ZooKeeper stores this information). If there are minor inconsistencies, the system resolves them by syncing data with the replicas.
 
-If the system detects broken data parts (with the wrong size of files) or unrecognized parts (parts written to the file system but not recorded in ZooKeeper), it moves them to the 'detached' subdirectory (they are not deleted). Any missing parts are copied from the replicas.
+If the system detects broken data parts (with the wrong size of files) or unrecognized parts (parts written to the file system but not recorded in ZooKeeper), it moves them to the `detached` subdirectory (they are not deleted). Any missing parts are copied from the replicas.
 
 Note that ClickHouse does not perform any destructive actions such as automatically deleting a large amount of data.
 
@@ -184,7 +184,7 @@ If you had a `MergeTree` table that was manually replicated, you can convert it 
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 
 Rename the existing MergeTree table, then create a `ReplicatedMergeTree` table with the old name.
-Move the data from the old table to the 'detached' subdirectory inside the directory with the new table data (`/var/lib/clickhouse/data/db_name/table_name/`).
+Move the data from the old table to the `detached` subdirectory inside the directory with the new table data (`/var/lib/clickhouse/data/db_name/table_name/`).
 Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data parts to the working set.
 
 ## Converting from ReplicatedMergeTree to MergeTree

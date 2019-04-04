@@ -11,34 +11,42 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & schema_file_extension, bool schema_required)
+
+namespace
+{
+    String getFormatSchemaDefaultFileExtension(const String & format)
+    {
+        if (format == "Protobuf")
+            return "proto";
+        else if (format == "CapnProto")
+            return "capnp";
+        else
+            return "";
+    }
+}
+
+
+FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & format)
 {
     String format_schema = context.getSettingsRef().format_schema.toString();
     if (format_schema.empty())
-    {
-        if (schema_required)
-        {
-            throw Exception(
-                "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format"
-                    + (schema_file_extension.empty() ? "" : "e.g. 'schema." + schema_file_extension + ":Message'"),
-                ErrorCodes::BAD_ARGUMENTS);
-        }
-        return;
-    }
+        throw Exception(
+            "The format " + format + " requires a schema. The 'format_schema' setting should be set", ErrorCodes::BAD_ARGUMENTS);
+
+    String default_file_extension = getFormatSchemaDefaultFileExtension(format);
 
     size_t colon_pos = format_schema.find(':');
     Poco::Path path;
     if ((colon_pos == String::npos) || (colon_pos == 0) || (colon_pos == format_schema.length() - 1)
-        || path.assign(format_schema.substr(0, colon_pos)).getFileName().empty())
+        || path.assign(format_schema.substr(0, colon_pos)).makeFile().getFileName().empty())
     {
         throw Exception(
             "Format schema requires the 'format_schema' setting to have the 'schema_file:message_name' format"
-                + (schema_file_extension.empty() ? "" : "e.g. 'schema." + schema_file_extension + ":Message'") + ". Got '" + format_schema
+                + (default_file_extension.empty() ? "" : ", e.g. 'schema." + default_file_extension + ":Message'") + ". Got '" + format_schema
                 + "'",
             ErrorCodes::BAD_ARGUMENTS);
     }
 
-    is_null = false;
     message_name = format_schema.substr(colon_pos + 1);
 
     auto default_schema_directory = [&context]()
@@ -51,8 +59,8 @@ FormatSchemaInfo::FormatSchemaInfo(const Context & context, const String & schem
         return context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER);
     };
 
-    if (path.getExtension().empty() && !schema_file_extension.empty())
-        path.setExtension(schema_file_extension);
+    if (path.getExtension().empty() && !default_file_extension.empty())
+        path.setExtension(default_file_extension);
 
     if (path.isAbsolute())
     {

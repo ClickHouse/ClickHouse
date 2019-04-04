@@ -19,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_CODEC;
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
 }
 
@@ -43,29 +42,18 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     }
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(const std::vector<CodecNameWithLevel> & codecs) const
-{
-    Codecs result;
-    for (const auto & [codec_name, level] : codecs)
-        result.push_back(get(codec_name, level));
-
-    if (result.size() == 1)
-        return result.back();
-
-    return std::make_shared<CompressionCodecMultiple>(result);
-}
 
 CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast, DataTypePtr column_type) const
 {
-    if (const auto * func = typeid_cast<const ASTFunction *>(ast.get()))
+    if (const auto * func = ast->as<ASTFunction>())
     {
         Codecs codecs;
         codecs.reserve(func->arguments->children.size());
         for (const auto & inner_codec_ast : func->arguments->children)
         {
-            if (const auto * family_name = typeid_cast<const ASTIdentifier *>(inner_codec_ast.get()))
+            if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
                 codecs.emplace_back(getImpl(family_name->name, {}, column_type));
-            else if (const auto * ast_func = typeid_cast<const ASTFunction *>(inner_codec_ast.get()))
+            else if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
                 codecs.emplace_back(getImpl(ast_func->name, ast_func->arguments, column_type));
             else
                 throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
@@ -85,7 +73,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
     const auto family_code_and_creator = family_code_with_codec.find(byte_code);
 
     if (family_code_and_creator == family_code_with_codec.end())
-        throw Exception("Unknown codec family code : " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
+        throw Exception("Unknown codec family code: " + toString(byte_code), ErrorCodes::UNKNOWN_CODEC);
 
     return family_code_and_creator->second({}, nullptr);
 }
@@ -94,7 +82,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, DataTypePtr column_type) const
 {
     if (family_name == "Multiple")
-        throw Exception("Codec MULTIPLE cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
+        throw Exception("Codec Multiple cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
 
     const auto family_and_creator = family_name_with_codec.find(family_name);
 

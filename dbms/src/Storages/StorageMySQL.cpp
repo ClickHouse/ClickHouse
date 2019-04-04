@@ -4,9 +4,9 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Dictionaries/MySQLBlockInputStream.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
@@ -52,12 +52,12 @@ BlockInputStreams StorageMySQL::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    UInt64 max_block_size,
+    size_t max_block_size,
     unsigned)
 {
     check(column_names);
     String query = transformQueryForExternalDatabase(
-        *query_info.query, getColumns().ordinary, IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
+        *query_info.query, getColumns().getOrdinary(), IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
 
     Block sample_block;
     for (const String & column_name : column_names)
@@ -179,9 +179,9 @@ private:
 
 
 BlockOutputStreamPtr StorageMySQL::write(
-    const ASTPtr & /*query*/, const Settings & settings)
+    const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), settings.mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)
@@ -199,21 +199,21 @@ void registerStorageMySQL(StorageFactory & factory)
             engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
 
         /// 3306 is the default MySQL port.
-        auto parsed_host_port = parseAddress(static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>(), 3306);
+        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 3306);
 
-        const String & remote_database = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
-        const String & remote_table = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
-        const String & username = static_cast<const ASTLiteral &>(*engine_args[3]).value.safeGet<String>();
-        const String & password = static_cast<const ASTLiteral &>(*engine_args[4]).value.safeGet<String>();
+        const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
         mysqlxx::Pool pool(remote_database, parsed_host_port.first, username, password, parsed_host_port.second);
 
         bool replace_query = false;
         std::string on_duplicate_clause;
         if (engine_args.size() >= 6)
-            replace_query = static_cast<const ASTLiteral &>(*engine_args[5]).value.safeGet<UInt64>() > 0;
+            replace_query = engine_args[5]->as<ASTLiteral &>().value.safeGet<UInt64>();
         if (engine_args.size() == 7)
-            on_duplicate_clause = static_cast<const ASTLiteral &>(*engine_args[6]).value.safeGet<String>();
+            on_duplicate_clause = engine_args[6]->as<ASTLiteral &>().value.safeGet<String>();
 
         if (replace_query && !on_duplicate_clause.empty())
             throw Exception(

@@ -1,11 +1,14 @@
 #pragma once
 
-#include <memory>
-#include <functional>
-#include <unordered_map>
-#include <Common/IFactoryWithAliases.h>
 #include <DataTypes/IDataType.h>
+#include <Parsers/IAST_fwd.h>
+#include <Common/IFactoryWithAliases.h>
+
 #include <ext/singleton.h>
+
+#include <functional>
+#include <memory>
+#include <unordered_map>
 
 
 namespace DB
@@ -16,9 +19,6 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 
 class IDataTypeDomain;
 using DataTypeDomainPtr = std::unique_ptr<const IDataTypeDomain>;
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Creates a data type by name of data type family and parameters.

@@ -11,17 +11,20 @@ add_library(clickhouse_functions ${LINK_MODE} ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        dbms
-    PRIVATE
         clickhouse_dictionaries
+        dbms
         ${CONSISTENT_HASHING_LIBRARY}
         consistent-hashing-sumbur
+        ${CITYHASH_LIBRARIES}
         ${FARMHASH_LIBRARIES}
         ${METROHASH_LIBRARIES}
         murmurhash
         ${BASE64_LIBRARY}
-        ${OPENSSL_CRYPTO_LIBRARY}
-        ${LZ4_LIBRARY})
+)
+
+if (OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
+endif()
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
 
@@ -56,3 +59,13 @@ endif ()
 if(USE_BASE64)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
 endif()
+
+if (USE_XXHASH)
+    target_link_libraries(clickhouse_functions PRIVATE ${XXHASH_LIBRARY})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${XXHASH_INCLUDE_DIR})
+endif()
+
+if (USE_HYPERSCAN)
+    target_link_libraries (clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
+    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
+endif ()

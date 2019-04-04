@@ -32,27 +32,24 @@ static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, con
 bool QueryAliasesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
     /// Don't descent into table functions and subqueries and special case for ArrayJoin.
-    if (typeid_cast<ASTTableExpression *>(node.get()) ||
-        typeid_cast<ASTSelectWithUnionQuery *>(node.get()) ||
-        typeid_cast<ASTArrayJoin *>(node.get()))
+    if (node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>())
         return false;
     return true;
 }
 
-std::vector<ASTPtr *> QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
+void QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
 {
-    if (auto * t = typeid_cast<ASTSubquery *>(ast.get()))
-        return visit(*t, ast, data);
-    if (auto * t = typeid_cast<ASTArrayJoin *>(ast.get()))
-        return visit(*t, ast, data);
-
-    visitOther(ast, data);
-    return {};
+    if (auto * s = ast->as<ASTSubquery>())
+        visit(*s, ast, data);
+    else if (auto * aj = ast->as<ASTArrayJoin>())
+        visit(*aj, ast, data);
+    else
+        visitOther(ast, data);
 }
 
 /// The top-level aliases in the ARRAY JOIN section have a special meaning, we will not add them
 /// (skip the expression list itself and its children).
-std::vector<ASTPtr *> QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data)
+void QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data)
 {
     visitOther(ast, data);
 
@@ -64,14 +61,13 @@ std::vector<ASTPtr *> QueryAliasesMatcher::visit(const ASTArrayJoin &, const AST
 
     /// create own visitor to run bottom to top
     for (auto & child : grand_children)
-        QueryAliasesVisitor(data).visit(child);
-    return {};
+        Visitor(data).visit(child);
 }
 
 /// set unique aliases for all subqueries. this is needed, because:
 /// 1) content of subqueries could change after recursive analysis, and auto-generated column names could become incorrect
 /// 2) result of different scalar subqueries can be cached inside expressions compilation cache and must have different names
-std::vector<ASTPtr *> QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data)
+void QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data)
 {
     Aliases & aliases = data.aliases;
 
@@ -92,7 +88,6 @@ std::vector<ASTPtr *> QueryAliasesMatcher::visit(ASTSubquery & subquery, const A
     }
     else
         visitOther(ast, data);
-    return {};
 }
 
 void QueryAliasesMatcher::visitOther(const ASTPtr & ast, Data & data)

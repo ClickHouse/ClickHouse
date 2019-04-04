@@ -2,6 +2,19 @@
 
 #include <string.h>
 
+#ifdef NDEBUG
+    /// If set to 1 - randomize memory mappings manually (address space layout randomization) to reproduce more memory stomping bugs.
+    /// Note that Linux doesn't do it by default. This may lead to worse TLB performance.
+    #define ALLOCATOR_ASLR 0
+#else
+    #define ALLOCATOR_ASLR 1
+#endif
+
+#if ALLOCATOR_ASLR
+    #include <pcg_random.hpp>
+    #include <Common/randomSeed.h>
+#endif
+
 
 /** Responsible for allocating / freeing memory. Used, for example, in PODArray, Arena.
   * Also used in hash tables.
@@ -14,6 +27,12 @@
 template <bool clear_memory_>
 class Allocator
 {
+#if ALLOCATOR_ASLR
+private:
+    pcg64 rng{randomSeed()};
+#endif
+    void * mmap_hint();
+
 protected:
     static constexpr bool clear_memory = clear_memory_;
 

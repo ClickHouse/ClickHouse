@@ -17,7 +17,8 @@ class ColumnTuple final : public COWPtrHelper<IColumn, ColumnTuple>
 private:
     friend class COWPtrHelper<IColumn, ColumnTuple>;
 
-    Columns columns;
+    using TupleColumns = std::vector<WrappedPtr>;
+    TupleColumns columns;
 
     template <bool positive>
     struct Less;
@@ -31,6 +32,7 @@ public:
       */
     using Base = COWPtrHelper<IColumn, ColumnTuple>;
     static Ptr create(const Columns & columns);
+    static Ptr create(const TupleColumns & columns);
     static Ptr create(Columns && arg) { return create(arg); }
 
     template <typename Arg, typename = typename std::enable_if<std::is_rvalue_reference<Arg &&>::value>::type>
@@ -60,25 +62,28 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    ColumnPtr permute(const Permutation & perm, UInt64 limit) const override;
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
     void getExtremes(Field & min, Field & max) const override;
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
+    void protect() override;
     void forEachSubcolumn(ColumnCallback callback) override;
+    bool structureEquals(const IColumn & rhs) const override;
 
     size_t tupleSize() const { return columns.size(); }
 
     const IColumn & getColumn(size_t idx) const { return *columns[idx]; }
-    IColumn & getColumn(size_t idx) { return columns[idx]->assumeMutableRef(); }
+    IColumn & getColumn(size_t idx) { return *columns[idx]; }
 
-    const Columns & getColumns() const { return columns; }
+    const TupleColumns & getColumns() const { return columns; }
+    Columns getColumnsCopy() const { return {columns.begin(), columns.end()}; }
 
     const ColumnPtr & getColumnPtr(size_t idx) const { return columns[idx]; }
 };

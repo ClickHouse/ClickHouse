@@ -1,23 +1,24 @@
 #pragma once
 
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/Types.h>
+#include <Interpreters/ClientInfo.h>
+#include <Core/Settings.h>
+#include <Parsers/IAST_fwd.h>
+#include <Common/LRUCache.h>
+#include <Common/MultiVersion.h>
+#include <Common/ThreadPool.h>
+#include <Common/config.h>
+
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <thread>
-#include <atomic>
 #include <optional>
-
-#include <Common/config.h>
-#include <Common/MultiVersion.h>
-#include <Common/LRUCache.h>
-#include <Common/ThreadPool.h>
-#include <Core/Types.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/Block.h>
-#include <Interpreters/Settings.h>
-#include <Interpreters/ClientInfo.h>
+#include <thread>
 
 
 namespace Poco
@@ -68,8 +69,6 @@ class IStorage;
 class ITableFunction;
 using StoragePtr = std::shared_ptr<IStorage>;
 using Tables = std::map<String, StoragePtr>;
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 class IBlockInputStream;
 class IBlockOutputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -98,6 +97,15 @@ using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(Context &)>;
+
+/// An empty interface for an arbitrary object that may be attached by a shared pointer
+/// to query context, when using ClickHouse as a library.
+struct IHostContext
+{
+    virtual ~IHostContext() = default;
+};
+
+using IHostContextPtr = std::shared_ptr<IHostContext>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -139,6 +147,12 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
+    IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
+                                   /// when using ClickHouse as a library in some project. For example, it may contain host
+                                   /// logger, some query identification information, profiling guards, etc. This field is
+                                   /// to be customized in HTTP and TCP servers by overloading the customizeContext(DB::Context&)
+                                   /// methods.
+
     /// Use copy constructor or createGlobal() instead
     Context();
 
@@ -173,6 +187,10 @@ public:
       */
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
+
+    // User property is a key-value pair from the configuration entry: users.<username>.databases.<db_name>.<table_name>.<key_name>
+    bool hasUserProperty(const String & database, const String & table, const String & name) const;
+    const String & getUserProperty(const String & database, const String & table, const String & name) const;
 
     /// Must be called before getClientInfo.
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
@@ -371,7 +389,7 @@ public:
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundSchedulePool & getSchedulePool();
 
-    void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
+    void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
 
     Clusters & getClusters() const;
@@ -388,12 +406,12 @@ public:
     void initializeSystemLogs();
 
     /// Nullptr if the query log is not ready for this moment.
-    QueryLog * getQueryLog();
-    QueryThreadLog * getQueryThreadLog();
+    std::shared_ptr<QueryLog> getQueryLog();
+    std::shared_ptr<QueryThreadLog> getQueryThreadLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & part_database);
+    std::shared_ptr<PartLog> getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
 
@@ -451,6 +469,9 @@ public:
 
     /// Add started bridge command. It will be killed after context destruction
     void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd);
+
+    IHostContextPtr & getHostContext();
+    const IHostContextPtr & getHostContext() const;
 
 private:
     /** Check if the current client has access to the specified database.

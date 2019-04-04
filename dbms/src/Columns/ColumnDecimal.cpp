@@ -63,7 +63,7 @@ void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <typename T>
-void ColumnDecimal<T>::getPermutation(bool reverse, UInt64 limit, int , IColumn::Permutation & res) const
+void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
 {
 #if 1 /// TODO: perf test
     if (data.size() <= std::numeric_limits<UInt32>::max())
@@ -82,7 +82,7 @@ void ColumnDecimal<T>::getPermutation(bool reverse, UInt64 limit, int , IColumn:
 }
 
 template <typename T>
-ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     size_t size = limit ? std::min(data.size(), limit) : data.size();
     if (perm.size() < size)
@@ -140,7 +140,7 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    memcpy(&data[old_size], &src_vec.data[start], length * sizeof(data[0]));
+    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
 }
 
 template <typename T>
@@ -173,7 +173,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <typename T>
-ColumnPtr ColumnDecimal<T>::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnDecimal<T>::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }

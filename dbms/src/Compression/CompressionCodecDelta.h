@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
+
 namespace DB
 {
 
@@ -22,5 +23,6 @@ protected:
 private:
     const UInt8 delta_bytes_size;
 };
+
 }
 

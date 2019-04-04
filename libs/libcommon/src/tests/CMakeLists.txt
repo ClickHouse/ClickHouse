@@ -21,7 +21,7 @@ add_check(local_date_time_comparison)
 
 if(USE_GTEST)
     add_executable(unit_tests_libcommon gtest_json_test.cpp gtest_strong_typedef.cpp gtest_find_symbols.cpp)
-    target_link_libraries(unit_tests_libcommon common ${GTEST_MAIN_LIBRARIES})
+    target_link_libraries(unit_tests_libcommon common ${GTEST_MAIN_LIBRARIES} ${GTEST_LIBRARIES})
     add_check(unit_tests_libcommon)
 endif()
 

@@ -152,7 +152,7 @@ public:
         auto it = counter_map.find(key, hash);
         if (it != counter_map.end())
         {
-            auto c = it->second;
+            auto c = it->getSecond();
             c->count += increment;
             c->error += error;
             percolate(c);
@@ -189,8 +189,8 @@ public:
             min->error = alpha + error;
             percolate(min);
 
-            it->second = min;
-            it->first = min->key;
+            it->getSecond() = min;
+            it->getFirstMutable() = min->key;
             counter_map.reinsert(it, hash);
         }
     }
