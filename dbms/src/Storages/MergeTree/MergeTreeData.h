@@ -465,6 +465,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
+    /// Must be called with locked lockStructureForShare().
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     /// After the call to dropAllData() no method can be called.
@@ -532,9 +533,6 @@ public:
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
-
-    /// Returns the size of partition in bytes.
-    size_t getPartitionSize(const std::string & partition_id) const;
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
