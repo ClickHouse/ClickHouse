@@ -64,8 +64,7 @@ StorageMergeTree::StorageMergeTree(
     bool has_force_restore_data_flag)
     : path(path_), database_name(database_name_), table_name(table_name_),
     global_context(context_), background_pool(context_.getBackgroundPool()),
-    data(database_name, table_name,
-         Schema(std::vector<Strings>{{path, "/mnt/data/Data2/"}}), columns_, indices_, ///@TODO_IGR generate Schema from config
+    data(database_name, table_name, columns_, indices_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
          sample_by_ast_, merging_params_, settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
@@ -73,6 +72,10 @@ StorageMergeTree::StorageMergeTree(
 {
     if (path_.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+    ///@TODO_IGR ASK Set inside MergeTreeData?
+    /// Is bad for default(((
+    data.schema.setDefaultPath(path);
 
     data.loadDataParts(has_force_restore_data_flag);
 
@@ -489,8 +492,7 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            /// DataPArt can be store only at one disk. Get Max of free space at all disks
-            UInt64 disk_space = DiskSpaceMonitor::getMaxUnreservedFreeSpace();  ///@TODO_IGR ASK Maybe reserve max space at this disk there and then change to exactly space
+            UInt64 disk_space = data.schema.getMaxUnreservedFreeSpace();
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
@@ -580,7 +582,7 @@ bool StorageMergeTree::tryMutatePart()
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
         /// DataPArt can be store only at one disk. Get Max of free space at all disks
-        UInt64 disk_space = DiskSpaceMonitor::getMaxUnreservedFreeSpace();  ///@TODO_IGR ASK Maybe reserve max space at this disk there and then change to exactly space
+        UInt64 disk_space = data.schema.getMaxUnreservedFreeSpace();
 
         std::lock_guard lock(currently_merging_mutex);
 

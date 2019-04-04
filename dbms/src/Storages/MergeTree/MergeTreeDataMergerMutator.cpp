@@ -150,7 +150,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_
             data.settings.max_bytes_to_merge_at_max_space_in_pool,
             static_cast<double>(free_entries) / data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge);
 
-    return std::min(max_size, static_cast<UInt64>(DiskSpaceMonitor::getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
+    return std::min(max_size, static_cast<UInt64>(data.schema.getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 
@@ -290,8 +290,8 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
             LOG_WARNING(log, "Won't merge parts from " << parts.front()->name << " to " << (*prev_it)->name
                 << " because not enough free space: "
                 << formatReadableSizeWithBinarySuffix(available_disk_space) << " free and unreserved "
-                << "(" << formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getReservedSpace("")) << " reserved in " ///@TODO_IGR ASK RESERVED SPACE ON ALL DISKS?
-                << DiskSpaceMonitor::getReservationCount("") << " chunks), "
+                << "(" << formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getAllReservedSpace()) << " reserved in " ///@TODO_IGR ASK RESERVED SPACE ON ALL DISKS?
+                << DiskSpaceMonitor::getAllReservationCount() << " chunks at all disks), "
                 << formatReadableSizeWithBinarySuffix(sum_bytes)
                 << " required now (+" << static_cast<int>((DISK_USAGE_COEFFICIENT_TO_SELECT - 1.0) * 100)
                 << "% on overhead); suppressing similar warnings for the next hour");

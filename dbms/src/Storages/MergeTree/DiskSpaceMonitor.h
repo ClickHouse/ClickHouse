@@ -4,6 +4,7 @@
 #include <sys/statvfs.h>
 #include <memory>
 #include <boost/noncopyable.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
@@ -23,7 +24,15 @@ namespace ErrorCodes
 {
     extern const int CANNOT_STATVFS;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
+
+struct Disk {
+    String path;
+    UInt64 keep_free_space_bytes;
+
+    Disk(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+};
 
 
 /** Determines amount of free space in filesystem.
@@ -114,21 +123,23 @@ public:
 
     using ReservationPtr = std::unique_ptr<Reservation>;
 
-    static UInt64 getUnreservedFreeSpace(const String & disk_path)
+    static UInt64 getUnreservedFreeSpace(const Disk & disk)
     {
         struct statvfs fs;
 
-        if (statvfs(disk_path.c_str(), &fs) != 0)
+        if (statvfs(disk.path.c_str(), &fs) != 0)
             throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
 
         UInt64 res = fs.f_bfree * fs.f_bsize;
+
+        res -= std::min(res, disk.keep_free_space_bytes);  ///@TODO_IGR ASK Is Heuristic by Michael Kolupaev actual?
 
         /// Heuristic by Michael Kolupaev: reserve 30 MB more, because statvfs shows few megabytes more space than df.
         res -= std::min(res, static_cast<UInt64>(30 * (1ul << 20)));
 
         std::lock_guard lock(mutex);
 
-        auto & reserved_bytes = reserved[disk_path].reserved_bytes;
+        auto & reserved_bytes = reserved[disk.path].reserved_bytes;
 
         if (reserved_bytes > res)
             res = 0;
@@ -138,65 +149,58 @@ public:
         return res;
     }
 
-    /** Returns max of unreserved free space on all disks
-      * It is necessary to have guarantee that all paths are set
-      */
-    static UInt64 getMaxUnreservedFreeSpace()
+    static UInt64 getAllReservedSpace()
     {
-        UInt64 max_unreserved = 0;
-        for (auto& [disk_path, reserve] : reserved) {
-            struct statvfs fs;
-
-            if (statvfs(disk_path.c_str(), &fs) != 0)
-                throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
-
-            UInt64 res = fs.f_bfree * fs.f_bsize;
-
-            /// Heuristic by Michael Kolupaev: reserve 30 MB more, because statvfs shows few megabytes more space than df.
-            res -= std::min(res, static_cast<UInt64>(30 * (1ul << 20)));
-
-            ///@TODO_IGR ASK Maybe mutex out of for
-            std::lock_guard lock(mutex);
-
-            auto &reserved_bytes = reserved[disk_path].reserved_bytes;
-
-            if (reserved_bytes > res)
-                res = 0;
-            else
-                res -= reserved_bytes;
-
-            max_unreserved = std::max(max_unreserved, res);
+        std::lock_guard lock(mutex);
+        UInt64 res;
+        for (const auto & reserve : reserved) {
+            res += reserve.second.reserved_bytes;
         }
-        return max_unreserved;
+        return res;
     }
 
-    static UInt64 getReservedSpace(const String & disk_path)
+    static UInt64 getAllReservationCount()
     {
         std::lock_guard lock(mutex);
-        return reserved[disk_path].reserved_bytes;
-    }
-
-    static UInt64 getReservationCount(const String & disk_path)
-    {
-        std::lock_guard lock(mutex);
-        return reserved[disk_path].reservation_count;
+        UInt64 res;
+        for (const auto & reserve : reserved) {
+            res += reserve.second.reservation_count;
+        }
+        return res;
     }
 
     /// If not enough (approximately) space, do not reserve.
-    static ReservationPtr tryToReserve(const String & disk_path, UInt64 size)
+    static ReservationPtr tryToReserve(const Disk & disk, UInt64 size)
     {
-        UInt64 free_bytes = getUnreservedFreeSpace(disk_path);
+        UInt64 free_bytes = getUnreservedFreeSpace(disk);
         ///@TODO_IGR ASK twice reservation?
         if (free_bytes < size)
         {
             return {};
         }
-        return std::make_unique<Reservation>(size, &reserved[disk_path], disk_path);
+        return std::make_unique<Reservation>(size, &reserved[disk.path], disk.path);
     }
 
 private:
     static std::map<String, DiskReserve> reserved;
     static std::mutex mutex;
+};
+
+class DisksSelector {
+public:
+    DisksSelector() = default;
+
+    DisksSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+
+    const Disk & operator[](const String & name) const;
+
+    ///@TODO_IGR REMOVE it
+    size_t size() const {
+        return disks.size();
+    }
+
+private:
+    std::map<String, Disk> disks;
 };
 
 class Schema
@@ -205,55 +209,65 @@ class Schema
         friend class Schema;
 
     public:
-        Volume(std::vector<String> paths_) : paths(std::move(paths_))
+        Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DisksSelector & disk_selector);
+
+        Volume(const Volume & other)
+            : max_data_part_size(other.max_data_part_size),
+              disks(other.disks),
+              last_used(0)
         {
         }
 
-        DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const {
-            for (size_t i = 0; i != paths.size(); ++i) {
-                last_used = (last_used + 1) % paths.size();
-                auto reservation = DiskSpaceMonitor::tryToReserve(paths[last_used], expected_size);
-                if (reservation) {
-                    return reservation;
-                }
-            }
-            return {};
-        }
+        bool setDefaultPath(const String & path);
+
+        DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
+
+        UInt64 getMaxUnreservedFreeSpace() const;
 
     private:
-        const Strings paths;
-        mutable size_t last_used = 0; ///@TODO_IGR ASK It is thread safe, but it is not consistent. :(
-                                      /// P.S. I do not want to use mutex here
+        UInt64 max_data_part_size;
+
+        std::vector<Disk> disks;
+        mutable std::atomic<size_t> last_used = 0; ///@TODO_IGR ASK It is thread safe, but it is not consistent. :(
+                                                   /// P.S. I do not want to use mutex here
     };
 
 public:
-    Schema(const std::vector<Strings> & disks) {
-        for (const Strings & volume : disks) {
-            volumes.emplace_back(volume);
-        }
-    }
+    Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DisksSelector & disks);
 
-    ///@TODO_IGR ASK maybe iterator without copy?
-    Strings getFullPaths() const {
-        Strings res;
-        for (const auto & volume : volumes) {
-            std::copy(volume.paths.begin(), volume.paths.end(), std::back_inserter(res));
-        }
-        return res;
-    }
+    void setDefaultPath(const String & path);
 
-    DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const {
-        for (auto & volume : volumes) {
-            auto reservation = volume.reserve(expected_size);
-            if (reservation) {
-                return reservation;
-            }
-        }
-        return {};
-    }
+    Strings getFullPaths() const;
+
+    UInt64 getMaxUnreservedFreeSpace() const;
+
+    DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
 
 private:
     std::vector<Volume> volumes;
+};
+
+class SchemaSelector {
+public:
+    SchemaSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DisksSelector & disks);
+
+    const Schema & operator[](const String & name) const;
+
+private:
+    std::map<String, Schema> schemes;
+};
+
+class MergeTreeStorageConfiguration {
+public:
+    MergeTreeStorageConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+
+    const Schema & operator[](const String & name) const {
+        return schema_selector[name];
+    }
+
+private:
+    DisksSelector disks;
+    SchemaSelector schema_selector;
 };
 
 }

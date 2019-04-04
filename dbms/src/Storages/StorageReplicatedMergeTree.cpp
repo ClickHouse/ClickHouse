@@ -214,8 +214,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name, table_name)),
     replica_name(global_context.getMacros()->expand(replica_name_, database_name, table_name)),
-    data(database_name, table_name,
-        Schema(std::vector<Strings>{{full_path}}), columns_, indices_,
+    data(database_name, table_name, columns_, indices_,
         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
         sample_by_ast_, merging_params_, settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
@@ -226,6 +225,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 {
     if (path_.empty())
         throw Exception("ReplicatedMergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+    ///@TODO_IGR ASK Set inside MergeTreeData?
+    data.schema.setDefaultPath(path_);
 
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
@@ -1046,7 +1048,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception.
-    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::tryToReserve(full_path, estimated_space_for_merge);
+    DiskSpaceMonitor::ReservationPtr reserved_space = data.reserveSpaceForPart(estimated_space_for_merge);
     if (!reserved_space) {
         throw Exception("TMP MSG", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR FIX
     }
@@ -1179,7 +1181,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
 
     /// Can throw an exception.
-    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::tryToReserve(full_path, estimated_space_for_result);
+    DiskSpaceMonitor::ReservationPtr reserved_space = data.reserveSpaceForPart(estimated_space_for_result);
     if (!reserved_space) {
         throw Exception("TMP MSG", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR FIX
     }
@@ -3010,7 +3012,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             for (const MergeTreeData::DataPartPtr & part : data_parts)
                 partition_ids.emplace(part->info.partition_id);
 
-            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+            UInt64 disk_space = data.schema.getMaxUnreservedFreeSpace();
 
             for (const String & partition_id : partition_ids)
             {
@@ -3037,7 +3039,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             }
             else
             {
-                UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+                UInt64 disk_space = data.schema.getMaxUnreservedFreeSpace();
                 String partition_id = data.getPartitionIDFromQuery(partition, query_context);
                 selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
