@@ -195,8 +195,11 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(0u);  // is_temporary
 
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it->table()->getDataPath());
+                if (columns_mask[src_index++]) {
+                    for (const String & path : tables_it->table()->getDataPaths() ) {
+                        res_columns[res_index++]->insert(path);  ///@TODO_IGR ASK Is it fine?
+                    }
+                }
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(database->getTableMetadataPath(table_name));

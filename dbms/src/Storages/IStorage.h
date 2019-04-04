@@ -305,8 +305,8 @@ public:
     /** Notify engine about updated dependencies for this storage. */
     virtual void updateDependencies() {}
 
-    /// Returns data path if storage supports it, empty string otherwise.
-    virtual String getDataPath() const { return {}; }
+    /// Returns data path if storage supports it, empty vector otherwise.
+    virtual Strings getDataPaths() const { return {}; }
 
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
     virtual ASTPtr getPartitionKeyAST() const { return nullptr; }

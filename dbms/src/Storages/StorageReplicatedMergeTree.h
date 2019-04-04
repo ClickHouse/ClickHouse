@@ -194,7 +194,7 @@ public:
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 
-    String getDataPath() const override { return full_path; }
+    Strings getDataPaths() const override { return {full_path}; }
 
     ASTPtr getPartitionKeyAST() const override { return data.partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return data.getSortingKeyAST(); }

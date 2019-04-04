@@ -62,10 +62,10 @@ StorageMergeTree::StorageMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : path(path_), database_name(database_name_), table_name(table_name_), full_paths{path + escapeForFileName(table_name) + '/', "/mnt/data/Data2/" + escapeForFileName(table_name) + '/'},
+    : path(path_), database_name(database_name_), table_name(table_name_),
     global_context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
-         Schema(std::vector<Strings>{full_paths}), columns_, indices_, ///@TODO_IGR generate Schema from config
+         Schema(std::vector<Strings>{{path, "/mnt/data/Data2/"}}), columns_, indices_, ///@TODO_IGR generate Schema from config
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
          sample_by_ast_, merging_params_, settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
@@ -183,9 +183,9 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
     data.setPath(new_full_path);
 
-    path = new_path_to_db;
+    path = new_path_to_db; ///@TODO_IGR ASK path? table_name?
     table_name = new_table_name;
-    full_paths = {new_full_path};  ///TODO_IGR ASK rename?
+    //full_paths = {new_full_path};  ///@TODO_IGR ASK rename?
 
     /// NOTE: Logger names are not updated.
 }
@@ -336,6 +336,7 @@ public:
 
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
+    const auto full_paths = data.getFullPaths(); ///@TODO_IGR ASK What expected size of mutated part? what size should we reserve?
     MergeTreeMutationEntry entry(commands, full_paths[0], data.insert_increment.get()); ///@TODO_IGR ASK PATH TO ENTRY
     String file_name;
     {
@@ -429,18 +430,22 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 void StorageMergeTree::loadMutations()
 {
     Poco::DirectoryIterator end;
-    for (auto it = Poco::DirectoryIterator(full_paths[0]); it != end; ++it) ///@TODO_IGR ASK MUTATIONS FROM ALL DISKS?
+    const auto full_paths = data.getFullPaths();
+    for (const String & path : full_paths)
     {
-        if (startsWith(it.name(), "mutation_"))
+        for (auto it = Poco::DirectoryIterator(path); it != end; ++it)
         {
-            MergeTreeMutationEntry entry(full_paths[0], it.name());
-            Int64 block_number = entry.block_number;
-            auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
-            current_mutations_by_version.emplace(block_number, insertion.first->second);
-        }
-        else if (startsWith(it.name(), "tmp_mutation_"))
-        {
-            it->remove();
+            if (startsWith(it.name(), "mutation_"))
+            {
+                MergeTreeMutationEntry entry(path, it.name());
+                Int64 block_number = entry.block_number;
+                auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
+                current_mutations_by_version.emplace(block_number, insertion.first->second);
+            }
+            else if (startsWith(it.name(), "tmp_mutation_"))
+            {
+                it->remove();
+            }
         }
     }
 
@@ -953,20 +958,23 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     String source_dir = "detached/";
 
+    const auto full_paths = data.getFullPaths();
+
     /// Let's make a list of parts to add.
     ActiveDataPartSet::PartPathNames parts;
     if (attach_part)
     {
         for (const String & full_path : full_paths) {
-            parts.push_back(ActiveDataPartSet::PartPathName{full_path, partition_id}); ///@TODO_IGR ASK
+            parts.push_back(ActiveDataPartSet::PartPathName{full_path, partition_id});
         }
     }
     else
     {
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
+        ///@TODO_IGR ASK ActiveDataPartSet without path? Is it possible here?
         ActiveDataPartSet active_parts(data.format_version);
         for (const String & full_path : full_paths) {
-            for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it) ///@TODO_IGR
+            for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
             {
                 const String & name = it.name();
                 MergeTreePartInfo part_info;
@@ -976,7 +984,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
                     continue;
                 }
                 LOG_DEBUG(log, "Found part " << name);
-                active_parts.add(full_path, name);
+                active_parts.add(full_path, name);  ///@TODO_IGR ASK full_path? full_path + detached?
             }
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");

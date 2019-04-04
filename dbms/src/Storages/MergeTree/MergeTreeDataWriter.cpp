@@ -162,7 +162,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         part_name = new_part_info.getPartName();
 
     size_t expected_size = block.bytes();
-    String part_absolute_path = data.getFullPathForPart(expected_size); ///@TODO_IGR ASK expected size
+    auto reservation = data.reserveSpaceForPart(expected_size); ///@TODO_IGR ASK expected size
+    String part_absolute_path = reservation->getPath();
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, part_absolute_path, part_name, new_part_info);
     new_data_part->partition = std::move(partition);

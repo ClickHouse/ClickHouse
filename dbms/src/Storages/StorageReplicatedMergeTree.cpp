@@ -215,7 +215,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name, table_name)),
     replica_name(global_context.getMacros()->expand(replica_name_, database_name, table_name)),
     data(database_name, table_name,
-        full_path, columns_, indices_,
+        Schema(std::vector<Strings>{{full_path}}), columns_, indices_,
         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
         sample_by_ast_, merging_params_, settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
@@ -1046,7 +1046,10 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts);
 
     /// Can throw an exception.
-    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
+    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::tryToReserve(full_path, estimated_space_for_merge);
+    if (!reserved_space) {
+        throw Exception("TMP MSG", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR FIX
+    }
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1176,7 +1179,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MutationCommands commands = queue.getMutationCommands(source_part, new_part_info.mutation);
 
     /// Can throw an exception.
-    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_result);
+    DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::tryToReserve(full_path, estimated_space_for_result);
+    if (!reserved_space) {
+        throw Exception("TMP MSG", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR FIX
+    }
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1202,7 +1208,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context, reserved_space.get());
         data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -1694,7 +1700,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         if (part_desc->src_table_part)
         {
             /// It is clonable part
-            adding_parts_active_set.add(part_desc->new_part_name);
+            adding_parts_active_set.add(full_path, part_desc->new_part_name);
             part_name_to_desc.emplace(part_desc->new_part_name, part_desc);
             continue;
         }
@@ -1727,14 +1733,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         part_desc->found_new_part_info = MergeTreePartInfo::fromPartName(found_part_name, data.format_version);
         part_desc->replica = replica;
 
-        adding_parts_active_set.add(part_desc->found_new_part_name);
+        adding_parts_active_set.add(full_path, part_desc->found_new_part_name);
         part_name_to_desc.emplace(part_desc->found_new_part_name, part_desc);
     }
 
     /// Check that we could cover whole range
     for (PartDescriptionPtr & part_desc : parts_to_add)
     {
-        if (adding_parts_active_set.getContainingPart(part_desc->new_part_info).empty())
+        if (adding_parts_active_set.getContainingPart(part_desc->new_part_info).name.empty())
         {
             throw Exception("Not found part " + part_desc->new_part_name +
                             " (or part covering it) neither source table neither remote replicas" , ErrorCodes::NO_REPLICA_HAS_PART);
@@ -1744,10 +1750,11 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Filter covered parts
     PartDescriptions final_parts;
     {
-        Strings final_part_names = adding_parts_active_set.getParts();
+        auto final_part_names = adding_parts_active_set.getParts();
 
-        for (const String & final_part_name : final_part_names)
+        for (const auto & final_part : final_part_names)
         {
+            const auto & final_part_name = final_part.name;
             auto part_desc = part_name_to_desc[final_part_name];
             if (!part_desc)
                 throw Exception("There is no final part " + final_part_name + ". This is a bug", ErrorCodes::LOGICAL_ERROR);
@@ -1925,12 +1932,18 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
-    Strings parts = zookeeper->getChildren(source_path + "/parts");
+    Strings parts_tmp = zookeeper->getChildren(source_path + "/parts");
+    ActiveDataPartSet::PartPathNames parts;
+    for (const auto & elem : parts_tmp) {
+        parts.push_back(ActiveDataPartSet::PartPathName{"/", elem});
+    }
+
     ActiveDataPartSet active_parts_set(data.format_version, parts);
 
-    Strings active_parts = active_parts_set.getParts();
-    for (const String & name : active_parts)
+    auto active_parts = active_parts_set.getParts();
+    for (const auto & path_name : active_parts)
     {
+        const auto & name = path_name.name;
         LogEntry log_entry;
         log_entry.type = LogEntry::GET_PART;
         log_entry.source_replica = "";
@@ -3553,16 +3566,19 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
             if (part_info.partition_id != partition_id)
                 continue;
             LOG_DEBUG(log, "Found part " << name);
-            active_parts.add(name);
+            active_parts.add(full_path, name);
             part_names.insert(name);
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
-        parts = active_parts.getParts();
+        auto tmp_parts = active_parts.getParts();
+        for (auto & elem : tmp_parts) {
+            parts.push_back(elem.name);
+        }
 
         /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
         for (const auto & name : part_names)
         {
-            String containing_part = active_parts.getContainingPart(name);
+            String containing_part = active_parts.getContainingPart(name).name;
             if (!containing_part.empty() && containing_part != name)
                 Poco::File(full_path + source_dir + name).renameTo(full_path + source_dir + "inactive_" + name);
         }
@@ -3574,7 +3590,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     for (const String & part : parts)
     {
         LOG_DEBUG(log, "Checking part " << part);
-        loaded_parts.push_back(data.loadPartAndFixMetadata(source_dir + part));
+        loaded_parts.push_back(data.loadPartAndFixMetadata(source_dir, source_dir + part));
     }
 
     ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, false);   /// TODO Allow to use quorum here.
@@ -4138,7 +4154,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
       * Unreliable (there is a race condition) - such a partition may appear a little later.
       */
     Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it{data.getFullPath() + "detached/"}; dir_it != dir_end; ++dir_it)
+    for (Poco::DirectoryIterator dir_it{data.getFullPaths()[0] + "detached/"}; dir_it != dir_end; ++dir_it)
     {
         MergeTreePartInfo part_info;
         if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, data.format_version)
@@ -4221,13 +4237,20 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
         if (try_no >= query_context.getSettings().max_fetch_partition_retries_count)
             throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS);
 
-        Strings parts = getZooKeeper()->getChildren(best_replica_path + "/parts");
+        Strings parts_tmp = getZooKeeper()->getChildren(best_replica_path + "/parts");
+        ActiveDataPartSet::PartPathNames parts;
+        for (const auto & elem : parts_tmp) {
+            parts.push_back(ActiveDataPartSet::PartPathName{"/", elem});
+        }
         ActiveDataPartSet active_parts_set(data.format_version, parts);
         Strings parts_to_fetch;
 
         if (missing_parts.empty())
         {
-            parts_to_fetch = active_parts_set.getParts();
+            auto tmp = active_parts_set.getParts();
+            for (auto elem : tmp) {
+                parts_to_fetch.push_back(elem.name);
+            }
 
             /// Leaving only the parts of the desired partition.
             Strings parts_to_fetch_partition;
@@ -4246,7 +4269,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
         {
             for (const String & missing_part : missing_parts)
             {
-                String containing_part = active_parts_set.getContainingPart(missing_part);
+                String containing_part = active_parts_set.getContainingPart(missing_part).name;
                 if (!containing_part.empty())
                     parts_to_fetch.push_back(containing_part);
                 else
