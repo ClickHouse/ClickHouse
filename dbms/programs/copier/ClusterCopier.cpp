@@ -500,9 +500,6 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
-    ASTPtr arguments_ast = engine.arguments->clone();
-    ASTs & arguments = arguments_ast->children;
-
     if (isExtendedDefinitionStorage(storage_ast))
     {
         if (storage.partition_by)
@@ -515,6 +512,12 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     {
         bool is_replicated = startsWith(engine.name, "Replicated");
         size_t min_args = is_replicated ? 3 : 1;
+
+        if (!engine.arguments)
+            throw Exception("Expected arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
+
+        ASTPtr arguments_ast = engine.arguments->clone();
+        ASTs & arguments = arguments_ast->children;
 
         if (arguments.size() < min_args)
             throw Exception("Expected at least " + toString(min_args) + " arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
