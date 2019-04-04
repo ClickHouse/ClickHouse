@@ -10,6 +10,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <Common/config.h>
+#include <Storages/MergeTree/DiskSpaceMonitor.h>
 
 #include <atomic>
 #include <chrono>
@@ -421,6 +422,8 @@ public:
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
+
+    Schema chooseSchema(const String & name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;

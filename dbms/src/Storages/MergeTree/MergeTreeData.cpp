@@ -89,7 +89,7 @@ namespace ErrorCodes
 
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
-    const Schema & schema_, const ColumnsDescription & columns_,
+    const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
     Context & context_,
     const String & date_column_name,
@@ -110,7 +110,7 @@ MergeTreeData::MergeTreeData(
     sample_by_ast(sample_by_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
-    schema(schema_),
+    schema(context_.chooseSchema("default")), ///@TODO_IGR Schema name
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
@@ -2425,11 +2425,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size) const
 {
     std::cerr << "Exp size " << expected_size << std::endl;
-    constexpr UInt64 SIZE_100MB = 100ull << 20;
+    constexpr UInt64 SIZE_1MB = 1ull << 20; ///@TODO_IGR ASK Is it OK?
     constexpr UInt64 MAGIC_CONST = 1;
 
-    if (expected_size < SIZE_100MB) {
-        expected_size = SIZE_100MB;
+    if (expected_size < SIZE_1MB) {
+        expected_size = SIZE_1MB;
     }
     auto reservation = reserveSpaceAtDisk(expected_size * MAGIC_CONST);
     if (reservation) {
@@ -2437,7 +2437,7 @@ DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expec
     }
 
     throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(expected_size) + " requested, "
-                    + formatReadableSizeWithBinarySuffix(DiskSpaceMonitor::getMaxUnreservedFreeSpace()) + " available",
+                    + formatReadableSizeWithBinarySuffix(schema.getMaxUnreservedFreeSpace()) + " available",
                     ErrorCodes::NOT_ENOUGH_SPACE);
 }
 
@@ -2650,7 +2650,7 @@ DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(UInt64 expect
     auto reservation = schema.reserve(expected_size);
     if (reservation) {
         /// Add path to table at disk
-        reservation->addEnclosedDirToPath(table_name); ///@TODO_IGR ASK can we use table_name here? Could path be different?
+        reservation->addEnclosedDirToPath(escapeForFileName(table_name)); ///@TODO_IGR ASK can we use table_name here? Could path be different?
     }
     return reservation;
 }
