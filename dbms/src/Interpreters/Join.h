@@ -1,10 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <shared_mutex>
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/AggregationCommon.h>
+#include <Interpreters/RowRefs.h>
 #include <Core/SettingsCommon.h>
 
 #include <Common/Arena.h>
@@ -129,27 +131,9 @@ public:
     size_t getTotalByteCount() const;
 
     ASTTableJoin::Kind getKind() const { return kind; }
-
-
-    /// Reference to the row in block.
-    struct RowRef
-    {
-        const Block * block = nullptr;
-        size_t row_num = 0;
-
-        RowRef() {}
-        RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
-    };
-
-    /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
-    struct RowRefList : RowRef
-    {
-        RowRefList * next = nullptr;
-
-        RowRefList() {}
-        RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
-    };
-
+    AsofRowRefs::Type getAsofType() const { return *asof_type; }
+    AsofRowRefs::LookupLists & getAsofData() { return asof_lookup_lists; }
+    const AsofRowRefs::LookupLists & getAsofData() const { return asof_lookup_lists; }
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
       * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
@@ -180,7 +164,6 @@ public:
         void setUsed() const {}
         bool getUsed() const { return true; }
     };
-
 
     /// Different types of keys for maps.
     #define APPLY_FOR_JOIN_VARIANTS(M) \
@@ -282,6 +265,7 @@ public:
     using MapsAnyFull = MapsTemplate<WithFlags<true, false, RowRef>>;
     using MapsAnyFullOverwrite = MapsTemplate<WithFlags<true, true, RowRef>>;
     using MapsAllFull = MapsTemplate<WithFlags<true, false, RowRefList>>;
+    using MapsAsof = MapsTemplate<WithFlags<false, false, AsofRowRefs>>;
 
     template <ASTTableJoin::Kind KIND>
     struct KindTrait
@@ -300,7 +284,7 @@ public:
     template <ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness, bool overwrite>
     using Map = typename MapGetterImpl<KindTrait<kind>::fill_right, strictness, overwrite>::Map;
 
-    static constexpr std::array<ASTTableJoin::Strictness, 2> STRICTNESSES = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All};
+    static constexpr std::array<ASTTableJoin::Strictness, 3> STRICTNESSES = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All, ASTTableJoin::Strictness::Asof};
     static constexpr std::array<ASTTableJoin::Kind, 4> KINDS
         = {ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Inner, ASTTableJoin::Kind::Full, ASTTableJoin::Kind::Right};
 
@@ -377,13 +361,15 @@ private:
       */
     BlocksList blocks;
 
-    std::variant<MapsAny, MapsAnyOverwrite, MapsAll, MapsAnyFull, MapsAnyFullOverwrite, MapsAllFull> maps;
+    std::variant<MapsAny, MapsAnyOverwrite, MapsAll, MapsAnyFull, MapsAnyFullOverwrite, MapsAllFull, MapsAsof> maps;
 
     /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
     Arena pool;
 
 private:
     Type type = Type::EMPTY;
+    std::optional<AsofRowRefs::Type> asof_type;
+    AsofRowRefs::LookupLists asof_lookup_lists;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
@@ -393,6 +379,9 @@ private:
     Block sample_block_with_columns_to_add;
     /// Block with key columns in the same order they appear in the right-side table.
     Block sample_block_with_keys;
+
+    /// Block as it would appear in the BlockList
+    Block blocklist_sample;
 
     Poco::Logger * log;
 
@@ -409,6 +398,11 @@ private:
     mutable std::shared_mutex rwlock;
 
     void init(Type type_);
+
+    /** Take an inserted block and discard everything that does not need to be stored
+     *  Example, remove the keys as they come from the LHS block, but do keep the ASOF timestamps
+     */
+    void prepareBlockListStructure(Block & stored_block);
 
     /// Throw an exception if blocks have different types of key columns.
     void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right) const;
@@ -452,6 +446,12 @@ template <>
 struct Join::MapGetterImpl<true, ASTTableJoin::Strictness::All, false>
 {
     using Map = MapsAllFull;
+};
+
+template <bool fill_right>
+struct Join::MapGetterImpl<fill_right, ASTTableJoin::Strictness::Asof, false>
+{
+    using Map = MapsAsof;
 };
 
 }

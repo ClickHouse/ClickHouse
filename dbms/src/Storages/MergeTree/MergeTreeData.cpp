@@ -2248,30 +2248,6 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
         context);
 }
 
-size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
-{
-    size_t size = 0;
-
-    Poco::DirectoryIterator end;
-
-    for (Poco::DirectoryIterator it(full_path); it != end; ++it)
-    {
-        MergeTreePartInfo part_info;
-        if (!MergeTreePartInfo::tryParsePartName(it.name(), &part_info, format_version))
-            continue;
-        if (part_info.partition_id != partition_id)
-            continue;
-
-        const auto part_path = it.path().absolute().toString();
-        for (Poco::DirectoryIterator it2(part_path); it2 != end; ++it2)
-        {
-            const auto part_file_path = it2.path().absolute().toString();
-            size += Poco::File(part_file_path).getSize();
-        }
-    }
-
-    return size;
-}
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context & context)
 {
