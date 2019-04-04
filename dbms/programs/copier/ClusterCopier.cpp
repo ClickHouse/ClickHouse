@@ -894,7 +894,7 @@ public:
         }
     }
 
-    void uploadTaskDescription(const std::string & task_path, const std::string & task_file)
+    void uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force)
     {
         auto local_task_description_path = task_path + "/description";
         if (task_file.empty())
@@ -912,8 +912,11 @@ public:
 
         zookeeper->createAncestors(local_task_description_path);
         auto code = zookeeper->tryCreate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
+        if (code && force) {
+            zookeeper->createOrUpdate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
+        }
 
-        LOG_DEBUG(log, "Task description " << (code ? "not " : "") << "uploaded to " << local_task_description_path << " with result " << code << " ("<< zookeeper->error2string(code) << ")");
+        LOG_DEBUG(log, "Task description " << ((code && !force) ? "not " : "") << "uploaded to " << local_task_description_path << " with result " << code << " ("<< zookeeper->error2string(code) << ")");
     }
 
     void reloadTaskDescription()
@@ -2128,6 +2131,8 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("task-path").binding("task-path"));
     options.addOption(Poco::Util::Option("task-file", "", "path to task file for uploading in ZooKeeper to task-path")
                           .argument("task-file").binding("task-file"));
+    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists")
+                          .argument("task-upload-force").binding("task-upload-force"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
                           .binding("safe-mode"));
     options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
@@ -2178,7 +2183,7 @@ void ClusterCopierApp::mainImpl()
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
-    copier->uploadTaskDescription(task_path, config().getString("task-file", ""));
+    copier->uploadTaskDescription(task_path, config().getString("task-file", ""), config().getBool("task-upload-force", false));
     copier->init();
     copier->process();
 }
