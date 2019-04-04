@@ -33,29 +33,45 @@ namespace
 {
 
 /// Replace asterisks in select_expression_list with column identifiers
-struct ExtractAsterisksMatcher
+class ExtractAsterisksMatcher
 {
+public:
     using Visitor = InDepthNodeVisitor<ExtractAsterisksMatcher, true>;
 
     struct Data
     {
         std::unordered_map<String, NamesAndTypesList> table_columns;
+        std::vector<String> tables_order;
         std::shared_ptr<ASTExpressionList> new_select_expression_list;
 
         Data(const Context & context, const std::vector<const ASTTableExpression *> & table_expressions)
         {
+            tables_order.reserve(table_expressions.size());
             for (const auto & expr : table_expressions)
             {
                 if (expr->subquery)
                 {
                     table_columns.clear();
+                    tables_order.clear();
                     break;
                 }
 
                 String table_name = DatabaseAndTableWithAlias(*expr, context.getCurrentDatabase()).getQualifiedNamePrefix(false);
                 NamesAndTypesList columns = getNamesAndTypeListFromTableExpression(*expr, context);
+                tables_order.push_back(table_name);
                 table_columns.emplace(std::move(table_name), std::move(columns));
             }
+        }
+
+        void addTableColumns(const String & table_name)
+        {
+            auto it = table_columns.find(table_name);
+            if (it == table_columns.end())
+                throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+
+            for (const auto & column : it->second)
+                new_select_expression_list->children.push_back(
+                    std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name}));
         }
     };
 
@@ -69,6 +85,7 @@ struct ExtractAsterisksMatcher
             visit(*t, ast, data);
     }
 
+private:
     static void visit(ASTSelectQuery & node, ASTPtr &, Data & data)
     {
         if (data.table_columns.empty())
@@ -101,10 +118,8 @@ struct ExtractAsterisksMatcher
             {
                 has_asterisks = true;
 
-                for (auto & pr : data.table_columns)
-                    for (const auto & column : pr.second)
-                        data.new_select_expression_list->children.push_back(
-                            std::make_shared<ASTIdentifier>(std::vector<String>{pr.first, column.name}));
+                for (auto & table_name : data.tables_order)
+                    data.addTableColumns(table_name);
             }
             else if (child->as<ASTQualifiedAsterisk>())
             {
@@ -114,13 +129,7 @@ struct ExtractAsterisksMatcher
                     throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
                 ASTIdentifier & identifier = child->children[0]->as<ASTIdentifier &>();
 
-                auto it = data.table_columns.find(identifier.name);
-                if (it == data.table_columns.end())
-                    throw Exception("Unknown qualified identifier: " + identifier.name, ErrorCodes::UNKNOWN_IDENTIFIER);
-
-                for (const auto & column : it->second)
-                    data.new_select_expression_list->children.push_back(
-                        std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name}));
+                data.addTableColumns(identifier.name);
             }
             else
                 data.new_select_expression_list->children.push_back(child);
