@@ -106,7 +106,7 @@ public:
         return aliases.count(name) || case_insensitive_aliases.count(name);
     }
 
-    virtual ~IFactoryWithAliases() {}
+    virtual ~IFactoryWithAliases() override {}
 
 private:
     using InnerMap = std::unordered_map<String, Creator>; // name -> creator
