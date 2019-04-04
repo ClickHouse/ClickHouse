@@ -173,10 +173,7 @@ struct PositionImpl
 
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() < begin + offsets[i])
-            {
-                size_t prev_offset = i != 0 ? offsets[i - 1] : 0;
-                res[i] = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + prev_offset), reinterpret_cast<const char *>(pos));
-            }
+                res[i] = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + offsets[i - 1]), reinterpret_cast<const char *>(pos));
             else
                 res[i] = 0;
 
@@ -306,7 +303,8 @@ struct MultiSearchAllPositionsImpl
         const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64 {
+        auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
+        {
             return 1 + Impl::countChars(reinterpret_cast<const char *>(start), reinterpret_cast<const char *>(end));
         };
         Impl::createMultiSearcherInBigHaystack(needles).searchAllPositions(haystack_data, haystack_offsets, res_callback, res);
@@ -341,7 +339,8 @@ struct MultiSearchFirstPositionImpl
         const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64 {
+        auto res_callback = [](const UInt8 * start, const UInt8 * end) -> UInt64
+        {
             return 1 + Impl::countChars(reinterpret_cast<const char *>(start), reinterpret_cast<const char *>(end));
         };
         Impl::createMultiSearcherInBigHaystack(needles).searchFirstPosition(haystack_data, haystack_offsets, res_callback, res);

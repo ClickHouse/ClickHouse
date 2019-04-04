@@ -37,6 +37,12 @@ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path 
 
 ```xml
 <yandex>
+    <logger>
+        <level>trace</level>
+        <size>100M</size>
+        <count>3</count>
+    </logger>
+
     <zookeeper>
         <node index="1">
             <host>127.0.0.1</host>
