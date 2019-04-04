@@ -7,18 +7,16 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Columns/ColumnVector.h>
 
+#include <Common/FieldVisitors.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <cmath>
 #include <exception>
-
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsNumber.h>
-#include <Functions/FunctionHelpers.h>
-#include <Common/FieldVisitors.h>
-
 
 namespace DB
 {
@@ -618,6 +616,7 @@ public:
     /// хочется не константный rhs
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        std::cout << "\nMERGING!!\n\n";
         this->data(place).merge(this->data(rhs));
     }
 
@@ -633,6 +632,8 @@ public:
 
     void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments) const
     {
+        std::cout << "\nPREDICTING!!\n\n";
+
         if (arguments.size() != param_num + 1)
             throw Exception("Predict got incorrect number of arguments. Got: " +
                             std::to_string(arguments.size()) + ". Required: " + std::to_string(param_num + 1),
@@ -660,7 +661,7 @@ public:
     {
         std::ignore = place;
         std::ignore = to;
-        return;
+        throw std::runtime_error("not implemented");
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
