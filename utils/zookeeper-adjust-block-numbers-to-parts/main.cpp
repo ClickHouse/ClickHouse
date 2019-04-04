@@ -28,7 +28,7 @@ size_t getMaxBlockSizeForPartition(zkutil::ZooKeeper & zk,
             }
             catch (const DB::Exception & ex)
             {
-                std::cerr << "Ex on:" << ex.displayText() << std::endl;
+                std::cerr << "Exception on: " << ex.displayText() << " will skip part: " << part << std::endl;
             }
         }
     }
@@ -45,7 +45,7 @@ std::unordered_map<std::string, size_t> getAllTablesBlockPaths(zkutil::ZooKeeper
         auto tables = zk.getChildren(shard_path);
         for (auto table : tables)
         {
-            std::cerr << "Searching for nodes in:" << table << std::endl;
+            std::cerr << "Searching for nodes in: " << table << std::endl;
             std::string table_path = shard_path + "/" + table;
             auto format_version = DB::ReplicatedMergeTreeTableMetadata::parse(zk.get(table_path + "/metadata")).data_format_version;
             std::string blocks_path = table_path + "/block_numbers";
@@ -56,7 +56,7 @@ std::unordered_map<std::string, size_t> getAllTablesBlockPaths(zkutil::ZooKeeper
                 {
                     std::string part_path = blocks_path + "/" + partition;
                     size_t partition_max_block = getMaxBlockSizeForPartition(zk, table_path, partition, format_version);
-                    std::cerr << "\tFound max block number:" << partition_max_block << " for part: " << partition << std::endl;
+                    std::cerr << "\tFound max block number: " << partition_max_block << " for part: " << partition << std::endl;
                     result.emplace(part_path, partition_max_block);
                 }
             }
@@ -74,12 +74,12 @@ void rotateNodes(zkutil::ZooKeeper & zk, const std::string & path, size_t max_bl
     size_t current_block_num = DB::parse<UInt64>(current.c_str() + block_prefix.size(), current.size() - block_prefix.size());
     if (current_block_num >= max_block_num)
     {
-        std::cerr << "Nothing to rotate, current block num:" << current_block_num << " max_block_num:" << max_block_num << std::endl;
+        std::cerr << "Nothing to rotate, current block num: " << current_block_num << " max_block_num:" << max_block_num << std::endl;
         return;
     }
 
     size_t need_to_rotate = max_block_num - current_block_num;
-    std::cerr << "Will rotate:" << need_to_rotate << " block numbers from " << current_block_num << " to " << max_block_num << std::endl;
+    std::cerr << "Will rotate: " << need_to_rotate << " block numbers from " << current_block_num << " to " << max_block_num << std::endl;
 
     for (size_t i = 0; i < need_to_rotate; ++i)
     {
@@ -124,7 +124,7 @@ try
     auto all_path = getAllTablesBlockPaths(zookeeper, global_path);
     for (const auto & [path, max_block_num] : all_path)
     {
-        std::cerr << "Rotating on:" << path << std::endl;
+        std::cerr << "Rotating on: " << path << std::endl;
         rotateNodes(zookeeper, path, max_block_num);
     }
     return 0;
