@@ -20,7 +20,8 @@ size_t getMaxBlockSizeForPartition(zkutil::ZooKeeper & zk,
         auto parts = zk.getChildren(replicas_path + "/" + replica_host + "/parts");
         for (const auto & part : parts)
         {
-            try {
+            try
+            {
                 auto info = DB::MergeTreePartInfo::fromPartName(part, format_version);
                 if (info.partition_id == partition_name)
                     max_block_num = std::max<UInt64>(info.max_block, max_block_num);
