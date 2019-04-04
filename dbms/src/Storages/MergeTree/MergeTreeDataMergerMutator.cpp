@@ -150,8 +150,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_
             data.settings.max_bytes_to_merge_at_max_space_in_pool,
             static_cast<double>(free_entries) / data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge);
 
-    ///@TODO_IGR ASK what path?
-    return std::min(max_size, static_cast<UInt64>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_paths[0]) / DISK_USAGE_COEFFICIENT_TO_SELECT));
+    return std::min(max_size, static_cast<UInt64>(DiskSpaceMonitor::getMaxUnreservedFreeSpace() / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 

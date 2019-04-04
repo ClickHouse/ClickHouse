@@ -200,8 +200,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
 
     String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
-    String part_path = data.getFullPathForPart(0);
-    String absolute_part_path = part_path + relative_part_path + "/";  ///@TODO_IGR ASK path for file
+    auto reservation = data.reserveSpaceForPart(0); ///@TODO_IGR ASK What size should be there?
+    String part_path = reservation->getPath();
+    String absolute_part_path = part_path + relative_part_path + "/";
     Poco::File part_file(absolute_part_path);
 
     if (part_file.exists())
