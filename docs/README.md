@@ -2,7 +2,7 @@
 
 ClickHouse uses the "documentation as code" approach, so you can edit Markdown files in this folder from the GitHub web interface. Alternatively, fork the ClickHouse repository, edit, commit, push, and open a pull request.
 
-At the moment documentation is bilingual in English and Russian. It's best to try to keep both languages in sync if you can, but this is not strictly required because there are people watching over this. If you add a new article, you should also add it to `toc_{en,ru,zh,fa}.yaml` files with the pages index.
+At the moment documentation is bilingual in English and Russian. Try to keep all languages in sync if you can, but this is not strictly required. There are people who are responsible for monitoring language versions and syncing them. If you add a new article, you should also add it to `toc_{en,ru,zh,fa}.yaml` files with the pages index.
 
 The master branch is then asynchronously published to the ClickHouse official website:
 
@@ -19,7 +19,7 @@ The infrastructure to build Markdown for publishing on the documentation website
 
 When you write pretty much any text, the first thing you should think about is who will read it and which terms you should use for communicating with them.
 
-ClickHouse can be directly used by all sorts of analysts and engineers. For generic parts of documentation (like the query language, tutorials or overviews), assume that the reader only has a basic technical background. For more technical sections (like articles that describe ClickHouse internals, guides for operating ClickHouse clusters, or rules for contributing to C++ code), you can use specific technical language and concepts.
+ClickHouse can be directly used by all sorts of analysts and engineers. For generic parts of documentation (like the query language, tutorials or overviews), assume that the reader only has a basic technical background. For more technical sections (like articles that describe ClickHouse internals, guides for operating ClickHouse clusters, or rules for contributing to C++ code), you can use technical language and concepts.
 
 ## Specific Recommendations
 
@@ -50,7 +50,7 @@ Some additional configuration has to be done to actually make a new language liv
 * Brightly highlighted text starts with  `!!! info "Header"`, followed by 4 spaces on the next line and content. For a warning, replace `info` with `warning`.
 * Hidden block that opens on click: `<details markdown="1"> <summary>Header</summary> hidden content</details>`.
 * Colored text: `<span style="color: red;">text</span>`.
-* Heading anchor to be linked to: `Title {#anchor-name}`. Anchors are created automatically for headings written fully in English: `"Title Name" -> "title-name"`.
+* Heading anchor to be linked to: `Title {#anchor-name}`.
 * Table:
 ```
 | Header    1 | Header    2 | Header    3 |
