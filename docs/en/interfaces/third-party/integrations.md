@@ -36,8 +36,7 @@
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
     - [Sematext](https://sematext.com/)
-        -  [Monitoring ClickHouse with Sematext](https://sematext.com/blog/clickhouse-monitoring-sematext/)
-        -  [clickhouse integration](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
+        - [clickhouse integration](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - Logging
     - [rsyslog](https://www.rsyslog.com/)
         - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
