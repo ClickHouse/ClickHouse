@@ -897,8 +897,6 @@ public:
     void uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force)
     {
         auto local_task_description_path = task_path + "/description";
-        if (task_file.empty())
-            return;
 
         String task_config_str;
         {
@@ -2183,7 +2181,11 @@ void ClusterCopierApp::mainImpl()
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
-    copier->uploadTaskDescription(task_path, config().getString("task-file", ""), config().getBool("task-upload-force", false));
+
+    auto task_file = config().getString("task-file", "");
+    if (!task_file.empty())
+        copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
+
     copier->init();
     copier->process();
 }
