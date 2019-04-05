@@ -53,16 +53,16 @@ bool CachedCompressedReadBuffer::nextImpl()
             owned_cell->data.resize(size_decompressed + owned_cell->additional_bytes);
             decompress(owned_cell->data.data(), size_decompressed, size_compressed_without_checksum);
 
-            /// Put data into cache.
-            cache->set(key, owned_cell);
         }
+
+        /// Put data into cache.
+        /// NOTE: Even if we don't read anything (compressed_size == 0)
+        /// because we can reuse this information and don't reopen file in future
+        cache->set(key, owned_cell);
     }
 
     if (owned_cell->data.size() == 0)
-    {
-        owned_cell = nullptr;
         return false;
-    }
 
     working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - owned_cell->additional_bytes);
 
