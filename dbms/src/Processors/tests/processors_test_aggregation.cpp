@@ -356,7 +356,7 @@ try
     std::vector<String> messages;
     std::vector<Int64> times;
 
-    auto exec = [&](auto func, String msg, ThreadPool * pool, bool two_level, bool external)
+    auto exec = [&](auto func, String msg, ThreadPool * cur_pool, bool two_level, bool external)
     {
         msg += ", two_level = " + toString(two_level) + ", external = " + toString(external);
         Int64 time = 0;
@@ -366,7 +366,7 @@ try
             ThreadStatus cur_status;
 
             CurrentThread::attachToIfDetached(thread_group);
-            time = measure<>::execution(func, msg, pool, two_level, external);
+            time = measure<>::execution(func, msg, cur_pool, two_level, external);
         };
 
         std::thread thread(wrapper);

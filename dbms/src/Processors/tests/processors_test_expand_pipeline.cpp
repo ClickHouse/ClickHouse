@@ -228,7 +228,6 @@ private:
     Chunk chunk_from_main_inp;
     Chunk chunk_from_add_inp;
     bool is_processed = false;
-    Processors processors;
 };
 
 
