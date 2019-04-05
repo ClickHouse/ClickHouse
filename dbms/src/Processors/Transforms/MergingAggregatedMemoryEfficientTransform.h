@@ -29,7 +29,7 @@ private:
     AggregatingTransformParamsPtr params;
 
     std::vector<Int32> last_bucket_number;
-    std::map<Int32, Chunks> chunks;
+    std::map<Int32, Chunks> chunks_map;
     Chunks overflow_chunks;
     Chunks single_level_chunks;
     Int32 current_bucket = 0;
