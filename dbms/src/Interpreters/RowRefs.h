@@ -76,9 +76,11 @@ private:
     // the array becomes immutable
     void sort()
     {
-        if(!sorted.load(std::memory_order_acquire)) {
+        if (!sorted.load(std::memory_order_acquire))
+        {
             std::lock_guard<std::mutex> l(lock);
-            if(!sorted.load(std::memory_order_relaxed)) {
+            if (!sorted.load(std::memory_order_relaxed))
+            {
                 std::sort(array.begin(), array.end());
                 sorted.store(true, std::memory_order_release);
             }
