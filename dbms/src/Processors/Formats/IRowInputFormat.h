@@ -33,9 +33,9 @@ public:
 
     IRowInputFormat(
         Block header,
-        ReadBuffer & in,
+        ReadBuffer & in_,
         Params params)
-        : IInputFormat(std::move(header), in), params(params)
+        : IInputFormat(std::move(header), in_), params(params)
     {
     }
 
