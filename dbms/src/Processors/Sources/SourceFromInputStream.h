@@ -21,6 +21,7 @@ public:
 private:
     bool initialized = false;
     bool stream_finished = false;
+    bool has_aggregate_functions = false;
     BlockInputStreamPtr stream;
 };
 

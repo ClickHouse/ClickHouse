@@ -1,4 +1,6 @@
 #include <Processors/Formats/LazyOutputFormat.h>
+#include <Processors/Transforms/AggregatingTransform.h>
+
 
 namespace DB
 {
@@ -22,6 +24,15 @@ Block LazyOutputFormat::getBlock(UInt64 milliseconds)
 
     auto block = getPort(PortKind::Main).getHeader().cloneWithColumns(chunk.detachColumns());
     info.update(block);
+
+    auto chunk_info = chunk.getChunkInfo();
+    auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get());
+
+    if (agg_info)
+    {
+        block.info.bucket_num = agg_info->bucket_num;
+        block.info.is_overflows = agg_info->is_overflows;
+    }
 
     return block;
 }
