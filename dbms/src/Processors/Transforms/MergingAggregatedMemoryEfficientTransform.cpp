@@ -66,32 +66,32 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
 {
     auto try_push_by_iter = [&](auto batch_it)
     {
-        if (batch_it == chunks.end())
+        if (batch_it == chunks_map.end())
             return false;
 
         Chunks & cur_chunks = batch_it->second;
         if (cur_chunks.empty())
         {
-            chunks.erase(batch_it);
+            chunks_map.erase(batch_it);
             return false;
         }
 
         pushData(std::move(cur_chunks), batch_it->first, false);
-        chunks.erase(batch_it);
+        chunks_map.erase(batch_it);
         return true;
     };
 
     if (all_inputs_finished)
     {
         /// Chunks are sorted by bucket.
-        while (!chunks.empty())
-            if (try_push_by_iter(chunks.begin()))
+        while (!chunks_map.empty())
+            if (try_push_by_iter(chunks_map.begin()))
                 return true;
     }
     else
     {
         for (; next_bucket_to_push < current_bucket; ++next_bucket_to_push)
-            if (try_push_by_iter(chunks.find(next_bucket_to_push)))
+            if (try_push_by_iter(chunks_map.find(next_bucket_to_push)))
                 return true;
     }
 
@@ -126,7 +126,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
         for (auto & input : inputs)
             input.close();
 
-        chunks.clear();
+        chunks_map.clear();
         last_bucket_number.clear();
         return Status::Finished;
     }
@@ -261,7 +261,7 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
         single_level_chunks.emplace_back(std::move(chunk));
     else
     {
-        chunks[bucket].emplace_back(std::move(chunk));
+        chunks_map[bucket].emplace_back(std::move(chunk));
         has_two_level = true;
         last_bucket_number[input] = bucket;
     }
@@ -279,7 +279,7 @@ void GroupingAggregatedTransform::work()
         for (auto & cur_block : blocks)
         {
             Int32 bucket = cur_block.info.bucket_num;
-            chunks[bucket].emplace_back(Chunk(cur_block.getColumns(), cur_block.rows()));
+            chunks_map[bucket].emplace_back(Chunk(cur_block.getColumns(), cur_block.rows()));
         }
     }
 }
@@ -354,7 +354,6 @@ bool SortingAggregatedTransform::tryPushChunk()
     auto cur_bucket = it->first;
 
     /// Check that can push it
-    size_t num_inputs = inputs.size();
     for (size_t input = 0; input < num_inputs; ++input)
         if (!is_input_finished[input] && last_bucket_number[input] < cur_bucket)
             return false;
