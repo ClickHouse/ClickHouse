@@ -25,7 +25,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-CapnProtoRowInputFormat::NestedField split(const Block & header, size_t i)
+static CapnProtoRowInputFormat::NestedField split(const Block & header, size_t i)
 {
     CapnProtoRowInputFormat::NestedField field = {{}, i};
 
@@ -39,7 +39,7 @@ CapnProtoRowInputFormat::NestedField split(const Block & header, size_t i)
 }
 
 
-Field convertNodeToField(const capnp::DynamicValue::Reader & value)
+static Field convertNodeToField(const capnp::DynamicValue::Reader & value)
 {
     switch (value.getType())
     {
@@ -96,7 +96,7 @@ Field convertNodeToField(const capnp::DynamicValue::Reader & value)
     return Field();
 }
 
-capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::string & field)
+static capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::string & field)
 {
     KJ_IF_MAYBE(child, node.findFieldByName(field))
         return *child;
