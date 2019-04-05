@@ -65,8 +65,8 @@ public:
     typename Base::const_iterator cend() const { return array.cend(); }
 
 private:
-    Base array;
     std::atomic<bool> sorted = false;
+    Base array;
     mutable std::mutex lock;
 
     // Double checked locking with SC atomics works in C++
