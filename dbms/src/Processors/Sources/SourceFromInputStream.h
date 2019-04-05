@@ -12,8 +12,6 @@ class SourceFromInputStream : public ISource
 {
 public:
     SourceFromInputStream(Block header, BlockInputStreamPtr stream);
-
-
     String getName() const override { return "SourceFromInputStream"; }
 
     Chunk generate() override;
@@ -22,7 +20,7 @@ public:
 
 private:
     bool initialized = false;
-    bool finished = false;
+    bool stream_finished = false;
     BlockInputStreamPtr stream;
 };
 

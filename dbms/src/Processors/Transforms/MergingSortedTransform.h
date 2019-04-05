@@ -26,59 +26,6 @@ struct SharedChunk : Chunk
     SharedChunk(Chunk && chunk) : Chunk(std::move(chunk)) {}
 };
 
-//template <typename TSortCursor>
-//class Queue
-//{
-//public:
-//    bool empty() const { return queue.empty(); }
-//    void push(TSortCursor cursor) { queue.push(std::move(cursor)); }
-//
-//    bool needUpdateCursor() const { return !empty() && !queue.top()->isLast(); }
-//
-//    void updateCursor(TSortCursor cursor)
-//    {
-//        if (!needUpdateCursor())
-//            throw Exception("Do not need to update cursor for sort cursor queue.", ErrorCodes::LOGICAL_ERROR);
-//
-//        if (cursor->order != queue.top()->order)
-//            throw Exception("Cannot update cursor for sort cursor queue because top cursor order "
-//                            "(" + toString(queue.top()->order) + ") is not equal to new cursor order "
-//                            "(" + toString(cursor->order) + ").", ErrorCodes::LOGICAL_ERROR);
-//        queue.pop();
-//        queue.push(cursor);
-//    }
-//
-//    void dropCursor()
-//    {
-//        if (!needUpdateCursor())
-//            throw Exception("Do not need to update cursor for sort cursor queue.", ErrorCodes::LOGICAL_ERROR);
-//
-//        queue.pop();
-//    }
-//
-//    const TSortCursor & top() const
-//    {
-//        if (needUpdateCursor())
-//            throw Exception("Cannot get top element from sort cursor queue because "
-//                            "need to update cursor.", ErrorCodes::LOGICAL_ERROR);
-//
-//        return queue.top();
-//    }
-//
-//    void pop()
-//    {
-//        if (needUpdateCursor())
-//            throw Exception("Cannot pop element from sort cursor queue because "
-//                            "need to update cursor.", ErrorCodes::LOGICAL_ERROR);
-//        queue.pop();
-//    }
-//
-//private:
-//    /// Queue with SortCursors.
-//    using PriorityQueue = std::priority_queue<TSortCursor>;
-//    PriorityQueue queue;
-//};
-
 }
 
 using SharedChunkPtr = boost::intrusive_ptr<detail::SharedChunk>;
@@ -132,7 +79,7 @@ protected:
             ++merged_rows;
         }
 
-        void insertFromChunk(Chunk && chunk, size_t limit)
+        void insertFromChunk(Chunk && chunk, size_t limit_rows)
         {
             if (merged_rows)
                 throw Exception("Cannot insert to MergedData from Chunk because MergedData is not empty.",
@@ -140,9 +87,9 @@ protected:
 
             auto num_rows = chunk.getNumRows();
             columns = chunk.mutateColumns();
-            if (limit && num_rows > limit)
+            if (limit_rows && num_rows > limit_rows)
                 for (auto & column : columns)
-                    column = (*column->cut(0, limit)).mutate();
+                    column = (*column->cut(0, limit_rows)).mutate();
 
             total_merged_rows += num_rows;
             merged_rows = num_rows;

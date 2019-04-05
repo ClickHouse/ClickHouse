@@ -10,7 +10,7 @@ SourceFromInputStream::SourceFromInputStream(Block header, BlockInputStreamPtr s
 
 Chunk SourceFromInputStream::generate()
 {
-    if (finished)
+    if (stream_finished)
         return {};
 
     if (!initialized)
@@ -23,7 +23,7 @@ Chunk SourceFromInputStream::generate()
     if (!block)
     {
         stream->readSuffix();
-        finished = true;
+        stream_finished = true;
         return {};
     }
 
