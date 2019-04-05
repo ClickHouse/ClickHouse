@@ -9,6 +9,7 @@ class ChunkInfo
 {
 public:
     virtual ~ChunkInfo() = default;
+    ChunkInfo() = default;
 };
 
 using ChunkInfoPtr = std::shared_ptr<const ChunkInfo>;
