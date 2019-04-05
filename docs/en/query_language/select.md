@@ -46,27 +46,37 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 ### SAMPLE Clause {#select-sample-clause}
 
-The `SAMPLE` clause allows for approximated query processing (sampling). 
+The `SAMPLE` clause allows for approximated query processing. 
 
-Sampling is not performed on all the data, but only on a certain sample. It makes sense when you need to build reports on the fly on a large amount of data. For example, if you need to calculate statistics for all the visits, it is enough to execute the query on the 1/10 fraction of all the visits and then multiply the result by 10.
+When data sampling is using, the query is not performed on all the data, but only on a certain fraction of data (sample). For example, if you need to calculate statistics for all the visits, it is enough to execute the query on the 1/10 fraction of all the visits and then multiply the result by 10. 
 
-You can only use sampling with the tables in the [MergeTree](../operations/table_engines/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table)).
+Approximated query processing can be useful in the following cases:
+
+- When you have strict timing requirements (like <100ms) but you can't justify the cost of additional hardware resources to meet them.
+- When your raw data is not accurate, so approximation doesn't noticeably degrade the quality.
+- Business requirements target approximate results (for cost-effectiveness, or in order to market exact results to premium users).
+
+!!! note
+    You can only use sampling with the tables in the [MergeTree](../operations/table_engines/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table)).
 
 The features of data sampling are listed below:
 
 - Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
-- Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. This means that you can use the sample in subqueries in the [IN](#select-in-operators) clause. Also, you can join samples using the [JOIN](#select-join) clause.
+- Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](#select-in-operators) clause. Also, you can join samples using the [JOIN](#select-join) clause.
 - Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table).
 
 For the `SAMPLE` clause the following syntax is supported:
 
-- `SAMPLE k`, where `k` is a decimal number from 0 to 1. The query is executed on `k` fraction of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#select-sample-k)
-- `SAMPLE n`, where `n` is a sufficiently large integer. The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#select-sample-n)
-- `SAMPLE k OFFSET m` where `k` and `m` are numbers from 0 to 1. The query is executed on a sample of `k` percent of the data. The data used for the sample is offset by `m` percent. [Read more](#select-sample-offset)
+| SAMPLE&#160;Clause&#160;Syntax | Description | 
+| ---------------- | --------- | 
+| `SAMPLE k` | Here `k` is the number from 0 to 1.</br>The query is executed on `k` fraction of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#select-sample-k)|
+| `SAMPLE n` | Here `n` is a sufficiently large integer.</br>The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#select-sample-n) |
+| `SAMPLE k OFFSET m` | Here `k` and `m` are the numbers from 0 to 1.</br>The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#select-sample-offset) | 
+
 
 #### SAMPLE k {#select-sample-k}
 
-Here `k` is the number from 0 to 1 (both fractional and decimal notations are supported). For example, `SAMPLE 0.5` or `SAMPLE 1/2`.
+Here `k` is the number from 0 to 1 (both fractional and decimal notations are supported). For example, `SAMPLE 1/2` or `SAMPLE 0.5`.
 
 In a `SAMPLE k` clause, the sample is taken from the `k` fraction of data. The example is shown below:
 
@@ -122,7 +132,7 @@ SAMPLE 10000000
  
 #### SAMPLE k OFFSET m {#select-sample-offset}
 
-You can specify the `SAMPLE k OFFSET m` clause, where `k` and `m` are numbers from 0 to 1. Examples are shown below.
+Here `k` and `m` are numbers from 0 to 1. Examples are shown below.
 
 **Example 1**
 
@@ -140,7 +150,7 @@ In this example, the sample is 1/10th of all data:
 SAMPLE 1/10 OFFSET 1/2
 ```
 
-Here, a sample of 10% is taken from the second half of data.
+Here, a sample of 10% is taken from the second half of the data.
 
 `[----------++--------]`
 
