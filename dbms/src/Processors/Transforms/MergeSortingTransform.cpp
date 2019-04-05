@@ -591,13 +591,13 @@ void MergeSortingTransform::remerge()
                     << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
 
     /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
-    MergeSorter merge_sorter(chunks, description, max_merged_block_size, limit);
+    MergeSorter remerge_sorter(chunks, description, max_merged_block_size, limit);
 
     Chunks new_chunks;
     size_t new_sum_rows_in_blocks = 0;
     size_t new_sum_bytes_in_blocks = 0;
 
-    while (auto chunk = merge_sorter.read())
+    while (auto chunk = remerge_sorter.read())
     {
         new_sum_rows_in_blocks += chunk.getNumRows();
         new_sum_bytes_in_blocks += chunk.allocatedBytes();
