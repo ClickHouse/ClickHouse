@@ -165,9 +165,9 @@ MergeTreeData::MergeTreeData(
 
     /// Creating directories, if not exist.
     Poco::File(full_path).createDirectories();
-    for (const String & path : getFullPaths()) {
+    for (const String & path : getFullPaths())
+    {
         Poco::File(path).createDirectories();
-
         Poco::File(path + "detached").createDirectory();
     }
 
@@ -858,13 +858,16 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
             {
                 Poco::File tmp_dir(full_path + it.name());
 
-                try {
-                    if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline)) {
+                try
+                {
+                    if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline))
+                    {
                         LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
                         Poco::File(full_path + it.name()).remove(true);
                     }
                 }
-                catch (const Poco::FileNotFoundException &) {
+                catch (const Poco::FileNotFoundException &)
+                {
                     /// If the file is already deleted, do nothing.
                 }
             }
@@ -1014,9 +1017,8 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
-    for (auto && full_path : getFullPaths()) {
+    for (auto && full_path : getFullPaths())
         Poco::File(full_path).remove(true);
-    }
 
     LOG_TRACE(log, "dropAllData: done.");
 }
@@ -2294,7 +2296,8 @@ size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
                 continue;
 
             const auto part_path = it.path().absolute().toString();
-            for (Poco::DirectoryIterator it2(part_path); it2 != end; ++it2) {
+            for (Poco::DirectoryIterator it2(part_path); it2 != end; ++it2)
+            {
                 const auto part_file_path = it2.path().absolute().toString();
                 size += Poco::File(part_file_path).getSize();
             }
@@ -2429,13 +2432,12 @@ DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expec
     constexpr UInt64 SIZE_1MB = 1ull << 20; ///@TODO_IGR ASK Is it OK?
     constexpr UInt64 MAGIC_CONST = 1;
 
-    if (expected_size < SIZE_1MB) {
+    if (expected_size < SIZE_1MB)
         expected_size = SIZE_1MB;
-    }
+
     auto reservation = reserveSpaceAtDisk(expected_size * MAGIC_CONST);
-    if (reservation) {
+    if (reservation)
         return reservation;
-    }
 
     throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(expected_size) + " requested, "
                     + formatReadableSizeWithBinarySuffix(schema.getMaxUnreservedFreeSpace()) + " available",
@@ -2647,7 +2649,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     return dst_data_part;
 }
 
-DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(UInt64 expected_size) const {
+DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(UInt64 expected_size) const
+{
     return schema.reserve(expected_size);
 }
 

@@ -572,9 +572,7 @@ public:
 
     DiskSpaceMonitor::ReservationPtr reserveSpaceAtDisk(UInt64 expected_size) const; ///@TODO_IGR ASK Maybe set this method as private?
 
-    Strings getFullPaths() const {
-        return schema.getFullPaths();
-    }
+    Strings getFullPaths() const { return schema.getFullPaths(); }
 
     MergeTreeDataFormatVersion format_version;
 

@@ -1623,7 +1623,6 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 }
 
 
-///@TODO_IGR ASK maybe pointer to Schema?
 const Schema& Context::getSchema(const String & name) const
 {
     auto lock = getLock();

@@ -1046,9 +1046,8 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     /// Can throw an exception.
     DiskSpaceMonitor::ReservationPtr reserved_space = data.reserveSpaceForPart(estimated_space_for_merge);
-    if (!reserved_space) {
+    if (!reserved_space)
         throw Exception("TMP MSG", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR FIX
-    }
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1179,9 +1178,8 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     /// Can throw an exception.
     DiskSpaceMonitor::ReservationPtr reserved_space = data.reserveSpaceForPart(estimated_space_for_result);
-    if (!reserved_space) {
+    if (!reserved_space)
         throw Exception("TMP MSG", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR FIX
-    }
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1933,9 +1931,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
     Strings parts_tmp = zookeeper->getChildren(source_path + "/parts");
     ActiveDataPartSet::PartPathNames parts;
-    for (const auto & elem : parts_tmp) {
+    for (const auto & elem : parts_tmp)
         parts.push_back(ActiveDataPartSet::PartPathName{"/", elem});
-    }
 
     ActiveDataPartSet active_parts_set(data.format_version, parts);
 
@@ -3570,9 +3567,8 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
         auto tmp_parts = active_parts.getParts();
-        for (auto & elem : tmp_parts) {
+        for (auto & elem : tmp_parts)
             parts.push_back(elem.name);
-        }
 
         /// Inactive parts rename so they can not be attached in case of repeated ATTACH.
         for (const auto & name : part_names)
@@ -4238,18 +4234,17 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
         Strings parts_tmp = getZooKeeper()->getChildren(best_replica_path + "/parts");
         ActiveDataPartSet::PartPathNames parts;
-        for (const auto & elem : parts_tmp) {
+        for (const auto & elem : parts_tmp)
             parts.push_back(ActiveDataPartSet::PartPathName{"/", elem});
-        }
+
         ActiveDataPartSet active_parts_set(data.format_version, parts);
         Strings parts_to_fetch;
 
         if (missing_parts.empty())
         {
             auto tmp = active_parts_set.getParts();
-            for (auto elem : tmp) {
+            for (auto elem : tmp)
                 parts_to_fetch.push_back(elem.name);
-            }
 
             /// Leaving only the parts of the desired partition.
             Strings parts_to_fetch_partition;
