@@ -1058,7 +1058,7 @@ void ExpressionAnalyzer::collectUsedColumns()
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";
-        ss << " while procesing query: '" << query << "'";
+        ss << " while processing query: '" << query << "'";
 
         ss << ", required columns:";
         for (const auto & name : columns_context.requiredColumns())
