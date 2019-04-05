@@ -48,7 +48,7 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 The `SAMPLE` clause allows for approximated query processing. 
 
-When data sampling is using, the query is not performed on all the data, but only on a certain fraction of data (sample). For example, if you need to calculate statistics for all the visits, it is enough to execute the query on the 1/10 fraction of all the visits and then multiply the result by 10. 
+When data sampling is enabled, the query is not performed on all the data, but only on a certain fraction of data (sample). For example, if you need to calculate statistics for all the visits, it is enough to execute the query on the 1/10 fraction of all the visits and then multiply the result by 10.
 
 Approximated query processing can be useful in the following cases:
 
