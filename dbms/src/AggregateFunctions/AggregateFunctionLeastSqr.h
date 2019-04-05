@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
+#include <limits>
 
 namespace DB
 {
@@ -65,12 +65,19 @@ struct AggregateFunctionLeastSqrData final
 
     Ret getK() const
     {
-        return (sum_xy * count - sum_x * sum_y)
-            / (sum_xx * count - sum_x * sum_x);
+        Ret divisor = sum_xx * count - sum_x * sum_x;
+
+        if (divisor == 0)
+            return std::numeric_limits<Ret>::quiet_NaN();
+
+        return (sum_xy * count - sum_x * sum_y) / divisor;
     }
 
     Ret getB(Ret k) const
     {
+        if (count == 0)
+            return std::numeric_limits<Ret>::quiet_NaN();
+
         return (sum_y - k * sum_x) / count;
     }
 };
