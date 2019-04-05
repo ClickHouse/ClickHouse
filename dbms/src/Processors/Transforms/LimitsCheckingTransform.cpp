@@ -44,12 +44,12 @@ LimitsCheckingTransform::LimitsCheckingTransform(const Block & header, LocalLimi
 {
 }
 
-LimitsCheckingTransform::LimitsCheckingTransform(const Block & header, LocalLimits limits, QueryStatus * process_list_elem)
-    : ISimpleTransform(header, header, false)
-    , limits(std::move(limits))
-    , process_list_elem(process_list_elem)
-{
-}
+//LimitsCheckingTransform::LimitsCheckingTransform(const Block & header, LocalLimits limits, QueryStatus * process_list_elem)
+//    : ISimpleTransform(header, header, false)
+//    , limits(std::move(limits))
+//    , process_list_elem(process_list_elem)
+//{
+//}
 
 void LimitsCheckingTransform::transform(Chunk & chunk)
 {

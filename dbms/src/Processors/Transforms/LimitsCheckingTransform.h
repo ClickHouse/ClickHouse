@@ -32,7 +32,7 @@ public:
     /// LIMITS_CURRENT
     LimitsCheckingTransform(const Block & header, LocalLimits limits);
     /// LIMITS_TOTAL
-    LimitsCheckingTransform(const Block & header, LocalLimits limits, QueryStatus * process_list_elem);
+    /// LimitsCheckingTransform(const Block & header, LocalLimits limits, QueryStatus * process_list_elem);
 
     String getName() const override { return "LimitsCheckingTransform"; }
 
@@ -43,7 +43,6 @@ protected:
 
 private:
     LocalLimits limits;
-    [[maybe_unused]] QueryStatus * process_list_elem = nullptr;
 
     QuotaForIntervals * quota = nullptr;
     double prev_elapsed = 0;
