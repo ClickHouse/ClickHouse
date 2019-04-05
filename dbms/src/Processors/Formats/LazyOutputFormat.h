@@ -11,8 +11,8 @@ class LazyOutputFormat : public IOutputFormat
 {
 
 public:
-    LazyOutputFormat(Block header)
-        : IOutputFormat(std::move(header), out), queue(1), finished(false) {}
+    explicit LazyOutputFormat(Block header)
+        : IOutputFormat(std::move(header), out), queue(1), finished_processing(false) {}
 
     String getName() const override { return "LazyOutputFormat"; }
 
@@ -20,7 +20,7 @@ public:
     Block getTotals();
     Block getExtremes();
 
-    bool isFinished() { return finished; }
+    bool isFinished() { return finished_processing; }
 
     BlockStreamProfileInfo & getProfileInfo() { return info; }
 
@@ -31,7 +31,7 @@ protected:
 
     void finalize() override
     {
-        finished = true;
+        finished_processing = true;
 
         /// In case we are waiting for result.
         queue.push({});
@@ -48,7 +48,7 @@ private:
 
     BlockStreamProfileInfo info;
 
-    std::atomic<bool> finished;
+    std::atomic<bool> finished_processing;
 };
 
 }
