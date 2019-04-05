@@ -1,6 +1,10 @@
 #pragma once
 #include <Processors/IProcessor.h>
-#include <Interpreters/ProcessList.h>
+#include <Processors/Executors/PipelineExecutor.h>
+
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
+
 
 namespace DB
 {
@@ -22,7 +26,7 @@ public:
 
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
 
-    void addSimpleTransform(ProcessorGetter getter);
+    void addSimpleTransform(const ProcessorGetter & getter);
     void addPipe(Processors pipe);
     void addTotalsHavingTransform(ProcessorPtr transform);
     void addExtremesTransform(ProcessorPtr transform);
@@ -37,7 +41,7 @@ public:
 
     void unitePipelines(std::vector<QueryPipeline> && pipelines, const Context & context);
 
-    void execute(size_t num_threads);
+    PipelineExecutorPtr execute(size_t num_threads);
 
     size_t getNumStreams() const { return streams.size(); }
     size_t getNumMainStreams() const { return streams.size() - (has_delayed_stream ? 1 : 0); }
@@ -48,7 +52,6 @@ public:
     void addTableLock(const TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 
     /// For compatibility with IBlockInputStream.
-    void setProcessListEntry(std::shared_ptr<ProcessListEntry> entry) { process_list_entry = std::move(entry); }
     void setProgressCallback(const ProgressCallback & callback);
     void setProcessListElement(QueryStatus * elem);
 
@@ -77,11 +80,8 @@ private:
     bool has_extremes = false;
     bool has_output = false;
 
-    /** process_list_entry should be destroyed after in and after out,
-      *  since in and out contain pointer to objects inside process_list_entry (query-level MemoryTracker for example),
-      *  which could be used before destroying of in and out.
-      */
-    std::shared_ptr<ProcessListEntry> process_list_entry;
+    PipelineExecutorPtr executor;
+    std::shared_ptr<ThreadPool> pool;
 
     void checkInitialized();
     void checkSource(const ProcessorPtr & source);

@@ -1,7 +1,7 @@
 #include <Processors/ISimpleTransform.h>
 
 #include <Common/Arena.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 
 namespace DB
 {

@@ -1,3 +1,4 @@
+#pragma once
 #include <Processors/IProcessor.h>
 
 namespace DB

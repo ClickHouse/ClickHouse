@@ -203,7 +203,7 @@ void TCPHandler::runImpl()
             if (state.need_receive_data_for_insert)
                 processInsertQuery(global_settings);
             else if (state.io.pipeline.initialized())
-                processOrdinaryQueryWithProcessors(query_context.getSettingsRef().max_threads);
+                processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads);
             else
                 processOrdinaryQuery();
 
@@ -478,9 +478,19 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
     pipeline.setOutput(lazy_format);
 
     ThreadPool pool(1, 1, 1);
+    auto executor = pipeline.execute(num_threads);
+    bool exception = false;
     pool.schedule([&]()
     {
-        pipeline.execute(num_threads);
+        try
+        {
+            executor->execute();
+        }
+        catch (...)
+        {
+            exception = true;
+            throw;
+        }
     });
 
     while (true)
@@ -492,12 +502,12 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
             if (isQueryCancelled())
             {
                 /// A packet was received requesting to stop execution of the request.
-                /// TODO
+                executor->cancel();
                 break;
             }
             else
             {
-                if (after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+                if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
                 {
                     /// Some time passed and there is a progress.
                     after_send_progress.restart();
@@ -506,11 +516,17 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 
                 sendLogs();
 
-                if ((block = lazy_format->getBlock(query_context.getSettingsRef().interactive_delay / 1000)))
+                if ((block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000)))
                     break;
 
                 if (lazy_format->isFinished())
                     break;
+
+                if (exception)
+                {
+                    pool.wait();
+                    break;
+                }
             }
         }
 
@@ -535,7 +551,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
             break;
     }
 
-    async_in.readSuffix();
+    pool.wait();
 
     state.io.onFinish();
 }

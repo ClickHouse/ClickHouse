@@ -4,6 +4,8 @@
 #include <Poco/Timespan.h>
 #include <Interpreters/ProcessList.h>
 
+#include <DataStreams/IBlockOutputStream.h>
+
 namespace DB
 {
 
@@ -24,32 +26,8 @@ class LimitsCheckingTransform : public ISimpleTransform
 {
 public:
 
-    /** What limitations and quotas should be checked.
-      * LIMITS_CURRENT - checks amount of data read by current stream only (BlockStreamProfileInfo is used for check).
-      *  Currently it is used in root streams to check max_result_{rows,bytes} limits.
-      * LIMITS_TOTAL - checks total amount of read data from leaf streams (i.e. data read from disk and remote servers).
-      *  It is checks max_{rows,bytes}_to_read in progress handler and use info from ProcessListElement::progress_in for this.
-      *  Currently this check is performed only in leaf streams.
-      */
-    enum LimitsMode
-    {
-        LIMITS_CURRENT,
-        LIMITS_TOTAL,
-    };
-
-    /// It is a subset of limitations from Limits.
-    struct LocalLimits
-    {
-        SizeLimits size_limits;
-
-        Poco::Timespan max_execution_time = 0;
-        OverflowMode timeout_overflow_mode = OverflowMode::THROW;
-
-        /// in rows per second
-        size_t min_execution_speed = 0;
-        /// Verify that the speed is not too low after the specified time has elapsed.
-        Poco::Timespan timeout_before_checking_execution_speed = 0;
-    };
+    using LocalLimits = IBlockInputStream::LocalLimits;
+    using LimitsMode = IBlockInputStream::LimitsMode;
 
     /// LIMITS_CURRENT
     LimitsCheckingTransform(const Block & header, LocalLimits limits);
@@ -65,7 +43,6 @@ protected:
 
 private:
     LocalLimits limits;
-    LimitsMode mode = LIMITS_CURRENT;
     QueryStatus * process_list_elem = nullptr;
 
     QuotaForIntervals * quota = nullptr;
@@ -74,6 +51,7 @@ private:
     ProcessorProfileInfo info;
 
     bool checkTimeLimit();
+    void checkQuota(Chunk & chunk);
 };
 
 }

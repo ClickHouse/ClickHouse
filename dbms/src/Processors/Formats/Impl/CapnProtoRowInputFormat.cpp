@@ -5,7 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/CapnProtoRowInputFormat.h> // Y_IGNORE
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/Impl/FormatSchemaInfo.h>
+#include <Formats/FormatSchemaInfo.h>
 #include <capnp/serialize.h> // Y_IGNORE
 #include <capnp/dynamic.h> // Y_IGNORE
 #include <capnp/common.h> // Y_IGNORE

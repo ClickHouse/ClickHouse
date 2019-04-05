@@ -3,6 +3,8 @@
 namespace DB
 {
 
+WriteBuffer LazyOutputFormat::out(nullptr, 0);
+
 Block LazyOutputFormat::getBlock(UInt64 milliseconds)
 {
     if (finished)

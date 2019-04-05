@@ -11,6 +11,7 @@ class RollupTransform : public IInflatingTransform
 {
 public:
     RollupTransform(Block header, AggregatingTransformParamsPtr params);
+    String getName() const override { return "RollupTransform"; }
 
 protected:
     void consume(Chunk chunk) override;

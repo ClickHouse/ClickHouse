@@ -1,8 +1,12 @@
 #pragma once
 
+#include <Common/config.h>
+#if USE_PROTOBUF
+
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/Impl/ProtobufWriter.h>
+#include <Formats/ProtobufWriter.h>
+#include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IOutputFormat.h>
 
 
@@ -30,19 +34,20 @@ class ProtobufBlockOutputFormat : public IOutputFormat
 public:
     ProtobufBlockOutputFormat(
         WriteBuffer & out,
-        Block header,
-        const google::protobuf::Descriptor * message_prototype,
-        const FormatSettings & format_settings);
+        const Block & header,
+        const FormatSchemaInfo & format_schema);
 
     String getName() const override { return "ProtobufBlockOutputFormat"; }
 
-    void consume(Chunk chunk) override;
+    void consume(Chunk) override;
+
     std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
+    DataTypes data_types;
     ProtobufWriter writer;
-    const Block header;
-    const FormatSettings format_settings;
+    std::vector<size_t> value_indices;
 };
 
 }
+#endif

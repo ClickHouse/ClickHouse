@@ -71,6 +71,9 @@ void BlockStreamProfileInfo::update(Block & block)
 
 void BlockStreamProfileInfo::collectInfosForStreamsWithName(const char * name, BlockStreamProfileInfos & res) const
 {
+    if (!parent)
+        return;
+
     if (parent->getName() == name)
     {
         res.push_back(this);

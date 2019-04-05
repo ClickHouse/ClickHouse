@@ -39,6 +39,7 @@ ConvertingTransform::ConvertingTransform(
     const Context & context)
     : ISimpleTransform(std::move(source_header), std::move(result_header), false)
     , context(context)
+    , conversion(getOutputPort().getHeader().columns())
 {
     auto & source = getInputPort().getHeader();
     auto & result = getOutputPort().getHeader();
@@ -51,7 +52,7 @@ ConvertingTransform::ConvertingTransform(
 
     for (size_t result_col_num = 0; result_col_num < num_result_columns; ++result_col_num)
     {
-        const auto & res_elem = result_header.getByPosition(result_col_num);
+        const auto & res_elem = result.getByPosition(result_col_num);
 
         switch (mode)
         {
@@ -108,7 +109,8 @@ void ConvertingTransform::transform(Chunk & chunk)
 
     for (size_t res_pos = 0; res_pos < num_res_columns; ++res_pos)
     {
-        const auto & src_elem = source.getByPosition(conversion[res_pos]);
+        auto src_elem = source.getByPosition(conversion[res_pos]);
+        src_elem.column = src_columns[conversion[res_pos]];
         auto res_elem = result.getByPosition(res_pos);
 
         ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);

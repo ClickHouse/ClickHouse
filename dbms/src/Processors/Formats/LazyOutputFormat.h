@@ -2,6 +2,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
+#include <IO/WriteBuffer.h>
 
 namespace DB
 {
@@ -10,8 +11,10 @@ class LazyOutputFormat : public IOutputFormat
 {
 
 public:
-    LazyOutputFormat(Block header, WriteBuffer & out)
+    LazyOutputFormat(Block header)
         : IOutputFormat(std::move(header), out), queue(1), finished(false) {}
+
+    String getName() const override { return "LazyOutputFormat"; }
 
     Block getBlock(UInt64 milliseconds = 0);
     Block getTotals();
@@ -39,6 +42,9 @@ private:
     ConcurrentBoundedQueue<Chunk> queue;
     Chunk totals;
     Chunk extremes;
+
+    /// Is not used.
+    static WriteBuffer out;
 
     BlockStreamProfileInfo info;
 

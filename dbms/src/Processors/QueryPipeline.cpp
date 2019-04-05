@@ -50,7 +50,7 @@ void QueryPipeline::init(Processors sources)
 
         auto & header = source->getOutputs().front().getHeader();
 
-        if (header)
+        if (current_header)
             assertBlocksHaveEqualStructure(current_header, header, "QueryPipeline");
         else
             current_header = header;
@@ -60,7 +60,7 @@ void QueryPipeline::init(Processors sources)
     }
 }
 
-void QueryPipeline::addSimpleTransform(ProcessorGetter getter)
+void QueryPipeline::addSimpleTransform(const ProcessorGetter & getter)
 {
     checkInitialized();
 
@@ -185,6 +185,8 @@ void QueryPipeline::resize(size_t num_streams)
     streams.reserve(num_streams);
     for (auto & output : resize->getOutputs())
         streams.emplace_back(&output);
+
+    processors.emplace_back(std::move(resize));
 }
 
 void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
@@ -262,7 +264,7 @@ void QueryPipeline::setOutput(ProcessorPtr output)
 {
     checkInitialized();
 
-    auto * format = typeid_cast<IOutputFormat * >(output.get());
+    auto * format = dynamic_cast<IOutputFormat * >(output.get());
 
     if (!format)
         throw Exception("IOutputFormat processor expected for QueryPipeline::setOutput.", ErrorCodes::LOGICAL_ERROR);
@@ -291,6 +293,8 @@ void QueryPipeline::setOutput(ProcessorPtr output)
         extremes_port = &null_source->getPort();
         processors.emplace_back(std::move(null_source));
     }
+
+    processors.emplace_back(std::move(output));
 
     connect(*streams.front(), main);
     connect(*totals_having_port, totals);
@@ -393,17 +397,20 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
 }
 
 
-void QueryPipeline::execute(size_t num_threads)
+PipelineExecutorPtr QueryPipeline::execute(size_t num_threads)
 {
     checkInitialized();
 
     if (!has_output)
         throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
-    ThreadPool pool(num_threads, num_threads, num_threads);
+    if (executor)
+        return executor;
 
-    PipelineExecutor executor(processors, &pool);
-    executor.execute();
+    pool = std::make_shared<ThreadPool>(num_threads, num_threads, num_threads);
+    executor = std::make_shared<PipelineExecutor>(processors, pool.get());
+
+    return executor;
 }
 
 }

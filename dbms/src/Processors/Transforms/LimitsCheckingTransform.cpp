@@ -47,7 +47,6 @@ LimitsCheckingTransform::LimitsCheckingTransform(const Block & header, LocalLimi
 LimitsCheckingTransform::LimitsCheckingTransform(const Block & header, LocalLimits limits, QueryStatus * process_list_elem)
     : ISimpleTransform(header, header, false)
     , limits(std::move(limits))
-    , mode(LIMITS_TOTAL)
     , process_list_elem(process_list_elem)
 {
 }
@@ -61,15 +60,21 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
     }
 
     if (!checkTimeLimit())
+    {
         stopReading();
+        return;
+    }
 
     if (chunk)
     {
         info.update(chunk);
 
-        if (mode == LIMITS_CURRENT &&
+        if (limits.mode == LimitsMode::LIMITS_CURRENT &&
             !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             stopReading();
+
+        if (quota != nullptr)
+            checkQuota(chunk);
     }
 }
 
@@ -87,13 +92,13 @@ bool LimitsCheckingTransform::checkTimeLimit()
 
 void LimitsCheckingTransform::checkQuota(Chunk & chunk)
 {
-    switch (mode)
+    switch (limits.mode)
     {
-        case LIMITS_TOTAL:
+        case LimitsMode::LIMITS_TOTAL:
             /// Checked in `progress` method.
             break;
 
-        case LIMITS_CURRENT:
+        case LimitsMode::LIMITS_CURRENT:
         {
             time_t current_time = time(nullptr);
             double total_elapsed = info.total_stopwatch.elapsedSeconds();
