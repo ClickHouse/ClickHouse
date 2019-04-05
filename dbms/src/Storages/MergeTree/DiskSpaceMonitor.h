@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int CANNOT_STATVFS;
     extern const int NOT_ENOUGH_SPACE;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 
 /** path - Contain path to data on disk.
@@ -42,23 +43,28 @@ public:
     {
     }
 
-    const String & getName() const {
+    const String & getName() const
+    {
         return name;
     }
 
-    const String & getPath() const {
+    const String & getPath() const
+    {
         return path;
     }
 
-    UInt64 getKeepingFreeSpace() const {
+    UInt64 getKeepingFreeSpace() const
+    {
         return keep_free_space_bytes;
     }
 
-    void addEnclosedDirToPath(const String & dir) {
+    void addEnclosedDirToPath(const String & dir)
+    {
         path += dir + '/';
     }
 
-    void SetPath(const String & path_) {
+    void SetPath(const String & path_)
+    {
         path = path_;
     }
 
@@ -79,7 +85,8 @@ private:
 class DiskSpaceMonitor
 {
 public:
-    struct DiskReserve {
+    struct DiskReserve
+    {
         UInt64 reserved_bytes;
         UInt64 reservation_count;
     };
@@ -226,9 +233,7 @@ public:
 
     bool has(const String & name) const;
 
-    void add(const Disk & disk) {
-        disks.emplace(disk.getName(), Disk(disk.getName(), disk.getPath(), disk.getKeepingFreeSpace()));
-    }
+    void add(const Disk & disk);
 
 private:
     std::map<String, Disk> disks;
@@ -239,7 +244,8 @@ class Schema
 {
 public:
 
-    class Volume {
+    class Volume
+    {
         friend class Schema;
 
     public:
@@ -293,7 +299,8 @@ public:
 
     Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disks);
 
-    Schema(const Schema & other, const String & default_path, const String & enclosed_dir) {
+    Schema(const Schema & other, const String & default_path, const String & enclosed_dir)
+    {
         for (const auto & volume : other.volumes) {
             volumes.push_back(Volume(volume, default_path, enclosed_dir));
         }
@@ -309,7 +316,8 @@ private:
     Volumes volumes;
 };
 
-class SchemaSelector {
+class SchemaSelector
+{
 public:
     SchemaSelector(const Poco::Util::AbstractConfiguration & config, String config_prefix);
 

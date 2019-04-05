@@ -1627,9 +1627,9 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
 
         auto tmp = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
         Strings covered;
-        for (auto & elem : tmp) {
+        for (auto & elem : tmp)
             covered.push_back(elem.name);
-        }
+
         if (!covered.empty())
         {
             if (out_reason)

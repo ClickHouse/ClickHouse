@@ -273,9 +273,8 @@ public:
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
         reserved_space = storage.data.reserveSpaceForPart(total_size);
-        if (!reserved_space) {
+        if (!reserved_space)
             throw Exception("Not enought space", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR Edit exception msg
-        }
 
         for (const auto & part : future_part.parts)
         {
@@ -962,16 +961,16 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
     ActiveDataPartSet::PartPathNames parts;
     if (attach_part)
     {
-        for (const String & full_path : full_paths) {
+        for (const String & full_path : full_paths)
             parts.push_back(ActiveDataPartSet::PartPathName{full_path, partition_id});
-        }
     }
     else
     {
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ///@TODO_IGR ASK ActiveDataPartSet without path? Is it possible here?
         ActiveDataPartSet active_parts(data.format_version);
-        for (const String & full_path : full_paths) {
+        for (const String & full_path : full_paths)
+        {
             for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
             {
                 const String & name = it.name();

@@ -15,7 +15,8 @@ namespace DB
 class ActiveDataPartSet
 {
 public:
-    struct PartPathName {
+    struct PartPathName
+    {
         /// path + name is absolute path to DataPart
         String path;
         String name;
