@@ -422,8 +422,8 @@ namespace
             typename Map::mapped_type * time_series_map = &emplace_result.getMapped();
 
             if (emplace_result.isInserted())
-                time_series_map = new (time_series_map) typename Map::mapped_type();
-            time_series_map->insert(join.getAsofType(), join.getAsofData(), asof_column, stored_block, i);
+                time_series_map = new (time_series_map) typename Map::mapped_type(join.getAsofType());
+            time_series_map->insert(join.getAsofType(), asof_column, stored_block, i);
         }
     };
 
@@ -511,10 +511,7 @@ void Join::prepareBlockListStructure(Block & stored_block)
         for (const auto & name : key_names_right)
         {
             if (strictness == ASTTableJoin::Strictness::Asof && name == key_names_right.back())
-            {
-                LOG_DEBUG(log, "preventing removal of ASOF join column with name=" << name);
                 break; // this is the last column so break is OK
-            }
 
             if (!erased.count(name))
                 stored_block.erase(stored_block.getPositionByName(name));
@@ -555,8 +552,6 @@ bool Join::insertFromBlock(const Block & block)
     Block * stored_block = &blocks.back();
 
     prepareBlockListStructure(*stored_block);
-
-    LOG_DEBUG(log, "insertFromBlock stored_block=" << stored_block->dumpStructure());
 
     size_t size = stored_block->columns();
 
@@ -720,7 +715,7 @@ std::unique_ptr<IColumn::Offsets> NO_INLINE joinRightIndexedColumns(
 
                 if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
                 {
-                    if (const RowRef * found = mapped.findAsof(join.getAsofType(), join.getAsofData(), asof_column, i))
+                    if (const RowRef * found = mapped.findAsof(join.getAsofType(), asof_column, i))
                     {
                         filter[i] = 1;
                         mapped.setUsed();
@@ -1096,7 +1091,6 @@ void Join::joinGet(Block & block, const String & column_name) const
 void Join::joinBlock(Block & block, const Names & key_names_left, const NamesAndTypesList & columns_added_by_join) const
 {
     std::shared_lock lock(rwlock);
-    LOG_DEBUG(log, "joinBlock: " << block.dumpStructure());
 
     checkTypesOfKeys(block, key_names_left, sample_block_with_keys);
 
