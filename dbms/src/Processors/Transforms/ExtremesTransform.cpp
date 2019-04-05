@@ -1,4 +1,4 @@
-#include <Processors/Transforms/ExtremsTransform.h>
+#include <Processors/Transforms/ExtremesTransform.h>
 
 namespace DB
 {

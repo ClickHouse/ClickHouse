@@ -2053,7 +2053,6 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
       * Then the calculations can be parallelized by buckets.
       * We decompose the blocks to the bucket numbers indicated in them.
       */
-    using BucketToBlocks = std::map<Int32, BlocksList>;
     BucketToBlocks bucket_to_blocks;
 
     /// Read all the data.

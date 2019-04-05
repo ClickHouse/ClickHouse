@@ -262,7 +262,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (stage == QueryProcessingStage::Complete)
             {
                 pipeline.resize(1);
-                pipeline.addSimpleTransform([&](const Block & header){
+                pipeline.addSimpleTransform([&](const Block & header)
+                {
                     auto transform = std::make_shared<LimitsCheckingTransform>(header, limits);
                     transform->setQuota(quota);
                     return transform;
