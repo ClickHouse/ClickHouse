@@ -43,7 +43,7 @@ protected:
 
 private:
     LocalLimits limits;
-    QueryStatus * process_list_elem = nullptr;
+    [[maybe_unused]] QueryStatus * process_list_elem = nullptr;
 
     QuotaForIntervals * quota = nullptr;
     double prev_elapsed = 0;
