@@ -66,8 +66,11 @@ void QueryPipeline::addSimpleTransform(const ProcessorGetter & getter)
 
     Block header;
 
-    for (auto & stream : streams)
+    auto add_transform = [&](OutputPort *& stream)
     {
+        if (!stream)
+            return;
+
         auto transform = getter(current_header);
 
         if (transform->getInputs().size() != 1)
@@ -90,7 +93,13 @@ void QueryPipeline::addSimpleTransform(const ProcessorGetter & getter)
         connect(*stream, transform->getInputs().front());
         stream = &transform->getOutputs().front();
         processors.emplace_back(std::move(transform));
-    }
+    };
+
+    for (auto & stream : streams)
+        add_transform(stream);
+
+    add_transform(totals_having_port);
+    add_transform(extremes_port);
 
     current_header = std::move(header);
 }
