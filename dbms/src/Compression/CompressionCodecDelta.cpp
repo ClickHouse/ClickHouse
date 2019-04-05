@@ -125,19 +125,34 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
     }
 }
 
+namespace
+{
+
+UInt8 getDeltaBytesSize(DataTypePtr column_type)
+{
+    UInt8 delta_bytes_size = 1;
+    if (column_type && column_type->haveMaximumSizeOfValue())
+    {
+        size_t max_size = column_type->getSizeOfValueInMemory();
+        if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+            delta_bytes_size = static_cast<UInt8>(max_size);
+    }
+    return delta_bytes_size;
+}
+
+}
+
+void CompressionCodecDelta::useInfoAboutType(DataTypePtr data_type)
+{
+    delta_bytes_size = getDeltaBytesSize(data_type);
+}
+
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Delta);
     factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = 1;
-        if (column_type && column_type->haveMaximumSizeOfValue())
-        {
-            size_t max_size = column_type->getSizeOfValueInMemory();
-            if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-                delta_bytes_size = static_cast<UInt8>(max_size);
-        }
-
+        UInt8 delta_bytes_size = getDeltaBytesSize(column_type);
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)

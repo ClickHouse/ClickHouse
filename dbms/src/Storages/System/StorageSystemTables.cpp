@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int TABLE_IS_DROPPED;
 }
 
 
@@ -174,9 +175,20 @@ protected:
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
-                const auto table = context.tryGetTable(database_name, table_name);
-                if (!table)
-                    continue;
+                const StoragePtr & table = tables_it->table();
+
+                TableStructureReadLockHolder lock;
+
+                try
+                {
+                    lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                        continue;
+                    throw;
+                }
 
                 ++rows_count;
 
@@ -190,13 +202,13 @@ protected:
                     res_columns[res_index++]->insert(table_name);
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(tables_it->table()->getName());
+                    res_columns[res_index++]->insert(table->getName());
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(0u);  // is_temporary
 
                 if (columns_mask[src_index++])
-                    for (const String & path : tables_it->table()->getDataPaths())
+                    for (const String & path : table->getDataPaths())
                         res_columns[res_index++]->insert(path);
 
                 if (columns_mask[src_index++])

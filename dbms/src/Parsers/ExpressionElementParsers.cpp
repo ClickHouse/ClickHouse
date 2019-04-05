@@ -1113,6 +1113,7 @@ const char * ParserAlias::restricted_keywords[] =
     "INNER",
     "FULL",
     "CROSS",
+    "ASOF",
     "JOIN",
     "GLOBAL",
     "ANY",
