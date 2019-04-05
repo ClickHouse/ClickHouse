@@ -1,28 +1,41 @@
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 
+#include <Common/escapeForFileName.h>
+
 namespace DB
 {
 
 std::map<String, DiskSpaceMonitor::DiskReserve> DiskSpaceMonitor::reserved;
 std::mutex DiskSpaceMonitor::mutex;
 
-Disk::Disk(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-    : path(config.getString(config_prefix + ".path")),
-      keep_free_space_bytes(config.getUInt64(config_prefix + ".keep_free_space_bytes", 0))
-{
-}
-
-DisksSelector::DisksSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix) {
+DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix) {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
-    for (const auto & name : keys)
+    constexpr auto default_disk_name = "default";
+    for (const auto & disk_name : keys)
     {
-        disks.emplace(name, Disk{config, config_prefix + "." + name});
+        UInt64 keep_free_space_bytes = config.getUInt64(config_prefix + "." + disk_name + ".keep_free_space_bytes", 0);
+        String path;
+        if (config.has(config_prefix + "." + disk_name + ".path")) {
+            path = config.getString(config_prefix + "." + disk_name + ".path");
+        }
+
+        if (disk_name == default_disk_name) {
+            if (!path.empty()) {
+                ///@TODO_IGR ASK Rename Default disk to smth? ClickHouse disk? DB disk?
+                throw Exception("It is not possible to specify default disk path", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            }
+        } else {
+            if (path.empty()) {
+                throw Exception("Disk path can not be empty. Disk " + disk_name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            }
+        }
+        disks.emplace(disk_name, Disk(disk_name, path, keep_free_space_bytes));
     }
 }
 
-const Disk & DisksSelector::operator[](const String & name) const {
+const Disk & DiskSelector::operator[](const String & name) const {
     auto it = disks.find(name);
     if (it == disks.end()) {
         throw Exception("Unknown disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -30,7 +43,12 @@ const Disk & DisksSelector::operator[](const String & name) const {
     return it->second;
 }
 
-Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DisksSelector & disk_selector) {
+bool DiskSelector::has(const String & name) const {
+    auto it = disks.find(name);
+    return it != disks.end();
+}
+
+Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector) {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
@@ -58,19 +76,19 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
     }
 }
 
-bool Schema::Volume::setDefaultPath(const String & path) {
-    bool set = false;
+Schema::Volume::Volume(const Volume & other, const String & default_path, const String & enclosed_dir)
+    : max_data_part_size(other.max_data_part_size),
+      disks(other.disks),
+      last_used(0)
+{
+    auto dir = escapeForFileName(enclosed_dir);
     for (auto & disk : disks) {
-        if (disk.path == "default") {
-            if (set) {
-                throw Exception("It is not possible to have two default disks", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG); ///@TODO_IGR ASK ErrorCode
-            }
-            set = true;
-            disk.path = path;
-
+        if (disk.getName() == "default") {
+            disk.SetPath(default_path + dir + '/');
+        } else {
+            disk.addEnclosedDirToPath(dir);
         }
     }
-    return set;
 }
 
 DiskSpaceMonitor::ReservationPtr Schema::Volume::reserve(UInt64 expected_size) const {
@@ -99,7 +117,7 @@ UInt64 Schema::Volume::getMaxUnreservedFreeSpace() const {
     return res;
 }
 
-Schema::Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DisksSelector & disks) {
+Schema::Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disks) {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
@@ -112,26 +130,12 @@ Schema::Schema(const Poco::Util::AbstractConfiguration & config, const std::stri
     }
 }
 
-///@TODO_IRG ASK Single use in MergeTreeData constuctor
-void Schema::setDefaultPath(const String & path) {
-    bool set = false;
-    for (auto & volume : volumes) {
-        if (volume.setDefaultPath(path)) {
-            if (set) {
-                throw Exception("It is not possible to have two default disks",
-                                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG); ///@TODO_IGR ASK ErrorCode
-            }
-            set = true;
-        }
-    }
-}
-
 ///@TODO_IGR ASK maybe iterator without copy?
 Strings Schema::getFullPaths() const {
     Strings res;
     for (const auto & volume : volumes) {
         for (const auto & disk : volume.disks) {
-            res.push_back(disk.path);
+            res.push_back(disk.getPath());
         }
     }
     return res;
@@ -155,7 +159,17 @@ DiskSpaceMonitor::ReservationPtr Schema::reserve(UInt64 expected_size) const {
     return {};
 }
 
-SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DisksSelector & disks) {
+SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config, String config_prefix) {
+    DiskSelector disks(config, config_prefix + ".disks");
+
+    constexpr auto default_disk_name = "default";
+    if (!disks.has(default_disk_name)) {
+        std::cerr << "No default disk settings" << std::endl;
+        disks.add(Disk(default_disk_name, "", 0));
+    }
+
+    config_prefix += ".schemes";
+
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
@@ -166,7 +180,12 @@ SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config,
         schemes.emplace(name, Schema{config, config_prefix + "." + name, disks});
     }
 
-    std::cerr << config_prefix << " " << schemes.size() << std::endl;
+    constexpr auto default_schema_name = "default";
+    if (schemes.find(default_schema_name) == schemes.end()) {
+        schemes.emplace(default_schema_name, Schema(Schema::Volumes{Schema::Volume::Disks{disks[default_disk_name]}}));
+    }
+
+    std::cerr << schemes.size() << " schemes loaded" << std::endl; ///@TODO_IGR ASK logs?
 }
 
 const Schema & SchemaSelector::operator[](const String & name) const {
@@ -175,12 +194,6 @@ const Schema & SchemaSelector::operator[](const String & name) const {
         throw Exception("Unknown schema " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG); ///@TODO_IGR Choose error code
     }
     return it->second;
-}
-
-MergeTreeStorageConfiguration::MergeTreeStorageConfiguration(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
-        : disks(config, config_prefix + ".disks"), schema_selector(config, config_prefix + ".schemes", disks)
-{
-    std::cerr << config_prefix << " " << disks.size() << std::endl;
 }
 
 }

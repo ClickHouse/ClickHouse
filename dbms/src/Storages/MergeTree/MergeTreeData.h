@@ -304,6 +304,7 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
+                  const String & path_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
                   Context & context_,
@@ -572,12 +573,7 @@ public:
     DiskSpaceMonitor::ReservationPtr reserveSpaceAtDisk(UInt64 expected_size) const; ///@TODO_IGR ASK Maybe set this method as private?
 
     Strings getFullPaths() const {
-        auto paths = schema.getFullPaths();
-        for (auto && path : paths) {
-            path += table_name + '/'; ///@TODO_IGR ASK It is too slow(
-                                      ///          Maybe store in full_paths variable?
-        }
-        return paths;
+        return schema.getFullPaths();
     }
 
     MergeTreeDataFormatVersion format_version;
@@ -644,6 +640,10 @@ private:
 
     String database_name;
     String table_name;
+
+    /// Defalt storage path. Always contain format_version.txt
+    ///                      Can contain data if specified in schema
+    String full_path;
 
     Schema schema;
 
