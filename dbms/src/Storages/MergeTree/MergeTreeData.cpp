@@ -112,7 +112,7 @@ MergeTreeData::MergeTreeData(
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     full_path(path_ + escapeForFileName(table_name) + '/'),
-    schema(context_.getSchema("default"), path_, escapeForFileName(table_name)), ///@TODO_IGR Schema name
+    schema(context_.getSchema(settings.storage_schema_name), path_, escapeForFileName(table_name)), ///@TODO_IGR Schema name
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
