@@ -22,7 +22,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
