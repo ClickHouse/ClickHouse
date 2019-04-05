@@ -37,9 +37,9 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     names_and_paddings.resize(columns);
     for (size_t i = 0; i < columns; ++i)
     {
-        WriteBufferFromString out(names_and_paddings[i]);
-        writeString(sample.getByPosition(i).name, out);
-        writeCString(": ", out);
+        WriteBufferFromString buf(names_and_paddings[i]);
+        writeString(sample.getByPosition(i).name, buf);
+        writeCString(": ", buf);
     }
 
     for (size_t i = 0; i < columns; ++i)
