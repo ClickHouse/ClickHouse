@@ -5,7 +5,7 @@
 #include <Processors/NullSink.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
-#include <Processors/Transforms/ExtremsTransform.h>
+#include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -313,7 +313,8 @@ void QueryPipeline::unitePipelines(std::vector<QueryPipeline> && pipelines, cons
         pipeline.checkInitialized();
         pipeline.concatDelayedStream();
 
-        pipeline.addSimpleTransform([&](const Block & header){
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
            return std::make_shared<ConvertingTransform>(
                    header, current_header, ConvertingTransform::MatchColumnsMode::Position, context);
         });

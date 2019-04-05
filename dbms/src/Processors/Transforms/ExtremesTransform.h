@@ -9,7 +9,7 @@ class ExtremesTransform : public ISimpleTransform
 public:
     explicit ExtremesTransform(const Block & header);
 
-    String getName() const override { return "ExtremsTransform"; }
+    String getName() const override { return "ExtremesTransform"; }
 
     OutputPort & getExtremesPort() { return outputs.back(); }
 
@@ -21,7 +21,7 @@ protected:
 
     bool finished_transform = false;
     Chunk extremes;
-    
+
 private:
     MutableColumns extremes_columns;
 };

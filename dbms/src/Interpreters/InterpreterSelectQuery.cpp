@@ -71,7 +71,7 @@
 #include <Processors/Transforms/MergingSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <Processors/Transforms/ExtremsTransform.h>
+#include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
@@ -657,7 +657,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (expressions.prewhere_info)
         {
             if constexpr (pipeline_with_processors)
-                pipeline.addSimpleTransform([&](const Block & header) {
+                pipeline.addSimpleTransform([&](const Block & header)
+                {
                     return std::make_shared<FilterTransform>(
                             header,
                             expressions.prewhere_info->prewhere_actions,
@@ -746,7 +747,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if constexpr (pipeline_with_processors)
                 {
                     header_before_join = pipeline.getHeader();
-                    pipeline.addSimpleTransform([&](const Block & header){
+                    pipeline.addSimpleTransform([&](const Block & header)
+                    {
                         return std::make_shared<ExpressionTransform>(header, expressions.before_join);
                     });
                 }
@@ -1472,7 +1474,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
                 : static_cast<size_t>(settings.max_threads);
 
         size_t counter = 0;
-        pipeline.addSimpleTransform([&](const Block & header) {
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
             return std::make_shared<AggregatingTransform>(header, transform_params, many_data, counter++, max_streams, merge_threads);
         });
 
@@ -1482,7 +1485,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     {
         pipeline.resize(1);
 
-        pipeline.addSimpleTransform([&](const Block & header) {
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
             return std::make_shared<AggregatingTransform>(header, transform_params);
         });
     }
