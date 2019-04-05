@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 
 #include <Common/escapeForFileName.h>
+#include <Poco/File.h>
 
 namespace DB
 {
@@ -54,6 +55,12 @@ void DiskSelector::add(const Disk & disk)
     disks.emplace(disk.getName(), Disk(disk.getName(), disk.getPath(), disk.getKeepingFreeSpace()));
 }
 
+Schema::Volume::Volume(std::vector<Disk> disks_)
+{
+    for (const auto & disk : disks_)
+        disks.push_back(std::make_shared<Disk>(disk));
+}
+
 Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -80,7 +87,7 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
     /// Get paths from disk's names
     /// Disks operator [] may throw exception
     for (const auto & disk_name : disks_names)
-        disks.push_back(disk_selector[disk_name]);
+        disks.push_back(std::make_shared<Disk>(disk_selector[disk_name]));
 }
 
 Schema::Volume::Volume(const Volume & other, const String & default_path, const String & enclosed_dir)
@@ -91,13 +98,13 @@ Schema::Volume::Volume(const Volume & other, const String & default_path, const 
     auto dir = escapeForFileName(enclosed_dir);
     for (auto & disk : disks)
     {
-        if (disk.getName() == "default")
+        if (disk->getName() == "default")
         {
-            disk.SetPath(default_path + dir + '/');
+            disk->SetPath(default_path + dir + '/');
         }
         else
         {
-            disk.addEnclosedDirToPath(dir);
+            disk->addEnclosedDirToPath(dir);
         }
     }
 }
@@ -129,6 +136,25 @@ UInt64 Schema::Volume::getMaxUnreservedFreeSpace() const
     return res;
 }
 
+void Schema::Volume::data_path_rename(const String & new_default_path, const String & new_data_dir_name, const String & old_data_dir_name) {
+    for (auto & disk : disks)
+    {
+        auto old_path = disk->getPath();
+        if (disk->getName() == "default")
+        {
+
+            disk->SetPath(new_default_path + new_data_dir_name + '/');
+            Poco::File(old_path).renameTo(new_default_path + new_data_dir_name + '/');
+        }
+        else
+        {
+            auto new_path = old_path.substr(0, old_path.size() - old_data_dir_name.size() - 1) + new_data_dir_name + '/';
+            disk->SetPath(new_path);
+            Poco::File(old_path).renameTo(new_path);
+        }
+    }
+}
+
 Schema::Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disks)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -149,7 +175,7 @@ Strings Schema::getFullPaths() const
     Strings res;
     for (const auto & volume : volumes)
         for (const auto & disk : volume.disks)
-            res.push_back(disk.getPath());
+            res.push_back(disk->getPath());
     return res;
 }
 
@@ -163,13 +189,18 @@ UInt64 Schema::getMaxUnreservedFreeSpace() const
 
 DiskSpaceMonitor::ReservationPtr Schema::reserve(UInt64 expected_size) const
 {
-    for (auto & volume : volumes)
+    for (const auto & volume : volumes)
     {
         auto reservation = volume.reserve(expected_size);
         if (reservation)
             return reservation;
     }
     return {};
+}
+
+void Schema::data_path_rename(const String & new_default_path, const String & new_data_dir_name, const String & old_data_dir_name) {
+    for (auto & volume : volumes)
+        volume.data_path_rename(new_default_path, new_data_dir_name, old_data_dir_name);
 }
 
 SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config, String config_prefix)
@@ -197,7 +228,7 @@ SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config,
 
     constexpr auto default_schema_name = "default";
     if (schemes.find(default_schema_name) == schemes.end())
-        schemes.emplace(default_schema_name, Schema(Schema::Volumes{Schema::Volume::Disks{disks[default_disk_name]}}));
+        schemes.emplace(default_schema_name, Schema(Schema::Volumes{std::vector<Disk>{disks[default_disk_name]}}));
 
     std::cerr << schemes.size() << " schemes loaded" << std::endl; ///@TODO_IGR ASK logs?
 }

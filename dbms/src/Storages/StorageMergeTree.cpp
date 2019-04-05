@@ -178,13 +178,10 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
 
 void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
-    std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
+    data.rename(new_path_to_db, new_table_name);
 
-    data.setPath(new_full_path);
-
-    path = new_path_to_db; ///@TODO_IGR ASK path? table_name?
+    path = new_path_to_db + escapeForFileName(new_table_name) + '/';
     table_name = new_table_name;
-    //full_paths = {new_full_path};  ///@TODO_IGR ASK rename?
 
     /// NOTE: Logger names are not updated.
 }
@@ -429,13 +426,13 @@ void StorageMergeTree::loadMutations()
 {
     Poco::DirectoryIterator end;
     const auto full_paths = data.getFullPaths();
-    for (const String & path : full_paths)
+    for (const String & full_path : full_paths)
     {
-        for (auto it = Poco::DirectoryIterator(path); it != end; ++it)
+        for (auto it = Poco::DirectoryIterator(full_path); it != end; ++it)
         {
             if (startsWith(it.name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(path, it.name());
+                MergeTreeMutationEntry entry(full_path, it.name());
                 Int64 block_number = entry.block_number;
                 auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);

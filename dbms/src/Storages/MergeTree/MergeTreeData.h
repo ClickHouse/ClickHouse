@@ -475,7 +475,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void setPath(const String & full_path);
+    void rename(const String & new_path, const String & new_table_name);
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.

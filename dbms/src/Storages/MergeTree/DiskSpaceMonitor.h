@@ -74,6 +74,8 @@ private:
     UInt64 keep_free_space_bytes;
 };
 
+using DiskPtr = std::shared_ptr<Disk>;
+
 
 /** Determines amount of free space in filesystem.
   * Could "reserve" space, for different operations to plan disk space usage.
@@ -139,12 +141,12 @@ public:
         }
 
         const String & getPath() const {
-            return path;
+            return disk_ptr->getPath();
         }
 
-        Reservation(UInt64 size_, DiskReserve * reserves_, const String & path_)
+        Reservation(UInt64 size_, DiskReserve * reserves_, DiskPtr disk_ptr_)
             : size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size), reserves(reserves_),
-              path(path_)
+              disk_ptr(disk_ptr_)
         {
             std::lock_guard lock(DiskSpaceMonitor::mutex);
             reserves->reserved_bytes += size;
@@ -155,28 +157,28 @@ public:
         UInt64 size;
         CurrentMetrics::Increment metric_increment;
         DiskReserve * reserves;
-        String path;
+        DiskPtr disk_ptr;
     };
 
     using ReservationPtr = std::unique_ptr<Reservation>;
 
-    static UInt64 getUnreservedFreeSpace(const Disk & disk)
+    static UInt64 getUnreservedFreeSpace(const DiskPtr & disk_ptr)
     {
         struct statvfs fs;
 
-        if (statvfs(disk.getPath().c_str(), &fs) != 0)
+        if (statvfs(disk_ptr->getPath().c_str(), &fs) != 0)
             throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
 
         UInt64 res = fs.f_bfree * fs.f_bsize;
 
-        res -= std::min(res, disk.getKeepingFreeSpace());  ///@TODO_IGR ASK Is Heuristic by Michael Kolupaev actual?
+        res -= std::min(res, disk_ptr->getKeepingFreeSpace());  ///@TODO_IGR ASK Is Heuristic by Michael Kolupaev actual?
 
         /// Heuristic by Michael Kolupaev: reserve 30 MB more, because statvfs shows few megabytes more space than df.
         res -= std::min(res, static_cast<UInt64>(30 * (1ul << 20)));
 
         std::lock_guard lock(mutex);
 
-        auto & reserved_bytes = reserved[disk.getName()].reserved_bytes;
+        auto & reserved_bytes = reserved[disk_ptr->getName()].reserved_bytes;
 
         if (reserved_bytes > res)
             res = 0;
@@ -207,15 +209,15 @@ public:
     }
 
     /// If not enough (approximately) space, do not reserve.
-    static ReservationPtr tryToReserve(const Disk & disk, UInt64 size)
+    static ReservationPtr tryToReserve(const DiskPtr & disk_ptr, UInt64 size)
     {
-        UInt64 free_bytes = getUnreservedFreeSpace(disk);
+        UInt64 free_bytes = getUnreservedFreeSpace(disk_ptr);
         ///@TODO_IGR ASK twice reservation?
         if (free_bytes < size)
         {
             return {};
         }
-        return std::make_unique<Reservation>(size, &reserved[disk.getName()], disk.getPath());
+        return std::make_unique<Reservation>(size, &reserved[disk_ptr->getName()], disk_ptr);
     }
 
 private:
@@ -249,19 +251,26 @@ public:
         friend class Schema;
 
     public:
-        using Disks = std::vector<Disk>;
+        /// Volume owns DiskPtrs
+        /// This means that there is no Volumes that share one DiskPtr
+        using Disks = std::vector<DiskPtr>;
 
-        Volume(Disks disks_)
-            : disks(disks_)
-        {
+        static Disks CopyDisks(const Disks & disks) {
+            Disks copy;
+            for (auto & disk_ptr : disks) {
+                copy.push_back(std::make_shared<Disk>(*disk_ptr));
+            }
+            return copy;
         }
+
+        Volume(std::vector<Disk> disks_);
 
         Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector);
 
-        Volume(const Volume & other) : max_data_part_size(other.max_data_part_size), disks(other.disks) { ; }
+        Volume(const Volume & other) : max_data_part_size(other.max_data_part_size), disks(CopyDisks(other.disks)) { ; }
         Volume & operator=(const Volume & other)
         {
-            disks = other.disks;
+            disks = CopyDisks(other.disks);
             max_data_part_size = other.max_data_part_size;
             last_used.store(0, std::memory_order_relaxed);
             return *this;
@@ -281,6 +290,8 @@ public:
         DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
 
         UInt64 getMaxUnreservedFreeSpace() const;
+
+        void data_path_rename(const String & new_default_path, const String & new_data_dir_name, const String & old_data_dir_name);
 
     private:
         UInt64 max_data_part_size;
@@ -311,6 +322,8 @@ public:
     UInt64 getMaxUnreservedFreeSpace() const;
 
     DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
+
+    void data_path_rename(const String & new_default_path, const String & new_data_dir_name, const String & old_data_dir_name);
 
 private:
     Volumes volumes;

@@ -988,18 +988,36 @@ void MergeTreeData::clearOldPartsFromFilesystem()
     removePartsFinally(parts_to_remove);
 }
 
-void MergeTreeData::setPath([[maybe_unused]] const String & new_full_path)
+void MergeTreeData::rename(const String & new_path, const String & new_table_name)
 {
-    ///@TODO_IGR ASK We can not implement this function. Remove it?
-    throw Exception{"this funcion does not implemeted yes", ErrorCodes::BAD_ARGUMENTS};
+    /// It is possible to change default disk path
+    /// It is impossible to change another disk path here, but possible to change table_name there
 
-//    if (Poco::File{new_full_path}.exists())
-//        throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
-//
-//    Poco::File(full_path).renameTo(new_full_path);
-//
-//    global_context.dropCaches();
-//    full_path = new_full_path;
+    auto old_file_table_name = escapeForFileName(table_name);
+    auto new_file_table_name = escapeForFileName(new_table_name);
+
+    auto full_paths = getFullPaths();
+    for (const auto & full_path : full_paths) {
+        auto new_full_path = full_path.substr(0, full_path.size() - old_file_table_name.size() - 1) + new_file_table_name + '/';
+        if (Poco::File{new_full_path}.exists())
+            throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
+    }
+
+    auto new_full_path = new_path + new_file_table_name + '/';
+    if (Poco::File{new_full_path}.exists())
+        throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
+
+    /// Everything is fine. Rename
+    schema.data_path_rename(new_path, new_file_table_name, old_file_table_name);
+
+    /// If default path doesn't store data
+    if (Poco::File(full_path).exists())
+        Poco::File(full_path).renameTo(new_full_path);
+
+    global_context.dropCaches();
+    full_path = new_full_path;
+    ///@TODO_IGR ASK We have not did it yet
+    table_name = new_table_name;
 }
 
 void MergeTreeData::dropAllData()
