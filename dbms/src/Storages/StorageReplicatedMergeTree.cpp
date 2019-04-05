@@ -3654,13 +3654,11 @@ void StorageReplicatedMergeTree::drop()
 
 void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name)
 {
-    std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
+    data.rename(new_path_to_db, new_table_name);
 
-    data.setPath(new_full_path);
-
-    database_name = new_database_name;
+    full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
     table_name = new_table_name;
-    full_path = new_full_path;
+    database_name = new_database_name;
 
     /// Update table name in zookeeper
     auto zookeeper = getZooKeeper();

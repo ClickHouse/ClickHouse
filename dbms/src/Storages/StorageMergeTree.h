@@ -107,7 +107,6 @@ private:
     String path;
     String database_name;
     String table_name;
-//    Strings full_paths;
 
     Context global_context;
     BackgroundProcessingPool & background_pool;
