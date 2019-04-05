@@ -997,7 +997,8 @@ void MergeTreeData::rename(const String & new_path, const String & new_table_nam
     auto new_file_table_name = escapeForFileName(new_table_name);
 
     auto full_paths = getFullPaths();
-    for (const auto & full_path : full_paths) {
+    for (const auto & full_path : full_paths)
+    {
         auto new_full_path = full_path.substr(0, full_path.size() - old_file_table_name.size() - 1) + new_file_table_name + '/';
         if (Poco::File{new_full_path}.exists())
             throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};

@@ -22,7 +22,8 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         if (config.has(config_prefix + "." + disk_name + ".path"))
             path = config.getString(config_prefix + "." + disk_name + ".path");
 
-        if (disk_name == default_disk_name) {
+        if (disk_name == default_disk_name)
+        {
             if (!path.empty())
                 ///@TODO_IGR ASK Rename Default disk to smth? ClickHouse disk? DB disk?
                 throw Exception("It is not possible to specify default disk path", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -136,7 +137,8 @@ UInt64 Schema::Volume::getMaxUnreservedFreeSpace() const
     return res;
 }
 
-void Schema::Volume::data_path_rename(const String & new_default_path, const String & new_data_dir_name, const String & old_data_dir_name) {
+void Schema::Volume::data_path_rename(const String & new_default_path, const String & new_data_dir_name, const String & old_data_dir_name)
+{
     for (auto & disk : disks)
     {
         auto old_path = disk->getPath();
@@ -198,7 +200,8 @@ DiskSpaceMonitor::ReservationPtr Schema::reserve(UInt64 expected_size) const
     return {};
 }
 
-void Schema::data_path_rename(const String & new_default_path, const String & new_data_dir_name, const String & old_data_dir_name) {
+void Schema::data_path_rename(const String & new_default_path, const String & new_data_dir_name, const String & old_data_dir_name)
+{
     for (auto & volume : volumes)
         volume.data_path_rename(new_default_path, new_data_dir_name, old_data_dir_name);
 }
