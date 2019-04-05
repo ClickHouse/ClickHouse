@@ -140,7 +140,8 @@ public:
             return size;
         }
 
-        const String & getPath() const {
+        const String & getPath() const
+        {
             return disk_ptr->getPath();
         }
 
@@ -192,9 +193,8 @@ public:
     {
         std::lock_guard lock(mutex);
         UInt64 res = 0;
-        for (const auto & reserve : reserved) {
+        for (const auto & reserve : reserved)
             res += reserve.second.reserved_bytes;
-        }
         return res;
     }
 
@@ -202,9 +202,8 @@ public:
     {
         std::lock_guard lock(mutex);
         UInt64 res = 0;
-        for (const auto & reserve : reserved) {
+        for (const auto & reserve : reserved)
             res += reserve.second.reservation_count;
-        }
         return res;
     }
 
@@ -214,9 +213,7 @@ public:
         UInt64 free_bytes = getUnreservedFreeSpace(disk_ptr);
         ///@TODO_IGR ASK twice reservation?
         if (free_bytes < size)
-        {
             return {};
-        }
         return std::make_unique<Reservation>(size, &reserved[disk_ptr->getName()], disk_ptr);
     }
 
@@ -255,11 +252,11 @@ public:
         /// This means that there is no Volumes that share one DiskPtr
         using Disks = std::vector<DiskPtr>;
 
-        static Disks CopyDisks(const Disks & disks) {
+        static Disks CopyDisks(const Disks & disks)
+        {
             Disks copy;
-            for (auto & disk_ptr : disks) {
+            for (auto & disk_ptr : disks)
                 copy.push_back(std::make_shared<Disk>(*disk_ptr));
-            }
             return copy;
         }
 
@@ -312,9 +309,8 @@ public:
 
     Schema(const Schema & other, const String & default_path, const String & enclosed_dir)
     {
-        for (const auto & volume : other.volumes) {
+        for (const auto & volume : other.volumes)
             volumes.push_back(Volume(volume, default_path, enclosed_dir));
-        }
     }
 
     Strings getFullPaths() const;
