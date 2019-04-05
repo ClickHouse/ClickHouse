@@ -29,7 +29,7 @@ using ProcessorPtr = std::shared_ptr<IProcessor>;
 class IInputFormat;
 class IOutputFormat;
 
-class RowInputFormatParams;
+struct RowInputFormatParams;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
