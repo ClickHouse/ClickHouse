@@ -214,7 +214,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name, table_name)),
     replica_name(global_context.getMacros()->expand(replica_name_, database_name, table_name)),
-    data(database_name, table_name, columns_, indices_,
+    data(database_name, table_name, path_, columns_, indices_,
         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
         sample_by_ast_, merging_params_, settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
@@ -225,9 +225,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 {
     if (path_.empty())
         throw Exception("ReplicatedMergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
-
-    ///@TODO_IGR ASK Set inside MergeTreeData?
-    data.schema.setDefaultPath(path_);
 
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);

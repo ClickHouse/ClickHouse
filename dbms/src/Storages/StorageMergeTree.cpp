@@ -64,7 +64,7 @@ StorageMergeTree::StorageMergeTree(
     bool has_force_restore_data_flag)
     : path(path_), database_name(database_name_), table_name(table_name_),
     global_context(context_), background_pool(context_.getBackgroundPool()),
-    data(database_name, table_name, columns_, indices_,
+    data(database_name, table_name, path_, columns_, indices_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
          sample_by_ast_, merging_params_, settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
@@ -72,10 +72,6 @@ StorageMergeTree::StorageMergeTree(
 {
     if (path_.empty())
         throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
-
-    ///@TODO_IGR ASK Set inside MergeTreeData?
-    /// Is bad for default(((
-    data.schema.setDefaultPath(path);
 
     data.loadDataParts(has_force_restore_data_flag);
 
@@ -339,8 +335,8 @@ public:
 
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
-    const auto full_paths = data.getFullPaths(); ///@TODO_IGR ASK What expected size of mutated part? what size should we reserve?
-    MergeTreeMutationEntry entry(commands, full_paths[0], data.insert_increment.get()); ///@TODO_IGR ASK PATH TO ENTRY
+    auto reservation = data.reserveSpaceForPart(0);  ///@TODO_IGR ASK What expected size of mutated part? what size should we reserve?
+    MergeTreeMutationEntry entry(commands, reservation->getPath(), data.insert_increment.get());
     String file_name;
     {
         std::lock_guard lock(currently_merging_mutex);

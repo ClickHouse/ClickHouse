@@ -146,7 +146,7 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Storage schema chooser;
-    mutable std::unique_ptr<MergeTreeStorageConfiguration> merge_tree_storage_configuration;
+    mutable std::unique_ptr<SchemaSelector> merge_tree_schema_selector;
     std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -1624,19 +1624,19 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 
 
 ///@TODO_IGR ASK maybe pointer to Schema?
-Schema Context::chooseSchema(const String & name) const
+const Schema& Context::getSchema(const String & name) const
 {
     auto lock = getLock();
 
-    if (!shared->merge_tree_storage_configuration)
+    if (!shared->merge_tree_schema_selector)
     {
         constexpr auto config_name = "storage_configuration";
         auto & config = getConfigRef();
 
-        shared->merge_tree_storage_configuration = std::make_unique<MergeTreeStorageConfiguration>(config, config_name);
+        shared->merge_tree_schema_selector = std::make_unique<SchemaSelector>(config, config_name);
     }
 
-    return (*shared->merge_tree_storage_configuration)[name];
+    return (*shared->merge_tree_schema_selector)[name];
 }
 
 

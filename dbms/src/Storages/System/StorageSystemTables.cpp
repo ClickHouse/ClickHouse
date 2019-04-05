@@ -197,7 +197,7 @@ protected:
 
                 if (columns_mask[src_index++]) {
                     for (const String & path : tables_it->table()->getDataPaths() ) {
-                        res_columns[res_index++]->insert(path);  ///@TODO_IGR ASK Is it fine?
+                        res_columns[res_index++]->insert(path);
                     }
                 }
 

@@ -89,6 +89,7 @@ namespace ErrorCodes
 
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
+    const String & path_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
     Context & context_,
@@ -110,7 +111,8 @@ MergeTreeData::MergeTreeData(
     sample_by_ast(sample_by_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
-    schema(context_.chooseSchema("default")), ///@TODO_IGR Schema name
+    full_path(path_ + escapeForFileName(table_name) + '/'),
+    schema(context_.getSchema("default"), path_, escapeForFileName(table_name)), ///@TODO_IGR Schema name
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
@@ -159,20 +161,19 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    auto full_paths = getFullPaths();
+    auto path_exists = Poco::File(full_path).exists();
 
-    auto format_path = full_paths[0];  ///@TODO_IGR ASK What path should we use for format file?
-                                       ///          Use first disk. If format file not there move it.
-    auto path_exists = Poco::File(format_path).exists();
-
-    for (const String & path : full_paths) {
-        /// Creating directories, if not exist.
+    /// Creating directories, if not exist.
+    Poco::File(full_path).createDirectories();
+    for (const String & path : getFullPaths()) {
         Poco::File(path).createDirectories();
 
         Poco::File(path + "detached").createDirectory();
     }
 
-    String version_file_path = format_path + "format_version.txt";
+    // format_file always contained in default path
+    String version_file_path = full_path + "format_version.txt"; ///@TODO_IGR ASK What path should we use for format file?
+
     auto version_file_exists = Poco::File(version_file_path).exists();
     // When data path or file not exists, ignore the format_version check
     if (!attach || !path_exists || !version_file_exists)
@@ -713,7 +714,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 for (auto part_file_name : part_file_names)
                 {
                     const String & contained_name = part_file_name.first;
-                    const size_t contained_path_index = part_file_name.second;
+                    const size_t full_path_index = part_file_name.second;
                     if (contained_name == file_name)
                         continue;
 
@@ -723,7 +724,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
                     if (part->info.contains(contained_part_info))
                     {
-                        LOG_ERROR(log, "Found part " << full_paths[contained_path_index] + contained_name);
+                        LOG_ERROR(log, "Found part " << full_paths[full_path_index] + contained_name);
                         ++contained_parts;
                     }
                 }
@@ -2647,12 +2648,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
 }
 
 DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(UInt64 expected_size) const {
-    auto reservation = schema.reserve(expected_size);
-    if (reservation) {
-        /// Add path to table at disk
-        reservation->addEnclosedDirToPath(escapeForFileName(table_name)); ///@TODO_IGR ASK can we use table_name here? Could path be different?
-    }
-    return reservation;
+    return schema.reserve(expected_size);
 }
 
 void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
