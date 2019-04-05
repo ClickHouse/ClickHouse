@@ -43,7 +43,7 @@ Chunk IRowInputFormat::generate()
     MutableColumns columns = header.cloneEmptyColumns();
     size_t prev_rows = total_rows;
 
-    ChunkMissingValues chunk_missing_values;
+    auto chunk_missing_values = std::make_unique<ChunkMissingValues>();
 
     try
     {
@@ -64,7 +64,7 @@ Chunk IRowInputFormat::generate()
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
                             throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-                        chunk_missing_values.setBit(column_idx, column_size - 1);
+                        chunk_missing_values->setBit(column_idx, column_size - 1);
                     }
                 }
             }
@@ -139,7 +139,7 @@ Chunk IRowInputFormat::generate()
     }
 
     Chunk chunk(std::move(columns), total_rows - prev_rows);
-    chunk.setChunkInfo(std::make_unique<const ChunkMissingValues>(std::move(chunk_missing_values)));
+    chunk.setChunkInfo(std::move(chunk_missing_values));
     return chunk;
 }
 
