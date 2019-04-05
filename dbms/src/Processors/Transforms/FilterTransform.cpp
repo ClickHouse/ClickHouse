@@ -37,18 +37,16 @@ static Block transformHeader(
 
 FilterTransform::FilterTransform(
     const Block & header,
-    ExpressionActionsPtr expression,
-    String filter_column_name,
+    ExpressionActionsPtr expression_,
+    String filter_column_name_,
     bool remove_filter_column)
-    : ISimpleTransform(header, transformHeader(header, expression, filter_column_name, remove_filter_column), true)
-    , expression(std::move(expression))
-    , filter_column_name(std::move(filter_column_name))
+    : ISimpleTransform(header, transformHeader(header, expression_, filter_column_name_, remove_filter_column), true)
+    , expression(std::move(expression_))
+    , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column)
 {
-    auto & transformed_header = getOutputPort().getHeader();
+    transformed_header = transformHeader(getInputPort().getHeader(), expression, filter_column_name, false);
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
-    auto & filter_column = transformed_header.getByPosition(filter_column_position);
-    constant_filter_description = ConstantFilterDescription(*filter_column.column);
 }
 
 IProcessor::Status FilterTransform::prepare()
@@ -72,13 +70,14 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk)
 
 void FilterTransform::transform(Chunk & chunk)
 {
-    auto columns = chunk.detachColumns();
     size_t num_rows_before_filtration = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
 
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
         expression->execute(block);
+        num_rows_before_filtration = block.rows();
         columns = block.getColumns();
     }
 
@@ -139,14 +138,16 @@ void FilterTransform::transform(Chunk & chunk)
         /// SimpleTransform will skip it.
         return;
 
-    auto & result_header = getOutputPort().getHeader();
-
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
     {
-        /// Replace the column with the filter by a constant.
-        auto & type = result_header.getByPosition(filter_column_position).type;
-        columns[filter_column_position] = type->createColumnConst(num_filtered_rows, 1u);
+        if (!remove_filter_column)
+        {
+            /// Replace the column with the filter by a constant.
+            auto & type = transformed_header.getByPosition(filter_column_position).type;
+            columns[filter_column_position] = type->createColumnConst(num_filtered_rows, 1u);
+        }
+
         /// No need to touch the rest of the columns.
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         removeFilterIfNeed(chunk);
@@ -156,7 +157,7 @@ void FilterTransform::transform(Chunk & chunk)
     /// Filter the rest of the columns.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const auto & current_type = result_header.safeGetByPosition(i).type;
+        const auto & current_type = transformed_header.safeGetByPosition(i).type;
         auto & current_column = columns[i];
 
         if (i == filter_column_position)

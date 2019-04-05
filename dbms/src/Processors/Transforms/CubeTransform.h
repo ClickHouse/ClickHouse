@@ -12,6 +12,7 @@ class CubeTransform : public IInflatingTransform
 {
 public:
     CubeTransform(Block header, AggregatingTransformParamsPtr params);
+    String getName() const override { return "CubeTransform"; }
 
 protected:
     void consume(Chunk chunk) override;

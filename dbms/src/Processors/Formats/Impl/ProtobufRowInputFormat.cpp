@@ -3,9 +3,9 @@
 
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/Impl/FormatSchemaInfo.h>
+#include <Formats/FormatSchemaInfo.h>
+#include <Formats/ProtobufSchemas.h>
 #include <Processors/Formats/Impl/ProtobufRowInputFormat.h>
-#include <Processors/Formats/Impl/ProtobufSchemas.h>
 
 
 namespace DB

@@ -18,6 +18,8 @@ public:
     FilterTransform(
         const Block & header, ExpressionActionsPtr expression, String filter_column_name, bool remove_filter_column);
 
+    String getName() const override { return "FilterTransform"; }
+
     Status prepare() override;
 
 protected:
@@ -30,6 +32,9 @@ private:
 
     ConstantFilterDescription constant_filter_description;
     size_t filter_column_position = 0;
+
+    /// Header after expression, but before removing filter column.
+    Block transformed_header;
 
     void removeFilterIfNeed(Chunk & chunk);
 };

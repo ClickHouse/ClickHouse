@@ -278,8 +278,6 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorCapnProto(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
-    registerInputFormatProcessorParquet(*this);
-    registerOutputFormatProcessorParquet(*this);
 
     registerOutputFormatPretty(*this);
     registerOutputFormatPrettyCompact(*this);

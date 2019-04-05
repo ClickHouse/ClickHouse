@@ -16,8 +16,10 @@ public:
     CreatingSetsTransform(
         Block out_header,
         const SubqueriesForSets & subqueries_for_sets_,
-        const SizeLimits & network_transfer_limits);
+        const SizeLimits & network_transfer_limits,
+        const Context & context);
 
+    String getName() const override { return "CreatingSetsTransform"; }
     Status prepare() override;
     void work() override;
 
@@ -37,6 +39,7 @@ private:
     bool done_with_table = true;
 
     SizeLimits network_transfer_limits;
+    const Context & context;
 
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;

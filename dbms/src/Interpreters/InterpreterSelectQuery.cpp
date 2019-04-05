@@ -1614,7 +1614,7 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
-        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having_expression->getColumnName());
+        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having_expression->getColumnName(), false);
     });
 }
 
@@ -1641,7 +1641,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(QueryPipeline & pipeline, bo
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
             pipeline.getHeader(), overflow_row, expression,
-            has_having ? query.having_expression->getColumnName() : "",
+            has_having ? getSelectQuery().having_expression->getColumnName() : "",
             settings.totals_mode, settings.totals_auto_threshold, final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
@@ -1702,12 +1702,14 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
                               settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
                               context.getTemporaryPath(), settings.max_threads);
 
+    auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
+
     pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
     {
         if (modificator == Modificator::ROLLUP)
-            return std::make_shared<RollupTransform>(header, params);
+            return std::make_shared<RollupTransform>(header, std::move(transform_params));
         else
-            return std::make_shared<CubeTransform>(header, params);
+            return std::make_shared<CubeTransform>(header, std::move(transform_params));
     });
 }
 
@@ -2138,7 +2140,8 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(QueryPipeline & pip
 
     auto creating_sets = std::make_shared<CreatingSetsTransform>(
             pipeline.getHeader(), subqueries_for_sets,
-            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
+            SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode),
+            context);
 
     pipeline.addCreatingSetsTransform(std::move(creating_sets));
 }

@@ -246,10 +246,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         /// Hold element of process list till end of query execution.
-        if (use_processors)
-            pipeline.setProcessListEntry(process_list_entry);
-        else
-            res.process_list_entry = process_list_entry;
+        res.process_list_entry = process_list_entry;
 
         IBlockInputStream::LocalLimits limits;
         limits.mode = IBlockInputStream::LIMITS_CURRENT;
@@ -430,16 +427,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            if (use_processors)
-            {
-                pipeline.finish_callback = std::move(finish_callback);
-                pipeline.exception_callback = std::move(exception_callback);
-            }
-            else
-            {
-                res.finish_callback = std::move(finish_callback);
-                res.exception_callback = std::move(exception_callback);
-            }
+            res.finish_callback = std::move(finish_callback);
+            res.exception_callback = std::move(exception_callback);
 
             if (!internal && res.in)
             {
@@ -624,7 +613,8 @@ void executeQuery(
                 set_query_id(context.getClientInfo().current_query_id);
 
             pipeline.setOutput(std::move(out));
-            pipeline.execute(context.getSettingsRef().max_threads);
+            auto executor = pipeline.execute(context.getSettingsRef().max_threads);
+            executor->execute();
         }
     }
     catch (...)

@@ -7,11 +7,11 @@ namespace DB
 class NullSink : public ISink
 {
 public:
-    NullSink(Block header) : ISink(std::move(header)) {}
+    explicit NullSink(Block header) : ISink(std::move(header)) {}
     String getName() const override { return "NullSink"; }
 
 protected:
-    void consume(Chunk block) override {}
+    void consume(Chunk) override {}
 };
 
 }

@@ -61,6 +61,8 @@ private:
     UInt64 num_waited_tasks = 0;
     UInt64 num_tasks_to_wait = 0;
 
+    std::atomic_bool cancelled;
+
 public:
     explicit PipelineExecutor(Processors processors, ThreadPool * pool = nullptr);
     void execute();
@@ -68,6 +70,8 @@ public:
     String getName() const { return "PipelineExecutor"; }
 
     const Processors & getProcessors() const { return processors; }
+
+    void cancel() { cancelled = true; }
 
 private:
     /// Graph related methods.
@@ -87,5 +91,7 @@ private:
     void addAsyncJob(UInt64 pid);
     void prepareProcessor(size_t pid, bool async);
 };
+
+using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 }

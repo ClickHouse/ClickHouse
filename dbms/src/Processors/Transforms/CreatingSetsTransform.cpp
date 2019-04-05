@@ -23,11 +23,13 @@ namespace ErrorCodes
 CreatingSetsTransform::CreatingSetsTransform(
     Block out_header,
     const SubqueriesForSets & subqueries_for_sets_,
-    const SizeLimits & network_transfer_limits)
+    const SizeLimits & network_transfer_limits,
+    const Context & context)
     : IProcessor({}, {std::move(out_header)})
     , subqueries_for_sets(subqueries_for_sets_)
     , cur_subquery(subqueries_for_sets.begin())
     , network_transfer_limits(network_transfer_limits)
+    , context(context)
 {
 }
 
@@ -60,7 +62,7 @@ void CreatingSetsTransform::startSubquery(SubqueryForSet & subquery)
     elapsed_nanoseconds = 0;
 
     if (subquery.table)
-        table_out = subquery.table->write({}, {});
+        table_out = subquery.table->write({}, context);
 
     done_with_set = !subquery.set;
     done_with_join = !subquery.join;
@@ -115,7 +117,7 @@ void CreatingSetsTransform::work()
         return;
     }
 
-    SubqueryForSet & subquery = cur_subquery.second;
+    SubqueryForSet & subquery = cur_subquery->second;
 
     if (!started_cur_subquery)
     {
