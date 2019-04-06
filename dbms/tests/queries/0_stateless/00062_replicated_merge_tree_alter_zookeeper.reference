@@ -10,12 +10,12 @@ CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32) ENGINE =
 d	Date					
 k	UInt64					
 i32	Int32					
-dt	DateTime				
+dt	DateTime					
 CREATE TABLE test.replicated_alter1 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r1\', d, k, 8192)
 d	Date					
 k	UInt64					
 i32	Int32					
-dt	DateTime				
+dt	DateTime					
 CREATE TABLE test.replicated_alter2 (`d` Date, `k` UInt64, `i32` Int32, `dt` DateTime) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/alter\', \'r2\', d, k, 8192)
 2015-01-01	9	41	1992-01-01 08:00:00
 2015-01-01	10	42	0000-00-00 00:00:00
