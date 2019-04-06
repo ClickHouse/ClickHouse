@@ -76,7 +76,7 @@ namespace AllocatorHints
 {
 struct DefaultHint
 {
-    void * operator()()
+    static void * mmap_hint()
     {
         return nullptr;
     }
@@ -84,12 +84,11 @@ struct DefaultHint
 
 struct RandomHint
 {
-    void * operator()()
+    static void * mmap_hint()
     {
+        static auto rng = pcg64{randomSeed()};
         return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(rng));
     }
-private:
-    pcg64 rng{randomSeed()};
 };
 }
 
@@ -101,12 +100,11 @@ private:
   * - by the presence of the `alignment` argument;
   * - the possibility of zeroing memory (used in hash tables);
   * - hint class for mmap
+  * - mmap_threshold for using mmap less or more
   */
 template <bool clear_memory_, typename Hint, size_t mmap_threshold>
 class AllocatorWithHint
 {
-    /// For most cases the size of it is 1 and empty structure in C++ is also of size one. No overhead.
-    Hint mmap_hint;
 protected:
     static constexpr bool clear_memory = clear_memory_;
 
@@ -124,7 +122,7 @@ public:
                 throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
                     + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
 
-            buf = mmap(mmap_hint(), size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            buf = mmap(Hint::mmap_hint(), size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
             if (MAP_FAILED == buf)
                 DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
