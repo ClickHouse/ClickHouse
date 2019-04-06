@@ -34,6 +34,6 @@ struct MarkInCompressedFile
     }
 };
 
-using MarksInCompressedFile = PODArray<MarkInCompressedFile, 4096, AllocatorWithHint<false, AllocatorHints::RandomHint, 0>>;
+using MarksInCompressedFile = PODArray<MarkInCompressedFile>;
 
 }
