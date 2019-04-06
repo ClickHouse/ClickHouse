@@ -16,8 +16,8 @@ $CLICKHOUSE_CLIENT --use_uncompressed_cache=1 --query="$cached_query" &> /dev/nu
 
 $CLICKHOUSE_CLIENT --use_uncompressed_cache=1 --query_id="test-query-uncompressed-cache" --query="$cached_query" &> /dev/null
 
-$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
 sleep 1
+$CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS"
 
 $CLICKHOUSE_CLIENT --query="SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'Seek')], ProfileEvents.Values[indexOf(ProfileEvents.Names, 'ReadCompressedBytes')], ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UncompressedCacheHits')] AS hit FROM system.query_log WHERE (query_id = 'test-query-uncompressed-cache') AND (type = 2) ORDER BY event_time DESC LIMIT 1"
 
