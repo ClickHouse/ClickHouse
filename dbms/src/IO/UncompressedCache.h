@@ -20,7 +20,7 @@ namespace DB
 
 struct UncompressedCacheCell
 {
-    Memory data;
+    Memory<AllocatorWithHint<false, AllocatorHints::RandomHint, 0>> data;
     size_t compressed_size;
 };
 
