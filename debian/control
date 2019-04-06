@@ -28,8 +28,8 @@ Package: clickhouse-common-static
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, tzdata
 Suggests: clickhouse-common-static-dbg
-Replaces: clickhouse-server-base
-Provides: clickhouse-server-base
+Replaces: clickhouse-common, clickhouse-server-base
+Provides: clickhouse-common, clickhouse-server-base
 Description: Common files for ClickHouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.

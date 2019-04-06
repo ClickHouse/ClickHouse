@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -ex
 BASE_DIR=$(dirname $(readlink -f $0))
-cd "${BASE_DIR}"
+BUILD_DIR="${BASE_DIR}/../build"
 IMAGE="clickhouse/website"
 if [[ -z "$1" ]]
 then
@@ -12,12 +12,12 @@ fi
 FULL_NAME="${IMAGE}:${TAG}"
 REMOTE_NAME="registry.yandex.net/${FULL_NAME}"
 DOCKER_HASH="$2"
-GULP="$BASE_DIR/node_modules/gulp/bin/gulp.js"
 if [[ -z "$1" ]]
 then
-    $GULP clean
-    $GULP build
-    docker build -t "${FULL_NAME}" "${BASE_DIR}"
+    source "${BASE_DIR}/venv/bin/activate"
+    python "${BASE_DIR}/build.py"
+    cd "${BUILD_DIR}"
+    docker build -t "${FULL_NAME}" "${BUILD_DIR}"
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
     DOCKER_HASH=$(docker push "${REMOTE_NAME}" | tail -1 | awk '{print $3;}')
     docker rmi "${FULL_NAME}"
