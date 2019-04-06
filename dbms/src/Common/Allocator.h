@@ -76,7 +76,7 @@ namespace AllocatorHints
 {
 struct DefaultHint
 {
-    static void * mmap_hint()
+    void * mmap_hint()
     {
         return nullptr;
     }
@@ -84,11 +84,12 @@ struct DefaultHint
 
 struct RandomHint
 {
-    static void * mmap_hint()
+    void * mmap_hint()
     {
-        static auto rng = pcg64{randomSeed()};
         return reinterpret_cast<void *>(std::uniform_int_distribution<intptr_t>(0x100000000000UL, 0x700000000000UL)(rng));
     }
+private:
+    pcg64 rng{randomSeed()};
 };
 }
 
@@ -103,7 +104,7 @@ struct RandomHint
   * - mmap_threshold for using mmap less or more
   */
 template <bool clear_memory_, typename Hint, size_t mmap_threshold>
-class AllocatorWithHint
+class AllocatorWithHint : Hint
 {
 protected:
     static constexpr bool clear_memory = clear_memory_;
