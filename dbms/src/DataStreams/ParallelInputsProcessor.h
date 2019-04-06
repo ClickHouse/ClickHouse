@@ -11,7 +11,6 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 

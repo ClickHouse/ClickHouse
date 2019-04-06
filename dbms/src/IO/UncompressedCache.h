@@ -20,7 +20,7 @@ namespace DB
 
 struct UncompressedCacheCell
 {
-    Memory data;
+    Memory<> data;
     size_t compressed_size;
 };
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+CLICKHOUSE_CLIENT_OPT="--allow_experimental_data_skipping_indices=1"
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
