@@ -47,7 +47,7 @@ std::vector<void *> NO_SANITIZE_ADDRESS backtraceLibUnwind(size_t max_frames, uc
 
             /// NOTE This triggers "AddressSanitizer: stack-buffer-overflow". Looks like false positive.
             /// It's Ok, because we use this method if the program is crashed nevertheless.
-            if (!unw_step(&cursor) || !unw_is_signal_frame(&cursor))
+            if (!unw_step(&cursor))
                 break;
         }
     }
