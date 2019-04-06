@@ -1,4 +1,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/AnalyzedJoin.h> /// for getNamesAndTypeListFromTableExpression
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 
@@ -11,65 +13,21 @@
 namespace DB
 {
 
-/// Checks that ast is ASTIdentifier and remove num_qualifiers_to_strip components from left.
-/// Example: 'database.table.name' -> (num_qualifiers_to_strip = 2) -> 'name'.
-void stripIdentifier(const DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
-{
-    ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(ast.get());
-
-    if (!identifier)
-        throw DB::Exception("ASTIdentifier expected for stripIdentifier", DB::ErrorCodes::LOGICAL_ERROR);
-
-    if (num_qualifiers_to_strip)
-    {
-        identifier->name_parts.erase(identifier->name_parts.begin(), identifier->name_parts.begin() + num_qualifiers_to_strip);
-        DB::String new_name;
-        for (const auto & part : identifier->name_parts)
-        {
-            if (!new_name.empty())
-                new_name += '.';
-            new_name += part;
-        }
-        identifier->name.swap(new_name);
-    }
-}
-
-/// Get the number of components of identifier which are correspond to 'alias.', 'table.' or 'databas.table.' from names.
-size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifier & identifier,
-                                                              const DatabaseAndTableWithAlias & names)
-{
-    /// database.table.column
-    if (doesIdentifierBelongTo(identifier, names.database, names.table))
-        return 2;
-
-    /// table.column or alias.column.
-    if (doesIdentifierBelongTo(identifier, names.table) ||
-        doesIdentifierBelongTo(identifier, names.alias))
-        return 1;
-
-    return 0;
-}
+NameSet removeDuplicateColumns(NamesAndTypesList & columns);
 
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
 {
-    database = current_database;
-    table = identifier.name;
     alias = identifier.tryGetAlias();
 
-    if (!identifier.name_parts.empty())
-    {
-        if (identifier.name_parts.size() != 2)
-            throw Exception("Logical error: 2 components expected in table expression '" + identifier.name + "'", ErrorCodes::LOGICAL_ERROR);
-
-        database = identifier.name_parts[0];
-        table = identifier.name_parts[1];
-    }
+    std::tie(database, table) = IdentifierSemantic::extractDatabaseAndTable(identifier);
+    if (database.empty())
+        database = current_database;
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
 {
-    const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get());
+    const auto * identifier = node->as<ASTIdentifier>();
     if (!identifier)
         throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -104,23 +62,11 @@ bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_t
     return database == db_table.database && table == db_table.table;
 }
 
-String DatabaseAndTableWithAlias::getQualifiedNamePrefix() const
+String DatabaseAndTableWithAlias::getQualifiedNamePrefix(bool with_dot) const
 {
     if (alias.empty() && table.empty())
         return "";
-
-    return (!alias.empty() ? alias : (database + '.' + table)) + '.';
-}
-
-void DatabaseAndTableWithAlias::makeQualifiedName(const ASTPtr & ast) const
-{
-    if (auto identifier = typeid_cast<ASTIdentifier *>(ast.get()))
-    {
-        String prefix = getQualifiedNamePrefix();
-        identifier->name.insert(identifier->name.begin(), prefix.begin(), prefix.end());
-
-        addIdentifierQualifier(*identifier, database, table, alias);
-    }
+    return (!alias.empty() ? alias : table) + (with_dot ? "." : "");
 }
 
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query)
@@ -132,10 +78,10 @@ std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelec
 
     for (const auto & child : select_query.tables->children)
     {
-        ASTTablesInSelectQueryElement * tables_element = static_cast<ASTTablesInSelectQueryElement *>(child.get());
+        const auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
 
         if (tables_element->table_expression)
-            tables_expression.emplace_back(static_cast<const ASTTableExpression *>(tables_element->table_expression.get()));
+            tables_expression.emplace_back(tables_element->table_expression->as<ASTTableExpression>());
     }
 
     return tables_expression;
@@ -146,17 +92,16 @@ static const ASTTableExpression * getTableExpression(const ASTSelectQuery & sele
     if (!select.tables)
         return {};
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
+    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.size() <= table_number)
         return {};
 
-    ASTTablesInSelectQueryElement & tables_element =
-        static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[table_number]);
+    const auto & tables_element = tables_in_select_query.children[table_number]->as<ASTTablesInSelectQueryElement &>();
 
     if (!tables_element.table_expression)
         return {};
 
-    return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element.table_expression->as<ASTTableExpression>();
 }
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database)
@@ -179,7 +124,7 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
         return {};
 
     ASTPtr database_and_table_name = table_expression->database_and_table_name;
-    if (!database_and_table_name || !isIdentifier(database_and_table_name))
+    if (!database_and_table_name || !database_and_table_name->as<ASTIdentifier>())
         return {};
 
     return DatabaseAndTableWithAlias(database_and_table_name);
@@ -196,10 +141,32 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
             return table_expression->table_function;
 
         if (table_expression->subquery)
-            return static_cast<const ASTSubquery *>(table_expression->subquery.get())->children[0];
+            return table_expression->subquery->children[0];
     }
 
     return nullptr;
+}
+
+std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const ASTSelectQuery & select_query, const Context & context)
+{
+    std::vector<TableWithColumnNames> tables_with_columns;
+
+    if (select_query.tables && !select_query.tables->children.empty())
+    {
+        String current_database = context.getCurrentDatabase();
+
+        for (const ASTTableExpression * table_expression : getSelectTablesExpression(select_query))
+        {
+            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
+
+            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, context);
+            removeDuplicateColumns(names_and_types);
+
+            tables_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
+        }
+    }
+
+    return tables_with_columns;
 }
 
 }

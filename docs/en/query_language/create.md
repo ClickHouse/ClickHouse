@@ -10,7 +10,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
 
 
-## CREATE TABLE
+## CREATE TABLE {#create-table-query}
 
 The `CREATE TABLE` query can have several forms.
 
@@ -45,7 +45,7 @@ In all cases, if `IF NOT EXISTS` is specified, the query won't return an error i
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../operations/table_engines/index.md#table_engines).
 
-### Default Values
+### Default Values {#create-default-values}
 
 The column description can specify an expression for a default value, in one of the following ways:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Example: `URLDomain String DEFAULT domain(URL)`.
@@ -80,7 +80,7 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-# Column Compression Codecs
+## Column Compression Codecs
 
 Besides default data compression, defined in [server settings](../operations/server_settings/settings.md#compression), per-column specification is also available.
 

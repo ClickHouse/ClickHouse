@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Formats/FormatSettings.h>
 #include <Formats/TabSeparatedRowOutputStream.h>
-
 
 namespace DB
 {
+struct FormatSettings;
 
 /** A stream for outputting data in tsv format, but without escaping individual values.
   * (That is, the output is irreversible.)
@@ -18,7 +17,7 @@ public:
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override
     {
-        type.serializeText(column, row_num, ostr, format_settings);
+        type.serializeAsText(column, row_num, ostr, format_settings);
     }
 };
 

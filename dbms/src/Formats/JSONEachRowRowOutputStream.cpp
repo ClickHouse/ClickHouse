@@ -27,7 +27,7 @@ void JSONEachRowRowOutputStream::writeField(const IColumn & column, const IDataT
 {
     writeString(fields[field_number], ostr);
     writeChar(':', ostr);
-    type.serializeTextJSON(column, row_num, ostr, settings);
+    type.serializeAsTextJSON(column, row_num, ostr, settings);
     ++field_number;
 }
 

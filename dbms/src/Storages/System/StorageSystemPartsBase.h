@@ -34,7 +34,7 @@ public:
     struct StoragesInfo
     {
         StoragePtr storage;
-        TableStructureReadLockPtr table_lock;
+        TableStructureReadLockHolder table_lock;
 
         String database;
         String table;

@@ -159,7 +159,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        const Columns & tuple_columns = tuple_col->getColumns();
+        const auto & tuple_columns = tuple_col->getColumns();
         const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
 
         bool use_float64 = WhichDataType(tuple_types[0]).isFloat64() || WhichDataType(tuple_types[1]).isFloat64();

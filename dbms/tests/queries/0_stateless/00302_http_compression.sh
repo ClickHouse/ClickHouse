@@ -21,9 +21,11 @@ ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}?enable_http_compression=1" -H 'Accept
 
 echo "SELECT 1" | ${CLICKHOUSE_CURL} -sS --data-binary @- ${CLICKHOUSE_URL};
 echo "SELECT 1" | gzip -c | ${CLICKHOUSE_CURL} -sS --data-binary @- -H 'Content-Encoding: gzip' ${CLICKHOUSE_URL};
+echo "SELECT 1" | brotli | ${CLICKHOUSE_CURL} -sS --data-binary @- -H 'Content-Encoding: br' ${CLICKHOUSE_URL};
 
 echo "'Hello, world'" | ${CLICKHOUSE_CURL} -sS --data-binary @- "${CLICKHOUSE_URL}?query=SELECT";
 echo "'Hello, world'" | gzip -c | ${CLICKHOUSE_CURL} -sS --data-binary @- -H 'Content-Encoding: gzip' "${CLICKHOUSE_URL}?query=SELECT";
+echo "'Hello, world'" | brotli | ${CLICKHOUSE_CURL} -sS --data-binary @- -H 'Content-Encoding: br' "${CLICKHOUSE_URL}?query=SELECT";
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?enable_http_compression=1" -H 'Accept-Encoding: gzip'          -d 'SELECT number FROM system.numbers LIMIT 0' | wc -c;
 

@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Interpreters/AggregateDescription.h>
-#include <Interpreters/Settings.h>
 #include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/AggregateDescription.h>
+#include <Core/Settings.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Parsers/IAST_fwd.h>
+
 
 namespace DB
 {
@@ -15,9 +17,6 @@ struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-using ASTs = std::vector<ASTPtr>;
 struct ASTTableJoin;
 
 class IBlockInputStream;
@@ -43,7 +42,7 @@ struct ExpressionAnalyzerData
     NamesAndTypesList source_columns;
 
     /// If non-empty, ignore all expressions in  not from this list.
-    Names required_result_columns;
+    NameSet required_result_columns;
 
     SubqueriesForSets subqueries_for_sets;
     PreparedSets prepared_sets;
@@ -67,19 +66,9 @@ struct ExpressionAnalyzerData
     /// Columns will be added to block by join.
     JoinedColumnsList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
 
-    /// Actions which need to be calculated on joined block.
-    ExpressionActionsPtr joined_block_actions;
-
-    /// Columns which will be used in query from joined table. Duplicate names are qualified.
-    NameSet required_columns_from_joined_table;
-
-    /// Such columns will be copied from left join keys during join.
-    /// Example: select right from tab1 join tab2 on left + 1 = right
-    NameSet columns_added_by_join_from_right_keys;
-
 protected:
     ExpressionAnalyzerData(const NamesAndTypesList & source_columns_,
-                           const Names & required_result_columns_,
+                           const NameSet & required_result_columns_,
                            const SubqueriesForSets & subqueries_for_sets_)
     :   source_columns(source_columns_),
         required_result_columns(required_result_columns_),
@@ -136,7 +125,7 @@ public:
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         const NamesAndTypesList & additional_source_columns = {},
-        const Names & required_result_columns_ = {},
+        const NameSet & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
         bool do_global_ = false,
         const SubqueriesForSets & subqueries_for_set_ = {});
@@ -221,7 +210,6 @@ public:
 
 private:
     ASTPtr query;
-    ASTSelectQuery * select_query;
     const Context & context;
     const ExtractedSettings settings;
     StoragePtr storage; /// The main table in FROM clause, if exists.

@@ -24,9 +24,10 @@ namespace DB
 class ColumnVectorHelper : public IColumn
 {
 public:
+    template <size_t ELEMENT_SIZE>
     const char * getRawDataBegin() const
     {
-        return *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(this) + sizeof(*this));
+        return reinterpret_cast<const PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, 15, 16> *>(reinterpret_cast<const char *>(this) + sizeof(*this))->raw_data();
     }
 
     template <size_t ELEMENT_SIZE>

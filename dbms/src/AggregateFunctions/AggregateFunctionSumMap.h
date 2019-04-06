@@ -50,7 +50,7 @@ struct AggregateFunctionSumMapData
   *  ([1,2,3,4,5,6,7,8,9,10],[10,10,45,20,35,20,15,30,20,20])
   */
 
-template <typename T, typename Derived>
+template <typename T, typename Derived, typename OverflowPolicy>
 class AggregateFunctionSumMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>
 {
@@ -61,8 +61,11 @@ private:
     DataTypes values_types;
 
 public:
-    AggregateFunctionSumMapBase(const DataTypePtr & keys_type, const DataTypes & values_types)
-        : keys_type(keys_type), values_types(values_types) {}
+    AggregateFunctionSumMapBase(
+        const DataTypePtr & keys_type, const DataTypes & values_types,
+        const DataTypes & argument_types_, const Array & params_)
+        : IAggregateFunctionDataHelper<AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>(argument_types_, params_)
+        , keys_type(keys_type), values_types(values_types) {}
 
     String getName() const override { return "sumMap"; }
 
@@ -72,7 +75,7 @@ public:
         types.emplace_back(std::make_shared<DataTypeArray>(keys_type));
 
         for (const auto & value_type : values_types)
-            types.emplace_back(std::make_shared<DataTypeArray>(value_type));
+            types.emplace_back(std::make_shared<DataTypeArray>(OverflowPolicy::promoteType(value_type)));
 
         return std::make_shared<DataTypeTuple>(types);
     }
@@ -262,12 +265,17 @@ public:
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
 };
 
-template <typename T>
-class AggregateFunctionSumMap final : public AggregateFunctionSumMapBase<T, AggregateFunctionSumMap<T>>
+template <typename T, typename OverflowPolicy>
+class AggregateFunctionSumMap final :
+    public AggregateFunctionSumMapBase<T, AggregateFunctionSumMap<T, OverflowPolicy>, OverflowPolicy>
 {
+private:
+    using Self = AggregateFunctionSumMap<T, OverflowPolicy>;
+    using Base = AggregateFunctionSumMapBase<T, Self, OverflowPolicy>;
+
 public:
-    AggregateFunctionSumMap(const DataTypePtr & keys_type, DataTypes & values_types)
-        : AggregateFunctionSumMapBase<T, AggregateFunctionSumMap<T>>{keys_type, values_types}
+    AggregateFunctionSumMap(const DataTypePtr & keys_type_, DataTypes & values_types_, const DataTypes & argument_types_)
+        : Base{keys_type_, values_types_, argument_types_, {}}
     {}
 
     String getName() const override { return "sumMap"; }
@@ -275,15 +283,21 @@ public:
     bool keepKey(const T &) const { return true; }
 };
 
-template <typename T>
-class AggregateFunctionSumMapFiltered final : public AggregateFunctionSumMapBase<T, AggregateFunctionSumMapFiltered<T>>
+template <typename T, typename OverflowPolicy>
+class AggregateFunctionSumMapFiltered final :
+    public AggregateFunctionSumMapBase<T, AggregateFunctionSumMapFiltered<T, OverflowPolicy>, OverflowPolicy>
 {
 private:
+    using Self = AggregateFunctionSumMapFiltered<T, OverflowPolicy>;
+    using Base = AggregateFunctionSumMapBase<T, Self, OverflowPolicy>;
+
     std::unordered_set<T> keys_to_keep;
 
 public:
-    AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep_)
-        : AggregateFunctionSumMapBase<T, AggregateFunctionSumMapFiltered<T>>{keys_type, values_types}
+    AggregateFunctionSumMapFiltered(
+        const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep_,
+        const DataTypes & argument_types_, const Array & params_)
+        : Base{keys_type, values_types, argument_types_, params_}
     {
         keys_to_keep.reserve(keys_to_keep_.size());
         for (const Field & f : keys_to_keep_)

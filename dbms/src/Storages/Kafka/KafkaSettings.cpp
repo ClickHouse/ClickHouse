@@ -1,8 +1,7 @@
-#include <Common/config.h>
-#if USE_RDKAFKA
-
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
 
 
@@ -41,4 +40,3 @@ void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
 }
 
 }
-#endif

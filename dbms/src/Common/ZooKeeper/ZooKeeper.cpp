@@ -523,6 +523,22 @@ int32_t ZooKeeper::tryMulti(const Coordination::Requests & requests, Coordinatio
 }
 
 
+void ZooKeeper::removeChildren(const std::string & path)
+{
+    Strings children = getChildren(path);
+    while (!children.empty())
+    {
+        Coordination::Requests ops;
+        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
+        {
+            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
+            children.pop_back();
+        }
+        multi(ops);
+    }
+}
+
+
 void ZooKeeper::removeChildrenRecursive(const std::string & path)
 {
     Strings children = getChildren(path);

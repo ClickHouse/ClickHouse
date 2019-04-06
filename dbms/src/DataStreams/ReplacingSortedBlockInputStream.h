@@ -3,6 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <DataStreams/MergingSortedBlockInputStream.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB

@@ -58,7 +58,7 @@ namespace
 
 BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
-    InterpreterSelectQuery interpreter{query_ast, context, Names{}, processed_stage};
+    InterpreterSelectQuery interpreter{query_ast, context, SelectQueryOptions(processed_stage)};
     BlockInputStreamPtr stream = interpreter.execute().in;
 
     /** Materialization is needed, since from remote servers the constants come materialized.
@@ -98,7 +98,7 @@ void SelectStreamFactory::createForShard(
 
         if (table_func_ptr)
         {
-            auto table_function = static_cast<const ASTFunction *>(table_func_ptr.get());
+            const auto * table_function = table_func_ptr->as<ASTFunction>();
             main_table_storage = TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context);
         }
         else

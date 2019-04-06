@@ -6,6 +6,9 @@
 namespace DB
 {
 
+struct AsteriskSemantic;
+struct AsteriskSemanticImpl;
+
 /** Something like t.*
   * It will have qualifier as its child ASTIdentifier.
   */
@@ -23,6 +26,11 @@ public:
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+private:
+    std::shared_ptr<AsteriskSemanticImpl> semantic; /// pimpl
+
+    friend struct AsteriskSemantic;
 };
 
 }

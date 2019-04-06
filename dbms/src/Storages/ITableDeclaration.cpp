@@ -26,9 +26,14 @@ namespace ErrorCodes
 
 void ITableDeclaration::setColumns(ColumnsDescription columns_)
 {
-    if (columns_.ordinary.empty())
+    if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     columns = std::move(columns_);
+}
+
+void ITableDeclaration::setIndicesDescription(IndicesDescription indices_)
+{
+    indices = std::move(indices_);
 }
 
 
@@ -58,7 +63,7 @@ Block ITableDeclaration::getSampleBlockNonMaterialized() const
 {
     Block res;
 
-    for (const auto & col : getColumns().ordinary)
+    for (const auto & col : getColumns().getOrdinary())
         res.insert({ col.type->createColumn(), col.type, col.name });
 
     return res;

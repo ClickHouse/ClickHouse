@@ -4,6 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ITableDeclaration.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -13,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/IndicesDescription.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -303,6 +305,7 @@ public:
     MergeTreeData(const String & database_, const String & table_,
                   const String & full_path_,
                   const ColumnsDescription & columns_,
+                  const IndicesDescription & indices_,
                   Context & context_,
                   const String & date_column_name,
                   const ASTPtr & partition_by_ast_,
@@ -462,6 +465,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
+    /// Must be called with locked lockStructureForShare().
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     /// After the call to dropAllData() no method can be called.
@@ -476,9 +480,9 @@ public:
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
     /// - all type conversions can be done.
-    /// - columns corresponding to primary key, sign, sampling expression and date are not affected.
+    /// - columns corresponding to primary key, indices, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
-    void checkAlter(const AlterCommands & commands);
+    void checkAlter(const AlterCommands & commands, const Context & context);
 
     /// Performs ALTER of the data part, writes the result to temporary files.
     /// Returns an object allowing to rename temporary files to permanent files.
@@ -487,6 +491,7 @@ public:
     AlterDataPartTransactionPtr alterDataPart(
         const DataPartPtr & part,
         const NamesAndTypesList & new_columns,
+        const IndicesASTs & new_indices,
         bool skip_sanity_checks);
 
     /// Freezes all parts.
@@ -508,6 +513,7 @@ public:
 
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
+    bool hasSkipIndices() const { return !skip_indices.empty(); }
 
     ASTPtr getSortingKeyAST() const { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const { return primary_key_expr_ast; }
@@ -528,13 +534,9 @@ public:
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
-    /// Returns the size of partition in bytes.
-    size_t getPartitionSize(const std::string & partition_id) const;
-
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        std::lock_guard lock{data_parts_mutex};
-
+        auto lock = lockParts();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
@@ -542,14 +544,14 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
     ColumnSizeByName getColumnSizes() const
     {
-        std::lock_guard lock{data_parts_mutex};
+        auto lock = lockParts();
         return column_sizes;
     }
 
     /// Calculates column sizes in compressed form for the current state of data_parts.
     void recalculateColumnSizes()
     {
-        std::lock_guard lock{data_parts_mutex};
+        auto lock = lockParts();
         calculateColumnSizesImpl();
     }
 
@@ -580,6 +582,12 @@ public:
     DataTypes minmax_idx_column_types;
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
+
+    /// Secondary (data skipping) indices for MergeTree
+    MergeTreeIndices skip_indices;
+
+    ExpressionActionsPtr primary_key_and_skip_indices_expr;
+    ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
     /// Names of columns for primary key + secondary sorting columns.
     Names sorting_key_columns;
@@ -721,7 +729,9 @@ private:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setPrimaryKeyAndColumns(const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check = false);
+    void setPrimaryKeyIndicesAndColumns(const ASTPtr & new_order_by_ast, const ASTPtr & new_primary_key_ast,
+                                        const ColumnsDescription & new_columns,
+                                        const IndicesDescription & indices_description, bool only_check = false);
 
     void initPartitionKey();
 
@@ -733,7 +743,8 @@ private:
     /// Files to be deleted are mapped to an empty string in out_rename_map.
     /// If part == nullptr, just checks that all type conversions are possible.
     void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-        ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
+                                 const IndicesASTs & old_indices, const IndicesASTs & new_indices,
+                                 ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizesImpl();

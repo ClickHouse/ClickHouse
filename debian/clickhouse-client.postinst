@@ -4,3 +4,5 @@ set -e
 CLICKHOUSE_USER=${CLICKHOUSE_USER=clickhouse}
 
 mkdir -p /etc/clickhouse-client/conf.d
+
+#DEBHELPER#

@@ -4,7 +4,7 @@
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -117,7 +117,7 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterSystemQuery::execute()
 {
-    auto & query = typeid_cast<ASTSystemQuery &>(*query_ptr);
+    auto & query = query_ptr->as<ASTSystemQuery &>();
 
     using Type = ASTSystemQuery::Type;
 
@@ -185,8 +185,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_REPLICATED_SENDS:
             startStopAction(context, query, ActionLocks::PartsSend, false);
             break;
-        case Type::START_REPLICATEDS_SENDS:
-            startStopAction(context, query, ActionLocks::PartsSend, false);
+        case Type::START_REPLICATED_SENDS:
+            startStopAction(context, query, ActionLocks::PartsSend, true);
             break;
         case Type::STOP_REPLICATION_QUEUES:
             startStopAction(context, query, ActionLocks::ReplicationQueue, false);
@@ -239,7 +239,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter();
+        auto table_lock = table->lockExclusively(context.getCurrentQueryId());
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);
@@ -248,11 +248,11 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
     /// Attach actions
     {
         /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-        auto & create = typeid_cast<ASTCreateQuery &>(*create_ast);
+        auto & create = create_ast->as<ASTCreateQuery &>();
         create.attach = true;
 
         std::string data_path = database->getDataPath();
-        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns, system_context);
+        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,

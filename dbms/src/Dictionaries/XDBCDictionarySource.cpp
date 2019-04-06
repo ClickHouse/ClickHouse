@@ -39,7 +39,7 @@ namespace
             std::function<void(std::ostream &)> callback,
             const Block & sample_block,
             const Context & context,
-            size_t max_block_size,
+            UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
             const String name)
             : name(name)
@@ -62,7 +62,7 @@ namespace
     };
 }
 
-static const size_t max_block_size = 8192;
+static const UInt64 max_block_size = 8192;
 
 
 XDBCDictionarySource::XDBCDictionarySource(
@@ -84,7 +84,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
     , bridge_helper{bridge_}
-    , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_.getSettingsRef())}
+    , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_)}
     , global_context(context_)
 {
     bridge_url = bridge_helper->getMainURI();

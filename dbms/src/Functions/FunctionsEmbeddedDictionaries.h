@@ -19,14 +19,14 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
 
+#if USE_MYSQL
+#include <Dictionaries/Embedded/TechDataHierarchy.h>
+#endif
+
 #include <IO/WriteHelpers.h>
 
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
-
-#if USE_MYSQL
-#include <Dictionaries/Embedded/TechDataHierarchy.h>
-#endif
 
 
 namespace DB
@@ -36,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int DICTIONARIES_WAS_NOT_LOADED;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -186,7 +187,7 @@ public:
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -280,7 +281,7 @@ public:
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -418,7 +419,7 @@ public:
     : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -690,7 +691,7 @@ public:
         : owned_dict(owned_dict_)
     {
         if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+            throw Exception("Embedded dictionaries were not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override

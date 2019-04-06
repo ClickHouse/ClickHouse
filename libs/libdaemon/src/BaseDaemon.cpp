@@ -1,10 +1,8 @@
 #include <daemon/BaseDaemon.h>
 #include <daemon/OwnFormattingChannel.h>
 #include <daemon/OwnPatternFormatter.h>
-
 #include <Common/Config/ConfigProcessor.h>
 #include <daemon/OwnSplitChannel.h>
-
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -15,18 +13,6 @@
 #include <cxxabi.h>
 #include <execinfo.h>
 #include <unistd.h>
-
-#if USE_UNWIND
-    #define UNW_LOCAL_ONLY
-    #include <libunwind.h>
-#endif
-
-#ifdef __APPLE__
-// ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE
-#endif
-#include <ucontext.h>
-
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -67,6 +53,17 @@
 #include <daemon/OwnPatternFormatter.h>
 #include <Common/CurrentThread.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
+
+#if USE_UNWIND
+    #define UNW_LOCAL_ONLY
+    #include <libunwind.h>
+#endif
+
+#ifdef __APPLE__
+// ucontext is not available without _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
+#include <ucontext.h>
 
 
 /** For transferring information from signal handler to a separate thread.
@@ -184,7 +181,21 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
 
 #if USE_UNWIND
-size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
+/** We suppress the following ASan report. Also shown by Valgrind.
+==124==ERROR: AddressSanitizer: stack-use-after-scope on address 0x7f054be57000 at pc 0x0000068b0649 bp 0x7f060eeac590 sp 0x7f060eeabd40
+READ of size 1 at 0x7f054be57000 thread T3
+    #0 0x68b0648 in write (/usr/bin/clickhouse+0x68b0648)
+    #1 0x717da02 in write_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:110:13
+    #2 0x717da02 in mincore_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:146
+    #3 0x717dec1 in validate_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:206:7
+    #4 0x717dec1 in access_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:240
+    #5 0x71881a9 in dwarf_get /build/obj-x86_64-linux-gnu/../contrib/libunwind/include/tdep-x86_64/libunwind_i.h:168:12
+    #6 0x71881a9 in apply_reg_state /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:872
+    #7 0x718705c in _ULx86_64_dwarf_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:953:10
+    #8 0x718f155 in _ULx86_64_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Gstep.c:71:9
+    #9 0x7162671 in backtraceLibUnwind(void**, unsigned long, ucontext_t&) /build/obj-x86_64-linux-gnu/../libs/libdaemon/src/BaseDaemon.cpp:202:14
+  */
+size_t NO_SANITIZE_ADDRESS backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
 {
     unw_cursor_t cursor;
 
@@ -288,13 +299,13 @@ private:
 private:
     void onTerminate(const std::string & message, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "(from thread " << thread_num << ") " << message);
+        LOG_ERROR(log, "(version " << VERSION_STRING << ") (from thread " << thread_num << ") " << message);
     }
 
     void onFault(int sig, siginfo_t & info, ucontext_t & context, ThreadNumber thread_num) const
     {
         LOG_ERROR(log, "########################################");
-        LOG_ERROR(log, "(from thread " << thread_num << ") "
+        LOG_ERROR(log, "(version " << VERSION_STRING << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
         void * caller_address = nullptr;
@@ -597,8 +608,10 @@ void BaseDaemon::reloadConfiguration()
 }
 
 
-/// For creating and destroying unique_ptr of incomplete type.
-BaseDaemon::BaseDaemon() = default;
+BaseDaemon::BaseDaemon()
+{
+    checkRequiredInstructions();
+}
 
 
 BaseDaemon::~BaseDaemon()
@@ -606,6 +619,127 @@ BaseDaemon::~BaseDaemon()
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     signal_pipe.close();
+}
+
+
+enum class InstructionFail
+{
+    NONE = 0,
+    SSE3 = 1,
+    SSSE3 = 2,
+    SSE4_1 = 3,
+    SSE4_2 = 4,
+    AVX = 5,
+    AVX2 = 6,
+    AVX512 = 7
+};
+
+static std::string instructionFailToString(InstructionFail fail)
+{
+    switch(fail)
+    {
+        case InstructionFail::NONE:
+            return "NONE";
+        case InstructionFail::SSE3:
+            return "SSE3";
+        case InstructionFail::SSSE3:
+            return "SSSE3";
+        case InstructionFail::SSE4_1:
+            return "SSE4.1";
+        case InstructionFail::SSE4_2:
+            return "SSE4.2";
+        case InstructionFail::AVX:
+            return "AVX";
+        case InstructionFail::AVX2:
+            return "AVX2";
+        case InstructionFail::AVX512:
+            return "AVX512";
+    }
+    __builtin_unreachable();
+}
+
+
+static sigjmp_buf jmpbuf;
+
+static void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
+{
+    siglongjmp(jmpbuf, 1);
+}
+
+/// Check if necessary sse extensions are available by trying to execute some sse instructions.
+/// If instruction is unavailable, SIGILL will be sent by kernel.
+static void checkRequiredInstructions(volatile InstructionFail & fail)
+{
+#if __SSE3__
+    fail = InstructionFail::SSE3;
+    __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __SSSE3__
+    fail = InstructionFail::SSSE3;
+    __asm__ volatile ("pabsw %%xmm0, %%xmm0" : : : "xmm0");
+
+#endif
+
+#if __SSE4_1__
+    fail = InstructionFail::SSE4_1;
+    __asm__ volatile ("pmaxud %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __SSE4_2__
+    fail = InstructionFail::SSE4_2;
+    __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __AVX__
+    fail = InstructionFail::AVX;
+    __asm__ volatile ("vaddpd %%ymm0, %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+#if __AVX2__
+    fail = InstructionFail::AVX2;
+    __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+#if __AVX512__
+    fail = InstructionFail::AVX512;
+    __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
+#endif
+
+    fail = InstructionFail::NONE;
+}
+
+
+void BaseDaemon::checkRequiredInstructions()
+{
+    struct sigaction sa{};
+    struct sigaction sa_old{};
+    sa.sa_sigaction = sigIllCheckHandler;
+    sa.sa_flags = SA_SIGINFO;
+    auto signal = SIGILL;
+    if (sigemptyset(&sa.sa_mask) != 0
+        || sigaddset(&sa.sa_mask, signal) != 0
+        || sigaction(signal, &sa, &sa_old) != 0)
+    {
+        std::cerr << "Can not set signal handler\n";
+        exit(1);
+    }
+
+    volatile InstructionFail fail = InstructionFail::NONE;
+
+    if (sigsetjmp(jmpbuf, 1))
+    {
+        std::cerr << "Instruction check fail. There is no " << instructionFailToString(fail) << " instruction set\n";
+        exit(1);
+    }
+
+    ::checkRequiredInstructions(fail);
+
+    if (sigaction(signal, &sa_old, nullptr))
+    {
+        std::cerr << "Can not set signal handler\n";
+        exit(1);
+    }
 }
 
 
@@ -889,16 +1023,15 @@ void BaseDaemon::initialize(Application & self)
     reloadConfiguration();
 
     /// This must be done before creation of any files (including logs).
+    mode_t umask_num = 0027;
     if (config().has("umask"))
     {
         std::string umask_str = config().getString("umask");
-        mode_t umask_num = 0;
         std::stringstream stream;
         stream << umask_str;
         stream >> std::oct >> umask_num;
-
-        umask(umask_num);
     }
+    umask(umask_num);
 
     DB::ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 
@@ -910,15 +1043,10 @@ void BaseDaemon::initialize(Application & self)
         /// 1 GiB by default. If more - it writes to disk too long.
         rlim.rlim_cur = config().getUInt64("core_dump.size_limit", 1024 * 1024 * 1024);
 
-        if (setrlimit(RLIMIT_CORE, &rlim))
+        if (rlim.rlim_cur && setrlimit(RLIMIT_CORE, &rlim))
         {
-            std::string message = "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur);
-        #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(SANITIZER) && !defined(__APPLE__)
-            throw Poco::Exception(message);
-        #else
             /// It doesn't work under address/thread sanitizer. http://lists.llvm.org/pipermail/llvm-bugs/2013-April/027880.html
-            std::cerr << message << std::endl;
-        #endif
+            std::cerr << "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur) << std::endl;
         }
     }
 
@@ -1000,8 +1128,6 @@ void BaseDaemon::initialize(Application & self)
     }
 
     initializeTerminationAndSignalProcessing();
-
-    DB::CurrentThread::get();   /// TODO Why do we need this?
     logRevision();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
