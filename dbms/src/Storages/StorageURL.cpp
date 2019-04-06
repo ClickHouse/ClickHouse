@@ -173,7 +173,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()));
+        ConnectionTimeouts::getHTTPTimeouts(context));
 
 
     auto column_defaults = getColumns().getDefaults();
@@ -187,7 +187,7 @@ void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
+        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
 }
 
 void registerStorageURL(StorageFactory & factory)

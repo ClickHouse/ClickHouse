@@ -465,6 +465,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
+    /// Must be called with locked lockStructureForShare().
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
     /// After the call to dropAllData() no method can be called.
@@ -533,13 +534,9 @@ public:
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
-    /// Returns the size of partition in bytes.
-    size_t getPartitionSize(const std::string & partition_id) const;
-
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        std::lock_guard lock{data_parts_mutex};
-
+        auto lock = lockParts();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
@@ -547,14 +544,14 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
     ColumnSizeByName getColumnSizes() const
     {
-        std::lock_guard lock{data_parts_mutex};
+        auto lock = lockParts();
         return column_sizes;
     }
 
     /// Calculates column sizes in compressed form for the current state of data_parts.
     void recalculateColumnSizes()
     {
-        std::lock_guard lock{data_parts_mutex};
+        auto lock = lockParts();
         calculateColumnSizesImpl();
     }
 
