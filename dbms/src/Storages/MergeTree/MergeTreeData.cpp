@@ -639,8 +639,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     Poco::DirectoryIterator end;
     for (size_t i = 0; i != full_paths.size(); ++i)
     {
-        auto&& full_path = full_paths[i];
-        for (Poco::DirectoryIterator it(full_path); it != end; ++it)
+        for (Poco::DirectoryIterator it(full_paths[i]); it != end; ++it)
         {
             /// Skip temporary directories.
             if (startsWith(it.name(), "tmp"))
@@ -711,10 +710,8 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
                 LOG_ERROR(log, "Part " << full_paths[path_index] + file_name << " is broken. Looking for parts to replace it.");
 
-                for (auto part_file_name : part_file_names)
+                for (const auto & [contained_name, full_path_index] : part_file_names)
                 {
-                    const String & contained_name = part_file_name.first;
-                    const size_t full_path_index = part_file_name.second;
                     if (contained_name == file_name)
                         continue;
 
@@ -850,19 +847,19 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
 
     /// Delete temporary directories older than a day.
     Poco::DirectoryIterator end;
-    for (auto && full_path : full_paths)
+    for (auto && full_data_path : full_paths)
     {
-        for (Poco::DirectoryIterator it{full_path}; it != end; ++it)
+        for (Poco::DirectoryIterator it{full_data_path}; it != end; ++it)
         {
             if (startsWith(it.name(), "tmp_"))
             {
-                Poco::File tmp_dir(full_path + it.name());
+                Poco::File tmp_dir(full_data_path + it.name());
 
                 try
                 {
                     if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline))
                     {
-                        LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
+                        LOG_WARNING(log, "Removing temporary directory " << full_data_path << it.name());
                         Poco::File(full_path + it.name()).remove(true);
                     }
                 }
@@ -997,9 +994,9 @@ void MergeTreeData::rename(const String & new_path, const String & new_table_nam
     auto new_file_table_name = escapeForFileName(new_table_name);
 
     auto full_paths = getFullPaths();
-    for (const auto & full_path : full_paths)
+    for (const auto & full_data_path : full_paths)
     {
-        auto new_full_path = full_path.substr(0, full_path.size() - old_file_table_name.size() - 1) + new_file_table_name + '/';
+        auto new_full_path = full_data_path.substr(0, full_data_path.size() - old_file_table_name.size() - 1) + new_file_table_name + '/';
         if (Poco::File{new_full_path}.exists())
             throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
     }
@@ -1012,8 +1009,11 @@ void MergeTreeData::rename(const String & new_path, const String & new_table_nam
     schema.data_path_rename(new_path, new_file_table_name, old_file_table_name);
 
     /// If default path doesn't store data
-    if (Poco::File(full_path).exists())
+    if (!Poco::File(new_full_path).exists())
+    {
+        std::cerr << "default path doesn't store data" << std::endl;
         Poco::File(full_path).renameTo(new_full_path);
+    }
 
     global_context.dropCaches();
     full_path = new_full_path;
@@ -1036,8 +1036,8 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
-    for (auto && full_path : getFullPaths())
-        Poco::File(full_path).remove(true);
+    for (auto && full_data_path : getFullPaths())
+        Poco::File(full_data_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
 }
@@ -1412,7 +1412,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         exception_message
             << ") need to be "
             << (forbidden_because_of_modify ? "modified" : "removed")
-            << " in part " << part->name << " of table at " << part->path << ". Aborting just in case."
+            << " in part " << part->name << " of table at " << part->full_path << ". Aborting just in case."
             << " If it is not an error, you could increase merge_tree/"
             << (forbidden_because_of_modify ? "max_files_to_modify_in_alter_columns" : "max_files_to_remove_in_alter_columns")
             << " parameter in configuration file (current value: "
@@ -1452,7 +1452,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
         ///@TODO_IGR ASK Why dont we use part->relative_path?
         MergedColumnOnlyOutputStream out(
-            *this, in.getHeader(), part->path + part->name + '/', true /* sync */, compression_codec, true /* skip_offsets */, unused_written_offsets);
+            *this, in.getHeader(), part->getFullPath(), true /* sync */, compression_codec, true /* skip_offsets */, unused_written_offsets);
 
         in.readPrefix();
         out.writePrefix();
@@ -1478,7 +1478,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     if (!part->checksums.empty())
     {
         transaction->new_checksums = new_checksums;
-        WriteBufferFromFile checksums_file(part->path + part->name + "/checksums.txt.tmp", 4096);
+        WriteBufferFromFile checksums_file(part->getFullPath() + "checksums.txt.tmp", 4096);
         new_checksums.write(checksums_file);
         transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
     }
@@ -1486,7 +1486,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// Write the new column list to the temporary file.
     {
         transaction->new_columns = new_columns.filter(part->columns.getNames());
-        WriteBufferFromFile columns_file(part->path + part->name + "/columns.txt.tmp", 4096);
+        WriteBufferFromFile columns_file(part->getFullPath() + "columns.txt.tmp", 4096);
         transaction->new_columns.writeText(columns_file);
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
     }
@@ -1507,7 +1507,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
     {
         std::unique_lock<std::shared_mutex> lock(data_part->columns_lock);
 
-        String path = data_part->path + data_part->name + "/";
+        String path = data_part->getFullPath();
 
         /// NOTE: checking that a file exists before renaming or deleting it
         /// is justified by the fact that, when converting an ordinary column
@@ -2418,7 +2418,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 
 DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size) const
 {
-    std::cerr << "Exp size " << expected_size << std::endl;
+//    std::cerr << "Exp size " << expected_size << std::endl;
     constexpr UInt64 SIZE_1MB = 1ull << 20; ///@TODO_IGR ASK Is it OK?
     constexpr UInt64 MAGIC_CONST = 1;
 

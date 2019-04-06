@@ -144,7 +144,6 @@ void Schema::Volume::data_path_rename(const String & new_default_path, const Str
         auto old_path = disk->getPath();
         if (disk->getName() == "default")
         {
-
             disk->SetPath(new_default_path + new_data_dir_name + '/');
             Poco::File(old_path).renameTo(new_default_path + new_data_dir_name + '/');
         }

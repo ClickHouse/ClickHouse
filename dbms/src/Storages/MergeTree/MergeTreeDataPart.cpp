@@ -138,7 +138,7 @@ void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
 MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String& path_, const String & name_)
     ///@TODO_IGR DO check is fromPartName need to use path
-    : storage(storage_), path(path_), name(name_), info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
+    : storage(storage_), full_path(path_), name(name_), info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
 {
 }
 
@@ -234,7 +234,7 @@ String MergeTreeDataPart::getFullPath() const
     if (relative_path.empty())
         throw Exception("Part relative_path cannot be empty. This is bug.", ErrorCodes::LOGICAL_ERROR);
 
-    return path + relative_path + "/";
+    return full_path + relative_path + "/";
 }
 
 String MergeTreeDataPart::getNameWithPrefix() const
@@ -356,8 +356,8 @@ void MergeTreeDataPart::remove() const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
-    String from = path + relative_path;
-    String to = path + "delete_tmp_" + name;
+    String from = full_path + relative_path;
+    String to = full_path + "delete_tmp_" + name;
 
     Poco::File from_dir{from};
     Poco::File to_dir{to};
@@ -397,7 +397,7 @@ void MergeTreeDataPart::remove() const
 void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
 {
     String from = getFullPath();
-    String to = path + new_relative_path + "/";
+    String to = full_path + new_relative_path + "/";
 
     Poco::File from_file(from);
     if (!from_file.exists())
@@ -443,7 +443,7 @@ String MergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) 
     {
         res = dst_name();
 
-        if (!Poco::File(path + res).exists())
+        if (!Poco::File(full_path + res).exists())
             return res;
 
         LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
@@ -463,7 +463,7 @@ void MergeTreeDataPart::renameToDetached(const String & prefix) const
 void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
 {
     Poco::Path src(getFullPath());
-    Poco::Path dst(path + getRelativePathForDetachedPart(prefix));
+    Poco::Path dst(full_path + getRelativePathForDetachedPart(prefix));
     ///@TODO_IGR ASK What about another path?
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
     localBackup(src, dst, 0);
@@ -547,10 +547,10 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
     }
     else
     {
-        String full_path = getFullPath();
-        partition.load(storage, full_path);
+        String path = getFullPath();
+        partition.load(storage, path);
         if (!isEmpty())
-            minmax_idx.load(storage, full_path);
+            minmax_idx.load(storage, path);
     }
 
     String calculated_partition_id = partition.getID(storage.partition_key_sample);
