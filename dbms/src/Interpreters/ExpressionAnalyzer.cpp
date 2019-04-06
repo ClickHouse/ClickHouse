@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/IColumn.h>
 
@@ -406,7 +407,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
             getRootActions(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
-            types[i] = actions->getSampleBlock().getByName(name).type;
+            types[i] = recursiveRemoveLowCardinality(actions->getSampleBlock().getByName(name).type);
             aggregate.argument_names[i] = name;
         }
 
