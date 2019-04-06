@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -10,7 +11,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 

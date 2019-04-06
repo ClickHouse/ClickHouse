@@ -17,13 +17,13 @@ namespace ErrorCodes
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
-    const ASTOptimizeQuery & ast = typeid_cast<const ASTOptimizeQuery &>(*query_ptr);
+    const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
 
     if (!ast.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {ast.database});
 
     StoragePtr table = context.getTable(ast.database, ast.table);
-    auto table_lock = table->lockStructure(true);
+    auto table_lock = table->lockStructureForShare(true, context.getCurrentQueryId());
     table->optimize(query_ptr, ast.partition, ast.final, ast.deduplicate, context);
     return {};
 }

@@ -1,13 +1,14 @@
 #pragma once
 
-#include <set>
-#include <memory>
-#include <ostream>
-#include <algorithm>
-
 #include <Core/Types.h>
-#include <Common/Exception.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
+#include <Common/Exception.h>
+#include <Common/TypePromotion.h>
+
+#include <algorithm>
+#include <ostream>
+#include <set>
 
 
 class SipHash;
@@ -26,16 +27,12 @@ namespace ErrorCodes
 
 using IdentifierNameSet = std::set<String>;
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-using ASTs = std::vector<ASTPtr>;
-
 class WriteBuffer;
 
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public std::enable_shared_from_this<IAST>
+class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
 {
 public:
     ASTs children;
@@ -211,7 +208,9 @@ private:
 };
 
 
-/// Surrounds an identifier by back quotes if it is necessary.
+/// Quote the identifier with backquotes, if required.
 String backQuoteIfNeed(const String & x);
+/// Quote the identifier with backquotes.
+String backQuote(const String & x);
 
 }

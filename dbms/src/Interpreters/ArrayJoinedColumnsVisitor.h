@@ -10,6 +10,7 @@
 
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Aliases.h>
 
 
@@ -27,6 +28,8 @@ namespace ErrorCodes
 class ArrayJoinedColumnsMatcher
 {
 public:
+    using Visitor = InDepthNodeVisitor<ArrayJoinedColumnsMatcher, true>;
+
     struct Data
     {
         const Aliases & aliases;
@@ -35,31 +38,27 @@ public:
         NameToNameMap & array_join_result_to_source;
     };
 
-    static constexpr const char * label = "ArrayJoinedColumns";
-
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child)
     {
-        if (typeid_cast<ASTTablesInSelectQuery *>(node.get()))
+        if (node->as<ASTTablesInSelectQuery>())
             return false;
 
-        if (typeid_cast<ASTSubquery *>(child.get()) ||
-            typeid_cast<ASTSelectQuery *>(child.get()))
+        if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
             return false;
 
         return true;
     }
 
-    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    static void visit(ASTPtr & ast, Data & data)
     {
-        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+        if (const auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
-        if (auto * t = typeid_cast<ASTSelectQuery *>(ast.get()))
-            return visit(*t, ast, data);
-        return {};
+        if (const auto * t = ast->as<ASTSelectQuery>())
+            visit(*t, ast, data);
     }
 
 private:
-    static std::vector<ASTPtr *> visit(const ASTSelectQuery & node, ASTPtr &, Data & data)
+    static void visit(const ASTSelectQuery & node, ASTPtr &, Data & data)
     {
         ASTPtr array_join_expression_list = node.array_join_expression_list();
         if (!array_join_expression_list)
@@ -73,7 +72,7 @@ private:
             const String nested_table_name = ast->getColumnName();
             const String nested_table_alias = ast->getAliasOrColumnName();
 
-            if (nested_table_alias == nested_table_name && !isIdentifier(ast))
+            if (nested_table_alias == nested_table_name && !ast->as<ASTIdentifier>())
                 throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name, ErrorCodes::ALIAS_REQUIRED);
 
             if (data.array_join_alias_to_name.count(nested_table_alias) || data.aliases.count(nested_table_alias))
@@ -86,7 +85,8 @@ private:
                 out.emplace_back(&child2);
         }
 
-        return out;
+        for (ASTPtr * add_node : out)
+            Visitor(data).visit(*add_node);
     }
 
     static void visit(const ASTIdentifier & node, ASTPtr &, Data & data)
@@ -95,7 +95,7 @@ private:
         NameToNameMap & array_join_alias_to_name = data.array_join_alias_to_name;
         NameToNameMap & array_join_result_to_source = data.array_join_result_to_source;
 
-        if (!getColumnIdentifierName(node))
+        if (!IdentifierSemantic::getColumnName(node))
             return;
 
         auto splitted = Nested::splitName(node.name);  /// ParsedParams, Key1
@@ -129,6 +129,6 @@ private:
     }
 };
 
-using ArrayJoinedColumnsVisitor = InDepthNodeVisitor<ArrayJoinedColumnsMatcher, true>;
+using ArrayJoinedColumnsVisitor = ArrayJoinedColumnsMatcher::Visitor;
 
 }

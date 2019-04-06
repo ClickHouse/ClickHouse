@@ -1,4 +1,4 @@
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__)
 
 #include <IO/WriteBufferAIO.h>
 #include <Common/ProfileEvents.h>
@@ -110,11 +110,19 @@ void WriteBufferAIO::nextImpl()
     /// Create a request for asynchronous write.
     prepare();
 
+#if defined(__FreeBSD__)
+    request.aio.aio_lio_opcode = LIO_WRITE;
+    request.aio.aio_fildes = fd;
+    request.aio.aio_buf = reinterpret_cast<volatile void *>(buffer_begin);
+    request.aio.aio_nbytes = region_aligned_size;
+    request.aio.aio_offset = region_aligned_begin;
+#else
     request.aio_lio_opcode = IOCB_CMD_PWRITE;
     request.aio_fildes = fd;
     request.aio_buf = reinterpret_cast<UInt64>(buffer_begin);
     request.aio_nbytes = region_aligned_size;
     request.aio_offset = region_aligned_begin;
+#endif
 
     /// Send the request.
     while (io_submit(aio_context.ctx, 1, &request_ptr) < 0)
@@ -193,7 +201,11 @@ bool WriteBufferAIO::waitForAIOCompletion()
     }
 
     is_pending_write = false;
+#if defined(__FreeBSD__)
+    bytes_written = aio_return(reinterpret_cast<struct aiocb *>(event.udata));
+#else
     bytes_written = event.res;
+#endif
 
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWrite);
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
@@ -396,7 +408,13 @@ void WriteBufferAIO::finalize()
 
     bytes_written -= truncation_count;
 
-    off_t pos_offset = bytes_written - (pos_in_file - request.aio_offset);
+#if defined(__FreeBSD__)
+    off_t aio_offset = request.aio.aio_offset;
+#else
+    off_t aio_offset = request.aio_offset;
+#endif
+    off_t pos_offset = bytes_written - (pos_in_file - aio_offset);
+
     if (pos_in_file > (std::numeric_limits<off_t>::max() - pos_offset))
         throw Exception("An overflow occurred during file operation", ErrorCodes::LOGICAL_ERROR);
     pos_in_file += pos_offset;

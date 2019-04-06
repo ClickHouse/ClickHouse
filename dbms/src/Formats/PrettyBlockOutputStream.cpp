@@ -58,7 +58,7 @@ void PrettyBlockOutputStream::calculateWidths(
         {
             {
                 WriteBufferFromString out(serialized_value);
-                elem.type->serializeText(*elem.column, j, out, format_settings);
+                elem.type->serializeAsText(*elem.column, j, out, format_settings);
             }
 
             widths[i][j] = std::min<UInt64>(format_settings.pretty.max_column_pad_width,
@@ -206,11 +206,11 @@ void PrettyBlockOutputStream::writeValueWithPadding(const ColumnWithTypeAndName 
     if (elem.type->shouldAlignRightInPrettyFormats())
     {
         writePadding();
-        elem.type->serializeText(*elem.column.get(), row_num, ostr, format_settings);
+        elem.type->serializeAsText(*elem.column.get(), row_num, ostr, format_settings);
     }
     else
     {
-        elem.type->serializeText(*elem.column.get(), row_num, ostr, format_settings);
+        elem.type->serializeAsText(*elem.column.get(), row_num, ostr, format_settings);
         writePadding();
     }
 }

@@ -44,13 +44,13 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <IO/WriteHelpers.h>
 #    include <common/LocalDateTime.h>
 #    include <common/logger_useful.h>
-#    include "MySQLBlockInputStream.h"
+#    include <Formats/MySQLBlockInputStream.h>
 #    include "readInvalidateQuery.h"
 
 
 namespace DB
 {
-static const size_t max_block_size = 8192;
+static const UInt64 max_block_size = 8192;
 
 
 MySQLDictionarySource::MySQLDictionarySource(

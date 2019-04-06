@@ -21,10 +21,10 @@ static void replaceConstFunction(IAST & node, const Context & context, const Nam
     for (size_t i = 0; i < node.children.size(); ++i)
     {
         auto child = node.children[i];
-        if (ASTExpressionList * exp_list = typeid_cast<ASTExpressionList *>(&*child))
+        if (auto * exp_list = child->as<ASTExpressionList>())
             replaceConstFunction(*exp_list, context, all_columns);
 
-        if (ASTFunction * function = typeid_cast<ASTFunction *>(&*child))
+        if (auto * function = child->as<ASTFunction>())
         {
             NamesAndTypesList source_columns = all_columns;
             ASTPtr query = function->ptr();
@@ -42,7 +42,7 @@ static void replaceConstFunction(IAST & node, const Context & context, const Nam
 
 static bool isCompatible(const IAST & node)
 {
-    if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&node))
+    if (const auto * function = node.as<ASTFunction>())
     {
         String name = function->name;
         if (!(name == "and"
@@ -66,7 +66,7 @@ static bool isCompatible(const IAST & node)
         return true;
     }
 
-    if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(&node))
+    if (const auto * literal = node.as<ASTLiteral>())
     {
         /// Foreign databases often have no support for Array and Tuple literals.
         if (literal->value.getType() == Field::Types::Array
@@ -76,7 +76,7 @@ static bool isCompatible(const IAST & node)
         return true;
     }
 
-    if (isIdentifier(&node))
+    if (node.as<ASTIdentifier>())
         return true;
 
     return false;
@@ -112,7 +112,7 @@ String transformQueryForExternalDatabase(
       * copy only compatible parts of it.
       */
 
-    ASTPtr & original_where = typeid_cast<ASTSelectQuery &>(*clone_query).where_expression;
+    auto & original_where = clone_query->as<ASTSelectQuery &>().where_expression;
     if (original_where)
     {
         replaceConstFunction(*original_where, context, available_columns);
@@ -120,7 +120,7 @@ String transformQueryForExternalDatabase(
         {
             select->where_expression = original_where;
         }
-        else if (const ASTFunction * function = typeid_cast<const ASTFunction *>(original_where.get()))
+        else if (const auto * function = original_where->as<ASTFunction>())
         {
             if (function->name == "and")
             {

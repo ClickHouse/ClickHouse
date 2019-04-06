@@ -1,9 +1,5 @@
 #pragma once
 
-#include <Common/config.h>
-
-#if USE_RDKAFKA
-
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -31,7 +27,7 @@ friend class KafkaBlockOutputStream;
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const { return database_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     void startup() override;
     void shutdown() override;
@@ -68,7 +64,7 @@ private:
     /// Total number of consumers
     size_t num_consumers;
     /// Maximum block size for insertion into this table
-    size_t max_block_size;
+    UInt64 max_block_size;
     /// Number of actually created consumers.
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
@@ -103,9 +99,7 @@ protected:
         const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
         const String & format_name_, char row_delimiter_, const String & schema_name_,
-        size_t num_consumers_, size_t max_block_size_, size_t skip_broken);
+        size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
 };
 
 }
-
-#endif

@@ -1,17 +1,14 @@
+#include "Exception.h"
+
 #include <string.h>
 #include <cxxabi.h>
-
 #include <Poco/String.h>
-
 #include <common/logger_useful.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-
-#include <Common/Exception.h>
 #include <common/demangle.h>
-
+#include <Common/config_version.h>
 
 namespace DB
 {
@@ -24,6 +21,10 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
 }
 
+const char * getVersion()
+{
+    return VERSION_STRING;
+}
 
 std::string errnoToString(int code, int e)
 {
@@ -38,10 +39,10 @@ std::string errnoToString(int code, int e)
 #endif
     {
         std::string tmp = std::to_string(code);
-        const char * code = tmp.c_str();
+        const char * code_str = tmp.c_str();
         const char * unknown_message = "Unknown error ";
         strcpy(buf, unknown_message);
-        strcpy(buf + strlen(unknown_message), code);
+        strcpy(buf + strlen(unknown_message), code_str);
     }
     return "errno: " + toString(e) + ", strerror: " + std::string(buf);
 #else
@@ -81,14 +82,14 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
     }
     catch (const Exception & e)
     {
-        stream << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace);
+        stream << "(version " << getVersion() << ") " << getExceptionMessage(e, with_stacktrace, check_embedded_stacktrace);
     }
     catch (const Poco::Exception & e)
     {
         try
         {
-            stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-                << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what();
+            stream << "(version " << getVersion() << ") " << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
+                << ", e.displayText() = " << e.displayText();
         }
         catch (...) {}
     }
@@ -102,7 +103,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what();
+            stream << "(version " << getVersion() << ") " << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what();
         }
         catch (...) {}
     }
@@ -116,7 +117,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
             if (status)
                 name += " (demangling status: " + toString(status) + ")";
 
-            stream << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name;
+            stream << "(version " << getVersion() << ") " << "Unknown exception. Code: " << ErrorCodes::UNKNOWN_EXCEPTION << ", type: " << name;
         }
         catch (...) {}
     }
@@ -202,7 +203,7 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
             }
         }
 
-        stream << "Code: " << e.code() << ", e.displayText() = " << text << ", e.what() = " << e.what();
+        stream << "Code: " << e.code() << ", e.displayText() = " << text;
 
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace:\n\n" << e.getStackTrace().toString();

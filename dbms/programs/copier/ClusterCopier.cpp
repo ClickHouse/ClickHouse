@@ -18,7 +18,7 @@
 #include <pcg_random.hpp>
 
 #include <common/logger_useful.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <daemon/OwnPatternFormatter.h>
 
 #include <Common/Exception.h>
@@ -33,6 +33,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/ThreadStatus.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -67,7 +68,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
-#include <daemon/OwnPatternFormatter.h>
 
 
 namespace DB
@@ -483,7 +483,7 @@ String DB::TaskShard::getHostNameExample() const
 
 static bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
-    const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
+    const auto & storage = storage_ast->as<ASTStorage &>();
     return storage.partition_by || storage.order_by || storage.sample_by;
 }
 
@@ -491,8 +491,8 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
 {
     String storage_str = queryToString(storage_ast);
 
-    const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
-    const ASTFunction & engine = typeid_cast<const ASTFunction &>(*storage.engine);
+    const auto & storage = storage_ast->as<ASTStorage &>();
+    const auto & engine = storage.engine->as<ASTFunction &>();
 
     if (!endsWith(engine.name, "MergeTree"))
     {
@@ -501,7 +501,7 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     }
 
     ASTPtr arguments_ast = engine.arguments->clone();
-    ASTs & arguments = typeid_cast<ASTExpressionList &>(*arguments_ast).children;
+    ASTs & arguments = arguments_ast->children;
 
     if (isExtendedDefinitionStorage(storage_ast))
     {
@@ -817,7 +817,7 @@ public:
 
             try
             {
-                type->deserializeTextQuoted(*column_dummy, rb, FormatSettings());
+                type->deserializeAsTextQuoted(*column_dummy, rb, FormatSettings());
             }
             catch (Exception & e)
             {
@@ -1179,12 +1179,12 @@ protected:
     /// Removes MATERIALIZED and ALIAS columns from create table query
     static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast)
     {
-        const ASTs & column_asts = typeid_cast<ASTCreateQuery &>(*query_ast).columns->children;
+        const ASTs & column_asts = query_ast->as<ASTCreateQuery &>().columns_list->columns->children;
         auto new_columns = std::make_shared<ASTExpressionList>();
 
         for (const ASTPtr & column_ast : column_asts)
         {
-            const ASTColumnDeclaration & column = typeid_cast<const ASTColumnDeclaration &>(*column_ast);
+            const auto & column = column_ast->as<ASTColumnDeclaration &>();
 
             if (!column.default_specifier.empty())
             {
@@ -1197,9 +1197,13 @@ protected:
         }
 
         ASTPtr new_query_ast = query_ast->clone();
-        ASTCreateQuery & new_query = typeid_cast<ASTCreateQuery &>(*new_query_ast);
-        new_query.columns = new_columns.get();
-        new_query.children.at(0) = std::move(new_columns);
+        auto & new_query = new_query_ast->as<ASTCreateQuery &>();
+
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        new_columns_list->set(new_columns_list->columns, new_columns);
+        new_columns_list->set(new_columns_list->indices, query_ast->as<ASTCreateQuery>()->columns_list->indices->clone());
+
+        new_query.replace(new_query.columns_list, new_columns_list);
 
         return new_query_ast;
     }
@@ -1207,7 +1211,7 @@ protected:
     /// Replaces ENGINE and table name in a create query
     std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
     {
-        ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*create_query_ast);
+        const auto & create = create_query_ast->as<ASTCreateQuery &>();
         auto res = std::make_shared<ASTCreateQuery>(create);
 
         if (create.storage == nullptr || new_storage_ast == nullptr)
@@ -1217,7 +1221,7 @@ protected:
         res->table = new_table.second;
 
         res->children.clear();
-        res->set(res->columns, create.columns->clone());
+        res->set(res->columns_list, create.columns_list->clone());
         res->set(res->storage, new_storage_ast->clone());
 
         return res;
@@ -1641,7 +1645,7 @@ protected:
         /// Try create table (if not exists) on each shard
         {
             auto create_query_push_ast = rewriteCreateQueryStorage(task_shard.current_pull_table_create_query, task_table.table_push, task_table.engine_push_ast);
-            typeid_cast<ASTCreateQuery &>(*create_query_push_ast).if_not_exists = true;
+            create_query_push_ast->as<ASTCreateQuery &>().if_not_exists = true;
             String query = queryToString(create_query_push_ast);
 
             LOG_DEBUG(log, "Create destination tables. Query: " << query);
@@ -1774,7 +1778,7 @@ protected:
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast)
     {
-        auto & create = typeid_cast<ASTCreateQuery &>(*create_ast);
+        const auto & create = create_ast->as<ASTCreateQuery &>();
         dropLocalTableIfExists({create.database, create.table});
 
         InterpreterCreateQuery interpreter(create_ast, context);
@@ -1877,7 +1881,7 @@ protected:
             for (size_t i = 0; i < column.column->size(); ++i)
             {
                 WriteBufferFromOwnString wb;
-                column.type->serializeTextQuoted(*column.column, i, wb, FormatSettings());
+                column.type->serializeAsTextQuoted(*column.column, i, wb, FormatSettings());
                 res.emplace(wb.str());
             }
         }
@@ -2117,6 +2121,7 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 void ClusterCopierApp::mainImpl()
 {
     StatusFile status_file(process_path + "/status");
+    ThreadStatus thread_status;
 
     auto log = &logger();
     LOG_INFO(log, "Starting clickhouse-copier ("

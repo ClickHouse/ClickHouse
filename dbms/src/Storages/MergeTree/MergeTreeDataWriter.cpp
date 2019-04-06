@@ -1,9 +1,10 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
-#include <Common/escapeForFileName.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/Exception.h>
 #include <Interpreters/AggregationCommon.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/File.h>
 
 
@@ -22,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_PARTS;
 }
 
 namespace
@@ -30,7 +32,8 @@ namespace
 void buildScatterSelector(
         const ColumnRawPtrs & columns,
         PODArray<size_t> & partition_num_to_first_row,
-        IColumn::Selector & selector)
+        IColumn::Selector & selector,
+        size_t max_parts)
 {
     /// Use generic hashed variant since partitioning is unlikely to be a bottleneck.
     using Data = HashMap<UInt128, size_t, UInt128TrivialHash>;
@@ -47,8 +50,11 @@ void buildScatterSelector(
 
         if (inserted)
         {
+            if (max_parts && partitions_count >= max_parts)
+                throw Exception("Too many partitions for single INSERT block (more than " + toString(max_parts) + "). The limit is controlled by 'max_partitions_per_insert_block' setting. Large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).", ErrorCodes::TOO_MANY_PARTS);
+
             partition_num_to_first_row.push_back(i);
-            it->second = partitions_count;
+            it->getSecond() = partitions_count;
 
             ++partitions_count;
 
@@ -61,13 +67,13 @@ void buildScatterSelector(
         }
 
         if (partitions_count > 1)
-            selector[i] = it->second;
+            selector[i] = it->getSecond();
     }
 }
 
 }
 
-BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block)
+BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block, size_t max_parts)
 {
     BlocksWithPartition result;
     if (!block || !block.rows())
@@ -92,7 +98,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partition_num_to_first_row, selector);
+    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts);
 
     size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);
@@ -141,7 +147,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
 
-    MergeTreePartInfo new_part_info(partition.getID(data), temp_index, temp_index, 0);
+    MergeTreePartInfo new_part_info(partition.getID(data.partition_key_sample), temp_index, temp_index, 0);
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -180,8 +186,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     dir.createDirectories();
 
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey())
-        data.sorting_key_expr->execute(block);
+    if (data.hasSortingKey() || data.hasSkipIndices())
+        data.sorting_key_and_skip_indices_expr->execute(block);
 
     Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;

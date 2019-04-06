@@ -15,7 +15,7 @@
 
 namespace DB
 {
-static const size_t max_block_size = 8192;
+static const UInt64 max_block_size = 8192;
 
 
 HTTPDictionarySource::HTTPDictionarySource(
@@ -32,7 +32,7 @@ HTTPDictionarySource::HTTPDictionarySource(
     , format{config.getString(config_prefix + ".format")}
     , sample_block{sample_block}
     , context(context)
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
 }
 
@@ -45,7 +45,7 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     , format{other.format}
     , sample_block{other.sample_block}
     , context(other.context)
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
 }
 
@@ -157,7 +157,8 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr {
+                                 Context & context) -> DictionarySourcePtr
+    {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 

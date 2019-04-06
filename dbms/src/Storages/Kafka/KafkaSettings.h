@@ -1,11 +1,9 @@
 #pragma once
-#include <Common/config.h>
-#if USE_RDKAFKA
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 
 
 namespace DB
@@ -42,4 +40,3 @@ public:
 };
 
 }
-#endif

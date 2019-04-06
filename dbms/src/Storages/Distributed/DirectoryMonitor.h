@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/StorageDistributed.h>
+#include <Common/ThreadPool.h>
 
 #include <atomic>
 #include <thread>
@@ -55,7 +56,7 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     Logger * log;
-    std::thread thread {&StorageDistributedDirectoryMonitor::run, this};
+    ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
 };
 
 }

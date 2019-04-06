@@ -61,7 +61,7 @@ ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `c
 
 The default database.
 
-To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases) query.
+To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#show-databases) query.
 
 **Example**
 
@@ -130,7 +130,7 @@ The path to the directory with the schemes for the input data, such as schemas f
 ```
 
 
-## graphite
+## graphite {#server_settings-graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -196,7 +196,7 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL](#openssl) must be configured.
+If `https_port` is specified, [openSSL](#server_settings-openssl) must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
@@ -262,16 +262,16 @@ Useful for breaking away from a specific network interface.
 
 ## keep_alive_timeout
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
 
 **Example**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 
-## listen_host
+## listen_host {#server_settings-listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -283,7 +283,7 @@ Examples:
 ```
 
 
-## logger
+## logger {#server_settings-logger}
 
 Logging settings.
 
@@ -326,8 +326,7 @@ Keys:
 - user_syslog — Required setting if you want to write to the syslog.
 - address — The host[:порт] of syslogd. If omitted, the local daemon is used.
 - hostname — Optional. The name of the host that logs are sent from.
-- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility)
-in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
+- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
 Default value: ``LOG_USER`` if ``address`` is specified, ``LOG_DAEMON otherwise.``
 - format – Message format. Possible values: ``bsd`` and ``syslog.``
 
@@ -418,7 +417,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree {#server_settings-merge_tree}
 
-Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md).
+Fine tuning for tables in the [MergeTree](../../operations/table_engines/mergetree.md).
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -431,7 +430,7 @@ For more information, see the MergeTreeSettings.h header file.
 ```
 
 
-## openSSL
+## openSSL {#server_settings-openssl}
 
 SSL client/server configuration.
 
@@ -600,7 +599,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 ```
 
 
-## tcp_port
+## tcp_port {#server_settings-tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 
@@ -610,6 +609,19 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
+## tcp_port_secure {#server_settings-tcp_port_secure}
+
+TCP port for secure communication with clients. Use it with [OpenSSL](#server_settings-openssl) settings.
+
+**Possible values**
+
+Positive integer.
+
+**Default value**
+
+```xml
+<tcp_port_secure>9440</tcp_port_secure>
+```
 
 ## tmp_path
 
@@ -694,5 +706,33 @@ For more information, see the section "[Replication](../../operations/table_engi
     </node>
 </zookeeper>
 ```
+
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+
+Storage method of the data parts headers in ZooKeeper.
+
+This setting applies only to the `MergeTree`-family and it can be specified:
+
+- Globally in the [merge_tree](#server_settings-merge_tree) section of the `config.xml` file.
+
+    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior with the setting change.
+
+- For each individual table.
+
+    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). After creating a table you can't change its behavior even with the global setting.
+
+**Possible values**
+
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
+
+If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_engines/replication.md) tables store the headers of the data parts compactly using single `znode`. If the table contains many columns, this way of storage significantly reduces the volume of the data stored in Zookeeper.
+
+!!! attention
+    Ones applying the `use_minimalistic_part_header_in_zookeeper = 1` you can't degrade the ClickHouse server to the version that doesn't support this setting. Be careful when upgrading ClickHouse on servers of a cluster. Don't upgrade all the servers at ones. It is safer to test the new versions of ClickHouse in a test environment, or at least at some servers of a cluster.
+
+    The data parts headers already stored with this setting also can't be restored to previous (non-compact) representation.
+
+**Default value:** 0.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

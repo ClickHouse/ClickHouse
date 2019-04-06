@@ -75,30 +75,22 @@ void NO_INLINE Set::insertFromBlockImplCase(
     const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
-    ConstNullMapPtr null_map,
-    ColumnUInt8::Container * out_filter)
+    [[maybe_unused]] ConstNullMapPtr null_map,
+    [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
-    typename Method::State state;
-    state.init(key_columns);
+    typename Method::State state(key_columns, key_sizes, nullptr);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
     {
-        if (has_null_map && (*null_map)[i])
-            continue;
+        if constexpr (has_null_map)
+            if ((*null_map)[i])
+                continue;
 
-        /// Obtain a key to insert to the set
-        typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
-        typename Method::Data::iterator it;
-        bool inserted;
-        method.data.emplace(key, it, inserted);
-
-        if (inserted)
-            method.onNewKey(*it, keys_size, variants.string_pool);
-
-        if (build_filter)
-            (*out_filter)[i] = inserted;
+        if constexpr (build_filter)
+            (*out_filter)[i] = emplace_result.isInserted();
     }
 }
 
@@ -205,7 +197,7 @@ bool Set::insertFromBlock(const Block & block)
             if (set_elements[i]->empty())
                 set_elements[i] = filtered_column;
             else
-                set_elements[i]->assumeMutableRef().insertRangeFrom(*filtered_column, 0, filtered_column->size());
+                set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
         }
     }
 
@@ -213,13 +205,13 @@ bool Set::insertFromBlock(const Block & block)
 }
 
 
-static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)
+static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, const Context & context)
 {
-    if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(node.get()))
+    if (const auto * lit = node->as<ASTLiteral>())
     {
         return convertFieldToType(lit->value, type);
     }
-    else if (typeid_cast<ASTFunction *>(node.get()))
+    else if (node->as<ASTFunction>())
     {
         std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
         return convertFieldToType(value_raw.first, type, value_raw.second.get());
@@ -243,7 +235,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     DataTypePtr tuple_type;
     Row tuple_values;
-    ASTExpressionList & list = typeid_cast<ASTExpressionList &>(*node);
+    const auto & list = node->as<ASTExpressionList &>();
     for (auto & elem : list.children)
     {
         if (num_columns == 1)
@@ -253,7 +245,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
             if (!value.isNull())
                 columns[0]->insert(value);
         }
-        else if (ASTFunction * func = typeid_cast<ASTFunction *>(elem.get()))
+        else if (const auto * func = elem->as<ASTFunction>())
         {
             Field function_result;
             const TupleBackend * tuple = nullptr;
@@ -392,10 +384,10 @@ void NO_INLINE Set::executeImplCase(
     size_t rows,
     ConstNullMapPtr null_map) const
 {
-    typename Method::State state;
-    state.init(key_columns);
+    Arena pool;
+    typename Method::State state(key_columns, key_sizes, nullptr);
 
-    /// NOTE Optimization is not used for consecutive identical values.
+    /// NOTE Optimization is not used for consecutive identical strings.
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -404,9 +396,8 @@ void NO_INLINE Set::executeImplCase(
             vec_res[i] = negative;
         else
         {
-            /// Build the key
-            typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
-            vec_res[i] = negative ^ method.data.has(key);
+            auto find_result = state.findKey(method.data, i, pool);
+            vec_res[i] = negative ^ find_result.isFound();
         }
     }
 }

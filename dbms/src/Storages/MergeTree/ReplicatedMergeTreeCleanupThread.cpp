@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/setThreadName.h>
 #include <Poco/Timestamp.h>
 
 #include <random>
@@ -54,7 +53,12 @@ void ReplicatedMergeTreeCleanupThread::run()
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
     storage.clearOldPartsAndRemoveFromZK();
-    storage.data.clearOldTemporaryDirectories();
+
+    {
+        /// TODO: Implement tryLockStructureForShare.
+        auto lock = storage.lockStructureForShare(false, "");
+        storage.data.clearOldTemporaryDirectories();
+    }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
     ///  and two replicas will try to do cleanup simultaneously.
