@@ -143,6 +143,7 @@ namespace
 
         template <typename T>
         void insertNumberValue(IColumn & column, const as_record * record, const std::string & name) {
+            (void)name;
             switch(as_val_type(&(record->bins.entries[0].value))) {
                 case AS_INTEGER:
                     static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.integer.value);
@@ -150,14 +151,16 @@ namespace
                 case AS_DOUBLE:
                     static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.dbl.value);
                     break;
-                case AS_STRING:
+                /*case AS_STRING:
                     static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.string.value);
-                    break;
+                    break; NOBODY USE IT */
                 default:
+                    std::string type = "bad"; // toString(as_val_type(&(record->bins.entries[0].value))); // TODO:FIX_ME(glebx777)
                     throw Exception(
-                        "Type mismatch, expected a number, got type id = " + toString(record->bins.entries[0].value) + " for column " + name,
+                        "Type mismatch, expected a number, got type id = " + type + " for column " + name,
                         ErrorCodes::TYPE_MISMATCH);
             }
+
         }
 
         void insertValue(IColumn& column, const ValueType type, const as_val* value, const as_record * record, const std::string& name) {
