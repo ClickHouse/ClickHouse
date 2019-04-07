@@ -267,15 +267,6 @@ public:
         | CLIENT_DEPRECATE_EOF), character_set(63), status_flags(0)
     {
         auth_plugin_data.resize(SCRAMBLE_LENGTH);
-
-        auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-        std::default_random_engine generator(static_cast<unsigned int>(seed));
-
-        std::uniform_int_distribution<char> distribution(0);
-        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
-        {
-            auth_plugin_data[i] = distribution(generator);
-        }
     }
 
     String getPayload() const override

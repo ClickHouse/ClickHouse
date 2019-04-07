@@ -102,7 +102,7 @@ class ClickHouseCluster:
         self.with_hdfs = False
         self.with_mongo = False
 
-        self.docker_client = None  # type: docker.DockerClient
+        self.docker_client = None
         self.is_up = False
 
 
