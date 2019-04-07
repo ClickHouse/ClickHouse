@@ -58,7 +58,7 @@ If the string contains a set of bytes that is not UTF-8, then the behavior is un
 
 ## isValidUTF8
 
-Returns 1, if set of bytes is valid UTF-8 encoded, otherwise 0.
+Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
 ## reverse
 
