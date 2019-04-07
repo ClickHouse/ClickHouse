@@ -43,6 +43,7 @@ protected:
     ProfileCallback profile_callback;
     clockid_t clock_type;
 
+    /// Children implementation should be able to seek backwards
     virtual off_t doSeek(off_t off, int whence) = 0;
 };
 

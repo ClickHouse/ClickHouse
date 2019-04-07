@@ -178,7 +178,7 @@ include (cmake/use_libcxx.cmake)
 # This is intended for more control of what we are linking.
 
 set (DEFAULT_LIBS "")
-if (OS_LINUX AND NOT UNBUNDLED)
+if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
     # Note: this probably has no effect, but I'm not an expert in CMake.
     set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
     set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")

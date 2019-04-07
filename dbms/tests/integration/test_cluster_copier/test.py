@@ -168,6 +168,52 @@ class Task_test_block_size:
         ddl_check_query(instance, "DROP TABLE test_block_size ON CLUSTER cluster1")
 
 
+class Task_no_index:
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path="/clickhouse-copier/task_no_index"
+        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_no_index.xml'), 'r').read()
+        self.rows = 1000000
+
+
+    def start(self):
+        instance = cluster.instances['s0_0_0']
+        instance.query("create table ontime (Year UInt16, FlightDate String) ENGINE = Memory")
+        instance.query("insert into ontime values (2016, 'test6'), (2017, 'test7'), (2018, 'test8')")
+
+
+    def check(self):
+        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT Year FROM ontime22")) == TSV("2017\n")
+        instance = cluster.instances['s0_0_0']
+        instance.query("DROP TABLE ontime")
+        instance = cluster.instances['s1_1_0']
+        instance.query("DROP TABLE ontime22")
+
+
+class Task_no_arg:
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path="/clickhouse-copier/task_no_arg"
+        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_no_arg.xml'), 'r').read()
+        self.rows = 1000000
+
+
+    def start(self):
+        instance = cluster.instances['s0_0_0']
+        instance.query("create table copier_test1 (date Date, id UInt32) engine = MergeTree PARTITION BY date ORDER BY date SETTINGS index_granularity = 8192")
+        instance.query("insert into copier_test1 values ('2016-01-01', 10);")
+
+
+    def check(self):
+        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT date FROM copier_test1_1")) == TSV("2016-01-01\n")
+        instance = cluster.instances['s0_0_0']
+        instance.query("DROP TABLE copier_test1")
+        instance = cluster.instances['s1_1_0']
+        instance.query("DROP TABLE copier_test1_1")
+
+
 def execute_task(task, cmd_options):
     task.start()
 
@@ -229,6 +275,11 @@ def test_copy_month_to_week_partition_with_recovering(started_cluster):
 def test_block_size(started_cluster):
     execute_task(Task_test_block_size(started_cluster), [])
 
+def test_no_index(started_cluster):
+    execute_task(Task_no_index(started_cluster), [])
+
+def test_no_arg(started_cluster):
+    execute_task(Task_no_arg(started_cluster), [])
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

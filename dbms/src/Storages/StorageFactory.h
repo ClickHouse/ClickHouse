@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/NamePrompter.h>
 #include <Storages/IStorage.h>
 #include <ext/singleton.h>
 #include <unordered_map>
@@ -17,7 +18,7 @@ class ASTStorage;
   * In 'columns' Nested data structures must be flattened.
   * You should subsequently call IStorage::startup method to work with table.
   */
-class StorageFactory : public ext::singleton<StorageFactory>
+class StorageFactory : public ext::singleton<StorageFactory>, public IHints<1, StorageFactory>
 {
 public:
     struct Arguments
@@ -56,6 +57,14 @@ public:
     const auto & getAllStorages() const
     {
         return storages;
+    }
+
+    std::vector<String> getAllRegisteredNames() const override
+    {
+        std::vector<String> result;
+        auto getter = [](const auto & pair) { return pair.first; };
+        std::transform(storages.begin(), storages.end(), std::back_inserter(result), getter);
+        return result;
     }
 
 private:
