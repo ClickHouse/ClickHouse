@@ -56,6 +56,10 @@ It doesn't detect the language. So for Turkish the result might not be exactly c
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
+## isValidUTF8
+
+Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
+
 ## reverse
 
 Reverses the string (as a sequence of bytes).
