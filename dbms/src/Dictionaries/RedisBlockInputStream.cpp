@@ -31,6 +31,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int TYPE_MISMATCH;
+        extern const int LOGICAL_ERROR;
     }
 
 
@@ -182,11 +183,20 @@ namespace DB
 
     Block RedisBlockInputStream::readImpl()
     {
+        if (description.sample_block.rows() == 0)
+            all_read = true;
+
         if (all_read)
             return {};
 
         const size_t size = 2;
-        assert(size == description.sample_block.columns());
+        if (size != description.sample_block.columns()) {
+            throw Exception{"Unsupported number of columns for key-value storage: "
+                            + std::to_string(description.sample_block.columns())
+                            + " (expected: " + std::to_string(size) + ")",
+                            ErrorCodes::LOGICAL_ERROR};
+        }
+
         MutableColumns columns(description.sample_block.columns());
 
         for (const auto i : ext::range(0, size))
