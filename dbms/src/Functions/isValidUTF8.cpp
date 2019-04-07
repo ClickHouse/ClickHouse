@@ -162,7 +162,7 @@ struct ValidUTF8Impl
         __m128i prev_first_len = _mm_set1_epi8(0);
         __m128i error = _mm_set1_epi8(0);
 
-        auto checkPacked = [&](__m128i input) noexcept
+        auto check_packed = [&](__m128i input) noexcept
         {
             /* high_nibbles = input >> 4 */
             const __m128i high_nibbles = _mm_and_si128(_mm_srli_epi16(input, 4), _mm_set1_epi8(0x0F));
@@ -250,14 +250,14 @@ struct ValidUTF8Impl
         };
 
         while (len >= 16)
-            checkPacked(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)));
+            check_packed(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)));
 
         /// 0 <= len <= 15 for now. Reading data from data - 1 because of right padding of 15 and left padding
         /// Then zero some bytes from the unknown memory and check again.
         alignas(16) char buf[32];
         _mm_store_si128(reinterpret_cast<__m128i *>(buf), _mm_loadu_si128(reinterpret_cast<const __m128i *>(data - 1)));
         memset(buf + len + 1, 0, 16);
-        checkPacked(_mm_loadu_si128(reinterpret_cast<__m128i *>(buf + 1)));
+        check_packed(_mm_loadu_si128(reinterpret_cast<__m128i *>(buf + 1)));
 
         /* Reduce error vector, error_reduced = 0xFFFF if error == 0 */
         return _mm_movemask_epi8(_mm_cmpeq_epi8(error, _mm_set1_epi8(0))) == 0xFFFF;
