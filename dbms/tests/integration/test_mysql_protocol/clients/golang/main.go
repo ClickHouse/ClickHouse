@@ -9,7 +9,6 @@ import (
 	"os"
 )
 
-
 func main() {
 	host := flag.String("host", "localhost", "mysql server address")
 	port := flag.Uint("port", 3306, "mysql server port")
@@ -20,14 +19,14 @@ func main() {
 
 	logger := log.New(os.Stderr, "", 0)
 	dataSource := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?allowCleartextPasswords=1", *user, *password, *host, *port, *database)
-    db, err := sql.Open("mysql", dataSource)
-    
-    if err != nil {
+	db, err := sql.Open("mysql", dataSource)
+
+	if err != nil {
 		logger.Fatal(err)
-    }
+	}
 	defer db.Close()
 
-	runQuery := func (query string, processRows func (*sql.Rows)) {
+	runQuery := func(query string, processRows func(*sql.Rows)) {
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Fatal(err)
@@ -63,7 +62,7 @@ func main() {
 		}
 	}
 
-	processRows := func (rows *sql.Rows) {
+	processRows := func(rows *sql.Rows) {
 		var x int
 		for rows.Next() {
 			err := rows.Scan(&x)
@@ -75,7 +74,7 @@ func main() {
 	}
 	runQuery("select number as a from system.numbers limit 2", processRows)
 
-	processRows = func (rows *sql.Rows) {
+	processRows = func(rows *sql.Rows) {
 		var name string
 		var a int
 		for rows.Next() {
