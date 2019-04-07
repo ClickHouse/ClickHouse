@@ -1,0 +1,24 @@
+Columns:
+a
+Column types:
+a BINARY
+Result:
+0
+1
+Columns:
+name
+a
+Column types:
+name BINARY
+a BINARY
+Result:
+aggregate_function_combinators 1
+asynchronous_metrics 1
+Columns:
+a
+b
+Column types:
+a BINARY
+b BINARY
+Result:
+тест 1
