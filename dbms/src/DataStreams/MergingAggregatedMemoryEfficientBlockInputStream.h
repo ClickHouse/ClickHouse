@@ -8,8 +8,6 @@
 #include <condition_variable>
 
 
-class MemoryTracker;
-
 namespace DB
 {
 

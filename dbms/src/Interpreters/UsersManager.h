@@ -1,21 +1,17 @@
 #pragma once
 
-#include <Interpreters/ISecurityManager.h>
+#include <Interpreters/IUsersManager.h>
 
 #include <map>
 
 namespace DB
 {
 
-/** Default implementation of security manager used by native server application.
+/** Default implementation of users manager used by native server application.
   * Manages fixed set of users listed in 'Users' configuration file.
   */
-class SecurityManager : public ISecurityManager
+class UsersManager : public IUsersManager
 {
-private:
-    using Container = std::map<String, UserPtr>;
-    Container users;
-
 public:
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config) override;
 
@@ -27,6 +23,10 @@ public:
     UserPtr getUser(const String & user_name) const override;
 
     bool hasAccessToDatabase(const String & user_name, const String & database_name) const override;
+
+private:
+    using Container = std::map<String, UserPtr>;
+    Container users;
 };
 
 }

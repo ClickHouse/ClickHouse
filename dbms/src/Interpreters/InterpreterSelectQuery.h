@@ -104,13 +104,13 @@ private:
         BlockInputStreamPtr & firstStream() { return streams.at(0); }
 
         template <typename Transform>
-        void transform(Transform && transform)
+        void transform(Transform && transformation)
         {
             for (auto & stream : streams)
-                transform(stream);
+                transformation(stream);
 
             if (stream_with_non_joined_data)
-                transform(stream_with_non_joined_data);
+                transformation(stream_with_non_joined_data);
         }
 
         bool hasMoreThanOneStream() const
@@ -154,9 +154,10 @@ private:
 
         SubqueriesForSets subqueries_for_sets;
         PrewhereInfoPtr prewhere_info;
+        FilterInfoPtr filter_info;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run);
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run, const FilterInfoPtr & filter_info);
 
 
     /** From which table to read. With JOIN, the "left" table is returned.
