@@ -49,6 +49,9 @@ static FormatSettings getInputFormatSetting(const Settings & settings)
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.template_settings.format = settings.format_schema;
+    format_settings.template_settings.row_format = settings.format_schema_rows;
+    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
 
     return format_settings;
 }
@@ -200,6 +203,7 @@ void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
+void registerInputFormatTemplate(FormatFactory & factory);
 void registerOutputFormatTemplate(FormatFactory &factory);
 
 void registerInputFormatProcessorNative(FormatFactory & factory);
@@ -274,6 +278,7 @@ FormatFactory::FormatFactory()
     registerInputFormatCapnProto(*this);
     registerInputFormatParquet(*this);
     registerOutputFormatParquet(*this);
+    registerInputFormatTemplate(*this);
     registerOutputFormatTemplate(*this);
 
     registerOutputFormatMySQLWire(*this);

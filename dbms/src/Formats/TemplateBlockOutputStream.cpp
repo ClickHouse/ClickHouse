@@ -13,12 +13,110 @@ namespace ErrorCodes
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
+ParsedTemplateFormat::ParsedTemplateFormat(const String & format_string, const ColumnIdxGetter & idxByName)
+{
+    enum ParserState
+    {
+        Delimiter,
+        Column,
+        Format
+    };
+    const char * pos = format_string.c_str();
+    const char * token_begin = pos;
+    ParserState state = Delimiter;
+    delimiters.emplace_back();
+    for (; *pos; ++pos)
+    {
+        switch (state)
+        {
+        case Delimiter:
+            if (*pos == '$')
+            {
+                delimiters.back().append(token_begin, pos - token_begin);
+                ++pos;
+                if (*pos == '{')
+                {
+                    token_begin = pos + 1;
+                    state = Column;
+                }
+                else if (*pos == '$')
+                {
+                    token_begin = pos;
+                }
+                else
+                {
+                    throw Exception("invalid template: pos " + std::to_string(pos - format_string.c_str()) +
+                    ": expected '{' or '$' after '$'", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                }
+            }
+            break;
+
+        case Column:
+            if (*pos == ':')
+            {
+                size_t column_idx = idxByName(String(token_begin, pos - token_begin));
+                format_idx_to_column_idx.push_back(column_idx);
+                token_begin = pos + 1;
+                state = Format;
+            }
+            else if (*pos == '}')
+            {
+                size_t column_idx = idxByName(String(token_begin, pos - token_begin));
+                format_idx_to_column_idx.push_back(column_idx);
+                formats.push_back(ColumnFormat::Default);
+                delimiters.emplace_back();
+                token_begin = pos + 1;
+                state = Delimiter;
+            }
+            break;
+
+        case Format:
+            if (*pos == '}')
+            {
+                formats.push_back(stringToFormat(String(token_begin, pos - token_begin)));
+                token_begin = pos + 1;
+                delimiters.emplace_back();
+                state = Delimiter;
+            }
+        }
+    }
+    if (state != Delimiter)
+        throw Exception("invalid template: check parentheses balance", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+    delimiters.back().append(token_begin, pos - token_begin);
+}
+
+
+ParsedTemplateFormat::ColumnFormat ParsedTemplateFormat::stringToFormat(const String & col_format)
+{
+    if (col_format.empty())
+        return ColumnFormat::Default;
+    else if (col_format == "Escaped")
+        return ColumnFormat::Escaped;
+    else if (col_format == "Quoted")
+        return ColumnFormat::Quoted;
+    else if (col_format == "JSON")
+        return ColumnFormat::Json;
+    else if (col_format == "XML")
+        return ColumnFormat::Xml;
+    else if (col_format == "Raw")
+        return ColumnFormat::Raw;
+    else
+        throw Exception("invalid template: unknown field format " + col_format, ErrorCodes::INVALID_TEMPLATE_FORMAT);
+}
+
+size_t ParsedTemplateFormat::columnsCount() const
+{
+    return format_idx_to_column_idx.size();
+}
+
+
+
 TemplateBlockOutputStream::TemplateBlockOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettings & settings_)
         : ostr(ostr_), header(sample), settings(settings_)
 {
     static const String default_format("${result}");
     const String & format_str = settings.template_settings.format.empty() ? default_format : settings.template_settings.format;
-    format = parseFormatString(format_str, [&](const String & partName)
+    format = ParsedTemplateFormat(format_str, [&](const String & partName)
     {
         return static_cast<size_t>(stringToOutputPart(partName));
     });
@@ -36,7 +134,7 @@ TemplateBlockOutputStream::TemplateBlockOutputStream(WriteBuffer & ostr_, const 
             case OutputPart::ExtremesMax:
                 if (format.formats[i] != ColumnFormat::Default)
                     throw Exception("invalid template: wrong serialization type for result, totals, min or max",
-                            ErrorCodes::INVALID_TEMPLATE_FORMAT);
+                                    ErrorCodes::INVALID_TEMPLATE_FORMAT);
                 break;
             default:
                 break;
@@ -46,107 +144,13 @@ TemplateBlockOutputStream::TemplateBlockOutputStream(WriteBuffer & ostr_, const 
     if (resultIdx != 0)
         throw Exception("invalid template: ${result} must be the first output part", ErrorCodes::INVALID_TEMPLATE_FORMAT);
 
-    row_format = parseFormatString(settings.template_settings.row_format, [&](const String & colName)
+    row_format = ParsedTemplateFormat(settings.template_settings.row_format, [&](const String & colName)
     {
         return header.getPositionByName(colName);
     });
 
     if (row_format.delimiters.size() == 1)
         throw Exception("invalid template: no columns specified", ErrorCodes::INVALID_TEMPLATE_FORMAT);
-}
-
-
-TemplateBlockOutputStream::ParsedFormat TemplateBlockOutputStream::parseFormatString(const String & s, const ColumnIdxGetter & idxByName)
-{
-    enum ParserState
-    {
-        Delimiter,
-        Column,
-        Format
-    };
-    ParsedFormat parsed_format;
-    const char * pos = s.c_str();
-    const char * token_begin = pos;
-    ParserState state = Delimiter;
-    parsed_format.delimiters.emplace_back();
-    for (; *pos; ++pos)
-    {
-        switch (state)
-        {
-        case Delimiter:
-            if (*pos == '$')
-            {
-                parsed_format.delimiters.back().append(token_begin, pos - token_begin);
-                ++pos;
-                if (*pos == '{')
-                {
-                    token_begin = pos + 1;
-                    state = Column;
-                }
-                else if (*pos == '$')
-                {
-                    token_begin = pos;
-                }
-                else
-                {
-                    throw Exception("invalid template: pos " + std::to_string(pos - s.c_str()) +
-                    ": expected '{' or '$' after '$'", ErrorCodes::INVALID_TEMPLATE_FORMAT);
-                }
-            }
-            break;
-
-        case Column:
-            if (*pos == ':')
-            {
-                size_t column_idx = idxByName(String(token_begin, pos - token_begin));
-                parsed_format.format_idx_to_column_idx.push_back(column_idx);
-                token_begin = pos + 1;
-                state = Format;
-            }
-            else if (*pos == '}')
-            {
-                size_t column_idx = idxByName(String(token_begin, pos - token_begin));
-                parsed_format.format_idx_to_column_idx.push_back(column_idx);
-                parsed_format.formats.push_back(ColumnFormat::Default);
-                parsed_format.delimiters.emplace_back();
-                token_begin = pos + 1;
-                state = Delimiter;
-            }
-            break;
-
-        case Format:
-            if (*pos == '}')
-            {
-                parsed_format.formats.push_back(stringToFormat(String(token_begin, pos - token_begin)));
-                token_begin = pos + 1;
-                parsed_format.delimiters.emplace_back();
-                state = Delimiter;
-            }
-        }
-    }
-    if (state != Delimiter)
-        throw Exception("invalid template: check parentheses balance", ErrorCodes::INVALID_TEMPLATE_FORMAT);
-    parsed_format.delimiters.back().append(token_begin, pos - token_begin);
-    return parsed_format;
-}
-
-
-TemplateBlockOutputStream::ColumnFormat TemplateBlockOutputStream::stringToFormat(const String & col_format)
-{
-    if (col_format.empty())
-        return ColumnFormat::Default;
-    else if (col_format == "Escaped")
-        return ColumnFormat::Escaped;
-    else if (col_format == "Quoted")
-        return ColumnFormat::Quoted;
-    else if (col_format == "JSON")
-        return ColumnFormat::Json;
-    else if (col_format == "XML")
-        return ColumnFormat::Xml;
-    else if (col_format == "Raw")
-        return ColumnFormat::Raw;
-    else
-        throw Exception("invalid template: unknown field format " + col_format, ErrorCodes::INVALID_TEMPLATE_FORMAT);
 }
 
 TemplateBlockOutputStream::OutputPart TemplateBlockOutputStream::stringToOutputPart(const String & part)
