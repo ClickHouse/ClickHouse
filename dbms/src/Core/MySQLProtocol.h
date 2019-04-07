@@ -301,6 +301,10 @@ public:
     String database;
     String auth_plugin_name;
 
+    HandshakeResponse() = default;
+
+    HandshakeResponse(const HandshakeResponse &) = default;
+
     void readPayload(String s) override
     {
         std::istringstream ss(s);
@@ -367,6 +371,10 @@ class NullTerminatedString : public ReadPacket
 {
 public:
     String value;
+
+    NullTerminatedString() = default;
+
+    NullTerminatedString(const NullTerminatedString &) = default;
 
     void readPayload(String s) override
     {
@@ -541,6 +549,10 @@ class ComFieldList : public ReadPacket
 {
 public:
     String table, field_wildcard;
+
+    ComFieldList() = default;
+
+    ComFieldList(const ComFieldList &) = default;
 
     void readPayload(String payload)
     {
