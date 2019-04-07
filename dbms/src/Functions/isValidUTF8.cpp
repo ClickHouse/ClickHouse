@@ -252,13 +252,13 @@ struct ValidUTF8Impl
         while (len >= 16)
             checkPacked(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)));
 
-        if (len)
-        {
-            alignas(16) char buf[32];
-            _mm_store_si128(reinterpret_cast<__m128i *>(buf), _mm_loadu_si128(reinterpret_cast<const __m128i *>(data)));
-            memset(reinterpret_cast<char *>(&buf) + len, 0, 16);
-            checkPacked(_mm_load_si128(reinterpret_cast<__m128i *>(buf)));
-        }
+        /// 0 <= len <= 15 for now. Reading data from data - 1 because of right padding of 15 and left padding
+        /// Then zero some bytes from the unknown memory and check again.
+        alignas(16) char buf[32];
+        _mm_store_si128(reinterpret_cast<__m128i *>(buf), _mm_loadu_si128(reinterpret_cast<const __m128i *>(data - 1)));
+        memset(buf + len + 1, 0, 16);
+        checkPacked(_mm_loadu_si128(reinterpret_cast<__m128i *>(buf + 1)));
+
         /* Reduce error vector, error_reduced = 0xFFFF if error == 0 */
         return _mm_movemask_epi8(_mm_cmpeq_epi8(error, _mm_set1_epi8(0))) == 0xFFFF;
     }
