@@ -10,9 +10,8 @@
 namespace DB
 {
 
-class TemplateBlockOutputStream : public IBlockOutputStream
+struct ParsedTemplateFormat
 {
-public:
     enum class ColumnFormat
     {
         Default,
@@ -22,7 +21,22 @@ public:
         Xml,
         Raw
     };
+    std::vector<String> delimiters;
+    std::vector<ColumnFormat> formats;
+    std::vector<size_t> format_idx_to_column_idx;
 
+    typedef std::function<size_t(const String &)> ColumnIdxGetter;
+
+    ParsedTemplateFormat() = default;
+    ParsedTemplateFormat(const String & format_string, const ColumnIdxGetter & idxByName);
+    static ColumnFormat stringToFormat(const String & format);
+    size_t columnsCount() const;
+};
+
+class TemplateBlockOutputStream : public IBlockOutputStream
+{
+    using ColumnFormat = ParsedTemplateFormat::ColumnFormat;
+public:
     TemplateBlockOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettings & settings_);
     Block getHeader() const override { return header; }
 
@@ -51,18 +65,7 @@ private:
         BytesRead
     };
 
-    struct ParsedFormat
-    {
-        std::vector<String> delimiters;
-        std::vector<ColumnFormat> formats;
-        std::vector<size_t> format_idx_to_column_idx;
-    };
-
-    typedef std::function<size_t(const String &)> ColumnIdxGetter;
-
-    ColumnFormat stringToFormat(const String & format);
     OutputPart stringToOutputPart(const String & part);
-    ParsedFormat parseFormatString(const String & s, const ColumnIdxGetter & idxByName);
     void writeRow(const Block & block, size_t row_num);
     void serializeField(const IColumn & column, const IDataType & type, size_t row_num, ColumnFormat format);
     template <typename U, typename V> void writeValue(U value, ColumnFormat col_format);
@@ -72,8 +75,8 @@ private:
     Block header;
     const FormatSettings settings;
 
-    ParsedFormat format;
-    ParsedFormat row_format;
+    ParsedTemplateFormat format;
+    ParsedTemplateFormat row_format;
 
     size_t rows_before_limit;
     Block totals;
