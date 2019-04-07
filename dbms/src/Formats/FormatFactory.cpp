@@ -46,6 +46,9 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    format_settings.template_settings.format = settings.format_schema;
+    format_settings.template_settings.row_format = settings.format_schema_rows;
+    format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
 
     return input_getter(buf, sample, context, max_block_size, format_settings);
 }
@@ -120,6 +123,7 @@ void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
+void registerInputFormatTemplate(FormatFactory & factory);
 void registerOutputFormatTemplate(FormatFactory &factory);
 
 /// Output only (presentational) formats.
@@ -161,6 +165,7 @@ FormatFactory::FormatFactory()
     registerInputFormatCapnProto(*this);
     registerInputFormatParquet(*this);
     registerOutputFormatParquet(*this);
+    registerInputFormatTemplate(*this);
     registerOutputFormatTemplate(*this);
 
     registerOutputFormatPretty(*this);
