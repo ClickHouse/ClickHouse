@@ -255,6 +255,18 @@ public:
             ++(*version);
 
         assumeConnected();
+
+        if (chunk.getNumColumns() != header.columns())
+        {
+            String msg = "Invalid number of columns in chunk pushed to OutputPort. Expected"
+                    + std::to_string(header.columns()) + ", found " + std::to_string(chunk.getNumColumns()) + '\n';
+
+            msg += "Header: " + header.dumpStructure() + '\n';
+            msg += "Chunk: " + chunk.dumpStructure() + '\n';
+
+            throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
+        }
+
         state->push(std::move(chunk));
     }
 
