@@ -17,10 +17,15 @@ from subprocess import CalledProcessError
 from datetime import datetime
 from time import sleep
 from errno import ESRCH
-from termcolor import colored
+import termcolor
 from random import random
 import commands
 
+def colored(text, color=None, on_color=None, attrs=None):
+    if sys.stdout.isatty():
+        return termcolor.colored(text, color, on_color, attrs)
+    else:
+        return text
 
 OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
 CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
