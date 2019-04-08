@@ -53,7 +53,8 @@ TotalsHavingTransform::TotalsHavingTransform(
     /// Port for Totals.
     outputs.emplace_back(outputs.front().getHeader(), this);
 
-    filter_column_pos = outputs.front().getHeader().getPositionByName(filter_column_name);
+    if (!filter_column_name.empty())
+        filter_column_pos = outputs.front().getHeader().getPositionByName(filter_column_name);
 
     finalized_header = getInputPort().getHeader();
     finalizeBlock(finalized_header);
