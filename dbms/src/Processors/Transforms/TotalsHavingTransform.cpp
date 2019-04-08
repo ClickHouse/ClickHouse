@@ -25,10 +25,11 @@ static Chunk finalizeChunk(Chunk chunk)
 
 static Block createOutputHeader(Block block, const ExpressionActionsPtr & expression)
 {
+    finalizeBlock(block);
+
     if (expression)
         expression->execute(block);
 
-    finalizeBlock(block);
     return block;
 }
 
