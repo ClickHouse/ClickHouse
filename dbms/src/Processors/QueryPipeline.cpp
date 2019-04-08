@@ -100,6 +100,7 @@ void QueryPipeline::addSimpleTransform(const ProcessorGetter & getter)
 
     add_transform(totals_having_port);
     add_transform(extremes_port);
+    add_transform(delayed_stream_port);
 
     current_header = std::move(header);
 }
@@ -146,20 +147,19 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
 {
     checkInitialized();
 
-    if (has_delayed_stream)
+    if (delayed_stream_port)
         throw Exception("QueryPipeline already has stream with non joined data.", ErrorCodes::LOGICAL_ERROR);
 
     checkSource(source);
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
 
-    has_delayed_stream = !streams.empty();
-    streams.emplace_back(&source->getOutputs().front());
+    delayed_stream_port = &source->getOutputs().front();
     processors.emplace_back(std::move(source));
 }
 
 void QueryPipeline::concatDelayedStream()
 {
-    if (!has_delayed_stream)
+    if (!delayed_stream_port)
         return;
 
     auto resize = std::make_shared<ResizeProcessor>(current_header, getNumMainStreams(), 1);
@@ -169,12 +169,13 @@ void QueryPipeline::concatDelayedStream()
 
     auto concat = std::make_shared<ConcatProcessor>(current_header, 2);
     connect(resize->getOutputs().front(), concat->getInputs().front());
-    connect(*streams.back(), concat->getInputs().back());
+    connect(*delayed_stream_port, concat->getInputs().back());
 
     streams = { &concat->getOutputs().front() };
     processors.emplace_back(std::move(resize));
     processors.emplace_back(std::move(concat));
-    has_delayed_stream = false;
+
+    delayed_stream_port = nullptr;
 }
 
 void QueryPipeline::resize(size_t num_streams)
@@ -206,10 +207,8 @@ void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
         throw Exception("TotalsHavingTransform expected for QueryPipeline::addTotalsHavingTransform.",
                 ErrorCodes::LOGICAL_ERROR);
 
-    if (has_totals_having)
+    if (totals_having_port)
         throw Exception("Totals having transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
-
-    has_totals_having = true;
 
     resize(1);
 
@@ -231,10 +230,8 @@ void QueryPipeline::addExtremesTransform(ProcessorPtr transform)
         throw Exception("ExtremesTransform expected for QueryPipeline::addExtremesTransform.",
                         ErrorCodes::LOGICAL_ERROR);
 
-    if (has_extremes)
+    if (extremes_port)
         throw Exception("Extremes transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
-
-    has_extremes = true;
 
     if (getNumStreams() != 1)
         throw Exception("Cant't add Extremes transform because pipeline is expected to have single stream, "
@@ -289,14 +286,14 @@ void QueryPipeline::setOutput(ProcessorPtr output)
     auto & totals = format->getPort(IOutputFormat::PortKind::Totals);
     auto & extremes = format->getPort(IOutputFormat::PortKind::Extremes);
 
-    if (!has_totals_having)
+    if (!totals_having_port)
     {
         auto null_source = std::make_shared<NullSource>(totals.getHeader());
         totals_having_port = &null_source->getPort();
         processors.emplace_back(std::move(null_source));
     }
 
-    if (!has_extremes)
+    if (!extremes_port)
     {
         auto null_source = std::make_shared<NullSource>(extremes.getHeader());
         extremes_port = &null_source->getPort();
@@ -341,10 +338,8 @@ void QueryPipeline::unitePipelines(std::vector<QueryPipeline> && pipelines, cons
         /// Take totals only from first port.
         if (pipeline.totals_having_port)
         {
-            if (!has_totals_having)
+            if (!totals_having_port)
             {
-
-                has_totals_having = true;
                 auto converting = std::make_shared<ConvertingTransform>(
                     pipeline.current_header, current_header, ConvertingTransform::MatchColumnsMode::Position, context);
 
@@ -366,8 +361,7 @@ void QueryPipeline::unitePipelines(std::vector<QueryPipeline> && pipelines, cons
 
     if (!extremes.empty())
     {
-        has_extremes = true;
-        size_t num_inputs = extremes.size() + (has_extremes ? 1u : 0u);
+        size_t num_inputs = extremes.size() + (extremes_port ? 1u : 0u);
 
         if (num_inputs == 1)
             extremes_port = extremes.front();
@@ -377,7 +371,7 @@ void QueryPipeline::unitePipelines(std::vector<QueryPipeline> && pipelines, cons
             auto resize = std::make_shared<ResizeProcessor>(current_header, num_inputs, 1);
             auto input = resize->getInputs().begin();
 
-            if (has_extremes)
+            if (extremes_port)
                 connect(*extremes_port, *(input++));
 
             for (auto & output : extremes)
