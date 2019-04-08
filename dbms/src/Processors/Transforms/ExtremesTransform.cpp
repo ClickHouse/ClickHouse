@@ -31,10 +31,12 @@ IProcessor::Status ExtremesTransform::prepare()
     if (!totals_output.canPush())
         return Status::PortFull;
 
-    if (!extremes)
+    if (!extremes && !extremes_columns.empty())
         return Status::Ready;
 
-    totals_output.push(std::move(extremes));
+    if (extremes)
+        totals_output.push(std::move(extremes));
+
     totals_output.finish();
     return Status::Finished;
 }
