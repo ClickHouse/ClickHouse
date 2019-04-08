@@ -53,6 +53,8 @@ public:
     UInt64 bytes() const;
     UInt64 allocatedBytes() const;
 
+    std::string dumpStructure() const;
+
 private:
     Columns columns;
     UInt64 num_rows = 0;

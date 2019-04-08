@@ -1,5 +1,6 @@
 #include <Processors/Chunk.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -142,6 +143,15 @@ UInt64 Chunk::allocatedBytes() const
         res += column->allocatedBytes();
 
     return res;
+}
+
+std::string Chunk::dumpStructure() const
+{
+    WriteBufferFromOwnString out;
+    for (auto & column : columns)
+        out << ' ' << column->dumpStructure();
+
+    return out.str();
 }
 
 
