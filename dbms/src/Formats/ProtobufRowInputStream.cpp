@@ -75,7 +75,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
-            std::make_shared<ProtobufRowInputStream>(buf, sample, FormatSchemaInfo(context, "proto")),
+            std::make_shared<ProtobufRowInputStream>(buf, sample, FormatSchemaInfo(context, "Protobuf")),
             sample, max_block_size, settings);
     });
 }

@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 
 InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
-    const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, Context & context)
+    const ASTPtr & ast, ReadBuffer * input_buffer_tail_part, const Block & header, const Context & context)
 {
     const auto * ast_insert_query = ast->as<ASTInsertQuery>();
 
@@ -28,8 +28,6 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     String format = ast_insert_query->format;
     if (format.empty())
         format = "Values";
-    if (ast_insert_query->settings_ast)
-        InterpreterSetQuery(ast_insert_query->settings_ast, context).executeForCurrentContext();
 
     /// Data could be in parsed (ast_insert_query.data) and in not parsed yet (input_buffer_tail_part) part of query.
 
