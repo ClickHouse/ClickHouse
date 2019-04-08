@@ -186,13 +186,9 @@ public:
         return std::move(buf.str());
     }
 
-    template<typename T>
-    T receivePacket()
+    void receivePacket(ReadPacket & packet)
     {
-        static_assert(std::is_base_of<ReadPacket, T>());
-        T packet;
-        packet.readPayload(std::move(receivePacketPayload()));
-        return packet;
+        packet.readPayload(receivePacketPayload());
     }
 
     template<class T>
@@ -301,10 +297,6 @@ public:
     String database;
     String auth_plugin_name;
 
-    HandshakeResponse() = default;
-
-    HandshakeResponse(const HandshakeResponse &) = default;
-
     void readPayload(String s) override
     {
         std::istringstream ss(s);
@@ -371,10 +363,6 @@ class NullTerminatedString : public ReadPacket
 {
 public:
     String value;
-
-    NullTerminatedString() = default;
-
-    NullTerminatedString(const NullTerminatedString &) = default;
 
     void readPayload(String s) override
     {
@@ -549,10 +537,6 @@ class ComFieldList : public ReadPacket
 {
 public:
     String table, field_wildcard;
-
-    ComFieldList() = default;
-
-    ComFieldList(const ComFieldList &) = default;
 
     void readPayload(String payload)
     {
