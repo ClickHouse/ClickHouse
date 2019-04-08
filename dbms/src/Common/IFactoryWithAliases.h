@@ -20,7 +20,7 @@ namespace ErrorCodes
  * template parameter is available as Creator
  */
 template <typename CreatorFunc>
-class IFactoryWithAliases
+class IFactoryWithAliases : public IHints<2, IFactoryWithAliases<CreatorFunc>>
 {
 protected:
     using Creator = CreatorFunc;
@@ -76,7 +76,7 @@ public:
             throw Exception(factory_name + ": alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
     }
 
-    std::vector<String> getAllRegisteredNames() const
+    std::vector<String> getAllRegisteredNames() const override
     {
         std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
@@ -106,13 +106,7 @@ public:
         return aliases.count(name) || case_insensitive_aliases.count(name);
     }
 
-    std::vector<String> getHints(const String & name) const
-    {
-        static const auto registered_names = getAllRegisteredNames();
-        return prompter.getHints(name, registered_names);
-    }
-
-    virtual ~IFactoryWithAliases() {}
+    virtual ~IFactoryWithAliases() override {}
 
 private:
     using InnerMap = std::unordered_map<String, Creator>; // name -> creator
@@ -127,13 +121,6 @@ private:
 
     /// Case insensitive aliases
     AliasMap case_insensitive_aliases;
-
-    /**
-      * prompter for names, if a person makes a typo for some function or type, it
-      * helps to find best possible match (in particular, edit distance is done like in clang
-      * (max edit distance is (typo.size() + 2) / 3)
-      */
-    NamePrompter</*MaxNumHints=*/2> prompter;
 };
 
 }

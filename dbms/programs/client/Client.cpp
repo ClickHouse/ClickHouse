@@ -1523,7 +1523,7 @@ private:
 
     void showClientVersion()
     {
-        std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
+        std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
 
 public:
