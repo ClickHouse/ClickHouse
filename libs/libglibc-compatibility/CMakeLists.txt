@@ -19,6 +19,7 @@ musl/sched_cpucount.c
 musl/glob.c
 musl/exp2f.c
 musl/pwritev.c
+musl/getentropy.c
 musl/getrandom.c
 musl/fcntl.c
 musl/timespec_get.c

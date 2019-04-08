@@ -317,7 +317,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
 /** Computes value of constant expression and its data type.
   * Returns false, if expression isn't constant.
   */
-static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
+bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
 {
     String column_name = expr->getColumnName();
 

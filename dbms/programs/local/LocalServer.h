@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Poco/Util/Application.h>
 #include <memory>
 
