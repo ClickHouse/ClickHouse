@@ -16,14 +16,16 @@ If rounding causes overflow (for example, floor(-128, -1)), an implementation-sp
 
 Returns the smallest round number that is greater than or equal to 'x'. In every other way, it is the same as the 'floor' function (see above).
 
-## round(x\[, N\])
+## round(x[, N]) {#rounding_functions-round}
 
-Implements [banker's rounding](https://en.wikipedia.org/wiki/Rounding#Round_half_to_even), i.e., rounding to the nearest even integer.
+Rounds `x` up to the `N` digit after the decimal point.
+
+Implements the [rounding to the nearest integer](https://en.wikipedia.org/wiki/Rounding#Rounding_to_the_nearest_integer) rule. If `x` is exactly half-way between two numbers the function uses [banker's rounding](https://en.wikipedia.org/wiki/Rounding#Round_half_to_even) rule.
 
 **Function arguments:**
 
-- `x` — the number to be rounded. [Type](../../data_types/index.md#data_types) —  any number.
-- `N`—  the position of the number after the decimal point to round the number to.
+- `x` — Number to be rounded. [Type](../../data_types/index.md#data_types) — any number.
+- `N`— Position of the number after the decimal point to round the number to.
 
 **Returned value:**
 
