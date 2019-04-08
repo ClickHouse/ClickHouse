@@ -19,6 +19,9 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     if (parameters.size() > 4)
         throw Exception("Aggregate function " + name + " requires at most four parameters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    if (argument_types.size() < 2)
+        throw Exception("Aggregate function " + name + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
         if (!WhichDataType(argument_types[i]).isFloat64())
@@ -28,58 +31,58 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     }
 
     Float64 learning_rate = Float64(0.01);
+    Float64 l2_reg_coef = Float64(0.01);
     UInt32 batch_size = 1;
 
-    std::shared_ptr<IGradientComputer> gc;
     std::shared_ptr<IWeightsUpdater> wu;
+    std::shared_ptr<IGradientComputer> gc;
+
     if (!parameters.empty())
     {
         learning_rate = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
     }
     if (parameters.size() > 1)
     {
-        batch_size = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[1]);
-
-    }
-
-    if (std::is_same<Method, FuncLinearRegression>::value)
-    {
-       gc = std::make_shared<LinearRegression>();
-    } else if (std::is_same<Method, FuncLogisticRegression>::value)
-    {
-       gc = std::make_shared<LogisticRegression>();
-    } else
-    {
-        throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        l2_reg_coef = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[1]);
     }
     if (parameters.size() > 2)
     {
-        if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{1.0})
+        batch_size = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]);
+
+    }
+    if (parameters.size() > 3)
+    {
+        if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{1.0})
         {
             wu = std::make_shared<StochasticGradientDescent>();
-        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{2.0})
+        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{2.0})
         {
             wu = std::make_shared<Momentum>();
-        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{3.0})
+        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{3.0})
         {
             wu = std::make_shared<Nesterov>();
 
-        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{4.0})
-        {
-            /// Adam should be here
-            wu = std::make_shared<Nesterov>();
         } else {
-            throw Exception("Such weights updater is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Invalid parameter for weights updater", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     } else
     {
         wu = std::make_unique<StochasticGradientDescent>();
     }
 
-    if (argument_types.size() < 2)
-        throw Exception("Aggregate function " + name + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (std::is_same<Method, FuncLinearRegression>::value)
+    {
+        gc = std::make_shared<LinearRegression>();
+    } else if (std::is_same<Method, FuncLogisticRegression>::value)
+    {
+        gc = std::make_shared<LogisticRegression>();
+    } else
+    {
+        throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
 
-    return std::make_shared<Method>(argument_types.size() - 1, gc, wu, learning_rate, batch_size, argument_types, parameters);
+
+    return std::make_shared<Method>(argument_types.size() - 1, gc, wu, learning_rate, l2_reg_coef, batch_size, argument_types, parameters);
 }
 
 }

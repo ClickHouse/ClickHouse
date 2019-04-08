@@ -28,8 +28,7 @@ namespace ErrorCodes
 }
 
 /**
-IGradientComputer class computes gradient according to its loss function
-and stores mini-batch
+GradientComputer class computes gradient according to its loss function
 */
 class IGradientComputer
 {
@@ -39,16 +38,12 @@ public:
 
     virtual ~IGradientComputer() = default;
 
-    /// Adds to batch_gradient computed gradient in point (weigts, bias) using corresponding loss function
+    /// Adds computed gradient in new point (weights, bias) to batch_gradient
     virtual void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
-                         Float64 learning_rate, Float64 target, const IColumn **columns, size_t row_num) = 0;
+                         Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn **columns, size_t row_num) = 0;
 
-    virtual Float64 predict(const std::vector<Float64> &predict_feature,
-                            const std::vector<Float64> &weights,
-                            Float64 bias) const = 0;
-
-    /// Now we should use predict_for_all function instead of predict
-    virtual void predict_for_all(ColumnVector<Float64>::Container &container,
+    /// Now we should use predict_block function instead of predict
+    virtual void predict_block(ColumnVector<Float64>::Container &container,
                                  Block &block, const ColumnNumbers &arguments,
                                  const std::vector<Float64> &weights,
                                  Float64 bias) const = 0;
@@ -62,7 +57,7 @@ public:
     {}
 
     void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
-                 Float64 learning_rate, Float64 target, const IColumn **columns, size_t row_num) override
+                 Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn **columns, size_t row_num) override
     {
         Float64 derivative = (target - bias);
         for (size_t i = 0; i < weights.size(); ++i)
@@ -75,27 +70,12 @@ public:
         for (size_t i = 0; i < weights.size(); ++i)
         {
             (*batch_gradient)[i] +=
-                    derivative * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+                    derivative * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num]
+                        - 2 * l2_reg_coef * weights[i];
         }
     }
 
-    Float64 predict(const std::vector<Float64> &predict_feature,
-                    const std::vector<Float64> &weights, Float64 bias) const override
-    {
-        /// не обновляем веса при предикте, т.к. это может замедлить предсказание
-        /// однако можно например обновлять их при каждом мердже не зависимо от того, сколько элементнов в батче
-
-        Float64 res{0.0};
-        for (size_t i = 0; i < predict_feature.size(); ++i)
-        {
-            res += predict_feature[i] * weights[i];
-        }
-        res += bias;
-
-        return res;
-    }
-
-    void predict_for_all(ColumnVector<Float64>::Container &container,
+    void predict_block(ColumnVector<Float64>::Container &container,
                          Block &block,
                          const ColumnNumbers &arguments,
                          const std::vector<Float64> &weights, Float64 bias) const override
@@ -133,7 +113,7 @@ public:
     {}
 
     void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
-                 Float64 learning_rate, Float64 target, const IColumn **columns, size_t row_num) override
+                 Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn **columns, size_t row_num) override
     {
         Float64 derivative = bias;
         for (size_t i = 0; i < weights.size(); ++i)
@@ -148,28 +128,12 @@ public:
         {
             (*batch_gradient)[i] +=
                     learning_rate * target *
-                    static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num]
-                    / (derivative + 1);
+                    static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num] / (derivative + 1)
+                        - 2 * l2_reg_coef * weights[i];
         }
     }
 
-    Float64 predict(const std::vector<Float64> &predict_feature,
-                    const std::vector<Float64> &weights, Float64 bias) const override
-    {
-        /// не обновляем веса при предикте, т.к. это может замедлить предсказание
-        /// однако можно например обновлять их при каждом мердже не зависимо от того, сколько элементнов в батче
-
-        Float64 res{0.0};
-        for (size_t i = 0; i < predict_feature.size(); ++i)
-        {
-            res += predict_feature[i] * weights[i];
-        }
-        res += bias;
-        res = 1 / (1 + exp(-res));
-        return res;
-    }
-
-    void predict_for_all(ColumnVector<Float64>::Container & container,
+    void predict_block(ColumnVector<Float64>::Container & container,
                          Block & block,
                          const ColumnNumbers & arguments,
                          const std::vector<Float64> & weights, Float64 bias) const override
@@ -199,8 +163,8 @@ public:
 
 
 /**
-* IWeightsUpdater class defines the way to update current state
-* and uses GradientComputer on each iteration
+* IWeightsUpdater class defines the way to update current weights
+* and uses class GradientComputer on each iteration
 */
 class IWeightsUpdater
 {
@@ -209,9 +173,9 @@ public:
 
     virtual void add_to_batch(std::vector<Float64> * batch_gradient, std::shared_ptr<IGradientComputer> gc,
                               const std::vector<Float64> & weights, Float64 bias,
-                              Float64 learning_rate, Float64 target, const IColumn **columns, size_t row_num)
+                              Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn **columns, size_t row_num)
     {
-        gc->compute(batch_gradient, weights, bias, learning_rate, target, columns, row_num);
+        gc->compute(batch_gradient, weights, bias, learning_rate, l2_reg_coef, target, columns, row_num);
     }
 
     virtual void update(UInt32 batch_size,
@@ -313,7 +277,7 @@ public:
 
     void add_to_batch(std::vector<Float64> * batch_gradient, std::shared_ptr<IGradientComputer> gc,
                       const std::vector<Float64> & weights, Float64 bias,
-                      Float64 learning_rate, Float64 target, const IColumn ** columns, size_t row_num) override
+                      Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn ** columns, size_t row_num) override
     {
         if (accumulated_gradient.empty())
         {
@@ -327,7 +291,7 @@ public:
         }
         auto shifted_bias = bias + accumulated_gradient[weights.size()] * alpha_;
 
-        gc->compute(batch_gradient, shifted_weights, shifted_bias, learning_rate, target, columns, row_num);
+        gc->compute(batch_gradient, shifted_weights, shifted_bias, learning_rate, l2_reg_coef, target, columns, row_num);
     }
 
     void update(UInt32 batch_size,
@@ -376,75 +340,8 @@ private:
 };
 
 
-// TODO: проверить после изменения логики моментума
-/*
-class Adam : public IWeightsUpdater
-{
-public:
-    Adam()
-    {}
-
-    Adam(Float64 betta1, Float64 betta2) : betta1_(betta1), betta2_(betta2), betta1t_(betta1), betta2t_(betta2)
-    {}
-
-    void update(UInt32 cur_batch,
-                std::vector<Float64> & weights, Float64 & bias,
-                std::vector<Float64> * batch_gradient) override
-    {
-        if (mt_.size() == 0)
-        {
-            mt_.resize(batch_gradient.size(), Float64{0.0});
-            vt_.resize(batch_gradient.size(), Float64{0.0});
-        }
-        Float64 eps = 0.01;
-        for (size_t i = 0; i < batch_gradient.size(); ++i)
-        {
-            mt_[i] = mt_[i] * betta1_ + (1 - betta1_) * batch_gradient[i];
-            vt_[i] = vt_[i] * betta2_ + (1 - betta2_) * batch_gradient[i] * batch_gradient[i];
-            if (t < 8)
-            {
-                mt_[i] = mt_[i] / (1 - betta1t_);
-                betta1t_ *= betta1_;
-            }
-            if (t < 850)
-            {
-                vt_[i] = vt_[i] / (1 - betta2t_);
-                betta2t_ *= betta2_;
-            }
-        }
-        for (size_t i = 0; i < weights.size(); ++i)
-        {
-            weights[i] += (mt_[i] / (sqrt(vt_[i] + eps))) / cur_batch;
-        }
-        bias += (mt_[weights.size()] / (sqrt(vt_[weights.size()] + eps))) / cur_batch;
-        t += 1;
-    }
-
-    virtual void merge(const IWeightsUpdater &rhs, Float64 frac, Float64 rhs_frac) override
-    {
-        auto &adam_rhs = static_cast<const Adam &>(rhs);
-        for (size_t i = 0; i < mt_.size(); ++i)
-        {
-            mt_[i] = mt_[i] * frac + adam_rhs.mt_[i] * rhs_frac;
-            vt_[i] = vt_[i] * frac + adam_rhs.vt_[i] * rhs_frac;
-        }
-    }
-
-private:
-    Float64 betta1_{0.2};
-    Float64 betta2_{0.3};
-    Float64 betta1t_{0.3};
-    Float64 betta2t_{0.3};
-    UInt32 t = 0;
-    std::vector<Float64> mt_;
-    std::vector<Float64> vt_;
-};
- */
-
-
 /**
 * LinearModelData is a class which manages current state of learning
-* and is stored as AggregateFunctionState
 */
 class LinearModelData
 {
@@ -453,11 +350,13 @@ public:
     {}
 
     LinearModelData(Float64 learning_rate,
+                    Float64 l2_reg_coef,
                     UInt32 param_num,
                     UInt32 batch_capacity,
                     std::shared_ptr<IGradientComputer> gc,
                     std::shared_ptr<IWeightsUpdater> wu)
     : learning_rate(learning_rate),
+      l2_reg_coef(l2_reg_coef),
       batch_capacity(batch_capacity),
       batch_size(0),
       gradient_computer(std::move(gc)),
@@ -474,7 +373,7 @@ public:
 
         /// Here we have columns + 1 as first column corresponds to target value, and others - to features
         weights_updater->add_to_batch(&gradient_batch, gradient_computer,
-                                      weights, bias, learning_rate, target, columns + 1, row_num);
+                                      weights, bias, learning_rate, l2_reg_coef, target, columns + 1, row_num);
 
         ++batch_size;
         if (batch_size == batch_capacity)
@@ -489,20 +388,18 @@ public:
             return;
 
         update_state();
-        /// нельзя обновить из-за константости
-//        rhs.update_weights();
+        /// can't update rhs state because it's constant
 
-        Float64 frac = static_cast<Float64>(iter_num) / (iter_num + rhs.iter_num);
-        Float64 rhs_frac = static_cast<Float64>(rhs.iter_num) / (iter_num + rhs.iter_num);
+        Float64 frac = (static_cast<Float64>(iter_num) * iter_num) / (iter_num * iter_num + rhs.iter_num * rhs.iter_num);
 
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            weights[i] = weights[i] * frac + rhs.weights[i] * rhs_frac;
+            weights[i] = weights[i] * frac + rhs.weights[i] * (1 - frac);
         }
+        bias = bias * frac + rhs.bias * (1 - frac);
 
-        bias = bias * frac + rhs.bias * rhs_frac;
         iter_num += rhs.iter_num;
-        weights_updater->merge(*rhs.weights_updater, frac, rhs_frac);
+        weights_updater->merge(*rhs.weights_updater, frac, 1 - frac);
     }
 
     void write(WriteBuffer &buf) const
@@ -525,21 +422,9 @@ public:
         weights_updater->read(buf);
     }
 
-    Float64 predict(const std::vector<Float64> &predict_feature) const
+    void predict_block(ColumnVector<Float64>::Container &container, Block &block, const ColumnNumbers &arguments) const
     {
-        /// не обновляем веса при предикте, т.к. это может замедлить предсказание
-        /// однако можно например обновлять их при каждом мердже независимо от того, сколько элементнов в батче
-//        if (cur_batch)
-//        {
-//            update_weights();
-//        }
-
-        return gradient_computer->predict(predict_feature, weights, bias);
-    }
-
-    void predict_for_all(ColumnVector<Float64>::Container &container, Block &block, const ColumnNumbers &arguments) const
-    {
-        gradient_computer->predict_for_all(container, block, arguments, weights, bias);
+        gradient_computer->predict_block(container, block, arguments, weights, bias);
     }
 
 private:
@@ -547,6 +432,7 @@ private:
     Float64 bias{0.0};
 
     Float64 learning_rate;
+    Float64 l2_reg_coef;
     UInt32 batch_capacity;
 
     UInt32 iter_num = 0;
@@ -557,8 +443,8 @@ private:
     std::shared_ptr<IWeightsUpdater> weights_updater;
 
     /**
-     * The function is called when we want to flush current batch and make a step with it
-    */
+     * The function is called when we want to flush current batch and update our weights
+     */
     void update_state()
     {
         if (batch_size == 0)
@@ -587,12 +473,14 @@ public:
                                        std::shared_ptr<IGradientComputer> gradient_computer,
                                        std::shared_ptr<IWeightsUpdater> weights_updater,
                                        Float64 learning_rate,
+                                       Float64 l2_reg_coef,
                                        UInt32 batch_size,
                                        const DataTypes & argument_types,
                                        const Array & params)
             : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(argument_types, params),
             param_num(param_num),
             learning_rate(learning_rate),
+            l2_reg_coef(l2_reg_coef),
             batch_size(batch_size),
             gc(std::move(gradient_computer)),
             wu(std::move(weights_updater)) {
@@ -605,7 +493,7 @@ public:
 
     void create(AggregateDataPtr place) const override
     {
-        new (place) Data(learning_rate, param_num, batch_size, gc, wu);
+        new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gc, wu);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -613,10 +501,8 @@ public:
         this->data(place).add(columns, row_num);
     }
 
-    /// хочется не константный rhs
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        std::cout << "\nMERGING!!\n\n";
         this->data(place).merge(this->data(rhs));
     }
 
@@ -632,8 +518,6 @@ public:
 
     void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments) const
     {
-        std::cout << "\nPREDICTING!!\n\n";
-
         if (arguments.size() != param_num + 1)
             throw Exception("Predict got incorrect number of arguments. Got: " +
                             std::to_string(arguments.size()) + ". Required: " + std::to_string(param_num + 1),
@@ -641,20 +525,7 @@ public:
 
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
 
-        /// Так делали с одним предиктом, пока пусть побудет тут
-//        std::vector<Float64> predict_features(arguments.size() - 1);
-//        for (size_t i = 1; i < arguments.size(); ++i)
-//        {
-//            const auto& element = (*block.getByPosition(arguments[i]).column)[row_num];
-//            if (element.getType() != Field::Types::Float64)
-//                throw Exception("Prediction arguments must be values of type Float",
-//                        ErrorCodes::BAD_ARGUMENTS);
-//
-////            predict_features[i - 1] = element.get<Float64>();
-//        }
-//        column.getData().push_back(this->data(place).predict(predict_features));
-//        column.getData().push_back(this->data(place).predict_for_all());
-        this->data(place).predict_for_all(column.getData(), block, arguments);
+        this->data(place).predict_block(column.getData(), block, arguments);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -669,6 +540,7 @@ public:
 private:
     UInt32 param_num;
     Float64 learning_rate;
+    Float64 l2_reg_coef;
     UInt32 batch_size;
     std::shared_ptr<IGradientComputer> gc;
     std::shared_ptr<IWeightsUpdater> wu;
