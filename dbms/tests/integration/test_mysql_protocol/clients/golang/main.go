@@ -26,7 +26,7 @@ func main() {
 	}
 	defer db.Close()
 
-	runQuery := func(query string, processRows func(*sql.Rows)) {
+	runQuery := func(query string, processRows func(*sql.Rows) error) {
 		rows, err := db.Query(query)
 		if err != nil {
 			logger.Fatal(err)
@@ -45,7 +45,10 @@ func main() {
 		}
 
 		fmt.Println("Result:")
-		processRows(rows)
+		err = processRows(rows)
+		if err != nil {
+			logger.Fatal(err)
+		}
 
 		err = rows.Err()
 		if err != nil {
@@ -62,30 +65,32 @@ func main() {
 		}
 	}
 
-	processRows := func(rows *sql.Rows) {
+	processRows := func(rows *sql.Rows) error {
 		var x int
 		for rows.Next() {
 			err := rows.Scan(&x)
 			if err != nil {
-				logger.Fatal(err)
+				return err
 			}
 			fmt.Println(x)
 		}
+		return nil
 	}
 	runQuery("select number as a from system.numbers limit 2", processRows)
 
-	processRows = func(rows *sql.Rows) {
+	processRows = func(rows *sql.Rows) error {
 		var name string
 		var a int
 		for rows.Next() {
 			err := rows.Scan(&name, &a)
 			if err != nil {
-				logger.Fatal(err)
+				return err
 			}
 			fmt.Println(name, a)
 		}
+		return nil
 	}
-	runQuery("select name, 1 as a from system.tables limit 2", processRows)
+	runQuery("select name, 1 as a from system.tables where name == 'tables'", processRows)
 
 	runQuery("select 'тест' as a, 1 as b", processRows)
 
