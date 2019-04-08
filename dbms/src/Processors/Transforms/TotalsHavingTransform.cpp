@@ -159,7 +159,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
         expression->execute(finalized_block);
         auto columns = finalized_block.getColumns();
 
-        ColumnPtr filter_column_ptr = finalized.getColumns()[filter_column_pos];
+        ColumnPtr filter_column_ptr = columns[filter_column_pos];
         ConstantFilterDescription const_filter_description(*filter_column_ptr);
 
         if (const_filter_description.always_true)
