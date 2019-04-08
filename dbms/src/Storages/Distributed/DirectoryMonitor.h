@@ -19,10 +19,14 @@ namespace DB
 class StorageDistributedDirectoryMonitor
 {
 public:
-    StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool);
+    StorageDistributedDirectoryMonitor(
+        StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool, ActionBlocker & monitor_blocker);
+
     ~StorageDistributedDirectoryMonitor();
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
+
+    void  syncReplicaSends();
 
     void shutdownAndDropAllData();
 private:
@@ -57,6 +61,7 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     Logger * log;
+    ActionBlocker & monitor_blocker;
     ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
 
     /// Read insert query and insert settings for backward compatible.

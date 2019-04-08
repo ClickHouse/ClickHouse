@@ -15,6 +15,7 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Databases/IDatabase.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -303,11 +304,12 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 
     StoragePtr table = context.getTable(database_name, table_name);
 
-    auto table_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
-    if (!table_replicated)
+    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(table.get()))
+        storage_distributed->syncReplicaSends();
+    else if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
+    else
         throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
-
-    table_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
 }
 
 
