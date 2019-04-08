@@ -12,8 +12,7 @@ Column types:
 name BINARY
 a BINARY
 Result:
-aggregate_function_combinators 1
-asynchronous_metrics 1
+tables 1
 Columns:
 a
 b
