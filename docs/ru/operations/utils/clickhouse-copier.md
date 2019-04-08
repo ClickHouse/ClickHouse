@@ -31,6 +31,8 @@ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path 
 - `daemon` - запускает `clickhouse-copier` в режиме демона.
 - `config` - путь к файлу `zookeeper.xml` с параметрами соединения с ZooKeeper.
 - `task-path` - путь к ноде ZooKeeper. Нода используется для синхронизации между процессами `clickhouse-copier` и для хранения заданий. Задания хранятся в `$task-path/description`.
+- `task-file` - необязательный путь к файлу с описанием конфигурация заданий для загрузки в ZooKeeper.
+- `task-upload-force` - Загрузить `task-file` в ZooKeeper даже если уже было загружено.
 - `base-dir` - путь к логам и вспомогательным файлам. При запуске `clickhouse-copier` создает в `$base-dir` подкаталоги `clickhouse-copier_YYYYMMHHSS_<PID>`. Если параметр не указан, то каталоги будут создаваться в каталоге, где `clickhouse-copier` был запущен.
 
 ## Формат zookeeper.xml
