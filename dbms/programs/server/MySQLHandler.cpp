@@ -41,7 +41,8 @@ void MySQLHandler::run()
 
         LOG_TRACE(log, "Sent handshake");
 
-        auto handshake_response = packet_sender.receivePacket<HandshakeResponse>();
+        HandshakeResponse handshake_response;
+        packet_sender.receivePacket(handshake_response);
 
         LOG_DEBUG(log, "Capabilities: " << handshake_response.capability_flags
                                         << "\nmax_packet_size: "
@@ -74,7 +75,9 @@ void MySQLHandler::run()
         {
 
             packet_sender.sendPacket(AuthSwitchRequest(Authentication::ClearText, ""), true);
-            password = packet_sender.receivePacket<NullTerminatedString>().value;
+            NullTerminatedString password_packet;
+            packet_sender.receivePacket(password_packet);
+            password = password_packet.value;
         }
         else
         {
