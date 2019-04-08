@@ -55,6 +55,9 @@ TotalsHavingTransform::TotalsHavingTransform(
 
     filter_column_pos = outputs.front().getHeader().getPositionByName(filter_column_name);
 
+    finalized_header = getInputPort().getHeader();
+    finalizeBlock(finalized_header);
+
     /// Initialize current totals with initial state.
     current_totals.reserve(header.columns());
     for (const auto & elem : header)
@@ -152,7 +155,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     else
     {
         /// Compute the expression in HAVING.
-        auto finalized_block = getOutputPort().getHeader().cloneWithColumns(finalized.detachColumns());
+        auto finalized_block = finalized_header.cloneWithColumns(finalized.detachColumns());
         expression->execute(finalized_block);
         auto columns = finalized_block.getColumns();
 

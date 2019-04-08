@@ -58,6 +58,8 @@ private:
 
     size_t filter_column_pos = 0;
 
+    Block finalized_header;
+
     /// Here are the values that did not pass max_rows_to_group_by.
     /// They are added or not added to the current_totals, depending on the totals_mode.
     Chunk overflow_aggregates;
