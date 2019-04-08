@@ -1,5 +1,8 @@
 add_executable (hashes_test hashes_test.cpp)
-target_link_libraries (hashes_test PRIVATE clickhouse_common_io ${OPENSSL_CRYPTO_LIBRARY} ${CITYHASH_LIBRARIES})
+target_link_libraries (hashes_test PRIVATE clickhouse_common_io ${CITYHASH_LIBRARIES})
+if(OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries (hashes_test PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
+endif()
 
 add_executable (sip_hash sip_hash.cpp)
 target_link_libraries (sip_hash PRIVATE clickhouse_common_io)
@@ -78,6 +81,9 @@ target_link_libraries (allocator PRIVATE clickhouse_common_io)
 
 add_executable (cow_columns cow_columns.cpp)
 target_link_libraries (cow_columns PRIVATE clickhouse_common_io)
+
+add_executable (cow_compositions cow_compositions.cpp)
+target_link_libraries (cow_compositions PRIVATE clickhouse_common_io)
 
 add_executable (stopwatch stopwatch.cpp)
 target_link_libraries (stopwatch PRIVATE clickhouse_common_io)

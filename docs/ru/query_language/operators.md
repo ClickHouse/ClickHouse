@@ -51,6 +51,8 @@
 
 `a BETWEEN b AND c` - равнозначно `a >= b AND a <= c`
 
+`a NOT BETWEEN b AND c` - равнозначно `a < b OR a > c`
+
 ## Операторы для работы с множествами
 
 *Смотрите раздел [Операторы IN](select.md#select-in-operators).*
