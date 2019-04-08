@@ -152,7 +152,7 @@ public:
     IAggregateFunctionDataHelper(const DataTypes & argument_types_, const Array & parameters_)
             : IAggregateFunctionHelper<Derived>(argument_types_, parameters_) {}
 
-    virtual void create(AggregateDataPtr place) const override
+    void create(AggregateDataPtr place) const override
     {
         new (place) Data;
     }
