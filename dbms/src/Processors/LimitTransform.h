@@ -21,6 +21,8 @@ private:
     bool block_processed = false;
     Chunk current_chunk;
 
+    UInt64 rows_before_limit_at_least = 0;
+
 public:
     LimitTransform(Block header, size_t limit, size_t offset, bool always_read_till_end = false);
 
@@ -31,6 +33,8 @@ public:
 
     InputPort & getInputPort() { return input; }
     OutputPort & getOutputPort() { return output; }
+
+    UInt64 getRowsBeforeLimitAtLeast() const { return rows_before_limit_at_least; }
 };
 
 }

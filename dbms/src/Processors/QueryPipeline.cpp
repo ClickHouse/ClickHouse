@@ -3,6 +3,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/NullSink.h>
+#include <Processors/LimitTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
@@ -15,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 
 namespace DB
 {
@@ -275,10 +277,10 @@ void QueryPipeline::setOutput(ProcessorPtr output)
     if (!format)
         throw Exception("IOutputFormat processor expected for QueryPipeline::setOutput.", ErrorCodes::LOGICAL_ERROR);
 
-    if (has_output)
+    if (output_format)
         throw Exception("QueryPipeline already has output.", ErrorCodes::LOGICAL_ERROR);
 
-    has_output = true;
+    output_format = format;
 
     resize(1);
 
@@ -400,12 +402,53 @@ void QueryPipeline::setProcessListElement(QueryStatus * elem)
             source->getStream()->setProcessListElement(elem);
 }
 
+void QueryPipeline::finalize()
+{
+    checkInitialized();
+
+    if (!output_format)
+        throw Exception("Cannot finalize pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
+
+    calcRowsBeforeLimit();
+}
+
+void QueryPipeline::calcRowsBeforeLimit()
+{
+    /// TODO get from Remote
+
+    UInt64 rows_before_limit_at_least = 0;
+    bool has_limit = false;
+
+    for (auto & processor : processors)
+    {
+        if (auto * limit = typeid_cast<const LimitTransform *>(processor.get()))
+        {
+            has_limit = true;
+            rows_before_limit_at_least += limit->getRowsBeforeLimitAtLeast();
+        }
+    }
+
+    UInt64 rows_before_limit = 0;
+    bool has_partial_sorting = false;
+
+    for (auto & processor : processors)
+    {
+        if (auto * limit = typeid_cast<const PartialSortingTransform *>(processor.get()))
+        {
+            has_partial_sorting = true;
+            rows_before_limit += limit->getNumReadRows();
+        }
+    }
+
+    if (has_limit)
+        output_format->setRowsBeforeLimit(has_partial_sorting ? rows_before_limit : rows_before_limit_at_least);
+}
 
 PipelineExecutorPtr QueryPipeline::execute(size_t num_threads)
 {
     checkInitialized();
 
-    if (!has_output)
+    if (!output_format)
         throw Exception("Cannot execute pipeline because it doesn't have output.", ErrorCodes::LOGICAL_ERROR);
 
     if (executor)
