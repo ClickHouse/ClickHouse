@@ -43,7 +43,7 @@ void ExtremesTransform::work()
 {
     if (finished_transform)
     {
-        if (!extremes)
+        if (!extremes && !extremes_columns.empty())
             extremes.setColumns(std::move(extremes_columns), 2);
     }
     else

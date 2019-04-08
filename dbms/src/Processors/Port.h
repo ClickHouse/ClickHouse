@@ -258,7 +258,7 @@ public:
 
         if (chunk.getNumColumns() != header.columns())
         {
-            String msg = "Invalid number of columns in chunk pushed to OutputPort. Expected"
+            String msg = "Invalid number of columns in chunk pushed to OutputPort. Expected "
                     + std::to_string(header.columns()) + ", found " + std::to_string(chunk.getNumColumns()) + '\n';
 
             msg += "Header: " + header.dumpStructure() + '\n';
