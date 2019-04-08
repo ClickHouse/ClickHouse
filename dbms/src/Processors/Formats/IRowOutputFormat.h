@@ -22,8 +22,8 @@ protected:
     void finalize() override;
 
 public:
-    IRowOutputFormat(Block header, WriteBuffer & out)
-        : IOutputFormat(header, out), types(header.getDataTypes())
+    IRowOutputFormat(const Block & header, WriteBuffer & out_)
+        : IOutputFormat(header, out_), types(header.getDataTypes())
     {
     }
 
