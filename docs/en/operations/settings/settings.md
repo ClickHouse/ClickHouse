@@ -302,15 +302,14 @@ Any positive integer.
 
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
 
-The minimum data volume to be read from storage required for using of the direct I/O access to the storage disk.
+The minimum data volume required for using direct I/O access to the storage disk.
 
-ClickHouse uses this setting when selecting the data from tables. If summary storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with `O_DIRECT` option.
+ClickHouse uses this setting when reading data from tables. If the total storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with the `O_DIRECT` option.
 
 **Possible values**
 
-Positive integer.
-
-0 — The direct I/O is disabled.
+- 0 — Direct I/O is disabled.
+- Positive integer.
 
 **Default value**: 0.
 
