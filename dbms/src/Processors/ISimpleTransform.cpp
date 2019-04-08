@@ -32,7 +32,6 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     if (transformed)
     {
         output.push(std::move(current_chunk));
-        has_input = false;
         transformed = false;
     }
 
@@ -72,6 +71,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 void ISimpleTransform::work()
 {
     transform(current_chunk);
+    has_input = false;
 
     if (!skip_empty_chunks || current_chunk)
         transformed = true;
