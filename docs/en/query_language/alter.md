@@ -7,7 +7,7 @@ The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`a
 Changing the table structure.
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|MODIFY COLUMN ...
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|COMMENT|MODIFY COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
@@ -16,31 +16,42 @@ Each action is an operation on a column.
 The following actions are supported:
 
 ``` sql
-ADD COLUMN name [type] [default_expr] [AFTER name_after]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified name, type, and `default_expr` (see the section "Default expressions"). If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, 'name_after' can be the name of a column that is added in one of the previous actions.
+Adds a new column to the table with the specified name, type, and `default_expr` (see the section "Default expressions"). 
+
+If `IF NOT EXISTS` is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, 'name_after' can be the name of a column that is added in one of the previous actions.
 
 Adding a column just changes the table structure, without performing any actions with data. The data doesn't appear on the disk after ALTER. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see MergeTree).
 
 This approach allows us to complete the ALTER query instantly, without increasing the volume of old data.
 
 ``` sql
-DROP COLUMN name
+DROP COLUMN [IF EXISTS] name
 ```
 
-Deletes the column with the name 'name'.
+Deletes the column with the name 'name'. If `IF EXISTS` is specified, the query won't return an error if the column doesn't exist.
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
 ``` sql
-CLEAR COLUMN name IN PARTITION partition_name
+CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
-Clears all data in a column in a specified partition.
+Clears all data in a column for a specified partition. If `IF EXISTS` is specified, the query won't return an error if the column doesn't exist.
 
 ``` sql
-MODIFY COLUMN name [type] [default_expr]
+COMMENT COLUMN [IF EXISTS] name 'comment'
+```
+
+Adds a comment to the column. If `IF EXISTS` is specified, the query won't return an error if the column doesn't exist.
+
+Each column can have one comment. Comments are stored in the `comment_expression` column returned by the [DESCRIBE t](misc.md#misc-describe-table) query. If a comment already exists for the column, this comment overwrites the previous comment.
+
+
+``` sql
+MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
 ```
 
 Changes the 'name' column's type to 'type' and/or the default expression to 'default_expr'. When changing the type, values are converted as if the 'toType' function were applied to them.
