@@ -65,6 +65,10 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType PartsSend;
+}
 
 namespace
 {
@@ -427,7 +431,7 @@ void StorageDistributed::createDirectoryMonitors()
 void StorageDistributed::requireDirectoryMonitor(const std::string & name)
 {
     std::lock_guard lock(cluster_nodes_mutex);
-    cluster_nodes_data[name].requireDirectoryMonitor(name, *this);
+    cluster_nodes_data[name].requireDirectoryMonitor(name, *this, monitors_blocker);
 }
 
 ConnectionPoolPtr StorageDistributed::requireConnectionPool(const std::string & name)
@@ -454,11 +458,17 @@ void StorageDistributed::ClusterNodeData::requireConnectionPool(const std::strin
         conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, storage);
 }
 
-void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::string & name, StorageDistributed & storage)
+void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(
+    const std::string & name, StorageDistributed & storage, ActionBlocker & monitor_blocker)
 {
     requireConnectionPool(name, storage);
     if (!directory_monitor)
-        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
+        directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool, monitor_blocker);
+}
+
+void StorageDistributed::ClusterNodeData::syncReplicaSends()
+{
+    directory_monitor->syncReplicaSends();
 }
 
 void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
@@ -497,6 +507,22 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
     }
 
     return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
+}
+
+ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
+{
+    if (type == ActionLocks::PartsSend)
+        return monitors_blocker.cancel();
+    return {};
+}
+
+void StorageDistributed::syncReplicaSends()
+{
+    std::lock_guard lock(cluster_nodes_mutex);
+
+    /// TODO: Maybe it should be executed in parallel
+    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
+        it->second.syncReplicaSends();
 }
 
 
