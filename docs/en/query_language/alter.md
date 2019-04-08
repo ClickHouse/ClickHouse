@@ -19,7 +19,7 @@ The following actions are supported:
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [AFTER name_after]
 ```
 
-Adds a new column to the table with the specified name, type, and `default_expr` (see the section "Default expressions"). 
+Adds a new column to the table with the specified name, type, and `default_expr` (see the section [Default expressions](create.md#create-default-values)). 
 
 If `IF NOT EXISTS` is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. Otherwise, the column is added to the end of the table. Note that there is no way to add a column to the beginning of a table. For a chain of actions, 'name_after' can be the name of a column that is added in one of the previous actions.
 
@@ -54,7 +54,9 @@ Each column can have one comment. Comments are stored in the `comment_expression
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
 ```
 
-Changes the 'name' column's type to 'type' and/or the default expression to 'default_expr'. When changing the type, values are converted as if the 'toType' function were applied to them.
+If `IF EXISTS` is specified, the query won't return an error if the column doesn't exist.
+
+This query changes the `name` column's type to `type` and/or the default expression to `default_expr`. When changing the type, values are converted as if the `toType` function were applied to them.
 
 If only the default expression is changed, the query doesn't do anything complex, and is completed almost instantly.
 
