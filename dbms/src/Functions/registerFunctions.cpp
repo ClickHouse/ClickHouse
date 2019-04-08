@@ -1,12 +1,10 @@
-#include <Common/config.h>
-#include <Functions/registerFunctions.h>
 #include <Functions/FunctionFactory.h>
-
+#include <Functions/registerFunctions.h>
+#include <Common/config.h>
 
 
 namespace DB
 {
-
 /** These functions are defined in a separate translation units.
   * This is done in order to reduce the consumption of RAM during build, and to speed up the parallel build.
   */
@@ -34,6 +32,7 @@ void registerFunctionsRound(FunctionFactory &);
 void registerFunctionsString(FunctionFactory &);
 void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
+void registerFunctionsStringRegex(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
@@ -75,6 +74,7 @@ void registerFunctions()
     registerFunctionsString(factory);
     registerFunctionsStringArray(factory);
     registerFunctionsStringSearch(factory);
+    registerFunctionsStringRegex(factory);
     registerFunctionsStringSimilarity(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);

@@ -33,11 +33,15 @@
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    - [Sematext](https://sematext.com/)
+        - [clickhouse积分](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - 记录
     - [rsyslog](https://www.rsyslog.com/)
         - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (对于 [Kubernetes](https://kubernetes.io))
+    - [logagent](https://www.sematext.com/logagent)
+        - [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
 
 ## 编程语言生态系统
 

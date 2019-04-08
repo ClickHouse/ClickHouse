@@ -52,6 +52,7 @@ query=hello world+foo+bar
 query=hello world+foo+bar#a=b
 query=hello world+foo+bar#a=b
 query=hello world+foo+bar#a=b
+#a=b
 ====CUT TO FIRST SIGNIFICANT SUBDOMAIN====
 example.com
 example.com
@@ -91,4 +92,5 @@ http://www.example.com/a/b/c
 http://www.example.com/a/b/c
 http://www.example.com/a/b/c
 http://paul@www.example.com/a/b/c
+//paul@www.example.com/a/b/c
 //paul@www.example.com/a/b/c
