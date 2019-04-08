@@ -157,7 +157,8 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     else
     {
         /// Compute the expression in HAVING.
-        auto finalized_block = finalized_header.cloneWithColumns(finalized.detachColumns());
+        auto & cur_header = final ? finalized_header : getInputPort().getHeader();
+        auto finalized_block = cur_header.cloneWithColumns(finalized.detachColumns());
         expression->execute(finalized_block);
         auto columns = finalized_block.getColumns();
 
