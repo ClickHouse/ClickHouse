@@ -27,7 +27,6 @@
 from . import local, query
 
 import argparse
-from pprint import pprint
 import sys
 
 
@@ -49,12 +48,17 @@ repo = local.Local(args.repo, args.remote, github.get_default_branch())
 stables = repo.get_stables()[-args.number:]
 if not stables:
     sys.exit('No stable branches found!')
+else:
+    print('Found stable branches:')
+    for stable in stables:
+        print(f'{stable[0]} forked from {stable[1]}')
 
 first_commit = max(repo.get_first_commit(), stables[0][1], key=repo.comparator)
 pull_requests = github.get_pull_requests(first_commit)
 good_commits = set(oid[0] for oid in pull_requests.values())
 
-pprint(good_commits)
+print()
+print('Problems:')
 
 # Iterate all local commits on portions: from HEAD to 1st recent stable base, then to 2nd recent base, and so on.
 # It will help to detect necessity to cherry-pick or backport something to previous stable branches.
@@ -65,6 +69,17 @@ for i in reversed(range(len(stables))):
 
     for commit in repo.iterate(from_commit, stables[i][1]):
         if str(commit) not in good_commits:
-            print(f'Commit {commit} is not referenced by any pull-request!', file=sys.stderr)
+            print(f'commit {commit} is not referenced by any pull-request', file=sys.stderr)
 
     from_commit = stables[i][1]
+
+for num, value in pull_requests.items():
+    label_found = False
+
+    for label in value[1]:
+        if label.startswith('pr-'):
+            label_found = True
+            break
+
+    if not label_found:
+        print(f'pull-request {num} has no description label', file=sys.stderr)

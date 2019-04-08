@@ -44,13 +44,13 @@ class Query:
     def get_default_branch(self):
         return self._run(Query._DEFAULT)['data']['repository']['defaultBranchRef']['name']
 
-    def _labels(self, pr):
-        pass
+    def _labels(self, pull_request):
+        # TODO: fetch all labels
+        return [label['node']['name'] for label in pull_request['labels']['edges']]
 
     def _run(self, query):
         headers = {'Authorization': f'bearer {self._token}'}
         request = requests.post('https://api.github.com/graphql', json={'query': query}, headers=headers)
-        print('Running query…')
         if request.status_code == 200:
             return request.json()
         else:
