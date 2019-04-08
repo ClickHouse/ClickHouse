@@ -23,8 +23,11 @@ static Chunk finalizeChunk(Chunk chunk)
     return Chunk(std::move(columns), num_rows);
 }
 
-static Block createOutputHeader(Block block)
+static Block createOutputHeader(Block block, const ExpressionActionsPtr & expression)
 {
+    if (expression)
+        expression->execute(block);
+
     finalizeBlock(block);
     return block;
 }
@@ -37,7 +40,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
-    : ISimpleTransform(header, createOutputHeader(header), true)
+    : ISimpleTransform(header, createOutputHeader(header, expression_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
     , filter_column_name(filter_column_)
