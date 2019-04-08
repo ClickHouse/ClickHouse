@@ -131,7 +131,7 @@ public:
     size_t getTotalByteCount() const;
 
     ASTTableJoin::Kind getKind() const { return kind; }
-    AsofRowRefs::Type getAsofType() const { return asof_type; }
+    AsofRowRefs::Type getAsofType() const { return *asof_type; }
 
     /** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
       * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
@@ -366,7 +366,7 @@ private:
 
 private:
     Type type = Type::EMPTY;
-    AsofRowRefs::Type asof_type = AsofRowRefs::Type::EMPTY;
+    std::optional<AsofRowRefs::Type> asof_type;
 
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
@@ -376,6 +376,9 @@ private:
     Block sample_block_with_columns_to_add;
     /// Block with key columns in the same order they appear in the right-side table.
     Block sample_block_with_keys;
+
+    /// Block as it would appear in the BlockList
+    Block blocklist_sample;
 
     Poco::Logger * log;
 
@@ -392,6 +395,11 @@ private:
     mutable std::shared_mutex rwlock;
 
     void init(Type type_);
+
+    /** Take an inserted block and discard everything that does not need to be stored
+     *  Example, remove the keys as they come from the LHS block, but do keep the ASOF timestamps
+     */
+    void prepareBlockListStructure(Block & stored_block);
 
     /// Throw an exception if blocks have different types of key columns.
     void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right) const;

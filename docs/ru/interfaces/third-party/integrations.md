@@ -34,11 +34,15 @@
         - [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (использует [Go client](https://github.com/kshvakov/clickhouse/))
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    - [Sematext](https://sematext.com/)
+        - [clickhouse интеграция](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - Логирование
     - [rsyslog](https://www.rsyslog.com/)
         - [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (для [Kubernetes](https://kubernetes.io))
+    - [logagent](https://www.sematext.com/logagent)
+        - [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
 
 ## Экосистемы вокруг языков программирования
 
