@@ -139,6 +139,7 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
+
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
 Turns on the full SQL parser if the fast stream parser can't parse the data. This setting is used only for [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
@@ -186,20 +187,20 @@ Ok.
 
 ## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
 
-Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. The setting is applies for `INSERT` queries.
+Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
 
-When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
 
 When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
 
 Operations where you may need the extended data exchange enabled:
 
-- Inserting the data of the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+- Inserting data in [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
 
-For all other operations ClickHouse doesn't apply the setting.
+For all other operations, ClickHouse doesn't apply the setting.
 
 !!! note "Note"
-    The functionality of the extended data exchange consumes additional computing resources on the server and can reduce the performance.
+    The extended data exchange functionality consumes additional computing resources on the server and can reduce performance.
 
 **Possible values**
 
@@ -207,6 +208,7 @@ For all other operations ClickHouse doesn't apply the setting.
 - 1 — Functionality is enabled.
 
 **Default value:** 0.
+
 
 ## join_default_strictness {#settings-join_default_strictness}
 
@@ -223,12 +225,12 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md#select
 
 ## join_use_nulls {#settings-join_use_nulls}
 
-Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables the empty cells may appear. ClickHouse fills them differently based on setting.
+Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
 **Possible values**
 
 - 0 — The empty cells are filled with the default value of the corresponding field type.
-- 1 — `JOIN` behaves like in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+- 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
 **Default value**: 0.
 

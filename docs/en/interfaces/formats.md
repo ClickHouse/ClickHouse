@@ -307,7 +307,7 @@ See also the `JSONEachRow` format.
 
 ## JSONEachRow {#jsoneachrow}
 
-When using this format, ClickHouse outputs rows as separated, newline delimited JSON objects, but the whole data is not a valid JSON.
+When using this format, ClickHouse outputs rows as separated, newline-delimited JSON objects, but the data as a whole is not valid JSON.
 
 ```json
 {"SearchPhrase":"curtain designs","count()":"1064"}
@@ -317,7 +317,7 @@ When using this format, ClickHouse outputs rows as separated, newline delimited 
 
 When inserting the data, you should provide a separate JSON object for each row.
 
-### Inserting the Data
+### Inserting Data
 
 ```
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -326,17 +326,17 @@ INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021
 ClickHouse allows:
 
 - Any order of key-value pairs in the object.
-- The omission of some values.
+- Omitting some values.
 
-ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects to a line. You do not have to separate them with line breaks.
+ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You don't have to separate them with line breaks.
 
-**Processing of omitted values**
+**Omitted values processing**
 
-ClickHouse substitutes the omitted values with the default values of corresponding [data types](../data_types/index.md).
+ClickHouse substitutes omitted values with the default values for the corresponding [data types](../data_types/index.md).
 
-In case of the `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [insert_sample_with_metadata](../operations/settings/settings.md#session_settings-insert_sample_with_metadata) setting.
+If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [insert_sample_with_metadata](../operations/settings/settings.md#session_settings-insert_sample_with_metadata) setting.
 
-Let's consider the following table:
+Consider the following table:
 
 ```
 CREATE TABLE IF NOT EXISTS example_table
@@ -346,15 +346,15 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
-- If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as a default value for `UInt32` data type).
+- If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
 - If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 !!! note "Warning"
-    Use this option carefully, enabling it negatively affects the performance of the ClickHouse server.
+    Use this option carefully. Enabling it negatively affects the performance of the ClickHouse server.
 
-### Selecting the Data
+### Selecting Data
 
-Let's consider the `UserActivity` table as an example:
+Consider the `UserActivity` table as an example:
 
 ```
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
@@ -373,7 +373,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
 !!! note "Note"
-    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted into JSON without losing any information.
+    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
 
 ## Native {#native}
 
