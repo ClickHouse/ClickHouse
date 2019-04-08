@@ -5,6 +5,7 @@
 
 #include <Poco/Path.h>
 
+#include <string>
 #include <unordered_map>
 
 
@@ -118,6 +119,7 @@ private:
     const String data_path;
     Poco::Logger * log;
 
+    /// This mutex follow tables_mutex in lock order
     mutable std::mutex dictionaries_mutex;
     DictionariesMap dictionaries;
 

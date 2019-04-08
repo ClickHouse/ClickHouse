@@ -851,6 +851,7 @@ StoragePtr Context::tryGetExternalTable(const String & table_name) const
 
 StoragePtr Context::getTable(const String & database_name, const String & table_name) const
 {
+    auto lock = getLock();
     Exception exc;
     auto res = getTableImpl(database_name, table_name, &exc);
     if (!res)
@@ -1310,16 +1311,19 @@ ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
 
 const DictionaryPtr Context::getDictionary(const std::string & dictionary_name) const
 {
+    auto lock = getLock();
     return getExternalDictionaries().getDictionary(dictionary_name);
 }
 
 DictionaryPtr Context::getDictionary(const std::string & dictionary_name)
 {
+    auto lock = getLock();
     return getExternalDictionaries().getDictionary(dictionary_name);
 }
 
 const DictionaryPtr Context::getDictionary(const std::string & database_name, const std::string & dictionary_name) const
 {
+    auto lock = getLock();
     if (database_name.empty())
         return getDictionary(dictionary_name);
 
@@ -1329,6 +1333,7 @@ const DictionaryPtr Context::getDictionary(const std::string & database_name, co
 
 DictionaryPtr Context::getDictionary(const std::string & database_name, const std::string & dictionary_name)
 {
+    auto lock = getLock();
     if (database_name.empty())
         return getDictionary(dictionary_name);
 

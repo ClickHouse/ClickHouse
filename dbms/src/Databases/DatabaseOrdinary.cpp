@@ -747,13 +747,15 @@ void DatabaseOrdinary::createDictionary(Context & context, const String & dictio
 
     try
     {
-        std::lock_guard tables_lock{tables_mutex};
-        if (tables.count(dictionary_name) > 0)
-            throw Exception("Table already exists with the same name `" + name + '.' + dictionary_name + "`", ErrorCodes::TABLE_ALREADY_EXISTS);
+        {
+            std::lock_guard tables_lock{tables_mutex};
+            if (tables.count(dictionary_name) > 0)
+                throw Exception("Table already exists with the same name `" + name + '.' + dictionary_name + "`", ErrorCodes::TABLE_ALREADY_EXISTS);
 
-        std::lock_guard dict_lock{dictionaries_mutex};
-        if (!dictionaries.emplace(dictionary_name, dict_ptr).second)
-            throw Exception("Dictionary " + name + '.' + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+            std::lock_guard dict_lock{dictionaries_mutex};
+            if (!dictionaries.emplace(dictionary_name, dict_ptr).second)
+                throw Exception("Dictionary " + name + '.' + dictionary_name + " already exists", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+        }
 
         context.getExternalDictionaries().addObjectFromDatabase(name, dictionary_name, dict_ptr);
         Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path.toString());
@@ -804,10 +806,13 @@ DictionaryPtr DatabaseOrdinary::getDictionary(const Context & context [[maybe_un
 
 void DatabaseOrdinary::removeDictionary(Context & context [[maybe_unused]], const String & dictionary_name)
 {
-    std::lock_guard dict_lock{dictionaries_mutex};
-    auto dictionary_path = getDictionaryMetadataPath(dictionary_name);
-    Poco::File(dictionary_path).remove();
-    dictionaries.erase(dictionary_name);
+    {
+        std::lock_guard dict_lock{dictionaries_mutex};
+        auto dictionary_path = getDictionaryMetadataPath(dictionary_name);
+        Poco::File(dictionary_path).remove();
+        dictionaries.erase(dictionary_name);
+    }
+
     context.getExternalDictionaries().removeObject(name, dictionary_name);
 }
 
