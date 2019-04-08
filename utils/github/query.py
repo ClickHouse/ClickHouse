@@ -5,7 +5,7 @@ import sys
 
 
 class Query:
-    def __init__(self, token, max_page_size=100, pull_request_page_size=2):
+    def __init__(self, token, max_page_size=100, pull_request_page_size=5):
         self._token = token
         self._max_page_size = max_page_size
         self._pull_request_page_size = pull_request_page_size
@@ -17,6 +17,8 @@ class Query:
         pull_requests = {} # number → (merge oid, labels)
         query = Query._FIRST.format(max_page_size=self._max_page_size, pull_request_page_size=self._pull_request_page_size)
         not_end = True
+
+        default_branch_name = self.get_default_branch()
 
         while not_end:
             result = self._run(query)['data']['repository']['defaultBranchRef']['target']['history']
@@ -33,7 +35,9 @@ class Query:
                 assert node['associatedPullRequests']['totalCount'] <= self._pull_request_page_size
 
                 for pull_request in node['associatedPullRequests']['nodes']:
-                    if pull_request['mergeCommit']['oid'] == node['oid']:
+                    if(pull_request['baseRepository']['nameWithOwner'] == 'yandex/ClickHouse' and
+                       pull_request['baseRefName'] == default_branch_name and
+                       pull_request['mergeCommit']['oid'] == node['oid']):
                         pull_requests[pull_request['number']] = (node['oid'], self._labels(pull_request))
 
             query = Query._NEXT.format(max_page_size=self._max_page_size,
@@ -76,6 +80,10 @@ Query._FIRST = '''
                   nodes {{
                     ... on PullRequest {{
                       number
+                      baseRefName
+                      baseRepository {{
+                        nameWithOwner
+                      }}
                       mergeCommit {{
                         oid
                       }}
@@ -124,6 +132,10 @@ Query._NEXT = '''
                   nodes {{
                     ... on PullRequest {{
                       number
+                      baseRefName
+                      baseRepository {{
+                        nameWithOwner
+                      }}
                       mergeCommit {{
                         oid
                       }}

@@ -5,22 +5,17 @@
     Rules for commit messages, branch names and everything:
 
     - All(!) commits to master branch must originate from pull-requests.
-    - Commit message should contain the reference to the originative pull-request in form `#NUMBER`.
-    - The first sequence recognized as reference must be the originative pull-request reference.
+    - All pull-requests must be squash-merged or explicitly merged without rebase.
+    - All pull-requests to master must have at least one label prefixed with `pr-`.
+    - Labels that require pull-request to be backported must be red colored (#ff0000).
     - Stable branch name must be of form `YY.NUMBER`.
     - All stable branches must be forked directly from the master branch and never be merged back,
       or merged with any other branches based on the master branch (including master branch itself).
 
-    Output of this script (if no errors occurred):
+    Output of this script:
 
-    - The 1st line is the last good handled commit on master branch for consecutive invocations.
-    - The 2nd line is the last handled commit on master branch (effectively current head).
-    - The 3rd line is the first handled commit on master branch (inclusive).
-
-    Errors (strictly after output):
-
-    - Commits without references to pull-requests.
-    - Commits with the first reference not to the originative pull-request.
+    - Commits without references from pull-requests.
+    - Pull-requests to master without proper labels.
 
 '''
 
@@ -79,6 +74,8 @@ for num, value in pull_requests.items():
     for label in value[1]:
         if label.startswith('pr-'):
             label_found = True
+            if label in ['pr-bugfix', 'pr-performance']:
+                print(f'pull-request {num} should be backported')
             break
 
     if not label_found:
