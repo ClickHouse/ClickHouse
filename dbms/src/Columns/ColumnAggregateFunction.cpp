@@ -84,16 +84,11 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         *   AggregateFunction(quantileTiming(0.5), UInt64)
         * into UInt16 - already finished result of `quantileTiming`.
         */
-//    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
-//    {
-//        auto res = createView();
-//        res->set(function_state->getNestedFunction());
-//        res->data.assign(data.begin(), data.end());
-//        return res;
-//    }
-//
-//    MutableColumnPtr res = func->getReturnType()->createColumn();
-//    res->reserve(data.size());
+
+    /** Convertion function is used in convertToValues and predictValues
+        * in the similar part of both functions
+        */
+
     MutableColumnPtr res;
     if (convertion(&res))
     {
@@ -113,8 +108,6 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
     {
         return res;
     }
-
-    /// На моих тестах дважды в эту функцию приходит нечтно, имеющее data.size() == 0 однако оно по сути ничего не делает в следующих строках
 
     auto ML_function_Linear = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLinearRegression> *>(func.get());
     auto ML_function_Logistic = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression> *>(func.get());

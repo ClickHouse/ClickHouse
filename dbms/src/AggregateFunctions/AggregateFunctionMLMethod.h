@@ -459,10 +459,10 @@ private:
 
 
 template <
-        /// Implemented Machine Learning method
-        typename Data,
-        /// Name of the method
-        typename Name
+    /// Implemented Machine Learning method
+    typename Data,
+    /// Name of the method
+    typename Name
 >
 class AggregateFunctionMLMethod final : public IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>
 {
