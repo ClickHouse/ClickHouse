@@ -11,7 +11,7 @@
 namespace DB
 {
 
-static Chunk finalizeChunk(Chunk chunk)
+void finalizeChunk(Chunk & chunk)
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
@@ -20,7 +20,7 @@ static Chunk finalizeChunk(Chunk chunk)
         if (auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(column.get()))
             column = agg_function->convertToValues();
 
-    return Chunk(std::move(columns), num_rows);
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 static Block createOutputHeader(Block block, const ExpressionActionsPtr & expression)

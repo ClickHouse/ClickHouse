@@ -1,19 +1,8 @@
 #include <Processors/Transforms/RollupTransform.h>
+#include <Processors/Transforms/TotalsHavingTransform.h>
 
 namespace DB
 {
-
-static Chunk finalizeChunk(Chunk chunk)
-{
-    auto num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-
-    for (auto & column : columns)
-        if (auto * agg_function = typeid_cast<const ColumnAggregateFunction *>(column.get()))
-            column = agg_function->convertToValues();
-
-    return Chunk(std::move(columns), num_rows);
-}
 
 RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_)
     : IInflatingTransform(std::move(header)
@@ -53,7 +42,8 @@ Chunk RollupTransform::generate()
         consumed_chunk = Chunk(rollup_block.getColumns(), num_rows);
     }
 
-    return finalizeChunk(std::move(gen_chunk));
+    finalizeChunk(gen_chunk);
+    return gen_chunk;
 }
 
 }

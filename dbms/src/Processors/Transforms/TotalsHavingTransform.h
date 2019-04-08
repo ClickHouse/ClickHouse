@@ -70,4 +70,6 @@ private:
     ArenaPtr arena;
 };
 
+void finalizeChunk(Chunk & chunk);
+
 }
