@@ -254,7 +254,7 @@ void TotalsHavingTransform::prepareTotals()
 
     if (expression)
     {
-        auto block = getOutputPort().getHeader().cloneWithColumns(totals.detachColumns());
+        auto block = finalized_header.cloneWithColumns(totals.detachColumns());
         expression->execute(block);
         totals = Chunk(block.getColumns(), 1);
     }
