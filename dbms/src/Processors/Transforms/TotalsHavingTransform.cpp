@@ -153,6 +153,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     if (filter_column_name.empty())
     {
         addToTotals(chunk, nullptr);
+        chunk = std::move(finalized);
     }
     else
     {
