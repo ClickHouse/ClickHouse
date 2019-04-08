@@ -63,6 +63,9 @@ LimitTransform::Status LimitTransform::prepare()
     current_chunk = input.pull();
     has_block = true;
 
+    auto rows = current_chunk.getNumRows();
+    rows_before_limit_at_least += rows;
+
     /// Skip block (for 'always_read_till_end' case).
     if (pushing_is_finished)
     {
@@ -75,7 +78,6 @@ LimitTransform::Status LimitTransform::prepare()
 
     /// Process block.
 
-    size_t rows = current_chunk.getNumRows();
     rows_read += rows;
 
     if (rows_read <= offset)

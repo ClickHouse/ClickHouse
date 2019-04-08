@@ -24,6 +24,8 @@ public:
 
     BlockStreamProfileInfo & getProfileInfo() { return info; }
 
+    void setRowsBeforeLimit(size_t rows_before_limit) override;
+
 protected:
     void consume(Chunk chunk) override { queue.push(chunk); }
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }

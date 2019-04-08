@@ -13,8 +13,11 @@ PartialSortingTransform::PartialSortingTransform(const Block & header, SortDescr
 void PartialSortingTransform::transform(Chunk & chunk)
 {
     auto num_rows = chunk.getNumRows();
+    read_rows += num_rows;
+
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
     chunk.clear();
+
     sortBlock(block, description, limit);
     chunk.setColumns(block.getColumns(), num_rows);
 }

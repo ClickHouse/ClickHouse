@@ -53,4 +53,9 @@ Block LazyOutputFormat::getExtremes()
     return getPort(PortKind::Extremes).getHeader().cloneWithColumns(extremes.detachColumns());
 }
 
+void LazyOutputFormat::setRowsBeforeLimit(size_t rows_before_limit)
+{
+    info.setRowsBeforeLimit(rows_before_limit);
+}
+
 }

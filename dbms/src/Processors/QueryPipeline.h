@@ -15,6 +15,8 @@ using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
 class Context;
 
+class IOutputFormat;
+
 class QueryPipeline
 {
 public:
@@ -55,6 +57,9 @@ public:
     void setProgressCallback(const ProgressCallback & callback);
     void setProcessListElement(QueryStatus * elem);
 
+    /// Call after execution.
+    void finalize();
+
 private:
 
     /// All added processors.
@@ -75,7 +80,7 @@ private:
 
     TableStructureReadLocks table_locks;
 
-    bool has_output = false;
+    IOutputFormat * output_format = nullptr;
 
     PipelineExecutorPtr executor;
     std::shared_ptr<ThreadPool> pool;
@@ -83,6 +88,8 @@ private:
     void checkInitialized();
     void checkSource(const ProcessorPtr & source);
     void concatDelayedStream();
+
+    void calcRowsBeforeLimit();
 };
 
 }

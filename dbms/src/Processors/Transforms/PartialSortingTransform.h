@@ -16,12 +16,15 @@ public:
 
     String getName() const override { return "PartialSortingTransform"; }
 
+    UInt64 getNumReadRows() const { return read_rows; }
+
 protected:
     void transform(Chunk & chunk) override;
 
 private:
     SortDescription description;
     UInt64 limit;
+    UInt64 read_rows = 0;
 };
 
 }
