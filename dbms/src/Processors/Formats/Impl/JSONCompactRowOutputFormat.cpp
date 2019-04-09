@@ -7,8 +7,9 @@
 namespace DB
 {
 
-JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings)
-    : JSONRowOutputFormat(out_, header, settings)
+JSONCompactRowOutputFormat::JSONCompactRowOutputFormat(
+    WriteBuffer & out_, const Block & header, const FormatSettings & settings_)
+    : JSONRowOutputFormat(out_, header, settings_)
 {
 }
 
