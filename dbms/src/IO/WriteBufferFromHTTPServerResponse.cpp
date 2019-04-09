@@ -82,6 +82,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     *response_header_ostr << "Content-Encoding: gzip\r\n";
 #else
                     response.set("Content-Encoding", "gzip");
+                    response_body_ostr = &(response.send());
 #endif
                     out_raw.emplace(*response_body_ostr);
                     deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
@@ -93,6 +94,7 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     *response_header_ostr << "Content-Encoding: deflate\r\n";
 #else
                     response.set("Content-Encoding", "deflate");
+                    response_body_ostr = &(response.send());
 #endif
                     out_raw.emplace(*response_body_ostr);
                     deflating_buf.emplace(*out_raw, compression_method, compression_level, working_buffer.size(), working_buffer.begin());
@@ -100,10 +102,11 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                 }
                 else if (compression_method == CompressionMethod::Brotli)
                 {
-#if POCO_CLICKHOUSE_PATCH
+#if defined(POCO_CLICKHOUSE_PATCH)
                     *response_header_ostr << "Content-Encoding: br\r\n";
 #else
                     response.set("Content-Encoding", "br");
+                    response_body_ostr = &(response.send());
 #endif
                     out_raw.emplace(*response_body_ostr);
                     brotli_buf.emplace(*out_raw, compression_level, working_buffer.size(), working_buffer.begin());
@@ -114,11 +117,6 @@ void WriteBufferFromHTTPServerResponse::nextImpl()
                     throw Exception("Logical error: unknown compression method passed to WriteBufferFromHTTPServerResponse",
                                     ErrorCodes::LOGICAL_ERROR);
                 /// Use memory allocated for the outer buffer in the buffer pointed to by out. This avoids extra allocation and copy.
-
-#if !defined(POCO_CLICKHOUSE_PATCH)
-                response_body_ostr = &(response.send());
-#endif
-
             }
             else
             {
