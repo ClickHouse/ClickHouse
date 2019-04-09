@@ -127,6 +127,9 @@ void CreatingSetsTransform::work()
 
     Stopwatch watch;
 
+    while (cur_subquery != subqueries_for_sets.end() && cur_subquery->second.source == nullptr)
+        ++cur_subquery;
+
     if (cur_subquery == subqueries_for_sets.end())
     {
         finished = true;
