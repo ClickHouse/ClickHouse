@@ -11,8 +11,8 @@ namespace DB
 class NativeInputFormatFromNativeBlockInputStream : public IInputFormat
 {
 public:
-    NativeInputFormatFromNativeBlockInputStream(const Block & header, ReadBuffer & in)
-        : IInputFormat(header, in)
+    NativeInputFormatFromNativeBlockInputStream(const Block & header, ReadBuffer & in_)
+        : IInputFormat(header, in_)
         , stream(std::make_shared<NativeBlockInputStream>(in, header, 0))
     {
     }
@@ -59,8 +59,8 @@ private:
 class NativeOutputFormatFromNativeBlockOutputStream : public IOutputFormat
 {
 public:
-    NativeOutputFormatFromNativeBlockOutputStream(const Block & header, WriteBuffer & out)
-            : IOutputFormat(header, out)
+    NativeOutputFormatFromNativeBlockOutputStream(const Block & header, WriteBuffer & out_)
+            : IOutputFormat(header, out_)
             , stream(std::make_shared<NativeBlockOutputStream>(out, 0, header))
     {
     }

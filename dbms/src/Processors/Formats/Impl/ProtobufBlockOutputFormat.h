@@ -33,7 +33,7 @@ class ProtobufBlockOutputFormat : public IOutputFormat
 {
 public:
     ProtobufBlockOutputFormat(
-        WriteBuffer & out,
+        WriteBuffer & out_,
         const Block & header,
         const FormatSchemaInfo & format_schema);
 

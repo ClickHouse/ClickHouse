@@ -27,8 +27,8 @@ enum
 
 
 JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
-    ReadBuffer & in, Block header, Params params, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in, params), format_settings(format_settings), name_map(header.columns())
+    ReadBuffer & in_, const Block & header, Params params, const FormatSettings & format_settings)
+    : IRowInputFormat(header, in_, params), format_settings(format_settings), name_map(header.columns())
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(in);

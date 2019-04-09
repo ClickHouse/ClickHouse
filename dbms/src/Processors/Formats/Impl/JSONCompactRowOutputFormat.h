@@ -16,7 +16,7 @@ struct FormatSettings;
 class JSONCompactRowOutputFormat : public JSONRowOutputFormat
 {
 public:
-    JSONCompactRowOutputFormat(WriteBuffer & out, Block header, const FormatSettings & settings);
+    JSONCompactRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings);
 
     String getName() const override { return "JSONCompactRowOutputFormat"; }
 

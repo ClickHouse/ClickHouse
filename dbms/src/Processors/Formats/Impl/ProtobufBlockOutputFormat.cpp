@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 
 ProtobufBlockOutputFormat::ProtobufBlockOutputFormat(
-    WriteBuffer & out,
+    WriteBuffer & out_,
     const Block & header,
     const FormatSchemaInfo & format_schema)
     : IOutputFormat(header, out)

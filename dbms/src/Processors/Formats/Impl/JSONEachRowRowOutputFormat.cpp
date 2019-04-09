@@ -8,8 +8,8 @@ namespace DB
 {
 
 
-JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(WriteBuffer & out, Block header, const FormatSettings & settings)
-    : IRowOutputFormat(std::move(header), out), settings(settings)
+JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings)
+    : IRowOutputFormat(header, out_), settings(settings)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();

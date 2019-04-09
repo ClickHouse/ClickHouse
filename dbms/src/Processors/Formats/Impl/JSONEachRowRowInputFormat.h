@@ -20,7 +20,7 @@ class ReadBuffer;
 class JSONEachRowRowInputFormat : public IRowInputFormat
 {
 public:
-    JSONEachRowRowInputFormat(ReadBuffer & in, Block header, Params params, const FormatSettings & format_settings);
+    JSONEachRowRowInputFormat(ReadBuffer & in_, const Block & header, Params params, const FormatSettings & format_settings);
 
     String getName() const override { return "JSONEachRowRowInputFormat"; }
 

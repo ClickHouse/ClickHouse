@@ -17,8 +17,8 @@ namespace ErrorCodes
 
 
 CSVRowInputFormat::CSVRowInputFormat(
-    ReadBuffer & in, Block header, Params params, bool with_names_, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in, params), with_names(with_names_), format_settings(format_settings)
+    ReadBuffer & in_, Block header, Params params, bool with_names_, const FormatSettings & format_settings)
+    : IRowInputFormat(std::move(header), in_, params), with_names(with_names_), format_settings(format_settings)
 {
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();

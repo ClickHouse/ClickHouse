@@ -11,8 +11,8 @@ namespace DB
 class PrettySpaceBlockOutputFormat : public PrettyBlockOutputFormat
 {
 public:
-    PrettySpaceBlockOutputFormat(WriteBuffer & out, Block header, const FormatSettings & format_settings)
-        : PrettyBlockOutputFormat(out, std::move(header), format_settings) {}
+    PrettySpaceBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
+        : PrettyBlockOutputFormat(out_, header, format_settings) {}
 
     String getName() const override { return "PrettySpaceBlockOutputFormat"; }
 

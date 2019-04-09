@@ -16,7 +16,7 @@ namespace DB
 class JSONRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONRowOutputFormat(WriteBuffer & out, Block header, const FormatSettings & settings);
+    JSONRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings);
 
     String getName() const override { return "JSONRowOutputFormat"; }
 

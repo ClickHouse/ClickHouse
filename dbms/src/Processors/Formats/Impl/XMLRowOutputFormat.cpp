@@ -7,8 +7,8 @@
 namespace DB
 {
 
-XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out, Block header, const FormatSettings & format_settings)
-    : IRowOutputFormat(std::move(header), out), format_settings(format_settings)
+XMLRowOutputFormat::XMLRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
+    : IRowOutputFormat(header, out_), format_settings(format_settings)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());

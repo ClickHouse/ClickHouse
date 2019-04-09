@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 
-TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in, Block header, Params params, const FormatSettings & format_settings)
+TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSettings & format_settings)
     : IRowInputFormat(std::move(header), in, params), format_settings(format_settings), name_map(header.columns())
 {
     /// In this format, we assume that column name cannot contain BOM,

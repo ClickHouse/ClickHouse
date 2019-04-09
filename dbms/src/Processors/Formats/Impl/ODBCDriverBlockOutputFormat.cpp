@@ -8,8 +8,8 @@
 namespace DB
 {
 
-ODBCDriverBlockOutputFormat::ODBCDriverBlockOutputFormat(WriteBuffer & out, Block header, const FormatSettings & format_settings)
-    : IOutputFormat(std::move(header), out), format_settings(format_settings)
+ODBCDriverBlockOutputFormat::ODBCDriverBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
+    : IOutputFormat(header, out_), format_settings(format_settings)
 {
 }
 
