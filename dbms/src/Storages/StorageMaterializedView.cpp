@@ -66,7 +66,7 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
 
 static void checkAllowedQueries(const ASTSelectQuery & query)
 {
-    if (query.prewhere_expression || query.final() || query.sample_size())
+    if (query.prewhere() || query.final() || query.sample_size())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
     ASTPtr subquery = extractTableExpression(query, 0);
