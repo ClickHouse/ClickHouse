@@ -15,6 +15,21 @@
 
   <ul id="md-extra-nav" class="md-nav__list" data-md-scrollfix>
     <li class="md-nav__item md-nav__item--active">
+      {{ lang.t("nav.release") }}:
+      <span class="md-selector">
+        <select id="releases-selector">
+          <option value="">{{ lang.t("nav.latest") }}</option>
+          {% for release in config.extra.stable_releases %}
+            <option value="{{ release.0 }}"
+              {% if release.0 == config.extra.version_prefix %}
+                selected="selected"
+              {% endif %}
+            >{{ release.0 }}</option>
+          {% endfor %}
+        </select><span id="releases-selector-after">&nbsp;▾</span>
+      </span>
+    </li>
+    <li class="md-nav__item md-nav__item--active">
         {% if config.extra.single_page %}
           <a href="{{ base_url }}" class="md-nav__link md-nav__link--active">{{ lang.t("nav.multi_page") }}</a>
         {% else %}
