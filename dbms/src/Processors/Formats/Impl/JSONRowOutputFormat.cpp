@@ -8,8 +8,8 @@
 namespace DB
 {
 
-JSONRowOutputFormat::JSONRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings)
-    : IRowOutputFormat(header, out_), settings(settings)
+JSONRowOutputFormat::JSONRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & settings_)
+    : IRowOutputFormat(header, out_), settings(settings_)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());

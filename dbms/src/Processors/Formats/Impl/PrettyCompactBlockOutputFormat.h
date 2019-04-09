@@ -11,8 +11,8 @@ namespace DB
 class PrettyCompactBlockOutputFormat : public PrettyBlockOutputFormat
 {
 public:
-    PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
-        : PrettyBlockOutputFormat(out_, header, format_settings) {}
+    PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_)
+        : PrettyBlockOutputFormat(out_, header, format_settings_) {}
 
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 

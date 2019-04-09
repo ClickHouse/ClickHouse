@@ -18,8 +18,8 @@ namespace ErrorCodes
 
 
 PrettyBlockOutputFormat::PrettyBlockOutputFormat(
-    WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
-     : IOutputFormat(header, out_), format_settings(format_settings)
+    WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_)
+     : IOutputFormat(header, out_), format_settings(format_settings_)
 {
     struct winsize w;
     if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
