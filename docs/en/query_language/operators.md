@@ -71,20 +71,20 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 EXTRACT(part FROM date);
 ```
 
-Extracts a part from a given date. For example, you can retrieve a day, a month or a year from a given date.
+Extracts a part from a given date. For example, you can retrieve a month from a given date, or a second from the time.
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
 - `DAY` — The day of the month. Available values: 1–31.
 - `MONTH` — The number of a month. Available values: 1–12.
 - `YEAR` — The year.
-- `SECOND` — The seconds. Available values: 0–59.
-- `MINUTE` — The minutes. Available values: 0–59.
-- `HOUR` — The hours. Available values: 0–23.
+- `SECOND` — The second. Available values: 0–59.
+- `MINUTE` — The minute. Available values: 0–59.
+- `HOUR` — The hour. Available values: 0–23.
 
 These values are supported in a lowercase as well.
 
-You can set both [Date](../data_types/date.md) and [DateTime](../data_types/datetime.md) types as a `date` parameter.
+You can set values with both [Date](../data_types/date.md) and [DateTime](../data_types/datetime.md) types in a `date` parameter.
 
 Examples:
 
