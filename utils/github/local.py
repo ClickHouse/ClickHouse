@@ -6,7 +6,6 @@ import git # gitpython
 import functools
 import os
 import re
-import sys
 
 
 class Local:
@@ -35,7 +34,10 @@ class Local:
         for commit in self._repo.iter_commits(rev_range, first_parent=True):
             yield commit
 
-    ''' Returns sorted list of tuples: remote branch (git.refs.remote.RemoteReference), base commit (git.Commit).
+    ''' Returns sorted list of tuples:
+         * remote branch (git.refs.remote.RemoteReference),
+         * base commit (git.Commit),
+         * head (git.Commit)).
         List is sorted by commits in ascending order.
     '''
     def get_stables(self):
@@ -44,10 +46,10 @@ class Local:
         for stable in [r for r in self._remote.refs if Local.RE_STABLE_REF.match(r.path)]:
             base = self._repo.merge_base(self._default, self._repo.commit(stable))
             if not base:
-                print(f'Branch {stable.path} is not based on branch {self._default}. Ignoring.', file=sys.stderr)
+                print(f'Branch {stable.path} is not based on branch {self._default}. Ignoring.')
             elif len(base) > 1:
-                print(f'Branch {stable.path} has more than one base commit. Ignoring.', file=sys.stderr)
+                print(f'Branch {stable.path} has more than one base commit. Ignoring.')
             else:
-                stables.append((stable, base[0]))
+                stables.append((stable, base[0], self._repo.commit(stable)))
 
         return sorted(stables, key=lambda x : self.comparator(x[1]))

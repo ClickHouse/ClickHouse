@@ -26,7 +26,8 @@ import sys
 
 CHECK_MARK = '🗸'
 CROSS_MARK = '🗙'
-AUTHOR_MARK = '⚠'
+WARN_MARK = '⚠'
+WAIT_MARK = '⊙'
 
 
 parser = argparse.ArgumentParser(description='Helper for the ClickHouse Release machinery')
@@ -44,7 +45,7 @@ args = parser.parse_args()
 github = query.Query(args.token)
 repo = local.Local(args.repo, args.remote, github.get_default_branch())
 
-stables = repo.get_stables()[-args.number:]
+stables = repo.get_stables()[-args.number:] # [(branch, base, head)]
 if not stables:
     sys.exit('No stable branches found!')
 else:
@@ -65,32 +66,41 @@ for i in reversed(range(len(stables))):
 
     from_commit = stables[i][1]
 
-bad_pull_requests = [] # collect and print if not empty
+bad_pull_requests = []  # collect and print if not empty
+need_backporting = []
 for num, value in pull_requests.items():
     label_found = False
 
     for label in value[1]:
-        if label.startswith('pr-'):
+        if label[0].startswith('pr-'):
             label_found = True
+            if label[1] == 'ff0000':
+                need_backporting.append(num)
             break
 
     if not label_found:
         bad_pull_requests.append(num)
 
 if bad_pull_requests:
-    print('\nPull-requests without description label:', file=sys.stderr)
+    print('\nPull-requests without description label:')
     for bad in reversed(sorted(bad_pull_requests)):
         print(f'{CROSS_MARK} {bad}')
 
-# FIXME: compatibility logic, until the modification of master is not prohibited.
+# FIXME: compatibility logic, until the direct modification of master is not prohibited.
 if bad_commits:
-    print('\nCommits not referenced by any pull-request:', file=sys.stderr)
+    print('\nCommits not referenced by any pull-request:')
 
     bad_authors = set()
     for bad in bad_commits:
-        print(f'{CROSS_MARK} {bad}', file=sys.stderr)
+        print(f'{CROSS_MARK} {bad}')
         bad_authors.add(bad.author)
 
     print('\nTell these authors not to push without pull-request and not to merge with rebase:')
     for author in sorted(bad_authors, key=lambda x : x.name):
-        print(f'{AUTHOR_MARK} {author}')
+        print(f'{WARN_MARK} {author}')
+
+# TODO: check backports.
+if need_backporting:
+    print('\nPull-requests need to be backported:')
+    for bad in reversed(sorted(need_backporting)):
+        print(f'{CROSS_MARK} {bad}')
