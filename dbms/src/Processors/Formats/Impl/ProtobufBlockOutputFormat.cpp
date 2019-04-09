@@ -26,7 +26,7 @@ ProtobufBlockOutputFormat::ProtobufBlockOutputFormat(
     WriteBuffer & out_,
     const Block & header,
     const FormatSchemaInfo & format_schema)
-    : IOutputFormat(header, out)
+    : IOutputFormat(header, out_)
     , data_types(header.getDataTypes())
     , writer(out, ProtobufSchemas::instance().getMessageTypeForFormatSchema(format_schema), header.getNames())
 {

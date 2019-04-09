@@ -30,7 +30,7 @@ namespace ErrorCodes
 
 ValuesRowInputFormat::ValuesRowInputFormat(
     ReadBuffer & in_, Block header, Params params, const Context & context_, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in, params)
+    : IRowInputFormat(std::move(header), in_, params)
     , context(std::make_unique<Context>(context_)), format_settings(format_settings)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
