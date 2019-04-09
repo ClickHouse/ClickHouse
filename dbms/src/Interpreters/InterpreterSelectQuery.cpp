@@ -747,9 +747,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 if constexpr (pipeline_with_processors)
                 {
                     header_before_join = pipeline.getHeader();
-                    pipeline.addSimpleTransform([&](const Block & header)
+                    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {
-                        return std::make_shared<ExpressionTransform>(header, expressions.before_join);
+                        bool on_totals = type == QueryPipeline::StreamType::Totals;
+                        return std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals);
                     });
                 }
                 else

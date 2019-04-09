@@ -10,7 +10,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ExpressionTransform : public ISimpleTransform
 {
 public:
-    ExpressionTransform(const Block & header, ExpressionActionsPtr expression);
+    ExpressionTransform(const Block & header, ExpressionActionsPtr expression, bool on_totals = false);
 
     String getName() const override { return "ExpressionTransform"; }
 
@@ -19,6 +19,7 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+    bool on_totals;
 };
 
 }
