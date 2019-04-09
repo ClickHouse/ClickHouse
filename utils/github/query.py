@@ -13,7 +13,7 @@ class Query:
         where "default head" is a head of default repository branch.
     '''
     def get_pull_requests(self, until):
-        pull_requests = {} # number → (merge oid, labels)
+        pull_requests = []
         query = Query._FIRST.format(max_page_size=self._max_page_size, pull_request_page_size=self._pull_request_page_size)
         not_end = True
 
@@ -37,7 +37,7 @@ class Query:
                     if(pull_request['baseRepository']['nameWithOwner'] == 'yandex/ClickHouse' and
                        pull_request['baseRefName'] == default_branch_name and
                        pull_request['mergeCommit']['oid'] == node['oid']):
-                        pull_requests[pull_request['number']] = (node['oid'], self._labels(pull_request))
+                        pull_requests.append(pull_request)
 
             query = Query._NEXT.format(max_page_size=self._max_page_size,
                                        pull_request_page_size=self._pull_request_page_size, history_cursor=result['pageInfo']['endCursor'])
@@ -47,7 +47,7 @@ class Query:
     def get_default_branch(self):
         return self._run(Query._DEFAULT)['data']['repository']['defaultBranchRef']['name']
 
-    def _labels(self, pull_request):
+    def get_labels(self, pull_request):
         # TODO: fetch all labels
         return [(label['node']['name'], label['node']['color']) for label in pull_request['labels']['edges']]
 
@@ -79,6 +79,7 @@ Query._FIRST = '''
                   nodes {{
                     ... on PullRequest {{
                       number
+                      url
                       baseRefName
                       baseRepository {{
                         nameWithOwner
@@ -132,6 +133,7 @@ Query._NEXT = '''
                   nodes {{
                     ... on PullRequest {{
                       number
+                      url
                       baseRefName
                       baseRepository {{
                         nameWithOwner

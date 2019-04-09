@@ -50,6 +50,6 @@ class Local:
             elif len(base) > 1:
                 print(f'Branch {stable.path} has more than one base commit. Ignoring.')
             else:
-                stables.append((stable, base[0], self._repo.commit(stable)))
+                stables.append((stable, base[0]))
 
         return sorted(stables, key=lambda x : self.comparator(x[1]))
