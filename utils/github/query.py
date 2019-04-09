@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import requests
-import sys
 
 
 class Query:
@@ -50,7 +49,7 @@ class Query:
 
     def _labels(self, pull_request):
         # TODO: fetch all labels
-        return [label['node']['name'] for label in pull_request['labels']['edges']]
+        return [(label['node']['name'], label['node']['color']) for label in pull_request['labels']['edges']]
 
     def _run(self, query):
         headers = {'Authorization': f'bearer {self._token}'}
@@ -95,6 +94,7 @@ Query._FIRST = '''
                         edges {{
                           node {{
                             name
+                            color
                           }}
                           cursor
                         }}
@@ -147,6 +147,7 @@ Query._NEXT = '''
                         edges {{
                           node {{
                             name
+                            color
                           }}
                           cursor
                         }}
