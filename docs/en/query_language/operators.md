@@ -73,7 +73,7 @@ EXTRACT(part FROM date);
 
 Extracts a part from a given date. For example, you can retrieve a day, a month or a year from a given date.
 
-The `part` parameter specifies the desired part of a date that must be retrieved. The following values are available:
+The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
 - `DAY` — The day of the month. Available values: 1–31.
 - `MONTH` — The number of a month. Available values: 1–12.
