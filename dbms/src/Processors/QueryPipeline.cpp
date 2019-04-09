@@ -17,6 +17,7 @@
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
 {
@@ -245,6 +246,28 @@ void QueryPipeline::addTotalsHavingTransform(ProcessorPtr transform)
     totals_having_port = &outputs.back();
     current_header = outputs.front().getHeader();
     processors.emplace_back(std::move(transform));
+}
+
+void QueryPipeline::addDefaultTotals()
+{
+    checkInitialized();
+
+    if (totals_having_port)
+        throw Exception("Totals having transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
+
+    Columns columns;
+    columns.reserve(current_header.columns());
+
+    for (size_t i = 0; i < current_header.columns(); ++i)
+    {
+        auto column = current_header.getByPosition(i).type->createColumn();
+        column->insertDefault();
+        columns.emplace_back(std::move(column));
+    }
+
+    auto source = std::make_shared<SourceFromSingleChunk>(current_header, Chunk(std::move(columns), 1));
+    totals_having_port = &source->getPort();
+    processors.emplace_back(source);
 }
 
 void QueryPipeline::addExtremesTransform(ProcessorPtr transform)
