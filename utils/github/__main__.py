@@ -22,12 +22,14 @@
 from . import local, query
 
 import argparse
+import re
 import sys
 
 CHECK_MARK = '🗸'
 CROSS_MARK = '🗙'
 WARN_MARK = '⚠'
 WAIT_MARK = '⊙'
+LABEL_MARK = '🏷'
 
 
 parser = argparse.ArgumentParser(description='Helper for the ClickHouse Release machinery')
@@ -45,7 +47,7 @@ args = parser.parse_args()
 github = query.Query(args.token)
 repo = local.Local(args.repo, args.remote, github.get_default_branch())
 
-stables = repo.get_stables()[-args.number:] # [(branch, base, head)]
+stables = repo.get_stables()[-args.number:] # [(branch, base)]
 if not stables:
     sys.exit('No stable branches found!')
 else:
@@ -55,7 +57,7 @@ else:
 
 first_commit = stables[0][1]
 pull_requests = github.get_pull_requests(first_commit)
-good_commits = set(oid[0] for oid in pull_requests.values())
+good_commits = set(pull_request['mergeCommit']['oid'] for pull_request in pull_requests)
 
 bad_commits = [] # collect and print them in the end
 from_commit = repo.get_head_commit()
@@ -68,23 +70,23 @@ for i in reversed(range(len(stables))):
 
 bad_pull_requests = []  # collect and print if not empty
 need_backporting = []
-for num, value in pull_requests.items():
+for pull_request in pull_requests:
     label_found = False
 
-    for label in value[1]:
+    for label in github.get_labels(pull_request):
         if label[0].startswith('pr-'):
             label_found = True
             if label[1] == 'ff0000':
-                need_backporting.append(num)
+                need_backporting.append(pull_request)
             break
 
     if not label_found:
-        bad_pull_requests.append(num)
+        bad_pull_requests.append(pull_request)
 
 if bad_pull_requests:
     print('\nPull-requests without description label:')
-    for bad in reversed(sorted(bad_pull_requests)):
-        print(f'{CROSS_MARK} {bad}')
+    for bad in reversed(sorted(bad_pull_requests, key = lambda x : x['number'])):
+        print(f'{CROSS_MARK} {bad["number"]}: {bad["url"]}')
 
 # FIXME: compatibility logic, until the direct modification of master is not prohibited.
 if bad_commits:
@@ -95,12 +97,48 @@ if bad_commits:
         print(f'{CROSS_MARK} {bad}')
         bad_authors.add(bad.author)
 
-    print('\nTell these authors not to push without pull-request and not to merge with rebase:')
+    print('\nTell these authors not to push without pull-request and not to merge with rebase :)')
     for author in sorted(bad_authors, key=lambda x : x.name):
         print(f'{WARN_MARK} {author}')
 
 # TODO: check backports.
 if need_backporting:
+    re_vlabel = re.compile(r'^v\d+\.\d+$')
+    re_stable_num = re.compile(r'\d+\.\d+$')
+
     print('\nPull-requests need to be backported:')
-    for bad in reversed(sorted(need_backporting)):
-        print(f'{CROSS_MARK} {bad}')
+    for pull_request in reversed(sorted(need_backporting, key=lambda x: x['number'])):
+        targets = []  # use common list for consistent order in output
+        good = set()
+
+        for stable in stables:
+            if repo.comparator(stable[1]) < repo.comparator(pull_request['mergeCommit']['oid']):
+                targets.append(stable)
+
+                # FIXME: compatibility logic - check for a manually set label, that indicates status 'backported'.
+                # FIXME: O(n²) - no need to iterate all labels for every stable
+                for label in github.get_labels(pull_request):
+                    if re_vlabel.match(label[0]):
+                        stable_num = re_stable_num.search(stable[0].name)
+                        if f'v{stable_num[0]}' == label[0]:
+                            good.add(stable)
+
+        # print pull-request's status
+        if len(good) == len(targets):
+            print(f'{CHECK_MARK}', end=' ')
+        else:
+            print(f'{CROSS_MARK}', end=' ')
+        print(f'{pull_request["number"]}', end=':')
+        for target in targets:
+            if target in good:
+                print(f'\t{LABEL_MARK} {target[0]}', end='')
+            else:
+                print(f'\t{CROSS_MARK} {target[0]}', end='')
+        print()
+
+# print legend
+print('\nLegend:')
+print(f'{CHECK_MARK} - good')
+print(f'{CROSS_MARK} - bad')
+print(f'{WARN_MARK} - pay attention!')
+print(f'{LABEL_MARK} - backport is detected via label')
