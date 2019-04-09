@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
     ReadBuffer & in_, Block header, bool with_names, bool with_types, Params params, const FormatSettings & format_settings)
-    : IRowInputFormat(std::move(header), in, params), with_names(with_names), with_types(with_types), format_settings(format_settings)
+    : IRowInputFormat(std::move(header), in_, params), with_names(with_names), with_types(with_types), format_settings(format_settings)
 {
     auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();

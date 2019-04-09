@@ -35,7 +35,7 @@ namespace ErrorCodes
 }
 
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings)
-    : IOutputFormat(header, out), format_settings{format_settings}
+    : IOutputFormat(header, out_), format_settings{format_settings}
 {
 }
 
