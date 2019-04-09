@@ -12,3 +12,4 @@ CREATE DICTIONARY test.dict_with_ranges (`second_column` UInt8 DEFAULT 1, `third
 1
 1
 2
+200

@@ -3,6 +3,7 @@ DROP TABLE IF EXISTS test.table_for_dict;
 DROP TABLE IF EXISTS test.table;
 DROP DICTIONARY IF EXISTS test.dict1;
 DROP DICTIONARY IF EXISTS test.dict_with_ranges;
+DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
 
 -- It used for loading in dictionaries via ClickHouse source
 CREATE TABLE test.table_for_dict
@@ -118,8 +119,39 @@ SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABL
 LAYOUT(RANGE_HASHED())
 LIFETIME(MIN 10, MAX 100);
 
+
+-- Check composite key part
+DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
+
+-- Check with complex_key_hashed layout
+CREATE DICTIONARY test.dict_with_complex_key
+ (
+    third_column UInt8 DEFAULT 1
+ )
+COMPOSITE KEY first_column UInt8, second_column UInt8
+SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 10, MAX 100);
+
+SELECT dictGetUInt8('test.dict_with_complex_key', 'third_column', tuple(toUInt8(2), toUInt8(2)));
+
+DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
+
+-- Check with complex_key_cache layout
+CREATE DICTIONARY test.dict_with_complex_key
+ (
+    third_column UInt8 DEFAULT 1
+ )
+COMPOSITE KEY first_column UInt8, second_column UInt8
+SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
+LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
+LIFETIME(MIN 10, MAX 100);
+
+-- TODO(s-mx): next query get queryCancelation error. bad
+-- SELECT dictGetUInt8('test.dict_with_complex_key', 'third_column', tuple(toUInt8(2), toUInt8(2)));
+
 -- TODO(s-mx): add here following checks:
--- 1) COMPOSITE KEY and work with that
+-- 1) ip-trie
 -- 2) dict functions
 -- 3) ...
 
@@ -127,3 +159,4 @@ DROP TABLE test.table_for_dict;
 DROP TABLE test.table;
 DROP DICTIONARY test.dict1;
 DROP DICTIONARY IF EXISTS test.dict_with_ranges;
+DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
