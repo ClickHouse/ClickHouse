@@ -30,6 +30,7 @@ public:
 
         ADD_INDEX,
         DROP_INDEX,
+        MATERIALIZE_INDEX,
 
         DROP_PARTITION,
         ATTACH_PARTITION,
