@@ -65,6 +65,14 @@ public:
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);
 
+    ASTPtr getExpression(Expression expr, bool clone = false) const
+    {
+        auto it = positions.find(expr);
+        if (it != positions.end())
+            return clone ? children[it->second]->clone() : children[it->second];
+        return {};
+    }
+
     /// Compatibility with old parser of tables list. TODO remove
     ASTPtr sample_size() const;
     ASTPtr sample_offset() const;
@@ -82,14 +90,6 @@ private:
     std::unordered_map<Expression, size_t> positions;
 
     ASTPtr & getExpression(Expression expr);
-
-    ASTPtr getExpression(Expression expr, bool clone = false) const
-    {
-        auto it = positions.find(expr);
-        if (it != positions.end())
-            return clone ? children[it->second]->clone() : children[it->second];
-        return {};
-    }
 };
 
 }
