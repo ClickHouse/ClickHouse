@@ -104,54 +104,62 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 0; query_num < num_selects; ++query_num)
             headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
 
-        result_header = headers.front();
-        size_t num_columns = result_header.columns();
+        result_header = getCommonHeaderForUnion(headers);
+    }
+}
 
-        for (size_t query_num = 1; query_num < num_selects; ++query_num)
-            if (headers[query_num].columns() != num_columns)
-                throw Exception("Different number of columns in UNION ALL elements:\n"
-                    + result_header.dumpNames()
-                    + "\nand\n"
-                    + headers[query_num].dumpNames() + "\n",
-                    ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 
-        for (size_t column_num = 0; column_num < num_columns; ++column_num)
+Block InterpreterSelectWithUnionQuery::getCommonHeaderForUnion(const Blocks & headers)
+{
+    size_t num_selects = headers.size();
+    Block common_header = headers.front();
+    size_t num_columns = common_header.columns();
+
+    for (size_t query_num = 1; query_num < num_selects; ++query_num)
+        if (headers[query_num].columns() != num_columns)
+            throw Exception("Different number of columns in UNION ALL elements:\n"
+                            + common_header.dumpNames()
+                            + "\nand\n"
+                            + headers[query_num].dumpNames() + "\n",
+                            ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+
+    for (size_t column_num = 0; column_num < num_columns; ++column_num)
+    {
+        auto & result_elem = common_header.getByPosition(column_num);
+
+        /// Determine common type.
+
+        DataTypes types(num_selects);
+        for (size_t query_num = 0; query_num < num_selects; ++query_num)
+            types[query_num] = headers[query_num].getByPosition(column_num).type;
+
+        result_elem.type = getLeastSupertype(types);
+
+        /// If there are different constness or different values of constants, the result must be non-constant.
+
+        if (auto * res_col_const = typeid_cast<const ColumnConst *>(result_elem.column.get()))
         {
-            ColumnWithTypeAndName & result_elem = result_header.getByPosition(column_num);
-
-            /// Determine common type.
-
-            DataTypes types(num_selects);
-            for (size_t query_num = 0; query_num < num_selects; ++query_num)
-                types[query_num] = headers[query_num].getByPosition(column_num).type;
-
-            result_elem.type = getLeastSupertype(types);
-
-            /// If there are different constness or different values of constants, the result must be non-constant.
-
-            if (result_elem.column->isColumnConst())
+            bool need_materialize = false;
+            for (size_t query_num = 1; query_num < num_selects; ++query_num)
             {
-                bool need_materialize = false;
-                for (size_t query_num = 1; query_num < num_selects; ++query_num)
+                const auto & source_elem = headers[query_num].getByPosition(column_num);
+                auto * source_col_const = typeid_cast<const ColumnConst *>(source_elem.column.get());
+
+                if (!source_col_const || res_col_const->getField() != source_col_const->getField())
                 {
-                    const ColumnWithTypeAndName & source_elem = headers[query_num].getByPosition(column_num);
-
-                    if (!source_elem.column->isColumnConst()
-                        || (static_cast<const ColumnConst &>(*result_elem.column).getField()
-                            != static_cast<const ColumnConst &>(*source_elem.column).getField()))
-                    {
-                        need_materialize = true;
-                        break;
-                    }
+                    need_materialize = true;
+                    break;
                 }
-
-                if (need_materialize)
-                    result_elem.column = result_elem.type->createColumn();
             }
 
-            /// BTW, result column names are from first SELECT.
+            if (need_materialize)
+                result_elem.column = result_elem.type->createColumn();
         }
+
+        /// BTW, result column names are from first SELECT.
     }
+
+    return common_header;
 }
 
 
@@ -232,22 +240,32 @@ QueryPipeline InterpreterSelectWithUnionQuery::executeWithProcessors()
     std::vector<QueryPipeline> pipelines;
     bool has_main_pipeline = false;
 
+    Blocks headers;
+    headers.reserve(nested_interpreters.size());
+
     for (auto & interpreter : nested_interpreters)
     {
         if (!has_main_pipeline)
         {
             has_main_pipeline = true;
             main_pipeline = interpreter->executeWithProcessors();
+            headers.emplace_back(main_pipeline.getHeader());
         }
         else
+        {
             pipelines.emplace_back(interpreter->executeWithProcessors());
+            headers.emplace_back(pipelines.back().getHeader());
+        }
     }
 
     if (!has_main_pipeline)
         main_pipeline.init({ std::make_shared<NullSource>(getSampleBlock()) });
 
     if (!pipelines.empty())
-        main_pipeline.unitePipelines(std::move(pipelines), context);
+    {
+        auto common_header = getCommonHeaderForUnion(headers);
+        main_pipeline.unitePipelines(std::move(pipelines), common_header, context);
+    }
 
     return main_pipeline;
 }

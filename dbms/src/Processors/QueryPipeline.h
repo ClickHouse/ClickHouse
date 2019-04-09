@@ -50,7 +50,7 @@ public:
 
     void resize(size_t num_streams);
 
-    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Context & context);
+    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
 
     PipelineExecutorPtr execute(size_t num_threads);
 

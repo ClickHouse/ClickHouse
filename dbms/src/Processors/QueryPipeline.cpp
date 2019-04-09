@@ -332,10 +332,17 @@ void QueryPipeline::setOutput(ProcessorPtr output)
     connect(*extremes_port, extremes);
 }
 
-void QueryPipeline::unitePipelines(std::vector<QueryPipeline> && pipelines, const Context & context)
+void QueryPipeline::unitePipelines(
+    std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context)
 {
     checkInitialized();
     concatDelayedStream();
+
+    addSimpleTransform([&](const Block & header)
+    {
+        return std::make_shared<ConvertingTransform>(
+                header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
+    });
 
     std::vector<OutputPort *> extremes;
 
@@ -347,13 +354,13 @@ void QueryPipeline::unitePipelines(std::vector<QueryPipeline> && pipelines, cons
         pipeline.addSimpleTransform([&](const Block & header)
         {
            return std::make_shared<ConvertingTransform>(
-                   header, current_header, ConvertingTransform::MatchColumnsMode::Position, context);
+                   header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
         });
 
         if (pipeline.extremes_port)
         {
             auto converting = std::make_shared<ConvertingTransform>(
-                pipeline.current_header, current_header, ConvertingTransform::MatchColumnsMode::Position, context);
+                pipeline.current_header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
 
             connect(*pipeline.extremes_port, converting->getInputPort());
             extremes.push_back(&converting->getOutputPort());
@@ -366,7 +373,7 @@ void QueryPipeline::unitePipelines(std::vector<QueryPipeline> && pipelines, cons
             if (!totals_having_port)
             {
                 auto converting = std::make_shared<ConvertingTransform>(
-                    pipeline.current_header, current_header, ConvertingTransform::MatchColumnsMode::Position, context);
+                    pipeline.current_header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
 
                 connect(*pipeline.extremes_port, converting->getInputPort());
                 totals_having_port = &converting->getOutputPort();

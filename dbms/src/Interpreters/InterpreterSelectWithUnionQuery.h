@@ -52,6 +52,8 @@ private:
     std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
 
     Block result_header;
+
+    static Block getCommonHeaderForUnion(const Blocks & headers);
 };
 
 }
