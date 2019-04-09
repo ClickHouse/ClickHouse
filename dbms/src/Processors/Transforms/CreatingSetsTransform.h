@@ -47,6 +47,9 @@ private:
     using Logger = Poco::Logger;
     Logger * log = &Logger::get("CreatingSetsBlockInputStream");
 
+    bool is_initialized = false;
+
+    void init();
     void startSubquery(SubqueryForSet & subquery);
     void finishSubquery(SubqueryForSet & subquery);
 };

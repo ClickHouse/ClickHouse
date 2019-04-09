@@ -107,8 +107,24 @@ void CreatingSetsTransform::finishSubquery(SubqueryForSet & subquery)
     }
 }
 
+void CreatingSetsTransform::init()
+{
+    is_initialized = true;
+
+    const Settings & settings = context.getSettingsRef();
+    network_transfer_limits = SizeLimits(
+            settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+
+    for (auto & elem : subqueries_for_sets)
+        if (elem.second.source && elem.second.set)
+            elem.second.set->setHeader(elem.second.source->getHeader());
+}
+
 void CreatingSetsTransform::work()
 {
+    if (!is_initialized)
+        init();
+
     Stopwatch watch;
 
     if (cur_subquery == subqueries_for_sets.end())
