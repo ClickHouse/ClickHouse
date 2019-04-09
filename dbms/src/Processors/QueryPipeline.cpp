@@ -62,18 +62,31 @@ void QueryPipeline::init(Processors sources)
     }
 }
 
-void QueryPipeline::addSimpleTransform(const ProcessorGetter & getter)
+static ProcessorPtr callProcessorGetter(
+    const Block & header, const QueryPipeline::ProcessorGetter & getter, QueryPipeline::StreamType)
+{
+    return getter(header);
+}
+
+static ProcessorPtr callProcessorGetter(
+    const Block & header, const QueryPipeline::ProcessorGetterWithStreamKind & getter, QueryPipeline::StreamType kind)
+{
+    return getter(header, kind);
+}
+
+template <typename TProcessorGetter>
+void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 {
     checkInitialized();
 
     Block header;
 
-    auto add_transform = [&](OutputPort *& stream)
+    auto add_transform = [&](OutputPort *& stream, StreamType stream_type)
     {
         if (!stream)
             return;
 
-        auto transform = getter(current_header);
+        auto transform = callProcessorGetter(current_header, getter, stream_type);
 
         if (transform->getInputs().size() != 1)
             throw Exception("Processor for query pipeline transform should have single input, "
@@ -98,13 +111,23 @@ void QueryPipeline::addSimpleTransform(const ProcessorGetter & getter)
     };
 
     for (auto & stream : streams)
-        add_transform(stream);
+        add_transform(stream, StreamType::Main);
 
-    add_transform(totals_having_port);
-    add_transform(extremes_port);
-    add_transform(delayed_stream_port);
+    add_transform(delayed_stream_port, StreamType::Main);
+    add_transform(totals_having_port, StreamType::Totals);
+    add_transform(extremes_port, StreamType::Extremes);
 
     current_header = std::move(header);
+}
+
+void QueryPipeline::addSimpleTransform(const ProcessorGetter & getter)
+{
+    addSimpleTransformImpl(getter);
+}
+
+void QueryPipeline::addSimpleTransform(const ProcessorGetterWithStreamKind & getter)
+{
+    addSimpleTransformImpl(getter);
 }
 
 void QueryPipeline::addPipe(Processors pipe)

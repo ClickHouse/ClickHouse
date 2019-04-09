@@ -26,9 +26,18 @@ public:
     void init(Processors sources);
     bool initialized() { return !processors.empty(); }
 
+    enum class StreamType
+    {
+        Main = 0,
+        Totals,
+        Extremes,
+    };
+
     using ProcessorGetter = std::function<ProcessorPtr(const Block & header)>;
+    using ProcessorGetterWithStreamKind = std::function<ProcessorPtr(const Block & header, StreamType stream_type)>;
 
     void addSimpleTransform(const ProcessorGetter & getter);
+    void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
     void addPipe(Processors pipe);
     void addTotalsHavingTransform(ProcessorPtr transform);
     void addExtremesTransform(ProcessorPtr transform);
@@ -88,6 +97,9 @@ private:
     void checkInitialized();
     void checkSource(const ProcessorPtr & source);
     void concatDelayedStream();
+
+    template <typename TProcessorGetter>
+    void addSimpleTransformImpl(const TProcessorGetter & getter);
 
     void calcRowsBeforeLimit();
 };
