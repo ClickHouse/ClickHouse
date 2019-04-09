@@ -154,11 +154,14 @@ void CreatingSetsTransform::work()
         ++cur_subquery;
         started_cur_subquery = false;
 
+        while (cur_subquery != subqueries_for_sets.end() && cur_subquery->second.source == nullptr)
+            ++cur_subquery;
+
         if (cur_subquery == subqueries_for_sets.end())
             finished = true;
     };
 
-    auto block =  subquery.source->read();
+    auto block = subquery.source->read();
     if (!block)
     {
         finishCurrentSubquery();
