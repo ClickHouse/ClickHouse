@@ -160,15 +160,16 @@ void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data
     for (auto & child : select.children)
         if (needVisitChild(child))
             visit(child, data);
-#if 0
+
+#if 1 /// TODO: legacy?
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
     /// but also in where_expression and having_expression.
     if (select.prewhere())
-        visit(select.prewhere(), data);
+        visit(select.refPrewhere(), data);
     if (select.where())
-        visit(select.where(), data);
+        visit(select.refWhere(), data);
     if (select.having())
-        visit(select.having(), data);
+        visit(select.refHaving(), data);
 #endif
 }
 
