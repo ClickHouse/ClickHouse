@@ -84,7 +84,7 @@ The `part` parameter specifies which part of the date to retrieve. The following
 
 The `part` parameter is case-insensitive.
 
-The `date` parameter specifies the date or time to process. Either [Date](../data_types/date.md) or [DateTime](../data_types/datetime.md) type is supported.
+The `date` parameter specifies the date or the time to process. Either [Date](../data_types/date.md) or [DateTime](../data_types/datetime.md) type is supported.
 
 Examples:
 
