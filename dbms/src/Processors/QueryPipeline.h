@@ -44,6 +44,9 @@ public:
     void addCreatingSetsTransform(ProcessorPtr transform);
     void setOutput(ProcessorPtr output);
 
+    /// Add totals which returns one chunk with single row with defaults.
+    void addDefaultTotals();
+
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
     bool hasDelayedStream() const { return delayed_stream_port; }
@@ -56,7 +59,9 @@ public:
 
     size_t getNumStreams() const { return streams.size() + (hasDelayedStream() ? 1 : 0); }
     size_t getNumMainStreams() const { return streams.size(); }
+
     bool hasMoreThanOneStream() const { return getNumStreams() > 1; }
+    bool hasTotals() const { return totals_having_port != nullptr; }
 
     const Block & getHeader() const { return current_header; }
 
