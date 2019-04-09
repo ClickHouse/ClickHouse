@@ -594,7 +594,7 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->settings_ast)
                 InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
-            auto out = context.getOutputFormatProcessor(format_name, *out_buf, streams.in->getHeader());
+            auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();
