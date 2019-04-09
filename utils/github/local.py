@@ -10,7 +10,6 @@ import sys
 
 
 class Local:
-    FIRST_COMMIT = 'd8abd09457662cf1fd51daea58230bcda71e07b1' # the branch "19.3" fork-point
     RE_STABLE_REF = re.compile(r'^refs/remotes/.+/\d+\.\d+$')
 
     def __init__(self, repo_path, remote_name, default_branch_name):
@@ -27,9 +26,6 @@ class Local:
             else:
                 return 1
         self.comparator = functools.cmp_to_key(cmp)
-
-    def get_first_commit(self):
-        return self._repo.commit(Local.FIRST_COMMIT)
 
     def get_head_commit(self):
         return self._repo.commit(self._default)
