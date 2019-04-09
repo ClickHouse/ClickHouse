@@ -107,7 +107,7 @@ String generateFilterActions(ExpressionActionsPtr & actions, const StoragePtr & 
         expr_list->children.push_back(parseExpression(column_str));
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
-    auto & tables = select_ast->tables();
+    auto tables = select_ast->tables();
     auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
     auto table_expr = std::make_shared<ASTTableExpression>();
     tables->children.push_back(tables_elem);
