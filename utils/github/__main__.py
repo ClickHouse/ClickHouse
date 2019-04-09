@@ -24,6 +24,10 @@ from . import local, query
 import argparse
 import sys
 
+CHECK_MARK = '🗸'
+CROSS_MARK = '🗙'
+AUTHOR_MARK = '⚠'
+
 
 parser = argparse.ArgumentParser(description='Helper for the ClickHouse Release machinery')
 parser.add_argument('--repo', '-r', type=str, default='', metavar='PATH',
@@ -46,37 +50,47 @@ if not stables:
 else:
     print('Found stable branches:')
     for stable in stables:
-        print(f'{stable[0]} forked from {stable[1]}')
+        print(f'{CHECK_MARK} {stable[0]} forked from {stable[1]}')
 
-first_commit = max(repo.get_first_commit(), stables[0][1], key=repo.comparator)
+first_commit = stables[0][1]
 pull_requests = github.get_pull_requests(first_commit)
 good_commits = set(oid[0] for oid in pull_requests.values())
 
-print()
-print('Problems:')
-
-# Iterate all local commits on portions: from HEAD to 1st recent stable base, then to 2nd recent base, and so on.
-# It will help to detect necessity to cherry-pick or backport something to previous stable branches.
+bad_commits = [] # collect and print them in the end
 from_commit = repo.get_head_commit()
 for i in reversed(range(len(stables))):
-    if repo.comparator(stables[i][1]) < repo.comparator(first_commit):
-        break
-
     for commit in repo.iterate(from_commit, stables[i][1]):
-        if str(commit) not in good_commits:
-            print(f'commit {commit} is not referenced by any pull-request', file=sys.stderr)
+        if str(commit) not in good_commits and commit.author.name != 'robot-clickhouse':
+            bad_commits.append(commit)
 
     from_commit = stables[i][1]
 
+bad_pull_requests = [] # collect and print if not empty
 for num, value in pull_requests.items():
     label_found = False
 
     for label in value[1]:
         if label.startswith('pr-'):
             label_found = True
-            if label in ['pr-bugfix', 'pr-performance']:
-                print(f'pull-request {num} should be backported')
             break
 
     if not label_found:
-        print(f'pull-request {num} has no description label', file=sys.stderr)
+        bad_pull_requests.append(num)
+
+if bad_pull_requests:
+    print('\nPull-requests without description label:', file=sys.stderr)
+    for bad in reversed(sorted(bad_pull_requests)):
+        print(f'{CROSS_MARK} {bad}')
+
+# FIXME: compatibility logic, until the modification of master is not prohibited.
+if bad_commits:
+    print('\nCommits not referenced by any pull-request:', file=sys.stderr)
+
+    bad_authors = set()
+    for bad in bad_commits:
+        print(f'{CROSS_MARK} {bad}', file=sys.stderr)
+        bad_authors.add(bad.author)
+
+    print('\nTell these authors not to push without pull-request and not to merge with rebase:')
+    for author in sorted(bad_authors, key=lambda x : x.name):
+        print(f'{AUTHOR_MARK} {author}')
