@@ -11,10 +11,10 @@
 namespace DB
 {
 
-ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in, Block header, Params params, const FormatSchemaInfo & info)
-: IRowInputFormat(header, in, params)
-,  data_types(header.getDataTypes())
-, reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info), header.getNames())
+ProtobufRowInputFormat::ProtobufRowInputFormat(ReadBuffer & in_, const Block & header, Params params, const FormatSchemaInfo & info)
+    : IRowInputFormat(header, in_, params)
+    ,  data_types(header.getDataTypes())
+    , reader(in, ProtobufSchemas::instance().getMessageTypeForFormatSchema(info), header.getNames())
 {
 }
 

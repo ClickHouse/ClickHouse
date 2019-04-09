@@ -8,8 +8,8 @@
 namespace DB
 {
 
-TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out, Block header, const FormatSettings & format_settings_)
-    : TabSeparatedRowOutputFormat(out, std::move(header), false, false, format_settings_)
+TSKVRowOutputFormat::TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_)
+    : TabSeparatedRowOutputFormat(out_, header, false, false, format_settings_)
 {
     auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());

@@ -9,8 +9,8 @@
 namespace DB
 {
 
-BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out, Block header, bool with_names_, bool with_types_)
-    : IRowOutputFormat(std::move(header), out), with_names(with_names_), with_types(with_types_)
+BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_)
+    : IRowOutputFormat(header, out_), with_names(with_names_), with_types(with_types_)
 {
 }
 

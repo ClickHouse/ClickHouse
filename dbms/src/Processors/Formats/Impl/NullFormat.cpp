@@ -8,7 +8,7 @@ namespace DB
 class NullOutputFormat : public IOutputFormat
 {
 public:
-    NullOutputFormat(const Block & header, WriteBuffer & out) : IOutputFormat(header, out) {}
+    NullOutputFormat(const Block & header, WriteBuffer & out_) : IOutputFormat(header, out_) {}
 
     String getName() const override { return "NullOutputFormat"; }
 

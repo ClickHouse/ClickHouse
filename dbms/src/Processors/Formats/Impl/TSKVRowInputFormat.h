@@ -23,7 +23,7 @@ class ReadBuffer;
 class TSKVRowInputFormat : public IRowInputFormat
 {
 public:
-    TSKVRowInputFormat(ReadBuffer & in, Block header, Params params, const FormatSettings & format_settings);
+    TSKVRowInputFormat(ReadBuffer & in_, Block header, Params params, const FormatSettings & format_settings);
 
     String getName() const override { return "TSKVRowInputFormat"; }
 

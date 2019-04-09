@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 
 ValuesRowInputFormat::ValuesRowInputFormat(
-    ReadBuffer & in, Block header, Params params, const Context & context_, const FormatSettings & format_settings)
+    ReadBuffer & in_, Block header, Params params, const Context & context_, const FormatSettings & format_settings)
     : IRowInputFormat(std::move(header), in, params)
     , context(std::make_unique<Context>(context_)), format_settings(format_settings)
 {
