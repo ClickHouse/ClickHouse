@@ -1799,9 +1799,10 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline)
 //    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
 
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
-        return std::make_shared<PartialSortingTransform>(header, order_descr, limit);
+        bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
+        return std::make_shared<PartialSortingTransform>(header, order_descr, limit, do_count_rows);
     });
 
     /// If there are several streams, we merge them into one
@@ -2102,9 +2103,11 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
 
-        pipeline.addSimpleTransform([&](const Block & header)
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
         {
-            return std::make_shared<LimitTransform>(header, limit_length, limit_offset, always_read_till_end);
+            bool do_count_rows_before_limit = stream_type == QueryPipeline::StreamType::Main;
+            return std::make_shared<LimitTransform>(
+                    header, limit_length, limit_offset, always_read_till_end, do_count_rows_before_limit);
         });
     }
 }

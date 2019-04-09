@@ -616,6 +616,7 @@ void executeQuery(
             pipeline.setOutput(std::move(out));
             auto executor = pipeline.execute(context.getSettingsRef().max_threads);
             executor->execute();
+            pipeline.finalize();
         }
     }
     catch (...)
