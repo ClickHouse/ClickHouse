@@ -210,10 +210,10 @@ using CheckExpressionVisitor = InDepthNodeVisitor<CheckExpressionMatcher, true>;
 
 bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables, size_t & num_comma)
 {
-    if (!select.tables)
+    if (!select.tables())
         return false;
 
-    const auto * tables = select.tables->as<ASTTablesInSelectQuery>();
+    const auto * tables = select.tables()->as<ASTTablesInSelectQuery>();
     if (!tables)
         return false;
 
@@ -268,11 +268,11 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
 
     /// CROSS to INNER
 
-    if (!select.where_expression)
+    if (!select.where())
         return;
 
     CheckExpressionVisitor::Data visitor_data{joined_tables};
-    CheckExpressionVisitor(visitor_data).visit(select.where_expression);
+    CheckExpressionVisitor(visitor_data).visit(select.refWhere());
 
     if (visitor_data.complex())
         return;

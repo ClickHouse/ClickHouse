@@ -45,10 +45,10 @@ PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
 
 bool PredicateExpressionsOptimizer::optimize()
 {
-    if (!settings.enable_optimize_predicate_expression || !ast_select || !ast_select->tables || ast_select->tables->children.empty())
+    if (!settings.enable_optimize_predicate_expression || !ast_select || !ast_select->tables() || ast_select->tables()->children.empty())
         return false;
 
-    if (!ast_select->where_expression && !ast_select->prewhere_expression)
+    if (!ast_select->where() && !ast_select->prewhere())
         return false;
 
     SubqueriesProjectionColumns all_subquery_projection_columns = getAllSubqueryProjectionColumns();
@@ -56,8 +56,8 @@ bool PredicateExpressionsOptimizer::optimize()
     bool is_rewrite_subqueries = false;
     if (!all_subquery_projection_columns.empty())
     {
-        is_rewrite_subqueries |= optimizeImpl(ast_select->where_expression, all_subquery_projection_columns, OptimizeKind::PUSH_TO_WHERE);
-        is_rewrite_subqueries |= optimizeImpl(ast_select->prewhere_expression, all_subquery_projection_columns, OptimizeKind::PUSH_TO_PREWHERE);
+        is_rewrite_subqueries |= optimizeImpl(ast_select->refWhere(), all_subquery_projection_columns, OptimizeKind::PUSH_TO_WHERE);
+        is_rewrite_subqueries |= optimizeImpl(ast_select->refPrewhere(), all_subquery_projection_columns, OptimizeKind::PUSH_TO_PREWHERE);
     }
 
     return is_rewrite_subqueries;
@@ -99,9 +99,9 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
                 switch (optimize_kind)
                 {
                     case OptimizeKind::NONE: continue;
-                    case OptimizeKind::PUSH_TO_WHERE: is_rewrite_subquery |= optimizeExpression(inner_predicate, subquery->where_expression, subquery); continue;
-                    case OptimizeKind::PUSH_TO_HAVING: is_rewrite_subquery |= optimizeExpression(inner_predicate, subquery->having_expression, subquery); continue;
-                    case OptimizeKind::PUSH_TO_PREWHERE: is_rewrite_subquery |= optimizeExpression(inner_predicate, subquery->prewhere_expression, subquery); continue;
+                    case OptimizeKind::PUSH_TO_WHERE: is_rewrite_subquery |= optimizeExpression(inner_predicate, subquery->refWhere(), subquery); continue;
+                    case OptimizeKind::PUSH_TO_HAVING: is_rewrite_subquery |= optimizeExpression(inner_predicate, subquery->refHaving(), subquery); continue;
+                    case OptimizeKind::PUSH_TO_PREWHERE: is_rewrite_subquery |= optimizeExpression(inner_predicate, subquery->refPrewhere(), subquery); continue;
                 }
             }
         }
@@ -111,9 +111,9 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
 
 bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquery)
 {
-    if (subquery && !subquery->final() && !subquery->limit_by_expression_list && !subquery->limit_length && !subquery->with_expression_list)
+    if (subquery && !subquery->final() && !subquery->limitBy() && !subquery->limitLength() && !subquery->with())
     {
-        ASTPtr expr_list = ast_select->select_expression_list;
+        ASTPtr expr_list = ast_select->select();
         ExtractFunctionVisitor::Data extract_data;
         ExtractFunctionVisitor(extract_data).visit(expr_list);
 
@@ -351,7 +351,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
     QueryNormalizer::Data normalizer_data(aliases, settings);
     QueryNormalizer(normalizer_data).visit(ast);
 
-    for (const auto & projection_column : select_query->select_expression_list->children)
+    for (const auto & projection_column : select_query->select()->children)
     {
         if (projection_column->as<ASTAsterisk>() || projection_column->as<ASTQualifiedAsterisk>())
         {
@@ -371,7 +371,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_query, const ASTPtr & asterisk)
 {
     /// SELECT *, SELECT dummy, SELECT 1 AS id
-    if (!select_query->tables || select_query->tables->children.empty())
+    if (!select_query->tables() || select_query->tables()->children.empty())
         return {};
 
     std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);

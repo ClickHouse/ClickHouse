@@ -100,10 +100,10 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
     if (distributed_product_mode == DistributedProductMode::ALLOW)
         return;
 
-    if (!query->tables)
+    if (!query->tables())
         return;
 
-    const auto & tables_in_select_query = query->tables->as<ASTTablesInSelectQuery &>();
+    const auto & tables_in_select_query = query->tables()->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
         return;
 

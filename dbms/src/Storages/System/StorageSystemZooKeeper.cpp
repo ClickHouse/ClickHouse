@@ -96,11 +96,11 @@ static bool extractPathImpl(const IAST & elem, String & res)
 static String extractPath(const ASTPtr & query)
 {
     const auto & select = query->as<ASTSelectQuery &>();
-    if (!select.where_expression)
+    if (!select.where())
         return "";
 
     String res;
-    return extractPathImpl(*select.where_expression, res) ? res : "";
+    return extractPathImpl(*select.where(), res) ? res : "";
 }
 
 
