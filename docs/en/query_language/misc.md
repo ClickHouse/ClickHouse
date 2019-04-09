@@ -57,11 +57,11 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns the following `String`-type columns: 
+Returns the following `String` type columns: 
 
 - `name` — Column name.
 - `type`— Column type.
-- `default_type` — Clause that is used in default expression (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn't specified.
+- `default_type` — Clause that is used in [default expression](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn't specified.
 - `default_expression` — Value specified in the `DEFAULT` clause.
 - `comment_expression` — Comment text.
 
