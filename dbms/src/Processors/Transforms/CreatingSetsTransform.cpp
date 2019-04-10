@@ -111,10 +111,6 @@ void CreatingSetsTransform::init()
 {
     is_initialized = true;
 
-    const Settings & settings = context.getSettingsRef();
-    network_transfer_limits = SizeLimits(
-            settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
-
     for (auto & elem : subqueries_for_sets)
         if (elem.second.source && elem.second.set)
             elem.second.set->setHeader(elem.second.source->getHeader());
@@ -208,6 +204,20 @@ void CreatingSetsTransform::work()
     }
     else
         elapsed_nanoseconds += watch.elapsedNanoseconds();
+}
+
+void CreatingSetsTransform::setProgressCallback(const ProgressCallback & callback)
+{
+    for (auto & elem : subqueries_for_sets)
+        if (elem.second.source)
+            elem.second.source->setProgressCallback(callback);
+}
+
+void CreatingSetsTransform::setProcessListElement(QueryStatus * status)
+{
+    for (auto & elem : subqueries_for_sets)
+        if (elem.second.source)
+            elem.second.source->setProcessListElement(status);
 }
 
 }

@@ -6,6 +6,9 @@
 namespace DB
 {
 
+struct Progress;
+using ProgressCallback = std::function<void(const Progress & progress)>;
+
 /// This processor creates sets during execution.
 /// Don't return any data. Sets are created when Finish status is returned.
 /// In general, several work() methods need to be called to finish.
@@ -22,6 +25,9 @@ public:
     String getName() const override { return "CreatingSetsTransform"; }
     Status prepare() override;
     void work() override;
+
+    void setProgressCallback(const ProgressCallback & callback);
+    void setProcessListElement(QueryStatus * status);
 
 protected:
     bool finished = false;

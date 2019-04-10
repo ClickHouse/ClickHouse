@@ -444,15 +444,25 @@ void QueryPipeline::unitePipelines(
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
     for (auto & processor : processors)
+    {
         if (auto * source = typeid_cast<SourceFromInputStream *>(processor.get()))
             source->getStream()->setProgressCallback(callback);
+
+        if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
+            source->setProgressCallback(callback);
+    }
 }
 
 void QueryPipeline::setProcessListElement(QueryStatus * elem)
 {
     for (auto & processor : processors)
+    {
         if (auto * source = typeid_cast<SourceFromInputStream *>(processor.get()))
             source->getStream()->setProcessListElement(elem);
+
+        if (auto * source = typeid_cast<CreatingSetsTransform *>(processor.get()))
+            source->setProcessListElement(elem);
+    }
 }
 
 void QueryPipeline::finalize()
