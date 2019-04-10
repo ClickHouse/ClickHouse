@@ -384,6 +384,14 @@ def test_create_as_select(started_cluster):
     ddl_check_query(instance, "DROP TABLE IF EXISTS test_as_select ON CLUSTER cluster")
 
 
+def test_create_reserved(started_cluster):
+    instance = cluster.instances['ch2']
+    ddl_check_query(instance, "CREATE TABLE test_reserved ON CLUSTER cluster (`p` Date, `image` Nullable(String), `index` Nullable(Float64), `invalidate` Nullable(Int64)) ENGINE = MergeTree(`p`, `p`, 8192)")
+    ddl_check_query(instance, "CREATE TABLE test_as_reserved ON CLUSTER cluster ENGINE = Memory AS (SELECT * from test_reserved)")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS test_reserved ON CLUSTER cluster")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS test_as_reserved ON CLUSTER cluster")
+
+
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
        for name, instance in cluster.instances.items():
