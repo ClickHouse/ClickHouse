@@ -7,6 +7,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BROTLI_WRITE_FAILED;
+}
+
+
 class BrotliWriteBuffer::BrotliStateWrapper
 {
 public:
@@ -72,7 +78,7 @@ void BrotliWriteBuffer::nextImpl()
 
         if (result == 0)
         {
-            throw Exception(std::string("brotli compress failed"), ErrorCodes::BROTLI_WRITE_FAILED);
+            throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
         }
     }
     while (in_available > 0 || out_capacity == 0);
@@ -110,7 +116,7 @@ void BrotliWriteBuffer::finish()
 
         if (result == 0)
         {
-            throw Exception(std::string("brotli compress failed"), ErrorCodes::BROTLI_WRITE_FAILED);
+            throw Exception("brotli compress failed", ErrorCodes::BROTLI_WRITE_FAILED);
         }
     }
 }
