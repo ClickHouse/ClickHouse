@@ -749,13 +749,17 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     header_before_join = pipeline.getHeader();
 
                     /// In case joined subquery has totals, and we don't, add default chunk to totals.
+                    bool default_totals = false;
                     if (!pipeline.hasTotals())
+                    {
                         pipeline.addDefaultTotals();
+                        default_totals = true;
+                    }
 
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {
                         bool on_totals = type == QueryPipeline::StreamType::Totals;
-                        return std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals);
+                        return std::make_shared<ExpressionTransform>(header, expressions.before_join, on_totals, default_totals);
                     });
                 }
                 else
