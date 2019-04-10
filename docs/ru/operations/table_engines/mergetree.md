@@ -86,7 +86,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 <details markdown="1"><summary>Устаревший способ создания таблицы</summary>
 
 !!! attention
-    Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
+    Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ, описанный выше.
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
