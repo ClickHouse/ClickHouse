@@ -1326,7 +1326,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             pipeline.init(std::move(sources));
 
-            if (options.to_stage == QueryProcessingStage::Complete)
+            if (processing_stage == QueryProcessingStage::Complete)
                 pipeline.addTotals(std::make_shared<SourceFromTotals>(streams));
         }
         else
