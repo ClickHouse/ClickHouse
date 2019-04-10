@@ -398,7 +398,7 @@ void QueryPipeline::unitePipelines(
                 auto converting = std::make_shared<ConvertingTransform>(
                     pipeline.current_header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
 
-                connect(*pipeline.extremes_port, converting->getInputPort());
+                connect(*pipeline.totals_having_port, converting->getInputPort());
                 totals_having_port = &converting->getOutputPort();
                 processors.push_back(std::move(converting));
             }
