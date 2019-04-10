@@ -3,7 +3,7 @@
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
-#include <Processors/Formats/Impl/verbosePrintString.h>
+#include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
 
 namespace DB
