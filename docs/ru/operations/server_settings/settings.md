@@ -117,7 +117,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## format_schema_path
+## format_schema_path {#server_settings-format_schema_path}
 
 Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../interfaces/formats.md#capnproto).
 
@@ -127,8 +127,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
   <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
-
-
 
 ## graphite {#server_settings-graphite}
 

@@ -2,7 +2,7 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/ZlibCompressionMethod.h>
+#include <IO/CompressionMethod.h>
 
 #include <zlib.h>
 
@@ -21,7 +21,7 @@ class ZlibDeflatingWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 public:
     ZlibDeflatingWriteBuffer(
             WriteBuffer & out_,
-            ZlibCompressionMethod compression_method,
+            CompressionMethod compression_method,
             int compression_level,
             size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
             char * existing_memory = nullptr,

@@ -6,7 +6,7 @@ namespace DB
 
 ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
         ReadBuffer & in_,
-        ZlibCompressionMethod compression_method,
+        CompressionMethod compression_method,
         size_t buf_size,
         char * existing_memory,
         size_t alignment)
@@ -23,7 +23,7 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
     zstr.avail_out = 0;
 
     int window_bits = 15;
-    if (compression_method == ZlibCompressionMethod::Gzip)
+    if (compression_method == CompressionMethod::Gzip)
     {
         window_bits += 16;
     }

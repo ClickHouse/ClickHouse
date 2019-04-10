@@ -29,7 +29,7 @@ public:
 BrotliReadBuffer::BrotliReadBuffer(ReadBuffer &in_, size_t buf_size, char *existing_memory, size_t alignment)
         : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
         , in(in_)
-        , brotli(new BrotliStateWrapper())
+        , brotli(std::make_unique<BrotliStateWrapper>())
         , in_available(0)
         , in_data(nullptr)
         , out_capacity(0)
@@ -56,7 +56,7 @@ bool BrotliReadBuffer::nextImpl()
 
     if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in.eof()))
     {
-        throw Exception(std::string("brotli decode error"), ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception(std::string("brotli decode error"), ErrorCodes::BROTLI_READ_FAILED);
     }
 
     out_capacity = internal_buffer.size();
@@ -76,13 +76,13 @@ bool BrotliReadBuffer::nextImpl()
         }
         else
         {
-            throw Exception(std::string("brotli decode error"), ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception(std::string("brotli decode error"), ErrorCodes::BROTLI_READ_FAILED);
         }
     }
 
     if (brotli->result == BROTLI_DECODER_RESULT_ERROR)
     {
-        throw Exception(std::string("brotli decode error"), ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception(std::string("brotli decode error"), ErrorCodes::BROTLI_READ_FAILED);
     }
 
     return true;
