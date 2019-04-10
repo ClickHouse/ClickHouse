@@ -1201,8 +1201,8 @@ protected:
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, new_columns);
-        new_columns_list->set(
-                new_columns_list->indices, typeid_cast<ASTCreateQuery &>(*query_ast).columns_list->indices->clone());
+        if (auto indices = typeid_cast<ASTCreateQuery &>(*query_ast).columns_list->indices)
+            new_columns_list->set(new_columns_list->indices, indices->clone());
 
         new_query.replace(new_query.columns_list, new_columns_list);
 
