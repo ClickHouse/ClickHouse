@@ -589,28 +589,28 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     while (true)
     {
-        if (!ast_source && source_keyword.check_without_moving(pos, expected))
+        if (!ast_source && source_keyword.checkWithoutMoving(pos, expected))
         {
             if (!key_value_pairs_p.parse(pos, ast_source, expected))
                 return false;
             continue;
         }
 
-        if (!ast_lifetime && lifetime_keyword.check_without_moving(pos, expected))
+        if (!ast_lifetime && lifetime_keyword.checkWithoutMoving(pos, expected))
         {
             if (!key_value_pairs_p.parse(pos, ast_lifetime, expected))
                 return false;
             continue;
         }
 
-        if (!ast_layout && layout_keyword.check_without_moving(pos, expected))
+        if (!ast_layout && layout_keyword.checkWithoutMoving(pos, expected))
         {
             if (!key_value_pairs_p.parse(pos, ast_layout, expected))
                 return false;
             continue;
         }
 
-        if (!ast_range && range_keyword.check_without_moving(pos, expected))
+        if (!ast_range && range_keyword.checkWithoutMoving(pos, expected))
         {
             if (!key_value_pairs_p.parse(pos, ast_range, expected))
                 return false;

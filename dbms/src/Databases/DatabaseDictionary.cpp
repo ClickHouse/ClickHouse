@@ -182,7 +182,7 @@ void DatabaseDictionary::removeTable(
 
 void DatabaseDictionary::removeDictionary(Context & /*context*/, const String & /*dictionary_name*/)
 {
-    throw Exception("DatabaseDictionary: attachDictionary() is not supported.", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("DatabaseDictionary: removeDictionary() is not supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
