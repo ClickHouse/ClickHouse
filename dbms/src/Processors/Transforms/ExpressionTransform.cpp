@@ -12,7 +12,7 @@ static Block transformHeader(Block header, const ExpressionActionsPtr & expressi
 
 
 ExpressionTransform::ExpressionTransform(const Block & header, ExpressionActionsPtr expression, bool on_totals)
-    : ISimpleTransform(header, transformHeader(header, expression), false)
+    : ISimpleTransform(header, transformHeader(header, expression), on_totals)
     , expression(std::move(expression))
     , on_totals(on_totals)
 {
@@ -23,7 +23,12 @@ void ExpressionTransform::transform(Chunk & chunk)
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (on_totals)
+    {
+        if (!expression->hasTotalsInJoin())
+            return;
+
         expression->executeOnTotals(block);
+    }
     else
         expression->execute(block);
 

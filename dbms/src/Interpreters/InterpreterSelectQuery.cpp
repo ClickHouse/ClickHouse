@@ -748,8 +748,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 {
                     header_before_join = pipeline.getHeader();
 
-                    /// In case joined subquery has totals, and we don't, add empty chunk to totals.
-                    if (!pipeline.hasTotals() && expressions.before_join->hasTotalsInJoin())
+                    /// In case joined subquery has totals, and we don't, add default chunk to totals.
+                    if (!pipeline.hasTotals())
                         pipeline.addDefaultTotals();
 
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
