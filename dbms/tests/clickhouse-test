@@ -168,6 +168,11 @@ def main(args):
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
 
+    def is_test_from_dir(suite_dir, case):
+        case_file = os.path.join(suite_dir, case)
+        (name, ext) = os.path.splitext(case)
+        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py')
+
     def sute_key_func(item):
        if args.order == 'random':
              return random()
@@ -197,7 +202,6 @@ def main(args):
 
         suite = suite_re_obj.group(1)
         if os.path.isdir(suite_dir):
-            print("\nRunning {} tests.\n".format(suite))
 
             failures = 0
             failures_chain = 0
@@ -226,14 +230,29 @@ def main(args):
                 except ValueError:
                     return 99997
 
-            for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), key=key_func):
+            run_n, run_total = args.parallel.split('/')
+            run_n = float(run_n)
+            run_total = float(run_total)
+            all_tests = os.listdir(suite_dir)
+            all_tests = filter(lambda case: is_test_from_dir(suite_dir, case), all_tests)
+            all_tests = sorted(filter(lambda case: re.search(args.test, case) if args.test else True, all_tests), key=key_func)
+            tests_n = len(all_tests)
+            start = int(tests_n/run_total*(run_n-1))
+            if start > 0:
+                start = start + 1
+            end = int(tests_n/run_total*(run_n))
+            all_tests = all_tests[start : end]
+
+            print("\nRunning {} {} tests.".format(tests_n, suite) + (" {} .. {} ".format(start, end) if run_total > 1 else "") + "\n")
+
+            for case in all_tests:
                 if SERVER_DIED:
                     break
 
                 case_file = os.path.join(suite_dir, case)
                 (name, ext) = os.path.splitext(case)
 
-                if os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py'):
+                if True:
                     report_testcase = et.Element("testcase", attrib = {"name": name})
 
                     try:
@@ -442,6 +461,7 @@ if __name__ == '__main__':
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
     parser.add_argument('--database', default='test', help='Default database for tests')
+    parser.add_argument('--parallel', default='1/1', help='Parralel test run number/total')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
