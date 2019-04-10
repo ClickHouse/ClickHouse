@@ -512,7 +512,7 @@ public:
     }
 
 protected:
-    void cannotConvertType(const String & type_name)
+    [[noreturn]] void cannotConvertType(const String & type_name)
     {
         throw Exception(
             String("Could not convert type '") + field->type_name() + "' from protobuf field '" + field->name() + "' to data type '"
@@ -520,7 +520,7 @@ protected:
             ErrorCodes::PROTOBUF_BAD_CAST);
     }
 
-    void cannotConvertValue(const String & value, const String & type_name)
+    [[noreturn]] void cannotConvertValue(const String & value, const String & type_name)
     {
         throw Exception(
             "Could not convert value '" + value + "' from protobuf field '" + field->name() + "' to data type '" + type_name + "'",
