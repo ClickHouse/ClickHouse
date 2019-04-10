@@ -746,8 +746,7 @@ bool ExpressionActions::hasTotalsInJoin() const
     bool has_totals_in_join = false;
     for (const auto & action : actions)
     {
-        if (action.join && action.jo
-        in->hasTotals())
+        if (action.join && action.join->hasTotals())
         {
             has_totals_in_join = true;
             break;
