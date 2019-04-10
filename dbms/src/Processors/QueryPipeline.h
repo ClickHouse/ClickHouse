@@ -47,6 +47,9 @@ public:
     /// Add totals which returns one chunk with single row with defaults.
     void addDefaultTotals();
 
+    /// Add already calculated totals.
+    void addTotals(ProcessorPtr source);
+
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
     bool hasDelayedStream() const { return delayed_stream_port; }
