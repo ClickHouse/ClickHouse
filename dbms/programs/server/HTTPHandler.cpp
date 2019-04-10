@@ -296,7 +296,7 @@ void HTTPHandler::processQuery(
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");
     bool client_supports_http_compression = false;
-    ZlibCompressionMethod http_response_compression_method {};
+    CompressionMethod http_response_compression_method {};
 
     if (!http_response_compression_methods.empty())
     {
@@ -305,12 +305,17 @@ void HTTPHandler::processQuery(
         if (std::string::npos != http_response_compression_methods.find("gzip"))
         {
             client_supports_http_compression = true;
-            http_response_compression_method = ZlibCompressionMethod::Gzip;
+            http_response_compression_method = CompressionMethod::Gzip;
         }
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
         {
             client_supports_http_compression = true;
-            http_response_compression_method = ZlibCompressionMethod::Zlib;
+            http_response_compression_method = CompressionMethod::Zlib;
+        }
+        else if (http_response_compression_methods == "br")
+        {
+            client_supports_http_compression = true;
+            http_response_compression_method = CompressionMethod::Brotli;
         }
     }
 
@@ -394,11 +399,11 @@ void HTTPHandler::processQuery(
     {
         if (http_request_compression_method_str == "gzip")
         {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, ZlibCompressionMethod::Gzip);
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Gzip);
         }
         else if (http_request_compression_method_str == "deflate")
         {
-            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, ZlibCompressionMethod::Zlib);
+            in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, CompressionMethod::Zlib);
         }
 #if USE_BROTLI
         else if (http_request_compression_method_str == "br")
