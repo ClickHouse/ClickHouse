@@ -520,7 +520,7 @@ void resizeDynamicSize(ArraySource && array_source, ValueSource && value_source,
     while (!sink.isEnd())
     {
         size_t row_num = array_source.rowNum();
-        bool has_size = !size_null_map || (size_null_map && (*size_null_map)[row_num]);
+        bool has_size = !size_null_map || (*size_null_map)[row_num];
 
         if (has_size)
         {
