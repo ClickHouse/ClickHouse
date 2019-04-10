@@ -6,24 +6,24 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.cannot_kill_query"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test.cannot_kill_query (x UInt64) ENGINE = MergeTree ORDER BY x" &> /dev/null
-$CLICKHOUSE_CLIENT -q "INSERT INTO test.cannot_kill_query SELECT * FROM numbers(10000000)" &> /dev/null
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS cannot_kill_query"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE cannot_kill_query (x UInt64) ENGINE = MergeTree ORDER BY x" &> /dev/null
+$CLICKHOUSE_CLIENT -q "INSERT INTO cannot_kill_query SELECT * FROM numbers(10000000)" &> /dev/null
 
 # This SELECT query will run for a long time. It's used as bloker for ALTER query. It will be killed with SYNC kill.
-query_for_pending="SELECT count() FROM test.cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads=1, max_block_size=1"
+query_for_pending="SELECT count() FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads=1, max_block_size=1"
 $CLICKHOUSE_CLIENT -q "$query_for_pending" &>/dev/null &
 
 sleep 1 # queries should be in strict order
 
 # This ALTER query will wait until $query_for_pending finished. Also it will block $query_to_kill.
-$CLICKHOUSE_CLIENT -q "ALTER TABLE test.cannot_kill_query MODIFY COLUMN x UInt64" &>/dev/null &
+$CLICKHOUSE_CLIENT -q "ALTER TABLE cannot_kill_query MODIFY COLUMN x UInt64" &>/dev/null &
 
 sleep 1
 
 # This SELECT query will also run for a long time. Also it's blocked by ALTER query. It will be killed with ASYNC kill.
 # This is main idea which we check -- blocked queries can be killed with ASYNC kill.
-query_to_kill="SELECT sum(1) FROM test.cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads=1"
+query_to_kill="SELECT sum(1) FROM cannot_kill_query WHERE NOT ignore(sleep(1)) SETTINGS max_threads=1"
 $CLICKHOUSE_CLIENT -q "$query_to_kill" &>/dev/null &
 
 sleep 1 # just to be sure that kill of $query_to_kill will be executed after $query_to_kill.
@@ -48,4 +48,4 @@ do
     fi
 done
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.cannot_kill_query" &>/dev/null
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS cannot_kill_query" &>/dev/null

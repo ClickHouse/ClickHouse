@@ -17,6 +17,10 @@ if [ "${PACKAGE_INSTALL}" ]; then
     apt install -y -f --allow-downgrades ||:
     dpkg -l | grep clickhouse ||:
 
+    # Second install to replace debian versions
+    dpkg --auto-deconfigure -i /tmp/buildd/*.deb ||:
+    dpkg -l | grep clickhouse ||:
+
     # Some test references uses specific timezone
     ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime
     echo 'Europe/Moscow' > /etc/timezone

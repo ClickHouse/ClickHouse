@@ -5,8 +5,6 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "USE test;"
-
 for typename in "UInt32" "UInt64" "Float64" "Float32"
 do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS A;"
@@ -19,4 +17,7 @@ do
     $CLICKHOUSE_CLIENT -q "INSERT INTO B(k,t,b) VALUES (2,3,3);"
 
     $CLICKHOUSE_CLIENT -q "SELECT k, t, a, b FROM A ASOF LEFT JOIN B USING(k,t) ORDER BY (k,t);"
+
+    $CLICKHOUSE_CLIENT -q "DROP TABLE A;"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE B;"
 done

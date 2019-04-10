@@ -43,7 +43,7 @@ def remove_control_characters(s):
 
 def run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file):
     if ext == '.sql':
-        command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
+        command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client_with_database, server_logs_level, case_file, stdout_file, stderr_file)
     else:
         command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
 
@@ -137,6 +137,7 @@ def main(args):
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
+    os.environ.setdefault("CLICKHOUSE_DATABASE", args.database)
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
@@ -165,7 +166,7 @@ def main(args):
     failures_total = 0
 
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
 
     def sute_key_func(item):
        if args.order == 'random':
@@ -265,7 +266,7 @@ def main(args):
                             else:
 
                                 if args.testname:
-                                    clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                                    clickhouse_proc = Popen(shlex.split(args.client_with_database), stdin=PIPE, stdout=PIPE, stderr=PIPE)
                                     clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
 
                                 reference_file = os.path.join(suite_dir, name) + '.reference'
@@ -396,7 +397,7 @@ def main(args):
         print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), "green", attrs=["bold"]))
 
     if args.hung_check:
-        processlist = get_processlist(args.client)
+        processlist = get_processlist(args.client_with_database)
         if processlist:
             server_pid = get_server_pid(os.getenv("CLICKHOUSE_PORT_TCP", '9000'))
             print(colored("\nFound hung queries in processlist:", "red", attrs=["bold"]))
@@ -440,6 +441,7 @@ if __name__ == '__main__':
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
+    parser.add_argument('--database', default='test', help='Default database for tests')
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
@@ -480,6 +482,12 @@ if __name__ == '__main__':
             args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
         if os.getenv("CLICKHOUSE_PORT_TCP"):
             args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+        if os.getenv("CLICKHOUSE_DATABASE"):
+            args.client += ' --database=' + os.getenv("CLICKHOUSE_DATABASE")
+
+    args.client_with_database = args.client
+    if args.database:
+        args.client_with_database += ' --database=' + args.database
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):
