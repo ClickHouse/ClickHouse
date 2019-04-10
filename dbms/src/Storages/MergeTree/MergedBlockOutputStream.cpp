@@ -632,13 +632,14 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
     CompressionCodecPtr default_codec_, bool skip_offsets_,
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     WrittenOffsetColumns & already_written_offset_columns)
     : IMergedBlockOutputStream(
         storage_, storage_.global_context.getSettings().min_compress_block_size,
         storage_.global_context.getSettings().max_compress_block_size, default_codec_,
         storage_.global_context.getSettings().min_bytes_to_use_direct_io),
     header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
-    already_written_offset_columns(already_written_offset_columns)
+    skip_indices(indices_to_recalc), already_written_offset_columns(already_written_offset_columns)
 {
 }
 
@@ -648,13 +649,13 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     {
         column_streams.clear();
         serialization_states.clear();
-        serialization_states.reserve(block.columns());
+        serialization_states.reserve(header.columns());
         WrittenOffsetColumns tmp_offset_columns;
         IDataType::SerializeBinaryBulkSettings settings;
 
-        for (size_t i = 0; i < block.columns(); ++i)
+        for (size_t i = 0; i < header.columns(); ++i)
         {
-            const auto & col = block.safeGetByPosition(i);
+            const auto & col = header.safeGetByPosition(i);
 
             const auto columns = storage.getColumns();
             addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
@@ -663,15 +664,96 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
             col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
         }
 
+        for (const auto & index : skip_indices)
+        {
+            String stream_name = index->getFileName();
+            skip_indices_streams.emplace_back(
+                    std::make_unique<ColumnStream>(
+                            stream_name,
+                            part_path + stream_name, INDEX_FILE_EXTENSION,
+                            part_path + stream_name, MARKS_FILE_EXTENSION,
+                            codec, max_compress_block_size,
+                            0, aio_threshold));
+            skip_indices_aggregators.push_back(index->createIndexAggregator());
+            skip_index_filling.push_back(0);
+        }
+
         initialized = true;
+    }
+
+    std::set<String> skip_indexes_column_names_set;
+    for (const auto & index : skip_indices)
+        std::copy(index->columns.cbegin(), index->columns.cend(),
+                  std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
+
+    std::vector<ColumnWithTypeAndName> skip_indexes_columns(skip_indexes_column_names.size());
+    std::map<String, size_t> skip_indexes_column_name_to_position;
+    for (size_t i = 0, size = skip_indexes_column_names.size(); i < size; ++i)
+    {
+        const auto & name = skip_indexes_column_names[i];
+        skip_indexes_column_name_to_position.emplace(name, i);
+        skip_indexes_columns[i] = block.getByName(name);
     }
 
     size_t rows = block.rows();
 
-    WrittenOffsetColumns offset_columns = already_written_offset_columns;
-    for (size_t i = 0; i < block.columns(); ++i)
     {
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+        /// Creating block for update
+        Block indices_update_block(skip_indexes_columns);
+        /// Filling and writing skip indices like in IMergedBlockOutputStream::writeData
+        for (size_t i = 0; i < skip_indices.size(); ++i)
+        {
+            const auto index = skip_indices[i];
+            auto & stream = *skip_indices_streams[i];
+            size_t prev_pos = 0;
+
+            while (prev_pos < rows)
+            {
+                UInt64 limit = 0;
+                if (prev_pos == 0 && index_offset != 0)
+                {
+                    limit = index_offset;
+                }
+                else
+                {
+                    limit = storage.index_granularity;
+                    if (skip_indices_aggregators[i]->empty())
+                    {
+                        skip_indices_aggregators[i] = index->createIndexAggregator();
+                        skip_index_filling[i] = 0;
+
+                        if (stream.compressed.offset() >= min_compress_block_size)
+                            stream.compressed.next();
+
+                        writeIntBinary(stream.plain_hashing.count(), stream.marks);
+                        writeIntBinary(stream.compressed.offset(), stream.marks);
+                    }
+                }
+
+                size_t pos = prev_pos;
+                skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
+
+                if (pos == prev_pos + limit)
+                {
+                    ++skip_index_filling[i];
+
+                    /// write index if it is filled
+                    if (skip_index_filling[i] == index->granularity)
+                    {
+                        skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+                        skip_index_filling[i] = 0;
+                    }
+                }
+                prev_pos = pos;
+            }
+        }
+    }
+
+    WrittenOffsetColumns offset_columns = already_written_offset_columns;
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const ColumnWithTypeAndName & column = block.getByName(header.getColumnsWithTypeAndName()[i].name);
         writeData(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i]);
     }
 
@@ -699,6 +781,15 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
     }
 
+    /// Finish skip index serialization
+    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+    {
+        auto & stream = *skip_indices_streams[i];
+        if (!skip_indices_aggregators[i]->empty())
+            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
+    }
+
+
     MergeTreeData::DataPart::Checksums checksums;
 
     for (auto & column_stream : column_streams)
@@ -710,9 +801,19 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         column_stream.second->addToChecksums(checksums);
     }
 
+    for (auto & stream : skip_indices_streams)
+    {
+        stream->finalize();
+        stream->addToChecksums(checksums);
+    }
+
     column_streams.clear();
     serialization_states.clear();
     initialized = false;
+
+    skip_indices_streams.clear();
+    skip_indices_aggregators.clear();
+    skip_index_filling.clear();
 
     return checksums;
 }

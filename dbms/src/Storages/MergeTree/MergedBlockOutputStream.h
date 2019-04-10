@@ -166,6 +166,7 @@ public:
     MergedColumnOnlyOutputStream(
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
         CompressionCodecPtr default_codec_, bool skip_offsets_,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         WrittenOffsetColumns & already_written_offset_columns);
 
     Block getHeader() const override { return header; }
@@ -181,6 +182,11 @@ private:
     bool initialized = false;
     bool sync;
     bool skip_offsets;
+
+    std::vector<MergeTreeIndexPtr> skip_indices;
+    std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
+    MergeTreeIndexAggregators skip_indices_aggregators;
+    std::vector<size_t> skip_index_filling;
 
     /// To correctly write Nested elements column-by-column.
     WrittenOffsetColumns & already_written_offset_columns;

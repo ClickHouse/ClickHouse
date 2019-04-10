@@ -13,7 +13,7 @@ namespace DB
 
 class Context;
 
-/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs)
+/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
 class MutationsInterpreter
 {

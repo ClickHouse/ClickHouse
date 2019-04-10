@@ -758,7 +758,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
             MergedColumnOnlyOutputStream column_to(
-                data, column_gathered_stream.getHeader(), new_part_tmp_path, false, compression_codec, false, written_offset_columns);
+                data, column_gathered_stream.getHeader(), new_part_tmp_path, false,
+                compression_codec, false, {}, written_offset_columns);
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
@@ -915,7 +916,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
 
-        /// Checks if columns used in skipping indexes modified/
+        /// Checks if columns used in skipping indexes modified
+        std::set<MergeTreeIndexPtr> indices_to_recalc;
         for (const auto & col : in_header.getNames())
         {
             for (const auto & index : data.skip_indices)
@@ -923,9 +925,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 const auto & index_cols = index->expr->getRequiredColumns();
                 auto it = find(cbegin(index_cols), cend(index_cols), col);
                 if (it != cend(index_cols))
-                    throw Exception("You can not modify columns used in index. Index name: '"
+                    indices_to_recalc.insert(index);
+                    /*throw Exception("You can not modify columns used in index. Index name: '"
                                     + index->name
-                                    + "' bad column: '" + *it + "'", ErrorCodes::ILLEGAL_COLUMN);
+                                    + "' bad column: '" + *it + "'", ErrorCodes::ILLEGAL_COLUMN);*/
             }
         }
 
@@ -941,6 +944,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
             IDataType::SubstreamPath stream_path;
             entry.type->enumerateStreams(callback, stream_path);
+        }
+        for (const auto & index : indices_to_recalc)
+        {
+            files_to_skip.insert(index->getFileName() + ".idx");
+            files_to_skip.insert(index->getFileName() + ".mrk");
         }
 
         Poco::DirectoryIterator dir_end;
@@ -959,7 +967,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
-            data, in_header, new_part_tmp_path, /* sync = */ false, compression_codec, /* skip_offsets = */ false, unused_written_offsets);
+            data, in_header, new_part_tmp_path, /* sync = */ false,
+            compression_codec, /* skip_offsets = */ false,
+            std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
+            unused_written_offsets);
 
         in->readPrefix();
         out.writePrefix();
