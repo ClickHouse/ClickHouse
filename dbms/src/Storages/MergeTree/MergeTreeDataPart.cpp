@@ -190,6 +190,15 @@ MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
 }
 
 
+size_t MergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
+{
+    auto checksum = checksums.files.find(file_name);
+    if (checksum == checksums.files.end())
+        return 0;
+    return checksum->second.file_size;
+}
+
+
 /** Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
   * If no checksums are present returns the name of the first physically existing column.
   */
@@ -460,6 +469,11 @@ void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
 
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
+    /// Memory should not be limited during ATTACH TABLE query.
+    /// This is already true at the server startup but must be also ensured for manual table ATTACH.
+    /// Motivation: memory for index is shared between queries - not belong to the query itself.
+    auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndex();
@@ -499,13 +513,16 @@ void MergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i)    //-V756
             for (size_t j = 0; j < key_size; ++j)
-                storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j].get(), index_file);
+                storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j], index_file);
 
         for (size_t i = 0; i < key_size; ++i)
+        {
+            loaded_index[i]->protect();
             if (loaded_index[i]->size() != marks_count)
                 throw Exception("Cannot read all data from index file " + index_path
                     + "(expected size: " + toString(marks_count) + ", read: " + toString(loaded_index[i]->size()) + ")",
                     ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
 
         if (!index_file.eof())
             throw Exception("Index file " + index_path + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);

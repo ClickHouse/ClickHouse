@@ -157,6 +157,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             }
             else
             {
+                /// shutdown is true, simply finish the thread.
                 return;
             }
         }
@@ -188,6 +189,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (threads.size() > scheduled_jobs + max_free_threads)
             {
+                thread_it->detach();
                 threads.erase(thread_it);
                 job_finished.notify_all();
                 return;

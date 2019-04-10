@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string.h>
-#include <Core/Defines.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>

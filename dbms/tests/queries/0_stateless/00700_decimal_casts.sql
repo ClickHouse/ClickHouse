@@ -240,5 +240,3 @@ SELECT toUInt64('9223372036854775809') AS x, toDecimal64(x, 0); -- { serverError
 SELECT toDecimal32(0, rowNumberInBlock()); -- { serverError 44 }
 SELECT toDecimal64(0, rowNumberInBlock()); -- { serverError 44 }
 SELECT toDecimal128(0, rowNumberInBlock()); -- { serverError 44 }
-
-DROP TABLE IF EXISTS test.decimal;

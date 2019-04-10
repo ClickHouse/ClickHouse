@@ -157,7 +157,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
-    UInt64 max_block_size,
+    size_t max_block_size,
     unsigned /*num_streams*/)
 {
     auto request_uri = uri;
@@ -173,21 +173,21 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()));
+        ConnectionTimeouts::getHTTPTimeouts(context));
 
 
-    const ColumnsDescription & columns = getColumns();
-    if (columns.defaults.empty())
+    auto column_defaults = getColumns().getDefaults();
+    if (column_defaults.empty())
         return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns.defaults, context)};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
 }
 
 void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
 
-BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
-        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
+        uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global));
 }
 
 void registerStorageURL(StorageFactory & factory)
@@ -202,12 +202,12 @@ void registerStorageURL(StorageFactory & factory)
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
-        String url = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         Poco::URI uri(url);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
-        String format_name = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageURL::create(uri, args.table_name, format_name, args.columns, args.context);
     });

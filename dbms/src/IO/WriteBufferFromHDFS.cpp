@@ -3,9 +3,9 @@
 #if USE_HDFS
 
 #include <Poco/URI.h>
-#include <IO/WriteBufferFromHDFS.h>
+#include <IO/WriteBufferFromHDFS.h> // Y_IGNORE
 #include <IO/HDFSCommon.h>
-#include <hdfs/hdfs.h>
+#include <hdfs/hdfs.h> // Y_IGNORE
 
 
 namespace DB

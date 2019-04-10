@@ -225,45 +225,68 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
     ColumnsDescription columns;
     NamesAndTypesList cat_columns;
     NamesAndTypesList num_columns;
+    NamesAndTypesList other_columns;
     sample_block.clear();
+
+    auto get_type = [](DatasetColumnType column_type) -> DataTypePtr
+    {
+        if (column_type == DatasetColumnType::Categ
+            || column_type == DatasetColumnType::Auxiliary
+            || column_type == DatasetColumnType::DocId)
+            return std::make_shared<DataTypeString>();
+        else
+            return std::make_shared<DataTypeFloat64>();
+    };
+
     for (auto & desc : columns_description)
     {
-        DataTypePtr type;
-        if (desc.column_type == DatasetColumnType::Categ
-            || desc.column_type == DatasetColumnType::Auxiliary
-            || desc.column_type == DatasetColumnType::DocId)
-            type = std::make_shared<DataTypeString>();
-        else
-            type = std::make_shared<DataTypeFloat64>();
+        DataTypePtr type = get_type(desc.column_type);
 
         if (desc.column_type == DatasetColumnType::Categ)
             cat_columns.emplace_back(desc.column_name, type);
         else if (desc.column_type == DatasetColumnType::Num)
             num_columns.emplace_back(desc.column_name, type);
         else
-            columns.materialized.emplace_back(desc.column_name, type);
-
-        if (!desc.alias.empty())
-        {
-            auto alias = std::make_shared<ASTIdentifier>(desc.column_name);
-            columns.defaults[desc.alias] = {ColumnDefaultKind::Alias, alias};
-            columns.aliases.emplace_back(desc.alias, type);
-        }
+            other_columns.emplace_back(desc.column_name, type);
 
         sample_block.insert(ColumnWithTypeAndName(type, desc.column_name));
     }
-    columns.ordinary.insert(columns.ordinary.end(), num_columns.begin(), num_columns.end());
-    columns.ordinary.insert(columns.ordinary.end(), cat_columns.begin(), cat_columns.end());
+
+    /// Order is important: first numeric columns, then categorial, then all others.
+    for (const auto & column : num_columns)
+        columns.add(DB::ColumnDescription(column.name, column.type));
+    for (const auto & column : cat_columns)
+        columns.add(DB::ColumnDescription(column.name, column.type));
+    for (const auto & column : other_columns)
+    {
+        DB::ColumnDescription column_desc(column.name, column.type);
+        /// We assign Materialized kind to the column so that it doesn't show in SELECT *.
+        /// Because the table is readonly, we do not need default expression.
+        column_desc.default_desc.kind = ColumnDefaultKind::Materialized;
+        columns.add(std::move(column_desc));
+    }
+
+    for (auto & desc : columns_description)
+    {
+        if (!desc.alias.empty())
+        {
+            DB::ColumnDescription column(desc.alias, get_type(desc.column_type));
+            column.default_desc.kind = ColumnDefaultKind::Alias;
+            column.default_desc.expression = std::make_shared<ASTIdentifier>(desc.column_name);
+            columns.add(std::move(column));
+        }
+    }
 
     setColumns(columns);
 }
 
-BlockInputStreams StorageCatBoostPool::read(const Names & column_names,
-                       const SelectQueryInfo & /*query_info*/,
-                       const Context & context,
-                       QueryProcessingStage::Enum /*processed_stage*/,
-                       UInt64 max_block_size,
-                       unsigned /*threads*/)
+BlockInputStreams StorageCatBoostPool::read(
+    const Names & column_names,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & context,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    size_t max_block_size,
+    unsigned /*threads*/)
 {
     auto stream = std::make_shared<CatBoostDatasetBlockInputStream>(
             data_description_file_name, "TSV", sample_block, context, max_block_size);

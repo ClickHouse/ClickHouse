@@ -132,7 +132,7 @@ int Server::run()
     }
     if (config().hasOption("version"))
     {
-        std::cout << DBMS_NAME << " server version " << VERSION_STRING << "." << std::endl;
+        std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
     return Application::run();
@@ -260,6 +260,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
+        /** Ask to cancel background jobs all table engines,
+          *  and also query_log.
+          * It is important to do early, not in destructor of Context, because
+          *  table engines could use Context on destroy.
+          */
+        LOG_INFO(log, "Shutting down storages.");
+        global_context->shutdown();
+        LOG_DEBUG(log, "Shutted down storages.");
+
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
@@ -478,7 +487,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
-    LOG_INFO(log, "Loading metadata.");
+    LOG_INFO(log, "Loading metadata from " + path);
     try
     {
         loadMetadataSystem(*global_context);
@@ -498,22 +507,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setCurrentDatabase(default_database);
 
-    SCOPE_EXIT({
-        /** Ask to cancel background jobs all table engines,
-          *  and also query_log.
-          * It is important to do early, not in destructor of Context, because
-          *  table engines could use Context on destroy.
-          */
-        LOG_INFO(log, "Shutting down storages.");
-        global_context->shutdown();
-        LOG_DEBUG(log, "Shutted down storages.");
-    });
-
     if (has_zookeeper && config().has("distributed_ddl"))
     {
         /// DDL worker should be started after all tables were loaded
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
-        global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+        global_context->setDDLWorker(std::make_unique<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
     std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
@@ -592,7 +590,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, bool secure = 0)
         {
                auto address = make_socket_address(host, port);
-#if !POCO_CLICKHOUSE_PATCH || POCO_VERSION <= 0x02000000 // TODO: fill correct version
+#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION <= 0x02000000 // TODO: fill correct version
                if (secure)
                    /// Bug in old poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
                    /// https://github.com/pocoproject/poco/pull/2257

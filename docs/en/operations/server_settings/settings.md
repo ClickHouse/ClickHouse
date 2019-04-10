@@ -118,7 +118,7 @@ The default is `true`.
 ```
 
 
-## format_schema_path
+## format_schema_path {#server_settings-format_schema_path}
 
 The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
@@ -128,7 +128,6 @@ The path to the directory with the schemes for the input data, such as schemas f
   <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
-
 
 ## graphite {#server_settings-graphite}
 
@@ -196,7 +195,7 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL](#openssl) must be configured.
+If `https_port` is specified, [openSSL](#server_settings-openssl) must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
@@ -417,7 +416,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree {#server_settings-merge_tree}
 
-Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md).
+Fine tuning for tables in the [MergeTree](../../operations/table_engines/mergetree.md).
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -430,7 +429,7 @@ For more information, see the MergeTreeSettings.h header file.
 ```
 
 
-## openSSL
+## openSSL {#server_settings-openssl}
 
 SSL client/server configuration.
 
@@ -609,6 +608,19 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
+## tcp_port_secure {#server_settings-tcp_port_secure}
+
+TCP port for secure communication with clients. Use it with [OpenSSL](#server_settings-openssl) settings.
+
+**Possible values**
+
+Positive integer.
+
+**Default value**
+
+```xml
+<tcp_port_secure>9440</tcp_port_secure>
+```
 
 ## tmp_path
 
@@ -693,5 +705,33 @@ For more information, see the section "[Replication](../../operations/table_engi
     </node>
 </zookeeper>
 ```
+
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+
+Storage method for data part headers in ZooKeeper.
+
+This setting only applies to the `MergeTree` family. It can be specified:
+
+- Globally in the [merge_tree](#server_settings-merge_tree) section of the `config.xml` file.
+
+    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior when the setting changes.
+
+- For each individual table.
+
+    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behavior of an existing table with this setting does not change, even if the global setting changes.
+
+**Possible values**
+
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
+
+If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_engines/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
+
+!!! attention
+    After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can't downgrade the ClickHouse server to a version that doesn't support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don't upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
+
+    Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
+
+**Default value:** 0.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

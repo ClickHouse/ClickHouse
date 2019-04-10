@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
 
@@ -330,11 +335,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     for (size_t i = 0; i < storage.skip_indices.size(); ++i)
     {
         auto & stream = *skip_indices_streams[i];
-        if (skip_indices_granules[i] && !skip_indices_granules[i]->empty())
-        {
-            skip_indices_granules[i]->serializeBinary(stream.compressed);
-            skip_indices_granules[i].reset();
-        }
+        if (!skip_indices_aggregators[i]->empty())
+            skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
     }
 
 
@@ -362,7 +364,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     }
 
     skip_indices_streams.clear();
-    skip_indices_granules.clear();
+    skip_indices_aggregators.clear();
     skip_index_filling.clear();
 
     for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
@@ -432,8 +434,7 @@ void MergedBlockOutputStream::init()
                         part_path + stream_name, MARKS_FILE_EXTENSION,
                         codec, max_compress_block_size,
                         0, aio_threshold));
-
-        skip_indices_granules.emplace_back(nullptr);
+        skip_indices_aggregators.push_back(index->createIndexAggregator());
         skip_index_filling.push_back(0);
     }
 }
@@ -448,9 +449,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     WrittenOffsetColumns offset_columns;
 
     auto primary_key_column_names = storage.primary_key_columns;
-    Names skip_indexes_column_names;
+    std::set<String> skip_indexes_column_names_set;
     for (const auto & index : storage.skip_indices)
-        std::copy(index->columns.cbegin(), index->columns.cend(), std::back_inserter(skip_indexes_column_names));
+        std::copy(index->columns.cbegin(), index->columns.cend(),
+                std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
+    Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
 
     /// Here we will add the columns related to the Primary Key, then write the index.
     std::vector<ColumnWithTypeAndName> primary_key_columns(primary_key_column_names.size());
@@ -542,6 +545,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     rows_count += rows;
 
     {
+        /// Creating block for update
+        Block indices_update_block(skip_indexes_columns);
         /// Filling and writing skip indices like in IMergedBlockOutputStream::writeData
         for (size_t i = 0; i < storage.skip_indices.size(); ++i)
         {
@@ -559,9 +564,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 else
                 {
                     limit = storage.index_granularity;
-                    if (!skip_indices_granules[i])
+                    if (skip_indices_aggregators[i]->empty())
                     {
-                        skip_indices_granules[i] = index->createIndexGranule();
+                        skip_indices_aggregators[i] = index->createIndexAggregator();
                         skip_index_filling[i] = 0;
 
                         if (stream.compressed.offset() >= min_compress_block_size)
@@ -573,7 +578,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
 
                 size_t pos = prev_pos;
-                skip_indices_granules[i]->update(block, &pos, limit);
+                skip_indices_aggregators[i]->update(indices_update_block, &pos, limit);
 
                 if (pos == prev_pos + limit)
                 {
@@ -582,8 +587,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                     /// write index if it is filled
                     if (skip_index_filling[i] == index->granularity)
                     {
-                        skip_indices_granules[i]->serializeBinary(stream.compressed);
-                        skip_indices_granules[i].reset();
+                        skip_indices_aggregators[i]->getGranuleAndReset()->serializeBinary(stream.compressed);
                         skip_index_filling[i] = 0;
                     }
                 }

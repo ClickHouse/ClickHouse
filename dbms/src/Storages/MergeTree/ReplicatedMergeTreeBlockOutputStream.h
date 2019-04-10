@@ -22,8 +22,9 @@ class StorageReplicatedMergeTree;
 class ReplicatedMergeTreeBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_, size_t quorum_, size_t quorum_timeout_ms_,
-                                         bool deduplicate_);
+    ReplicatedMergeTreeBlockOutputStream(StorageReplicatedMergeTree & storage_,
+        size_t quorum_, size_t quorum_timeout_ms_, size_t max_parts_per_block,
+        bool deduplicate_);
 
     Block getHeader() const override;
     void writePrefix() override;
@@ -56,6 +57,7 @@ private:
     StorageReplicatedMergeTree & storage;
     size_t quorum;
     size_t quorum_timeout_ms;
+    size_t max_parts_per_block;
 
     bool deduplicate = true;
     bool last_block_is_duplicate = false;

@@ -6,7 +6,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
@@ -68,10 +68,10 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        UInt64 max_block_size,
+        size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
     void drop() override {}
 
@@ -81,7 +81,9 @@ public:
     void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { table_name = new_table_name; }
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    void alter(
+        const AlterCommands & params, const String & database_name, const String & table_name,
+        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     void startup() override;
     void shutdown() override;

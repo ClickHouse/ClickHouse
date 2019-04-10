@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 
 GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
-    const BlockInputStreams & inputs_, const SortDescription & description_, UInt64 max_block_size_,
+    const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
     const Graphite::Params & params, time_t time_of_merge)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
     params(params), time_of_merge(time_of_merge)
@@ -23,8 +23,11 @@ GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
 
     for (const auto & pattern : params.patterns)
     {
-        max_size_of_aggregate_state = std::max(max_size_of_aggregate_state, pattern.function->sizeOfData());
-        max_alignment_of_aggregate_state = std::max(max_alignment_of_aggregate_state, pattern.function->alignOfData());
+        if (pattern.function)
+        {
+            max_size_of_aggregate_state = std::max(max_size_of_aggregate_state, pattern.function->sizeOfData());
+            max_alignment_of_aggregate_state = std::max(max_alignment_of_aggregate_state, pattern.function->alignOfData());
+        }
     }
 
     place_for_aggregate_state.reset(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
@@ -41,13 +44,60 @@ GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
 }
 
 
-const Graphite::Pattern * GraphiteRollupSortedBlockInputStream::selectPatternForPath(StringRef path) const
+Graphite::RollupRule GraphiteRollupSortedBlockInputStream::selectPatternForPath(StringRef path) const
 {
-    for (const auto & pattern : params.patterns)
-        if (!pattern.regexp || pattern.regexp->match(path.data, path.size))
-            return &pattern;
+    const Graphite::Pattern * first_match = &undef_pattern;
 
-    return nullptr;
+    for (const auto & pattern : params.patterns)
+    {
+        if (!pattern.regexp)
+        {
+            /// Default pattern
+            if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
+            {
+                /// There is only default pattern for both retention and aggregation
+                return std::pair(&pattern, &pattern);
+            }
+            if (pattern.type != first_match->type)
+            {
+                if (first_match->type == first_match->TypeRetention)
+                {
+                    return std::pair(first_match, &pattern);
+                }
+                if (first_match->type == first_match->TypeAggregation)
+                {
+                    return std::pair(&pattern, first_match);
+                }
+            }
+        }
+        else if (pattern.regexp->match(path.data, path.size))
+        {
+            /// General pattern with matched path
+            if (pattern.type == pattern.TypeAll)
+            {
+               /// Only for not default patterns with both function and retention parameters
+               return std::pair(&pattern, &pattern);
+            }
+            if (first_match->type == first_match->TypeUndef)
+            {
+                first_match = &pattern;
+                continue;
+            }
+            if (pattern.type != first_match->type)
+            {
+                if (first_match->type == first_match->TypeRetention)
+                {
+                    return std::pair(first_match, &pattern);
+                }
+                if (first_match->type == first_match->TypeAggregation)
+                {
+                    return std::pair(&pattern, first_match);
+                }
+            }
+        }
+    }
+
+    return {nullptr, nullptr};
 }
 
 
@@ -142,14 +192,15 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
             if (started_rows)
                 accumulateRow(current_subgroup_newest_row);
 
-            const Graphite::Pattern * next_pattern = current_pattern;
+            Graphite::RollupRule next_rule = current_rule;
             if (new_path)
-                next_pattern = selectPatternForPath(next_path);
+                next_rule = selectPatternForPath(next_path);
 
+            const Graphite::RetentionPattern * retention_pattern = std::get<0>(next_rule);
             time_t next_time_rounded;
-            if (next_pattern)
+            if (retention_pattern)
             {
-                UInt32 precision = selectPrecision(next_pattern->retentions, next_row_time);
+                UInt32 precision = selectPrecision(retention_pattern->retentions, next_row_time);
                 next_time_rounded = roundTimeToPrecision(date_lut, next_row_time, precision);
             }
             else
@@ -177,7 +228,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
                 /// At this point previous row has been fully processed, so we can advance the loop
                 /// (substitute current_* values for next_*, advance the cursor).
 
-                startNextGroup(merged_columns, next_cursor, next_pattern);
+                startNextGroup(merged_columns, next_cursor, next_rule);
                 ++started_rows;
 
                 current_time_rounded = next_time_rounded;
@@ -229,8 +280,10 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
 
 template <typename TSortCursor>
 void GraphiteRollupSortedBlockInputStream::startNextGroup(MutableColumns & merged_columns, TSortCursor & cursor,
-                                                          const Graphite::Pattern * next_pattern)
+                                                          Graphite::RollupRule next_rule)
 {
+    const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(next_rule);
+
     /// Copy unmodified column values (including path column).
     for (size_t i = 0, size = unmodified_column_numbers.size(); i < size; ++i)
     {
@@ -238,13 +291,13 @@ void GraphiteRollupSortedBlockInputStream::startNextGroup(MutableColumns & merge
         merged_columns[j]->insertFrom(*cursor->all_columns[j], cursor->pos);
     }
 
-    if (next_pattern)
+    if (aggregation_pattern)
     {
-        next_pattern->function->create(place_for_aggregate_state.data());
+        aggregation_pattern->function->create(place_for_aggregate_state.data());
         aggregate_state_created = true;
     }
 
-    current_pattern = next_pattern;
+    current_rule = next_rule;
 }
 
 
@@ -255,10 +308,11 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
     merged_columns[version_column_num]->insertFrom(
         *(*current_subgroup_newest_row.columns)[version_column_num], current_subgroup_newest_row.row_num);
 
+    const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
     if (aggregate_state_created)
     {
-        current_pattern->function->insertResultInto(place_for_aggregate_state.data(), *merged_columns[value_column_num]);
-        current_pattern->function->destroy(place_for_aggregate_state.data());
+        aggregation_pattern->function->insertResultInto(place_for_aggregate_state.data(), *merged_columns[value_column_num]);
+        aggregation_pattern->function->destroy(place_for_aggregate_state.data());
         aggregate_state_created = false;
     }
     else
@@ -269,8 +323,9 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
 
 void GraphiteRollupSortedBlockInputStream::accumulateRow(RowRef & row)
 {
+    const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(current_rule);
     if (aggregate_state_created)
-        current_pattern->function->add(place_for_aggregate_state.data(), &(*row.columns)[value_column_num], row.row_num, nullptr);
+        aggregation_pattern->function->add(place_for_aggregate_state.data(), &(*row.columns)[value_column_num], row.row_num, nullptr);
 }
 
 }

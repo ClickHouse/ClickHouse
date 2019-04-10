@@ -25,7 +25,7 @@
 #include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
 
@@ -91,16 +91,6 @@ public:
             throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    /// This functionality seems strange.
-    //void initialize(Poco::Util::Application & self [[maybe_unused]])
-    //{
-    //    std::string home_path;
-    //    const char * home_path_cstr = getenv("HOME");
-    //    if (home_path_cstr)
-    //        home_path = home_path_cstr;
-    //    configReadClient(Poco::Util::Application::instance().config(), home_path);
-    //}
-
     int run()
     {
         std::string name;
@@ -119,6 +109,10 @@ public:
         processTestsConfigurations(input_files);
 
         return 0;
+    }
+    void setContextSetting(const String & name, const std::string & value)
+    {
+        global_context.setSetting(name, value);
     }
 
 private:
@@ -201,7 +195,7 @@ private:
 
     std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
     {
-        PerformanceTestInfo info(test_config, profiles_file);
+        PerformanceTestInfo info(test_config, profiles_file, global_context.getSettingsRef());
         LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
         PerformanceTest current(test_config, connection, interrupt_listener, info, global_context, query_indexes[info.path]);
 
@@ -330,6 +324,7 @@ try
     using Strings = DB::Strings;
 
 
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
     po::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")
@@ -350,7 +345,10 @@ try
         ("skip-names-regexp", value<Strings>()->multitoken(), "Do not run tests with names matching regexp")
         ("input-files", value<Strings>()->multitoken(), "Input .xml files")
         ("query-indexes", value<std::vector<size_t>>()->multitoken(), "Input query indexes")
-        ("recursive,r", "Recurse in directories to find all xml's");
+        ("recursive,r", "Recurse in directories to find all xml's")
+    APPLY_FOR_SETTINGS(DECLARE_SETTING);
+#undef DECLARE_SETTING
+
 
     po::options_description cmdline_options;
     cmdline_options.add(desc);
@@ -408,6 +406,15 @@ try
         std::move(skip_names_regexp),
         queries_with_indexes,
         timeouts);
+    /// Extract settings from the options.
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    if (options.count(#NAME)) \
+    { \
+        performance_test_suite.setContextSetting(#NAME, options[#NAME].as<std::string>()); \
+    }
+    APPLY_FOR_SETTINGS(EXTRACT_SETTING)
+#undef EXTRACT_SETTING
+
     return performance_test_suite.run();
 }
 catch (...)

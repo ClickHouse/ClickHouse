@@ -2,6 +2,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -94,7 +95,7 @@ void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num,
 }
 
 template <typename T>
-void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit) const
+void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
     const typename ColumnType::Container & x = typeid_cast<const ColumnType &>(column).getData();
 
@@ -124,7 +125,7 @@ void DataTypeDecimal<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 }
 
 template <typename T>
-void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, UInt64 limit, double) const
+void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
 {
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     size_t initial_size = x.size();
@@ -135,9 +136,30 @@ void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & is
 
 
 template <typename T>
-void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    protobuf.writeDecimal(static_cast<const ColumnType &>(column).getData()[row_num], scale);
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeDecimal(static_cast<const ColumnType &>(column).getData()[row_num], scale));
+}
+
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const
+{
+    row_added = false;
+    T decimal;
+    if (!protobuf.readDecimal(decimal, precision, scale))
+        return;
+
+    auto & container = static_cast<ColumnType &>(column).getData();
+    if (allow_add_row)
+    {
+        container.emplace_back(decimal);
+        row_added = true;
+    }
+    else
+        container.back() = decimal;
 }
 
 
@@ -186,8 +208,8 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral * precision = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
-    const ASTLiteral * scale = typeid_cast<const ASTLiteral *>(arguments->children[1].get());
+    const auto * precision = arguments->children[0]->as<ASTLiteral>();
+    const auto * scale = arguments->children[1]->as<ASTLiteral>();
 
     if (!precision || precision->value.getType() != Field::Types::UInt64 ||
         !scale || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
@@ -206,7 +228,7 @@ static DataTypePtr createExect(const ASTPtr & arguments)
         throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral * scale_arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const auto * scale_arg = arguments->children[0]->as<ASTLiteral>();
 
     if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
         throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

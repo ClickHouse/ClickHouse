@@ -16,14 +16,27 @@ class MergeTreeMinMaxIndex;
 struct MergeTreeMinMaxGranule : public IMergeTreeIndexGranule
 {
     explicit MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index);
+    MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index, std::vector<Range> && parallelogram);
+    ~MergeTreeMinMaxGranule() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
     bool empty() const override { return parallelogram.empty(); }
-    void update(const Block & block, size_t * pos, UInt64 limit) override;
 
-    ~MergeTreeMinMaxGranule() override = default;
+    const MergeTreeMinMaxIndex & index;
+    std::vector<Range> parallelogram;
+};
+
+
+struct MergeTreeMinMaxAggregator : IMergeTreeIndexAggregator
+{
+    explicit MergeTreeMinMaxAggregator(const MergeTreeMinMaxIndex & index);
+    ~MergeTreeMinMaxAggregator() override = default;
+
+    bool empty() const override { return parallelogram.empty(); }
+    MergeTreeIndexGranulePtr getGranuleAndReset() override;
+    void update(const Block & block, size_t * pos, size_t limit) override;
 
     const MergeTreeMinMaxIndex & index;
     std::vector<Range> parallelogram;
@@ -64,10 +77,12 @@ public:
     ~MergeTreeMinMaxIndex() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     IndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query, const Context & context) const override;
 
+    bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 };
 
 }

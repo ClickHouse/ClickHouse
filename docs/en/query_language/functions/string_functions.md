@@ -1,6 +1,6 @@
 # Functions for working with strings
 
-## empty
+## empty {#string_functions-empty}
 
 Returns 1 for an empty string or 0 for a non-empty string.
 The result type is UInt8.
@@ -56,6 +56,10 @@ It doesn't detect the language. So for Turkish the result might not be exactly c
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
+## isValidUTF8
+
+Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
+
 ## reverse
 
 Reverses the string (as a sequence of bytes).
@@ -103,7 +107,7 @@ Returns whether to end with the specified suffix. Returns 1 if the string ends w
 
 ## startsWith(s, prefix)
 
-Returns whether to end with the specified prefix. Returns 1 if the string ends with the specified prefix, otherwise it returns 0.
+Returns whether to start with the specified prefix. Returns 1 if the string starts with the specified prefix, otherwise it returns 0.
 
 ## trimLeft(s)
 

@@ -33,7 +33,7 @@ namespace
 
         data.resize(hash_map.size());
         for (auto val : hash_map)
-            data[val.second] = val.first;
+            data[val.getSecond()] = val.getFirst();
 
         for (auto & ind : index)
             ind = hash_map[ind];
@@ -250,7 +250,7 @@ int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int
     return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
 }
 
-void ColumnLowCardinality::getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, Permutation & res) const
+void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     if (limit == 0)
         limit = size();
@@ -306,21 +306,11 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
     dictionary.setShared(column_unique);
 }
 
-ColumnLowCardinality::MutablePtr ColumnLowCardinality::compact()
-{
-    auto positions = idx.getPositions();
-    /// Create column with new indexes and old dictionary.
-    auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), (*std::move(positions)).mutate());
-    /// Will create new dictionary.
-    column->compactInplace();
-
-    return column;
-}
-
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
     auto sub_positions = (*idx.getPositions()->cut(start, length)).mutate();
     /// Create column with new indexes and old dictionary.
+    /// Dictionary is shared, but will be recreated after compactInplace call.
     auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
     /// Will create new dictionary.
     column->compactInplace();
@@ -361,7 +351,6 @@ ColumnPtr ColumnLowCardinality::countKeys() const
     idx.countKeys(counter->getData());
     return std::move(counter);
 }
-
 
 
 ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
@@ -523,7 +512,7 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
     while (position > getMaxPositionForCurrentType())
         expandType();
 
-    positions->assumeMutableRef().insert(position);
+    positions->insert(position);
     checkSizeOfType();
 }
 
@@ -541,7 +530,7 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
             convertPositions<ColumnType>();
 
         if (size_of_type == sizeof(ColumnType))
-            positions->assumeMutableRef().insertRangeFrom(column, offset, limit);
+            positions->insertRangeFrom(column, offset, limit);
         else
         {
             auto copy = [&](auto cur_type)

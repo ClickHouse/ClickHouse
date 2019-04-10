@@ -61,9 +61,13 @@ public:
         UInt64 max_block_size,
         ColumnPtr databases,
         ColumnPtr tables,
-        Storages storages)
-        : columns_mask(columns_mask), header(header), max_block_size(max_block_size),
-        databases(databases), tables(tables), storages(std::move(storages)), total_tables(tables->size()) {}
+        Storages storages,
+        String query_id_)
+        : columns_mask(columns_mask), header(header), max_block_size(max_block_size)
+        , databases(databases), tables(tables), storages(std::move(storages))
+        , query_id(std::move(query_id_)), total_tables(tables->size())
+    {
+    }
 
     String getName() const override { return "Columns"; }
     Block getHeader() const override { return header; }
@@ -84,10 +88,7 @@ protected:
             const std::string table_name = (*tables)[db_table_num].get<std::string>();
             ++db_table_num;
 
-            NamesAndTypesList columns;
-            ColumnDefaults column_defaults;
-            ColumnComments column_comments;
-            ColumnCodecs column_codecs;
+            ColumnsDescription columns;
             Names cols_required_for_partition_key;
             Names cols_required_for_sorting_key;
             Names cols_required_for_primary_key;
@@ -96,11 +97,11 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableStructureReadLockPtr table_lock;
+                TableStructureReadLockHolder table_lock;
 
                 try
                 {
-                    table_lock = storage->lockStructure(false);
+                    table_lock = storage->lockStructureForShare(false, query_id);
                 }
                 catch (const Exception & e)
                 {
@@ -115,10 +116,7 @@ protected:
                         throw;
                 }
 
-                columns = storage->getColumns().getAll();
-                column_codecs = storage->getColumns().codecs;
-                column_defaults = storage->getColumns().defaults;
-                column_comments = storage->getColumns().comments;
+                columns = storage->getColumns();
 
                 cols_required_for_partition_key = storage->getColumnsRequiredForPartitionKey();
                 cols_required_for_sorting_key = storage->getColumnsRequiredForSortingKey();
@@ -152,22 +150,19 @@ protected:
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(column.type->getName());
 
+                if (column.default_desc.expression)
                 {
-                    const auto it = column_defaults.find(column.name);
-                    if (it == std::end(column_defaults))
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                    }
-                    else
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(toString(it->second.kind));
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(queryToString(it->second.expression));
-                    }
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(toString(column.default_desc.kind));
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(queryToString(column.default_desc.expression));
+                }
+                else
+                {
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insertDefault();
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 {
@@ -192,19 +187,8 @@ protected:
                     }
                 }
 
-                {
-                    const auto it = column_comments.find(column.name);
-                    if (it == std::end(column_comments))
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                    }
-                    else
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(it->second);
-                    }
-                }
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(column.comment);
 
                 {
                     auto find_in_vector = [&key = column.name](const Names& names)
@@ -222,18 +206,12 @@ protected:
                         res_columns[res_index++]->insert(find_in_vector(cols_required_for_sampling));
                 }
 
+                if (columns_mask[src_index++])
                 {
-                    const auto it = column_codecs.find(column.name);
-                    if (it == std::end(column_codecs))
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insertDefault();
-                    }
+                    if (column.codec)
+                        res_columns[res_index++]->insert("CODEC(" + column.codec->getCodecDesc() + ")");
                     else
-                    {
-                        if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert("CODEC(" + it->second->getCodecDesc() + ")");
-                    }
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 ++rows_count;
@@ -251,6 +229,7 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
+    String query_id;
     size_t db_table_num = 0;
     size_t total_tables;
 };
@@ -261,7 +240,7 @@ BlockInputStreams StorageSystemColumns::read(
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
-    const UInt64 max_block_size,
+    const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
     check(column_names);
@@ -343,7 +322,8 @@ BlockInputStreams StorageSystemColumns::read(
 
     return {std::make_shared<ColumnsBlockInputStream>(
         std::move(columns_mask), std::move(res_block), max_block_size,
-        std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages))};
+        std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages),
+        context.getCurrentQueryId())};
 }
 
 }

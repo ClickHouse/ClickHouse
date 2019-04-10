@@ -28,7 +28,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        UInt64 max_block_size = DEFAULT_BLOCK_SIZE,
+        size_t max_block_size = DEFAULT_BLOCK_SIZE,
         unsigned threads = 1) override;
 
     void drop() override {}

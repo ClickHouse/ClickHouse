@@ -125,26 +125,41 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
     }
 }
 
+namespace
+{
+
+UInt8 getDeltaBytesSize(DataTypePtr column_type)
+{
+    UInt8 delta_bytes_size = 1;
+    if (column_type && column_type->haveMaximumSizeOfValue())
+    {
+        size_t max_size = column_type->getSizeOfValueInMemory();
+        if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+            delta_bytes_size = static_cast<UInt8>(max_size);
+    }
+    return delta_bytes_size;
+}
+
+}
+
+void CompressionCodecDelta::useInfoAboutType(DataTypePtr data_type)
+{
+    delta_bytes_size = getDeltaBytesSize(data_type);
+}
+
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Delta);
     factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = 1;
-        if (column_type && column_type->haveMaximumSizeOfValue())
-        {
-            size_t max_size = column_type->getSizeOfValueInMemory();
-            if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-                delta_bytes_size = static_cast<UInt8>(max_size);
-        }
-
+        UInt8 delta_bytes_size = getDeltaBytesSize(column_type);
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
                 throw Exception("Delta codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
             const auto children = arguments->children;
-            const ASTLiteral * literal = static_cast<const ASTLiteral *>(children[0].get());
+            const auto * literal = children[0]->as<ASTLiteral>();
             size_t user_bytes_size = literal->value.safeGet<UInt64>();
             if (user_bytes_size != 1 && user_bytes_size != 2 && user_bytes_size != 4 && user_bytes_size != 8)
                 throw Exception("Delta value for delta codec can be 1, 2, 4 or 8, given " + toString(user_bytes_size), ErrorCodes::ILLEGAL_CODEC_PARAMETER);

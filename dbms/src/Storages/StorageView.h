@@ -1,16 +1,14 @@
 #pragma once
 
-#include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/IStorage.h>
+
+#include <ext/shared_ptr_helper.h>
 
 
 namespace DB
 {
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
 
 class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
@@ -27,7 +25,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
-        UInt64 max_block_size,
+        size_t max_block_size,
         unsigned num_streams) override;
 
     void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override

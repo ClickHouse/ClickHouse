@@ -86,7 +86,7 @@ public:
         if (!eof())
             ++pos;
         else
-            throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throwReadAfterEOF();
     }
 
     void ignore(size_t n)
@@ -99,7 +99,7 @@ public:
         }
 
         if (n)
-            throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+            throwReadAfterEOF();
     }
 
     /// You could call this method `ignore`, and `ignore` call `ignoreStrict`.
@@ -115,6 +115,22 @@ public:
         }
 
         return bytes_ignored;
+    }
+
+    /** Reads a single byte. */
+    bool ALWAYS_INLINE read(char & c)
+    {
+        if (eof())
+            return false;
+        c = *pos++;
+        return true;
+    }
+
+    void ALWAYS_INLINE readStrict(char & c)
+    {
+        if (read(c))
+            return;
+        throwReadAfterEOF();
     }
 
     /** Reads as many as there are, no more than n bytes. */
@@ -162,6 +178,11 @@ private:
       * Throw an exception if something is wrong.
       */
     virtual bool nextImpl() { return false; }
+
+    void throwReadAfterEOF()
+    {
+        throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+    }
 };
 
 

@@ -13,7 +13,7 @@ Connected to ClickHouse server version 0.0.26176.
 
 Клиент поддерживает параметры командной строки и конфигурационные файлы. Подробнее читайте в разделе "[Конфигурирование](#interfaces_cli_configuration)". 
 
-## Использование
+## Использование {#cli_usage}
 
 Клиент может быть использован в интерактивном и неинтерактивном (batch) режиме.
 Чтобы использовать batch режим, укажите параметр query, или отправьте данные в stdin (проверяется, что stdin - не терминал), или и то, и другое.
@@ -103,7 +103,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 - Определенного параметром `--config-file`.
 - `./clickhouse-client.xml`
-- `\~/.clickhouse-client/config.xml`
+- `~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`
 
 Пример конфигурационного файла:

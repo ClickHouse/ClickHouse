@@ -163,6 +163,11 @@ public:
         return data.allocated_bytes();
     }
 
+    void protect() override
+    {
+        data.protect();
+    }
+
     void insertValue(const T value)
     {
         data.push_back(value);
@@ -174,7 +179,7 @@ public:
         return CompareHelper<T>::compare(data[n], static_cast<const Self &>(rhs_).data[m], nan_direction_hint);
     }
 
-    void getPermutation(bool reverse, UInt64 limit, int nan_direction_hint, IColumn::Permutation & res) const override;
+    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
     void reserve(size_t n) override
     {
@@ -221,12 +226,12 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    ColumnPtr permute(const IColumn::Permutation & perm, UInt64 limit) const override;
+    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
-    ColumnPtr index(const IColumn & indexes, UInt64 limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const;
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
@@ -245,6 +250,12 @@ public:
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
     StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
+
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnVector<T>);
+    }
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
@@ -273,9 +284,9 @@ protected:
 
 template <typename T>
 template <typename Type>
-ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, UInt64 limit) const
+ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    UInt64 size = indexes.size();
+    size_t size = indexes.size();
 
     if (limit == 0)
         limit = size;

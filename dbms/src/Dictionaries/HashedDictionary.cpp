@@ -83,7 +83,7 @@ void HashedDictionary::isInImpl(const ChildType & child_ids, const AncestorType 
         {
             auto it = attr.find(id);
             if (it != std::end(attr))
-                id = it->second;
+                id = it->getSecond();
             else
                 break;
         }
@@ -605,7 +605,7 @@ void HashedDictionary::getItemsImpl(
     for (const auto i : ext::range(0, rows))
     {
         const auto it = attr.find(ids[i]);
-        set_value(i, it != attr.end() ? static_cast<OutputType>(it->second) : get_default(i));
+        set_value(i, it != attr.end() ? static_cast<OutputType>(it->getSecond()) : get_default(i));
     }
 
     query_count.fetch_add(rows, std::memory_order_relaxed);
@@ -707,7 +707,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds(const Attribute &
     PaddedPODArray<Key> ids;
     ids.reserve(attr.size());
     for (const auto & value : attr)
-        ids.push_back(value.first);
+        ids.push_back(value.getFirst());
 
     return ids;
 }
@@ -753,7 +753,7 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
     return PaddedPODArray<Key>();
 }
 
-BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names, UInt64 max_block_size) const
+BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     using BlockInputStreamType = DictionaryBlockInputStream<HashedDictionary, Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);

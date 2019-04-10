@@ -158,14 +158,14 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) 
     return ColumnNullable::create(filtered_data, filtered_null_map);
 }
 
-ColumnPtr ColumnNullable::permute(const Permutation & perm, UInt64 limit) const
+ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
 {
     ColumnPtr permuted_data = getNestedColumn().permute(perm, limit);
     ColumnPtr permuted_null_map = getNullMapColumn().permute(perm, limit);
     return ColumnNullable::create(permuted_data, permuted_null_map);
 }
 
-ColumnPtr ColumnNullable::index(const IColumn & indexes, UInt64 limit) const
+ColumnPtr ColumnNullable::index(const IColumn & indexes, size_t limit) const
 {
     ColumnPtr indexed_data = getNestedColumn().index(indexes, limit);
     ColumnPtr indexed_null_map = getNullMapColumn().index(indexes, limit);
@@ -197,7 +197,7 @@ int ColumnNullable::compareAt(size_t n, size_t m, const IColumn & rhs_, int null
     return getNestedColumn().compareAt(n, m, nested_rhs, null_direction_hint);
 }
 
-void ColumnNullable::getPermutation(bool reverse, UInt64 limit, int null_direction_hint, Permutation & res) const
+void ColumnNullable::getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const
 {
     /// Cannot pass limit because of unknown amount of NULLs.
     getNestedColumn().getPermutation(reverse, 0, null_direction_hint, res);
@@ -289,6 +289,12 @@ size_t ColumnNullable::byteSize() const
 size_t ColumnNullable::allocatedBytes() const
 {
     return getNestedColumn().allocatedBytes() + getNullMapColumn().allocatedBytes();
+}
+
+void ColumnNullable::protect()
+{
+    getNestedColumn().protect();
+    getNullMapColumn().protect();
 }
 
 

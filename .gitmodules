@@ -48,10 +48,16 @@
 	url = https://github.com/ClickHouse-Extras/protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
-	url = https://github.com/ClickHouse-Extras/boost-extra.git
+	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/base64"]
 	path = contrib/base64
 	url = https://github.com/aklomp/base64.git
+[submodule "contrib/arrow"]
+	path = contrib/arrow
+	url = https://github.com/apache/arrow
+[submodule "contrib/thrift"]
+	path = contrib/thrift
+	url = https://github.com/apache/thrift.git
 [submodule "contrib/libhdfs3"]
 	path = contrib/libhdfs3
 	url = https://github.com/ClickHouse-Extras/libhdfs3.git
@@ -61,9 +67,15 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse-Extras/libgsasl.git
+[submodule "contrib/snappy"]
+	path = contrib/snappy
+	url = https://github.com/google/snappy
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
 	url = https://github.com/ClickHouse-Extras/cppkafka.git
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli.git
+[submodule "contrib/hyperscan"]
+	path = contrib/hyperscan
+	url = https://github.com/ClickHouse-Extras/hyperscan.git

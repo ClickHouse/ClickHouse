@@ -28,13 +28,13 @@ public:
             const SelectQueryInfo & query_info,
             const Context & context,
             QueryProcessingStage::Enum processed_stage,
-            UInt64 max_block_size,
+            size_t max_block_size,
             unsigned num_streams) override;
 
     struct StoragesInfo
     {
         StoragePtr storage;
-        TableStructureReadLockPtr table_lock;
+        TableStructureReadLockHolder table_lock;
 
         String database;
         String table;

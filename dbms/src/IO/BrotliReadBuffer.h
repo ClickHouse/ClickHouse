@@ -34,5 +34,6 @@ private:
 
     bool eof;
 };
+
 }
 

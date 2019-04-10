@@ -223,6 +223,7 @@
           });
       }
       ready(function () {
+          var i;
           {% if config.extra.single_page and page.content %}
           document.getElementById("content").innerHTML = {{ page.content|tojson|safe }};
           document.getElementsByClassName('md-footer')[0].style.display = 'block';
@@ -235,7 +236,7 @@
           });
           var beforePrint = function() {
             var details = document.getElementsByTagName("details");
-            for (var i = 0; i < details.length; ++i) {
+            for (i = 0; i < details.length; ++i) {
                 details[i].open = 1;
             }
           };
@@ -247,6 +248,25 @@
               });
           }
           window.onbeforeprint = beforePrint;
+
+          var name = window.location.hostname.split('.')[0];
+          var feedback_address = name + '-feedback' + '@yandex-team.ru';
+          var feedback_email = document.getElementsByClassName('feedback-email');
+          for (i = 0; i < feedback_email.length; i++) {
+            feedback_email[i].setAttribute('href', 'mailto:' + feedback_address);
+            feedback_email[i].innerHTML = feedback_address;
+          }
+
+          document.getElementById("releases-selector").addEventListener(
+            "change",
+            function() {
+              var target = window.location.href.split('docs')[0] + 'docs/';
+              if (this.value) {
+                target = target + this.value + '/';
+              }
+              window.location = target + '{{ config.theme.language }}';
+            }
+          )
       });
     </script>
     <!-- Yandex.Metrika counter -->
