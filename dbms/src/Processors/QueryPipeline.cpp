@@ -270,6 +270,20 @@ void QueryPipeline::addDefaultTotals()
     processors.emplace_back(source);
 }
 
+void QueryPipeline::addTotals(ProcessorPtr source)
+{
+    checkInitialized();
+
+    if (totals_having_port)
+        throw Exception("Totals having transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
+
+    checkSource(source);
+    assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
+
+    totals_having_port = &source->getOutputs().front();
+    processors.emplace_back(source);
+}
+
 void QueryPipeline::addExtremesTransform(ProcessorPtr transform)
 {
     checkInitialized();

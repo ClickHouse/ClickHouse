@@ -59,6 +59,7 @@
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Sources/SourceFromTotals.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -1324,6 +1325,9 @@ void InterpreterSelectQuery::executeFetchColumns(
                 sources.emplace_back(std::make_shared<SourceFromInputStream>(stream->getHeader(), stream));
 
             pipeline.init(std::move(sources));
+
+            if (options.to_stage == QueryProcessingStage::Complete)
+                pipeline.addTotals(std::make_shared<SourceFromTotals>(streams));
         }
         else
             pipeline.streams = std::move(streams);
