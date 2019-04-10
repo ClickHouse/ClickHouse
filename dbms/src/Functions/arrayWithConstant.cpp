@@ -61,7 +61,7 @@ public:
         {
             auto array_size = col_num->getInt(i);
 
-            if (unlikely(array_size) < 0)
+            if (unlikely(array_size < 0))
                 throw Exception("Array size cannot be negative: while executing function " + getName(), ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
             offset += array_size;
