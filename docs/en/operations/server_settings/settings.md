@@ -118,7 +118,7 @@ The default is `true`.
 ```
 
 
-## format_schema_path
+## format_schema_path {#server_settings-format_schema_path}
 
 The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
@@ -128,7 +128,6 @@ The path to the directory with the schemes for the input data, such as schemas f
   <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
-
 
 ## graphite {#server_settings-graphite}
 
@@ -709,29 +708,29 @@ For more information, see the section "[Replication](../../operations/table_engi
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
-Storage method of the data parts headers in ZooKeeper.
+Storage method for data part headers in ZooKeeper.
 
-This setting applies only to the `MergeTree`-family and it can be specified:
+This setting only applies to the `MergeTree` family. It can be specified:
 
 - Globally in the [merge_tree](#server_settings-merge_tree) section of the `config.xml` file.
 
-    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior with the setting change.
+    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behavior when the setting changes.
 
 - For each individual table.
 
-    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). After creating a table you can't change its behavior even with the global setting.
+    When creating a table, specify the corresponding [engine setting](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). The behavior of an existing table with this setting does not change, even if the global setting changes.
 
 **Possible values**
 
 - 0 — Functionality is turned off.
 - 1 — Functionality is turned on.
 
-If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_engines/replication.md) tables store the headers of the data parts compactly using single `znode`. If the table contains many columns, this way of storage significantly reduces the volume of the data stored in Zookeeper.
+If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../table_engines/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
 
 !!! attention
-    Ones applying the `use_minimalistic_part_header_in_zookeeper = 1` you can't degrade the ClickHouse server to the version that doesn't support this setting. Be careful when upgrading ClickHouse on servers of a cluster. Don't upgrade all the servers at ones. It is safer to test the new versions of ClickHouse in a test environment, or at least at some servers of a cluster.
+    After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can't downgrade the ClickHouse server to a version that doesn't support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don't upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
 
-    The data parts headers already stored with this setting also can't be restored to previous (non-compact) representation.
+    Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 
 **Default value:** 0.
 

@@ -185,11 +185,11 @@ Ok.
 ```
 
 
-## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
+## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
 
-When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
 
 When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
 
