@@ -334,7 +334,7 @@ ClickHouse игнорирует пробелы между элементами �
 
 ClickHouse заменяет опущенные значения значениями по умолчанию для соответствующих [data types](../data_types/index.md).
 
-Если указано `DEFAULT expr`, то ClickHouse использует различные правила подстановки в зависимости от настройки [insert_sample_with_metadata](../operations/settings/settings.md#session_settings-insert_sample_with_metadata).
+Если указано `DEFAULT expr`, то ClickHouse использует различные правила подстановки в зависимости от настройки [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields).
 
 Рассмотрим следующую таблицу:
 

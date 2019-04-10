@@ -334,7 +334,7 @@ ClickHouse ignores spaces between elements and commas after the objects. You can
 
 ClickHouse substitutes omitted values with the default values for the corresponding [data types](../data_types/index.md).
 
-If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [insert_sample_with_metadata](../operations/settings/settings.md#session_settings-insert_sample_with_metadata) setting.
+If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting.
 
 Consider the following table:
 
