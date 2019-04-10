@@ -11,10 +11,11 @@ static Block transformHeader(Block header, const ExpressionActionsPtr & expressi
 }
 
 
-ExpressionTransform::ExpressionTransform(const Block & header, ExpressionActionsPtr expression, bool on_totals)
+ExpressionTransform::ExpressionTransform(const Block & header, ExpressionActionsPtr expression, bool on_totals, bool default_totals)
     : ISimpleTransform(header, transformHeader(header, expression), on_totals)
     , expression(std::move(expression))
     , on_totals(on_totals)
+    , default_totals(default_totals)
 {
 }
 
@@ -24,7 +25,7 @@ void ExpressionTransform::transform(Chunk & chunk)
 
     if (on_totals)
     {
-        if (!expression->hasTotalsInJoin())
+        if (default_totals && !expression->hasTotalsInJoin())
             return;
 
         expression->executeOnTotals(block);
