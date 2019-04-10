@@ -1404,7 +1404,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           */
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
-            *this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_codec, true /* skip_offsets */, unused_written_offsets);
+            *this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_codec, true /* skip_offsets */, {}, unused_written_offsets);
 
         in.readPrefix();
         out.writePrefix();

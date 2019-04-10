@@ -22,6 +22,7 @@ struct MutationCommand
         EMPTY,     /// Not used.
         DELETE,
         UPDATE,
+        MATERIALIZE_INDEX
     };
 
     Type type = EMPTY;
@@ -29,6 +30,9 @@ struct MutationCommand
     ASTPtr predicate;
 
     std::unordered_map<String, ASTPtr> column_to_update_expression;
+
+    /// For MATERIALIZE INDEX
+    ASTPtr partition;
 
     static std::optional<MutationCommand> parse(ASTAlterCommand * command);
 };

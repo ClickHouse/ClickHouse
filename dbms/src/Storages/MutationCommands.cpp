@@ -43,6 +43,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
         }
         return res;
     }
+    else if (command->type == ASTAlterCommand::MATERIALIZE_INDEX)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE_INDEX;
+        res.partition = command->partition;
+        res.predicate = nullptr;
+        return res;
+    }
     else
         return {};
 }
