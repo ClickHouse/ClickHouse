@@ -311,13 +311,12 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
 
     if (!table_expression)
     {
-        auto tables_list = std::make_shared<ASTTablesInSelectQuery>();
+        setExpression(Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
         auto element = std::make_shared<ASTTablesInSelectQueryElement>();
         auto table_expr = std::make_shared<ASTTableExpression>();
         element->table_expression = table_expr;
         element->children.emplace_back(table_expr);
-        tables_list->children.emplace_back(element);
-        setExpression(Expression::TABLES, tables_list);
+        tables()->children.emplace_back(element);
         table_expression = table_expr.get();
     }
 
@@ -335,13 +334,12 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
 
     if (!table_expression)
     {
-        auto tables_list = std::make_shared<ASTTablesInSelectQuery>();
+        setExpression(Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
         auto element = std::make_shared<ASTTablesInSelectQueryElement>();
         auto table_expr = std::make_shared<ASTTableExpression>();
         element->table_expression = table_expr;
         element->children.emplace_back(table_expr);
-        tables_list->children.emplace_back(element);
-        setExpression(Expression::TABLES, tables_list);
+        tables()->children.emplace_back(element);
         table_expression = table_expr.get();
     }
 
