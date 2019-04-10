@@ -13,8 +13,8 @@ namespace DB
 class TabSeparatedRawRowOutputFormat : public TabSeparatedRowOutputFormat
 {
 public:
-    TabSeparatedRawRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names, bool with_types, const FormatSettings & format_settings)
-        : TabSeparatedRowOutputFormat(out_, header, with_names, with_types, format_settings) {}
+    TabSeparatedRawRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+        : TabSeparatedRowOutputFormat(out_, header, with_names_, with_types_, format_settings_) {}
 
     String getName() const override { return "TabSeparatedRawRowOutputFormat"; }
 
