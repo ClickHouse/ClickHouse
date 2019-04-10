@@ -119,6 +119,8 @@ struct IntegerRoundingComputation
                 return x;
             }
         }
+
+        __builtin_unreachable();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -132,6 +134,8 @@ struct IntegerRoundingComputation
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
         }
+
+        __builtin_unreachable();
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)

@@ -21,16 +21,6 @@ extern const int CORRUPTED_DATA;
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs)
     : codecs(codecs)
 {
-    std::ostringstream ss;
-    for (size_t idx = 0; idx < codecs.size(); idx++)
-    {
-        if (idx != 0)
-            ss << ',' << ' ';
-
-        const auto codec = codecs[idx];
-        ss << codec->getCodecDesc();
-    }
-    codec_desc = ss.str();
 }
 
 UInt8 CompressionCodecMultiple::getMethodByte() const
@@ -40,7 +30,16 @@ UInt8 CompressionCodecMultiple::getMethodByte() const
 
 String CompressionCodecMultiple::getCodecDesc() const
 {
-    return codec_desc;
+    std::ostringstream ss;
+    for (size_t idx = 0; idx < codecs.size(); idx++)
+    {
+        if (idx != 0)
+            ss << ',' << ' ';
+
+        const auto codec = codecs[idx];
+        ss << codec->getCodecDesc();
+    }
+    return ss.str();
 }
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -77,6 +76,14 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     memcpy(&dest[1 + codecs.size()], uncompressed_buf.data(), source_size);
 
     return 1 + codecs.size() + source_size;
+}
+
+void CompressionCodecMultiple::useInfoAboutType(DataTypePtr data_type)
+{
+    for (auto & codec : codecs)
+    {
+        codec->useInfoAboutType(data_type);
+    }
 }
 
 void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const

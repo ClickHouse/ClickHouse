@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/AutoPtr.h>
 
