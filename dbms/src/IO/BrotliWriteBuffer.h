@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BROTLI_WRITE_FAILED;
-}
-
 class BrotliWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:

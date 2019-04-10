@@ -7,6 +7,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BROTLI_READ_FAILED;
+}
+
+
 class BrotliReadBuffer::BrotliStateWrapper
 {
 public:
@@ -56,7 +62,7 @@ bool BrotliReadBuffer::nextImpl()
 
     if (brotli->result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in.eof()))
     {
-        throw Exception(std::string("brotli decode error"), ErrorCodes::BROTLI_READ_FAILED);
+        throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
     }
 
     out_capacity = internal_buffer.size();
@@ -76,13 +82,13 @@ bool BrotliReadBuffer::nextImpl()
         }
         else
         {
-            throw Exception(std::string("brotli decode error"), ErrorCodes::BROTLI_READ_FAILED);
+            throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
         }
     }
 
     if (brotli->result == BROTLI_DECODER_RESULT_ERROR)
     {
-        throw Exception(std::string("brotli decode error"), ErrorCodes::BROTLI_READ_FAILED);
+        throw Exception("brotli decode error", ErrorCodes::BROTLI_READ_FAILED);
     }
 
     return true;
