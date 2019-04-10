@@ -1,7 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
-#include <Processors/Formats/Impl/verbosePrintString.h>
+#include <Formats/verbosePrintString.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Formats/FormatFactory.h>
 
