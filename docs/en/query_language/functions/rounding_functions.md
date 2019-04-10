@@ -18,7 +18,9 @@ Returns the smallest round number that is greater than or equal to 'x'. In every
 
 ## round(x[, N]) {#rounding_functions-round}
 
-Rounds a value to a specified number of decimal places. The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers the function returns the number having the nearest even digit (banker's rounding).
+Rounds a value to a specified number of decimal places.
+
+The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers the function returns the number having the nearest even digit (banker's rounding).
 
 ```
 round(expression [, decimal_places])
@@ -30,11 +32,11 @@ round(expression [, decimal_places])
 - `decimal-places` — An integer value.
     - If `decimal-places > 0` then the function rounds the value to the right of the decimal point.
     - If `decimal-places < 0` then the function rounds the value to the left of the decimal point.
-    - If `decimal-places = 0` then the function rounds the value at the decimal point. In this case the argument can be omitted.
+    - If `decimal-places = 0` then the function rounds the value to integer. In this case the argument can be omitted.
 
 **Returned value:**
 
-The rounded number of the same type as the input number `x`.
+The rounded number of the same type as the input number.
 
 ### Examples
 
