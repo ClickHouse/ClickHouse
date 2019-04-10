@@ -61,8 +61,8 @@ namespace
     class SourceFromInputStream : public ISource
     {
     public:
-        SourceFromInputStream(Block header, BlockInputStreamPtr stream)
-            : ISource(std::move(header)), stream(std::move(stream)) {}
+        SourceFromInputStream(Block header, AggregatingTransformParamsPtr params_, BlockInputStreamPtr stream)
+            : ISource(std::move(header)), params(std::move(params_)), stream(std::move(stream)) {}
 
         String getName() const override { return "SourceFromInputStream"; }
 
@@ -85,6 +85,8 @@ namespace
         }
 
     private:
+        /// Store params because aggregator must be destroyed after stream. Order is important.
+        AggregatingTransformParamsPtr params;
         BlockInputStreamPtr stream;
     };
 }
@@ -246,7 +248,7 @@ void AggregatingTransform::initGenerate()
     if (!params->aggregator.hasTemporaryFiles())
     {
         auto stream = params->aggregator.mergeAndConvertToBlocks(many_data->variants, params->final, max_threads);
-        processors.emplace_back(std::make_shared<SourceFromInputStream>(stream->getHeader(), std::move(stream)));
+        processors.emplace_back(std::make_shared<SourceFromInputStream>(stream->getHeader(), params, std::move(stream)));
     }
     else
     {
