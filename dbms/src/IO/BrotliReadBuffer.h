@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BROTLI_READ_FAILED;
-}
-
 class BrotliReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
@@ -39,5 +34,6 @@ private:
 
     bool eof;
 };
+
 }
 
