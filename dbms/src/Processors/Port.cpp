@@ -8,6 +8,8 @@ void connect(OutputPort & output, InputPort & input)
     if (input.state || output.state)
         throw Exception("Port is already connected", ErrorCodes::LOGICAL_ERROR);
 
+    assertBlocksHaveEqualStructure(input.getHeader(), output.getHeader(), "connect");
+
     input.output_port = &output;
     output.input_port = &input;
     input.state = std::make_shared<Port::State>();
