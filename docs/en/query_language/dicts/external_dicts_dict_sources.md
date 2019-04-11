@@ -30,6 +30,7 @@ Types of sources (`source_type`):
     - [MySQL](#dicts-external_dicts_dict_sources-mysql)
     - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [Cassanda](#dicts-external_dicts_dict_sources-cassandra)
     - [ODBC](#dicts-external_dicts_dict_sources-odbc)
 
 
@@ -143,7 +144,7 @@ PASSWORD = test
 If you then make a query such as
 
 ```
-SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
+SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ```
 
 ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
@@ -420,5 +421,18 @@ Setting fields:
 - `password` – Password of the MongoDB user.
 - `db` – Name of the database.
 - `collection` – Name of the collection.
+
+### Cassandra {#dicts-external_dicts_dict_sources-cassandra}
+
+Example of settings:
+
+```xml
+<source>
+    <cassandra>
+        <host>localhost</host>
+        <port>6349</port>
+    </cassandra>
+</source>
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

@@ -2,6 +2,7 @@
 import warnings
 import pymysql.cursors
 import pymongo
+import cassandra
 from tzlocal import get_localzone
 import datetime
 import os
@@ -372,3 +373,22 @@ class SourceHTTP(SourceHTTPBase):
 class SourceHTTPS(SourceHTTPBase):
     def _get_schema(self):
         return "https"
+
+class SourceCassandra(ExternalSource):
+    def get_source_str(self, table_name):
+        return '''
+            <cassandra>
+                <host>{host}</host>
+                <port>{port}</port>
+            </cassandra>
+        '''.format(
+            host=self.docker_hostname,
+            port=self.docker_port,
+        )
+
+    def prepare(self, structure, table_name, cluster):
+        self.client = cassandra.cluster.Cluster([self.internal_hostname], port=self.internal_port)
+        self.prepared = True
+
+    def load_data(self, data, table_name):
+        for ro

@@ -92,6 +92,7 @@ class ClickHouseCluster:
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
+        self.base_cassandra_cmd = []
         self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
@@ -101,6 +102,7 @@ class ClickHouseCluster:
         self.with_odbc_drivers = False
         self.with_hdfs = False
         self.with_mongo = False
+        self.with_cassandra = False
 
         self.docker_client = None
         self.is_up = False
@@ -112,7 +114,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False, with_cassandra=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False, ipv4_address=None, ipv6_address=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -130,7 +132,7 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, self.base_configs_dir, self.server_bin_path,
+            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_cassandra, self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address, ipv6_address=ipv6_address)
 
@@ -184,6 +186,13 @@ class ClickHouseCluster:
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
+
+        if with_cassandra and not self.with_cassandra:
+            self.with_cassandra = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_cassandra.yml')])
+            self.base_cassandra_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_cassandra.yml')]
+
 
         return instance
 
@@ -316,6 +325,10 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_mongo_cmd + ['up', '-d', '--force-recreate'])
             self.wait_mongo_to_start(30)
 
+        if self.with_cassandra and self.base_cassandra_cmd:
+            subprocess_check_call(self.base_cassandra_cmd + ['up', '-d', '--force-recreate'])
+            time.sleep(10)
+
         subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
         start_deadline = time.time() + 20.0 # seconds
@@ -414,7 +427,7 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_cassandra, base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
             stay_alive=False, ipv4_address=None, ipv6_address=None):
 
@@ -439,6 +452,7 @@ class ClickHouseInstance:
         self.with_mysql = with_mysql
         self.with_kafka = with_kafka
         self.with_mongo = with_mongo
+        self.with_cassandra = with_cassandra
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')

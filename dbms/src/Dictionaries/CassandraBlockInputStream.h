@@ -32,6 +32,7 @@ namespace DB
         const size_t max_block_size;
         ExternalResultDescription description;
         const CassResult * result;
+        cass_bool_t has_more_pages;
         CassIterator * iterator = nullptr;
     };
 

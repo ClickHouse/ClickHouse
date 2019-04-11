@@ -1,10 +1,13 @@
 #include <Common/config.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/ExternalResultDescription.h>
+#include <Columns/ColumnString.h>
+#include <IO/ReadHelpers.h>
 
 #if USE_CASSANDRA
 
 #   include "CassandraBlockInputStream.h"
-#include "CassandraBlockInputStream.h"
+#   include "CassandraBlockInputStream.h"
 
 
 namespace DB
@@ -25,23 +28,8 @@ CassandraBlockInputStream::CassandraBlockInputStream(
     , max_block_size{max_block_size}
 {
     CassStatement * statement = cass_statement_new(query_str.c_str(), 0);
-    CassFuture* future = cass_session_execute(session, statement);
-
-    const CassResult * result = cass_future_get_result(future);
-    cass_statement_free(statement);
-
-    if (result == nullptr) {
-//        CassError error_code = cass_future_error_code(future);
-        const char* error_message;
-        size_t error_message_length;
-        cass_future_error_message(future, &error_message, &error_message_length);
-
-        throw Exception{error_message, ErrorCodes::CASSANDRA_INTERNAL_ERROR};
-    }
-
-    cass_future_free(future);
-
-    this->result = result;
+    cass_statement_set_paging_size(statement, max_block_size)
+    this->has_more_pages = cass_true;
 
     description.init(sample_block);
 }
@@ -134,23 +122,78 @@ namespace
             {
                 const char* _value;
                 size_t _value_length;
-                cass_value_get_string
-                static_cast<ColumnString &>(column).insertData(value.data(), value.size());
+                cass_value_get_string(value, &_value, &_value_length);
+                static_cast<ColumnString &>(column).insertData(_value, _value_length);
                 break;
             }
             case ValueType::Date:
-                static_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum()));
+            {
+                cass_int64_t _value;
+                cass_value_get_int64(value, &_value);
+                static_cast<ColumnUInt32 &>(column).insertValue(UInt32{cass_date_from_epoch(_value)});
                 break;
+            }
             case ValueType::DateTime:
-                static_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime()));
+            {
+                cass_int64_t _value;
+                cass_value_get_int64(value, &_value);
+                static_cast<ColumnUInt64 &>(column).insertValue(_value);
                 break;
+            }
             case ValueType::UUID:
+            {
+                CassUuid _value;
+                cass_value_get_uuid(value, &_value);
                 static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
                 break;
+            }
         }
     }
 
     void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
+
+    Block CassandraBlockInputStream::readImpl()
+    {
+        if (has_more_pages)
+            return {};
+
+        CassFuture* query_future = cass_session_execute(session, statement);
+
+        const CassResult* result = cass_future_get_result(query_future);
+
+        if (result == nullptr) {
+            const char* error_message;
+            size_t error_message_length;
+            cass_future_error_message(future, &error_message, &error_message_length);
+
+            throw Exception{error_message, ErrorCodes::CASSANDRA_INTERNAL_ERROR};
+        }
+
+        const CassRow* row = cass_result_first_row(result);
+        const CassValue* map = cass_row_get_column(row, 0);
+        CassIterator* iterator = cass_iterator_from_map(map);
+        while (cass_iterator_next(iterator)) {
+            const CassValue* _key = cass_iterator_get_map_key(iterator);
+            const CassValue* _value = cass_iterator_get_map_value(iterator);
+            for (const auto &[value, idx]: {{_key, 0}, {_value, 1}}) {
+                if (description.types[idx].second) {
+                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    column_nullable.getNullMapData().emplace_back(0);
+                } else {
+                    insertValue(*columns[idx], description.types[idx].first, value);
+                }
+            }
+        }
+
+        has_more_pages = cass_result_has_more_pages(result);
+
+        if (has_more_pages) {
+            cass_statement_set_paging_state(statement, result);
+        }
+
+        cass_result_free(result);
+    }
 }
 
 

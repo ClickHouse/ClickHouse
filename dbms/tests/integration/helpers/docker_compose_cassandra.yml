@@ -1,0 +1,7 @@
+version: '2.2'
+services:
+    cassandra1:
+        image: cassandra
+        restart: always
+        ports:
+          - 6340:6349
