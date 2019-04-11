@@ -1612,7 +1612,7 @@ void InterpreterSelectQuery::executeMergeAggregated(QueryPipeline & pipeline, bo
     }
     else
     {
-        pipeline.resize(max_streams);
+        /// pipeline.resize(max_streams); - Seem we don't need it.
         auto num_merge_threads = settings.aggregation_memory_efficient_merge_threads
                                  ? static_cast<size_t>(settings.aggregation_memory_efficient_merge_threads)
                                  : static_cast<size_t>(settings.max_threads);
