@@ -29,7 +29,7 @@ private:
 
 public:
     LimitTransform(
-        Block header, size_t limit, size_t offset,
+        const Block & header, size_t limit, size_t offset,
         bool always_read_till_end = false,
         bool do_count_rows_before_limit = true);
 
