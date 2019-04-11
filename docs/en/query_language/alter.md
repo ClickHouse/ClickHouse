@@ -65,7 +65,7 @@ ALTER TABLE visits DROP COLUMN browser
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
-Resets all data in a column for a specified partition. Read more about setting the partition name in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to specify the partition expression](#alter-how-to-specify-part-expr).
  
 If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
 
