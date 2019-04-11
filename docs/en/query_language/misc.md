@@ -57,7 +57,13 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns two `String`-type columns: `name` and `type`, which indicate the names and types of columns in the specified table.
+Returns the following `String` type columns: 
+
+- `name` — Column name.
+- `type`— Column type.
+- `default_type` — Clause that is used in [default expression](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn't specified.
+- `default_expression` — Value specified in the `DEFAULT` clause.
+- `comment_expression` — Comment text.
 
 Nested data structures are output in "expanded" format. Each column is shown separately, with the name after a dot.
 
@@ -176,7 +182,7 @@ If you specify `FINAL`, optimization will be performed even when all the data is
 !!! warning
     OPTIMIZE can't fix the "Too many parts" error.
 
-## RENAME
+## RENAME {#misc_operations-rename}
 
 Renames one or more tables.
 
