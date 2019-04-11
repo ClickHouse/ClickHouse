@@ -89,7 +89,7 @@ void FilterTransform::transform(Chunk & chunk)
     }
 
     size_t num_columns = columns.size();
-    ColumnPtr & filter_column = columns[filter_column_position];
+    ColumnPtr filter_column = columns[filter_column_position];
 
     /** It happens that at the stage of analysis of expressions (in sample_block) the columns-constants have not been calculated yet,
         *  and now - are calculated. That is, not all cases are covered by the code above.
