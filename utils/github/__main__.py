@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 '''
@@ -28,8 +27,6 @@ import sys
 
 CHECK_MARK = '🗸'
 CROSS_MARK = '🗙'
-WARN_MARK = '⚠'
-WAIT_MARK = '⊙'
 LABEL_MARK = '🏷'
 
 
@@ -42,6 +39,8 @@ parser.add_argument('-n', type=int, default=3, dest='number',
     help='number of last stable branches to consider')
 parser.add_argument('--token', type=str, required=True,
     help='token for Github access')
+parser.add_argument('--login', type = str,
+    help='filter authorship by login')
 
 args = parser.parse_args()
 
@@ -57,7 +56,7 @@ else:
         print(f'{CHECK_MARK} {stable[0]} forked from {stable[1]}')
 
 first_commit = stables[0][1]
-pull_requests = github.get_pull_requests(first_commit)
+pull_requests = github.get_pull_requests(first_commit, args.login)
 good_commits = set(pull_request['mergeCommit']['oid'] for pull_request in pull_requests)
 
 bad_commits = [] # collect and print them in the end
@@ -93,14 +92,8 @@ if bad_pull_requests:
 if bad_commits:
     print('\nCommits not referenced by any pull-request:')
 
-    bad_authors = set()
     for bad in bad_commits:
-        print(f'{CROSS_MARK} {bad}')
-        bad_authors.add(bad.author)
-
-    print('\nTell these authors not to push without pull-request and not to merge with rebase :)')
-    for author in sorted(bad_authors, key=lambda x : x.name):
-        print(f'{WARN_MARK} {author}')
+        print(f'{CROSS_MARK} {bad} {bad.author}')
 
 # TODO: check backports.
 if need_backporting:
@@ -141,5 +134,4 @@ if need_backporting:
 print('\nLegend:')
 print(f'{CHECK_MARK} - good')
 print(f'{CROSS_MARK} - bad')
-print(f'{WARN_MARK} - pay attention!')
 print(f'{LABEL_MARK} - backport is detected via label')
