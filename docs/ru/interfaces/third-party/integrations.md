@@ -37,6 +37,8 @@
         - [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (использует [Go client](https://github.com/kshvakov/clickhouse/))
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    - [Zabbix](https://www.zabbix.com)
+        - [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     - [Sematext](https://sematext.com/)
         - [clickhouse интеграция](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - Логирование
