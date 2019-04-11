@@ -316,28 +316,47 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
     if (num_tables <= 2)
         return false;
 
+    size_t num_array_join = 0;
+    size_t num_using = 0;
+
     table_expressions.reserve(num_tables);
     for (size_t i = 0; i < num_tables; ++i)
     {
         const auto * table = tables->children[i]->as<ASTTablesInSelectQueryElement>();
-        if (table && table->table_expression)
+        if (!table)
+            throw Exception("Table expected", ErrorCodes::LOGICAL_ERROR);
+
+        if (table->table_expression)
             if (const auto * expression = table->table_expression->as<ASTTableExpression>())
                 table_expressions.push_back(expression);
         if (!i)
             continue;
 
-        if (!table || !table->table_join)
-            throw Exception("Multiple JOIN expects joined tables", ErrorCodes::LOGICAL_ERROR);
+        if (!table->table_join && !table->array_join)
+            throw Exception("Joined table expected", ErrorCodes::LOGICAL_ERROR);
+
+        if (table->array_join)
+        {
+            ++num_array_join;
+            continue;
+        }
 
         const auto & join = table->table_join->as<ASTTableJoin &>();
         if (isComma(join.kind))
             throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
 
-        /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
         if (join.using_expression_list)
-            throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
+            ++num_using;
     }
 
+    if (num_tables - num_array_join <= 2)
+        return false;
+
+    /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
+    if (num_using)
+        throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
+    if (num_array_join)
+        throw Exception("Multiple JOIN does not support mix with ARRAY JOINs", ErrorCodes::NOT_IMPLEMENTED);
     return true;
 }
 

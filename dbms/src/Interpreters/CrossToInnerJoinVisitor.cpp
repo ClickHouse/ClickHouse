@@ -222,20 +222,38 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedTable> & joined_tables
         return false;
 
     joined_tables.reserve(num_tables);
+    size_t num_array_join = 0;
+    size_t num_using = 0;
+
     for (auto & child : tables->children)
     {
         joined_tables.emplace_back(JoinedTable(child));
         JoinedTable & t = joined_tables.back();
         if (t.array_join)
-            return false;
+        {
+            ++num_array_join;
+            continue;
+        }
 
-        if (num_tables > 2 && t.has_using)
-            throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
+        if (t.has_using)
+        {
+            ++num_using;
+            continue;
+        }
 
         if (auto * join = t.join)
             if (join->kind == ASTTableJoin::Kind::Comma)
                 ++num_comma;
     }
+
+    if (num_using && (num_tables - num_array_join) > 2)
+        throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (num_comma && (num_comma != (joined_tables.size() - 1)))
+        throw Exception("Mix of COMMA and other JOINS is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
+    if (num_array_join || num_using)
+        return false;
     return true;
 }
 
@@ -259,9 +277,6 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
 
     if (num_comma)
     {
-        if (num_comma != (joined_tables.size() - 1))
-            throw Exception("Mix of COMMA and other JOINS is not supported", ErrorCodes::NOT_IMPLEMENTED);
-
         for (auto & table : joined_tables)
             table.rewriteCommaToCross();
     }
