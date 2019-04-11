@@ -10,6 +10,7 @@
         - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         - [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
     - [PostgreSQL](https://www.postgresql.org)
+        - [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     - [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         - [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
