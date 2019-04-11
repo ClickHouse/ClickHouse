@@ -210,7 +210,7 @@ This table contains information about the events that occurred with the [data pa
 
 The `system.part_log` table contains the following columns:
 
-- `event_type` (Enum) — Type of the event that occurred with the part. Can have one of the following values: `NEW_PART` — inserting, `MERGE_PARTS` — merging, `DOWNLOAD_PART` — downloading, `REMOVE_PART` — removing or detaching using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition), `MUTATE_PART` — updating.
+- `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values: `NEW_PART` — inserting, `MERGE_PARTS` — merging, `DOWNLOAD_PART` — downloading, `REMOVE_PART` — removing or detaching using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition), `MUTATE_PART` — updating.
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
 - `duration_ms` (UInt64) — Duration.
