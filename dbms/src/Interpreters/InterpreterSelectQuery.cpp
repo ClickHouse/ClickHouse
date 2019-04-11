@@ -203,7 +203,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (settings.allow_experimental_multiple_joins_emulation)
     {
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data;
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data{context};
         JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
     }
 
