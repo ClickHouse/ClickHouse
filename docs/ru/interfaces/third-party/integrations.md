@@ -18,6 +18,9 @@
 - Хранилища объектов
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- Оркестрация контейнеров
+    - [Kubernetes](https://kubernetes.io)
+        - [clickhouse-operator](https://github.com/Altinity/clickhouse-operator)
 - Системы управления конфигурацией
     - [puppet](https://puppet.com)
         - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
@@ -34,6 +37,8 @@
         - [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (использует [Go client](https://github.com/kshvakov/clickhouse/))
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    - [Zabbix](https://www.zabbix.com)
+        - [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     - [Sematext](https://sematext.com/)
         - [clickhouse интеграция](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - Логирование
