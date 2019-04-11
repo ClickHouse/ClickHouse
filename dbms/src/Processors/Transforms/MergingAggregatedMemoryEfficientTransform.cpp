@@ -16,7 +16,7 @@ struct ChunksToMerge : public ChunkInfo
 
 GroupingAggregatedTransform::GroupingAggregatedTransform(
     const Block & header, size_t num_inputs, AggregatingTransformParamsPtr params)
-    : IProcessor(InputPorts(num_inputs, header), {})
+    : IProcessor(InputPorts(num_inputs, header), { Block() })
     , num_inputs(num_inputs)
     , params(std::move(params))
     , last_bucket_number(num_inputs, -1)
