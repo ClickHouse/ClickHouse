@@ -582,6 +582,8 @@ void MergeSortingTransform::generate()
         generated_chunk = merge_sorter->read();
         if (!generated_chunk)
             merge_sorter.reset();
+        else
+            enrichChunkWithConstants(generated_chunk);
     }
 }
 
@@ -640,5 +642,34 @@ void MergeSortingTransform::removeConstColumns(Chunk & chunk)
     chunk.setColumns(std::move(column_without_constants), num_rows);
 }
 
+void MergeSortingTransform::enrichChunkWithConstants(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    size_t num_result_columns = const_columns_to_remove.size();
+
+    auto columns = chunk.detachColumns();
+    Columns column_with_constants;
+    column_with_constants.reserve(num_result_columns);
+
+    auto & header = inputs.front().getHeader();
+
+    size_t next_non_const_column = 0;
+    for (size_t i = 0; i < num_result_columns; ++i)
+    {
+        if (const_columns_to_remove[i])
+            column_with_constants.emplace_back(header.getByPosition(i).column->cloneResized(num_rows));
+        else
+        {
+            if (next_non_const_column >= columns.size())
+                throw Exception("Can't enrich chunk with constants because run out of non-constant columns.",
+                        ErrorCodes::LOGICAL_ERROR);
+
+            column_with_constants.emplace_back(std::move(columns[next_non_const_column]));
+            ++next_non_const_column;
+        }
+    }
+
+    chunk.setColumns(std::move(column_with_constants), num_rows);
+}
 
 }
