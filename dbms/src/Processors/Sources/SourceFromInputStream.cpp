@@ -5,8 +5,8 @@
 namespace DB
 {
 
-SourceFromInputStream::SourceFromInputStream(Block header, BlockInputStreamPtr stream)
-    : ISource(std::move(header)), stream(std::move(stream))
+SourceFromInputStream::SourceFromInputStream(InputStreamHolderPtr holder_)
+    : ISource(holder_->getStream().getHeader()), holder(std::move(holder_))
 {
     auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
@@ -16,20 +16,13 @@ SourceFromInputStream::SourceFromInputStream(Block header, BlockInputStreamPtr s
 
 Chunk SourceFromInputStream::generate()
 {
-    if (stream_finished)
+    if (holder->isFinished())
         return {};
 
-    if (!initialized)
-    {
-        stream->readPrefix();
-        initialized = true;
-    }
-
-    auto block = stream->read();
+    auto block = holder->read();
     if (!block)
     {
-        stream->readSuffix();
-        stream_finished = true;
+        holder->readSuffix();
         return {};
     }
 

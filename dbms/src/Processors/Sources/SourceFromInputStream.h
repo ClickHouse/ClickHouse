@@ -1,28 +1,23 @@
 #pragma once
 #include <Processors/ISource.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/InputStreamHolder.h>
 
 namespace DB
 {
 
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-
 class SourceFromInputStream : public ISource
 {
 public:
-    SourceFromInputStream(Block header, BlockInputStreamPtr stream);
+    explicit SourceFromInputStream(InputStreamHolderPtr holder_);
     String getName() const override { return "SourceFromInputStream"; }
 
     Chunk generate() override;
 
-    BlockInputStreamPtr & getStream() { return stream; }
+    IBlockInputStream & getStream() { return holder->getStream(); }
 
 private:
-    bool initialized = false;
-    bool stream_finished = false;
     bool has_aggregate_functions = false;
-    BlockInputStreamPtr stream;
+    InputStreamHolderPtr holder;
 };
 
 }
