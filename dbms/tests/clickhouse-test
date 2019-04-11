@@ -17,18 +17,10 @@ from subprocess import CalledProcessError
 from datetime import datetime
 from time import sleep
 from errno import ESRCH
-from termcolor import colored
+import termcolor
 from random import random
 import commands
 
-
-OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
-CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
-
-MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", "red", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
@@ -98,6 +90,20 @@ def get_server_pid(server_tcp_port):
 def main(args):
 
     SERVER_DIED = False
+
+    def colored(text, color=None, on_color=None, attrs=None):
+           if sys.stdout.isatty() or args.force_color:
+               return termcolor.colored(text, color, on_color, attrs)
+           else:
+               return text
+
+    OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
+    CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
+
+    MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", "red", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
     def is_data_present():
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
@@ -341,7 +347,7 @@ def main(args):
                                         if result_is_different:
                                             diff = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()[0]
                                             diff = unicode(diff, errors='replace', encoding='utf-8')
-                                            cat = Popen(['cat', '-vet'], stdin=PIPE, stdout=PIPE).communicate(input=diff)[0]
+                                            cat = Popen(['cat', '-vet'], stdin=PIPE, stdout=PIPE).communicate(input=diff.encode(encoding='utf-8', errors='replace'))[0]
 
                                             failure = et.Element("failure", attrib = {"message": "result differs with reference"})
                                             report_testcase.append(failure)
@@ -367,12 +373,13 @@ def main(args):
                         print(colored("Break tests execution", "red"))
                         raise e
                     except:
-                        (exc_type, exc_value) = sys.exc_info()[:2]
+                        import traceback
+                        exc_type, exc_value, tb = sys.exc_info()
                         error = et.Element("error", attrib = {"type": exc_type.__name__, "message": str(exc_value)})
                         report_testcase.append(error)
 
                         failures += 1
-                        print("{0} - Test internal error: {1}\n{2}".format(MSG_FAIL, exc_type.__name__, exc_value))
+                        print("{0} - Test internal error: {1}\n{2}\n{3}".format(MSG_FAIL, exc_type.__name__, exc_value, "\n".join(traceback.format_tb(tb, 10))))
                     finally:
                         dump_report(args.output, suite, name, report_testcase)
 
@@ -432,6 +439,7 @@ if __name__ == '__main__':
     parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
+    parser.add_argument('--force-color', action='store_true', default=False)
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")

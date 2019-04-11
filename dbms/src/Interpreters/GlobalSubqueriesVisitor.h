@@ -46,48 +46,36 @@ public:
             has_global_subqueries(has_global_subqueries_)
         {}
 
-        void addExternalStorage(ASTPtr & subquery_or_table_name_or_table_expression)
+        void addExternalStorage(ASTPtr & ast, bool set_alias = false)
         {
             /// With nondistributed queries, creating temporary tables does not make sense.
             if (!is_remote)
                 return;
 
-            ASTPtr subquery;
-            ASTPtr table_name;
-            ASTPtr subquery_or_table_name;
+            bool is_table = false;
+            ASTPtr subquery_or_table_name = ast; /// ASTIdentifier | ASTSubquery | ASTTableExpression
 
-            if (subquery_or_table_name_or_table_expression->as<ASTIdentifier>())
+            if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
-                table_name = subquery_or_table_name_or_table_expression;
-                subquery_or_table_name = table_name;
-            }
-            else if (const auto * ast_table_expr = subquery_or_table_name_or_table_expression->as<ASTTableExpression>())
-            {
+                subquery_or_table_name = ast_table_expr->subquery;
+
                 if (ast_table_expr->database_and_table_name)
                 {
-                    table_name = ast_table_expr->database_and_table_name;
-                    subquery_or_table_name = table_name;
-                }
-                else if (ast_table_expr->subquery)
-                {
-                    subquery = ast_table_expr->subquery;
-                    subquery_or_table_name = subquery;
+                    subquery_or_table_name = ast_table_expr->database_and_table_name;
+                    is_table = true;
                 }
             }
-            else if (subquery_or_table_name_or_table_expression->as<ASTSubquery>())
-            {
-                subquery = subquery_or_table_name_or_table_expression;
-                subquery_or_table_name = subquery;
-            }
+            else if (ast->as<ASTIdentifier>())
+                is_table = true;
 
             if (!subquery_or_table_name)
                 throw Exception("Logical error: unknown AST element passed to ExpressionAnalyzer::addExternalStorage method",
                                 ErrorCodes::LOGICAL_ERROR);
 
-            if (table_name)
+            if (is_table)
             {
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
-                if (external_tables.end() != external_tables.find(*getIdentifierName(table_name)))
+                if (external_tables.end() != external_tables.find(*getIdentifierName(subquery_or_table_name)))
                     return;
             }
 
@@ -114,8 +102,16 @@ public:
                 */
 
             auto database_and_table_name = createTableIdentifier("", external_table_name);
+            if (set_alias)
+            {
+                String alias = subquery_or_table_name->tryGetAlias();
+                if (auto * table_name = subquery_or_table_name->as<ASTIdentifier>())
+                    if (alias.empty())
+                        alias = table_name->shortName();
+                database_and_table_name->setAlias(alias);
+            }
 
-            if (auto * ast_table_expr = subquery_or_table_name_or_table_expression->as<ASTTableExpression>())
+            if (auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
                 ast_table_expr->subquery.reset();
                 ast_table_expr->database_and_table_name = database_and_table_name;
@@ -124,7 +120,7 @@ public:
                 ast_table_expr->children.emplace_back(database_and_table_name);
             }
             else
-                subquery_or_table_name_or_table_expression = database_and_table_name;
+                ast = database_and_table_name;
 
             external_tables[external_table_name] = external_storage;
             subqueries_for_sets[external_table_name].source = interpreter->execute().in;
@@ -170,7 +166,7 @@ private:
     {
         if (table_elem.table_join && table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global)
         {
-            data.addExternalStorage(table_elem.table_expression);
+            data.addExternalStorage(table_elem.table_expression, true);
             data.has_global_subqueries = true;
         }
     }

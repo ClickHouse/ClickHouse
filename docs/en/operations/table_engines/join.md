@@ -7,7 +7,7 @@ A prepared data structure for JOIN that is always located in RAM.
 Join(ANY|ALL, LEFT|INNER, k1[, k2, ...])
 ```
 
-Engine parameters: `ANY|ALL` – strictness; `LEFT|INNER` – type.
+Engine parameters: `ANY|ALL` – strictness; `LEFT|INNER` – type. For more information, see the [JOIN Clause](../../query_language/select.md#select-join) section.
 These parameters are set without quotes and must match the JOIN that the table will be used for. k1, k2, ... are the key columns from the USING clause that the join will be made on.
 
 The table can't be used for GLOBAL JOINs.

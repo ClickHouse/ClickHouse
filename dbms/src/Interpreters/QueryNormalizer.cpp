@@ -155,20 +155,22 @@ static bool needVisitChild(const ASTPtr & child)
 }
 
 /// special visitChildren() for ASTSelectQuery
-void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & data)
+void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
-    for (auto & child : ast->children)
+    for (auto & child : select.children)
         if (needVisitChild(child))
             visit(child, data);
 
+#if 1 /// TODO: legacy?
     /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
     /// but also in where_expression and having_expression.
-    if (select.prewhere_expression)
-        visit(select.prewhere_expression, data);
-    if (select.where_expression)
-        visit(select.where_expression, data);
-    if (select.having_expression)
-        visit(select.having_expression, data);
+    if (select.prewhere())
+        visit(select.refPrewhere(), data);
+    if (select.where())
+        visit(select.refWhere(), data);
+    if (select.having())
+        visit(select.refHaving(), data);
+#endif
 }
 
 /// Don't go into subqueries.

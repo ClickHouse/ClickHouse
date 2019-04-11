@@ -299,13 +299,13 @@ private:
 private:
     void onTerminate(const std::string & message, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "(version " << VERSION_STRING << ") (from thread " << thread_num << ") " << message);
+        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
     void onFault(int sig, siginfo_t & info, ucontext_t & context, ThreadNumber thread_num) const
     {
         LOG_ERROR(log, "########################################");
-        LOG_ERROR(log, "(version " << VERSION_STRING << ") (from thread " << thread_num << ") "
+        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
         void * caller_address = nullptr;

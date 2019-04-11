@@ -423,7 +423,7 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
 
 /** Throw exception with verbose message when string value is not parsed completely.
   */
-void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, Block & block, size_t result);
+[[noreturn]] void throwExceptionForIncompletelyParsedValue(ReadBuffer & read_buffer, Block & block, size_t result);
 
 
 enum class ConvertFromStringExceptionMode

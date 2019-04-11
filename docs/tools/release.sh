@@ -15,7 +15,7 @@ DOCKER_HASH="$2"
 if [[ -z "$1" ]]
 then
     source "${BASE_DIR}/venv/bin/activate"
-    python "${BASE_DIR}/build.py"
+    python "${BASE_DIR}/build.py" "--enable-stable-releases"
     cd "${BUILD_DIR}"
     docker build -t "${FULL_NAME}" "${BUILD_DIR}"
     docker tag "${FULL_NAME}" "${REMOTE_NAME}"
