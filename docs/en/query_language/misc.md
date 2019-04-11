@@ -51,7 +51,7 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 3. Execute the query `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. This request copies the non-corrupted data from the damaged table to another table. Only the data before the corrupted part will be copied.
 4. Restart the `clickhouse-client` to reset the `max_threads` value.
 
-## DESCRIBE TABLE
+## DESCRIBE TABLE {#misc-describe-table}
 
 ``` sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]

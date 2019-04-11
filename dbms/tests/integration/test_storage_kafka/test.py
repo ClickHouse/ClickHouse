@@ -7,6 +7,17 @@ from helpers.test_tools import TSV
 
 import json
 import subprocess
+from kafka import KafkaProducer
+from google.protobuf.internal.encoder import _VarintBytes
+
+"""
+protoc --version
+libprotoc 3.0.0
+
+# to create kafka_pb2.py
+protoc --python_out=. kafka.proto
+"""
+import kafka_pb2
 
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
@@ -17,7 +28,8 @@ import subprocess
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/kafka.xml'],
-                                with_kafka=True)
+                                with_kafka=True,
+                                clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
 
 
@@ -30,7 +42,7 @@ def check_kafka_is_available():
                           kafka_id,
                           '/usr/bin/kafka-broker-api-versions',
                           '--bootstrap-server',
-                          'PLAINTEXT://localhost:9092'),
+                          'INSIDE://localhost:9092'),
                          stdout=subprocess.PIPE)
     p.communicate()
     return p.returncode == 0
@@ -56,7 +68,7 @@ def kafka_produce(topic, messages):
                           kafka_id,
                           '/usr/bin/kafka-console-producer',
                           '--broker-list',
-                          'localhost:9092',
+                          'INSIDE://localhost:9092',
                           '--topic',
                           topic,
                           '--sync',
@@ -65,7 +77,21 @@ def kafka_produce(topic, messages):
                          stdin=subprocess.PIPE)
     p.communicate(messages)
     p.stdin.close()
-    print("Produced {} messages".format(len(messages.splitlines())))
+    print("Produced {} messages for topic {}".format(len(messages.splitlines()), topic))
+
+
+def kafka_produce_protobuf_messages(topic, start_index, num_messages):
+    data = ''
+    for i in range(start_index, start_index + num_messages):
+        msg = kafka_pb2.KeyValuePair()
+        msg.key = i
+        msg.value = str(i)
+        serialized_msg = msg.SerializeToString()
+        data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+    producer = KafkaProducer(bootstrap_servers="localhost:9092")
+    producer.send(topic=topic, value=data)
+    producer.flush()
+    print("Produced {} messages for topic {}".format(num_messages, topic))
 
 
 # Since everything is async and shaky when receiving messages from Kafka,
@@ -110,7 +136,7 @@ def kafka_setup_teardown():
 def test_kafka_settings_old_syntax(kafka_cluster):
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka('kafka1:9092', 'old', 'old', 'JSONEachRow', '\\n');
+            ENGINE = Kafka('kafka1:19092', 'old', 'old', 'JSONEachRow', '\\n');
         ''')
 
     # Don't insert malformed messages since old settings syntax
@@ -133,7 +159,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS
-                kafka_broker_list = 'kafka1:9092',
+                kafka_broker_list = 'kafka1:19092',
                 kafka_topic_list = 'new',
                 kafka_group_name = 'new',
                 kafka_format = 'JSONEachRow',
@@ -168,7 +194,7 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS
-                kafka_broker_list = 'kafka1:9092',
+                kafka_broker_list = 'kafka1:19092',
                 kafka_topic_list = 'csv',
                 kafka_group_name = 'csv',
                 kafka_format = 'CSV',
@@ -193,7 +219,7 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS
-                kafka_broker_list = 'kafka1:9092',
+                kafka_broker_list = 'kafka1:19092',
                 kafka_topic_list = 'tsv',
                 kafka_group_name = 'tsv',
                 kafka_format = 'TSV',
@@ -213,6 +239,30 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
     kafka_check_result(result, True)
 
 
+def test_kafka_protobuf(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS
+                kafka_broker_list = 'kafka1:19092',
+                kafka_topic_list = 'pb',
+                kafka_group_name = 'pb',
+                kafka_format = 'Protobuf',
+                kafka_schema = 'kafka.proto:KeyValuePair';
+        ''')
+
+    kafka_produce_protobuf_messages('pb', 0, 20)
+    kafka_produce_protobuf_messages('pb', 20, 1)
+    kafka_produce_protobuf_messages('pb', 21, 29)
+
+    result = ''
+    for i in range(50):
+        result += instance.query('SELECT * FROM test.kafka')
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True)
+
+
 def test_kafka_materialized_view(kafka_cluster):
     instance.query('''
         DROP TABLE IF EXISTS test.view;
@@ -220,7 +270,7 @@ def test_kafka_materialized_view(kafka_cluster):
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS
-                kafka_broker_list = 'kafka1:9092',
+                kafka_broker_list = 'kafka1:19092',
                 kafka_topic_list = 'json',
                 kafka_group_name = 'json',
                 kafka_format = 'JSONEachRow',

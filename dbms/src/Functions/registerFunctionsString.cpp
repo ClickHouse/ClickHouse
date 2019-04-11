@@ -9,6 +9,7 @@ void registerFunctionEmpty(FunctionFactory &);
 void registerFunctionNotEmpty(FunctionFactory &);
 void registerFunctionLength(FunctionFactory &);
 void registerFunctionLengthUTF8(FunctionFactory &);
+void registerFunctionValidUTF8(FunctionFactory &);
 void registerFunctionLower(FunctionFactory &);
 void registerFunctionUpper(FunctionFactory &);
 void registerFunctionLowerUTF8(FunctionFactory &);
@@ -36,6 +37,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionNotEmpty(factory);
     registerFunctionLength(factory);
     registerFunctionLengthUTF8(factory);
+    registerFunctionValidUTF8(factory);
     registerFunctionLower(factory);
     registerFunctionUpper(factory);
     registerFunctionLowerUTF8(factory);

@@ -1,10 +1,8 @@
 #include <daemon/BaseDaemon.h>
 #include <daemon/OwnFormattingChannel.h>
 #include <daemon/OwnPatternFormatter.h>
-
 #include <Common/Config/ConfigProcessor.h>
 #include <daemon/OwnSplitChannel.h>
-
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -15,18 +13,6 @@
 #include <cxxabi.h>
 #include <execinfo.h>
 #include <unistd.h>
-
-#if USE_UNWIND
-    #define UNW_LOCAL_ONLY
-    #include <libunwind.h>
-#endif
-
-#ifdef __APPLE__
-// ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE
-#endif
-#include <ucontext.h>
-
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -67,6 +53,18 @@
 #include <daemon/OwnPatternFormatter.h>
 #include <Common/CurrentThread.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
+
+#if USE_UNWIND
+    #define UNW_LOCAL_ONLY
+    #include <libunwind.h>
+#endif
+
+#ifdef __APPLE__
+// ucontext is not available without _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
+#include <ucontext.h>
+
 
 /** For transferring information from signal handler to a separate thread.
   * If you need to do something serious in case of a signal (example: write a message to the log),
@@ -301,13 +299,13 @@ private:
 private:
     void onTerminate(const std::string & message, ThreadNumber thread_num) const
     {
-        LOG_ERROR(log, "(from thread " << thread_num << ") " << message);
+        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
     void onFault(int sig, siginfo_t & info, ucontext_t & context, ThreadNumber thread_num) const
     {
         LOG_ERROR(log, "########################################");
-        LOG_ERROR(log, "(from thread " << thread_num << ") "
+        LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "
             << "Received signal " << strsignal(sig) << " (" << sig << ")" << ".");
 
         void * caller_address = nullptr;

@@ -33,8 +33,6 @@ ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicated
 
 void ReplicatedMergeTreeAlterThread::run()
 {
-    bool force_recheck_parts = true;
-
     try
     {
         /** We have a description of columns in ZooKeeper, common for all replicas (Example: /clickhouse/tables/02-06/visits/columns),

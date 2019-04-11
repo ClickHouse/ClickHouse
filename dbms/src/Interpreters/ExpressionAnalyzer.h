@@ -2,7 +2,7 @@
 
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/IAST_fwd.h>
 

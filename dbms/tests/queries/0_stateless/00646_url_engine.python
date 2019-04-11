@@ -5,17 +5,31 @@ import sys
 import tempfile
 import threading
 import os, urllib
+import subprocess
 from io import StringIO
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
+CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
+CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 
-SERVER_ADDRESS = ('127.0.0.1', 51234)
-SERVER_ADDRESS_STR = 'http://' + ':'.join(str(s) for s in SERVER_ADDRESS) + "/"
+#####################################################################################
+# This test starts an HTTP server and serves data to clickhouse url-engine based table.
+# In order for it to work ip+port of http server (given below) should be
+# accessible from clickhouse server.
+#####################################################################################
+
+# IP-address of this host accessible from outside world.
+HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip()
+HTTP_SERVER_PORT = int(os.environ.get('CLICKHOUSE_TEST_HOST_EXPOSED_PORT', 51234))
+
+# IP address and port of the HTTP server started from this script.
+HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
+HTTP_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in HTTP_SERVER_ADDRESS) + "/"
 CSV_DATA = os.path.join(tempfile._get_default_tempdir(), next(tempfile._get_candidate_names()))
 
-
 def get_ch_answer(query):
-    return urllib.urlopen(os.environ.get('CLICKHOUSE_URL', 'http://localhost:' + os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')), data=query).read()
+    url = os.environ.get('CLICKHOUSE_URL', 'http://{host}:{port}'.format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP))
+    return urllib.urlopen(url, data=query).read()
 
 def check_answers(query, answer):
     ch_answer = get_ch_answer(query)
@@ -75,7 +89,7 @@ class CSVHTTPServer(BaseHTTPRequestHandler):
         return
 
 def start_server(requests_amount):
-    httpd = HTTPServer(SERVER_ADDRESS, CSVHTTPServer)
+    httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
 
     def real_func():
         for i in xrange(requests_amount):
@@ -96,12 +110,12 @@ def test_select(table_name="", schema="str String,numuint UInt32,numint Int32,do
 
     if table_name:
         get_ch_answer("drop table if exists {}".format(table_name))
-        get_ch_answer("create table {} ({}) engine=URL('{}', 'CSV')".format(table_name, schema, SERVER_ADDRESS_STR))
+        get_ch_answer("create table {} ({}) engine=URL('{}', 'CSV')".format(table_name, schema, HTTP_SERVER_URL_STR))
 
     for i in xrange(len(requests)):
         tbl = table_name
         if not tbl:
-            tbl = "url('{addr}', 'CSV', '{schema}')".format(addr=SERVER_ADDRESS_STR, schema=schema)
+            tbl = "url('{addr}', 'CSV', '{schema}')".format(addr=HTTP_SERVER_URL_STR, schema=schema)
         check_answers(requests[i].format(tbl=tbl), answers[i])
 
     if table_name:
@@ -113,19 +127,19 @@ def test_insert(table_name="", schema="str String,numuint UInt32,numint Int32,do
 
     if table_name:
         get_ch_answer("drop table if exists {}".format(table_name))
-        get_ch_answer("create table {} ({}) engine=URL('{}', 'CSV')".format(table_name, schema, SERVER_ADDRESS_STR))
+        get_ch_answer("create table {} ({}) engine=URL('{}', 'CSV')".format(table_name, schema, HTTP_SERVER_URL_STR))
 
     for req in requests_insert:
         tbl = table_name
         if not tbl:
-            tbl = "table function url('{addr}', 'CSV', '{schema}')".format(addr=SERVER_ADDRESS_STR, schema=schema)
+            tbl = "table function url('{addr}', 'CSV', '{schema}')".format(addr=HTTP_SERVER_URL_STR, schema=schema)
         get_ch_answer(req.format(tbl=tbl))
 
 
     for i in xrange(len(requests_select)):
         tbl = table_name
         if not tbl:
-            tbl = "url('{addr}', 'CSV', '{schema}')".format(addr=SERVER_ADDRESS_STR, schema=schema)
+            tbl = "url('{addr}', 'CSV', '{schema}')".format(addr=HTTP_SERVER_URL_STR, schema=schema)
         check_answers(requests_select[i].format(tbl=tbl), answers[i])
 
     if table_name:

@@ -36,6 +36,7 @@ private:
     String log_name;
     Logger * log;
     BackgroundSchedulePool::TaskHolder task;
+    bool force_recheck_parts = true;
 };
 
 }

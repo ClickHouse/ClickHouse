@@ -457,7 +457,7 @@ bool BloomFilterCondition::tryPrepareSetBloomFilter(
     std::vector<std::vector<StringBloomFilter>> bloom_filters;
     std::vector<size_t> key_position;
 
-    const auto & columns = prepared_set->getSetElements();
+    Columns columns = prepared_set->getSetElements();
     for (size_t col = 0; col < key_tuple_mapping.size(); ++col)
     {
         bloom_filters.emplace_back();

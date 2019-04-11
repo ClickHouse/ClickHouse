@@ -818,7 +818,7 @@ private:
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
         {
-            const Columns & tuple_columns = tuple->getColumns();
+            const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
@@ -826,7 +826,7 @@ private:
         }
         else if (const ColumnTuple * tuple_const = checkAndGetColumnConstData<ColumnTuple>(column))
         {
-            const Columns & tuple_columns = tuple_const->getColumns();
+            const auto & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)

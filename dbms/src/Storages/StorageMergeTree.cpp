@@ -126,9 +126,9 @@ BlockInputStreams StorageMergeTree::read(
     return reader.read(column_names, query_info, context, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<MergeTreeBlockOutputStream>(*this);
+    return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -690,7 +690,11 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
             data.clearOldPartsFromFilesystem();
-            data.clearOldTemporaryDirectories();
+            {
+                /// TODO: Implement tryLockStructureForShare.
+                auto lock_structure = lockStructureForShare(false, "");
+                data.clearOldTemporaryDirectories();
+            }
             clearOldMutations();
         }
 

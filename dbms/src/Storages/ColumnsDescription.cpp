@@ -427,7 +427,7 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
 
 const ColumnsDescription * ColumnsDescription::loadFromContext(const Context & context, const String & db, const String & table)
 {
-    if (context.getSettingsRef().insert_sample_with_metadata)
+    if (context.getSettingsRef().input_format_defaults_for_omitted_fields)
     {
         if (context.isTableExist(db, table))
         {

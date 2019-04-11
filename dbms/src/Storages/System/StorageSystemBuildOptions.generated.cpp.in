@@ -56,6 +56,7 @@ const char * auto_config_build[]
     "USE_PROTOBUF", "@USE_PROTOBUF@",
     "USE_BROTLI", "@USE_BROTLI@",
     "USE_SSL", "@USE_SSL@",
+    "USE_HYPERSCAN", "@USE_HYPERSCAN@",
 
     nullptr, nullptr
 };

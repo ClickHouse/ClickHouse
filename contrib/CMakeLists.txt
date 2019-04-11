@@ -284,6 +284,7 @@ endif ()
 
 if (USE_INTERNAL_BROTLI_LIBRARY)
     add_subdirectory(brotli-cmake)
+    target_compile_definitions(brotli PRIVATE BROTLI_BUILD_PORTABLE=1)
 endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
@@ -303,4 +304,8 @@ endif ()
 
 if (USE_BASE64)
     add_subdirectory (base64-cmake)
+endif()
+
+if (USE_INTERNAL_HYPERSCAN_LIBRARY)
+    add_subdirectory (hyperscan)
 endif()

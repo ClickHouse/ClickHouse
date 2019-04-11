@@ -16,11 +16,34 @@ Restrictions:
 
 The possible values are:
 
-- `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
-- `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
-- `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
-- `allow`  — Allows the use of these types of subqueries.
+- `deny` — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
+- `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
+- `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
+- `allow` — Allows the use of these types of subqueries.
 
+## enable_optimize_predicate_expression
+
+Turns on predicate pushdown in `SELECT` queries.
+
+Predicate pushdown may significantly reduce network traffic for distributed queries.
+
+Possible values:
+
+- 0 — Functionality is turned off.
+- 1 — Functionality is turned on.
+
+Default value: 0.
+
+**Usage**
+
+Consider the following queries:
+
+1. `SELECT count() FROM test_table WHERE date = '2018-10-10'`
+2. `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
+
+If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse applies `WHERE` to the subquery when processing it.
+
+If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer, because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
@@ -56,6 +79,41 @@ Enable or disable fsync when writing .sql files. Enabled by default.
 
 It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
 
+## enable_http_compression {#settings-enable_http_compression}
+
+Enables/disables compression of the data in the response to an HTTP request.
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — The functionality is disabled.
+- 1 — The functionality is enabled.
+
+Default value: 0.
+
+## http_zlib_compression_level {#settings-http_zlib_compression_level}
+
+Sets the level of the compression of the data in the response to an HTTP request if [enable_http_compression = 1](#settings-enable_http_compression).
+
+Possible values: numbers from 1 to 9.
+
+Default value: 3.
+
+
+## http_native_compression_disable_checksumming_on_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
+
+Enables/disables the verification of the checksum when uncompressing the HTTP POST data from the client. Used only for ClickHouse native format of compression (neither `gzip` nor `deflate`).
+
+For more information, read the [HTTP interface description](../../interfaces/http.md).
+
+Possible values:
+
+- 0 — The functionality is disabled.
+- 1 — The functionality is enabled.
+
+Default value: 0.
+
 ## input_format_allow_errors_num
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
@@ -80,6 +138,7 @@ Always pair it with `input_format_allow_errors_num`. To skip errors, both settin
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_ratio`, ClickHouse ignores the row and moves on to the next one.
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
+
 
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
@@ -126,11 +185,11 @@ Ok.
 ```
 
 
-## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
+## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
 
-When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
 
 When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
 
@@ -149,6 +208,7 @@ For all other operations, ClickHouse doesn't apply the setting.
 - 1 — Functionality is enabled.
 
 **Default value:** 0.
+
 
 ## join_default_strictness {#settings-join_default_strictness}
 
@@ -242,15 +302,14 @@ Any positive integer.
 
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
 
-The minimum data volume to be read from storage required for using of the direct I/O access to the storage disk.
+The minimum data volume required for using direct I/O access to the storage disk.
 
-ClickHouse uses this setting when selecting the data from tables. If summary storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with `O_DIRECT` option.
+ClickHouse uses this setting when reading data from tables. If the total storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with the `O_DIRECT` option.
 
 **Possible values**
 
-Positive integer.
-
-0 — The direct I/O is disabled.
+- 0 — Direct I/O is disabled.
+- Positive integer.
 
 **Default value**: 0.
 

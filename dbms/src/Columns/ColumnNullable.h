@@ -106,16 +106,15 @@ public:
 
 
     /// Return the column that represents values.
-    IColumn & getNestedColumn() { return nested_column->assumeMutableRef(); }
+    IColumn & getNestedColumn() { return *nested_column; }
     const IColumn & getNestedColumn() const { return *nested_column; }
 
     const ColumnPtr & getNestedColumnPtr() const { return nested_column; }
 
     /// Return the column that represents the byte map.
-    //ColumnPtr & getNullMapColumnPtr() { return null_map; }
     const ColumnPtr & getNullMapColumnPtr() const { return null_map; }
 
-    ColumnUInt8 & getNullMapColumn() { return static_cast<ColumnUInt8 &>(null_map->assumeMutableRef()); }
+    ColumnUInt8 & getNullMapColumn() { return static_cast<ColumnUInt8 &>(*null_map); }
     const ColumnUInt8 & getNullMapColumn() const { return static_cast<const ColumnUInt8 &>(*null_map); }
 
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }
@@ -134,8 +133,8 @@ public:
     void checkConsistency() const;
 
 private:
-    ColumnPtr nested_column;
-    ColumnPtr null_map;
+    WrappedPtr nested_column;
+    WrappedPtr null_map;
 
     template <bool negative>
     void applyNullMapImpl(const ColumnUInt8 & map);

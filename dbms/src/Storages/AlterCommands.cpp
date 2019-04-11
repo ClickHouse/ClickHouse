@@ -59,7 +59,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
 
         if (command_ast->column)
             command.after_column = *getIdentifierName(command_ast->column);
@@ -105,7 +105,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
 
         if (ast_col_decl.codec)
-            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+            command.codec = compression_codec_factory.get(ast_col_decl.codec, command.data_type);
 
         command.if_exists = command_ast->if_exists;
 
@@ -190,7 +190,13 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
         ColumnDescription & column = columns_description.get(column_name);
 
         if (codec)
+        {
+            /// User doesn't specify data type, it means that datatype doesn't change
+            /// let's use info about old type
+            if (data_type == nullptr)
+                codec->useInfoAboutType(column.type);
             column.codec = codec;
+        }
 
         if (!is_mutable())
         {
@@ -205,7 +211,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (!primary_key_ast)
+        if (!primary_key_ast && order_by_ast)
         {
             /// Primary and sorting key become independent after this ALTER so we have to
             /// save the old ORDER BY expression as the new primary key.

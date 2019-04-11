@@ -6,7 +6,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>

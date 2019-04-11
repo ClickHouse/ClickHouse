@@ -82,5 +82,8 @@ target_link_libraries (allocator PRIVATE clickhouse_common_io)
 add_executable (cow_columns cow_columns.cpp)
 target_link_libraries (cow_columns PRIVATE clickhouse_common_io)
 
+add_executable (cow_compositions cow_compositions.cpp)
+target_link_libraries (cow_compositions PRIVATE clickhouse_common_io)
+
 add_executable (stopwatch stopwatch.cpp)
 target_link_libraries (stopwatch PRIVATE clickhouse_common_io)

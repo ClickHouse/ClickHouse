@@ -6,7 +6,7 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 
 
 namespace ProfileEvents

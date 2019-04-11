@@ -117,7 +117,7 @@ CREATE TABLE timeseries_example
     dt Date,
     ts DateTime,
     path String,
-    value Float32 CODEC(Delta(2), ZSTD)
+    value Float32 CODEC(Delta, ZSTD)
 )
 ENGINE = MergeTree
 PARTITION BY dt

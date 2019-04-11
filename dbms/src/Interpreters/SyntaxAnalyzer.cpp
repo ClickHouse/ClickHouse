@@ -1,7 +1,7 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ArrayJoinedColumnsVisitor.h>
@@ -123,23 +123,68 @@ bool hasArrayJoin(const ASTPtr & ast)
     return false;
 }
 
+/// Keep number of columns for 'GLOBAL IN (SELECT 1 AS a, a)'
+void renameDuplicatedColumns(const ASTSelectQuery * select_query)
+{
+    ASTs & elements = select_query->select()->children;
+
+    std::set<String> all_column_names;
+    std::set<String> assigned_column_names;
+
+    for (auto & expr : elements)
+        all_column_names.insert(expr->getAliasOrColumnName());
+
+    for (auto & expr : elements)
+    {
+        auto name = expr->getAliasOrColumnName();
+
+        if (!assigned_column_names.insert(name).second)
+        {
+            size_t i = 1;
+            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+                ++i;
+
+            name = name + "_" + toString(i);
+            expr = expr->clone();   /// Cancels fuse of the same expressions in the tree.
+            expr->setAlias(name);
+
+            all_column_names.insert(name);
+            assigned_column_names.insert(name);
+        }
+    }
+}
+
 /// Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
-void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns)
+/// Also we have to remove duplicates in case of GLOBAL subqueries. Their results are placed into tables so duplicates are inpossible.
+void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns, bool remove_dups)
 {
-    if (required_result_columns.empty())
-        return;
+    ASTs & elements = select_query->select()->children;
 
-    ASTs & elements = select_query->select_expression_list->children;
+    std::map<String, size_t> required_columns_with_duplicate_count;
+
+    if (!required_result_columns.empty())
+    {
+        /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
+        for (const auto & name : required_result_columns)
+        {
+            if (remove_dups)
+                required_columns_with_duplicate_count[name] = 1;
+            else
+                ++required_columns_with_duplicate_count[name];
+        }
+    }
+    else if (remove_dups)
+    {
+        /// Even if we have no requirements there could be duplicates cause of asterisks. SELECT *, t.*
+        for (const auto & elem : elements)
+            required_columns_with_duplicate_count.emplace(elem->getAliasOrColumnName(), 1);
+    }
+    else
+        return;
 
     ASTs new_elements;
     new_elements.reserve(elements.size());
-
-    /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
-    /// In that case we keep them exactly same number of times.
-    std::map<String, size_t> required_columns_with_duplicate_count;
-    for (const auto & name : required_result_columns)
-        ++required_columns_with_duplicate_count[name];
 
     for (const auto & elem : elements)
     {
@@ -210,7 +255,7 @@ const std::unordered_set<String> possibly_injective_function_names
 /// Eliminates injective function calls and constant expressions from group by statement.
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
-    if (!select_query->group_expression_list)
+    if (!select_query->groupBy())
         return;
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
@@ -218,7 +263,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         return ast->as<ASTLiteral>();
     };
 
-    auto & group_exprs = select_query->group_expression_list->children;
+    auto & group_exprs = select_query->groupBy()->children;
 
     /// removes expression at index idx by making it last one and calling .pop_back()
     const auto remove_expr_at_index = [&group_exprs] (const size_t idx)
@@ -302,22 +347,22 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
             unused_column_name = toString(unused_column);
         }
 
-        select_query->group_expression_list = std::make_shared<ASTExpressionList>();
-        select_query->group_expression_list->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
+        select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
+        select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
     }
 }
 
 /// Remove duplicate items from ORDER BY.
 void optimizeOrderBy(const ASTSelectQuery * select_query)
 {
-    if (!select_query->order_expression_list)
+    if (!select_query->orderBy())
         return;
 
     /// Make unique sorting conditions.
     using NameAndLocale = std::pair<String, String>;
     std::set<NameAndLocale> elems_set;
 
-    ASTs & elems = select_query->order_expression_list->children;
+    ASTs & elems = select_query->orderBy()->children;
     ASTs unique_elems;
     unique_elems.reserve(elems.size());
 
@@ -331,18 +376,18 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
     }
 
     if (unique_elems.size() < elems.size())
-        elems = unique_elems;
+        elems = std::move(unique_elems);
 }
 
 /// Remove duplicate items from LIMIT BY.
 void optimizeLimitBy(const ASTSelectQuery * select_query)
 {
-    if (!select_query->limit_by_expression_list)
+    if (!select_query->limitBy())
         return;
 
     std::set<String> elems_set;
 
-    ASTs & elems = select_query->limit_by_expression_list->children;
+    ASTs & elems = select_query->limitBy()->children;
     ASTs unique_elems;
     unique_elems.reserve(elems.size());
 
@@ -353,7 +398,7 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
     }
 
     if (unique_elems.size() < elems.size())
-        elems = unique_elems;
+        elems = std::move(unique_elems);
 }
 
 /// Remove duplicated columns from USING(...).
@@ -645,6 +690,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     if (select_query)
     {
+        if (remove_duplicates)
+            renameDuplicatedColumns(select_query);
+
         if (const ASTTablesInSelectQueryElement * node = select_query->join())
         {
             if (settings.enable_optimize_predicate_expression)
@@ -688,7 +736,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
     if (select_query)
-        removeUnneededColumnsFromSelectClause(select_query, required_result_columns);
+        removeUnneededColumnsFromSelectClause(select_query, required_result_columns, remove_duplicates);
 
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth);
