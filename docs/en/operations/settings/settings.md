@@ -142,23 +142,23 @@ If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception
 
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
-Turns on the full SQL parser if the fast stream parser can't parse the data. This setting is used only for [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
+Turns on the full SQL parser if the fast stream parser can't parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format during data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
 
 Possible values:
 
-- 0 — The functionality is turned off.
+- 0 — Functionality is turned off.
 
     In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
 
-- 1 — The functionality is turned on.
+- 1 — Functionality is turned on.
 
-    In this case, you can use an SQL expression as a value, but ClickHouse inserts the data much slower this way. If you insert only formatted data, then ClickHouse behaves as the setting value is 0.
+    In this case, you can use an SQL expression as a value, but data insertion is much slower this way. If you insert only formatted data, then ClickHouse behaves as if the setting value is 0.
 
 Default value: 1.
 
 **Example of Use**
 
-Let's try to insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
+Insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
 
 ```sql
 SET input_format_values_interpret_expressions = 0;
@@ -175,7 +175,7 @@ INSERT INTO datetime_t VALUES (now())
 Ok.
 ```
 
-The last query is equivalent to the following.
+The last query is equivalent to the following:
 
 ```sql
 SET input_format_values_interpret_expressions = 0;
@@ -189,7 +189,7 @@ Ok.
 
 Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
 
-When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
+When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
 
 When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
 
