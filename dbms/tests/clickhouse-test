@@ -17,18 +17,10 @@ from subprocess import CalledProcessError
 from datetime import datetime
 from time import sleep
 from errno import ESRCH
-from termcolor import colored
+import termcolor
 from random import random
 import commands
 
-
-OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
-CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
-
-MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", "red", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
 MESSAGES_TO_RETRY = [
     "DB::Exception: ZooKeeper session has been expired",
@@ -98,6 +90,20 @@ def get_server_pid(server_tcp_port):
 def main(args):
 
     SERVER_DIED = False
+
+    def colored(text, color=None, on_color=None, attrs=None):
+           if sys.stdout.isatty() or args.force_color:
+               return termcolor.colored(text, color, on_color, attrs)
+           else:
+               return text
+
+    OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
+    CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
+
+    MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", "red", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
     def is_data_present():
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
@@ -433,6 +439,7 @@ if __name__ == '__main__':
     parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
+    parser.add_argument('--force-color', action='store_true', default=False)
 
     parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
     parser.add_argument('--skip', nargs='+', help="Skip these tests")

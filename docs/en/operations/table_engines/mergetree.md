@@ -60,18 +60,16 @@ For a description of request parameters, see [request description](../../query_l
 
 - `PRIMARY KEY` - The primary key if it [differs from the sorting key](mergetree.md).
 
-    By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause).
-    Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
+    By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
 - `SAMPLE BY` — An expression for sampling.
 
-    If a sampling expression is used, the primary key must contain it. Example:  
-    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
     - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information refer the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in the "Server configuration parameters" chapter.
-    - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation required for using of the direct I/O access to the storage disk. During the merging of the data parts, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, thеn ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk. If `min_merge_bytes_to_use_direct_io = 0`, then the direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
+    - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation required for using of the direct I/O access to the storage disk. During the merging of the data parts, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, then ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk. If `min_merge_bytes_to_use_direct_io = 0`, then the direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
 
 **Example of sections setting**
 
@@ -192,7 +190,7 @@ added dimensions.
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient
 range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER of the sorting key](../../query_language/alter.md) is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts don't need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the just added column, the data at the moment of table modification is sorted by both the old and the new sorting key. 
+[ALTER of the sorting key](../../query_language/alter.md) is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts don't need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the just added column, the data at the moment of table modification is sorted by both the old and the new sorting key.
 
 ### Use of Indexes and Partitions in Queries
 
@@ -240,11 +238,11 @@ INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 
 For tables from the `*MergeTree` family data skipping indices can be specified.
 
-These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (size of the granule is specified using `index_granularity` setting in the table engine),
-then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where `where` query cannot be satisfied.
+These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules (size of the granule is specified using `index_granularity` setting in the table engine), then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where `where` query cannot be satisfied.
 
 
-Example
+**Example**
+
 ```sql
 CREATE TABLE table_name
 (
@@ -259,6 +257,7 @@ CREATE TABLE table_name
 ```
 
 Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in following queries.
+
 ```sql
 SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
@@ -266,22 +265,26 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 #### Available Types of Indices
 
-* `minmax`
-Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of the data like the primary key.
+- `minmax`
 
-* `set(max_rows)`
-Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"), use them to check if the `WHERE` expression is not satisfiable on a block of the data.  
+    Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of the data like the primary key.
 
-* `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
-Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from block of data. Works only with strings.
-Can be used for optimization of `equals`, `like` and `in` expressions.
-`n` -- ngram size,
-`size_of_bloom_filter_in_bytes` -- bloom filter size in bytes (you can use big values here, for example, 256 or 512, because it can be compressed well),
-`number_of_hash_functions` -- number of hash functions used in bloom filter,
-`random_seed` -- seed for bloom filter hash functions.
+- `set(max_rows)`
 
-* `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
-The same as `ngrambf_v1`, but instead of ngrams stores tokens, which are sequences separated by non-alphanumeric characters.
+    Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"), use them to check if the `WHERE` expression is not satisfiable on a block of the data.  
+
+- `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+
+    Stores [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all ngrams from block of data. Works only with strings. Can be used for optimization of `equals`, `like` and `in` expressions.
+
+    - `n` — ngram size,
+    - `size_of_bloom_filter_in_bytes` — bloom filter size in bytes (you can use big values here, for example, 256 or 512, because it can be compressed well),
+    - `number_of_hash_functions` — number of hash functions used in bloom filter,
+    - `random_seed` — seed for bloom filter hash functions.
+
+- `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+
+    The same as `ngrambf_v1`, but instead of ngrams stores tokens, which are sequences separated by non-alphanumeric characters.
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
@@ -289,12 +292,10 @@ INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100
 INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
 ```
 
-
 ## Concurrent Data Access
 
 For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
 
 Reading from a table is automatically parallelized.
-
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
