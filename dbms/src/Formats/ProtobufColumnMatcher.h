@@ -77,7 +77,7 @@ namespace ProtobufColumnMatcher
 
     namespace details
     {
-        void throwNoCommonColumns();
+        [[noreturn]] void throwNoCommonColumns();
 
         class ColumnNameMatcher
         {
