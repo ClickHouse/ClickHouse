@@ -75,7 +75,7 @@ BlockInputStreams StorageView::read(
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
 {
-    auto * select_element = select_query->tables->children[0]->as<ASTTablesInSelectQueryElement>();
+    auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
