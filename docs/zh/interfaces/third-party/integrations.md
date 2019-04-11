@@ -18,6 +18,9 @@
 - 对象存储
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- 容器编排
+    - [Kubernetes](https://kubernetes.io)
+        - [clickhouse-operator](https://github.com/Altinity/clickhouse-operator)
 - 配置管理
     - [puppet](https://puppet.com)
         - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
@@ -33,6 +36,8 @@
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    - [Zabbix](https://www.zabbix.com)
+        - [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     - [Sematext](https://sematext.com/)
         - [clickhouse积分](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - 记录
