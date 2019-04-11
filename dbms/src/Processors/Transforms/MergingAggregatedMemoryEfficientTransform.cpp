@@ -197,7 +197,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
             if (has_two_level && !single_level_chunks.empty())
                 return Status::Ready;
 
-            if (need_input(input_num))
+            if (!in->isFinished() && need_input(input_num))
                 need_data = true;
         }
 
