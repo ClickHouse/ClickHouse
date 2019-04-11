@@ -7,7 +7,7 @@
 * Added hyperscan fuzzy search. [#4841](https://github.com/yandex/ClickHouse/pull/4841) ([Danila Kutenin](https://github.com/danlark1))
 * A new type of data skipping indices based on bloom filters (can be used for `equal`, `in` and `like` functions). [#4499](https://github.com/yandex/ClickHouse/pull/4499) ([Nikita Vasilev](https://github.com/nikvas0))
 * Added `ASOF JOIN` which allows to run queries that join to the most recent value known. [#4774](https://github.com/yandex/ClickHouse/pull/4774) ([Martijn Bakker](https://github.com/Gladdy))
-* Rewrite multiple `COMMA JOINS` to `CROSS JOINS`. Then rewrite them to INNER JOINs if possible. [#4661](https://github.com/yandex/ClickHouse/pull/4661) ([Artem Zuikov](https://github.com/4ertus2))
+* Rewrite multiple `COMMA JOIN` to `CROSS JOIN`. Then rewrite them to `INNER JOIN` if possible. [#4661](https://github.com/yandex/ClickHouse/pull/4661) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Improvement
 
@@ -19,7 +19,7 @@
 * Fixed flicker of progress bar in clickhouse-client. The issue was most noticeable when using `FORMAT Null` with streaming queries. [#4811](https://github.com/yandex/ClickHouse/pull/4811) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Allow to disable functions with `hyperscan` library on per user basis to limit potentially excessive and uncontrolled resource usage. [#4816](https://github.com/yandex/ClickHouse/pull/4816) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Add version number logging in all errors. [#4824](https://github.com/yandex/ClickHouse/pull/4824) ([proller](https://github.com/proller))
-* Hyperscan API requires string sizes to fit in unsigned int. Throw an exception if not. Added restriction to the multiSearch functions. [#4834](https://github.com/yandex/ClickHouse/pull/4834) ([Danila Kutenin](https://github.com/danlark1))
+* Added restriction to the `multiSearch` functions which requires string size to fit into `unsigned int`. [#4834](https://github.com/yandex/ClickHouse/pull/4834) ([Danila Kutenin](https://github.com/danlark1))
 * Adapt the ASOF join strictness to support multiple column types. [#4863](https://github.com/yandex/ClickHouse/pull/4863) ([Martijn Bakker](https://github.com/Gladdy))
 * Improved usage of scratch space and error handling Hyperscan. [#4866](https://github.com/yandex/ClickHouse/pull/4866) ([Danila Kutenin](https://github.com/danlark1))
 * Fill `system.graphite_detentions` from a table config of `*GraphiteMergeTree` engine tables. [#4584](https://github.com/yandex/ClickHouse/pull/4584) ([Mikhail f. Shiryaev](https://github.com/Felixoid))
@@ -43,10 +43,10 @@
 * Fix recheck parts in ReplicatedMergeTreeAlterThread in case of error. [#4772](https://github.com/yandex/ClickHouse/pull/4772) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Arithmetic operations on intermediate aggregate function states were not working for constant arguments (such as subquery results). [#4776](https://github.com/yandex/ClickHouse/pull/4776) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Always backquote column names in metadata. Otherwise it's impossible to create a table with column named `index` (server won't restart due to malformed `ATTACH` query in metadata). [#4782](https://github.com/yandex/ClickHouse/pull/4782) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fix crash in `ALTER ... MODIFY ORDER BY` on Distributed table. [#4790](https://github.com/yandex/ClickHouse/pull/4790) ([TCeason](https://github.com/TCeason))
+* Fix crash in `ALTER ... MODIFY ORDER BY` on `Distributed` table. [#4790](https://github.com/yandex/ClickHouse/pull/4790) ([TCeason](https://github.com/TCeason))
 * Fix segfault in `JOIN ON` with enabled `enable_optimize_predicate_expression`. [#4794](https://github.com/yandex/ClickHouse/pull/4794) ([Winter Zhang](https://github.com/zhang2014))
 * Fix bug with adding an extraneous row after consuming a protobuf message from Kafka. [#4808](https://github.com/yandex/ClickHouse/pull/4808) ([Vitaly Baranov](https://github.com/vitlibar))
-* Fix crash of JOIN on not-nullable vs nullable column. Fix NULLs in right keys in ANY JOIN + join_use_nulls. [#4815](https://github.com/yandex/ClickHouse/pull/4815) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix crash of `JOIN` on not-nullable vs nullable column. Fix NULLs in right keys in `ANY JOIN` + `join_use_nulls`. [#4815](https://github.com/yandex/ClickHouse/pull/4815) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix segmentation fault in `clickhouse-copier`. [#4835](https://github.com/yandex/ClickHouse/pull/4835) ([proller](https://github.com/proller))
 * Fixed race condition in `SELECT` from `system.tables` if the table is renamed or altered concurrently. [#4836](https://github.com/yandex/ClickHouse/pull/4836) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed data race when fetching data part that is already obsolete. [#4839](https://github.com/yandex/ClickHouse/pull/4839) ([alexey-milovidov](https://github.com/alexey-milovidov))
