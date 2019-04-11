@@ -5,9 +5,9 @@ namespace DB
 {
 
 LimitTransform::LimitTransform(
-    Block header, size_t limit, size_t offset,
+    const Block & header, size_t limit, size_t offset,
     bool always_read_till_end, bool do_count_rows_before_limit)
-    : IProcessor({std::move(header)}, {std::move(header)})
+    : IProcessor({header}, {header})
     , input(inputs.front()), output(outputs.front())
     , limit(limit), offset(offset)
     , always_read_till_end(always_read_till_end)
