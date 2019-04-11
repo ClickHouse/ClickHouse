@@ -79,3 +79,6 @@
 [submodule "contrib/hyperscan"]
 	path = contrib/hyperscan
 	url = https://github.com/ClickHouse-Extras/hyperscan.git
+[submodule "contrib/libunwind"]
+	path = contrib/libunwind
+	url = https://github.com/ClickHouse-Extras/libunwind.git
