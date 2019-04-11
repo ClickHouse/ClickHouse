@@ -1,4 +1,5 @@
 #include <Processors/Port.h>
+#include <Processors/IProcessor.h>
 
 namespace DB
 {
@@ -8,7 +9,10 @@ void connect(OutputPort & output, InputPort & input)
     if (input.state || output.state)
         throw Exception("Port is already connected", ErrorCodes::LOGICAL_ERROR);
 
-    assertBlocksHaveEqualStructure(input.getHeader(), output.getHeader(), "connect");
+    auto out_name = output.getProcessor().getName();
+    auto in_name = input.getProcessor().getName();
+
+    assertBlocksHaveEqualStructure(input.getHeader(), output.getHeader(), " function connect between " + out_name + " and " + in_name);
 
     input.output_port = &output;
     output.input_port = &input;
