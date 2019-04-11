@@ -19,6 +19,9 @@
 - Object storages
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- Container orchestration
+    - [Kubernetes](https://kubernetes.io)
+        - [clickhouse-operator](https://github.com/Altinity/clickhouse-operator)
 - Configuration management
     - [puppet](https://puppet.com)
         - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
