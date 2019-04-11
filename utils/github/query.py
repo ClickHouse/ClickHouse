@@ -52,6 +52,7 @@ class Query:
 
         return labels
 
+    _MAX_PULL_REQUESTS = 5
     _PULL_REQUESTS = '''
     {{
         repository(owner: "yandex" name: "ClickHouse") {{
@@ -66,7 +67,7 @@ class Query:
                             }}
                             nodes {{
                                 oid
-                                associatedPullRequests(first: 5) {{
+                                associatedPullRequests(first: {max_pull_requests}) {{
                                     totalCount
                                     nodes {{
                                         ... on PullRequest {{
@@ -79,6 +80,9 @@ class Query:
                                             mergeCommit {{
                                                 oid
                                                 author {{
+                                                    user {{
+                                                        id
+                                                    }}
                                                     name
                                                 }}
                                             }}
@@ -103,18 +107,20 @@ class Query:
         }}
     }}
     '''
-    def get_pull_requests(self, before_commit):
+    def get_pull_requests(self, before_commit, author):
         '''Get all merged pull-requests from the HEAD of default branch to the last commit (excluding)
 
         Args:
             before_commit (string-convertable): commit sha of the last commit (excluding)
+            author (string): filter pull-requests by author name
 
         Returns:
             pull_requests: a list of JSON nodes with pull-requests' details
         '''
         pull_requests = []
-        query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size, next='')
+        query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size, max_pull_requests=Query._MAX_PULL_REQUESTS, next='')
         not_end = True
+        user_id = self.get_user(author) if author else None
 
         while not_end:
             result = self._run(query)['data']['repository']['defaultBranchRef']
@@ -127,17 +133,18 @@ class Query:
                     not_end = False
                     break
 
-                # TODO: use helper to fetch all pull-requests that were merged in a single commit.
-                assert commit['associatedPullRequests']['totalCount'] <= self._max_page_size, \
+                # TODO: fetch all pull-requests that were merged in a single commit.
+                assert commit['associatedPullRequests']['totalCount'] <= Query._MAX_PULL_REQUESTS, \
                     f'there are {commit["associatedPullRequests"]["totalCount"]} pull-requests merged in commit {commit["oid"]}'
 
                 for pull_request in commit['associatedPullRequests']['nodes']:
                     if(pull_request['baseRepository']['nameWithOwner'] == 'yandex/ClickHouse' and
                        pull_request['baseRefName'] == default_branch_name and
-                       pull_request['mergeCommit']['oid'] == commit['oid']):
+                       pull_request['mergeCommit']['oid'] == commit['oid'] and
+                       (not user_id or pull_request['mergeCommit']['author']['user']['id'] == user_id)):
                         pull_requests.append(pull_request)
 
-            query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size, next=f'after: "{result["pageInfo"]["endCursor"]}"')
+            query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size, max_pull_requests=Query._MAX_PULL_REQUESTS, next=f'after: "{result["pageInfo"]["endCursor"]}"')
 
         return pull_requests
 
@@ -157,6 +164,18 @@ class Query:
             name (string): branch name
         '''
         return self._run(Query._DEFAULT)['data']['repository']['defaultBranchRef']['name']
+
+    _USER = '''
+    {{
+        user(login: "{login}") {{
+            id
+        }}
+    }}
+    '''
+    def get_user(self, login):
+        '''Returns id by user login
+        '''
+        return self._run(Query._USER.format(login=login))['data']['user']['id']
 
     def _run(self, query):
         from requests.adapters import HTTPAdapter
