@@ -285,19 +285,19 @@ KeyCondition::KeyCondition(
 
     /// Trasform WHERE section to Reverse Polish notation
     const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (select.where_expression)
+    if (select.where())
     {
-        traverseAST(select.where_expression, context, block_with_constants);
+        traverseAST(select.where(), context, block_with_constants);
 
-        if (select.prewhere_expression)
+        if (select.prewhere())
         {
-            traverseAST(select.prewhere_expression, context, block_with_constants);
+            traverseAST(select.prewhere(), context, block_with_constants);
             rpn.emplace_back(RPNElement::FUNCTION_AND);
         }
     }
-    else if (select.prewhere_expression)
+    else if (select.prewhere())
     {
-        traverseAST(select.prewhere_expression, context, block_with_constants);
+        traverseAST(select.prewhere(), context, block_with_constants);
     }
     else
     {

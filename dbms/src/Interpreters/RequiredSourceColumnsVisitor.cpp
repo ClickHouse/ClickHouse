@@ -114,7 +114,7 @@ void RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & data)
 void RequiredSourceColumnsMatcher::visit(ASTSelectQuery & select, const ASTPtr &, Data & data)
 {
     /// special case for top-level SELECT items: they are publics
-    for (auto & node : select.select_expression_list->children)
+    for (auto & node : select.select()->children)
     {
         if (const auto * identifier = node->as<ASTIdentifier>())
             data.addColumnIdentifier(*identifier);
@@ -124,14 +124,11 @@ void RequiredSourceColumnsMatcher::visit(ASTSelectQuery & select, const ASTPtr &
 
     std::vector<ASTPtr *> out;
     for (auto & node : select.children)
-        if (node != select.select_expression_list)
-            out.push_back(&node);
+        if (node != select.select())
+            Visitor(data).visit(node);
 
     /// revisit select_expression_list (with children) when all the aliases are set
-    out.push_back(&select.select_expression_list);
-
-    for (ASTPtr * add_node : out)
-        Visitor(data).visit(*add_node);
+    Visitor(data).visit(select.refSelect());
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
