@@ -71,8 +71,8 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
-        if (select.tables)
-            tryVisit<ASTTablesInSelectQuery>(select.tables);
+        if (select.tables())
+            tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
         visitChildren(select);
     }

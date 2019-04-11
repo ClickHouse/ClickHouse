@@ -91,19 +91,11 @@ private:
         if (data.table_columns.empty())
             return;
 
-        Visitor(data).visit(node.select_expression_list);
+        Visitor(data).visit(node.refSelect());
         if (!data.new_select_expression_list)
             return;
 
-        size_t pos = 0;
-        for (; pos < node.children.size(); ++pos)
-            if (node.children[pos].get() == node.select_expression_list.get())
-                break;
-        if (pos == node.children.size())
-            throw Exception("No select expressions list in select", ErrorCodes::NOT_IMPLEMENTED);
-
-        node.select_expression_list = data.new_select_expression_list;
-        node.children[pos] = node.select_expression_list;
+        node.setExpression(ASTSelectQuery::Expression::SELECT, std::move(data.new_select_expression_list));
     }
 
     static void visit(ASTExpressionList & node, ASTPtr &, Data & data)
@@ -267,10 +259,10 @@ struct AppendSemanticVisitorData
 
     void visit(ASTSelectQuery & select, ASTPtr &)
     {
-        if (done || !rev_aliases || !select.select_expression_list)
+        if (done || !rev_aliases || !select.select())
             return;
 
-        for (auto & child : select.select_expression_list->children)
+        for (auto & child : select.select()->children)
         {
             if (auto * node = child->as<ASTAsterisk>())
                 AsteriskSemantic::setAliases(*node, rev_aliases);
@@ -305,10 +297,10 @@ struct RewriteTablesVisitorData
 
 bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
-    if (!select.tables)
+    if (!select.tables())
         return false;
 
-    const auto * tables = select.tables->as<ASTTablesInSelectQuery>();
+    const auto * tables = select.tables()->as<ASTTablesInSelectQuery>();
     if (!tables)
         return false;
 
@@ -316,28 +308,47 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
     if (num_tables <= 2)
         return false;
 
+    size_t num_array_join = 0;
+    size_t num_using = 0;
+
     table_expressions.reserve(num_tables);
     for (size_t i = 0; i < num_tables; ++i)
     {
         const auto * table = tables->children[i]->as<ASTTablesInSelectQueryElement>();
-        if (table && table->table_expression)
+        if (!table)
+            throw Exception("Table expected", ErrorCodes::LOGICAL_ERROR);
+
+        if (table->table_expression)
             if (const auto * expression = table->table_expression->as<ASTTableExpression>())
                 table_expressions.push_back(expression);
         if (!i)
             continue;
 
-        if (!table || !table->table_join)
-            throw Exception("Multiple JOIN expects joined tables", ErrorCodes::LOGICAL_ERROR);
+        if (!table->table_join && !table->array_join)
+            throw Exception("Joined table expected", ErrorCodes::LOGICAL_ERROR);
+
+        if (table->array_join)
+        {
+            ++num_array_join;
+            continue;
+        }
 
         const auto & join = table->table_join->as<ASTTableJoin &>();
         if (isComma(join.kind))
             throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
 
-        /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
         if (join.using_expression_list)
-            throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
+            ++num_using;
     }
 
+    if (num_tables - num_array_join <= 2)
+        return false;
+
+    /// it's not trivial to support mix of JOIN ON & JOIN USING cause of short names
+    if (num_using)
+        throw Exception("Multiple JOIN does not support USING", ErrorCodes::NOT_IMPLEMENTED);
+    if (num_array_join)
+        throw Exception("Multiple JOIN does not support mix with ARRAY JOINs", ErrorCodes::NOT_IMPLEMENTED);
     return true;
 }
 
@@ -369,21 +380,21 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     ExtractAsterisksVisitor(asterisks_data).visit(ast);
 
     ColumnAliasesVisitor::Data aliases_data(getDatabaseAndTables(select, ""));
-    if (select.select_expression_list)
+    if (select.select())
     {
         aliases_data.public_names = true;
-        ColumnAliasesVisitor(aliases_data).visit(select.select_expression_list);
+        ColumnAliasesVisitor(aliases_data).visit(select.refSelect());
         aliases_data.public_names = false;
     }
-    if (select.where_expression)
-        ColumnAliasesVisitor(aliases_data).visit(select.where_expression);
-    if (select.prewhere_expression)
-        ColumnAliasesVisitor(aliases_data).visit(select.prewhere_expression);
-    if (select.having_expression)
-        ColumnAliasesVisitor(aliases_data).visit(select.having_expression);
+    if (select.where())
+        ColumnAliasesVisitor(aliases_data).visit(select.refWhere());
+    if (select.prewhere())
+        ColumnAliasesVisitor(aliases_data).visit(select.refPrewhere());
+    if (select.having())
+        ColumnAliasesVisitor(aliases_data).visit(select.refHaving());
 
     /// JOIN sections
-    for (auto & child : select.tables->children)
+    for (auto & child : select.tables()->children)
     {
         auto * table = child->as<ASTTablesInSelectQueryElement>();
         if (table->table_join)
@@ -399,7 +410,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     auto rev_aliases = std::make_shared<RevertedAliases>();
     rev_aliases->swap(aliases_data.rev_aliases);
 
-    auto & src_tables = select.tables->children;
+    auto & src_tables = select.tables()->children;
     ASTPtr left_table = src_tables[0];
 
     for (size_t i = 1; i < src_tables.size() - 1; ++i)
@@ -415,7 +426,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
 
     /// replace tables in select with generated two-table join
     RewriteVisitor::Data visitor_data{left_table, src_tables.back()};
-    RewriteVisitor(visitor_data).visit(select.tables);
+    RewriteVisitor(visitor_data).visit(select.refTables());
 
     data.done = true;
 }
