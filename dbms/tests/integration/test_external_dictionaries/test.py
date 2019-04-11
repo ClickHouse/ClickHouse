@@ -5,7 +5,7 @@ import time
 from helpers.cluster import ClickHouseCluster
 from dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from external_sources import SourceMySQL, SourceClickHouse, SourceFile, SourceExecutableCache, SourceExecutableHashed, SourceMongo
-from external_sources import SourceHTTP, SourceHTTPS
+from external_sources import SourceHTTP, SourceHTTPS, SourceCassandra
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -79,6 +79,7 @@ LAYOUTS = [
 ]
 
 SOURCES = [
+    SourceCassandra("Cassandra", "localhost", "6340", "cassandra1", "6349", "", ""),
     SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
     SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", ""),
@@ -120,7 +121,7 @@ def setup_module(module):
     for fname in os.listdir(dict_configs_path):
         main_configs.append(os.path.join(dict_configs_path, fname))
     cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True)
+    node = cluster.add_instance('node', main_configs=main_configs, with_mysql=True, with_mongo=True, with_cassandra=True)
     cluster.add_instance('clickhouse1')
 
 @pytest.fixture(scope="module")
