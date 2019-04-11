@@ -677,7 +677,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (prepared_input)
         {
             if constexpr (pipeline_with_processors)
-                pipeline.init({std::make_shared<SourceFromInputStream>(source_header, prepared_input)});
+                pipeline.init({std::make_shared<SourceFromInputStream>(std::make_shared<InputStreamHolder>(prepared_input))});
             else
                 pipeline.streams.push_back(prepared_input);
         }
@@ -779,7 +779,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
                     if constexpr (pipeline_with_processors)
                     {
-                        auto source = std::make_shared<SourceFromInputStream>(stream->getHeader(), std::move(stream));
+                        auto holder = std::make_shared<InputStreamHolder>(std::move(stream));
+                        auto source = std::make_shared<SourceFromInputStream>(std::move(holder));
                         pipeline.addDelayedStream(source);
                     }
                     else
@@ -1321,13 +1322,20 @@ void InterpreterSelectQuery::executeFetchColumns(
             Processors sources;
             sources.reserve(streams.size());
 
+            InputStreamHolders holders;
+            holders.reserve(streams.size());
+
             for (auto & stream : streams)
-                sources.emplace_back(std::make_shared<SourceFromInputStream>(stream->getHeader(), stream));
+            {
+                auto holder = std::make_shared<InputStreamHolder>(stream);
+                sources.emplace_back(std::make_shared<SourceFromInputStream>(holder));
+                holders.emplace_back(std::move(holder));
+            }
 
             pipeline.init(std::move(sources));
 
             if (processing_stage == QueryProcessingStage::Complete)
-                pipeline.addTotals(std::make_shared<SourceFromTotals>(streams));
+                pipeline.addTotals(std::make_shared<SourceFromTotals>(std::move(holders)));
         }
         else
             pipeline.streams = std::move(streams);
