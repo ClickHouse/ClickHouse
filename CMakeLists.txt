@@ -217,13 +217,15 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
 
     if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
         # TODO: Allow to use non-static library as well.
-        set (UNWIND_LIBRARY_PATH "lib/libunwind${${CMAKE_POSTFIX_VARIABLE}}.a")
+        set (EXCEPTION_HANDLING_LIBRARY "lib/libunwind${${CMAKE_POSTFIX_VARIABLE}}.a")
+    else ()
+        set (EXCEPTION_HANDLING_LIBRARY "-lgcc_eh")
     endif ()
 
     if (USE_LIBCXX)
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi -lgcc_eh ${UNWIND_LIBRARY_PATH} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh ${UNWIND_LIBRARY_PATH} -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ ${EXCEPTION_HANDLING_LIBRARY} -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     endif ()
 
     # Linking with GLIBC prevents portability of binaries to older systems.
