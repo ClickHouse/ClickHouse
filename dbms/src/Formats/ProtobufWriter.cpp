@@ -334,14 +334,14 @@ public:
     virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) override { cannotConvertType("AggregateFunction"); }
 
 protected:
-    void cannotConvertType(const String & type_name)
+    [[noreturn]] void cannotConvertType(const String & type_name)
     {
         throw Exception(
             "Could not convert data type '" + type_name + "' to protobuf type '" + field->type_name() + "' (field: " + field->name() + ")",
             ErrorCodes::PROTOBUF_BAD_CAST);
     }
 
-    void cannotConvertValue(const String & value)
+    [[noreturn]] void cannotConvertValue(const String & value)
     {
         throw Exception(
             "Could not convert value '" + value + "' to protobuf type '" + field->type_name() + "' (field: " + field->name() + ")",

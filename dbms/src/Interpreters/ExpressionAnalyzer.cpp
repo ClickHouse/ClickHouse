@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Columns/IColumn.h>
 
@@ -406,7 +407,7 @@ void ExpressionAnalyzer::getAggregates(const ASTPtr & ast, ExpressionActionsPtr 
 
             getRootActions(arguments[i], true, actions);
             const std::string & name = arguments[i]->getColumnName();
-            types[i] = actions->getSampleBlock().getByName(name).type;
+            types[i] = recursiveRemoveLowCardinality(actions->getSampleBlock().getByName(name).type);
             aggregate.argument_names[i] = name;
         }
 
@@ -974,19 +975,11 @@ void ExpressionAnalyzer::collectUsedColumns()
     RequiredSourceColumnsVisitor::Data columns_context;
     RequiredSourceColumnsVisitor(columns_context).visit(query);
 
-    NameSet required = columns_context.requiredColumns();
+    NameSet source_column_names;
+    for (const auto & column : source_columns)
+        source_column_names.insert(column.name);
 
-#if 0
-    std::cerr << "Query: " << query << std::endl;
-    std::cerr << "CTX: " << columns_context << std::endl;
-    std::cerr << "source_columns: ";
-    for (const auto & name : source_columns)
-        std::cerr << "'" << name.name << "' ";
-    std::cerr << "required: ";
-    for (const auto & pr : required)
-        std::cerr << "'" << pr.first << "' ";
-    std::cerr << std::endl;
-#endif
+    NameSet required = columns_context.requiredColumns();
 
     if (columns_context.has_table_join)
     {
@@ -1013,10 +1006,10 @@ void ExpressionAnalyzer::collectUsedColumns()
         }
     }
 
+    NameSet array_join_sources;
     if (columns_context.has_array_join)
     {
         /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
-        NameSet array_join_sources;
         for (const auto & result_source : syntax->array_join_result_to_source)
             array_join_sources.insert(result_source.second);
 
@@ -1063,15 +1056,39 @@ void ExpressionAnalyzer::collectUsedColumns()
     if (!unknown_required_source_columns.empty())
     {
         std::stringstream ss;
-        ss << "query: '" << query << "' ";
-        ss << columns_context;
-        ss << "source_columns: ";
-        for (const auto & name : source_columns)
-            ss << "'" << name.name << "' ";
+        ss << "Missing columns:";
+        for (const auto & name : unknown_required_source_columns)
+            ss << " '" << name << "'";
+        ss << " while processing query: '" << query << "'";
 
-        throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin()
-            + (select_query && !select_query->tables ? ". Note that there are no tables (FROM clause) in your query" : "")
-            + ", context: " + ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
+        ss << ", required columns:";
+        for (const auto & name : columns_context.requiredColumns())
+            ss << " '" << name << "'";
+
+        if (!source_column_names.empty())
+        {
+            ss << ", source columns:";
+            for (const auto & name : source_column_names)
+                ss << " '" << name << "'";
+        }
+        else
+            ss << ", no source columns";
+
+        if (columns_context.has_table_join)
+        {
+            ss << ", joined columns:";
+            for (const auto & column : analyzedJoin().available_joined_columns)
+                ss << " '" << column.name_and_type.name << "'";
+        }
+
+        if (!array_join_sources.empty())
+        {
+            ss << ", arrayJoin columns:";
+            for (const auto & name : array_join_sources)
+                ss << " '" << name << "'";
+        }
+
+        throw Exception(ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 }
 

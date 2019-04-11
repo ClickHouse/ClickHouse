@@ -1,8 +1,10 @@
 #include <Common/typeid_cast.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/AsteriskSemantic.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -22,10 +24,121 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNKNOWN_IDENTIFIER;
 }
+
+NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 namespace
 {
+
+/// Replace asterisks in select_expression_list with column identifiers
+class ExtractAsterisksMatcher
+{
+public:
+    using Visitor = InDepthNodeVisitor<ExtractAsterisksMatcher, true>;
+
+    struct Data
+    {
+        std::unordered_map<String, NamesAndTypesList> table_columns;
+        std::vector<String> tables_order;
+        std::shared_ptr<ASTExpressionList> new_select_expression_list;
+
+        Data(const Context & context, const std::vector<const ASTTableExpression *> & table_expressions)
+        {
+            tables_order.reserve(table_expressions.size());
+            for (const auto & expr : table_expressions)
+            {
+                if (expr->subquery)
+                {
+                    table_columns.clear();
+                    tables_order.clear();
+                    break;
+                }
+
+                String table_name = DatabaseAndTableWithAlias(*expr, context.getCurrentDatabase()).getQualifiedNamePrefix(false);
+                NamesAndTypesList columns = getNamesAndTypeListFromTableExpression(*expr, context);
+                tables_order.push_back(table_name);
+                table_columns.emplace(std::move(table_name), std::move(columns));
+            }
+        }
+
+        void addTableColumns(const String & table_name)
+        {
+            auto it = table_columns.find(table_name);
+            if (it == table_columns.end())
+                throw Exception("Unknown qualified identifier: " + table_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+
+            for (const auto & column : it->second)
+                new_select_expression_list->children.push_back(
+                    std::make_shared<ASTIdentifier>(std::vector<String>{it->first, column.name}));
+        }
+    };
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return false; }
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * t = ast->as<ASTSelectQuery>())
+            visit(*t, ast, data);
+        if (auto * t = ast->as<ASTExpressionList>())
+            visit(*t, ast, data);
+    }
+
+private:
+    static void visit(ASTSelectQuery & node, ASTPtr &, Data & data)
+    {
+        if (data.table_columns.empty())
+            return;
+
+        Visitor(data).visit(node.select_expression_list);
+        if (!data.new_select_expression_list)
+            return;
+
+        size_t pos = 0;
+        for (; pos < node.children.size(); ++pos)
+            if (node.children[pos].get() == node.select_expression_list.get())
+                break;
+        if (pos == node.children.size())
+            throw Exception("No select expressions list in select", ErrorCodes::NOT_IMPLEMENTED);
+
+        node.select_expression_list = data.new_select_expression_list;
+        node.children[pos] = node.select_expression_list;
+    }
+
+    static void visit(ASTExpressionList & node, ASTPtr &, Data & data)
+    {
+        bool has_asterisks = false;
+        data.new_select_expression_list = std::make_shared<ASTExpressionList>();
+        data.new_select_expression_list->children.reserve(node.children.size());
+
+        for (auto & child : node.children)
+        {
+            if (child->as<ASTAsterisk>())
+            {
+                has_asterisks = true;
+
+                for (auto & table_name : data.tables_order)
+                    data.addTableColumns(table_name);
+            }
+            else if (child->as<ASTQualifiedAsterisk>())
+            {
+                has_asterisks = true;
+
+                if (child->children.size() != 1)
+                    throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
+                ASTIdentifier & identifier = child->children[0]->as<ASTIdentifier &>();
+
+                data.addTableColumns(identifier.name);
+            }
+            else
+                data.new_select_expression_list->children.push_back(child);
+        }
+
+        if (!has_asterisks)
+            data.new_select_expression_list.reset();
+    }
+};
 
 /// Find columns with aliases to push them into rewritten subselects.
 /// Normalize table aliases: table_name.column_name -> table_alias.column_name
@@ -41,7 +154,7 @@ struct ColumnAliasesMatcher
         std::vector<std::pair<ASTIdentifier *, bool>> compound_identifiers;
         std::set<String> allowed_long_names;            /// original names allowed as aliases '--t.x as t.x' (select expressions only).
 
-        Data(std::vector<DatabaseAndTableWithAlias> && tables_)
+        Data(const std::vector<DatabaseAndTableWithAlias> && tables_)
             : tables(tables_)
             , public_names(false)
         {}
@@ -101,7 +214,7 @@ struct ColumnAliasesMatcher
             visit(*t, ast, data);
 
         if (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>())
-            throw Exception("Multiple JOIN do not support asterisks yet", ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception("Multiple JOIN do not support asterisks for complex queries yet", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     static void visit(ASTIdentifier & node, ASTPtr &, Data & data)
@@ -190,7 +303,7 @@ struct RewriteTablesVisitorData
     }
 };
 
-bool needRewrite(ASTSelectQuery & select)
+bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *> & table_expressions)
 {
     if (!select.tables)
         return false;
@@ -203,9 +316,16 @@ bool needRewrite(ASTSelectQuery & select)
     if (num_tables <= 2)
         return false;
 
-    for (size_t i = 1; i < tables->children.size(); ++i)
+    table_expressions.reserve(num_tables);
+    for (size_t i = 0; i < num_tables; ++i)
     {
         const auto * table = tables->children[i]->as<ASTTablesInSelectQueryElement>();
+        if (table && table->table_expression)
+            if (const auto * expression = table->table_expression->as<ASTTableExpression>())
+                table_expressions.push_back(expression);
+        if (!i)
+            continue;
+
         if (!table || !table->table_join)
             throw Exception("Multiple JOIN expects joined tables", ErrorCodes::LOGICAL_ERROR);
 
@@ -223,6 +343,7 @@ bool needRewrite(ASTSelectQuery & select)
 
 using RewriteMatcher = OneTypeMatcher<RewriteTablesVisitorData>;
 using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
+using ExtractAsterisksVisitor = ExtractAsterisksMatcher::Visitor;
 using ColumnAliasesVisitor = InDepthNodeVisitor<ColumnAliasesMatcher, true>;
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
 using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
@@ -236,12 +357,16 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
         visit(*t, ast, data);
 }
 
-void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & data)
+void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     using RevertedAliases = AsteriskSemantic::RevertedAliases;
 
-    if (!needRewrite(select))
+    std::vector<const ASTTableExpression *> table_expressions;
+    if (!needRewrite(select, table_expressions))
         return;
+
+    ExtractAsterisksVisitor::Data asterisks_data(data.context, table_expressions);
+    ExtractAsterisksVisitor(asterisks_data).visit(ast);
 
     ColumnAliasesVisitor::Data aliases_data(getDatabaseAndTables(select, ""));
     if (select.select_expression_list)
