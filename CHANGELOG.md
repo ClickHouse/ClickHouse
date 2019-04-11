@@ -2,9 +2,9 @@
 
 ### New Features
 
-* Hyperscan string search matching was added. [#4780](https://github.com/yandex/ClickHouse/pull/4780) ([Danila Kutenin](https://github.com/danlark1))
+* [Hyperscan](https://github.com/intel/hyperscan) multiple regular expression matching was added (functions `multiMatchAny`, `multiMatchAnyIndex`, `multiFuzzyMatchAny`, `multiFuzzyMatchAnyIndex`). [#4780](https://github.com/yandex/ClickHouse/pull/4780), [#4841](https://github.com/yandex/ClickHouse/pull/4841) ([Danila Kutenin](https://github.com/danlark1))
+* `multiSearchFirstPosition` function was added. [#4780](https://github.com/yandex/ClickHouse/pull/4780) ([Danila Kutenin](https://github.com/danlark1))
 * Implement the predefined expression filter per row for tables. [#4792](https://github.com/yandex/ClickHouse/pull/4792) ([Ivan](https://github.com/abyss7))
-* Added hyperscan fuzzy search. [#4841](https://github.com/yandex/ClickHouse/pull/4841) ([Danila Kutenin](https://github.com/danlark1))
 * A new type of data skipping indices based on bloom filters (can be used for `equal`, `in` and `like` functions). [#4499](https://github.com/yandex/ClickHouse/pull/4499) ([Nikita Vasilev](https://github.com/nikvas0))
 * Added `ASOF JOIN` which allows to run queries that join to the most recent value known. [#4774](https://github.com/yandex/ClickHouse/pull/4774) ([Martijn Bakker](https://github.com/Gladdy))
 * Rewrite multiple `COMMA JOIN` to `CROSS JOIN`. Then rewrite them to `INNER JOIN` if possible. [#4661](https://github.com/yandex/ClickHouse/pull/4661) ([Artem Zuikov](https://github.com/4ertus2))
@@ -19,9 +19,9 @@
 * Fixed flicker of progress bar in clickhouse-client. The issue was most noticeable when using `FORMAT Null` with streaming queries. [#4811](https://github.com/yandex/ClickHouse/pull/4811) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Allow to disable functions with `hyperscan` library on per user basis to limit potentially excessive and uncontrolled resource usage. [#4816](https://github.com/yandex/ClickHouse/pull/4816) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Add version number logging in all errors. [#4824](https://github.com/yandex/ClickHouse/pull/4824) ([proller](https://github.com/proller))
-* Added restriction to the `multiSearch` functions which requires string size to fit into `unsigned int`. [#4834](https://github.com/yandex/ClickHouse/pull/4834) ([Danila Kutenin](https://github.com/danlark1))
+* Added restriction to the `multiMatch` functions which requires string size to fit into `unsigned int`. Also added the number of arguments limit to the `multiSearch` functions. [#4834](https://github.com/yandex/ClickHouse/pull/4834) ([Danila Kutenin](https://github.com/danlark1))
 * Adapt the ASOF join strictness to support multiple column types. [#4863](https://github.com/yandex/ClickHouse/pull/4863) ([Martijn Bakker](https://github.com/Gladdy))
-* Improved usage of scratch space and error handling Hyperscan. [#4866](https://github.com/yandex/ClickHouse/pull/4866) ([Danila Kutenin](https://github.com/danlark1))
+* Improved usage of scratch space and error handling in Hyperscan. [#4866](https://github.com/yandex/ClickHouse/pull/4866) ([Danila Kutenin](https://github.com/danlark1))
 * Fill `system.graphite_detentions` from a table config of `*GraphiteMergeTree` engine tables. [#4584](https://github.com/yandex/ClickHouse/pull/4584) ([Mikhail f. Shiryaev](https://github.com/Felixoid))
 * Rename `trigramDistance` function to `ngramDistance` and add more functions with `CaseInsensitive` and `UTF`. [#4602](https://github.com/yandex/ClickHouse/pull/4602) ([Danila Kutenin](https://github.com/danlark1))
 * Improved data skipping indices calculation. [#4640](https://github.com/yandex/ClickHouse/pull/4640) ([Nikita Vasilev](https://github.com/nikvas0)
@@ -65,6 +65,7 @@
 
 * Rename setting `insert_sample_with_metadata` to setting `input_format_defaults_for_omitted_fields`. [#4771](https://github.com/yandex/ClickHouse/pull/4771) ([Artem Zuikov](https://github.com/4ertus2))
 * Added setting `max_partitions_per_insert_block` (with value 100 by default). If inserted block contains larger number of partitions, an exception is thrown. Set it to 0 if you want to remove the limit (not recommended). [#4845](https://github.com/yandex/ClickHouse/pull/4845) ([alexey-milovidov](https://github.com/alexey-milovidov))
+* Multi-search functions were renamed (`multiPosition` to `multiSearchAllPositions`, `multiSearch` to `multiSearchAny`, `firstMatch` to `multiSearchFirstIndex`). [#4780](https://github.com/yandex/ClickHouse/pull/4780) ([Danila Kutenin](https://github.com/danlark1))
 
 ### Performance Improvement
 
