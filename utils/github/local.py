@@ -9,6 +9,8 @@ import re
 
 
 class Local:
+    '''Implements some useful methods atop of the local repository
+    '''
     RE_STABLE_REF = re.compile(r'^refs/remotes/.+/\d+\.\d+$')
 
     def __init__(self, repo_path, remote_name, default_branch_name):

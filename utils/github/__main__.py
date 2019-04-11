@@ -16,6 +16,7 @@
 
     - Commits without references from pull-requests.
     - Pull-requests to master without proper labels.
+    - Pull-requests that need to be backported.
 
 '''
 
@@ -74,9 +75,9 @@ for pull_request in pull_requests:
     label_found = False
 
     for label in github.get_labels(pull_request):
-        if label[0].startswith('pr-'):
+        if label['name'].startswith('pr-'):
             label_found = True
-            if label[1] == 'ff0000':
+            if label['color'] == 'ff0000':
                 need_backporting.append(pull_request)
             break
 
@@ -116,11 +117,11 @@ if need_backporting:
                 targets.append(stable)
 
                 # FIXME: compatibility logic - check for a manually set label, that indicates status 'backported'.
-                # FIXME: O(n²) - no need to iterate all labels for every stable
+                # FIXME: O(n²) - no need to iterate all labels for every `stable`
                 for label in github.get_labels(pull_request):
-                    if re_vlabel.match(label[0]):
+                    if re_vlabel.match(label['name']):
                         stable_num = re_stable_num.search(stable[0].name)
-                        if f'v{stable_num[0]}' == label[0]:
+                        if f'v{stable_num[0]}' == label['name']:
                             good.add(stable)
 
         # print pull-request's status
@@ -134,7 +135,7 @@ if need_backporting:
                 print(f'\t{LABEL_MARK} {target[0]}', end='')
             else:
                 print(f'\t{CROSS_MARK} {target[0]}', end='')
-        print()
+        print(f'\t({pull_request["mergeCommit"]["author"]["name"]}) {pull_request["url"]}')
 
 # print legend
 print('\nLegend:')
