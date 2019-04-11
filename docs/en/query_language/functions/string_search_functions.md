@@ -56,7 +56,7 @@ For patterns to search for substrings in a string, it is better to use LIKE or '
 
 The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) library. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
 
-**Note: this function is in experimental mode because of some [issues](https://github.com/intel/hyperscan/issues/141). The length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.**
+**Note: the length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.**
 
 ## multiMatchAnyIndex(haystack, [pattern_1, pattern_2, ..., pattern_n])
 
