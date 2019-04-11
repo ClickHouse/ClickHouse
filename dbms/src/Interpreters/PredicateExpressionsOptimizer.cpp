@@ -155,27 +155,29 @@ bool PredicateExpressionsOptimizer::allowPushDown(
     }
 
     const auto * ast_join = ast_select->join();
-
-    /// XXX: code depends on the order and availability of AST children
-    const auto * left_table_expr = ast_join ? ast_select->tables->as<ASTTablesInSelectQuery>()
-                                                  ->children[0]
-                                                  ->as<ASTTablesInSelectQueryElement>()
-                                                  ->table_expression->as<ASTTableExpression>()
-                                            : nullptr;
-    const auto * right_table_expr = ast_join ? ast_select->tables->as<ASTTablesInSelectQuery>()
-                                                   ->children[1]
-                                                   ->as<ASTTablesInSelectQueryElement>()
-                                                   ->table_expression->as<ASTTableExpression>()
-                                             : nullptr;
-    const auto * left_subquery = (left_table_expr && left_table_expr->subquery)
-        ? left_table_expr->subquery->children[0]->as<ASTSelectWithUnionQuery>()->list_of_selects->children[0]->as<ASTSelectQuery>()
-        : nullptr;
-    const auto * right_subquery = (right_table_expr && right_table_expr->subquery)
-        ? right_table_expr->subquery->children[0]->as<ASTSelectWithUnionQuery>()->list_of_selects->children[0]->as<ASTSelectQuery>()
-        : nullptr;
+    const ASTTableExpression * left_table_expr = nullptr, * right_table_expr = nullptr;
+    const ASTSelectQuery * left_subquery = nullptr, * right_subquery = nullptr;
 
     if (ast_join)
     {
+        left_table_expr = ast_select
+                                ->tables()->as<ASTTablesInSelectQuery>()
+                                ->children[0]->as<ASTTablesInSelectQueryElement>()
+                                ->table_expression->as<ASTTableExpression>();
+        right_table_expr = ast_select
+                                ->tables()->as<ASTTablesInSelectQuery>()
+                                ->children[1]->as<ASTTablesInSelectQueryElement>()
+                                ->table_expression->as<ASTTableExpression>();
+
+        if (left_table_expr && left_table_expr->subquery)
+            left_subquery = left_table_expr->subquery
+                                ->children[0]->as<ASTSelectWithUnionQuery>()
+                                ->list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (right_table_expr && right_table_expr->subquery)
+            right_subquery = right_table_expr->subquery
+                                ->children[0]->as<ASTSelectWithUnionQuery>()
+                                ->list_of_selects->children[0]->as<ASTSelectQuery>();
+
         /// Check right side for LEFT'o'FULL JOIN
         if (isLeftOrFull(ast_join->table_join->as<ASTTableJoin>()->kind) && right_subquery == subquery)
         {
