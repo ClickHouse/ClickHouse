@@ -68,6 +68,7 @@ private:
     void remerge();
 
     void removeConstColumns(Chunk & chunk);
+    void enrichChunkWithConstants(Chunk & chunk);
 
     enum class Stage
     {
