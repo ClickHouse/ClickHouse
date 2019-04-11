@@ -16,7 +16,7 @@ struct ChunksToMerge : public ChunkInfo
 
 GroupingAggregatedTransform::GroupingAggregatedTransform(
     const Block & header, size_t num_inputs, AggregatingTransformParamsPtr params)
-    : IProcessor(InputPorts(num_inputs, header), {header})
+    : IProcessor(InputPorts(num_inputs, header), {})
     , num_inputs(num_inputs)
     , params(std::move(params))
     , last_bucket_number(num_inputs, -1)
@@ -496,7 +496,7 @@ Processors createMergingAggregatedMemoryEfficientPipe(
     /// --> GroupingAggregated --> ResizeProcessor --> MergingAggregatedBucket --> SortingAggregated -->
     /// -->                                        --> MergingAggregatedBucket -->
 
-    auto resize = std::make_shared<ResizeProcessor>(header, 1, num_merging_processors);
+    auto resize = std::make_shared<ResizeProcessor>(Block(), 1, num_merging_processors);
     connect(processors.back()->getOutputs().front(), resize->getInputs().front());
     processors.emplace_back(std::move(resize));
 
