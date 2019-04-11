@@ -10,3 +10,4 @@ insert into test.table select today() as date, [number], [number + 1], toFixedSt
 set preferred_max_column_in_block_size_bytes = 112;
 select blockSize(), * from test.table prewhere x = 7 format Null;
 
+drop table if exists test.table;

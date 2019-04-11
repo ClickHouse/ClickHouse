@@ -137,7 +137,7 @@ else
         # Running test in parallel will fail some results (tests can create/fill/drop same tables)
         TEST_NPROC=${TEST_NPROC:=$(( `nproc || sysctl -n hw.ncpu || echo 2` * 2))}
         for i in `seq 1 ${TEST_NPROC}`; do
-             $CLICKHOUSE_TEST --order=random --testname &
+             $CLICKHOUSE_TEST --order=random --testname --tmp=$DATA_DIR/tmp/tmp${i} &
         done
         $CLICKHOUSE_PERFORMANCE_TEST &
     fi
