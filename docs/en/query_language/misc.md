@@ -182,7 +182,7 @@ If you specify `FINAL`, optimization will be performed even when all the data is
 !!! warning
     OPTIMIZE can't fix the "Too many parts" error.
 
-## RENAME
+## RENAME {#misc_operations-rename}
 
 Renames one or more tables.
 

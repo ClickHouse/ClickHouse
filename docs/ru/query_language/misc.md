@@ -180,7 +180,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 
 !!! warning "Внимание"Запрос OPTIMIZE не может устранить причину появления ошибки "Too many parts".
 
-## RENAME
+## RENAME {#misc_operations-rename}
 
 Переименовывает одну или несколько таблиц.
 

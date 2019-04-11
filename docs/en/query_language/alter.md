@@ -21,17 +21,7 @@ The following actions are supported:
 - [COMMENT COLUMN](#alter_comment-column) — Adds a text comment to the column.
 - [MODIFY COLUMN](#alter_modify-column) — Changes column's type and/or default expression.
 
-Detailed description of these actions is shown [below](#alter_add-column).
-
-The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
-
-There is no support for deleting columns in the primary key or the sampling key (columns that are in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, it is allowed to add values to an Enum or change a type with `DateTime` to `UInt32`).
-
-If the `ALTER` query is not sufficient for making the table changes you need, you can create a new table, copy the data to it using the `INSERT SELECT` query, then switch the tables using the `RENAME` query and delete the old table.
-
-The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
-
-For tables that don't store data themselves (such as `Merge` and `Distributed`), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.
+Detailed description of these actions is shown below.
 
 #### ADD COLUMN {#alter_add-column}
 
@@ -75,7 +65,9 @@ ALTER TABLE visits DROP COLUMN browser
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
-Resets all data in a column for a specified partition. If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
+Resets all data in a column for a specified partition. Read more about setting the partition name in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
+ 
+If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
 
 Example:
 
@@ -107,11 +99,9 @@ ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for 
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr]
 ```
 
-If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
+This query changes the `name` column's type to `type` and/or the default expression to `default_expr`. If the `IF EXISTS` clause is specified, the query won't return an error if the column doesn't exist.
 
-This query changes the `name` column's type to `type` and/or the default expression to `default_expr`. When changing the type, values are converted as if the `toType` function were applied to them.
-
-If only the default expression is changed, the query doesn't do anything complex, and is completed almost instantly.
+When changing the type, values are converted as if the [toType](functions/type_conversion_functions.md) functions were applied to them. If only the default expression is changed, the query doesn't do anything complex, and is completed almost instantly.
 
 Example:
 
@@ -132,6 +122,18 @@ Only the first stage takes time. If there is a failure at this stage, the data i
 If there is a failure during one of the successive stages, data can be restored manually. The exception is if the old files were deleted from the file system but the data for the new files did not get written to the disk and was lost.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
+
+#### ALTER Query Limitations
+
+The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
+
+There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, it is allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
+
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](insert_into.md#insert_query_insert-select) query, then switch the tables using the [RENAME](misc.md#misc_operations-rename) query and delete the old table. You can use the [clickhouse-copier](../operations/utils/clickhouse-copier.md) as an alternative to the `INSERT SELECT` query. 
+
+The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
+
+For tables that don't store data themselves (such as `Merge` and `Distributed`), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.
 
 ### Manipulations With Key Expressions
 
