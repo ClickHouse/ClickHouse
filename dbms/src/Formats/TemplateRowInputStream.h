@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/TemplateBlockOutputStream.h>
 #include <IO/ReadHelpers.h>
+#include <IO/PeekableReadBuffer.h>
 
 
 namespace DB
@@ -27,10 +28,12 @@ public:
 
 private:
     void deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(istr); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
+    bool checkForSuffix();
+    bool compareSuffixPart(StringRef & suffix, BufferBase::Position pos, size_t available);
 
 private:
-    ReadBuffer & istr;
+    PeekableReadBuffer buf;
     Block header;
     DataTypes types;
 
