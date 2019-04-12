@@ -79,7 +79,7 @@ void JSONRowOutputFormat::writeField(const IColumn & column, const IDataType & t
 void JSONRowOutputFormat::writeTotalsField(const IColumn & column, const IDataType & type, size_t row_num)
 {
     writeCString("\t\t", *ostr);
-    writeJSONString(fields[field_number].name, *ostr, settings);
+    writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
     type.serializeAsTextJSON(column, row_num, *ostr, settings);
     ++field_number;
