@@ -165,7 +165,7 @@ void JSONRowOutputFormat::writeExtremesElement(const char * title, const Columns
     for (size_t i = 0; i < extremes_columns; ++i)
     {
         if (i != 0)
-            writeFieldDelimiter();
+            writeTotalsFieldDelimiter();
 
         writeField(*columns[i], *types[i], row_num);
     }
