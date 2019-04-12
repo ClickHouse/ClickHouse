@@ -18,14 +18,13 @@ LimitTransform::LimitTransform(
 
 LimitTransform::Status LimitTransform::prepare()
 {
-    /// Check if we are done with pushing.
-    bool pushing_is_finished = rows_read >= offset + limit;
+
 
     /// Check can output.
-
+    bool output_finished = false;
     if (output.isFinished())
     {
-        pushing_is_finished = true;
+        output_finished = true;
         if (!always_read_till_end)
         {
             input.close();
@@ -33,20 +32,22 @@ LimitTransform::Status LimitTransform::prepare()
         }
     }
 
-    if (!pushing_is_finished && !output.canPush())
+    if (!output_finished && !output.canPush())
     {
         input.setNotNeeded();
         return Status::PortFull;
     }
 
     /// Push block if can.
-    if (!pushing_is_finished && has_block && block_processed)
+    if (!output_finished && has_block && block_processed)
     {
         output.push(std::move(current_chunk));
         has_block = false;
         block_processed = false;
     }
 
+    /// Check if we are done with pushing.
+    bool pushing_is_finished = rows_read >= offset + limit;
     if (pushing_is_finished)
     {
         if (!always_read_till_end)
