@@ -58,10 +58,12 @@ add_library (common ${LINK_MODE}
 
 # When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 
-if (USE_JEMALLOC)
+if (USE_LFALLOC)
+    message (STATUS "Link lfalloc: ${LFALLOC_LIBRARIES}")
+    set (MALLOC_LIBRARIES ${LFALLOC_LIBRARIES})
+elseif (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-
 elseif (USE_TCMALLOC)
     if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
         message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
