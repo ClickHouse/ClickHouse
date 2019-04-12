@@ -226,6 +226,69 @@ query String             - The query text. For INSERT, it doesn't include the da
 query_id String          - Query ID, if defined.
 ```
 
+## system.query_log {#system_tables-query-log}
+
+This table is created if query_log server setting is specified.
+
+To log the query, you must perform the query with parameter log_queries=1.
+
+Columns:
+
+- `type` — Type of event that occurred when executing the query.
+
+Can have one of the following values:
+- 1 — Successful start of query execution.
+- 2 — Successful end of query execution.
+- 3 — Exception before start of query execution.
+- 4 — Exception while query execution.
+
+- `event_date` — Event date.
+- `event_time` — Event time.
+- `query_start_time` — Time of start query performing.
+- `query_duration_ms` — Duration of the query processing. 
+- `read_rows` — Number of read rows.
+- `read_bytes` — Number of read bytes.
+- `written_rows` — Number of written rows.
+- `written_bytes` — Number of written rows.
+- `result_rows` — Number of rows in a result.
+- `result_bytes` — Number of bytes in a result.
+- `memory_usage` — Memory consumption by queries
+- `query` — Query string.
+- `exception` — Exception.
+- `stack_trace` — Stack trace.
+- `is_initial_query` — 1 if the query was initiated by the client; 0 if by ClickHouse itself.
+- `user` —
+- `query_id` — ID of the query.
+- `address` —  The IP address the query was initiated from.
+- `port` — The port that is used for connecting to the server.
+- `initial_user` —  The name of the user who initiated the query.
+- `initial_query_id` — ID of the initial query.
+- `initial_address` — The IP address the query was initiated from.
+- `initial_port` — 
+- `interface` — 
+- `os_user` — User os.
+- `client_hostname` — 
+- `client_name` — 
+- `client_revision` — 
+- `client_version_major` — 
+- `client_version_minor` —
+- `client_version_patch` —
+- `http_method` —
+- `http_user_agent` —  
+- `quota_key` — 
+- `revision` — 
+- `thread_numbers` — 
+- `ProfileEvents.Names` —
+- `ProfileEvents.Values` —
+- `Settings.Names` —
+- `Settings.Values` — 
+
+Each query create one or two events in `query_log` table:
+
+- Two events with types 1 and 2: usual, successful case.
+- Two events with types 1 and 4.
+- Single event with type 3.
+
 ## system.replicas {#system_tables-replicas}
 
 Contains information and status for replicated tables residing on the local server.
