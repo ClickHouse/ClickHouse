@@ -106,6 +106,10 @@ LimitTransform::Status LimitTransform::prepare()
         return Status::NeedData;
     }
 
+    /// No more data is needed.
+    if (rows_read >= offset + limit)
+        input.close();
+
     return Status::Ready;
 }
 
