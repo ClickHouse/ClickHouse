@@ -138,6 +138,19 @@ bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge)
     return false;
 }
 
+static void executeJob(IProcessor * processor)
+{
+    try
+    {
+        processor->work();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While executing " + processor->getName() + " ("
+                     + toString(reinterpret_cast<std::uintptr_t>(processor)) + ") ");
+    }
+}
+
 void PipelineExecutor::addJob(UInt64 pid)
 {
     if (pool)
@@ -152,7 +165,7 @@ void PipelineExecutor::addJob(UInt64 pid)
                 event_counter.notify()
             );
 
-            graph[pid].processor->work();
+            executeJob(graph[pid].processor);
         };
 
         pool->schedule(createExceptionHandledJob(std::move(job), exception_handler));
@@ -161,7 +174,7 @@ void PipelineExecutor::addJob(UInt64 pid)
     else
     {
         /// Execute task in main thread.
-        graph[pid].processor->work();
+        executeJob(graph[pid].processor);
         finished_execution_queue.push(pid);
     }
 }
