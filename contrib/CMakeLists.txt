@@ -102,7 +102,7 @@ if (ENABLE_JEMALLOC AND USE_INTERNAL_JEMALLOC_LIBRARY)
     add_subdirectory (jemalloc-cmake)
 endif ()
 
-if (ENABLE_LFALLOC)
+if (USE_LFALLOC)
     add_subdirectory (lfalloc)
 endif ()
 
