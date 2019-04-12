@@ -35,6 +35,9 @@ protected:
     {
         return writeField(column, type, row_num);
     }
+
+    void writeTotalsFieldDelimiter() override;
+
 };
 
 }

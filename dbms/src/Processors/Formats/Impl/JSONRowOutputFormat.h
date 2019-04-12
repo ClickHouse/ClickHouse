@@ -60,6 +60,7 @@ public:
 protected:
     virtual void writeTotalsField(const IColumn & column, const IDataType & type, size_t row_num);
     virtual void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
+    virtual void writeTotalsFieldDelimiter() { writeFieldDelimiter(); }
 
     void writeRowsBeforeLimitAtLeast();
     void writeStatistics();
