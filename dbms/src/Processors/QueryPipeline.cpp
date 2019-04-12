@@ -503,6 +503,16 @@ void QueryPipeline::calcRowsBeforeLimit()
             has_limit = true;
             rows_before_limit_at_least += limit->getRowsBeforeLimitAtLeast();
         }
+
+        if (auto * source = typeid_cast<SourceFromInputStream *>(processor.get()))
+        {
+            auto & info = source->getStream().getProfileInfo();
+            if (info.hasAppliedLimit())
+            {
+                has_limit = true;
+                rows_before_limit_at_least += info.getRowsBeforeLimit();
+            }
+        }
     }
 
     UInt64 rows_before_limit = 0;
