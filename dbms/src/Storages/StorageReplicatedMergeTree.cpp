@@ -3982,6 +3982,14 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     if (leader == replica_name)
         throw Exception("Leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
 
+    /// SECONDARY_QUERY here means, that we received query from DDLWorker
+    /// there is no sense to send query to leader, because he will receive it from own DDLWorker
+    if (query_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        LOG_DEBUG(log, "Not leader replica received query from DDLWorker, skipping it.");
+        return;
+    }
+
     ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
 
     /// TODO: add setters and getters interface for database and table fields of AST
@@ -4010,6 +4018,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     const auto & query_client_info = query_context.getClientInfo();
     String user = query_client_info.current_user;
     String password = query_client_info.current_password;
+
     if (auto address = findClusterAddress(leader_address); address)
     {
         user = address->user;
@@ -4020,7 +4029,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        user, password, timeouts, "ClickHouse replica");
+        user, password, timeouts, "Follower replica");
 
     std::stringstream new_query_ss;
     formatAST(*new_query, new_query_ss, false, true);
