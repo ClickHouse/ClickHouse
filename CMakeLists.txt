@@ -336,6 +336,8 @@ include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
 
+include (cmake/find_lfalloc.cmake)
+
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
