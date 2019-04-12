@@ -133,7 +133,7 @@ void JSONRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (i != 0)
-            writeFieldDelimiter();
+            writeTotalsFieldDelimiter();
 
         writeTotalsField(*columns[i], *types[i], row_num);
     }

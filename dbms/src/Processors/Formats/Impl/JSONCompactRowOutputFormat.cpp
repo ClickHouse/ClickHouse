@@ -23,6 +23,11 @@ void JSONCompactRowOutputFormat::writeField(const IColumn & column, const IDataT
 
 void JSONCompactRowOutputFormat::writeFieldDelimiter()
 {
+    writeCString(", ", *ostr);
+}
+
+void JSONCompactRowOutputFormat::writeTotalsFieldDelimiter()
+{
     writeCString(",", *ostr);
 }
 
