@@ -90,6 +90,10 @@ private:
     void addJob(UInt64 pid);
     void addAsyncJob(UInt64 pid);
     void prepareProcessor(size_t pid, bool async);
+
+    void executeImpl();
+
+    String dumpPipeline() const;
 };
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
