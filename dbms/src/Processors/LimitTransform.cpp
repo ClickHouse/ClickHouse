@@ -120,13 +120,7 @@ LimitTransform::Status LimitTransform::prepare()
         output.push(std::move(current_chunk));
         has_block = false;
 
-        if (input.isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-
-        return Status::NeedData;
+        return Status::PortFull;
     }
 
     /// No more data is needed.
