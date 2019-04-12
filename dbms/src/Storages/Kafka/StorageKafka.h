@@ -27,7 +27,7 @@ friend class KafkaBlockOutputStream;
 public:
     std::string getName() const override { return "Kafka"; }
     std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const { return database_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     void startup() override;
     void shutdown() override;

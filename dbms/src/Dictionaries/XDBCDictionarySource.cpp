@@ -84,7 +84,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
     , bridge_helper{bridge_}
-    , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_.getSettingsRef())}
+    , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_)}
     , global_context(context_)
 {
     bridge_url = bridge_helper->getMainURI();

@@ -9,6 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 cur_name=$(basename "${BASH_SOURCE[0]}")
 server_logs_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
+
 server_logs="--server_logs_file=$server_logs_file"
 rm -f "$server_logs_file"
 

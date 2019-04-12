@@ -23,9 +23,9 @@ Possible values:
 
 ## enable_optimize_predicate_expression
 
-Turns on the predicate pushdown in `SELECT` queries.
+Turns on predicate pushdown in `SELECT` queries.
 
-Predicate pushdown may significantly reduce the network traffic for distributed queries.
+Predicate pushdown may significantly reduce network traffic for distributed queries.
 
 Possible values:
 
@@ -43,7 +43,7 @@ Consider the following queries:
 
 If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal, because ClickHouse applies `WHERE` to the subquery when processing it.
 
-If `enable_optimize_predicate_expression = 0`, then the second query is executed much slower, because the `WHERE` clause applies to all the data after the subquery finishes.
+If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer, because the `WHERE` clause applies to all the data after the subquery finishes.
 
 ## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
@@ -139,9 +139,10 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
+
 ## input_format_values_interpret_expressions {#settings-input_format_values_interpret_expressions}
 
-Enables or disables the full SQL parser if the fast stream parser can't parse the data. This setting is used only for [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
+Enables or disables the full SQL parser if the fast stream parser can't parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
 
 Possible values:
 
@@ -157,7 +158,7 @@ Default value: 1.
 
 **Example of Use**
 
-Let's try to insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
+Insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
 
 ```sql
 SET input_format_values_interpret_expressions = 0;
@@ -174,7 +175,7 @@ INSERT INTO datetime_t VALUES (now())
 Ok.
 ```
 
-The last query is equivalent to the following.
+The last query is equivalent to the following:
 
 ```sql
 SET input_format_values_interpret_expressions = 0;
@@ -184,22 +185,22 @@ Ok.
 ```
 
 
-## insert_sample_with_metadata {#session_settings-insert_sample_with_metadata}
+## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. The setting is applies for `INSERT` queries.
+Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
 
-When executing the `INSERT` query, ClickHouse client prepares data and sends it to the server for writing. During the preparation of the data, the client gets the table structure from the server. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `insert_sample_with_metadata = 1`.
+When executing the `INSERT` query, the ClickHouse client prepares data and sends it to the server for writing. The client gets the table structure from the server when preparing the data. In some cases, the client needs more information than the server sends by default. Turn on the extended data exchange with `input_format_defaults_for_omitted_fields = 1`.
 
 When the extended data exchange is enabled, the server sends the additional metadata along with the table structure. The composition of the metadata depends on the operation.
 
 Operations where you may need the extended data exchange enabled:
 
-- Inserting the data of the [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
+- Inserting data in [JSONEachRow](../../interfaces/formats.md#jsoneachrow) format.
 
-For all other operations ClickHouse doesn't apply the setting.
+For all other operations, ClickHouse doesn't apply the setting.
 
 !!! note "Note"
-    The functionality of the extended data exchange consumes additional computing resources on the server and can reduce the performance.
+    The extended data exchange functionality consumes additional computing resources on the server and can reduce performance.
 
 **Possible values**
 
@@ -207,6 +208,7 @@ For all other operations ClickHouse doesn't apply the setting.
 - 1 — Enabled.
 
 **Default value:** 0.
+
 
 ## join_default_strictness {#settings-join_default_strictness}
 
@@ -223,12 +225,12 @@ Sets default strictness for [JOIN clauses](../../query_language/select.md#select
 
 ## join_use_nulls {#settings-join_use_nulls}
 
-Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables the empty cells may appear. ClickHouse fills them differently based on setting.
+Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
 **Possible values**
 
 - 0 — The empty cells are filled with the default value of the corresponding field type.
-- 1 — `JOIN` behaves like in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+- 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
 **Default value**: 0.
 
@@ -300,15 +302,14 @@ Any positive integer.
 
 ## min_bytes_to_use_direct_io {#settings-min_bytes_to_use_direct_io}
 
-The minimum data volume to be read from storage required for using of the direct I/O access to the storage disk.
+The minimum data volume required for using direct I/O access to the storage disk.
 
-ClickHouse uses this setting when selecting the data from tables. If summary storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with `O_DIRECT` option.
+ClickHouse uses this setting when reading data from tables. If the total storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with the `O_DIRECT` option.
 
 **Possible values**
 
-Positive integer.
-
-0 — The direct I/O is disabled.
+- 0 — Direct I/O is disabled.
+- Positive integer.
 
 **Default value**: 0.
 
@@ -579,15 +580,20 @@ Default value: 60 seconds.
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
 
-Enables/disables sequential consistency for `SELECT` queries:
+Enables or disables sequential consistency for `SELECT` queries:
+
+Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
+
 Default value: 0.
+
+**Usage**
 
 When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
 
-See also the following parameters:
+**See Also**
 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)

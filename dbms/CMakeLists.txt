@@ -20,7 +20,7 @@ set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 
 include (cmake/version.cmake)
-message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION}")
+message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
 configure_file (src/Common/config.h.in ${CONFIG_COMMON})
 configure_file (src/Common/config_version.h.in ${CONFIG_VERSION})
 

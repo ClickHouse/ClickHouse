@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-class DataTypeDomanIPv4 : public DataTypeDomainWithSimpleSerialization
+class DataTypeDomainIPv4 : public DataTypeDomainWithSimpleSerialization
 {
 public:
     const char * getName() const override
@@ -63,7 +63,7 @@ public:
     }
 };
 
-class DataTypeDomanIPv6 : public DataTypeDomainWithSimpleSerialization
+class DataTypeDomainIPv6 : public DataTypeDomainWithSimpleSerialization
 {
 public:
     const char * getName() const override
@@ -111,8 +111,8 @@ public:
 
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
 {
-    factory.registerDataTypeDomain("UInt32", std::make_unique<DataTypeDomanIPv4>());
-    factory.registerDataTypeDomain("FixedString(16)", std::make_unique<DataTypeDomanIPv6>());
+    factory.registerDataTypeDomain("UInt32", std::make_unique<DataTypeDomainIPv4>());
+    factory.registerDataTypeDomain("FixedString(16)", std::make_unique<DataTypeDomainIPv6>());
 }
 
 } // namespace DB

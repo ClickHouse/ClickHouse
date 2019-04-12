@@ -34,4 +34,4 @@ RUN apt-get update -y \
             git \
             tzdata
 
-CMD mkdir -p build/build_result && cd build/build_result && cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS && ninja && mv ./dbms/programs/clickhouse* /output
+CMD mkdir -p build/build_result && cd build/build_result && cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS && ninja && mv ./dbms/programs/clickhouse* /output && mv ./dbms/unit_tests_dbms /output

@@ -42,6 +42,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
@@ -796,14 +797,33 @@ private:
         written_progress_chars = 0;
         written_first_block = false;
 
-        connection->forceConnected();
+        {
+            /// Temporarily apply query settings to context.
+            std::optional<Settings> old_settings;
+            SCOPE_EXIT({ if (old_settings) context.setSettings(*old_settings); });
+            auto apply_query_settings = [&](const IAST & settings_ast)
+            {
+                if (!old_settings)
+                    old_settings.emplace(context.getSettingsRef());
+                for (const auto & change : settings_ast.as<ASTSetQuery>()->changes)
+                    context.setSetting(change.name, change.value);
+            };
+            const auto * insert = parsed_query->as<ASTInsertQuery>();
+            if (insert && insert->settings_ast)
+                apply_query_settings(*insert->settings_ast);
+            /// FIXME: try to prettify this cast using `as<>()`
+            const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+            if (with_output && with_output->settings_ast)
+                apply_query_settings(*with_output->settings_ast);
 
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
-        if (insert_query && !insert_query->select)
-            processInsertQuery();
-        else
-            processOrdinaryQuery();
+            connection->forceConnected();
+
+            /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
+            if (insert && !insert->select)
+                processInsertQuery();
+            else
+                processOrdinaryQuery();
+        }
 
         /// Do not change context (current DB, settings) in case of an exception.
         if (!got_exception)
@@ -963,8 +983,6 @@ private:
         {
             if (!insert->format.empty())
                 current_format = insert->format;
-            if (insert->settings_ast)
-                InterpreterSetQuery(insert->settings_ast, context).executeForCurrentContext();
         }
 
         BlockInputStreamPtr block_input = context.getInputFormat(
@@ -1247,10 +1265,6 @@ private:
                     const auto & id = query_with_output->format->as<ASTIdentifier &>();
                     current_format = id.name;
                 }
-                if (query_with_output->settings_ast)
-                {
-                    InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
-                }
             }
 
             if (has_vertical_output_suffix)
@@ -1314,6 +1328,9 @@ private:
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
+
+        /// Restore progress bar after data block.
+        writeProgress();
     }
 
 
@@ -1353,8 +1370,8 @@ private:
 
     void clearProgress()
     {
-        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
         written_progress_chars = 0;
+        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1362,6 +1379,9 @@ private:
     {
         if (!need_render_progress)
             return;
+
+        /// Output all progress bar commands to stderr at once to avoid flicker.
+        WriteBufferFromFileDescriptor message(STDERR_FILENO, 1024);
 
         static size_t increment = 0;
         static const char * indicators[8] =
@@ -1377,13 +1397,15 @@ private:
         };
 
         if (written_progress_chars)
-            clearProgress();
+            message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
         else
-            std::cerr << SAVE_CURSOR_POSITION;
+            message << SAVE_CURSOR_POSITION;
 
-        std::stringstream message;
+        message << DISABLE_LINE_WRAPPING;
+
+        size_t prefix_size = message.count();
+
         message << indicators[increment % 8]
-            << std::fixed << std::setprecision(3)
             << " Progress: ";
 
         message
@@ -1398,8 +1420,7 @@ private:
         else
             message << ". ";
 
-        written_progress_chars = message.str().size() - (increment % 8 == 7 ? 10 : 13);
-        std::cerr << DISABLE_LINE_WRAPPING << message.rdbuf();
+        written_progress_chars = message.count() - prefix_size - (increment % 8 == 7 ? 10 : 13);    /// Don't count invisible output (escape sequences).
 
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
         if (progress.total_rows > 0)
@@ -1421,19 +1442,21 @@ private:
                     if (width_of_progress_bar > 0)
                     {
                         std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.rows, 0, total_rows_corrected, width_of_progress_bar));
-                        std::cerr << "\033[0;32m" << bar << "\033[0m";
+                        message << "\033[0;32m" << bar << "\033[0m";
                         if (width_of_progress_bar > static_cast<ssize_t>(bar.size() / UNICODE_BAR_CHAR_SIZE))
-                        std::cerr << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
+                            message << std::string(width_of_progress_bar - bar.size() / UNICODE_BAR_CHAR_SIZE, ' ');
                     }
                 }
             }
 
             /// Underestimate percentage a bit to avoid displaying 100%.
-            std::cerr << ' ' << (99 * progress.rows / total_rows_corrected) << '%';
+            message << ' ' << (99 * progress.rows / total_rows_corrected) << '%';
         }
 
-        std::cerr << ENABLE_LINE_WRAPPING;
+        message << ENABLE_LINE_WRAPPING;
         ++increment;
+
+        message.next();
     }
 
 
@@ -1500,7 +1523,7 @@ private:
 
     void showClientVersion()
     {
-        std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
+        std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
 
 public:

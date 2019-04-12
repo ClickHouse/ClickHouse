@@ -2,13 +2,13 @@
 
 #include "DatabaseAndTableWithAlias.h"
 #include "ExpressionAnalyzer.h"
+#include <Parsers/ASTSelectQuery.h>
 #include <map>
 
 namespace DB
 {
 
 class ASTIdentifier;
-class ASTSelectQuery;
 class ASTSubquery;
 class Context;
 
@@ -69,14 +69,14 @@ private:
 
     bool isArrayJoinFunction(const ASTPtr & node);
 
-    std::vector<ASTPtr> splitConjunctionPredicate(ASTPtr & predicate_expression);
+    std::vector<ASTPtr> splitConjunctionPredicate(const ASTPtr & predicate_expression);
 
     std::vector<IdentifierWithQualifier> getDependenciesAndQualifiers(ASTPtr & expression,
                                                                       std::vector<TableWithColumnNames> & tables_with_aliases);
 
-    bool optimizeExpression(const ASTPtr & outer_expression, ASTPtr & subquery_expression, ASTSelectQuery * subquery);
+    bool optimizeExpression(const ASTPtr & outer_expression, ASTSelectQuery * subquery, ASTSelectQuery::Expression expr);
 
-    bool optimizeImpl(ASTPtr & outer_expression, const SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
+    bool optimizeImpl(const ASTPtr & outer_expression, const SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
 
     bool allowPushDown(const ASTSelectQuery * subquery);
 

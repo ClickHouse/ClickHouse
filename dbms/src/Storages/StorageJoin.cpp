@@ -295,7 +295,7 @@ private:
             if (column_with_null[i])
             {
                 if (key_pos == i)
-                    res.getByPosition(i).column = makeNullable(std::move(columns[i]))->assumeMutable();
+                    res.getByPosition(i).column = makeNullable(std::move(columns[i]));
                 else
                 {
                     const ColumnNullable & nullable_col = static_cast<const ColumnNullable &>(*columns[i]);
@@ -332,6 +332,10 @@ private:
                     else
                         columns[j]->insertFrom(*it->getSecond().block->getByPosition(column_indices[j]).column.get(), it->getSecond().row_num);
                 ++rows_added;
+            }
+            else if constexpr (STRICTNESS == ASTTableJoin::Strictness::Asof)
+            {
+                throw Exception("ASOF join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
             }
             else
                 for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->getSecond()); current != nullptr;

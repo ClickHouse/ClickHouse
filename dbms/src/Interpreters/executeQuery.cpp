@@ -170,6 +170,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
         auto * insert_query = ast->as<ASTInsertQuery>();
+
+        if (insert_query && insert_query->settings_ast)
+            InterpreterSetQuery(insert_query->settings_ast, context).executeForCurrentContext();
+
         if (insert_query && insert_query->data)
         {
             query_end = insert_query->data;

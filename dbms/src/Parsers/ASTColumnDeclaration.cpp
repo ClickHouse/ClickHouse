@@ -39,9 +39,13 @@ ASTPtr ASTColumnDeclaration::clone() const
 void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
-    std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    settings.ostr << settings.nl_or_ws << indent_str << backQuoteIfNeed(name);
+    if (!settings.one_line)
+        settings.ostr << settings.nl_or_ws << std::string(4 * frame.indent, ' ');
+
+    /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
+    settings.ostr << backQuote(name);
+
     if (type)
     {
         settings.ostr << ' ';

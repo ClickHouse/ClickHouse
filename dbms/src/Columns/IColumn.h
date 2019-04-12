@@ -259,7 +259,7 @@ public:
 
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
-    using ColumnCallback = std::function<void(Ptr&)>;
+    using ColumnCallback = std::function<void(WrappedPtr&)>;
     virtual void forEachSubcolumn(ColumnCallback) {}
 
     /// Columns have equal structure.
@@ -272,8 +272,8 @@ public:
 
     MutablePtr mutate() const &&
     {
-        MutablePtr res = COWPtr<IColumn>::mutate();
-        res->forEachSubcolumn([](Ptr & subcolumn) { subcolumn = (*std::move(subcolumn)).mutate(); });
+        MutablePtr res = shallowMutate();
+        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = std::move(*subcolumn).mutate(); });
         return res;
     }
 

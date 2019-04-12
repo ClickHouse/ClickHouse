@@ -75,7 +75,8 @@ struct ASTTableJoin : public IAST
     {
         Unspecified,
         Any,    /// If there are many suitable rows to join, use any from them (also known as unique JOIN).
-        All        /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
+        All,    /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
+        Asof,   /// For the last JOIN column, pick the latest value
     };
 
     /// Join method.

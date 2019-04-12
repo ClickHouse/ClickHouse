@@ -1,4 +1,3 @@
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.defaults;
 CREATE TABLE IF NOT EXISTS test.defaults
 (
@@ -9,7 +8,6 @@ insert into test.defaults values ('ba'), ('aa'), ('ba'), ('b'), ('ba'), ('aa');
 select val < 1.5 and val > 1.459 from (select entropy(vals) as val from test.defaults);
 
 
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.defaults;
 CREATE TABLE IF NOT EXISTS test.defaults
 (
@@ -19,7 +17,6 @@ insert into test.defaults values (0), (0), (1), (0), (0), (0), (1), (2), (3), (5
 select val < 2.4 and val > 2.3393 from (select entropy(vals) as val from test.defaults);
 
 
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.defaults;
 CREATE TABLE IF NOT EXISTS test.defaults
 (
@@ -29,7 +26,6 @@ insert into test.defaults values (0), (0), (1), (0), (0), (0), (1), (2), (3), (5
 select val < 2.4 and val > 2.3393 from (select entropy(vals) as val from test.defaults);
 
 
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.defaults;
 CREATE TABLE IF NOT EXISTS test.defaults
 (
@@ -39,7 +35,6 @@ insert into test.defaults values (0), (0), (-1), (0), (0), (0), (-1), (2), (3), 
 select val < 2.4 and val > 2.3393 from (select entropy(vals) as val from test.defaults);
 
 
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.defaults;
 CREATE TABLE IF NOT EXISTS test.defaults
 (

@@ -26,7 +26,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
-#include <Interpreters/ISecurityManager.h>
+#include <Interpreters/IUsersManager.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
@@ -129,7 +129,7 @@ struct ContextShared
     mutable std::optional<ExternalModels> external_models;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
-    std::unique_ptr<ISecurityManager> security_manager;     /// Known users.
+    std::unique_ptr<IUsersManager> users_manager;           /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -291,7 +291,7 @@ struct ContextShared
 private:
     void initialize()
     {
-       security_manager = runtime_components_factory->createSecurityManager();
+       users_manager = runtime_components_factory->createUsersManager();
     }
 };
 
@@ -571,7 +571,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->security_manager->loadFromConfig(*shared->users_config);
+    shared->users_manager->loadFromConfig(*shared->users_config);
     shared->quotas.loadFromConfig(*shared->users_config);
 }
 
@@ -581,11 +581,39 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+bool Context::hasUserProperty(const String & database, const String & table, const String & name) const
+{
+    auto lock = getLock();
+
+    // No user - no properties.
+    if (client_info.current_user.empty())
+        return false;
+
+    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+
+    auto db = props.find(database);
+    if (db == props.end())
+        return false;
+
+    auto table_props = db->second.find(table);
+    if (table_props == db->second.end())
+        return false;
+
+    return !!table_props->second.count(name);
+}
+
+const String & Context::getUserProperty(const String & database, const String & table, const String & name) const
+{
+    auto lock = getLock();
+    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+    return props.at(database).at(table).at(name);
+}
+
 void Context::calculateUserSettings()
 {
     auto lock = getLock();
 
-    String profile = shared->security_manager->getUser(client_info.current_user)->profile;
+    String profile = shared->users_manager->getUser(client_info.current_user)->profile;
 
     /// 1) Set default settings (hardcoded values)
     /// NOTE: we ignore global_context settings (from which it is usually copied)
@@ -606,7 +634,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 {
     auto lock = getLock();
 
-    auto user_props = shared->security_manager->authorizeAndGetUser(name, password, address.host());
+    auto user_props = shared->users_manager->authorizeAndGetUser(name, password, address.host());
 
     client_info.current_user = name;
     client_info.current_address = address;
@@ -644,7 +672,7 @@ bool Context::hasDatabaseAccessRights(const String & database_name) const
 {
     auto lock = getLock();
     return client_info.current_user.empty() || (database_name == "system") ||
-        shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name);
+        shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name);
 }
 
 void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
@@ -655,7 +683,7 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
          /// All users have access to the database system.
         return;
     }
-    if (!shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name))
+    if (!shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name))
         throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
