@@ -595,6 +595,11 @@ void executeQuery(
             if (ast_query_with_output && ast_query_with_output->settings_ast)
                 InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
+            pipeline.addSimpleTransform([](const Block & header)
+            {
+                return std::make_shared<MaterializingTransform>(header);
+            });
+
             auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
@@ -614,10 +619,7 @@ void executeQuery(
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
 
-            pipeline.addSimpleTransform([](const Block & header)
-            {
-                return std::make_shared<MaterializingTransform>(header);
-            });
+
             pipeline.setOutput(std::move(out));
 
             auto executor = pipeline.execute(context.getSettingsRef().max_threads);
