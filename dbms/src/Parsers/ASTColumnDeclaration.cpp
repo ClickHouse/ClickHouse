@@ -75,6 +75,12 @@ void ASTColumnDeclaration::formatImpl(const FormatSettings & settings, FormatSta
         settings.ostr << ' ';
         codec->formatImpl(settings, state, frame);
     }
+
+    if (expr_list)
+    {
+        settings.ostr << ' ';
+        expr_list->formatImpl(settings, state, frame);
+    }
 }
 
 }

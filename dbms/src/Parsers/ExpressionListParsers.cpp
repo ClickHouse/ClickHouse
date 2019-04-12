@@ -672,9 +672,13 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 {
     if (separator == TokenType::Whitespace)
     {
-        return ParserList(
-            std::make_unique<ParserKeyValuePair>(),
-            std::make_unique<ParserNothing>()).parse(pos, node, expected);
+        auto parser_list = ParserList(std::make_unique<ParserKeyValuePair>(),
+                                      std::make_unique<ParserNothing>());
+        if (!parser_list.parse(pos, node, expected))
+            return false;
+
+        node->as<ASTExpressionList &>().empty_separator = true;
+        return true;
     }
     else
     {

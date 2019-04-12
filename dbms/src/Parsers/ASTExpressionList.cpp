@@ -16,7 +16,12 @@ void ASTExpressionList::formatImpl(const FormatSettings & settings, FormatState 
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
     {
         if (it != children.begin())
-            settings.ostr << ", ";
+        {
+            if (!empty_separator)
+                settings.ostr << ',';
+
+            settings.ostr << ' ';
+        }
 
         (*it)->formatImpl(settings, state, frame);
     }

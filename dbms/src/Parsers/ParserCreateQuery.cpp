@@ -662,7 +662,6 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Exp
     ParserToken s_dot(TokenType::Dot);
     ParserColumnsOrIndicesDeclarationList columns_p(true);
     ParserDictionarySource source_p;
-    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
 
     bool if_not_exists = false;
     bool or_replace = false;
