@@ -30,6 +30,7 @@
 #include "DNSCacheUpdater.h"
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 
 namespace DB
@@ -613,7 +614,12 @@ void executeQuery(
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
 
+            pipeline.addSimpleTransform([](const Block & header)
+            {
+                return std::make_shared<MaterializingTransform>(header);
+            });
             pipeline.setOutput(std::move(out));
+
             auto executor = pipeline.execute(context.getSettingsRef().max_threads);
             executor->execute();
             pipeline.finalize();
