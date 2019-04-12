@@ -293,6 +293,28 @@ void PipelineExecutor::execute()
 {
     addChildlessProcessorsToQueue();
 
+    try
+    {
+        executeImpl();
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("\nCurrent state:\n" + dumpPipeline());
+        throw;
+    }
+
+    bool all_processors_finished = true;
+    for (auto & node : graph)
+        if (node.status != ExecStatus::Finished)
+            all_processors_finished = false;
+
+    if (!all_processors_finished)
+        /// It seems that pipeline has stuck.
+        throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
+}
+
+void PipelineExecutor::executeImpl()
+{
     while (!cancelled)
     {
         processFinishedExecutionQueueSafe();
@@ -318,33 +340,26 @@ void PipelineExecutor::execute()
             }
         }
     }
+}
 
-    bool all_processors_finished = true;
-    for (auto & node : graph)
-        if (node.status != ExecStatus::Finished)
-            all_processors_finished = false;
+String PipelineExecutor::dumpPipeline() const
+{
+    std::vector<IProcessor::Status> statuses;
+    std::vector<IProcessor *> proc_list;
+    statuses.reserve(graph.size());
+    proc_list.reserve(graph.size());
 
-    if (!all_processors_finished)
+    for (auto & proc : graph)
     {
-        /// It seems that pipeline has stuck.
-
-        std::vector<IProcessor::Status> statuses;
-        std::vector<IProcessor *> proc_list;
-        statuses.reserve(graph.size());
-        proc_list.reserve(graph.size());
-
-        for (auto & proc : graph)
-        {
-            proc_list.emplace_back(proc.processor);
-            statuses.emplace_back(proc.last_processor_status);
-        }
-
-        WriteBufferFromOwnString out;
-        printPipeline(processors, statuses, out);
-        out.finish();
-
-        throw Exception("Pipeline stuck. Current state:\n" + out.str(), ErrorCodes::LOGICAL_ERROR);
+        proc_list.emplace_back(proc.processor);
+        statuses.emplace_back(proc.last_processor_status);
     }
+
+    WriteBufferFromOwnString out;
+    printPipeline(processors, statuses, out);
+    out.finish();
+
+    return out.str();
 }
 
 }
