@@ -1329,7 +1329,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             {
                 auto holder = std::make_shared<InputStreamHolder>(stream);
                 bool force_add_agg_info = processing_stage == QueryProcessingStage::WithMergeableState;
-                sources.emplace_back(std::make_shared<SourceFromInputStream>(holder), force_add_agg_info);
+                sources.emplace_back(std::make_shared<SourceFromInputStream>(holder, force_add_agg_info));
                 holders.emplace_back(std::move(holder));
             }
 
