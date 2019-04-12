@@ -87,6 +87,11 @@ private:
         const std::vector<IdentifierWithQualifier> & outer_predicate_dependencies,
         OptimizeKind & optimize_kind);
 
+    bool checkDependencies(
+        const std::vector<ProjectionWithAlias> & projection_columns,
+        const std::vector<IdentifierWithQualifier> & dependencies,
+        OptimizeKind & optimize_kind);
+
     void setNewAliasesForInnerPredicate(const std::vector<ProjectionWithAlias> & projection_columns,
                                         const std::vector<IdentifierWithQualifier> & inner_predicate_dependencies);
 

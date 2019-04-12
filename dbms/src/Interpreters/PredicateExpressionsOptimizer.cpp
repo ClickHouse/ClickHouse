@@ -50,7 +50,7 @@ String qualifiedName(ASTIdentifier * identifier, const String & prefix)
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
     ASTSelectQuery * ast_select_, ExtractedSettings && settings_, const Context & context_)
-        : ast_select(ast_select_), settings(settings_), context(context_)
+    : ast_select(ast_select_), settings(settings_), context(context_)
 {
 }
 
@@ -191,6 +191,14 @@ bool PredicateExpressionsOptimizer::allowPushDown(
         }
     }
 
+    return checkDependencies(projection_columns, dependencies, optimize_kind);
+}
+
+bool PredicateExpressionsOptimizer::checkDependencies(
+    const std::vector<ProjectionWithAlias> & projection_columns,
+    const std::vector<IdentifierWithQualifier> & dependencies,
+    OptimizeKind & optimize_kind)
+{
     for (const auto & [identifier, prefix] : dependencies)
     {
         bool is_found = false;
