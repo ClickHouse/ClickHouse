@@ -5,8 +5,10 @@
 namespace DB
 {
 
-SourceFromInputStream::SourceFromInputStream(InputStreamHolderPtr holder_)
-    : ISource(holder_->getStream().getHeader()), holder(std::move(holder_))
+SourceFromInputStream::SourceFromInputStream(InputStreamHolderPtr holder_, bool force_add_aggregating_info)
+    : ISource(holder_->getStream().getHeader())
+    , force_add_aggregating_info(force_add_aggregating_info)
+    , holder(std::move(holder_))
 {
     auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
