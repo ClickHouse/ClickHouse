@@ -58,13 +58,13 @@ namespace
         BlockInputStreamPtr block_in;
     };
 
-    class SourceFromInputStream : public ISource
+    class ConvertingAggregatedToBlocksTransform : public ISource
     {
     public:
-        SourceFromInputStream(Block header, AggregatingTransformParamsPtr params_, BlockInputStreamPtr stream)
+        ConvertingAggregatedToBlocksTransform(Block header, AggregatingTransformParamsPtr params_, BlockInputStreamPtr stream)
             : ISource(std::move(header)), params(std::move(params_)), stream(std::move(stream)) {}
 
-        String getName() const override { return "SourceFromInputStream"; }
+        String getName() const override { return "ConvertingAggregatedToBlocksTransform"; }
 
     protected:
         Chunk generate() override
@@ -248,7 +248,7 @@ void AggregatingTransform::initGenerate()
     if (!params->aggregator.hasTemporaryFiles())
     {
         auto stream = params->aggregator.mergeAndConvertToBlocks(many_data->variants, params->final, max_threads);
-        processors.emplace_back(std::make_shared<SourceFromInputStream>(stream->getHeader(), params, std::move(stream)));
+        processors.emplace_back(std::make_shared<ConvertingAggregatedToBlocksTransform>(stream->getHeader(), params, std::move(stream)));
     }
     else
     {
