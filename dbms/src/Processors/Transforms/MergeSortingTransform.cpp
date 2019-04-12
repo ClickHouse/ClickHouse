@@ -445,7 +445,9 @@ IProcessor::Status MergeSortingTransform::prepareGenerate()
         if (!input.hasData())
             return Status::NeedData;
 
-        output.push(input.pull());
+        auto chunk = input.pull();
+        enrichChunkWithConstants(chunk);
+        output.push(std::move(chunk));
         return Status::PortFull;
     }
 }
