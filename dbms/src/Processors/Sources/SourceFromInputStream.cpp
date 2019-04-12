@@ -33,7 +33,7 @@ Chunk SourceFromInputStream::generate()
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);
 
-    if (has_aggregate_functions)
+    if (force_add_aggregating_info || has_aggregate_functions)
     {
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = block.info.bucket_num;
