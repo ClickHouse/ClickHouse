@@ -148,6 +148,7 @@ static void executeJob(IProcessor * processor)
     {
         e.addMessage("While executing " + processor->getName() + " ("
                      + toString(reinterpret_cast<std::uintptr_t>(processor)) + ") ");
+        throw;
     }
 }
 
