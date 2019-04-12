@@ -83,7 +83,7 @@ public:
                               Int64 start_value, Int64 length_value, Block & block, size_t result, Source && source,
                               size_t input_rows_count)
     {
-       auto col_res = ColumnString::create();
+        auto col_res = ColumnString::create();
 
         if (!column_length)
         {
