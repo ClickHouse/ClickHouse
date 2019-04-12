@@ -44,9 +44,9 @@ LimitTransform::Status LimitTransform::prepare()
     bool pushing_is_finished = rows_read >= offset + limit;
     if (pushing_is_finished)
     {
-        output.finish();
         if (!always_read_till_end)
         {
+            output.finish();
             input.close();
             return Status::Finished;
         }
