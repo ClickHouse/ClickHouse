@@ -102,10 +102,6 @@ if (ENABLE_JEMALLOC AND USE_INTERNAL_JEMALLOC_LIBRARY)
     add_subdirectory (jemalloc-cmake)
 endif ()
 
-if (USE_LFALLOC)
-    add_subdirectory (lfalloc)
-endif ()
-
 if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()

@@ -58,10 +58,7 @@ add_library (common ${LINK_MODE}
 
 # When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 
-if (USE_LFALLOC)
-    message (STATUS "Link lfalloc: ${LFALLOC_LIBRARIES}")
-    set (MALLOC_LIBRARIES ${LFALLOC_LIBRARIES})
-elseif (USE_JEMALLOC)
+if (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
 elseif (USE_TCMALLOC)

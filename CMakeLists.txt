@@ -317,6 +317,7 @@ include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 include (cmake/find_hyperscan.cmake)
+include (cmake/find_lfalloc.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
@@ -335,8 +336,6 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
-
-include (cmake/find_lfalloc.cmake)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
