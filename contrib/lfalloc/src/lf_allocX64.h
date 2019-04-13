@@ -8,6 +8,7 @@
 
 #include "util/system/compiler.h"
 #include "util/system/types.h"
+#include <random>
 
 #ifdef _MSC_VER
 #ifndef _CRT_SECURE_NO_WARNINGS
@@ -137,7 +138,7 @@ inline T* DoCas(T* volatile* target, T* exchange, T* compare) {
 }
 
 #ifdef _64_
-const uintptr_t N_MAX_WORKSET_SIZE = 0x100000000ll * 200;
+const uintptr_t N_MAX_WORKSET_SIZE = 0x700000000000ll;
 const uintptr_t N_HUGE_AREA_FINISH = 0x700000000000ll;
 #ifndef _freebsd_
 const uintptr_t LINUX_MMAP_AREA_START = 0x100000000ll;
@@ -345,8 +346,14 @@ static char* AllocWithMMap(uintptr_t sz, EMMapMode mode) {
     if (Y_UNLIKELY(uintptr_t(((char*)largeBlock - ALLOC_START) + sz) >= N_MAX_WORKSET_SIZE))
         NMalloc::AbortFromCorruptedAllocator(); // out of working set, something has broken
 #else
-#if defined(_freebsd_) || !defined(_64_)
+#if defined(_freebsd_) || !defined(_64_) || defined(USE_LFALLOC_RANDOM_HINT)
+#if defined(USE_LFALLOC_RANDOM_HINT)
+    static thread_local std::mt19937_64 generator(std::random_device{}());
+    std::uniform_int_distribution<intptr_t> distr(0x100000000000UL, N_MAX_WORKSET_SIZE / 2);
+    char* largeBlock = (char*)mmap(reinterpret_cast<void*>(distr(generator)), sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+#else
     char* largeBlock = (char*)mmap(0, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+#endif
     VerifyMmapResult(largeBlock);
     if (Y_UNLIKELY(uintptr_t(((char*)largeBlock - ALLOC_START) + sz) >= N_MAX_WORKSET_SIZE))
         NMalloc::AbortFromCorruptedAllocator(); // out of working set, something has broken
