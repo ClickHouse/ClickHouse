@@ -347,8 +347,6 @@ static char* AllocWithMMap(uintptr_t sz, EMMapMode mode) {
         NMalloc::AbortFromCorruptedAllocator(); // out of working set, something has broken
 #else
 #if defined(_freebsd_) || !defined(_64_) || defined(USE_LFALLOC_RANDOM_HINT)
-#if defined(USE_LFALLOC_RANDOM_HINT)
-    static thread_local std::mt19937_64 generator(std::random_device{}());
     uintptr_t areaStart;
     uintptr_t areaFinish;
     if (mode == MM_HUGE) {
@@ -358,6 +356,8 @@ static char* AllocWithMMap(uintptr_t sz, EMMapMode mode) {
         areaStart = LINUX_MMAP_AREA_START;
         areaFinish = N_MAX_WORKSET_SIZE;
     }
+#if defined(USE_LFALLOC_RANDOM_HINT)
+    static thread_local std::mt19937_64 generator(std::random_device{}());
     std::uniform_int_distribution<intptr_t> distr(areaStart, areaFinish / 2);
     char* largeBlock = (char*)mmap(reinterpret_cast<void*>(distr(generator)), sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 #else
