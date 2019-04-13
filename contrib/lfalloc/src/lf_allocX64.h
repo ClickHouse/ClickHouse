@@ -138,7 +138,13 @@ inline T* DoCas(T* volatile* target, T* exchange, T* compare) {
 }
 
 #ifdef _64_
+
+#if defined(USE_LFALLOC_RANDOM_HINT)
 const uintptr_t N_MAX_WORKSET_SIZE = 0x700000000000ll;
+#else
+const uintptr_t N_MAX_WORKSET_SIZE = 0x100000000ll * 200;
+#endif
+
 const uintptr_t N_HUGE_AREA_FINISH = 0x700000000000ll;
 #ifndef _freebsd_
 const uintptr_t LINUX_MMAP_AREA_START = 0x100000000ll;
