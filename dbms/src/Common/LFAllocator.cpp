@@ -15,7 +15,7 @@ void * LFAllocator::alloc(size_t size, size_t alignment)
         return LFAlloc(size);
     else
     {
-        void* ptr;
+        void * ptr;
         int res = LFPosixMemalign(&ptr, alignment, size);
         return res ? nullptr : ptr;
     }
@@ -30,7 +30,7 @@ void * LFAllocator::realloc(void * old_ptr, size_t, size_t new_size, size_t alig
 {
     if (old_ptr == nullptr)
     {
-        void* result = LFAllocator::alloc(new_size, alignment);
+        void * result = LFAllocator::alloc(new_size, alignment);
         return result;
     }
     if (new_size == 0)
@@ -39,11 +39,9 @@ void * LFAllocator::realloc(void * old_ptr, size_t, size_t new_size, size_t alig
         return nullptr;
     }
 
-    void* new_ptr = LFAllocator::alloc(new_size, alignment);
+    void * new_ptr = LFAllocator::alloc(new_size, alignment);
     if (new_ptr == nullptr)
-    {
         return nullptr;
-    }
     size_t old_size = LFGetSize(old_ptr);
     memcpy(new_ptr, old_ptr, ((old_size < new_size) ? old_size : new_size));
     LFFree(old_ptr);
