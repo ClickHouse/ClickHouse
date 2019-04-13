@@ -1,5 +1,6 @@
-#if USE_LFALLOC
+#include <Common/config.h>
 
+#if USE_LFALLOC
 #include "LFAllocator.h"
 
 #include <cstring>

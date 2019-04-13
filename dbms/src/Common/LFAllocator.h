@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Common/config.h>
-#include <cstddef>
 
 #if !USE_LFALLOC
 #error "do not include this file until USE_LFALLOC is set to 1"
 #endif
+
+#include <cstddef>
 
 namespace DB
 {
