@@ -58,7 +58,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int UNSUPPORTED_METHOD;
-        extern const int SELECT_DB_FAILURE;
+        extern const int CANNOT_SELECT;
     }
 
 
@@ -85,7 +85,7 @@ namespace DB
             std::string reply = client->execute<std::string>(command);
             if (reply != "+OK\r\n")
                 throw Exception{"Selecting db with index " + DB::toString(db_index) + " failed with reason " + reply,
-                                ErrorCodes::SELECT_DB_FAILURE};
+                                ErrorCodes::CANNOT_SELECT};
         }
     }
 
