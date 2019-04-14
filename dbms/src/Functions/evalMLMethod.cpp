@@ -49,6 +49,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (!arguments.size())
+            throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
+
         const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
@@ -59,12 +62,15 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
+        if (!arguments.size())
+            throw Exception("Function " + getName() + " requires at least one argument", ErrorCodes::BAD_ARGUMENTS);
+
         const ColumnConst * column_with_states
-                = typeid_cast<const ColumnConst *>(&*block.getByPosition(arguments.at(0)).column);
+                = typeid_cast<const ColumnConst *>(&*block.getByPosition(arguments[0]).column);
 
 
         if (!column_with_states)
-            throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                             + " of first argument of function "
                             + getName(),
                             ErrorCodes::ILLEGAL_COLUMN);
