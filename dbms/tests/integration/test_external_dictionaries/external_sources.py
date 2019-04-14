@@ -10,7 +10,7 @@ import os
 
 class ExternalSource(object):
     def __init__(self, name, internal_hostname, internal_port,
-                 docker_hostname, docker_port, user, password):
+                 docker_hostname, docker_port, user, password, is_kv):
         self.name = name
         self.internal_hostname = internal_hostname
         self.internal_port = int(internal_port)
@@ -18,6 +18,7 @@ class ExternalSource(object):
         self.docker_port = int(docker_port)
         self.user = user
         self.password = password
+        self.is_kv = is_kv
 
     def get_source_str(self, table_name):
         raise NotImplementedError("Method {} is not implemented for {}".format(
@@ -381,6 +382,7 @@ class SourceRedis(ExternalSource):
             <redis>
                 <host>{host}</host>
                 <port>{port}</port>
+                <db_index>0</db_index>
             </redis>
         '''.format(
             host=self.docker_hostname,
@@ -392,8 +394,7 @@ class SourceRedis(ExternalSource):
         self.prepared = True
 
     def load_data(self, data, table_name):
-        for row_num, row in enumerate(data):
-            self.client.execute_command("SELECT " + str(row_num))
+        for row_num, row in enumerate(data): # FIXME: yield
             self.client.execute_command("FLUSHDB")
             for cell_name, cell_value in row.data.items():
                 value_type = "$"
@@ -404,3 +405,4 @@ class SourceRedis(ExternalSource):
                 cmd = "SET " + "$" + cell_name + " " + value_type + str(cell_value)
                 print(cmd)
                 self.client.execute_command(cmd)
+            return
