@@ -1,9 +1,10 @@
-
+export CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:="test"}
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 [ -n "$CLICKHOUSE_CONFIG_CLIENT" ] && CLICKHOUSE_CLIENT_OPT0+=" --config-file=${CLICKHOUSE_CONFIG_CLIENT} "
 [ -n "${CLICKHOUSE_HOST}" ] && CLICKHOUSE_CLIENT_OPT0+=" --host=${CLICKHOUSE_HOST} "
 [ -n "${CLICKHOUSE_PORT_TCP}" ] && CLICKHOUSE_CLIENT_OPT0+=" --port=${CLICKHOUSE_PORT_TCP} "
 [ -n "${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL}" ] && CLICKHOUSE_CLIENT_OPT0+=" --send_logs_level=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL} "
+[ -n "${CLICKHOUSE_DATABASE}" ] && CLICKHOUSE_CLIENT_OPT0+=" --database=${CLICKHOUSE_DATABASE} "
 
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
 [ -x "$CLICKHOUSE_BINARY-client" ] && CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:=$CLICKHOUSE_BINARY-client}
@@ -39,3 +40,10 @@ export CLICKHOUSE_CURL_COMMAND=${CLICKHOUSE_CURL_COMMAND:="curl"}
 export CLICKHOUSE_CURL=${CLICKHOUSE_CURL:="${CLICKHOUSE_CURL_COMMAND} --max-time 10"}
 export CLICKHOUSE_TMP=${CLICKHOUSE_TMP:="."}
 mkdir -p ${CLICKHOUSE_TMP}
+
+function clickhouse_client_removed_host_parameter()
+{
+	# removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
+	# bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
+	$(echo "$CLICKHOUSE_CLIENT"  | python -c "import sys, re; print re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read())") "$@"
+}

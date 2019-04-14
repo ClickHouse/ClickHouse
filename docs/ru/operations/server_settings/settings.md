@@ -1,5 +1,4 @@
-# Серверные настройки
-
+# Конфигурационные параметры сервера
 
 ## builtin_dictionaries_reload_interval
 
@@ -89,8 +88,8 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Путь:
 
--   Указывается абсолютным или относительно конфигурационного файла сервера.
--   Может содержать wildcard-ы \* и ?.
+- Указывается абсолютным или относительно конфигурационного файла сервера.
+- Может содержать wildcard-ы \* и ?.
 
 Смотрите также "[Внешние словари](../../query_language/dicts/external_dicts.md)".
 
@@ -118,7 +117,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## format_schema_path
+## format_schema_path {#server_settings-format_schema_path}
 
 Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../interfaces/formats.md#capnproto).
 
@@ -128,8 +127,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
   <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
-
-
 
 ## graphite {#server_settings-graphite}
 
@@ -640,7 +637,7 @@ TCP порт для защищённого обмена данными с кли
 ```
 
 
-## uncompressed_cache_size  {#server-settings-uncompressed_cache_size}
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
@@ -669,10 +666,10 @@ TCP порт для защищённого обмена данными с кли
 
 Путь к файлу, который содержит:
 
--   Конфигурации пользователей.
--   Права доступа.
--   Профили настроек.
--   Настройки квот.
+- Конфигурации пользователей.
+- Права доступа.
+- Профили настроек.
+- Настройки квот.
 
 **Пример**
 
@@ -709,5 +706,33 @@ ClickHouse использует ZooKeeper для хранения метадан
     </node>
 </zookeeper>
 ```
+
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+
+Способ хранения заголовков кусков данных в ZooKeeper.
+
+Параметр применяется только к семейству таблиц `MergeTree`. Его можно установить:
+
+- Глобально в разделе [merge_tree](#server_settings-merge_tree) файла `config.xml`.
+
+    ClickHouse использует этот параметр для всех таблиц на сервере. Вы можете изменить настройку в любое время. Существующие таблицы изменяют свое поведение при изменении параметра.
+
+- Для каждой отдельной таблицы.
+
+    При создании таблицы укажите соответствующую [настройку движка](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). Поведение существующей таблицы с установленным параметром не изменяется даже при изменении глобального параметра.
+
+**Возможные значения**
+
+- 0 — функциональность выключена.
+- 1 — функциональность включена.
+
+Если `use_minimalistic_part_header_in_zookeeper = 1`, то [реплицированные](../table_engines/replication.md) таблицы хранят заголовки кусков данных в компактном виде, используя только одну `znode`. Если таблица содержит много столбцов, этот метод хранения значительно уменьшает объем данных, хранящихся в Zookeeper.
+
+!!! attention "Внимание"
+    После того как вы установили `use_minimalistic_part_header_in_zookeeper = 1`, невозможно откатить ClickHouse до версии, которая не поддерживает этот параметр. Будьте осторожны при обновлении ClickHouse на серверах в кластере. Не обновляйте все серверы сразу. Безопаснее проверять новые версии ClickHouse в тестовой среде или только на некоторых серверах кластера.
+
+    Заголовки частей данных, ранее сохранённые с этим параметром, не могут быть восстановлены в их предыдущем (некомпактном) представлении.
+
+**Значение по умолчанию**: 0.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->

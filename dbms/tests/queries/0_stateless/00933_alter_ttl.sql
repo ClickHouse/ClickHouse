@@ -10,7 +10,7 @@ insert into test.ttl values (toDateTime('2100-10-10 00:00:00'), 3);
 optimize table test.ttl final;
 select * from test.ttl order by d;
 
-alter table test.ttl modify ttl a; -- { serverError 448}
+alter table test.ttl modify ttl a; -- { serverError 450 }
 
 drop table if exists test.ttl;
 

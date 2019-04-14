@@ -1,4 +1,3 @@
-#include <Common/MemoryTracker.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Poco/File.h>
 

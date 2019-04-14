@@ -28,10 +28,13 @@ namespace ErrorCodes
 }
 
 
+/// If 'is_utf8' - measure offset and length in code points instead of bytes.
+/// UTF8 variant is not available for FixedString arguments.
+template <bool is_utf8>
 class FunctionSubstring : public IFunction
 {
 public:
-    static constexpr auto name = "substring";
+    static constexpr auto name = is_utf8 ? "substringUTF8" : "substring";
     static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionSubstring>();
@@ -56,7 +59,7 @@ public:
                 + toString(number_of_arguments) + ", should be 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!isStringOrFixedString(arguments[0]))
+        if ((is_utf8 && !isString(arguments[0])) || !isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!isNumber(arguments[1]))
@@ -80,7 +83,7 @@ public:
                               Int64 start_value, Int64 length_value, Block & block, size_t result, Source && source,
                               size_t input_rows_count)
     {
-       auto col_res = ColumnString::create();
+        auto col_res = ColumnString::create();
 
         if (!column_length)
         {
@@ -145,30 +148,48 @@ public:
                 throw Exception("Third argument provided for function substring could not be negative.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
         }
 
-        if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
-            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                             length_value, block, result, StringSource(*col), input_rows_count);
-        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
-            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                             length_value, block, result, FixedStringSource(*col_fixed), input_rows_count);
-        else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                             length_value, block, result, ConstSource<StringSource>(*col_const), input_rows_count);
-        else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
-            executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
-                             length_value, block, result, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
+        if constexpr (is_utf8)
+        {
+            if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
+                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, block, result, UTF8StringSource(*col), input_rows_count);
+            else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, block, result, ConstSource<UTF8StringSource>(*col_const), input_rows_count);
+            else
+                throw Exception(
+                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
         else
-            throw Exception(
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        {
+            if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
+                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, block, result, StringSource(*col), input_rows_count);
+            else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, block, result, FixedStringSource(*col_fixed), input_rows_count);
+            else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, block, result, ConstSource<StringSource>(*col_const), input_rows_count);
+            else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
+                executeForSource(column_start, column_length, column_start_const, column_length_const, start_value,
+                                length_value, block, result, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
+            else
+                throw Exception(
+                    "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
     }
 };
 
 void registerFunctionSubstring(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionSubstring>(FunctionFactory::CaseInsensitive);
-    factory.registerAlias("substr", FunctionSubstring::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("mid", FunctionSubstring::name, FunctionFactory::CaseInsensitive); /// from MySQL dialect
+    factory.registerFunction<FunctionSubstring<false>>(FunctionFactory::CaseInsensitive);
+    factory.registerAlias("substr", "substring", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("mid", "substring", FunctionFactory::CaseInsensitive); /// from MySQL dialect
+
+    factory.registerFunction<FunctionSubstring<true>>(FunctionFactory::CaseSensitive);
 }
 
 }

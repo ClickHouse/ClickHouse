@@ -131,13 +131,13 @@ else
     TEST_DICT=${TEST_DICT=1}
     CLICKHOUSE_CLIENT_QUERY="${CLICKHOUSE_CLIENT} --config ${CLICKHOUSE_CONFIG_CLIENT} --port $CLICKHOUSE_PORT_TCP -m -n -q"
     $CLICKHOUSE_CLIENT_QUERY 'SELECT * from system.build_options; SELECT * FROM system.clusters;'
-    CLICKHOUSE_TEST="env ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}${CLICKHOUSE_BINARY_NAME} --configclient $CLICKHOUSE_CONFIG_CLIENT --configserver $CLICKHOUSE_CONFIG --tmp $DATA_DIR/tmp --queries $QUERIES_DIR $TEST_OPT0 $TEST_OPT"
+    CLICKHOUSE_TEST="env ${TEST_DIR}clickhouse-test --force-color --binary ${BIN_DIR}${CLICKHOUSE_BINARY_NAME} --configclient $CLICKHOUSE_CONFIG_CLIENT --configserver $CLICKHOUSE_CONFIG --tmp $DATA_DIR/tmp --queries $QUERIES_DIR $TEST_OPT0 $TEST_OPT"
     CLICKHOUSE_PERFORMANCE_TEST="${BIN_DIR}clickhouse-performance-test --port $CLICKHOUSE_PORT_TCP --recursive $CUR_DIR/performance --skip-tags=long"
     if [ "${TEST_RUN_STRESS}" ]; then
         # Running test in parallel will fail some results (tests can create/fill/drop same tables)
         TEST_NPROC=${TEST_NPROC:=$(( `nproc || sysctl -n hw.ncpu || echo 2` * 2))}
         for i in `seq 1 ${TEST_NPROC}`; do
-             $CLICKHOUSE_TEST --order=random --testname &
+             $CLICKHOUSE_TEST --order=random --testname --tmp=$DATA_DIR/tmp/tmp${i} &
         done
         $CLICKHOUSE_PERFORMANCE_TEST &
     fi
