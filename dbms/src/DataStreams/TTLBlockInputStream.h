@@ -45,13 +45,8 @@ private:
     Logger * log;
     DateLUTImpl date_lut;
 
-    struct DefaultWithResultColumn
-    {
-        ExpressionActionsPtr expression;
-        String result_column;
-    };
-    std::unordered_map<String, DefaultWithResultColumn> default_expressions;
-
+    std::unordered_map<String, String> defaults_result_column;
+    ExpressionActionsPtr defaults_expression;
 private:
     /// Removes values with expired ttl and computes new min_ttl and empty_columns for part
     void removeValuesWithExpiredColumnTTL(Block & block);

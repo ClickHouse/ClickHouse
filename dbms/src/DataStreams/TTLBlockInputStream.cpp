@@ -28,6 +28,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     children.push_back(input_);
 
     const auto & column_defaults = storage.getColumns().getDefaults();
+    ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & [name, ttl_info] : old_ttl_infos.columns_ttl)
     {
         if (ttl_info.min <= current_time)
@@ -35,13 +36,11 @@ TTLBlockInputStream::TTLBlockInputStream(
             new_ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
 
-            if (column_defaults.count(name))
-            {
-                auto ast = column_defaults.at(name).expression;
-                auto syntax_result = SyntaxAnalyzer(storage.global_context).analyze(ast, storage.getColumns().getAllPhysical());
-                auto expr = ExpressionAnalyzer{ast, syntax_result, storage.global_context}.getActions(true);
-                default_expressions.emplace(name, DefaultWithResultColumn{expr, ast->getColumnName()});
-            }
+            auto it = column_defaults.find(name);
+
+            if (it != column_defaults.end())
+                default_expr_list->children.emplace_back(
+                    setAlias(it->second.expression, it->first));
         }
         else
             new_ttl_infos.columns_ttl.emplace(name, ttl_info);
@@ -49,6 +48,13 @@ TTLBlockInputStream::TTLBlockInputStream(
 
     if (old_ttl_infos.table_ttl.min > current_time)
         new_ttl_infos.table_ttl = old_ttl_infos.table_ttl;
+
+    if (!default_expr_list->children.empty())
+    {
+        auto syntax_result = SyntaxAnalyzer(storage.global_context).analyze(
+            default_expr_list, storage.getColumns().getAllPhysical());
+        defaults_expression = ExpressionAnalyzer{default_expr_list, syntax_result, storage.global_context}.getActions(true);
+    }
 }
 
 
@@ -130,6 +136,13 @@ void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 
 void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
 {
+    Block block_with_defaults;
+    if (defaults_expression)
+    {
+        block_with_defaults = block;
+        defaults_expression->execute(block_with_defaults);
+    }
+
     for (const auto & [name, ttl_entry] : storage.ttl_entries_by_name)
     {
         const auto & old_ttl_info = old_ttl_infos.columns_ttl[name];
@@ -145,13 +158,8 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
             ttl_entry.expression->execute(block);
 
         const IColumn * default_column = nullptr;
-        auto it = default_expressions.find(name);
-        if (it != default_expressions.end())
-        {
-            if (!block.has(it->second.result_column))
-                it->second.expression->execute(block);
-            default_column = block.getByName(it->second.result_column).column.get();
-        }
+        if (block_with_defaults.has(name))
+            default_column = block_with_defaults.getByName(name).column->convertToFullColumnIfConst().get();
 
         auto & column_with_type = block.getByName(name);
         const IColumn * values_column = column_with_type.column.get();
@@ -183,10 +191,6 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
     }
 
     for (const auto & elem : storage.ttl_entries_by_name)
-        if (block.has(elem.second.result_column))
-            block.erase(elem.second.result_column);
-
-    for (const auto & elem : default_expressions)
         if (block.has(elem.second.result_column))
             block.erase(elem.second.result_column);
 }
