@@ -87,12 +87,14 @@ class Field(object):
 
 
 class DictionaryStructure(object):
-    def __init__(self, layout, fields):
+    def __init__(self, layout, fields, is_kv=False):
         self.layout = layout
         self.keys = []
         self.range_key = None
         self.ordinary_fields = []
         self.range_fields = []
+        self.is_kv = is_kv
+
         for field in fields:
             if field.is_key:
                 self.keys.append(field)
@@ -286,6 +288,7 @@ class Dictionary(object):
         self.source = copy.deepcopy(source)
         self.config_path = config_path
         self.table_name = table_name
+        self.is_kv = source.is_kv
 
     def generate_config(self):
         with open(self.config_path, 'w') as result:

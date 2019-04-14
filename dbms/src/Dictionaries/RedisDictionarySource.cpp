@@ -58,6 +58,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int UNSUPPORTED_METHOD;
+        extern const int SELECT_DB_FAILURE;
     }
 
 
@@ -68,13 +69,26 @@ namespace DB
             const DictionaryStructure & dict_struct,
             const std::string & host,
             UInt16 port,
+            UInt8 db_index,
             const Block & sample_block)
             : dict_struct{dict_struct}
             , host{host}
             , port{port}
+            , db_index{db_index}
             , sample_block{sample_block}
             , client{std::make_shared<Poco::Redis::Client>(host, port)}
     {
+        if (db_index != 0)
+        {
+            Poco::Redis::Array command;
+            command << "SELECT" << db_index;
+            String reply = client->execute<String>(command);
+            if (reply != "+OK\r\n")
+            {
+                throw Exception{"Selecting db with index " + DB::toString(db_index) + " failed with reason " + reply,
+                                ErrorCodes::SELECT_DB_FAILURE};
+            }
+        }
     }
 
 
@@ -87,6 +101,7 @@ namespace DB
             dict_struct,
             config.getString(config_prefix + ".host"),
             config.getUInt(config_prefix + ".port"),
+            config.getUInt(config_prefix + ".db_index", 0),
             sample_block)
     {
     }
@@ -96,6 +111,7 @@ namespace DB
             : RedisDictionarySource{other.dict_struct,
                                     other.host,
                                     other.port,
+                                    other.db_index,
                                     other.sample_block}
     {
     }

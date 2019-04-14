@@ -79,16 +79,16 @@ LAYOUTS = [
 ]
 
 SOURCES = [
-    SourceRedis("Redis", "localhost", "6380", "redis1", "6379", "", ""),
-    SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
-    SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
-    SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", ""),
-    SourceClickHouse("LocalClickHouse", "localhost", "9000", "node", "9000", "default", ""),
-    SourceFile("File", "localhost", "9000", "node", "9000", "", ""),
-    SourceExecutableHashed("ExecutableHashed", "localhost", "9000", "node", "9000", "", ""),
-    SourceExecutableCache("ExecutableCache", "localhost", "9000", "node", "9000", "", ""),
-    SourceHTTP("SourceHTTP", "localhost", "9000", "clickhouse1", "9000", "", ""),
-    SourceHTTPS("SourceHTTPS", "localhost", "9000", "clickhouse1", "9000", "", ""),
+    SourceRedis("Redis", "localhost", "6380", "redis1", "6379", "", "", True),
+    SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse", False),
+    SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse", False),
+    SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", "", False),
+    SourceClickHouse("LocalClickHouse", "localhost", "9000", "node", "9000", "default", "", False),
+    SourceFile("File", "localhost", "9000", "node", "9000", "", "", False),
+    SourceExecutableHashed("ExecutableHashed", "localhost", "9000", "node", "9000", "", "", False),
+    SourceExecutableCache("ExecutableCache", "localhost", "9000", "node", "9000", "", "", False),
+    SourceHTTP("SourceHTTP", "localhost", "9000", "clickhouse1", "9000", "", "", False),
+    SourceHTTPS("SourceHTTPS", "localhost", "9000", "clickhouse1", "9000", "", "", False),
 ]
 
 DICTIONARIES = []
@@ -108,9 +108,9 @@ def setup_module(module):
     for layout in LAYOUTS:
         for source in SOURCES:
             if source.compatible_with_layout(layout):
-                structure = DictionaryStructure(layout, FIELDS[layout.layout_type])
+                structure = DictionaryStructure(layout, FIELDS[layout.layout_type], source.is_kv)
                 dict_name = source.name + "_" + layout.name
-                dict_path = os.path.join(dict_configs_path, dict_name + '.xml')
+                dict_path = os.path.join(dict_configs_path, dict_name + '.xml') # FIXME: single xml config for every column
                 dictionary = Dictionary(dict_name, structure, source, dict_path, "table_" + dict_name)
                 dictionary.generate_config()
                 DICTIONARIES.append(dictionary)
@@ -171,6 +171,8 @@ def test_simple_dictionaries(started_cluster):
 
                     for query in dct.get_select_get_or_default_queries(field, row):
                         queries_with_answers.append((query, field.default_value_for_get))
+                if dct.is_kv:
+                    break
         for query in dct.get_hierarchical_queries(data[0]):
             queries_with_answers.append((query, [1]))
 
@@ -223,6 +225,8 @@ def test_complex_dictionaries(started_cluster):
 
                     for query in dct.get_select_get_or_default_queries(field, row):
                         queries_with_answers.append((query, field.default_value_for_get))
+                if dct.is_kv:
+                    break
 
     for query, answer in queries_with_answers:
         print query
@@ -258,6 +262,8 @@ def test_ranged_dictionaries(started_cluster):
                 if not field.is_key and not field.is_range:
                     for query in dct.get_select_get_queries(field, row):
                         queries_with_answers.append((query, row.get_value_by_name(field.name)))
+                if dct.is_kv:
+                    break
 
     for query, answer in queries_with_answers:
         print query

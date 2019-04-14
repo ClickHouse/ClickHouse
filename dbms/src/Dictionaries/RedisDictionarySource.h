@@ -28,6 +28,7 @@ namespace DB
                 const DictionaryStructure & dict_struct,
                 const std::string & host,
                 UInt16 port,
+                UInt8 db_index,
                 const Block & sample_block);
 
     public:
@@ -69,6 +70,7 @@ namespace DB
         const DictionaryStructure dict_struct;
         const std::string host;
         const UInt16 port;
+        const UInt8 db_index; // [0..15]
         Block sample_block;
 
         std::shared_ptr<Poco::Redis::Client> client;
