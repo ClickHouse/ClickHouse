@@ -1,5 +1,3 @@
-#include <Core/Defines.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
@@ -7,6 +5,7 @@
 #include <Formats/CSVRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <DataTypes/DataTypeNothing.h>
 
 
 namespace DB
@@ -15,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -90,7 +88,7 @@ static void skipRow(ReadBuffer & istr, const FormatSettings::CSV & settings, siz
 
 
 CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings)
-    : istr(istr_), header(header_), with_names(with_names_), format_settings(format_settings)
+        : RowInputStreamWithDiagnosticInfo(istr_, header_), with_names(with_names_), format_settings(format_settings)
 {
     const auto num_columns = header.columns();
 
@@ -235,71 +233,7 @@ bool CSVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
     return true;
 }
 
-
-String CSVRowInputStream::getDiagnosticInfo()
-{
-    if (istr.eof())        /// Buffer has gone, cannot extract information about what has been parsed.
-        return {};
-
-    WriteBufferFromOwnString out;
-
-    MutableColumns columns = header.cloneEmptyColumns();
-
-    /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
-    size_t bytes_read_at_start_of_buffer = istr.count() - istr.offset();
-    if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
-    {
-        out << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
-        return out.str();
-    }
-
-    size_t max_length_of_column_name = 0;
-    for (size_t i = 0; i < header.columns(); ++i)
-        if (header.safeGetByPosition(i).name.size() > max_length_of_column_name)
-            max_length_of_column_name = header.safeGetByPosition(i).name.size();
-
-    size_t max_length_of_data_type_name = 0;
-    for (size_t i = 0; i < header.columns(); ++i)
-        if (header.safeGetByPosition(i).type->getName().size() > max_length_of_data_type_name)
-            max_length_of_data_type_name = header.safeGetByPosition(i).type->getName().size();
-
-    /// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
-
-    if (pos_of_prev_row)
-    {
-        istr.position() = pos_of_prev_row;
-
-        out << "\nRow " << (row_num - 1) << ":\n";
-        if (!parseRowAndPrintDiagnosticInfo(columns, out, max_length_of_column_name, max_length_of_data_type_name))
-            return out.str();
-    }
-    else
-    {
-        if (!pos_of_current_row)
-        {
-            out << "Could not print diagnostic info because parsing of data hasn't started.\n";
-            return out.str();
-        }
-
-        istr.position() = pos_of_current_row;
-    }
-
-    out << "\nRow " << row_num << ":\n";
-    parseRowAndPrintDiagnosticInfo(columns, out, max_length_of_column_name, max_length_of_data_type_name);
-    out << "\n";
-
-    return out.str();
-}
-
-
-/** gcc-7 generates wrong code with optimization level greater than 1.
-  * See tests: dbms/src/IO/tests/write_int.cpp
-  *  and dbms/tests/queries/0_stateless/00898_parsing_bad_diagnostic_message.sh
-  * This is compiler bug. The bug does not present in gcc-8 and clang-8.
-  * Nevertheless, we don't need high optimization of this function.
-  */
-bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
-    WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
+bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
     const char delimiter = format_settings.csv.delimiter;
 
@@ -313,87 +247,18 @@ bool OPTIMIZE(1) CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumn
 
         if (column_indexes_for_input_fields[input_position].has_value())
         {
-            const auto & column_index = *column_indexes_for_input_fields[input_position];
-            const auto & current_column_type = data_types[column_index];
-
-            out << "Column " << input_position << ", " << std::string((input_position < 10 ? 2 : input_position < 100 ? 1 : 0), ' ')
-                << "name: " << header.safeGetByPosition(column_index).name << ", " << std::string(max_length_of_column_name - header.safeGetByPosition(column_index).name.size(), ' ')
-                << "type: " << current_column_type->getName() << ", " << std::string(max_length_of_data_type_name - current_column_type->getName().size(), ' ');
-
-            BufferBase::Position prev_position = istr.position();
-            BufferBase::Position curr_position = istr.position();
-            std::exception_ptr exception;
-
-            try
-            {
-                skipWhitespacesAndTabs(istr);
-                prev_position = istr.position();
-                current_column_type->deserializeAsTextCSV(*columns[column_index], istr, format_settings);
-                curr_position = istr.position();
-                skipWhitespacesAndTabs(istr);
-            }
-            catch (...)
-            {
-                exception = std::current_exception();
-            }
-
-            if (curr_position < prev_position)
-                throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
-
-            if (isNumber(current_column_type) || isDateOrDateTime(current_column_type))
-            {
-                /// An empty string instead of a value.
-                if (curr_position == prev_position)
-                {
-                    out << "ERROR: text ";
-                    verbosePrintString(prev_position, std::min(prev_position + 10, istr.buffer().end()), out);
-                    out << " is not like " << current_column_type->getName() << "\n";
-                    return false;
-                }
-            }
-
-            out << "parsed text: ";
-            verbosePrintString(prev_position, curr_position, out);
-
-            if (exception)
-            {
-                if (current_column_type->getName() == "DateTime")
-                    out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
-                else if (current_column_type->getName() == "Date")
-                    out << "ERROR: Date must be in YYYY-MM-DD format.\n";
-                else
-                    out << "ERROR\n";
+            size_t col_idx = column_indexes_for_input_fields[input_position].value();
+            if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx],
+                                                        out, input_position))
                 return false;
-            }
-
-            out << "\n";
-
-            if (current_column_type->haveMaximumSizeOfValue())
-            {
-                if (*curr_position != '\n' && *curr_position != '\r' && *curr_position != delimiter)
-                {
-                    out << "ERROR: garbage after " << current_column_type->getName() << ": ";
-                    verbosePrintString(curr_position, std::min(curr_position + 10, istr.buffer().end()), out);
-                    out << "\n";
-
-                    if (current_column_type->getName() == "DateTime")
-                        out << "ERROR: DateTime must be in YYYY-MM-DD hh:mm:ss or NNNNNNNNNN (unix timestamp, exactly 10 digits) format.\n";
-                    else if (current_column_type->getName() == "Date")
-                        out << "ERROR: Date must be in YYYY-MM-DD format.\n";
-
-                    return false;
-                }
-            }
         }
         else
         {
             static const String skipped_column_str = "<SKIPPED COLUMN>";
-            out << "Column " << input_position << ", " << std::string((input_position < 10 ? 2 : input_position < 100 ? 1 : 0), ' ')
-                << "name: " << skipped_column_str << ", " << std::string(max_length_of_column_name - skipped_column_str.length(), ' ')
-                << "type: " << skipped_column_str << ", " << std::string(max_length_of_data_type_name - skipped_column_str.length(), ' ');
-
-            String tmp;
-            readCSVString(tmp, istr, format_settings.csv);
+            static const DataTypePtr skipped_column_type = std::make_shared<DataTypeNothing>();
+            static const MutableColumnPtr skipped_column = skipped_column_type->createColumn();
+            if (!deserializeFieldAndPrintDiagnosticInfo(skipped_column_str, skipped_column_type, *skipped_column, out, input_position))
+                return false;
         }
 
         /// Delimiters
@@ -457,15 +322,21 @@ void CSVRowInputStream::syncAfterError()
     skipToNextLineOrEOF(istr);
 }
 
-void CSVRowInputStream::updateDiagnosticInfo()
+void
+CSVRowInputStream::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
+                                       ReadBuffer::Position & curr_pos)
 {
-    ++row_num;
-
-    bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
-    bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
-
-    pos_of_prev_row = pos_of_current_row;
-    pos_of_current_row = istr.position();
+    skipWhitespacesAndTabs(istr);
+    prev_pos = istr.position();
+    if (column_indexes_for_input_fields[input_position])
+        type->deserializeAsTextCSV(column, istr, format_settings);
+    else
+    {
+        String tmp;
+        readCSVString(tmp, istr, format_settings.csv);
+    }
+    curr_pos = istr.position();
+    skipWhitespacesAndTabs(istr);
 }
 
 
