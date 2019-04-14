@@ -81,8 +81,8 @@ namespace DB
         if (db_index != 0)
         {
             Poco::Redis::Array command;
-            command << "SELECT" << db_index;
-            String reply = client->execute<String>(command);
+            command << "SELECT" << static_cast<Int64>(db_index);
+            std::string reply = client->execute<std::string>(command);
             if (reply != "+OK\r\n")
                 throw Exception{"Selecting db with index " + DB::toString(db_index) + " failed with reason " + reply,
                                 ErrorCodes::SELECT_DB_FAILURE};
