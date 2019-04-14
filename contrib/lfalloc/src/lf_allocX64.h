@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#include "malloc.h"
+#include "lfmalloc.h"
 
 #include "util/system/compiler.h"
 #include "util/system/types.h"
