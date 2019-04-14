@@ -5,9 +5,12 @@ drop table if exists test.ttl;
 create table test.ttl (d Date, a Int) engine = MergeTree order by a partition by toDayOfMonth(d);
 alter table test.ttl modify ttl d + interval 1 day;
 show create table test.ttl;
+insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 1);
 insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 2);
 insert into test.ttl values (toDateTime('2100-10-10 00:00:00'), 3);
-optimize table test.ttl final;
+insert into test.ttl values (toDateTime('2100-10-10 00:00:00'), 4);
+optimize table test.ttl partition 10 final;
+
 select * from test.ttl order by d;
 
 alter table test.ttl modify ttl a; -- { serverError 450 }
