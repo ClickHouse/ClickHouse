@@ -157,9 +157,9 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
         if (!block.has(ttl_entry.result_column))
             ttl_entry.expression->execute(block);
 
-        const IColumn * default_column = nullptr;
+        ColumnPtr default_column = nullptr;
         if (block_with_defaults.has(name))
-            default_column = block_with_defaults.getByName(name).column->convertToFullColumnIfConst().get();
+            default_column = block_with_defaults.getByName(name).column->convertToFullColumnIfConst();
 
         auto & column_with_type = block.getByName(name);
         const IColumn * values_column = column_with_type.column.get();
