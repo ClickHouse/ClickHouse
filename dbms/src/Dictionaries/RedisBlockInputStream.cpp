@@ -225,12 +225,13 @@ namespace DB
                 break;
             }
 
-            ++num_rows;
-            ++cursor;
 
             const auto & key = *(keys.begin() + cursor);
             insertValueByIdx(0, key);
             commandForValues.addRedisType(key);
+            
+            ++num_rows;
+            ++cursor;
         }
 
         if (num_rows == 0)
