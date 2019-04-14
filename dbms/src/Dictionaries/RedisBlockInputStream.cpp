@@ -190,12 +190,11 @@ namespace DB
             return {};
 
         const size_t size = 2;
-        if (size != description.sample_block.columns()) {
+        if (size != description.sample_block.columns())
             throw Exception{"Unsupported number of columns for key-value storage: "
                             + std::to_string(description.sample_block.columns())
                             + " (expected: " + std::to_string(size) + ")",
                             ErrorCodes::LOGICAL_ERROR};
-        }
 
         MutableColumns columns(description.sample_block.columns());
 

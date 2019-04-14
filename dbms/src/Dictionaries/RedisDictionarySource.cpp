@@ -84,10 +84,8 @@ namespace DB
             command << "SELECT" << db_index;
             String reply = client->execute<String>(command);
             if (reply != "+OK\r\n")
-            {
                 throw Exception{"Selecting db with index " + DB::toString(db_index) + " failed with reason " + reply,
                                 ErrorCodes::SELECT_DB_FAILURE};
-            }
         }
     }
 
