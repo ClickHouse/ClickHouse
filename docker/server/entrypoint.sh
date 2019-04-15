@@ -32,6 +32,8 @@ for dir in "$DATA_DIR" \
   "$USER_PATH" \
   "$FORMAT_SCHEMA_PATH"
 do
+    # check if variable not empty
+    [ -z "$dir" ] && continue
     # ensure directories exist
     if ! mkdir -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"

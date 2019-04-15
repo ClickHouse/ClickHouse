@@ -31,8 +31,8 @@ Main features:
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
     INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
     INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
@@ -41,6 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [ORDER BY expr]
 [PRIMARY KEY expr]
 [SAMPLE BY expr]
+[TTL expr]
 [SETTINGS name=value, ...]
 ```
 
@@ -66,10 +67,18 @@ For a description of request parameters, see [request description](../../query_l
 
     If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
+- `TTL` - An expression for setting storage time for rows. 
+
+    It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
+    `TTL date + INTERVAL 1 DAY`
+
+    For more details, see [TTL for columns and tables](mergetree.md)
+
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
     - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information refer the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in the "Server configuration parameters" chapter.
     - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation required for using of the direct I/O access to the storage disk. During the merging of the data parts, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, then ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk. If `min_merge_bytes_to_use_direct_io = 0`, then the direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
+    - `merge_with_ttl_timeout` - Minimal time in seconds, when merge with TTL can be repeated. Default value: 86400 (1 day).
 
 **Example of sections setting**
 
@@ -297,5 +306,14 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
 
 Reading from a table is automatically parallelized.
+
+
+## TTL for columns and tables
+
+Data with expired TTL is removed while executing merges. 
+
+If TTL is set for column, when it expires, value will be replaced by default. If all values in columns were zeroed in part, data for this column will be deleted from disk for part. You are not allowed to set TTL for all key columns. If TTL is set for table, when it expires, row will be deleted.
+
+When TTL expires on some value or row in part, extra merge will be executed. To control frequency of merges with TTL you can set `merge_with_ttl_timeout`. If it is too low, many extra merges and lack of regular merges can reduce the perfomance.  
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->

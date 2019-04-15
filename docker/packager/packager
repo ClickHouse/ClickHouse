@@ -102,7 +102,7 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
         logging.info("Copying binary back")
         vagrant.copy_from_image("~/ClickHouse/dbms/programs/clickhouse", output_dir)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official):
     result = []
     if package_type == "deb":
         result.append("DEB_CC={}".format(compiler))
@@ -137,6 +137,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     if author:
         result.append("AUTHOR='{}'".format(author))
 
+    if official:
+        result.append('CMAKE_FLAGS="-DYANDEX_OFFICIAL_BUILD=1 $CMAKE_FLAGS"')
+
     return result
 
 if __name__ == "__main__":
@@ -155,6 +158,7 @@ if __name__ == "__main__":
     parser.add_argument("--force-build-image", action="store_true")
     parser.add_argument("--version")
     parser.add_argument("--author", default="clickhouse")
+    parser.add_argument("--official", action="store_true")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -174,7 +178,7 @@ if __name__ == "__main__":
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type,
         args.cache, args.distcc_hosts, args.unbundled, args.split_binary,
-        args.version, args.author)
+        args.version, args.author, args.official)
     if args.package_type != "freebsd":
         run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root)
     else:

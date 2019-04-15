@@ -47,6 +47,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     skip_indices = data.getIndicesDescription().toString();
     index_granularity_bytes = data.index_granularity_info.index_granularity_bytes;
+    ttl_table = formattedAST(data.ttl_table_ast);
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -67,6 +68,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!sorting_key.empty())
         out << "sorting key: " << sorting_key << "\n";
+
+    if (!ttl_table.empty())
+        out << "ttl: " << ttl_table << "\n";
 
     if (!skip_indices.empty())
         out << "indices: " << skip_indices << "\n";
@@ -111,6 +115,8 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     else
         index_granularity_bytes = 0;
 
+    if (checkString("ttl: ", in))
+        in >> ttl_table >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -191,6 +197,21 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                 "Existing table metadata in ZooKeeper differs in sorting key expression."
                 " Stored in ZooKeeper: " + from_zk.sorting_key + ", local: " + sorting_key,
                 ErrorCodes::METADATA_MISMATCH);
+    }
+
+    if (ttl_table != from_zk.ttl_table)
+    {
+        if (allow_alter)
+        {
+            diff.ttl_table_changed = true;
+            diff.new_ttl_table = from_zk.ttl_table;
+        }
+        else
+            throw Exception(
+                    "Existing table metadata in ZooKeeper differs in ttl."
+                    " Stored in ZooKeeper: " + from_zk.ttl_table +
+                    ", local: " + ttl_table,
+                    ErrorCodes::METADATA_MISMATCH);
     }
 
     if (skip_indices != from_zk.skip_indices)

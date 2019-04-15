@@ -513,8 +513,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     /// PREWHERE
     String prewhere_column;
-    if (select.prewhere_expression)
-        prewhere_column = select.prewhere_expression->getColumnName();
+    if (select.prewhere())
+        prewhere_column = select.prewhere()->getColumnName();
 
     RangesInDataParts parts_with_ranges;
 
