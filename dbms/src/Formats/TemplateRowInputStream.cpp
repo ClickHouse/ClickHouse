@@ -1,6 +1,8 @@
 #include <Formats/TemplateRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Formats/verbosePrintString.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -13,7 +15,7 @@ extern const int INVALID_TEMPLATE_FORMAT;
 
 TemplateRowInputStream::TemplateRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & settings_,
         bool ignore_spaces_)
-    : buf(istr_), header(header_), types(header.getDataTypes()), settings(settings_), ignore_spaces(ignore_spaces_)
+    : RowInputStreamWithDiagnosticInfo(buf, header_), buf(istr_), settings(settings_), ignore_spaces(ignore_spaces_)
 {
     static const String default_format("${data}");
     const String & format_str = settings.template_settings.format.empty() ? default_format : settings.template_settings.format;
@@ -60,10 +62,10 @@ bool TemplateRowInputStream::read(MutableColumns & columns, RowReadExtension & e
     if (checkForSuffix())
         return false;
 
-    if (row_count)
-    {
+    updateDiagnosticInfo();
+
+    if (likely(row_num != 1))
         assertString(settings.template_settings.row_between_delimiter, buf);
-    }
 
     extra.read_columns.assign(columns.size(), false);
 
@@ -73,7 +75,7 @@ bool TemplateRowInputStream::read(MutableColumns & columns, RowReadExtension & e
         assertString(row_format.delimiters[i], buf);
         size_t col_idx = row_format.format_idx_to_column_idx[i];
         skipSpaces();
-        deserializeField(*types[col_idx], *columns[col_idx], row_format.formats[i]);
+        deserializeField(*data_types[col_idx], *columns[col_idx], row_format.formats[i]);
         extra.read_columns[col_idx] = true;
     }
 
@@ -84,7 +86,6 @@ bool TemplateRowInputStream::read(MutableColumns & columns, RowReadExtension & e
         if (!extra.read_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
-    ++row_count;
     return true;
 }
 
@@ -147,6 +148,87 @@ bool TemplateRowInputStream::compareSuffixPart(StringRef & suffix, BufferBase::P
     suffix.data += available;
     suffix.size -= available;
     return true;
+}
+
+bool TemplateRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out,
+                                                            size_t max_length_of_column_name, size_t max_length_of_data_type_name)
+{
+    try
+    {
+        if (likely(row_num != 1))
+            assertString(settings.template_settings.row_between_delimiter, buf);
+    }
+    catch (const DB::Exception &)
+    {
+        writeErrorStringForWrongDelimiter(out, "delimiter between rows", settings.template_settings.row_between_delimiter);
+
+        return false;
+    }
+    for (size_t i = 0; i < row_format.columnsCount(); ++i)
+    {
+        skipSpaces();
+        try
+        {
+            assertString(row_format.delimiters[i], buf);
+        }
+        catch (const DB::Exception &)
+        {
+            writeErrorStringForWrongDelimiter(out, "delimiter before field " + std::to_string(i), row_format.delimiters[i]);
+            return false;
+        }
+
+        skipSpaces();
+        size_t col_idx = row_format.format_idx_to_column_idx[i];
+        if (!deserializeFieldAndPrintDiagnosticInfo(columns, out, max_length_of_column_name, max_length_of_data_type_name, col_idx))
+        {
+            out << "Maybe it's not possible to deserialize field " + std::to_string(i) +
+                   " as " + ParsedTemplateFormat::formatToString(row_format.formats[i]);
+            return false;
+        }
+    }
+
+    skipSpaces();
+    try
+    {
+        assertString(row_format.delimiters.back(), buf);
+    }
+    catch (const DB::Exception &)
+    {
+        writeErrorStringForWrongDelimiter(out, "delimiter after last field", row_format.delimiters.back());
+        return false;
+    }
+
+    return true;
+}
+
+void TemplateRowInputStream::writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim)
+{
+    out << "ERROR: There is no " << description << ": expected ";
+    verbosePrintString(delim.data(), delim.data() + delim.size(), out);
+    out << ", got ";
+    if (buf.eof())
+        out << "<End of stream>";
+    else
+        verbosePrintString(buf.position(), std::min(buf.position() + delim.size() + 10, buf.buffer().end()), out);
+    out << '\n';
+}
+
+void TemplateRowInputStream::tryDeserializeFiled(MutableColumns & columns, size_t col_idx, ReadBuffer::Position & prev_pos,
+                                                 ReadBuffer::Position & curr_pos)
+{
+    prev_pos = buf.position();
+    auto format_iter = std::find(row_format.format_idx_to_column_idx.cbegin(), row_format.format_idx_to_column_idx.cend(), col_idx);
+    if (format_iter == row_format.format_idx_to_column_idx.cend())
+        throw DB::Exception("Parse error", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+    size_t format_idx = format_iter - row_format.format_idx_to_column_idx.begin();
+    deserializeField(*data_types[col_idx], *columns[col_idx], row_format.formats[format_idx]);
+    curr_pos = buf.position();
+}
+
+bool TemplateRowInputStream::isGarbageAfterField(size_t, ReadBuffer::Position)
+{
+    /// Garbage will be considered as wrong delimiter
+    return false;
 }
 
 
