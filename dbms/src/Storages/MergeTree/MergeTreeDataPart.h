@@ -9,6 +9,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
@@ -126,6 +127,11 @@ struct MergeTreeDataPart
         Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
     };
 
+    using TTLInfo = MergeTreeDataPartTTLInfo;
+    using TTLInfos = MergeTreeDataPartTTLInfos;
+
+    TTLInfos ttl_infos;
+
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     mutable State state{State::Temporary};
 
@@ -217,6 +223,9 @@ struct MergeTreeDataPart
     /// Columns description.
     NamesAndTypesList columns;
 
+    /// Columns with values, that all have been zeroed by expired ttl
+    NameSet empty_columns;
+
     using ColumnToSize = std::map<std::string, UInt64>;
 
     /** It is blocked for writing when changing columns, checksums or any part files.
@@ -285,6 +294,9 @@ private:
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
+
+    /// Loads ttl infos in json format from file ttl.txt. If file doesn`t exists assigns ttl infos with all zeros
+    void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
 

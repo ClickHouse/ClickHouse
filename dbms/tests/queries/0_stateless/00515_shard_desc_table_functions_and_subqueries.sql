@@ -14,4 +14,4 @@ desc table (select 1);
 select '-';
 desc (select * from system.numbers);
 select '-';
-
+drop table if exists test.tab;

@@ -6,6 +6,10 @@
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
 
+#include <Common/config.h>
+#if USE_LFALLOC
+#include <Common/LFAllocator.h>
+#endif
 
 namespace DB
 {
@@ -39,7 +43,9 @@ struct MarkInCompressedFile
     }
 
 };
-
+#if USE_LFALLOC
+using MarksInCompressedFile = PODArray<MarkInCompressedFile, 4096, LFAllocator>;
+#else
 using MarksInCompressedFile = PODArray<MarkInCompressedFile>;
-
+#endif
 }

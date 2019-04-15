@@ -43,7 +43,7 @@ void LogicalExpressionsOptimizer::perform()
         return;
 
     size_t position = 0;
-    for (auto & column : select_query->select_expression_list->children)
+    for (auto & column : select_query->select()->children)
     {
         bool inserted = column_to_position.emplace(column.get(), position).second;
 
@@ -79,7 +79,7 @@ void LogicalExpressionsOptimizer::perform()
 
 void LogicalExpressionsOptimizer::reorderColumns()
 {
-    auto & columns = select_query->select_expression_list->children;
+    auto & columns = select_query->select()->children;
     size_t cur_position = 0;
 
     while (cur_position < columns.size())
@@ -364,12 +364,12 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 
             /// If the OR node was the root of the WHERE, PREWHERE, or HAVING expression, then update this root.
             /// Due to the fact that we are dealing with a directed acyclic graph, we must check all cases.
-            if (select_query->where_expression && (or_function == &*(select_query->where_expression)))
-                select_query->where_expression = operands[0];
-            if (select_query->prewhere_expression && (or_function == &*(select_query->prewhere_expression)))
-                select_query->prewhere_expression = operands[0];
-            if (select_query->having_expression && (or_function == &*(select_query->having_expression)))
-                select_query->having_expression = operands[0];
+            if (select_query->where() && (or_function == &*(select_query->where())))
+                select_query->setExpression(ASTSelectQuery::Expression::WHERE, operands[0]->clone());
+            if (select_query->prewhere() && (or_function == &*(select_query->prewhere())))
+                select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, operands[0]->clone());
+            if (select_query->having() && (or_function == &*(select_query->having())))
+                select_query->setExpression(ASTSelectQuery::Expression::HAVING, operands[0]->clone());
         }
     }
 }
