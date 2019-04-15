@@ -156,9 +156,6 @@ private:
     /// Objects which should be reloaded soon.
     mutable std::unordered_map<std::string, LoadableCreationInfo> objects_to_reload;
 
-    /// Should some objects be reloaded?
-    mutable std::atomic<bool> has_objects_to_reload = true;
-
     /// Here are loadable objects, that has been never loaded successfully.
     /// They are also in 'loadable_objects', but with nullptr as 'loadable'.
     mutable std::unordered_map<std::string, FailedLoadableInfo> failed_loadable_objects;
@@ -192,14 +189,14 @@ private:
     void reloadFromConfigFiles(bool throw_on_error, bool force_reload = false, const std::string & loadable_name = "");
     void reloadFromConfigFile(const std::string & config_path, const bool force_reload, const std::string & loadable_name);
 
-    void ensureReloadFinished(const std::string & loadable_name, bool throw_on_error) const;
-    void ensureReloadFinished(bool throw_on_error) const;
-    void ensureReloadFinishedImpl(const LoadableCreationInfo & creation_info, bool throw_on_error) const;
-
     /// Check config files and update expired loadable objects
     void reloadAndUpdate(bool throw_on_error = false);
 
     void reloadPeriodically();
+
+    void finishReload(const std::string & loadable_name, bool throw_on_error) const;
+    void finishAllReloads(bool throw_on_error) const;
+    void finishReloadImpl(const LoadableCreationInfo & creation_info, bool throw_on_error) const;
 
     LoadablePtr getLoadableImpl(const std::string & name, bool throw_on_error) const;
 };

@@ -290,12 +290,14 @@ void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool
     }
 
     /// create all loadable objects which was read from config
-    ensureReloadFinished(throw_on_error);
+    finishAllReloads(throw_on_error);
 }
 
 
 void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const bool force_reload, const std::string & loadable_name)
 {
+    // We assume `all_mutex` is already locked.
+
     if (config_path.empty() || !config_repository->exists(config_path))
     {
         LOG_WARNING(log, "config file '" + config_path + "' does not exist");
@@ -349,19 +351,31 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                     continue;
 
                 objects_to_reload.emplace(name, LoadableCreationInfo{name, loaded_config, config_path, key});
-                has_objects_to_reload = true;
             }
         }
     }
 }
 
 
-void ExternalLoader::ensureReloadFinished(const std::string & loadable_name, bool throw_on_error) const
+void ExternalLoader::reload()
 {
-    if (!has_objects_to_reload)
-        return;
+    reloadFromConfigFiles(true, true);
+}
 
-    std::lock_guard all_lock{all_mutex};
+void ExternalLoader::reload(const std::string & name)
+{
+    reloadFromConfigFiles(true, true, name);
+
+    /// Check that specified object was loaded
+    std::lock_guard lock{map_mutex};
+    if (!loadable_objects.count(name))
+        throw Exception("Failed to load " + object_name + " '" + name + "' during the reload process", ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+void ExternalLoader::finishReload(const std::string & loadable_name, bool throw_on_error) const
+{
+    // We assume `all_mutex` is already locked.
 
     auto it = objects_to_reload.find(loadable_name);
     if (it == objects_to_reload.end())
@@ -369,19 +383,13 @@ void ExternalLoader::ensureReloadFinished(const std::string & loadable_name, boo
 
     LoadableCreationInfo creation_info = std::move(it->second);
     objects_to_reload.erase(it);
-    if (objects_to_reload.empty())
-        has_objects_to_reload = false;
-
-    ensureReloadFinishedImpl(creation_info, throw_on_error);
+    finishReloadImpl(creation_info, throw_on_error);
 }
 
 
-void ExternalLoader::ensureReloadFinished(bool throw_on_error) const
+void ExternalLoader::finishAllReloads(bool throw_on_error) const
 {
-    if (!has_objects_to_reload)
-        return;
-
-    std::lock_guard all_lock{all_mutex};
+    // We assume `all_mutex` is already locked.
 
     // We cannot just go through the map `objects_to_create` from begin to end and create every object
     // because these objects can depend on each other.
@@ -392,25 +400,24 @@ void ExternalLoader::ensureReloadFinished(bool throw_on_error) const
         auto it = objects_to_reload.begin();
         LoadableCreationInfo creation_info = std::move(it->second);
         objects_to_reload.erase(it);
-        if (objects_to_reload.empty())
-            has_objects_to_reload = false;
 
         try
         {
-            ensureReloadFinishedImpl(creation_info, throw_on_error);
+            finishReloadImpl(creation_info, throw_on_error);
         }
         catch (...)
         {
             objects_to_reload.clear(); // no more objects to create after an exception
-            has_objects_to_reload = false;
             throw;
         }
     }
 }
 
 
-void ExternalLoader::ensureReloadFinishedImpl(const LoadableCreationInfo & creation_info, bool throw_on_error) const
+void ExternalLoader::finishReloadImpl(const LoadableCreationInfo & creation_info, bool throw_on_error) const
 {
+    // We assume `all_mutex` is already locked.
+
     const std::string & name = creation_info.name;
     const std::string & config_path = creation_info.config_path;
 
@@ -498,24 +505,14 @@ void ExternalLoader::ensureReloadFinishedImpl(const LoadableCreationInfo & creat
 }
 
 
-void ExternalLoader::reload()
-{
-    reloadFromConfigFiles(true, true);
-}
-
-void ExternalLoader::reload(const std::string & name)
-{
-    reloadFromConfigFiles(true, true, name);
-
-    /// Check that specified object was loaded
-    std::lock_guard lock{map_mutex};
-    if (!loadable_objects.count(name))
-        throw Exception("Failed to load " + object_name + " '" + name + "' during the reload process", ErrorCodes::BAD_ARGUMENTS);
-}
-
 ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & name, bool throw_on_error) const
 {
-    ensureReloadFinished(name, throw_on_error);
+    /// We try to finish the reloading of the object `name` here, before searching it in the map `loadable_objects` later in this function.
+    /// If some other thread is already doing this reload work we don't want to wait until it finishes, because it's faster to just use
+    /// the current version of this loadable object. That's why we use try_lock() instead of lock() here.
+    std::unique_lock all_lock{all_mutex, std::defer_lock};
+    if (all_lock.try_lock())
+        finishReload(name, throw_on_error);
 
     std::lock_guard lock{map_mutex};
     const auto it = loadable_objects.find(name);
@@ -549,7 +546,6 @@ ExternalLoader::LoadablePtr ExternalLoader::tryGetLoadable(const std::string & n
 
 ExternalLoader::LockedObjectsMap ExternalLoader::getObjectsMap() const
 {
-    ensureReloadFinished(false);
     return LockedObjectsMap(map_mutex, loadable_objects);
 }
 
