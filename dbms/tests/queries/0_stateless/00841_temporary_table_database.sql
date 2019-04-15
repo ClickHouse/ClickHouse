@@ -2,4 +2,4 @@ CREATE TEMPORARY TABLE t1 (x UInt8);
 INSERT INTO t1 VALUES (1);
 SELECT * FROM t1;
 
-CREATE TEMPORARY TABLE test.t2 (x UInt8); -- { serverError 442 }
+CREATE TEMPORARY TABLE t2 (x UInt8); -- { serverError 442 }

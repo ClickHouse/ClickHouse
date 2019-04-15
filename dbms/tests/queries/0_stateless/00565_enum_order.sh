@@ -54,5 +54,5 @@ for i in 1 2 3; do
 done
 
 echo 'Count:'
-$CLICKHOUSE_CLIENT --query 'select count() from test.test_log'
-$CLICKHOUSE_CLIENT --query 'DROP TABLE test.test_log'
+$CLICKHOUSE_CLIENT --query 'select count() from test_log'
+$CLICKHOUSE_CLIENT --query 'DROP TABLE test_log'

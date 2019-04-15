@@ -8,9 +8,9 @@ set -e -o pipefail
 # Run the client.
 $CLICKHOUSE_CLIENT --multiquery <<'EOF'
 CREATE DATABASE IF NOT EXISTS test;
-DROP TABLE IF EXISTS test.table;
+DROP TABLE IF EXISTS table;
 
-CREATE TABLE test.table (uuid UUID,
+CREATE TABLE table (uuid UUID,
                          name String,
                          surname String,
                          gender Enum8('male'=1, 'female'=0),
@@ -43,4 +43,4 @@ EOF
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
 source $CURDIR/00825_protobuf_format_input.insh
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM test.table ORDER BY uuid;"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM table ORDER BY uuid;"
