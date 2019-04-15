@@ -82,12 +82,15 @@ private:
             std::lock_guard<std::mutex> l(lock);
             if (!sorted.load(std::memory_order_relaxed))
             {
-#if 0 /// TODO: Check correctness + pref test for 32/64 bits.
-                if (!array.empty())
-                    radixSort<_Entry, _Key>(&array[0], array.size());
-#else
-                std::sort(array.begin(), array.end());
-#endif
+                /// TODO: It has been tested only for UInt32 yet. It needs to check UInt64, Float32/64.
+                if constexpr (std::is_same_v<_Key, UInt32>)
+                {
+                    if (!array.empty())
+                        radixSort<_Entry, _Key>(&array[0], array.size());
+                }
+                else
+                    std::sort(array.begin(), array.end());
+
                 sorted.store(true, std::memory_order_release);
             }
         }
