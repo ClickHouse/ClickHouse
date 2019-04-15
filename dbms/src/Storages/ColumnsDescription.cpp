@@ -37,12 +37,14 @@ namespace ErrorCodes
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
     auto codec_str = [](const CompressionCodecPtr & codec_ptr) { return codec_ptr ? codec_ptr->getCodecDesc() : String(); };
+    auto ttl_str = [](const ASTPtr & ttl_ast) { return ttl_ast ? queryToString(ttl_ast) : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
         && comment == other.comment
-        && codec_str(codec) == codec_str(other.codec);
+        && codec_str(codec) == codec_str(other.codec)
+        && ttl_str(ttl) == ttl_str(other.ttl);
 }
 
 void ColumnDescription::writeText(WriteBuffer & buf) const
@@ -74,6 +76,13 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         DB::writeText(")", buf);
     }
 
+    if (ttl)
+    {
+        writeChar('\t', buf);
+        DB::writeText("TTL ", buf);
+        DB::writeText(queryToString(ttl), buf);
+    }
+
     writeChar('\n', buf);
 }
 
@@ -99,6 +108,9 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
         if (col_ast->codec)
             codec = CompressionCodecFactory::instance().get(col_ast->codec, type);
+
+        if (col_ast->ttl)
+            ttl = col_ast->ttl;
     }
     else
         throw Exception("Cannot parse column description", ErrorCodes::CANNOT_PARSE_TEXT);
@@ -386,6 +398,18 @@ CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_
 CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name) const
 {
     return getCodecOrDefault(column_name, CompressionCodecFactory::instance().getDefaultCodec());
+}
+
+ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
+{
+    ColumnTTLs ret;
+    for (const auto & column : columns)
+    {
+        if (column.ttl)
+            ret.emplace(column.name, column.ttl);
+    }
+
+    return ret;
 }
 
 

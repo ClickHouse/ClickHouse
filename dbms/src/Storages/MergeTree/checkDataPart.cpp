@@ -211,14 +211,15 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         checksums_data.files["primary.idx"] = MergeTreeData::DataPart::Checksums::Checksum(primary_idx_size, hashing_buf.getHash());
     }
 
-    /// Optional files count.txt, partition.dat, minmax_*.idx. Just calculate checksums for existing files.
+    /// Optional files count.txt, partition.dat, minmax_*.idx, ttl.txt. Just calculate checksums for existing files.
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(path); dir_it != dir_end; ++dir_it)
     {
         const String & file_name = dir_it.name();
         if (file_name == "count.txt"
             || file_name == "partition.dat"
-            || (startsWith(file_name, "minmax_") && endsWith(file_name, ".idx")))
+            || (startsWith(file_name, "minmax_") && endsWith(file_name, ".idx"))
+            || file_name == "ttl.txt")
         {
             ReadBufferFromFile file_buf(dir_it->path());
             HashingReadBuffer hashing_buf(file_buf);

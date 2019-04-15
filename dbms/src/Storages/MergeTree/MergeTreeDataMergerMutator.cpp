@@ -4,9 +4,11 @@
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
+#include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
@@ -176,6 +178,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     const String * prev_partition_id = nullptr;
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
+    bool has_part_with_expired_ttl = false;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         const String & partition_id = part->info.partition_id;
@@ -191,6 +194,10 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
+        part_info.min_ttl = part->ttl_infos.part_min_ttl;
+
+        if (part_info.min_ttl && part_info.min_ttl <= current_time)
+            has_part_with_expired_ttl = true;
 
         partitions.back().emplace_back(part_info);
 
@@ -210,8 +217,17 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     if (aggressive)
         merge_settings.base = 1;
 
+    bool can_merge_with_ttl =
+        (current_time - last_merge_with_ttl > data.settings.merge_with_ttl_timeout);
+
     /// NOTE Could allow selection of different merge strategy.
-    merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
+    if (can_merge_with_ttl && has_part_with_expired_ttl)
+    {
+        merge_selector = std::make_unique<TTLMergeSelector>(current_time);
+        last_merge_with_ttl = current_time;
+    }
+    else
+        merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
 
     IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
         partitions,
@@ -224,7 +240,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         return false;
     }
 
-    if (parts_to_merge.size() == 1)
+    /// Allow to "merge" part with itself if we need remove some values with expired ttl
+    if (parts_to_merge.size() == 1 && !has_part_with_expired_ttl)
         throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
 
     MergeTreeData::DataPartsVector parts;
@@ -536,9 +553,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
 
+    bool need_remove_expired_values = false;
+    for (const MergeTreeData::DataPartPtr & part : parts)
+        new_data_part->ttl_infos.update(part->ttl_infos);
+
+    const auto & part_min_ttl = new_data_part->ttl_infos.part_min_ttl;
+    if (part_min_ttl && part_min_ttl <= time_of_merge)
+        need_remove_expired_values = true;
+
     size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
 
-    MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate);
+    MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
     LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
@@ -599,6 +624,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     MergeStageProgress horizontal_stage_progress(
         merge_alg == MergeAlgorithm::Horizontal ? 1.0 : column_sizes.keyColumnsWeight());
+
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialBlockInputStream>(
@@ -671,6 +697,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
+    if (need_remove_expired_values)
+        merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge);
+
     MergedBlockOutputStream to{
         data, new_part_tmp_path, merging_columns, compression_codec, merged_column_to_size, data.settings.min_merge_bytes_to_use_direct_io};
 
@@ -684,6 +713,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     while (!actions_blocker.isCancelled() && (block = merged_stream->read()))
     {
         rows_written += block.rows();
+
         to.write(block);
 
         merge_entry->rows_written = merged_stream->getProfileInfo().rows;
@@ -857,6 +887,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         data, future_part.name, future_part.part_info);
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
     new_data_part->is_temp = true;
+    new_data_part->ttl_infos = source_part->ttl_infos;
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
@@ -1016,11 +1047,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
 MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMergeAlgorithm(
     const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
-    const NamesAndTypesList & gathering_columns, bool deduplicate) const
+    const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const
 {
     if (deduplicate)
         return MergeAlgorithm::Horizontal;
     if (data.settings.enable_vertical_merge_algorithm == 0)
+        return MergeAlgorithm::Horizontal;
+    if (need_remove_expired_values)
         return MergeAlgorithm::Horizontal;
 
     bool is_supported_storage =
@@ -1092,7 +1125,6 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
     return new_data_part;
 }
-
 
 size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts)
 {
