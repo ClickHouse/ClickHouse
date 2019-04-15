@@ -51,17 +51,11 @@ static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_ty
     }
 }
 
-template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
-static IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type, TArgs && ... args)
-{
-    return createWithNumericType<AggregateFunctionTemplate, Data, TArgs...>(argument_type, std::forward<TArgs>(args)...);
-}
-
 template <typename has_limit, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupUniqArrayImpl(const std::string & name, const DataTypePtr & argument_type, TArgs ... args)
 {
 
-    AggregateFunctionPtr res(createWithNumericOrTimeType<AggregateFunctionGroupUniqArray, has_limit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionGroupUniqArray, has_limit, const DataTypePtr &, TArgs...>(*argument_type, argument_type, std::forward<TArgs>(args)...));
 
     if (!res)
         res = AggregateFunctionPtr(createWithExtraTypes<has_limit>(argument_type, std::forward<TArgs>(args)...));

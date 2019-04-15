@@ -131,6 +131,14 @@ struct AggreagteFunctionGroupUniqArrayGenericData
     Set value;
 };
 
+
+/// Helper function for deserialize and insert for the class AggreagteFunctionGroupUniqArrayGeneric
+template <bool is_plain_column>
+static StringRef getSerializationImpl(const IColumn & column, size_t row_num, Arena & arena);
+
+template <bool is_plain_column>
+static void deserializeAndInsertImpl(StringRef str, IColumn & data_to);
+
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
  */
@@ -145,9 +153,13 @@ class AggreagteFunctionGroupUniqArrayGeneric
 
     using State = AggreagteFunctionGroupUniqArrayGenericData;
 
-    static StringRef getSerialization(const IColumn & column, size_t row_num, Arena & arena);
+    static StringRef getSerialization(const IColumn & column, size_t row_num, Arena & arena) {
+        return getSerializationImpl<is_plain_column>(column, row_num, arena);
+    }
 
-    static void deserializeAndInsert(StringRef str, IColumn & data_to);
+    static void deserializeAndInsert(StringRef str, IColumn & data_to) {
+        return deserializeAndInsertImpl<is_plain_column>(str, data_to);
+    }
 
 public:
     AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
@@ -258,52 +270,26 @@ public:
 
 
 template <>
-inline StringRef AggreagteFunctionGroupUniqArrayGeneric<false, std::false_type>::getSerialization(const IColumn & column, size_t row_num, Arena & arena)
+inline StringRef getSerializationImpl<false>(const IColumn & column, size_t row_num, Arena & arena)
 {
     const char * begin = nullptr;
     return column.serializeValueIntoArena(row_num, arena, begin);
 }
 
 template <>
-inline StringRef AggreagteFunctionGroupUniqArrayGeneric<false, std::true_type>::getSerialization(const IColumn & column, size_t row_num, Arena & arena)
-{
-    const char * begin = nullptr;
-    return column.serializeValueIntoArena(row_num, arena, begin);
-}
-
-template <>
-inline StringRef AggreagteFunctionGroupUniqArrayGeneric<true, std::false_type>::getSerialization(const IColumn & column, size_t row_num, Arena &)
+inline StringRef getSerializationImpl<true>(const IColumn & column, size_t row_num, Arena &)
 {
     return column.getDataAt(row_num);
 }
 
 template <>
-inline StringRef AggreagteFunctionGroupUniqArrayGeneric<true, std::true_type>::getSerialization(const IColumn & column, size_t row_num, Arena &)
-{
-    return column.getDataAt(row_num);
-}
-
-
-template <>
-inline void AggreagteFunctionGroupUniqArrayGeneric<false, std::false_type>::deserializeAndInsert(StringRef str, IColumn & data_to)
+inline void deserializeAndInsertImpl<false>(StringRef str, IColumn & data_to)
 {
     data_to.deserializeAndInsertFromArena(str.data);
 }
 
 template <>
-inline void AggreagteFunctionGroupUniqArrayGeneric<false, std::true_type>::deserializeAndInsert(StringRef str, IColumn & data_to)
-{
-    data_to.deserializeAndInsertFromArena(str.data);
-}
-
-template <>
-inline void AggreagteFunctionGroupUniqArrayGeneric<true, std::true_type>::deserializeAndInsert(StringRef str, IColumn & data_to)
-{
-    data_to.insertData(str.data, str.size);
-}
-
-template <>
-inline void AggreagteFunctionGroupUniqArrayGeneric<true, std::false_type>::deserializeAndInsert(StringRef str, IColumn & data_to)
+inline void deserializeAndInsertImpl<true>(StringRef str, IColumn & data_to)
 {
     data_to.insertData(str.data, str.size);
 }
