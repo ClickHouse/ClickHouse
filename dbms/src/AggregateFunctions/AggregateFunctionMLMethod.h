@@ -475,9 +475,9 @@ public:
                                        Float64 learning_rate,
                                        Float64 l2_reg_coef,
                                        UInt32 batch_size,
-                                       const DataTypes & argument_types,
+                                       const DataTypes & arguments_types,
                                        const Array & params)
-            : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(argument_types, params),
+            : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params),
             param_num(param_num),
             learning_rate(learning_rate),
             l2_reg_coef(l2_reg_coef),
