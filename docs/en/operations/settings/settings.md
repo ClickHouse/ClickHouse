@@ -75,7 +75,7 @@ If `force_primary_key=1`, ClickHouse checks to see if the query has a primary ke
 
 ## fsync_metadata
 
-Enables or disables fsync when writing .sql files. Enabled by default.
+Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
 
 It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
 
