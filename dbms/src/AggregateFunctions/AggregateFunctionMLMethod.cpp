@@ -25,9 +25,7 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
         if (!WhichDataType(argument_types[i]).isFloat64())
-            throw Exception("Illegal type " + argument_types[i]->getName() + " of argument " 
-			                    + std::to_string(i) + "for aggregate function " + name,
-                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Illegal type " + argument_types[i]->getName() + " of argument " + std::to_string(i) + "for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     Float64 learning_rate = Float64(0.01);
@@ -55,17 +53,22 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
         if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{1.0})
         {
             wu = std::make_shared<StochasticGradientDescent>();
-        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{2.0})
+        }
+        else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{2.0})
         {
             wu = std::make_shared<Momentum>();
-        } else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{3.0})
+        }
+        else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{3.0})
         {
             wu = std::make_shared<Nesterov>();
 
-        } else {
+        }
+        else
+        {
             throw Exception("Invalid parameter for weights updater", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
-    } else
+    }
+    else
     {
         wu = std::make_unique<StochasticGradientDescent>();
     }
@@ -73,10 +76,12 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     if (std::is_same<Method, FuncLinearRegression>::value)
     {
         gc = std::make_shared<LinearRegression>();
-    } else if (std::is_same<Method, FuncLogisticRegression>::value)
+    }
+    else if (std::is_same<Method, FuncLogisticRegression>::value)
     {
         gc = std::make_shared<LogisticRegression>();
-    } else
+    }
+    else
     {
         throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

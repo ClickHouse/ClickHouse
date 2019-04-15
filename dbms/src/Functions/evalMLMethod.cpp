@@ -39,7 +39,8 @@ public:
         return name;
     }
 
-    bool isVariadic() const override {
+    bool isVariadic() const override
+    {
         return true;
     }
     size_t getNumberOfArguments() const override
