@@ -119,6 +119,7 @@ private:
             return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
         }
 
+        /// Resulting stream is mix of other streams data. Distinct and/or order guaranties are broken.
         bool hasMixedStreams() const
         {
             return hasMoreThanOneStream() || union_stream;
