@@ -27,62 +27,42 @@ namespace ProfileEvents
 namespace DB
 {
 
-class SinkToNativeStream : public IAccumulatingTransform
+class BufferingToFileTransform : public IAccumulatingTransform
 {
 public:
-    SinkToNativeStream(const Block & header, Logger * log_, std::string path_)
+    BufferingToFileTransform(const Block & header, Logger * log_, std::string path_)
         : IAccumulatingTransform(header, header), log(log_)
-        , path(std::move(path_)), file_buf(path), compressed_buf(file_buf)
-        , stream(std::make_shared<NativeBlockOutputStream>(compressed_buf, 0, header))
+        , path(std::move(path_)), file_buf_out(path), compressed_buf_out(file_buf_out)
+        , out_stream(std::make_shared<NativeBlockOutputStream>(compressed_buf_out, 0, header))
     {
         LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
         ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
-        stream->writePrefix();
+        out_stream->writePrefix();
     }
 
     String getName() const override { return "SinkToNativeStream"; }
 
     void consume(Chunk chunk) override
     {
-        stream->write(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        out_stream->write(getInputPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     Chunk generate() override
     {
-        if (stream)
+        if (out_stream)
         {
-            stream->writeSuffix();
-            compressed_buf.next();
-            file_buf.next();
+            out_stream->writeSuffix();
+            compressed_buf_out.next();
+            file_buf_out.next();
             LOG_INFO(log, "Done writing part of data into temporary file " + path);
+
+            out_stream.reset();
+
+            file_in = std::make_unique<ReadBufferFromFile>(path);
+            compressed_in = std::make_unique<CompressedReadBuffer>(*file_in);
+            block_in = std::make_shared<NativeBlockInputStream>(compressed_in, getOutputPort().getHeader(), 0);
         }
 
-        stream.reset();
-        return Chunk();
-    }
-
-private:
-    Logger * log;
-    std::string path;
-    WriteBufferFromFile file_buf;
-    CompressedWriteBuffer compressed_buf;
-    BlockOutputStreamPtr stream;
-};
-
-class SourceFromNativeStream : public ISource
-{
-public:
-    SourceFromNativeStream(const Block & header, const std::string & path)
-        : ISource(header), file_in(path), compressed_in(file_in)
-        , block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header, 0))
-    {
-        block_in->readPrefix();
-    }
-
-    String getName() const override { return "SourceFromNativeStream"; }
-
-    Chunk generate() override
-    {
         if (!block_in)
             return {};
 
@@ -99,8 +79,14 @@ public:
     }
 
 private:
-    ReadBufferFromFile file_in;
-    CompressedReadBuffer compressed_in;
+    Logger * log;
+    std::string path;
+    WriteBufferFromFile file_buf_out;
+    CompressedWriteBuffer compressed_buf_out;
+    BlockOutputStreamPtr out_stream;
+
+    std::unique_ptr<ReadBufferFromFile> file_in;
+    std::unique_ptr<CompressedReadBuffer> compressed_in;
     BlockInputStreamPtr block_in;
 };
 
@@ -532,7 +518,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         temporary_files.emplace_back(std::make_unique<Poco::TemporaryFile>(tmp_path));
         const std::string & path = temporary_files.back()->path();
         merge_sorter = std::make_unique<MergeSorter>(std::move(chunks), description, max_merged_block_size, limit);
-        current_processor = std::make_shared<SinkToNativeStream>(header_without_constants, log, path);
+        current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, path);
 
         stage = Stage::Serialize;
         sum_bytes_in_blocks = 0;
