@@ -123,7 +123,7 @@ public:
         derivative *= target;
         derivative = exp(derivative);
 
-        (*batch_gradient)[weights.size()] += learning_rate * target / (derivative + 1);;
+        (*batch_gradient)[weights.size()] += learning_rate * target / (derivative + 1);
         for (size_t i = 0; i < weights.size(); ++i)
         {
             (*batch_gradient)[i] +=
