@@ -15,6 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/MarkInCompressedFile.h>
 #include <Formats/ValuesRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
@@ -105,8 +106,8 @@ MergeTreeData::MergeTreeData(
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : global_context(context_),
+    index_granularity_info(settings_),
     merging_params(merging_params_),
-    index_granularity(settings_.index_granularity),
     settings(settings_),
     partition_by_ast(partition_by_ast_),
     sample_by_ast(sample_by_ast_),
@@ -136,7 +137,6 @@ MergeTreeData::MergeTreeData(
         columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, global_context)
             .getRequiredSourceColumns();
     }
-
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
     {
@@ -192,9 +192,33 @@ MergeTreeData::MergeTreeData(
         format_version = 0;
 
     if (format_version < min_format_version)
-        throw Exception(
-            "MergeTree data format version on disk doesn't support custom partitioning",
-            ErrorCodes::METADATA_MISMATCH);
+    {
+        if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
+            throw Exception(
+                "MergeTree data format version on disk doesn't support custom partitioning",
+                ErrorCodes::METADATA_MISMATCH);
+    }
+
+}
+
+
+MergeTreeData::IndexGranularityInfo::IndexGranularityInfo(const MergeTreeSettings & settings)
+    : fixed_index_granularity(settings.index_granularity)
+    , index_granularity_bytes(settings.index_granularity_bytes)
+{
+    /// Granularity is fixed
+    if (index_granularity_bytes == 0)
+    {
+        is_adaptive = false;
+        mark_size_in_bytes = sizeof(UInt64) * 2;
+        marks_file_extension = ".mrk";
+    }
+    else
+    {
+        is_adaptive = true;
+        mark_size_in_bytes = sizeof(UInt64) * 3;
+        marks_file_extension = ".mrk2";
+    }
 }
 
 
@@ -1249,7 +1273,6 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     ExpressionActionsPtr unused_expression;
     NameToNameMap unused_map;
     bool unused_bool;
-
     createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
             getIndicesDescription().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
 }
@@ -1281,7 +1304,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_indices_set.count(index.name))
         {
             out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
+            out_rename_map["skp_idx_" + index.name + index_granularity_info.marks_file_extension] = "";
         }
     }
 
@@ -1310,7 +1333,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     if (--stream_counts[file_name] == 0)
                     {
                         out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + ".mrk"] = "";
+                        out_rename_map[file_name + index_granularity_info.marks_file_extension] = "";
                     }
                 }, {});
             }
@@ -1385,7 +1408,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
                     out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + ".mrk"] = original_file_name + ".mrk";
+                    out_rename_map[temporary_file_name + index_granularity_info.marks_file_extension] = original_file_name + index_granularity_info.marks_file_extension;
                 }, {});
         }
 
@@ -1504,7 +1527,14 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           */
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
-            *this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_codec, true /* skip_offsets */, unused_written_offsets);
+            *this,
+            in.getHeader(),
+            full_path + part->name + '/',
+            true /* sync */,
+            compression_codec,
+            true /* skip_offsets */,
+            unused_written_offsets,
+            part->index_granularity);
 
         in.readPrefix();
         out.writePrefix();
@@ -2276,8 +2306,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
     /// Check the data while we are at it.
     if (part->checksums.empty())
     {
-        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types, skip_indices);
-
+        part->checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
         {
             WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
             part->checksums.write(out);
