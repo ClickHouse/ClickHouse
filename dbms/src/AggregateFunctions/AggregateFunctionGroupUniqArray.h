@@ -36,16 +36,21 @@ struct AggregateFunctionGroupUniqArrayData
 
 
 /// Puts all values to the hash set. Returns an array of unique values. Implemented for numeric types.
-template <typename T>
+template <typename T, typename Tlimit_num_elem>
 class AggregateFunctionGroupUniqArray
-    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>
 {
+    static constexpr bool limit_num_elems = Tlimit_num_elem::value;
+    UInt64 max_elems;
+
 private:
     using State = AggregateFunctionGroupUniqArrayData<T>;
 
 public:
-    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type)
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>, AggregateFunctionGroupUniqArray<T>>({argument_type}, {}) {}
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
+          AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>({argument_type}, {}),
+          max_elems(max_elems_) {}
 
     String getName() const override { return "groupUniqArray"; }
 
@@ -56,6 +61,8 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
+        if (limit_num_elems && this->data(place).value.size() >= max_elems)
+            return;
         this->data(place).value.insert(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
     }
 
@@ -114,11 +121,14 @@ struct AggreagteFunctionGroupUniqArrayGenericData
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
  *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
  */
-template <bool is_plain_column = false>
+template <bool is_plain_column = false, typename Tlimit_num_elem = std::false_type>
 class AggreagteFunctionGroupUniqArrayGeneric
-    : public IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>
+    : public IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>
 {
     DataTypePtr & input_data_type;
+
+    static constexpr bool limit_num_elems = Tlimit_num_elem::value;
+    UInt64 max_elems;
 
     using State = AggreagteFunctionGroupUniqArrayGenericData;
 
@@ -127,9 +137,10 @@ class AggreagteFunctionGroupUniqArrayGeneric
     static void deserializeAndInsert(StringRef str, IColumn & data_to);
 
 public:
-    AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type)
-        : IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column>>({input_data_type}, {})
-        , input_data_type(this->argument_types[0]) {}
+    AggreagteFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<AggreagteFunctionGroupUniqArrayGenericData, AggreagteFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type}, {})
+        , input_data_type(this->argument_types[0])
+        , max_elems(max_elems_) {}
 
     String getName() const override { return "groupUniqArray"; }
 
