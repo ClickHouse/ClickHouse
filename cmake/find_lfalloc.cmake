@@ -1,7 +1,8 @@
-if (NOT SANITIZE AND NOT ARCH_ARM AND NOT ARCH_32 AND NOT ARCH_PPC64LE)
-    if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/lfalloc/src/lf_allocX64.h")
-        message (FATAL_ERROR "submodule contrib/lfalloc is missing. to fix try run: \n git submodule update --init --recursive")
-    endif()
+if (NOT SANITIZE AND NOT ARCH_ARM AND NOT ARCH_32 AND NOT ARCH_PPC64LE AND NOT OS_FREEBSD)
+    option (ENABLE_LFALLOC "Set to FALSE to use system libgsasl library instead of bundled" ${NOT_UNBUNDLED})
+endif ()
+
+if (ENABLE_LFALLOC)
     set (USE_LFALLOC 1)
     set (USE_LFALLOC_RANDOM_HINT 1)
     set (LFALLOC_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/lfalloc/src)
