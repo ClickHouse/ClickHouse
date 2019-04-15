@@ -120,7 +120,8 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
             ++row_num;
         }
 
-    } else if (ML_function_Logistic)
+    }
+    else if (ML_function_Logistic)
     {
         size_t row_num = 0;
         for (auto val : data)
@@ -128,7 +129,8 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
             ML_function_Logistic->predictResultInto(val, *res, block, arguments);
             ++row_num;
         }
-    } else 
+    }
+    else
     {
         throw Exception("Illegal aggregate function is passed",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

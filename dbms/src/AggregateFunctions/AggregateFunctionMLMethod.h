@@ -483,8 +483,8 @@ public:
             l2_reg_coef(l2_reg_coef),
             batch_size(batch_size),
             gc(std::move(gradient_computer)),
-            wu(std::move(weights_updater)) {
-    }
+            wu(std::move(weights_updater))
+            {}
 
     DataTypePtr getReturnType() const override
     {
