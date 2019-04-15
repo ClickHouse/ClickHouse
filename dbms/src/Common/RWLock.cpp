@@ -1,7 +1,7 @@
 #include "RWLock.h"
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/ThreadNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
