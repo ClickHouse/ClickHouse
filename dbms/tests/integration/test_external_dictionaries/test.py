@@ -206,7 +206,7 @@ def test_complex_dictionaries(started_cluster):
              'my', 255.543, 3332221.44]),
     ]
 
-    complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex"]
+    complex_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "complex" and not d.is_kv]
     for dct in complex_dicts:
         dct.load_data(data)
 
@@ -225,8 +225,6 @@ def test_complex_dictionaries(started_cluster):
 
                     for query in dct.get_select_get_or_default_queries(field, row):
                         queries_with_answers.append((query, field.default_value_for_get))
-                if dct.is_kv:
-                    break
 
     for query, answer in queries_with_answers:
         print query
@@ -249,7 +247,7 @@ def test_ranged_dictionaries(started_cluster):
             32.543, 3332543.4]),
     ]
 
-    ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged"]
+    ranged_dicts = [d for d in DICTIONARIES if d.structure.layout.layout_type == "ranged" and not d.is_kv]
     for dct in ranged_dicts:
         dct.load_data(data)
 
