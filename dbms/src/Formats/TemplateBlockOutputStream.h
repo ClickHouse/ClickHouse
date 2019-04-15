@@ -30,6 +30,7 @@ struct ParsedTemplateFormat
     ParsedTemplateFormat() = default;
     ParsedTemplateFormat(const String & format_string, const ColumnIdxGetter & idxByName);
     static ColumnFormat stringToFormat(const String & format);
+    static String formatToString(ColumnFormat format);
     size_t columnsCount() const;
 };
 

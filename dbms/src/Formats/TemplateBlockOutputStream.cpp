@@ -109,6 +109,25 @@ size_t ParsedTemplateFormat::columnsCount() const
     return format_idx_to_column_idx.size();
 }
 
+String ParsedTemplateFormat::formatToString(ParsedTemplateFormat::ColumnFormat format)
+{
+    switch (format)
+    {
+        case ColumnFormat::Default:
+            return "Escaped (Default)";
+        case ColumnFormat::Escaped:
+            return "Escaped";
+        case ColumnFormat::Quoted:
+            return "Quoted";
+        case ColumnFormat::Json:
+            return "Json";
+        case ColumnFormat::Xml:
+            return "Xml";
+        case ColumnFormat::Raw:
+            return "Raw";
+    }
+    __builtin_unreachable();
+}
 
 
 TemplateBlockOutputStream::TemplateBlockOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettings & settings_)
