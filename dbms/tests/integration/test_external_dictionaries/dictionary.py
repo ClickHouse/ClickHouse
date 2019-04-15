@@ -118,6 +118,9 @@ class DictionaryStructure(object):
         fields_strs = []
         for field in self.ordinary_fields:
             fields_strs.append(field.get_attribute_str())
+            if self.is_kv:
+                break
+
         key_strs = []
         if self.layout.is_complex:
             for key_field in self.keys:

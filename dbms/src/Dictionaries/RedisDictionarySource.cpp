@@ -52,6 +52,9 @@ namespace DB
 #    include <ext/enumerate.h>
 #    include "RedisBlockInputStream.h"
 
+#    include "Poco/Logger.h"
+#    include "common/logger_useful.h"
+
 
 namespace DB
 {
@@ -120,10 +123,16 @@ namespace DB
 
     BlockInputStreamPtr RedisDictionarySource::loadAll()
     {
+        LOG_ERROR(&Logger::get("Redis"), "Redis in loadAll");
+
         Poco::Redis::Array commandForKeys;
         commandForKeys << "KEYS" << "*";
+        LOG_ERROR(&Logger::get("Redis"), "Command for keys: " + commandForKeys.toString());
 
         Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(commandForKeys);
+
+        LOG_ERROR(&Logger::get("Redis"), "Command for keys executed");
+        LOG_ERROR(&Logger::get("Redis"), "KEYS: " + keys.toString());
 
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }
@@ -131,6 +140,8 @@ namespace DB
 
     BlockInputStreamPtr RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
+        LOG_ERROR(&Logger::get("Redis"), "Redis in loadIds");
+
         if (!dict_struct.id)
             throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
 
@@ -138,6 +149,8 @@ namespace DB
 
         for (UInt64 id : ids)
             keys << static_cast<Int64>(id);
+
+        LOG_ERROR(&Logger::get("Redis"), "KEYS: " + keys.toString());
 
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }

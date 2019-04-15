@@ -25,6 +25,9 @@
 #    include "DictionaryStructure.h"
 #    include "RedisBlockInputStream.h"
 
+#    include "Poco/Logger.h"
+#    include "common/logger_useful.h"
+
 
 namespace DB
 {
@@ -56,6 +59,12 @@ namespace DB
         template <typename T>
         void insertNumber(IColumn & column, const Poco::Redis::RedisType::Ptr & value, const std::string & name)
         {
+            LOG_ERROR(&Logger::get("Redis"), "Got value: " + value->toString() + "with type=" +
+                ", isInteger=" + DB::toString(value->isInteger()) +
+                ", isSimpleString=" + DB::toString(value->isSimpleString()) +
+                ", isBulkString=" + DB::toString(value->isBulkString()) +
+                ", isArray=" + DB::toString(value->isArray()) +
+                ", isError=" + DB::toString(value->isError()));
             switch (value->type())
             {
                 case Poco::Redis::RedisTypeTraits<Poco::Int64>::TypeId:
@@ -68,7 +77,7 @@ namespace DB
                     break;
                 case Poco::Redis::RedisTypeTraits<Poco::Redis::BulkString>::TypeId:
                 {
-                    const auto &bs =
+                    const auto & bs =
                             static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(value.get())->value();
                     if (bs.isNull())
                         static_cast<ColumnVector<T> &>(column).getData().emplace_back();
@@ -78,7 +87,8 @@ namespace DB
                 }
                 default:
                     throw Exception(
-                            "Type mismatch, expected a number, got type id = " + toString(value->type()) + " for column " + name,
+                            "Type mismatch, expected a number, got " + value->toString() +
+                            " with type id = " + toString(value->type()) + " for column " + name,
                             ErrorCodes::TYPE_MISMATCH);
             }
         }
@@ -189,6 +199,9 @@ namespace DB
         if (all_read)
             return {};
 
+        for (size_t i = 0; i < 3; ++i)
+            if (description.sample_block.columns() >= i + 1)
+                LOG_ERROR(&Logger::get("Redis"), description.sample_block.getByPosition(i).dumpStructure());
         const size_t size = 2;
         if (size != description.sample_block.columns())
             throw Exception{"Unsupported number of columns for key-value storage: "
@@ -225,21 +238,27 @@ namespace DB
                 break;
             }
 
-
+            LOG_ERROR(&Logger::get("Redis"), "Get key: " + DB::toString(cursor));
             const auto & key = *(keys.begin() + cursor);
             insertValueByIdx(0, key);
             commandForValues.addRedisType(key);
-            
+            LOG_ERROR(&Logger::get("Redis"), "Key has read: " + DB::toString(cursor));
+
             ++num_rows;
             ++cursor;
         }
 
+        LOG_ERROR(&Logger::get("Redis"), "All " + DB::toString(num_rows) + " rows added");
+
         if (num_rows == 0)
             return {};
 
+        LOG_ERROR(&Logger::get("Redis"), "Req to get values");
         Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
+        LOG_ERROR(&Logger::get("Redis"), "Req executed");
         for (size_t i = 0; i < num_rows; ++i)
         {
+            LOG_ERROR(&Logger::get("Redis"), "Get value from : " + DB::toString(i));
             const Poco::Redis::RedisType::Ptr & value = *(values.begin() + i);
             if (value.isNull())
                 insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
@@ -249,7 +268,6 @@ namespace DB
 
         return description.sample_block.cloneWithColumns(std::move(columns));
     }
-
 }
 
 #endif
