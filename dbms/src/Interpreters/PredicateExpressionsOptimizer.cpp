@@ -180,15 +180,11 @@ bool PredicateExpressionsOptimizer::allowPushDown(
 
         /// Check right side for LEFT'o'FULL JOIN
         if (isLeftOrFull(ast_join->table_join->as<ASTTableJoin>()->kind) && right_subquery == subquery)
-        {
             return false;
-        }
 
         /// Check left side for RIGHT'o'FULL JOIN
         if (isRightOrFull(ast_join->table_join->as<ASTTableJoin>()->kind) && left_subquery == subquery)
-        {
             return false;
-        }
     }
 
     return checkDependencies(projection_columns, dependencies, optimize_kind);
