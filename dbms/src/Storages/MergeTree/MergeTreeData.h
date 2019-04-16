@@ -285,6 +285,32 @@ public:
         String getModeName() const;
     };
 
+    /// Meta information about index granularity
+    struct IndexGranularityInfo
+    {
+        /// Marks file extension '.mrk' or '.mrk2'
+        String marks_file_extension;
+
+        /// Size of one mark in file two or three size_t numbers
+        UInt8 mark_size_in_bytes;
+
+        /// Is stride in rows between marks non fixed?
+        bool is_adaptive;
+
+        /// Fixed size in rows of one granule if index_granularity_bytes is zero
+        size_t fixed_index_granularity;
+
+        /// Approximate bytes size of one granule
+        size_t index_granularity_bytes;
+
+        IndexGranularityInfo(const MergeTreeSettings & settings);
+
+        String getMarksFilePath(const String & column_path) const
+        {
+            return column_path + marks_file_extension;
+        }
+    };
+
 
     /// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
@@ -574,6 +600,7 @@ public:
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;
+    IndexGranularityInfo index_granularity_info;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
@@ -620,7 +647,6 @@ public:
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    const size_t index_granularity;
     const MergeTreeSettings settings;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange

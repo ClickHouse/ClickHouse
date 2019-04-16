@@ -52,6 +52,9 @@
         - [loghouse](https://github.com/flant/loghouse) (برای [Kubernetes](https://kubernetes.io))
     - [logagent](https://www.sematext.com/logagent)
         - [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
+- جغرافیایی
+    - [MaxMind](https://dev.maxmind.com/geoip/)
+        - [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
 ## اکوسیستم زبان برنامه نویسی
 

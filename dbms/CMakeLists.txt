@@ -226,8 +226,9 @@ if(CPUINFO_LIBRARY)
 endif()
 
 target_link_libraries (dbms
-        PRIVATE
+        PUBLIC
     clickhouse_compression
+        PRIVATE
     clickhouse_parsers
     clickhouse_common_config
         PUBLIC

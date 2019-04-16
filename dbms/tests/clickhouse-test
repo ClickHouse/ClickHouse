@@ -167,6 +167,9 @@ def main(args):
 
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
     clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+    if args.database != "test":
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
     def is_test_from_dir(suite_dir, case):
         case_file = os.path.join(suite_dir, case)
