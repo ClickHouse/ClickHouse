@@ -446,18 +446,19 @@ Processors MergeSortingTransform::expandPipeline()
 
     static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
 
-    /// Serialize
+    connect(buffer->getOutputs().back(), external_merging_sorted->getInputs().back());
+
+
     if (!buffer->getInputs().empty())
     {
+        /// Serialize
         connect(getOutputs().back(), buffer->getInputs().back());
         /// Hack. Say buffer that we need data from port (otherwise it will return PortFull).
-        buffer->getInputs().back().setNeeded();
+        external_merging_sorted->getInputs().back().setNeeded();
     }
     else
+        /// Generate
         static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
-
-    /// Serialize or Generate
-    connect(buffer->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     return std::move(processors);
 }
