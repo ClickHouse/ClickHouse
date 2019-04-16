@@ -170,7 +170,7 @@ namespace DB
                 for (const auto & secondary_key : reply_for_primary_key)
                     primary_with_secondary->addRedisType(secondary_key);
                 LOG_ERROR(&Logger::get("Redis"), "HKEYS: " + primary_with_secondary->toString());
-                hkeys.addRedisType(primary_with_secondary);
+                hkeys.add(*primary_with_secondary);
             }
             keys = hkeys;
         }
