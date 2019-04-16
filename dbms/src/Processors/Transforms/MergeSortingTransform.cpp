@@ -362,20 +362,13 @@ IProcessor::Status MergeSortingTransform::prepareConsume()
 
 IProcessor::Status MergeSortingTransform::prepareSerialize()
 {
-    auto & input = inputs.back();
     auto & output = outputs.back();
 
     if (output.isFinished())
-    {
-        input.close();
         return Status::Finished;
-    }
 
     if (!output.canPush())
-    {
-        // input.setNotNeeded();
         return Status::PortFull;
-    }
 
     if (current_chunk)
         output.push(std::move(current_chunk));
@@ -384,17 +377,6 @@ IProcessor::Status MergeSortingTransform::prepareSerialize()
         return Status::Ready;
 
     output.finish();
-
-    if (input.isFinished())
-        return Status::Finished;
-
-    input.setNeeded();
-
-    if (!input.hasData())
-        return Status::NeedData;
-
-    input.pull();
-    input.close();
     return Status::Finished;
 }
 
@@ -452,25 +434,26 @@ void MergeSortingTransform::work()
 
 Processors MergeSortingTransform::expandPipeline()
 {
-    if (!processors.empty())
+    if (processors.size() > 1)
     {
-        /// Before generate.
+        /// Add external_merging_sorted.
         inputs.emplace_back(header_without_constants, this);
-        connect(current_processor->getOutputs().front(), getInputs().back());
-        current_processor.reset();
-        inputs.back().setNeeded();
-        return std::move(processors);
+        connect(external_merging_sorted->getOutputs().front(), inputs.back());
     }
-    else
-    {
-        /// Before serialize.
-        inputs.emplace_back(header_without_constants, this);
-        outputs.emplace_back(header_without_constants, this);
-        connect(current_processor->getOutputs().front(), getInputs().back());
-        connect(getOutputs().back(), current_processor->getInputs().front());
-        inputs.back().setNeeded();
-        return {std::move(current_processor)};
-    }
+
+    auto & buffer = processors.front();
+    outputs.emplace_back(header_without_constants, this);
+
+    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
+
+    /// Serialize
+    if (!buffer->getInputs().empty())
+        connect(getOutputs().back(), buffer->getInputs().back());
+
+    /// Serialize or Generate
+    connect(buffer->getOutputs().back(), external_merging_sorted->getInputs().back());
+
+    return std::move(processors);
 }
 
 void MergeSortingTransform::consume(Chunk chunk)
@@ -520,6 +503,25 @@ void MergeSortingTransform::consume(Chunk chunk)
         merge_sorter = std::make_unique<MergeSorter>(std::move(chunks), description, max_merged_block_size, limit);
         current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, path);
 
+        processors.emplace_back(current_processor);
+
+        if (!external_merging_sorted)
+        {
+            bool quiet = false;
+            bool have_all_inputs = false;
+
+            external_merging_sorted = std::make_shared<MergingSortedTransform>(
+                    header_without_constants,
+                    0,
+                    description,
+                    max_merged_block_size,
+                    limit,
+                    quiet,
+                    have_all_inputs);
+
+            processors.emplace_back(external_merging_sorted);
+        }
+
         stage = Stage::Serialize;
         sum_bytes_in_blocks = 0;
         sum_rows_in_blocks = 0;
@@ -544,22 +546,9 @@ void MergeSortingTransform::generate()
             ProfileEvents::increment(ProfileEvents::ExternalSortMerge);
             LOG_INFO(log, "There are " << temporary_files.size() << " temporary sorted parts to merge.");
 
-            /// Create sorted streams to merge.
-            for (const auto & file : temporary_files)
-                processors.emplace_back(std::make_unique<SourceFromNativeStream>(header_without_constants, file->path()));
-
             if (!chunks.empty())
                 processors.emplace_back(std::make_shared<MergeSorterSource>(
                         header_without_constants, std::move(chunks), description, max_merged_block_size, limit));
-
-            current_processor = std::make_shared<MergingSortedTransform>(
-                    header_without_constants, processors.size(), description, max_merged_block_size, limit);
-
-            auto next_input = current_processor->getInputs().begin();
-            for (auto & processor : processors)
-                connect(processor->getOutputs().front(), *(next_input++));
-
-            processors.push_back(current_processor);
         }
 
         generated_prefix = true;

@@ -51,11 +51,15 @@ public:
         const SortDescription & description_,
         size_t max_block_size,
         UInt64 limit = 0,
-        bool quiet = false);
+        bool quiet = false,
+        bool have_all_inputs = false);
 
     String getName() const override { return "MergingSortedTransform"; }
     Status prepare() override;
     void work() override;
+
+    void addInput();
+    void setHaveAllInputs();
 
 protected:
 
@@ -125,6 +129,8 @@ protected:
     UInt64 limit;
     bool has_collation = false;
     bool quiet = false;
+
+    std::atomic<bool> have_all_inputs;
 
     MergedData merged_data;
 

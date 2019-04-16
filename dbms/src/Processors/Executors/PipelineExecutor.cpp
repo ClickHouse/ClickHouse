@@ -15,7 +15,7 @@ PipelineExecutor::PipelineExecutor(Processors processors, ThreadPool * pool)
     buildGraph();
 }
 
-void PipelineExecutor::addEdges(const ProcessorsMap & processors_map, UInt64 node, UInt64 from_input, UInt64 from_output)
+bool PipelineExecutor::addEdges(UInt64 node)
 {
     auto throwUnknownProcessor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
     {
@@ -49,24 +49,41 @@ void PipelineExecutor::addEdges(const ProcessorsMap & processors_map, UInt64 nod
         from_port.setVersion(&edge_ptr->version);
     };
 
+    bool was_edge_added = false;
+
     auto & inputs = processors[node]->getInputs();
-    for (auto it = std::next(inputs.begin(), from_input); it != inputs.end(); ++it)
+    auto from_input = graph[node].backEdges.size();
+
+    if (from_input < inputs.size())
     {
-        const IProcessor * proc = &it->getOutputPort().getProcessor();
-        add_edge(*it, proc, graph[node].backEdges);
+        was_edge_added = true;
+
+        for (auto it = std::next(inputs.begin(), from_input); it != inputs.end(); ++it)
+        {
+            const IProcessor * proc = &it->getOutputPort().getProcessor();
+            add_edge(*it, proc, graph[node].backEdges);
+        }
     }
 
     auto & outputs = processors[node]->getOutputs();
-    for (auto it = std::next(outputs.begin(), from_output); it != outputs.end(); ++it)
+    auto from_output = graph[node].directEdges.size();
+
+    if (from_output < outputs.size())
     {
-        const IProcessor * proc = &it->getInputPort().getProcessor();
-        add_edge(*it, proc, graph[node].directEdges);
+        was_edge_added = true;
+
+        for (auto it = std::next(outputs.begin(), from_output); it != outputs.end(); ++it)
+        {
+            const IProcessor * proc = &it->getInputPort().getProcessor();
+            add_edge(*it, proc, graph[node].directEdges);
+        }
     }
+
+    return was_edge_added;
 }
 
 void PipelineExecutor::buildGraph()
 {
-    ProcessorsMap processors_map;
     UInt64 num_processors = processors.size();
 
     graph.resize(num_processors);
@@ -78,7 +95,7 @@ void PipelineExecutor::buildGraph()
     }
 
     for (UInt64 node = 0; node < num_processors; ++node)
-        addEdges(processors_map, node, 0, 0);
+        addEdges(node);
 }
 
 void PipelineExecutor::addChildlessProcessorsToQueue()
@@ -190,15 +207,14 @@ void PipelineExecutor::addAsyncJob(UInt64 pid)
 void PipelineExecutor::expendPipeline(UInt64 pid)
 {
     auto & cur_node = graph[pid];
-    UInt64 from_input = cur_node.processor->getInputs().size();
-    UInt64 from_output = cur_node.processor->getOutputs().size();
-    UInt64 from_processor = processors.size();
     auto new_processors = cur_node.processor->expandPipeline();
 
-    ProcessorsMap processors_map;
-    processors_map[cur_node.processor] = pid;
     for (const auto & processor : new_processors)
     {
+        if (processors_map.count(processor.get()))
+            throw Exception("Processor " + processor->getName() + " was already added to pipeline.",
+                    ErrorCodes::LOGICAL_ERROR);
+
         processors_map[processor.get()] = graph.size();
         graph.emplace_back();
         graph.back().processor = processor.get();
@@ -207,14 +223,17 @@ void PipelineExecutor::expendPipeline(UInt64 pid)
     processors.insert(processors.end(), new_processors.begin(), new_processors.end());
     UInt64 num_processors = processors.size();
 
-    for (UInt64 node = from_processor; node < num_processors; ++node)
+    for (UInt64 node = 0; node < num_processors; ++node)
     {
-        addEdges(processors_map, node, 0, 0);
-        prepare_queue.push(node);
-        graph[node].status = ExecStatus::Preparing;
+        if (addEdges(node))
+        {
+            if (graph[node].status == ExecStatus::Idle || graph[node].status == ExecStatus::New)
+            {
+                graph[node].status = ExecStatus::Preparing;
+                prepare_queue.push(node);
+            }
+        }
     }
-
-    addEdges(processors_map, pid, from_input, from_output);
 }
 
 void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)

@@ -11,9 +11,11 @@ MergingSortedTransform::MergingSortedTransform(
     const SortDescription & description_,
     size_t max_block_size,
     UInt64 limit,
-    bool quiet)
+    bool quiet,
+    bool have_all_inputs)
     : IProcessor(InputPorts(num_inputs, header), {header})
     , description(description_), max_block_size(max_block_size), limit(limit), quiet(quiet)
+    , have_all_inputs(have_all_inputs)
     , merged_data(header), source_chunks(num_inputs), cursors(num_inputs)
 {
     auto & sample = outputs.front().getHeader();
@@ -29,8 +31,29 @@ MergingSortedTransform::MergingSortedTransform(
     }
 }
 
+void MergingSortedTransform::addInput()
+{
+    if (have_all_inputs)
+        throw Exception("MergingSortedTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
+
+    inputs.emplace_back(outputs.front().getHeader(), this);
+    source_chunks.emplace_back();
+    cursors.emplace_back();
+}
+
+void MergingSortedTransform::setHaveAllInputs()
+{
+    if (have_all_inputs)
+        throw Exception("MergingSortedTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
+
+    have_all_inputs = true;
+}
+
 IProcessor::Status MergingSortedTransform::prepare()
 {
+    if (!have_all_inputs)
+        return Status::NeedData;
+
     auto & output = outputs.front();
 
     /// Special case for no inputs.
