@@ -22,6 +22,25 @@ namespace Poco
 
 namespace DB
 {
+    namespace RedisStorageType
+    {
+        enum Id
+        {
+            SIMPLE,
+            HASH_MAP,
+            UNKNOWN
+        };
+
+        Id valueOf(const std::string& value)
+        {
+            if (value == "simple")
+                return SIMPLE;
+            if (value == "hash_map")
+                return HASH_MAP;
+            return UNKNOWN;
+        }
+    }
+
     class RedisDictionarySource final : public IDictionarySource
     {
         RedisDictionarySource(
@@ -29,6 +48,7 @@ namespace DB
                 const std::string & host,
                 UInt16 port,
                 UInt8 db_index,
+                RedisStorageType::Id storage_type,
                 const Block & sample_block);
 
     public:
@@ -55,6 +75,7 @@ namespace DB
 
         BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
         {
+            // Redis does not support native indexing
             throw Exception{"Method loadKeys is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
         }
 
@@ -67,10 +88,14 @@ namespace DB
         std::string toString() const override;
 
     private:
+        static RedisStorageType::Id parseStorageType(const std::string& storage_type);
+
+    private:
         const DictionaryStructure dict_struct;
         const std::string host;
         const UInt16 port;
         const UInt8 db_index; // [0..15]
+        const RedisStorageType::Id storage_type;
         Block sample_block;
 
         std::shared_ptr<Poco::Redis::Client> client;

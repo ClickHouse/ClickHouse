@@ -62,6 +62,7 @@ namespace DB
     {
         extern const int UNSUPPORTED_METHOD;
         extern const int CANNOT_SELECT;
+        extern const int INVALID_CONFIG_PARAMETER;
     }
 
 
@@ -73,18 +74,36 @@ namespace DB
             const std::string & host,
             UInt16 port,
             UInt8 db_index,
+            RedisStorageType::Id storage_type,
             const Block & sample_block)
             : dict_struct{dict_struct}
             , host{host}
             , port{port}
             , db_index{db_index}
+            , storage_type{storage_type}
             , sample_block{sample_block}
             , client{std::make_shared<Poco::Redis::Client>(host, port)}
     {
+        if (dict_struct.attributes.size() != 1)
+            throw Exception{"Invalid number of non key columns for Redis source: " +
+                            DB::toString(dict_struct.attributes.size()) + ", expected 1",
+                            ErrorCodes::INVALID_CONFIG_PARAMETER};
+
+        if (storage_type == RedisStorageType::HASH_MAP)
+        {
+            if (!dict_struct.key.has_value())
+                throw Exception{"Redis source with storage type \'hash_map\' mush have key",
+                                ErrorCodes::INVALID_CONFIG_PARAMETER};
+            if (dict_struct.key.value().size() > 2)
+                throw Exception{"Redis source with complex keys having more than 2 attributes are unsupported",
+                                ErrorCodes::INVALID_CONFIG_PARAMETER};
+            // suppose key[0] is primary key, key[1] is secondary key
+        }
+
         if (db_index != 0)
         {
-            Poco::Redis::Array command;
-            command << "SELECT" << static_cast<Int64>(db_index);
+            Poco::Redis::Command command("SELECT");
+            command << static_cast<Int64>(db_index);
             std::string reply = client->execute<std::string>(command);
             if (reply != "+OK\r\n")
                 throw Exception{"Selecting db with index " + DB::toString(db_index) + " failed with reason " + reply,
@@ -103,6 +122,7 @@ namespace DB
             config.getString(config_prefix + ".host"),
             config.getUInt(config_prefix + ".port"),
             config.getUInt(config_prefix + ".db_index", 0),
+            parseStorageType(config.getString(config_prefix + ".storage_type", "")),
             sample_block)
     {
     }
@@ -113,6 +133,7 @@ namespace DB
                                     other.host,
                                     other.port,
                                     other.db_index,
+                                    other.storage_type,
                                     other.sample_block}
     {
     }
@@ -125,14 +146,34 @@ namespace DB
     {
         LOG_ERROR(&Logger::get("Redis"), "Redis in loadAll");
 
-        Poco::Redis::Array commandForKeys;
-        commandForKeys << "KEYS" << "*";
-        LOG_ERROR(&Logger::get("Redis"), "Command for keys: " + commandForKeys.toString());
+        Poco::Redis::Command command_for_keys("KEYS");
+        command_for_keys << "*";
+        LOG_ERROR(&Logger::get("Redis"), "Command for keys: " + command_for_keys.toString());
 
-        Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(commandForKeys);
+        Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(command_for_keys);
 
         LOG_ERROR(&Logger::get("Redis"), "Command for keys executed");
         LOG_ERROR(&Logger::get("Redis"), "KEYS: " + keys.toString());
+
+        if (storage_type == RedisStorageType::HASH_MAP && dict_struct.key->size() == 2)
+        {
+            Poco::Redis::Array hkeys;
+            for (const auto & key : keys)
+            {
+                Poco::Redis::Command command_for_secondary_keys("HKEYS");
+                command_for_secondary_keys.addRedisType(key);
+                Poco::Redis::Array reply_for_primary_key = client->execute<Poco::Redis::Array>(command_for_secondary_keys);
+                LOG_ERROR(&Logger::get("Redis"), "Command for hkeys executed");
+
+                Poco::SharedPtr<Poco::Redis::Array> primary_with_secondary;
+                primary_with_secondary->addRedisType(key);
+                for (const auto & secondary_key : reply_for_primary_key)
+                    primary_with_secondary->addRedisType(secondary_key);
+                LOG_ERROR(&Logger::get("Redis"), "HKEYS: " + primary_with_secondary->toString());
+                hkeys.addRedisType(primary_with_secondary);
+            }
+            keys = hkeys;
+        }
 
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }
@@ -141,6 +182,9 @@ namespace DB
     BlockInputStreamPtr RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
         LOG_ERROR(&Logger::get("Redis"), "Redis in loadIds");
+
+        if (storage_type != RedisStorageType::SIMPLE)
+            throw Exception{"Cannot use loadIds with \'simple\' storage type", ErrorCodes::UNSUPPORTED_METHOD};
 
         if (!dict_struct.id)
             throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
@@ -155,12 +199,18 @@ namespace DB
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }
 
-
     std::string RedisDictionarySource::toString() const
     {
         return "Redis: " + host + ':' + DB::toString(port);
     }
 
+    RedisStorageType::Id RedisDictionarySource::parseStorageType(const std::string & storage_type) {
+        RedisStorageType::Id storage_type_id = RedisStorageType::valueOf(storage_type);
+        if (storage_type_id == RedisStorageType::UNKNOWN) {
+            storage_type_id = RedisStorageType::SIMPLE;
+        }
+        return storage_type_id;
+    }
 }
 
 #endif
