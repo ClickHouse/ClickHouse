@@ -52,7 +52,7 @@ public:
         size_t max_block_size,
         UInt64 limit = 0,
         bool quiet = false,
-        bool have_all_inputs = false);
+        bool have_all_inputs = true);
 
     String getName() const override { return "MergingSortedTransform"; }
     Status prepare() override;
