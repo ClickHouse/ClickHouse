@@ -371,7 +371,7 @@ public:
     /// The week number 1 is the first week in year that contains 4 or more days (that's more than half).
     inline unsigned toISOWeek(DayNum d) const
     {
-        return 1 + (toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7;
+        return 1 + DayNum(toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7;
     }
 
     inline unsigned toISOWeek(time_t t) const

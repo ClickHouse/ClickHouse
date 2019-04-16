@@ -43,6 +43,9 @@ struct BlockIO
 
     BlockIO & operator= (const BlockIO & rhs)
     {
+        if (this == &rhs)
+            return *this;
+
         out.reset();
         in.reset();
         process_list_entry.reset();

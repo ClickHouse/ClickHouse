@@ -1,7 +1,7 @@
 #include "DNSCacheUpdater.h"
 #include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/ProfileEvents.h>
 #include <Poco/Net/NetException.h>
 #include <common/logger_useful.h>
@@ -15,8 +15,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-using BackgroundProcessingPoolTaskInfo = BackgroundProcessingPool::TaskInfo;
 
 namespace ErrorCodes
 {
@@ -56,18 +54,15 @@ static bool isNetworkError()
 
 
 DNSCacheUpdater::DNSCacheUpdater(Context & context_)
-    : context(context_), pool(context_.getBackgroundPool())
+    : context(context_), pool(context_.getSchedulePool())
 {
-    task_handle = pool.addTask([this] () { return run(); });
+    task_handle = pool.createTask("DNSCacheUpdater", [this]{ run(); });
 }
 
-BackgroundProcessingPoolTaskResult DNSCacheUpdater::run()
+void DNSCacheUpdater::run()
 {
-    /// TODO: Ensusre that we get global counter (not thread local)
     auto num_current_network_exceptions = ProfileEvents::global_counters[ProfileEvents::NetworkErrors].load(std::memory_order_relaxed);
-
-    if (num_current_network_exceptions >= last_num_network_erros + min_errors_to_update_cache
-        && time(nullptr) > last_update_time + min_update_period_seconds)
+    if (num_current_network_exceptions >= last_num_network_erros + min_errors_to_update_cache)
     {
         try
         {
@@ -77,31 +72,17 @@ BackgroundProcessingPoolTaskResult DNSCacheUpdater::run()
             context.reloadClusterConfig();
 
             last_num_network_erros = num_current_network_exceptions;
-            last_update_time = time(nullptr);
-
-            return BackgroundProcessingPoolTaskResult::SUCCESS;
+            task_handle->scheduleAfter(min_update_period_seconds * 1000);
+            return;
         }
         catch (...)
         {
-            /// Do not increment ProfileEvents::NetworkErrors twice
-            if (isNetworkError())
-                return BackgroundProcessingPoolTaskResult::ERROR;
-
-            throw;
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
-    /// According to BackgroundProcessingPool logic, if task has done work, it could be executed again immediately.
-    return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
+    task_handle->scheduleAfter(10 * 1000);
 }
-
-DNSCacheUpdater::~DNSCacheUpdater()
-{
-    if (task_handle)
-        pool.removeTask(task_handle);
-    task_handle.reset();
-}
-
 
 bool DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded()
 {
