@@ -125,20 +125,22 @@ void TotalsHavingTransform::work()
 
 void TotalsHavingTransform::transform(Chunk & chunk)
 {
-    auto & info = chunk.getChunkInfo();
-    if (!info)
-        throw Exception("Chunk info was not set for chunk in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
-    if (!agg_info)
-        throw Exception("Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
-
-
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
-    if (overflow_row && agg_info->is_overflows)
+    if (overflow_row)
     {
-        overflow_aggregates = std::move(chunk);
-        return;
+        auto & info = chunk.getChunkInfo();
+        if (!info)
+            throw Exception("Chunk info was not set for chunk in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
+
+        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        if (!agg_info)
+            throw Exception("Chunk should have AggregatedChunkInfo in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
+
+        if (agg_info->is_overflows)
+        {
+            overflow_aggregates = std::move(chunk);
+            return;
+        }
     }
 
     if (!chunk)
