@@ -76,7 +76,9 @@ public:
 private:
     /// Graph related methods.
     using ProcessorsMap = std::unordered_map<const IProcessor *, UInt64>;
-    void addEdges(const ProcessorsMap & processors_map, UInt64 node, UInt64 from_input, UInt64 from_output);
+    ProcessorsMap processors_map;
+
+    bool addEdges(UInt64 node);
     void buildGraph();
     void expendPipeline(UInt64 pid);
 

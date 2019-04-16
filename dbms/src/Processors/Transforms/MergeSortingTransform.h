@@ -84,6 +84,7 @@ private:
 
     std::unique_ptr<MergeSorter> merge_sorter;
     ProcessorPtr current_processor;
+    ProcessorPtr external_merging_sorted;
     Processors processors;
 
     Status prepareConsume();
