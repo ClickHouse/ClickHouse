@@ -563,6 +563,7 @@ protected:
         const ASTPtr & order_by_ast_,
         const ASTPtr & primary_key_ast_,
         const ASTPtr & sample_by_ast_,
+        const ASTPtr & table_ttl_ast_,
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,
         bool has_force_restore_data_flag);

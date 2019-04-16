@@ -38,9 +38,9 @@ MergeTreeReader::MergeTreeReader(const String & path,
     size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback,
     clockid_t clock_type)
-    : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
+    : data_part(data_part), avg_value_size_hints(avg_value_size_hints), path(path), columns(columns)
     , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size), index_granularity(storage.index_granularity)
+    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {
     try
     {
@@ -172,10 +172,12 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
+            path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
             all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
-            aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+            aio_threshold, max_read_buffer_size,
+            &storage.index_granularity_info,
+            profile_callback, clock_type));
     };
 
     IDataType::SubstreamPath substream_path;
