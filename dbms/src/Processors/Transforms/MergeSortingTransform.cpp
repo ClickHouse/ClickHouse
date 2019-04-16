@@ -290,7 +290,7 @@ IProcessor::Status MergeSortingTransform::prepare()
 {
     if (stage == Stage::Serialize)
     {
-        if (current_processor)
+        if (!processors.empty())
             return Status::ExpandPipeline;
 
         auto status = prepareSerialize();
@@ -501,7 +501,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         temporary_files.emplace_back(std::make_unique<Poco::TemporaryFile>(tmp_path));
         const std::string & path = temporary_files.back()->path();
         merge_sorter = std::make_unique<MergeSorter>(std::move(chunks), description, max_merged_block_size, limit);
-        current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, path);
+        auto current_processor = std::make_shared<BufferingToFileTransform>(header_without_constants, log, path);
 
         processors.emplace_back(current_processor);
 
