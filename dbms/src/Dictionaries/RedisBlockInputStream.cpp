@@ -35,6 +35,7 @@ namespace DB
     {
         extern const int TYPE_MISMATCH;
         extern const int LOGICAL_ERROR;
+        extern const int LIMIT_EXCEEDED;
     }
 
 
@@ -107,10 +108,10 @@ namespace DB
                                             ErrorCodes::TYPE_MISMATCH};
                         return bs.value();
                     }
-                    case Poco::Redis::RedisTypeTraits<String>::TypeId:
-                        return static_cast<const Poco::Redis::Type<String> *>(value.get())->value();
+                    case Poco::Redis::RedisTypeTraits<std::string>::TypeId:
+                        return static_cast<const Poco::Redis::Type<std::string> *>(value.get())->value();
                     default:
-                        throw Exception{"Type mismatch, expected String, got type id = " + toString(value->type()) + " for column " + name,
+                        throw Exception{"Type mismatch, expected std::string, got type id = " + toString(value->type()) + " for column " + name,
                                         ErrorCodes::TYPE_MISMATCH};
                 }
             };
@@ -193,21 +194,23 @@ namespace DB
 
     Block RedisBlockInputStream::readImpl()
     {
-        if (description.sample_block.rows() == 0)
+        if (description.sample_block.rows() == 0 || keys.size() == 0)
             all_read = true;
 
         if (all_read)
             return {};
 
-        for (size_t i = 0; i < 3; ++i)
+        for (size_t i = 0; i < 5; ++i)
             if (description.sample_block.columns() >= i + 1)
                 LOG_ERROR(&Logger::get("Redis"), description.sample_block.getByPosition(i).dumpStructure());
-        const size_t size = 2;
-        if (size != description.sample_block.columns())
-            throw Exception{"Unsupported number of columns for key-value storage: "
-                            + std::to_string(description.sample_block.columns())
-                            + " (expected: " + std::to_string(size) + ")",
-                            ErrorCodes::LOGICAL_ERROR};
+
+        const size_t size = description.sample_block.columns();
+//        const size_t size = 2;
+//        if (size != description.sample_block.columns())
+//            throw Exception{"Unsupported number of columns for key-value storage: "
+//                            + DB::toString(description.sample_block.columns())
+//                            + " (expected: " + DB::toString(size) + ")",
+//                            ErrorCodes::LOGICAL_ERROR};
 
         MutableColumns columns(description.sample_block.columns());
 
@@ -227,43 +230,89 @@ namespace DB
                 insertValue(*columns[idx], description.types[idx].first, value, name);
         };
 
-        size_t num_rows = 0;
-        Poco::Redis::Command commandForValues("MGET");
-
-        while (num_rows < max_block_size)
+        if (keys.begin()->get()->isArray())
         {
-            if (cursor >= keys.size())
+            size_t num_rows = 0;
+            while (num_rows < max_block_size)
             {
-                all_read = true;
-                break;
+                if (cursor >= keys.size())
+                {
+                    all_read = true;
+                    break;
+                }
+
+                const auto & primary_with_secondary = *(keys.begin() + cursor);
+                const auto & keys_array =
+                        static_cast<const Poco::Redis::Type<Poco::Redis::Array> *>(primary_with_secondary.get())->value();
+                if (keys_array.size() < 2)
+                {
+                    throw Exception{"Too low keys in request to source: " + DB::toString(keys_array.size())
+                                    + ", expected 2 or more",
+                                    ErrorCodes::LOGICAL_ERROR};
+                }
+                if (num_rows + keys_array.size() - 1 > max_block_size)
+                {
+                    if (num_rows == 0)
+                        throw Exception{"Too many (" + DB::toString(keys_array.size()) + ") key attributes",
+                                        ErrorCodes::LIMIT_EXCEEDED};
+                    break;
+                }
+
+                Poco::Redis::Command commandForValues("HMGET");
+                const auto & primary_key = *keys_array.begin();
+                for (size_t i = 1; i < keys_array.size(); ++i)
+                {
+                    const auto & secondary_key = *(keys_array.begin() + i);
+                    insertValueByIdx(0, primary_key);
+                    insertValueByIdx(1, secondary_key);
+                    commandForValues.addRedisType(secondary_key);
+                }
+
+                Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
+                for (const auto & value : values)
+                {
+                    if (value.isNull())
+                        insertDefaultValue(*columns[2], *description.sample_block.getByPosition(2).column);
+                    else
+                        insertValueByIdx(2, value);
+                }
+
+                num_rows += keys_array.size() - 1;
+                cursor += keys_array.size() - 1;
+            }
+        }
+        else
+        {
+            size_t num_rows = 0;
+            Poco::Redis::Command commandForValues("MGET");
+
+            while (num_rows < max_block_size)
+            {
+                if (cursor >= keys.size())
+                {
+                    all_read = true;
+                    break;
+                }
+
+                const auto & key = *(keys.begin() + cursor);
+                insertValueByIdx(0, key);
+                commandForValues.addRedisType(key);
+
+                ++num_rows;
+                ++cursor;
             }
 
-            LOG_ERROR(&Logger::get("Redis"), "Get key: " + DB::toString(cursor));
-            const auto & key = *(keys.begin() + cursor);
-            insertValueByIdx(0, key);
-            commandForValues.addRedisType(key);
-            LOG_ERROR(&Logger::get("Redis"), "Key has read: " + DB::toString(cursor));
+            if (num_rows == 0)
+                return {};
 
-            ++num_rows;
-            ++cursor;
-        }
-
-        LOG_ERROR(&Logger::get("Redis"), "All " + DB::toString(num_rows) + " rows added");
-
-        if (num_rows == 0)
-            return {};
-
-        LOG_ERROR(&Logger::get("Redis"), "Req to get values");
-        Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
-        LOG_ERROR(&Logger::get("Redis"), "Req executed");
-        for (size_t i = 0; i < num_rows; ++i)
-        {
-            LOG_ERROR(&Logger::get("Redis"), "Get value from : " + DB::toString(i));
-            const Poco::Redis::RedisType::Ptr & value = *(values.begin() + i);
-            if (value.isNull())
-                insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
-            else
-                insertValueByIdx(1, value);
+            Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
+            for (const auto & value : values)
+            {
+                if (value.isNull())
+                    insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
+                else
+                    insertValueByIdx(1, value);
+            }
         }
 
         return description.sample_block.cloneWithColumns(std::move(columns));
