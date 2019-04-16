@@ -1,5 +1,4 @@
 SET send_logs_level = 'none';
-USE test;
 
 drop table if exists t1;
 create table t1 (id UInt64, val Array(String),nid UInt64, eDate Date)ENGINE = MergeTree(eDate, (id, eDate), 8192);

@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS ANIMAL;
 
 CREATE TABLE ANIMAL ( ANIMAL Nullable(String) ) engine = TinyLog;
