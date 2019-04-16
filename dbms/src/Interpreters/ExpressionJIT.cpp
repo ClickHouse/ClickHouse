@@ -8,7 +8,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Common/LRUCache.h>
-#include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
