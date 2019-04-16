@@ -40,7 +40,7 @@ public:
         out_stream->writePrefix();
     }
 
-    String getName() const override { return "SinkToNativeStream"; }
+    String getName() const override { return "BufferingToFileTransform"; }
 
     void consume(Chunk chunk) override
     {
@@ -449,6 +449,8 @@ Processors MergeSortingTransform::expandPipeline()
     /// Serialize
     if (!buffer->getInputs().empty())
         connect(getOutputs().back(), buffer->getInputs().back());
+    else
+        static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
 
     /// Serialize or Generate
     connect(buffer->getOutputs().back(), external_merging_sorted->getInputs().back());
