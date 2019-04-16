@@ -11,7 +11,7 @@ set -e -o pipefail
 
 # Run the client.
 $CLICKHOUSE_CLIENT --multiquery <<EOF
-DROP TABLE IF EXISTS table;
+DROP TABLE IF EXISTS table_00825;
 
 CREATE TABLE table_00825 (uuid UUID,
                          name String,

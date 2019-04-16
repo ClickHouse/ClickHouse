@@ -42,4 +42,4 @@ EOF
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
 source $CURDIR/00825_protobuf_format_input.insh
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM table ORDER BY uuid;"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM table_00825 ORDER BY uuid;"
