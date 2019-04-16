@@ -80,7 +80,7 @@ private:
 
     bool addEdges(UInt64 node);
     void buildGraph();
-    void expendPipeline(UInt64 pid);
+    void expandPipeline(UInt64 pid);
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToQueue();

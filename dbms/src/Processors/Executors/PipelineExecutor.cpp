@@ -204,7 +204,7 @@ void PipelineExecutor::addAsyncJob(UInt64 pid)
     ++num_tasks_to_wait;
 }
 
-void PipelineExecutor::expendPipeline(UInt64 pid)
+void PipelineExecutor::expandPipeline(UInt64 pid)
 {
     auto & cur_node = graph[pid];
     auto new_processors = cur_node.processor->expandPipeline();
@@ -291,7 +291,7 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
         }
         case IProcessor::Status::ExpandPipeline:
         {
-            expendPipeline(pid);
+            expandPipeline(pid);
             /// Add node to queue again.
             prepare_queue.push(pid);
 
