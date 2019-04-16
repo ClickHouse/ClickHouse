@@ -36,7 +36,7 @@ protected:
                 return false;
 
             BufferBase::set(buffer->position(), buffer->available(), 0);
-            put_delimiter = true;
+            put_delimiter = (delimiter != 0);
         }
 
         return true;

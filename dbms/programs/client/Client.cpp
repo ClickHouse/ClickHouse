@@ -796,22 +796,38 @@ private:
         written_progress_chars = 0;
         written_first_block = false;
 
-        const ASTSetQuery * set_query = typeid_cast<const ASTSetQuery *>(&*parsed_query);
-        const ASTUseQuery * use_query = typeid_cast<const ASTUseQuery *>(&*parsed_query);
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-        const ASTInsertQuery * insert = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
+        {
+            /// Temporarily apply query settings to context.
+            std::optional<Settings> old_settings;
+            SCOPE_EXIT({ if (old_settings) context.setSettings(*old_settings); });
+            auto apply_query_settings = [&](const IAST & settings_ast)
+            {
+                if (!old_settings)
+                    old_settings.emplace(context.getSettingsRef());
+                for (const auto & change : typeid_cast<const ASTSetQuery &>(settings_ast).changes)
+                    context.setSetting(change.name, change.value);
+            };
+            const auto * insert = typeid_cast<const ASTInsertQuery*>(parsed_query.get());
+            if (insert && insert->settings_ast)
+                apply_query_settings(*insert->settings_ast);
+            /// FIXME: try to prettify this cast using `as<>()`
+            const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+            if (with_output && with_output->settings_ast)
+                apply_query_settings(*with_output->settings_ast);
 
-        connection->forceConnected();
+            connection->forceConnected();
 
-        if (insert && !insert->select)
-            processInsertQuery();
-        else
-            processOrdinaryQuery();
+            /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
+            if (insert && !insert->select)
+                processInsertQuery();
+            else
+                processOrdinaryQuery();
+        }
 
         /// Do not change context (current DB, settings) in case of an exception.
         if (!got_exception)
         {
-            if (set_query)
+            if (const ASTSetQuery * set_query = typeid_cast<const ASTSetQuery *>(&*parsed_query))
             {
                 /// Save all changes in settings to avoid losing them if the connection is lost.
                 for (const auto & change : set_query->changes)
@@ -823,7 +839,7 @@ private:
                 }
             }
 
-            if (use_query)
+            if (const ASTUseQuery * use_query = typeid_cast<const ASTUseQuery *>(&*parsed_query))
             {
                 const String & new_database = use_query->database;
                 /// If the client initiates the reconnection, it takes the settings from the config.
@@ -966,8 +982,6 @@ private:
         {
             if (!insert->format.empty())
                 current_format = insert->format;
-            if (insert->settings_ast)
-                InterpreterSetQuery(insert->settings_ast, context).executeForCurrentContext();
         }
 
         BlockInputStreamPtr block_input = context.getInputFormat(
@@ -1247,10 +1261,6 @@ private:
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
                     current_format = id.name;
-                }
-                if (query_with_output->settings_ast)
-                {
-                    InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
                 }
             }
 

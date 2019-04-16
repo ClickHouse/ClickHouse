@@ -335,9 +335,6 @@ struct SettingString
 
 struct SettingChar
 {
-private:
-    void checkStringIsACharacter(const String & x) const;
-
 public:
     char value;
     bool changed = false;
