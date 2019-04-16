@@ -162,6 +162,9 @@ struct MergeTreeSettings
     /** Minimal amount of bytes to enable O_DIRECT in merge (0 - disabled) */                                 \
     M(SettingUInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024)                            \
                                                                                                               \
+    /** Approximate amount of bytes in single granule (0 - disabled) */                                       \
+    M(SettingUInt64, index_granularity_bytes, 0)                                                              \
+                                                                                                              \
     /** Minimal time in seconds, when merge with TTL can be repeated */                                       \
     M(SettingInt64, merge_with_ttl_timeout, 3600 * 24)
 

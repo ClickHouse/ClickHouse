@@ -28,7 +28,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
 
     sampling_expression = formattedAST(data.sample_by_ast);
-    index_granularity = data.index_granularity;
+    index_granularity = data.index_granularity_info.fixed_index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
 
@@ -46,7 +46,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 
     skip_indices = data.getIndicesDescription().toString();
-
+    index_granularity_bytes = data.index_granularity_info.index_granularity_bytes;
     ttl_table = formattedAST(data.ttl_table_ast);
 }
 
@@ -74,6 +74,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!skip_indices.empty())
         out << "indices: " << skip_indices << "\n";
+
+    if (index_granularity_bytes != 0)
+        out << "granularity bytes: " << index_granularity_bytes << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -106,6 +109,11 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
+
+    if (checkString("granularity bytes: ", in))
+        in >> index_granularity_bytes >> "\n";
+    else
+        index_granularity_bytes = 0;
 
     if (checkString("ttl: ", in))
         in >> ttl_table >> "\n";
@@ -220,6 +228,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                     ", local: " + skip_indices,
                     ErrorCodes::METADATA_MISMATCH);
     }
+
+    if (index_granularity_bytes != from_zk.index_granularity_bytes)
+        throw Exception("Existing table metadata in ZooKeeper differs in index granularity bytes."
+            " Stored in ZooKeeper: " + DB::toString(from_zk.index_granularity_bytes) +
+            ", local: " + DB::toString(index_granularity_bytes),
+            ErrorCodes::METADATA_MISMATCH);
 
     return diff;
 }

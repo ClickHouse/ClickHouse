@@ -36,6 +36,12 @@ struct MarkInCompressedFile
     {
         return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
     }
+
+    String toStringWithRows(size_t rows_num)
+    {
+        return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + "," + DB::toString(rows_num) + ")";
+    }
+
 };
 #if USE_LFALLOC
 using MarksInCompressedFile = PODArray<MarkInCompressedFile, 4096, LFAllocator>;
