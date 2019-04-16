@@ -703,6 +703,10 @@ message MessageType {
 
 are not applied; the [table defaults](../query_language/create.md#create-default-values) are used instead of them.
 
+ClickHouse expects protobuf messages to be length-delimited, i.e. before every message should be written its length in var-int form.
+This is a common practice when Protobuf is used for communications so that you know how many bytes to read from the network when receiving a message.
+Protobuf does not have uniform support for sending and receiving “delimited” messages. 
+
 ## Format Schema {#formatschema}
 
 The file name containing the format schema is set by the setting `format_schema`.
