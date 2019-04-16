@@ -60,7 +60,7 @@ public:
 
             file_in = std::make_unique<ReadBufferFromFile>(path);
             compressed_in = std::make_unique<CompressedReadBuffer>(*file_in);
-            block_in = std::make_shared<NativeBlockInputStream>(compressed_in, getOutputPort().getHeader(), 0);
+            block_in = std::make_shared<NativeBlockInputStream>(*compressed_in, getOutputPort().getHeader(), 0);
         }
 
         if (!block_in)
