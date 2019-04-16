@@ -1,4 +1,3 @@
-USE test;
 SET send_logs_level = 'none';
 DROP TABLE IF EXISTS add_aggregate;
 CREATE TABLE add_aggregate(a UInt32, b UInt32) ENGINE = Memory;
