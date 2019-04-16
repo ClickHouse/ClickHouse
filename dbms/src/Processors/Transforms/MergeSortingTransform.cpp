@@ -448,7 +448,11 @@ Processors MergeSortingTransform::expandPipeline()
 
     /// Serialize
     if (!buffer->getInputs().empty())
+    {
         connect(getOutputs().back(), buffer->getInputs().back());
+        /// Hack. Say buffer that we need data from port (otherwise it will return PortFull).
+        buffer->getInputs().back().setNeeded();
+    }
     else
         static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
 
