@@ -442,16 +442,14 @@ Processors MergeSortingTransform::expandPipeline()
     }
 
     auto & buffer = processors.front();
-    outputs.emplace_back(header_without_constants, this);
 
     static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
-
     connect(buffer->getOutputs().back(), external_merging_sorted->getInputs().back());
-
 
     if (!buffer->getInputs().empty())
     {
         /// Serialize
+        outputs.emplace_back(header_without_constants, this);
         connect(getOutputs().back(), buffer->getInputs().back());
         /// Hack. Say buffer that we need data from port (otherwise it will return PortFull).
         external_merging_sorted->getInputs().back().setNeeded();
