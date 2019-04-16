@@ -12,6 +12,7 @@ www.example.com
 127.0.0.1
 www.example.com
 www.example.com
+www.example.com
 example.com
 example.com
 ====DOMAIN====
@@ -19,6 +20,7 @@ com
 
 ru
 ru
+com
 com
 ====PATH====
 П

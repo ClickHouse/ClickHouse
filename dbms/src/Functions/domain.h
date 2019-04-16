@@ -9,27 +9,31 @@ namespace DB
 {
 
 /// Extracts host from given url.
+template <bool ignore_scheme = true>
 inline StringRef getURLHost(const char * data, size_t size)
 {
     Pos pos = data;
     Pos end = data + size;
 
-    if (end == (pos = find_first_symbols<'/'>(pos, end)))
-        return {};
-
-    if (pos != data)
+    if (!ignore_scheme || strncmp("www.", data, 4))
     {
-        StringRef scheme = getURLScheme(data, size);
-        Pos scheme_end = data + scheme.size;
-
-        // Colon must follows after scheme.
-        if (pos - scheme_end != 1 || *scheme_end != ':')
+        if (end == (pos = find_first_symbols<'/'>(pos, end)))
             return {};
-    }
 
-    if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
-        return {};
-    pos += 2;
+        if (pos != data)
+        {
+            StringRef scheme = getURLScheme(data, size);
+            Pos scheme_end = data + scheme.size;
+
+            // Colon must follows after scheme.
+            if (pos - scheme_end != 1 || *scheme_end != ':')
+                return {};
+        }
+
+        if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
+            return {};
+        pos += 2;
+    }
 
     const char * start_of_host = pos;
     for (; pos < end; ++pos)
