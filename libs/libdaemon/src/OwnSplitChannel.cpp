@@ -6,7 +6,7 @@
 #include <Core/Block.h>
 
 #include <Poco/Message.h>
-#include <common/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 
 #include <sys/time.h>
 #include <iostream>

@@ -4,7 +4,4 @@
   * Используется при логгировании.
   */
 
-namespace ThreadNumber
-{
-    unsigned get();
-}
+unsigned getThreadNumber();
