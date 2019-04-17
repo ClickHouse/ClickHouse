@@ -34,19 +34,23 @@ IProcessor::Status SourceFromInputStream::prepare()
         if (!is_stream_finished)
             return Status::Ready;
 
-        if (has_totals_port && has_totals)
+        if (has_totals_port)
         {
             auto & totals_out = outputs.back();
 
             if (totals_out.isFinished())
                 return Status::Finished;
 
-            if (!totals_out.canPush())
-                return Status::PortFull;
+            if (has_totals)
+            {
+                if (!totals_out.canPush())
+                    return Status::PortFull;
 
-            totals_out.push(std::move(totals));
+                totals_out.push(std::move(totals));
+                has_totals = false;
+            }
+
             totals_out.finish();
-            has_totals = false;
         }
     }
 
