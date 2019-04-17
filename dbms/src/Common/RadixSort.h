@@ -64,15 +64,15 @@ struct RadixSortFloatTransform
 };
 
 
-template <typename Float>
+template <typename _Element, typename _Key = _Element>
 struct RadixSortFloatTraits
 {
-    using Element = Float;        /// The type of the element. It can be a structure with a key and some other payload. Or just a key.
-    using Key = Float;            /// The key to sort.
+    using Element = _Element;     /// The type of the element. It can be a structure with a key and some other payload. Or just a key.
+    using Key = _Key;             /// The key to sort.
     using CountType = uint32_t;   /// Type for calculating histograms. In the case of a known small number of elements, it can be less than size_t.
 
     /// The type to which the key is transformed to do bit operations. This UInt is the same size as the key.
-    using KeyBits = std::conditional_t<sizeof(Float) == 8, uint64_t, uint32_t>;
+    using KeyBits = std::conditional_t<sizeof(_Key) == 8, uint64_t, uint32_t>;
 
     static constexpr size_t PART_SIZE_BITS = 8;    /// With what pieces of the key, in bits, to do one pass - reshuffle of the array.
 
@@ -85,7 +85,13 @@ struct RadixSortFloatTraits
     using Allocator = RadixSortMallocAllocator;
 
     /// The function to get the key from an array element.
-    static Key & extractKey(Element & elem) { return elem; }
+    static Key & extractKey(Element & elem)
+    {
+        if constexpr (std::is_same_v<Element, Key>)
+            return elem;
+        else
+            return *reinterpret_cast<Key *>(&elem);
+    }
 };
 
 
@@ -109,13 +115,13 @@ struct RadixSortSignedTransform
 };
 
 
-template <typename UInt>
+template <typename _Element, typename _Key = _Element>
 struct RadixSortUIntTraits
 {
-    using Element = UInt;
-    using Key = UInt;
+    using Element = _Element;
+    using Key = _Key;
     using CountType = uint32_t;
-    using KeyBits = UInt;
+    using KeyBits = _Key;
 
     static constexpr size_t PART_SIZE_BITS = 8;
 
@@ -123,16 +129,22 @@ struct RadixSortUIntTraits
     using Allocator = RadixSortMallocAllocator;
 
     /// The function to get the key from an array element.
-    static Key & extractKey(Element & elem) { return elem; }
+    static Key & extractKey(Element & elem)
+    {
+        if constexpr (std::is_same_v<Element, Key>)
+            return elem;
+        else
+            return *reinterpret_cast<Key *>(&elem);
+    }
 };
 
-template <typename Int>
+template <typename _Element, typename _Key = _Element>
 struct RadixSortIntTraits
 {
-    using Element = Int;
-    using Key = Int;
+    using Element = _Element;
+    using Key = _Key;
     using CountType = uint32_t;
-    using KeyBits = std::make_unsigned_t<Int>;
+    using KeyBits = std::make_unsigned_t<_Key>;
 
     static constexpr size_t PART_SIZE_BITS = 8;
 
@@ -140,7 +152,13 @@ struct RadixSortIntTraits
     using Allocator = RadixSortMallocAllocator;
 
     /// The function to get the key from an array element.
-    static Key & extractKey(Element & elem) { return elem; }
+    static Key & extractKey(Element & elem)
+    {
+        if constexpr (std::is_same_v<Element, Key>)
+            return elem;
+        else
+            return *reinterpret_cast<Key *>(&elem);
+    }
 };
 
 
@@ -261,3 +279,16 @@ radixSort(T * arr, size_t size)
     return RadixSort<RadixSortFloatTraits<T>>::execute(arr, size);
 }
 
+template <typename _Element, typename _Key>
+std::enable_if_t<std::is_integral_v<_Key>, void>
+radixSort(_Element * arr, size_t size)
+{
+    return RadixSort<RadixSortUIntTraits<_Element, _Key>>::execute(arr, size);
+}
+
+template <typename _Element, typename _Key>
+std::enable_if_t<std::is_floating_point_v<_Key>, void>
+radixSort(_Element * arr, size_t size)
+{
+    return RadixSort<RadixSortFloatTraits<_Element, _Key>>::execute(arr, size);
+}
