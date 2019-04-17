@@ -323,6 +323,7 @@ void QueryPipeline::dropTotalsIfHas()
         auto null_sink = std::make_shared<NullSink>(totals_having_port->getHeader());
         connect(*totals_having_port, null_sink->getPort());
         processors.emplace_back(std::move(null_sink));
+        totals_having_port = nullptr;
     }
 }
 
