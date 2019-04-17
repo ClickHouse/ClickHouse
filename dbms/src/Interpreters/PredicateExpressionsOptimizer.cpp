@@ -155,8 +155,10 @@ bool PredicateExpressionsOptimizer::allowPushDown(
     }
 
     const auto * ast_join = ast_select->join();
-    const ASTTableExpression * left_table_expr = nullptr, * right_table_expr = nullptr;
-    const ASTSelectQuery * left_subquery = nullptr, * right_subquery = nullptr;
+    const ASTTableExpression * left_table_expr = nullptr;
+    const ASTTableExpression * right_table_expr = nullptr;
+    const ASTSelectQuery * left_subquery = nullptr;
+    const ASTSelectQuery * right_subquery = nullptr;
 
     if (ast_join)
     {
@@ -177,6 +179,19 @@ bool PredicateExpressionsOptimizer::allowPushDown(
             right_subquery = right_table_expr->subquery
                                 ->children[0]->as<ASTSelectWithUnionQuery>()
                                 ->list_of_selects->children[0]->as<ASTSelectQuery>();
+
+        /// NOTE: the syntactic way of pushdown has limitations and should be partially disabled in case of JOINs.
+        ///       Let's take a look at the query:
+        ///
+        ///           SELECT a, b FROM (SELECT 1 AS a) ANY LEFT JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0
+        ///
+        ///       The result is empty - without pushdown. But the pushdown tends to modify it in this way:
+        ///
+        ///           SELECT a, b FROM (SELECT 1 AS a) ANY LEFT JOIN (SELECT 1 AS a, 1 AS b WHERE b = 0) USING (a) WHERE b = 0
+        ///
+        ///       That leads to the empty result in the right subquery and changes the whole outcome to (1, 0) or (1, NULL).
+        ///       It happens because the not-matching columns are replaced with a global default values on JOIN.
+        ///       Same is true for RIGHT JOIN and FULL JOIN.
 
         /// Check right side for LEFT'o'FULL JOIN
         if (isLeftOrFull(ast_join->table_join->as<ASTTableJoin>()->kind) && right_subquery == subquery)
