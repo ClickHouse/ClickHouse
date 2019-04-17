@@ -153,11 +153,13 @@ class AggreagteFunctionGroupUniqArrayGeneric
 
     using State = AggreagteFunctionGroupUniqArrayGenericData;
 
-    static StringRef getSerialization(const IColumn & column, size_t row_num, Arena & arena) {
+    static StringRef getSerialization(const IColumn & column, size_t row_num, Arena & arena)
+    {
         return getSerializationImpl<is_plain_column>(column, row_num, arena);
     }
 
-    static void deserializeAndInsert(StringRef str, IColumn & data_to) {
+    static void deserializeAndInsert(StringRef str, IColumn & data_to)
+    {
         return deserializeAndInsertImpl<is_plain_column>(str, data_to);
     }
 
