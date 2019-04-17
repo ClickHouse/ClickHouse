@@ -59,7 +59,6 @@
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sources/SourceFromTotals.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
