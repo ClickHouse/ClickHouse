@@ -29,7 +29,7 @@ namespace DB
 
         PaddedPODArray<size_t> permutation;
 
-        for (size_t i = 0; i < result_block.rows(); ++i) 
+        for (size_t i = 0; i < result_block.rows(); ++i)
         {
             permutation.emplace_back(result_block.rows() - 1 - i);
         }
