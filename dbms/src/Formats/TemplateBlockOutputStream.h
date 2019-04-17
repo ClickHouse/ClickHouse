@@ -17,6 +17,7 @@ struct ParsedTemplateFormat
         Default,
         Escaped,
         Quoted,
+        Csv,
         Json,
         Xml,
         Raw

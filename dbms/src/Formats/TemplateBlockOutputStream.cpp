@@ -94,6 +94,8 @@ ParsedTemplateFormat::ColumnFormat ParsedTemplateFormat::stringToFormat(const St
         return ColumnFormat::Escaped;
     else if (col_format == "Quoted")
         return ColumnFormat::Quoted;
+    else if (col_format == "CSV")
+        return ColumnFormat::Csv;
     else if (col_format == "JSON")
         return ColumnFormat::Json;
     else if (col_format == "XML")
@@ -119,6 +121,8 @@ String ParsedTemplateFormat::formatToString(ParsedTemplateFormat::ColumnFormat f
             return "Escaped";
         case ColumnFormat::Quoted:
             return "Quoted";
+        case ColumnFormat::Csv:
+            return "CSV";
         case ColumnFormat::Json:
             return "Json";
         case ColumnFormat::Xml:
@@ -225,6 +229,9 @@ void TemplateBlockOutputStream::serializeField(const IColumn & column, const IDa
             break;
         case ColumnFormat::Quoted:
             type.serializeAsTextQuoted(column, row_num, ostr, settings);
+            break;
+        case ColumnFormat::Csv:
+            type.serializeAsTextCSV(column, row_num, ostr, settings);
             break;
         case ColumnFormat::Json:
             type.serializeAsTextJSON(column, row_num, ostr, settings);
