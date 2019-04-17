@@ -177,7 +177,8 @@ private:
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
-                             const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
+                             const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere,
+                             SelectQueryInfo& query_info);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -185,7 +186,7 @@ private:
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeOrder(Pipeline & pipeline);
+    void executeOrder(Pipeline & pipeline, SelectQueryInfo& query_info);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
     void executeUnion(Pipeline & pipeline);

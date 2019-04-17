@@ -51,6 +51,8 @@ struct SelectQueryInfo
 
     PrewhereInfoPtr prewhere_info;
 
+    bool do_not_steal_task = false;
+
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
