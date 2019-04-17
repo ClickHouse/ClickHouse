@@ -101,6 +101,9 @@ void TemplateRowInputStream::deserializeField(const IDataType & type, IColumn & 
         case ColumnFormat::Quoted:
             type.deserializeAsTextQuoted(column, buf, settings);
             break;
+        case ColumnFormat::Csv:
+            type.deserializeAsTextCSV(column, buf, settings);
+            break;
         case ColumnFormat::Json:
             type.deserializeAsTextJSON(column, buf, settings);
             break;
