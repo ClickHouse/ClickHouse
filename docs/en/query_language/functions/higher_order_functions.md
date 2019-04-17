@@ -1,4 +1,4 @@
-# Higher-order functions
+# Higher-order Functions
 
 ## `->` operator, lambda(params, expr) function
 

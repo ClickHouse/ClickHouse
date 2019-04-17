@@ -527,6 +527,50 @@ arrayReduce('agg_func', arr1, ...) - apply the aggregate function `agg_func` to 
 
 Returns an array of the same size as the source array, containing the result of inverting all elements of the source array.
 
+## arraySort(arr)
 
+Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+
+The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to impove sorting efficiency.
+
+Example:
+
+``` sql
+SELECT arraySort([1, 3, 3, 0])
+```
+```
+┌─arraySort([1, 3, 3, 0])─┐
+│ [0,1,3,3]               │
+└─────────────────────────┘
+```
+
+Note that NULLs and NaNs go last (NaNs go before NULLs). For example:
+ 
+``` sql
+SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
+```
+```
+┌─arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
+│ [1,2,3,4,nan,nan,NULL,NULL]                   │
+└───────────────────────────────────────────────┘
+```
+You can pass to the `arraySort` function the lambda function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
+
+## arrayReverseSort(arr1)
+
+Returns an array as result of sorting the elements of `arr1` in descending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+
+Note that NULLs and NaNs go last (NaNs go before NULLs). For example:
+ 
+``` sql
+SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
+```
+```
+┌─arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
+│ [4,3,2,1,nan,nan,NULL,NULL]                          │
+└──────────────────────────────────────────────────────┘
+```
+
+You can pass to the `arrayReverseSort` function the lambda function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->
