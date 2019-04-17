@@ -50,6 +50,8 @@ public:
     /// Add already calculated totals.
     void addTotals(ProcessorPtr source);
 
+    void dropTotalsIfHas();
+
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
     bool hasDelayedStream() const { return delayed_stream_port; }

@@ -316,6 +316,16 @@ void QueryPipeline::addTotals(ProcessorPtr source)
     processors.emplace_back(source);
 }
 
+void QueryPipeline::dropTotalsIfHas()
+{
+    if (totals_having_port)
+    {
+        auto null_sink = std::make_shared<NullSink>(totals_having_port->getHeader());
+        connect(*totals_having_port, null_sink->getPort());
+        processors.emplace_back(std::move(null_sink));
+    }
+}
+
 void QueryPipeline::addExtremesTransform(ProcessorPtr transform)
 {
     checkInitialized();
@@ -449,11 +459,7 @@ void QueryPipeline::unitePipelines(
                 processors.push_back(std::move(converting));
             }
             else
-            {
-                auto null_sink = std::make_shared<NullSink>(pipeline.totals_having_port->getHeader());
-                connect(*pipeline.totals_having_port, null_sink->getPort());
-                processors.emplace_back(std::move(null_sink));
-            }
+                pipeline.dropTotalsIfHas();
         }
 
         processors.insert(processors.end(), pipeline.processors.begin(), pipeline.processors.end());
