@@ -1322,21 +1322,19 @@ void InterpreterSelectQuery::executeFetchColumns(
             Processors sources;
             sources.reserve(streams.size());
 
-            InputStreamHolders holders;
-            holders.reserve(streams.size());
-
             for (auto & stream : streams)
             {
-                auto holder = std::make_shared<InputStreamHolder>(stream);
                 bool force_add_agg_info = processing_stage == QueryProcessingStage::WithMergeableState;
-                sources.emplace_back(std::make_shared<SourceFromInputStream>(holder, force_add_agg_info));
-                holders.emplace_back(std::move(holder));
+                auto source = std::make_shared<SourceFromInputStream>(stream, force_add_agg_info);
+
+                if (processing_stage == QueryProcessingStage::Complete)
+                    source->addTotalsPort();
+
+                sources.emplace_back(std::move(source));
+
             }
 
             pipeline.init(std::move(sources));
-
-            if (processing_stage == QueryProcessingStage::Complete)
-                pipeline.addTotals(std::make_shared<SourceFromTotals>(std::move(holders)));
         }
         else
             pipeline.streams = std::move(streams);

@@ -5,10 +5,10 @@
 namespace DB
 {
 
-SourceFromInputStream::SourceFromInputStream(InputStreamHolderPtr holder_, bool force_add_aggregating_info)
-    : ISource(holder_->getStream().getHeader())
+SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info)
+    : ISource(stream_->getHeader())
     , force_add_aggregating_info(force_add_aggregating_info)
-    , holder(std::move(holder_))
+    , stream(std::move(stream_))
 {
     auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
@@ -16,15 +16,80 @@ SourceFromInputStream::SourceFromInputStream(InputStreamHolderPtr holder_, bool 
             has_aggregate_functions = true;
 }
 
+void SourceFromInputStream::addTotalsPort()
+{
+    if (has_totals_port)
+        throw Exception("Totals port was already added for SourceFromInputStream.", ErrorCodes::LOGICAL_ERROR);
+
+    outputs.emplace_back(outputs.front().getHeader(), this);
+}
+
+IProcessor::Status SourceFromInputStream::prepare()
+{
+    auto status = ISource::prepare();
+
+    if (status == Status::Finished)
+    {
+        /// Read postfix and get totals if needed.
+        if (!is_stream_finished)
+            return Status::Ready;
+
+        if (has_totals_port && has_totals)
+        {
+            auto & totals_out = outputs.back();
+
+            if (totals_out.isFinished())
+                return Status::Finished;
+
+            if (!totals_out.canPush())
+                return Status::PortFull;
+
+            totals_out.push(std::move(totals));
+            totals_out.finish();
+            has_totals = false;
+        }
+    }
+
+    return status;
+}
+
+void SourceFromInputStream::work()
+{
+    if (!finished)
+        return ISource::work();
+
+    if (is_stream_finished)
+        return;
+
+    stream->cancel(false);
+    stream->readSuffix();
+
+    if (auto totals_block = stream->getTotals())
+    {
+        totals.setColumns(totals_block.getColumns(), 1);
+        has_totals = true;
+    }
+
+    is_stream_finished = true;
+}
+
 Chunk SourceFromInputStream::generate()
 {
-    if (holder->isFinished())
+    if (is_stream_finished)
         return {};
 
-    auto block = holder->read();
+    auto block = stream->read();
     if (!block)
     {
-        holder->readSuffix();
+        stream->readSuffix();
+
+        if (auto totals_block = stream->getTotals())
+        {
+            totals.setColumns(totals_block.getColumns(), 1);
+            has_totals = true;
+        }
+
+        is_stream_finished = true;
         return {};
     }
 
