@@ -710,9 +710,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
                                 (storage ? storage->getColumns().getOrdinary().getNames() : source_columns_list), source_columns_set,
                                 result.analyzed_join.columns_from_joined_table);
 
-        /// Depending on the user's profile, check for the execution rights
-        /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
-        InJoinSubqueriesPreprocessor(context).process(select_query);
+        /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
+        InJoinSubqueriesPreprocessor(context).visit(query);
 
         /// Optimizes logical expressions.
         LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
