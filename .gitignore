@@ -223,6 +223,9 @@ config-preprocessed.xml
 *.pb.cpp
 *.pb.h
 
+# Gperf generated file
+dbms/src/Functions/tldLookup.cpp
+
 # Ignore symlink to private repository
 /private
 

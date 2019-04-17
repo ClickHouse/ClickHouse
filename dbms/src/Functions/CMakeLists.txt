@@ -3,6 +3,12 @@ include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
 add_headers_and_sources(clickhouse_functions .)
 
+add_custom_command(
+	OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.cpp
+	COMMAND ${GPERF} ${CMAKE_CURRENT_SOURCE_DIR}/gperf/tldLookup.gperf --output-file=${CMAKE_CURRENT_SOURCE_DIR}/tldLookup.cpp
+)
+
+list(APPEND clickhouse_functions_sources tldLookup.cpp)
 
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
