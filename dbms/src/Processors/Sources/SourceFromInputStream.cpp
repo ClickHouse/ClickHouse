@@ -31,6 +31,8 @@ IProcessor::Status SourceFromInputStream::prepare()
 
     if (status == Status::Finished)
     {
+        is_generating_finished = true;
+
         /// Read postfix and get totals if needed.
         if (!is_stream_finished)
             return Status::Ready;
@@ -60,7 +62,7 @@ IProcessor::Status SourceFromInputStream::prepare()
 
 void SourceFromInputStream::work()
 {
-    if (!finished)
+    if (!is_generating_finished)
         return ISource::work();
 
     if (is_stream_finished)
