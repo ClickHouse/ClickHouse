@@ -29,8 +29,10 @@ private:
 
     Chunk totals;
     bool has_totals_port = false;
-    bool is_stream_finished = false;
     bool has_totals = false;
+
+    bool is_generating_finished = false;
+    bool is_stream_finished = false;
 };
 
 }
