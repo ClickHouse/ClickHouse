@@ -412,6 +412,11 @@ class SourceRedis(ExternalSource):
                 self.client.execute_command(cmd)
             return
 
+    def compatible_with_layout(self, layout):
+        if not layout.is_simple:
+            return False
+        return True
+
     def prepare_value_for_type(self, field, value):
         if field.field_type == "Date":
             dt = dateutil.parser.parse(value)
