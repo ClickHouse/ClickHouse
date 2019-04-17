@@ -155,7 +155,6 @@ if (USE_EMBEDDED_COMPILER)
     target_include_directories (dbms SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
-
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
     set_source_files_properties(
@@ -186,8 +185,6 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
-        PRIVATE
-    pocoext
         PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
@@ -214,6 +211,10 @@ target_link_libraries (clickhouse_common_io
 
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 
+if (USE_LFALLOC)
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${LFALLOC_INCLUDE_DIR})
+endif ()
+
 if(CPUID_LIBRARY)
     target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
 endif()
@@ -223,8 +224,9 @@ if(CPUINFO_LIBRARY)
 endif()
 
 target_link_libraries (dbms
-        PRIVATE
+        PUBLIC
     clickhouse_compression
+        PRIVATE
     clickhouse_parsers
     clickhouse_common_config
         PUBLIC
@@ -232,7 +234,6 @@ target_link_libraries (dbms
         PRIVATE
     clickhouse_dictionaries_embedded
         PUBLIC
-    pocoext
     ${MYSQLXX_LIBRARY}
         PRIVATE
     ${BTRIE_LIBRARIES}

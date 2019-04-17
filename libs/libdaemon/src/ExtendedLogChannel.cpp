@@ -1,7 +1,7 @@
 #include <daemon/ExtendedLogChannel.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 #include <sys/time.h>
 
 
@@ -27,7 +27,7 @@ ExtendedLogMessage ExtendedLogMessage::getFrom(const Poco::Message & base)
     if (current_thread)
         msg_ext.query_id = CurrentThread::getQueryId();
 
-    msg_ext.thread_number = Poco::ThreadNumber::get();
+    msg_ext.thread_number = getThreadNumber();
 
     return msg_ext;
 }
