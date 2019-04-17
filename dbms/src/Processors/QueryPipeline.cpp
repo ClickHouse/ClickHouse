@@ -208,7 +208,7 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
     if (delayed_stream_port)
         throw Exception("QueryPipeline already has stream with non joined data.", ErrorCodes::LOGICAL_ERROR);
 
-    checkSource(source);
+    checkSource(source, false);
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
 
     delayed_stream_port = &source->getOutputs().front();
@@ -309,7 +309,7 @@ void QueryPipeline::addTotals(ProcessorPtr source)
     if (totals_having_port)
         throw Exception("Totals having transform was already added to pipeline.", ErrorCodes::LOGICAL_ERROR);
 
-    checkSource(source);
+    checkSource(source, false);
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
 
     totals_having_port = &source->getOutputs().front();
