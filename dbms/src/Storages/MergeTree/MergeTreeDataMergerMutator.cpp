@@ -918,18 +918,32 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         /// Checks if columns used in skipping indexes modified
         std::set<MergeTreeIndexPtr> indices_to_recalc;
+        ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
         for (const auto & col : in_header.getNames())
         {
-            for (const auto & index : data.skip_indices)
+            for (size_t i = 0; i < data.skip_indices.size(); ++i)
             {
+                const auto & index = data.skip_indices[i];
                 const auto & index_cols = index->expr->getRequiredColumns();
                 auto it = find(cbegin(index_cols), cend(index_cols), col);
-                if (it != cend(index_cols))
-                    indices_to_recalc.insert(index);
-                    /*throw Exception("You can not modify columns used in index. Index name: '"
-                                    + index->name
-                                    + "' bad column: '" + *it + "'", ErrorCodes::ILLEGAL_COLUMN);*/
+                if (it != cend(index_cols) && indices_to_recalc.insert(index).second)
+                {
+                    ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(
+                            storage_from_source_part->getIndicesDescription().indices[i]->expr->clone());
+                    for (const auto & expr : expr_list->children)
+                        indices_recalc_expr_list->children.push_back(expr->clone());
+                }
             }
+        }
+        if (!indices_to_recalc.empty())
+        {
+            auto indices_recalc_syntax = SyntaxAnalyzer(context, {}).analyze(
+                    indices_recalc_expr_list, in_header.getNamesAndTypesList());
+            auto indices_recalc_expr = ExpressionAnalyzer(
+                    indices_recalc_expr_list,
+                    indices_recalc_syntax, context).getActions(false);
+            in = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(in, indices_recalc_expr));
         }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
