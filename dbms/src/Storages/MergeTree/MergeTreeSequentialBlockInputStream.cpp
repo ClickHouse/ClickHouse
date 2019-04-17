@@ -62,7 +62,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     fixHeader(header);
 
     bool should_reorder = false, should_evaluate_missing_defaults = false;
-    reader->fillMissingColumns(header, should_reorder, should_evaluate_missing_defaults, res.rows());
+    reader->fillMissingColumns(header, should_reorder, should_evaluate_missing_defaults, header.rows());
 
     if (should_evaluate_missing_defaults)
         reader->evaluateMissingDefaults(header);
