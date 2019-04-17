@@ -1,5 +1,3 @@
-use test;
-
 drop table if exists t;
 drop table if exists s;
 

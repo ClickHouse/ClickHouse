@@ -104,7 +104,7 @@ struct ContextShared
     mutable std::recursive_mutex mutex;
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
-    mutable std::mutex external_dictionaries_mutex;
+    mutable std::recursive_mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
     /// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
@@ -1240,44 +1240,38 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
 ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
+    {
+        std::lock_guard lock(shared->external_dictionaries_mutex);
+        if (shared->external_dictionaries)
+            return *shared->external_dictionaries;
+    }
+
     const auto & config = getConfigRef();
-
     std::lock_guard lock(shared->external_dictionaries_mutex);
-
     if (!shared->external_dictionaries)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
         auto config_repository = shared->runtime_components_factory->createExternalDictionariesConfigRepository();
-
-        shared->external_dictionaries.emplace(
-            std::move(config_repository),
-            config,
-            *this->global_context,
-            throw_on_error);
+        shared->external_dictionaries.emplace(std::move(config_repository), config, *this->global_context);
+        shared->external_dictionaries->init(throw_on_error);
     }
-
     return *shared->external_dictionaries;
 }
 
 ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
 {
     std::lock_guard lock(shared->external_models_mutex);
-
     if (!shared->external_models)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
         auto config_repository = shared->runtime_components_factory->createExternalModelsConfigRepository();
-
-        shared->external_models.emplace(
-            std::move(config_repository),
-            *this->global_context,
-            throw_on_error);
+        shared->external_models.emplace(std::move(config_repository), *this->global_context);
+        shared->external_models->init(throw_on_error);
     }
-
     return *shared->external_models;
 }
 
