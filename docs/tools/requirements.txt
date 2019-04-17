@@ -8,7 +8,7 @@ click==6.7
 CommonMark==0.5.4
 cssmin==0.2.0
 docutils==0.14
-futures==3.2.0
+futures==3.1.1
 htmlmin==0.1.12
 idna==2.6
 imagesize==0.7.1
