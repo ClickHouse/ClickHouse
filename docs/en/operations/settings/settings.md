@@ -313,7 +313,7 @@ ClickHouse uses this setting when reading data from tables. If the total storage
 
 **Default value**: 0.
 
-## log_queries
+## log_queries {#settings-log-queries}
 
 Setting up query logging.
 
