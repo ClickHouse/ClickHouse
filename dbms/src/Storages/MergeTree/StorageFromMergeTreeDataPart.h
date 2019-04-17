@@ -37,6 +37,8 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand);
     }
 
+    const IndicesDescription & getIndicesDescription() const override { return part->storage.getIndicesDescription(); }
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(part_->storage.getColumns()), part(part_)

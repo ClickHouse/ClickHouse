@@ -173,6 +173,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
     const ColumnsDescription & columns_desc = storage->getColumns();
+    const IndicesDescription & indices_desc = storage->getIndicesDescription();
     NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
     NameSet updated_columns;
@@ -182,9 +183,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             updated_columns.insert(kv.first);
     }
 
-    /// We need to know which columns affect which MATERIALIZED columns to recalculate them if dependencies
-    /// are updated.
+    /// We need to know which columns affect which MATERIALIZED columns and data skipping indices
+    /// to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
+    NameSet affected_indices_columns;
     if (!updated_columns.empty())
     {
         for (const auto & column : columns_desc)
@@ -198,6 +200,22 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     if (updated_columns.count(dependency))
                         column_to_affected_materialized[dependency].push_back(column.name);
+                }
+            }
+        }
+        for (const auto & index : indices_desc.indices)
+        {
+            auto query = index->expr->clone();
+            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
+            ExpressionAnalyzer analyzer(query, syntax_result, context);
+            const auto required_columns = analyzer.getRequiredSourceColumns();
+
+            for (const String & dependency : required_columns)
+            {
+                if (updated_columns.count(dependency))
+                {
+                    affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
+                    break;
                 }
             }
         }
@@ -262,6 +280,20 @@ void MutationsInterpreter::prepare(bool dry_run)
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
+
+    /// Special step to recalculate affected indices.
+    if (!affected_indices_columns.empty())
+    {
+        stages.emplace_back(context);
+        for (const auto & column : affected_indices_columns)
+        {
+            stages.back().column_to_updated.emplace(
+                    column,
+                    std::make_shared<ASTLiteral>(
+                            columns_desc.getPhysical(column).type->getName()));
+        }
+    }
+
 
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < stages.size(); ++i)
