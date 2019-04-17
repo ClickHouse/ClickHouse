@@ -72,9 +72,9 @@ namespace DB
                     static_cast<ColumnVector<T> &>(column).getData().push_back(
                             static_cast<const Poco::Redis::Type<Poco::Int64> *>(value.get())->value());
                     break;
-                case Poco::Redis::RedisTypeTraits<String>::TypeId:
+                case Poco::Redis::RedisTypeTraits<std::string>::TypeId:
                     static_cast<ColumnVector<T> &>(column).getData().push_back(
-                            parse<T>(static_cast<const Poco::Redis::Type<String> *>(value.get())->value()));
+                            parse<T>(static_cast<const Poco::Redis::Type<std::string> *>(value.get())->value()));
                     break;
                 case Poco::Redis::RedisTypeTraits<Poco::Redis::BulkString>::TypeId:
                 {
@@ -113,6 +113,35 @@ namespace DB
                     default:
                         throw Exception{"Type mismatch, expected std::string, got type id = " + toString(value->type()) + " for column " + name,
                                         ErrorCodes::TYPE_MISMATCH};
+                }
+            };
+
+            auto getInt64IfCould = [&value]()
+            {
+                switch (value->type())
+                {
+                    case Poco::Redis::RedisTypeTraits<Int64>::TypeId:
+                    {
+                        return static_cast<const Poco::Redis::Type<Poco::Int64> *>(value.get())->value();
+                    }
+                    case Poco::Redis::RedisTypeTraits<std::string>::TypeId:
+                    {
+                        return parse<Int64>(
+                                static_cast<const Poco::Redis::Type<std::string> *>(value.get())->value());
+                    }
+                    case Poco::Redis::RedisTypeTraits<Poco::Redis::BulkString>::TypeId:
+                    {
+                        const auto & bs = static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(
+                                value.get())->value();
+                        if (bs.isNull())
+                            throw Exception{"Unexpected null value", ErrorCodes::TYPE_MISMATCH};
+                        return parse<Int64>(bs.value());
+                    }
+                    default:
+                    {
+                        throw Exception{"Type mismatch, cannot convert to Int64, got type id = " + toString(value->type()),
+                                        ErrorCodes::TYPE_MISMATCH};
+                    }
                 }
             };
 
@@ -158,25 +187,17 @@ namespace DB
 
                 case ValueType::Date:
                 {
-                    if (value->type() != Poco::Redis::RedisTypeTraits<Int64>::TypeId)
-                        throw Exception{"Type mismatch, expected Int64 (Timestamp), got type id = " + toString(value->type()) + " for column " + name,
-                                        ErrorCodes::TYPE_MISMATCH};
-
+                    Int64 int_value = getInt64IfCould();
                     static_cast<ColumnUInt16 &>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
-                            static_cast<const Poco::Timestamp &>(
-                                    static_cast<const Poco::Redis::Type<Poco::Int64> *>(value.get())->value()).epochTime())});
+                            static_cast<const Poco::Timestamp &>(int_value).epochTime())});
                     break;
                 }
 
                 case ValueType::DateTime:
                 {
-                    if (value->type() != Poco::Redis::RedisTypeTraits<Poco::Int64>::TypeId)
-                        throw Exception{"Type mismatch, expected Int64 (Timestamp), got type id = " + toString(value->type()) + " for column " + name,
-                                        ErrorCodes::TYPE_MISMATCH};
-
+                    Int64 int_value = getInt64IfCould();
                     static_cast<ColumnUInt32 &>(column).getData().push_back(
-                            static_cast<const Poco::Timestamp &>(
-                                    static_cast<const Poco::Redis::Type<Poco::Int64> *>(value.get())->value()).epochTime());
+                            static_cast<const Poco::Timestamp &>(int_value).epochTime());
                     break;
                 }
                 case ValueType::UUID:
