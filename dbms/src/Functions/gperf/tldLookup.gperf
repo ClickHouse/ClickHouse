@@ -3,6 +3,9 @@
 %define class-name tldLookupHash
 %readonly-tables
 %includes
+%compare-strncmp
+
+# List generated using https://publicsuffix.org/list/public_suffix_list.dat
 %%
 ac
 com.ac
