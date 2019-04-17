@@ -1482,6 +1482,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
+    pipeline.dropTotalsIfHas();
+
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumMainStreams() > 1)
     {
