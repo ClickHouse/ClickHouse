@@ -36,9 +36,6 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
 
     addTotalRowsApprox(data_part->rows_count);
 
-    header = storage.getSampleBlockForColumns(columns_to_read);
-    fixHeader(header);
-
     /// Add columns because we don't want to read empty blocks
     injectRequiredColumns(storage, data_part, columns_to_read);
     NamesAndTypesList columns_for_reader;
@@ -60,6 +57,18 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
         /* bytes to use AIO (this is hack) */
         read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
         DBMS_DEFAULT_BUFFER_SIZE);
+
+    header = storage.getSampleBlockForColumns(columns_to_read);
+    fixHeader(header);
+
+    bool should_reorder = false, should_evaluate_missing_defaults = false;
+    reader->fillMissingColumns(header, should_reorder, should_evaluate_missing_defaults, res.rows());
+
+    if (should_evaluate_missing_defaults)
+        reader->evaluateMissingDefaults(header);
+
+    if (should_reorder)
+        reader->reorderColumns(header, header.getNames(), nullptr);
 }
 
 
