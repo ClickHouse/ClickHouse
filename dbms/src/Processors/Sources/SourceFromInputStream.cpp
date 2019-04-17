@@ -22,6 +22,7 @@ void SourceFromInputStream::addTotalsPort()
         throw Exception("Totals port was already added for SourceFromInputStream.", ErrorCodes::LOGICAL_ERROR);
 
     outputs.emplace_back(outputs.front().getHeader(), this);
+    has_totals_port = true;
 }
 
 IProcessor::Status SourceFromInputStream::prepare()
