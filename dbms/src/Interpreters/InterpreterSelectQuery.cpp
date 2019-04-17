@@ -676,7 +676,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
         if (prepared_input)
         {
             if constexpr (pipeline_with_processors)
-                pipeline.init({std::make_shared<SourceFromInputStream>(std::make_shared<InputStreamHolder>(prepared_input))});
+                pipeline.init({std::make_shared<SourceFromInputStream>(prepared_input)});
             else
                 pipeline.streams.push_back(prepared_input);
         }
@@ -778,8 +778,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
                     if constexpr (pipeline_with_processors)
                     {
-                        auto holder = std::make_shared<InputStreamHolder>(std::move(stream));
-                        auto source = std::make_shared<SourceFromInputStream>(std::move(holder));
+                        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
                         pipeline.addDelayedStream(source);
                     }
                     else
