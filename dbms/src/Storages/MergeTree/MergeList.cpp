@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Common/CurrentMetrics.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 #include <Common/CurrentThread.h>
 
 
@@ -19,7 +19,7 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
     , result_part_name{future_part.name}
     , result_data_version{future_part.part_info.getDataVersion()}
     , num_parts{future_part.parts.size()}
-    , thread_number{Poco::ThreadNumber::get()}
+    , thread_number{getThreadNumber()}
 {
     for (const auto & source_part : future_part.parts)
     {

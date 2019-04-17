@@ -1,10 +1,8 @@
 add_library (pocoext ${LINK_MODE}
     src/LevelFilterChannel.cpp
-    src/ThreadNumber.cpp
     src/SessionPoolHelpers.cpp
 
     include/Poco/Ext/LevelFilterChannel.h
-    include/Poco/Ext/ThreadNumber.h
     include/Poco/Ext/SessionPoolHelpers.h)
 
 if (Poco_Data_FOUND)
