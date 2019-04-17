@@ -46,6 +46,9 @@ class Row(object):
     def get_value_by_name(self, name):
         return self.data[name]
 
+    def set_value(self, name, value):
+        self.data[name] = value
+
 
 class Field(object):
     def __init__(self, name, field_type, is_key=False, is_range_key=False, default=None, hierarchical=False, range_hash_type=None, default_value_for_get=None):
