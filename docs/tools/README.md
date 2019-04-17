@@ -23,7 +23,8 @@ $ cd ClickHouse/docs/tools
 $ mkdir venv
 $ virtualenv venv
 $ source venv/bin/activate
-$ pip install -r requirements.txt
+$ pip install -r requirements.txt     # for python2
+$ pip install -r requirements-py3.txt # for python3
 ```
 
 Then running `build.py` without args (there are some, check `build.py --help`) will generate `ClickHouse/docs/build` folder with complete static html website.
