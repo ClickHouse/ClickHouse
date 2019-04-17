@@ -204,6 +204,7 @@ public:
     Names getColumnsRequiredForPrimaryKey() const override { return data.getColumnsRequiredForPrimaryKey(); }
     Names getColumnsRequiredForSampling() const override { return data.getColumnsRequiredForSampling(); }
     Names getColumnsRequiredForFinal() const override { return data.getColumnsRequiredForSortingKey(); }
+    Names getSortingKeyColumns() const override { return data.getSortingKeyColumns(); }
 
 private:
     /// Delete old parts from disk and from ZooKeeper.

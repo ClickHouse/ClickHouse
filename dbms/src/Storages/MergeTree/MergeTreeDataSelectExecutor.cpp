@@ -583,7 +583,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
-            query_info.prewhere_info,
+            query_info,
             virt_column_names,
             settings);
     }
@@ -595,7 +595,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             column_names_to_read,
             max_block_size,
             settings.use_uncompressed_cache,
-            query_info.prewhere_info,
+            query_info,
             virt_column_names,
             settings);
     }
@@ -646,10 +646,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const Names & column_names,
     UInt64 max_block_size,
     bool use_uncompressed_cache,
-    const PrewhereInfoPtr & prewhere_info,
+    const SelectQueryInfo & query_info,
     const Names & virt_columns,
     const Settings & settings) const
 {
+    const PrewhereInfoPtr prewhere_info = query_info.prewhere_info;
     const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
         settings.merge_tree_max_rows_to_use_cache,
         settings.merge_tree_max_bytes_to_use_cache,
@@ -689,7 +690,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
         MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
             num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_info, true,
-            column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, false);
+            column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, query_info.do_not_steal_task);
 
         /// Let's estimate total number of rows for progress bar.
         LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
@@ -794,10 +795,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     const Names & column_names,
     UInt64 max_block_size,
     bool use_uncompressed_cache,
-    const PrewhereInfoPtr & prewhere_info,
+    const SelectQueryInfo & query_info,
     const Names & virt_columns,
     const Settings & settings) const
 {
+    const PrewhereInfoPtr prewhere_info = query_info.prewhere_info;
     const size_t max_marks_to_use_cache = roundRowsOrBytesToMarks(
         settings.merge_tree_max_rows_to_use_cache,
         settings.merge_tree_max_bytes_to_use_cache,

@@ -551,6 +551,7 @@ public:
 
     Names getColumnsRequiredForSortingKey() const { return sorting_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForPrimaryKey() const { return primary_key_expr->getRequiredColumns(); }
+    Names getSortingKeyColumns() const { return sorting_key_columns; }
 
     bool supportsSampling() const { return sample_by_ast != nullptr; }
     ASTPtr getSamplingExpression() const { return sample_by_ast; }
