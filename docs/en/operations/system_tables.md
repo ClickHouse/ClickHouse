@@ -296,7 +296,7 @@ Columns:
     - 0 — Query was initiated by another query for distributed query execution.
 - `user` (String) — Name of the user initiated the current query.
 - `query_id` (String) — ID of the query.
-- `address` (String) — IP address the query was initiated from.
+- `address` (FixedString(16)) — IP address the query was initiated from.
 - `port` (UInt16) — A server port that was used to receive the query.
 - `initial_user` (String) —  Name of the user who run the parent query (for distributed query execution).
 - `initial_query_id` (String) — ID of the parent query.
