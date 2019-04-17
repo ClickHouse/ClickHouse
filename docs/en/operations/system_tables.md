@@ -256,14 +256,19 @@ query_id String          - Query ID, if defined.
 
 ## system.query_log {#system_tables-query-log}
 
-Contains information about queries execution. For example, time of start, duration, error message, and so on.
+Contains information about queries execution. For each query, you can see processing start time, duration of processing, error message and other information.
 
 !!! note
-    The `INSERT` queries are logged without data that is added to the tables.
+    The table doesn't contain input data for `INSERT` queries.
     
-This table is created only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules. For example, logging interval or the name of a table the queries will be logged in (by default is `system.query_log`).
+ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules. For example, a logging interval or name of a table the queries will be logged in.
 
-To enable query logging, set the parameter [log_queries](settings/settings.md#settings-log-queries) to 1. You can set this parameter in the following ways: globally, for a session, or for an individual query. How to do this, read in section [Settings](settings/settings.md).
+To enable query logging, set the parameter [log_queries](settings/settings.md#settings-log-queries) to 1. For details, see the section [Settings](settings/settings.md).
+
+The `system.query_log` table registers two kinds of queries:
+ 
+1. Initial queries, that were run directly by the client.
+2. Child queries that were initiated by other queries (for distributed query execution). For such a kind of queries, information about the parent queries is shown in the `initial_*` columns. 
 
 Columns:
 
@@ -274,29 +279,29 @@ Columns:
     - 4 — Exception during the query execution. 
 - `event_date` (Date) — Event date.
 - `event_time` (DateTime) — Event time.
-- `query_start_time` (DateTime) — Time of the query execution start.
-- `query_duration_ms` (UInt64) — Duration of the query execution. 
+- `query_start_time` (DateTime) — Time of the query processing start.
+- `query_duration_ms` (UInt64) — Duration of the query processing. 
 - `read_rows` (UInt64) — Number of read rows.
 - `read_bytes` (UInt64) — Number of read bytes.
-- `written_rows` (UInt64) — Number of written rows.
-- `written_bytes` (UInt64) — Number of written bytes.
-- `result_rows` (UInt64) — Number of rows in a result.
+- `written_rows` (UInt64) — For `INSERT` queries, number of written rows. For other queries, the column value is 0.
+- `written_bytes` (UInt64) — For `INSERT` queries, number of written bytes. For other queries, the column value is 0.
+- `result_rows` (UInt64) — Number of rows in a result. 
 - `result_bytes` (UInt64) — Number of bytes in a result.
 - `memory_usage` (UInt64) — Memory consumption by the query.
 - `query` (String) — Query string.
 - `exception` (String) — Exception message.
 - `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
-- `is_initial_query` (UInt8) — Query type. Possible values: 
+- `is_initial_query` (UInt8) — Kind of query. Possible values: 
     - 1 — Query was initiated by the client.
     - 0 — Query was initiated by another query for distributed query execution.
-- `user` (String) — Name of the user initiated the query.
+- `user` (String) — Name of the user initiated the current query.
 - `query_id` (String) — ID of the query.
 - `address` (FixedString(16)) — IP address the query was initiated from.
 - `port` (UInt16) — A server port that was used to receive the query.
-- `initial_user` (String) —  User who initiated the query. For distributed queries is 'default.'
-- `initial_query_id` (String) — ID of the initial query.
-- `initial_address` (FixedString(16)) — IP address that the initial query was launched from.
-- `initial_port` (UInt16) — A server port that was used to receive the initial query from the client.
+- `initial_user` (String) —  Name of the user who run the parent query (for distributed query execution).
+- `initial_query_id` (String) — ID of the parent query.
+- `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
+- `initial_port` (UInt16) — A server port that was used to receive the parent query from the client.
 - `interface` (UInt8) — Interface that the query was initiated from.
 Possible values:
     - 1 — TCP.

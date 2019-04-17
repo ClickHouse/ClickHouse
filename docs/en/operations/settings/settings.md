@@ -317,7 +317,7 @@ ClickHouse uses this setting when reading data from tables. If the total storage
 
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../server_settings/settings.md) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../server_settings/settings.md#server_settings-query-log) server configuration parameter.
 
 **Example**:
 
