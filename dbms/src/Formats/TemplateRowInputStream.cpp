@@ -15,7 +15,8 @@ extern const int INVALID_TEMPLATE_FORMAT;
 
 TemplateRowInputStream::TemplateRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & settings_,
         bool ignore_spaces_)
-    : RowInputStreamWithDiagnosticInfo(buf, header_), buf(istr_), settings(settings_), ignore_spaces(ignore_spaces_)
+    : RowInputStreamWithDiagnosticInfo(buf, header_), buf(istr_), data_types(header.getDataTypes()),
+    settings(settings_), ignore_spaces(ignore_spaces_)
 {
     static const String default_format("${data}");
     const String & format_str = settings.template_settings.format.empty() ? default_format : settings.template_settings.format;
@@ -141,6 +142,7 @@ bool TemplateRowInputStream::compareSuffixPart(StringRef & suffix, BufferBase::P
         while (pos != end)
             if (!isWhitespaceASCII(*pos))
                 return false;
+        return true;
     }
 
     if (likely(StringRef(suffix.data, available) != StringRef(pos, available)))
@@ -150,8 +152,7 @@ bool TemplateRowInputStream::compareSuffixPart(StringRef & suffix, BufferBase::P
     return true;
 }
 
-bool TemplateRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out,
-                                                            size_t max_length_of_column_name, size_t max_length_of_data_type_name)
+bool TemplateRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out)
 {
     try
     {
@@ -179,7 +180,7 @@ bool TemplateRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & col
 
         skipSpaces();
         size_t col_idx = row_format.format_idx_to_column_idx[i];
-        if (!deserializeFieldAndPrintDiagnosticInfo(columns, out, max_length_of_column_name, max_length_of_data_type_name, col_idx))
+        if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx], out, i))
         {
             out << "Maybe it's not possible to deserialize field " + std::to_string(i) +
                    " as " + ParsedTemplateFormat::formatToString(row_format.formats[i]);
@@ -213,15 +214,11 @@ void TemplateRowInputStream::writeErrorStringForWrongDelimiter(WriteBuffer & out
     out << '\n';
 }
 
-void TemplateRowInputStream::tryDeserializeFiled(MutableColumns & columns, size_t col_idx, ReadBuffer::Position & prev_pos,
+void TemplateRowInputStream::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t input_position, ReadBuffer::Position & prev_pos,
                                                  ReadBuffer::Position & curr_pos)
 {
     prev_pos = buf.position();
-    auto format_iter = std::find(row_format.format_idx_to_column_idx.cbegin(), row_format.format_idx_to_column_idx.cend(), col_idx);
-    if (format_iter == row_format.format_idx_to_column_idx.cend())
-        throw DB::Exception("Parse error", ErrorCodes::INVALID_TEMPLATE_FORMAT);
-    size_t format_idx = format_iter - row_format.format_idx_to_column_idx.begin();
-    deserializeField(*data_types[col_idx], *columns[col_idx], row_format.formats[format_idx]);
+    deserializeField(*type, column, row_format.formats[input_position]);
     curr_pos = buf.position();
 }
 
@@ -229,6 +226,31 @@ bool TemplateRowInputStream::isGarbageAfterField(size_t, ReadBuffer::Position)
 {
     /// Garbage will be considered as wrong delimiter
     return false;
+}
+
+bool TemplateRowInputStream::allowSyncAfterError() const
+{
+    return !row_format.delimiters.back().empty();
+}
+
+void TemplateRowInputStream::syncAfterError()
+{
+    StringRef delim(row_format.delimiters.back());
+    if (unlikely(!delim.size)) return;
+    while (!buf.eof())
+    {
+        void* pos = memchr(buf.position(), *delim.data, buf.available());
+        if (!pos)
+        {
+            buf.position() += buf.available();
+            continue;
+        }
+        buf.position() = static_cast<ReadBuffer::Position>(pos);
+        while (buf.available() < delim.size && buf.peekNext());
+        if (buf.available() < delim.size || delim == StringRef(buf.position(), delim.size))
+            return;
+        ++buf.position();
+    }
 }
 
 

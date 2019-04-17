@@ -44,6 +44,7 @@ public:
                 memmove(memory.data(), memory.data() + offset, peeked_size);
                 working_buffer.resize(peeked_size);
                 pos = memory.data();
+                bytes += offset;
                 offset = 0;
             }
             else
@@ -57,6 +58,7 @@ public:
         /// Save unread data from sub-buffer to own memory
         memcpy(memory.data() + peeked_size, sub_buf_pos, available);
         peeked_size = new_size;
+        bytes += sub_buf_pos - sub_buf.buffer().begin();
         /// Switch to reading from own memory (or just update size if already switched)
         BufferBase::set(memory.data(), new_size, offset);
 

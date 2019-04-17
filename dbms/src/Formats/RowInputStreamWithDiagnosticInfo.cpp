@@ -24,8 +24,8 @@ void DB::RowInputStreamWithDiagnosticInfo::updateDiagnosticInfo()
     bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
     bytes_read_at_start_of_buffer_on_current_row = istr.count() - istr.offset();
 
-    pos_of_prev_row = pos_of_current_row;
-    pos_of_current_row = istr.position();
+    offset_of_prev_row = offset_of_current_row;
+    offset_of_current_row = istr.offset();
 }
 
 String DB::RowInputStreamWithDiagnosticInfo::getDiagnosticInfo()
@@ -57,9 +57,9 @@ String DB::RowInputStreamWithDiagnosticInfo::getDiagnosticInfo()
 
     /// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
 
-    if (pos_of_prev_row)
+    if (offset_of_prev_row <= istr.buffer().size())
     {
-        istr.position() = pos_of_prev_row;
+        istr.position() = istr.buffer().begin() + offset_of_prev_row;
 
         out << "\nRow " << (row_num - 1) << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(columns, out))
@@ -67,13 +67,13 @@ String DB::RowInputStreamWithDiagnosticInfo::getDiagnosticInfo()
     }
     else
     {
-        if (!pos_of_current_row)
+        if (istr.buffer().size() < offset_of_current_row)
         {
             out << "Could not print diagnostic info because parsing of data hasn't started.\n";
             return out.str();
         }
 
-        istr.position() = pos_of_current_row;
+        istr.position() = istr.buffer().begin() + offset_of_current_row;
     }
 
     out << "\nRow " << row_num << ":\n";
