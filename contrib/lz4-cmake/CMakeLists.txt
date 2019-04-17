@@ -9,9 +9,6 @@ add_library (lz4
     ${LIBRARY_DIR}/xxhash.h
 
     ${LIBRARY_DIR}/lz4.h
-    ${LIBRARY_DIR}/lz4hc.h
-    ${LIBRARY_DIR}/lz4opt.h)
-
-target_compile_definitions(lz4 PUBLIC LZ4_DISABLE_DEPRECATE_WARNINGS=1)
+    ${LIBRARY_DIR}/lz4hc.h)
 
 target_include_directories(lz4 PUBLIC ${LIBRARY_DIR})
