@@ -263,7 +263,7 @@ Contains information about queries execution. For each query, you can see proces
     
 ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules. For example, a logging interval or name of a table the queries will be logged in.
 
-To enable query logging, set the parameter [log_queries](settings/settings.md#settings-log-queries) to 1. For details, see the section [Settings](settings/settings.md).
+To enable query logging, set the parameter [log_queries](settings/settings.md#settings-log-queries) to 1. For details, see the [Settings](settings/settings.md) section.
 
 The `system.query_log` table registers two kinds of queries:
  
