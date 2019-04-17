@@ -892,7 +892,8 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
-        const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
+        const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere,
+        SelectQueryInfo& query_info)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
@@ -1142,7 +1143,6 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        SelectQueryInfo query_info;
         query_info.query = query_ptr;
         query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
@@ -1446,7 +1446,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
     {
         bool need_sorting = false;
         const auto& sorting_key_order = storage_merge_tree->getSortingKeyColumns();
-        if (!(sorting_key_order.size() < order_descr.size()) && !query.limit_by_value && !query.group_expression_list)
+        if (!(sorting_key_order.size() < order_descr.size()) && !query.limitByValue() && !query.groupBy())
         {
             for (size_t i = 0; i < order_descr.size(); ++i)
             {
@@ -1473,7 +1473,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
                     {
                         stream = std::make_shared<ReverseBlockInputStream>(stream);
                     });
-                } 
+                }
                 executeUnion(pipeline);
                 pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
                     pipeline.firstStream(), order_descr, settings.max_block_size, limit,
@@ -1481,7 +1481,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
                     settings.max_bytes_before_external_sort, context.getTemporaryPath());
                 return;
             }
-        }    
+        }
     }
 
     pipeline.transform([&](auto & stream)
