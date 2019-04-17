@@ -1,9 +1,8 @@
 add_library (pocoext ${LINK_MODE}
     src/LevelFilterChannel.cpp
-    src/SessionPoolHelpers.cpp
 
     include/Poco/Ext/LevelFilterChannel.h
-    include/Poco/Ext/SessionPoolHelpers.h)
+    )
 
 if (Poco_Data_FOUND)
     target_include_directories (pocoext SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
