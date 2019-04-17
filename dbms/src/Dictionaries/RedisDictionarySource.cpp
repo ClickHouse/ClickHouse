@@ -204,11 +204,11 @@ namespace DB
         return "Redis: " + host + ':' + DB::toString(port);
     }
 
-    RedisStorageType::Id RedisDictionarySource::parseStorageType(const std::string & storage_type) {
+    RedisStorageType::Id RedisDictionarySource::parseStorageType(const std::string & storage_type)
+    {
         RedisStorageType::Id storage_type_id = RedisStorageType::valueOf(storage_type);
-        if (storage_type_id == RedisStorageType::UNKNOWN) {
+        if (storage_type_id == RedisStorageType::UNKNOWN)
             storage_type_id = RedisStorageType::SIMPLE;
-        }
         return storage_type_id;
     }
 }
