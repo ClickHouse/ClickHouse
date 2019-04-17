@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Formats/IRowInputStream.h>
 #include <IO/ReadBuffer.h>
+#include <limits>
 
 
 namespace DB
@@ -37,8 +38,8 @@ private:
     size_t bytes_read_at_start_of_buffer_on_current_row = 0;
     size_t bytes_read_at_start_of_buffer_on_prev_row = 0;
 
-    char * pos_of_current_row = nullptr;
-    char * pos_of_prev_row = nullptr;
+    size_t offset_of_current_row = std::numeric_limits<size_t>::max();
+    size_t offset_of_prev_row = std::numeric_limits<size_t>::max();
 
     /// For alignment of diagnostic info.
     size_t max_length_of_column_name = 0;

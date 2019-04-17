@@ -133,26 +133,26 @@ String ParsedTemplateFormat::formatToString(ParsedTemplateFormat::ColumnFormat f
 TemplateBlockOutputStream::TemplateBlockOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettings & settings_)
         : ostr(ostr_), header(sample), settings(settings_)
 {
-    static const String default_format("${result}");
+    static const String default_format("${data}");
     const String & format_str = settings.template_settings.format.empty() ? default_format : settings.template_settings.format;
     format = ParsedTemplateFormat(format_str, [&](const String & partName)
     {
         return static_cast<size_t>(stringToOutputPart(partName));
     });
 
-    size_t resultIdx = format.format_idx_to_column_idx.size() + 1;
+    size_t dataIdx = format.format_idx_to_column_idx.size() + 1;
     for (size_t i = 0; i < format.format_idx_to_column_idx.size(); ++i)
     {
         switch (static_cast<OutputPart>(format.format_idx_to_column_idx[i]))
         {
-            case OutputPart::Result:
-                resultIdx = i;
+            case OutputPart::Data:
+                dataIdx = i;
                 BOOST_FALLTHROUGH;
             case OutputPart::Totals:
             case OutputPart::ExtremesMin:
             case OutputPart::ExtremesMax:
                 if (format.formats[i] != ColumnFormat::Default)
-                    throw Exception("invalid template: wrong serialization type for result, totals, min or max",
+                    throw Exception("invalid template: wrong serialization type for data, totals, min or max",
                                     ErrorCodes::INVALID_TEMPLATE_FORMAT);
                 break;
             default:
@@ -160,8 +160,8 @@ TemplateBlockOutputStream::TemplateBlockOutputStream(WriteBuffer & ostr_, const 
         }
     }
 
-    if (resultIdx != 0)
-        throw Exception("invalid template: ${result} must be the first output part", ErrorCodes::INVALID_TEMPLATE_FORMAT);
+    if (dataIdx != 0)
+        throw Exception("invalid template: ${data} must be the first output part", ErrorCodes::INVALID_TEMPLATE_FORMAT);
 
     row_format = ParsedTemplateFormat(settings.template_settings.row_format, [&](const String & colName)
     {
@@ -174,8 +174,8 @@ TemplateBlockOutputStream::TemplateBlockOutputStream(WriteBuffer & ostr_, const 
 
 TemplateBlockOutputStream::OutputPart TemplateBlockOutputStream::stringToOutputPart(const String & part)
 {
-    if (part == "result")
-        return OutputPart::Result;
+    if (part == "data")
+        return OutputPart::Data;
     else if (part == "totals")
         return OutputPart::Totals;
     else if (part == "min")
@@ -295,6 +295,8 @@ void TemplateBlockOutputStream::writeSuffix()
                 writeValue<size_t, DataTypeUInt64>(row_count, format.formats[j]);
                 break;
             case OutputPart::RowsBeforeLimit:
+                if (!rows_before_limit_set)
+                    throw Exception("invalid template: cannot print rows_before_limit for this request", ErrorCodes::INVALID_TEMPLATE_FORMAT);
                 writeValue<size_t, DataTypeUInt64>(rows_before_limit, format.formats[j]);
                 break;
             case OutputPart::TimeElapsed:

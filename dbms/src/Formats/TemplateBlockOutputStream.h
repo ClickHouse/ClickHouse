@@ -47,7 +47,7 @@ public:
 
     void flush() override;
 
-    void setRowsBeforeLimit(size_t rows_before_limit_) override { rows_before_limit = rows_before_limit_; }
+    void setRowsBeforeLimit(size_t rows_before_limit_) override { rows_before_limit = rows_before_limit_; rows_before_limit_set = true; }
     void setTotals(const Block & totals_) override { totals = totals_; }
     void setExtremes(const Block & extremes_) override { extremes = extremes_; }
     void onProgress(const Progress & progress_) override { progress.incrementPiecewiseAtomically(progress_); }
@@ -55,7 +55,7 @@ public:
 private:
     enum class OutputPart : size_t
     {
-        Result,
+        Data,
         Totals,
         ExtremesMin,
         ExtremesMax,
@@ -80,6 +80,7 @@ private:
     ParsedTemplateFormat row_format;
 
     size_t rows_before_limit;
+    bool rows_before_limit_set = false;
     Block totals;
     Block extremes;
     Progress progress;
