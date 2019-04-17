@@ -95,8 +95,6 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
 endif ()
 
 target_link_libraries (common
-        PRIVATE
-    pocoext
         PUBLIC
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}

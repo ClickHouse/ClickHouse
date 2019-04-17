@@ -4,18 +4,23 @@
 #include "Poco/Channel.h"
 #include "Poco/Message.h"
 #include <vector>
+#include <string>
 
 
-namespace Poco
+namespace Poco {
+    class Channel;
+}
+
+namespace DB
 {
 
 /// This channel sends messages only higher then specified level
-class Foundation_API LevelFilterChannel : public Channel
+class Foundation_API LevelFilterChannel : public Poco::Channel
 {
 public:
     /// Sends the given Message to all
     /// attaches channels.
-    void log(const Message & msg);
+    void log(const Poco::Message & msg);
 
     /// Sets or changes a configuration property.
     ///
@@ -24,11 +29,11 @@ public:
 
     /// Sets the destination channel to which the formatted
     /// messages are passed on.
-    void setChannel(Channel * channel_);
+    void setChannel(Poco::Channel * channel_);
 
     /// Returns the channel to which the formatted
     /// messages are passed on.
-    Channel * getChannel() const;
+    Poco::Channel * getChannel() const;
 
     /// Opens the attached channel.
     void open();
@@ -37,19 +42,19 @@ public:
     void close();
 
     /// Sets the Logger's log level.
-    void setLevel(Message::Priority);
+    void setLevel(Poco::Message::Priority);
     /// Sets the Logger's log level using a symbolic value.
     void setLevel(const std::string & value);
 
     /// Returns the Logger's log level.
-    Message::Priority getLevel() const;
+    Poco::Message::Priority getLevel() const;
 
 protected:
     ~LevelFilterChannel();
 
 private:
-    Channel * channel = nullptr;
-    Message::Priority priority = Message::PRIO_ERROR;
+    Poco::Channel * channel = nullptr;
+    Poco::Message::Priority priority = Poco::Message::PRIO_ERROR;
 };
 
 }

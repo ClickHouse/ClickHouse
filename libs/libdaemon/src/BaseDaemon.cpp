@@ -25,7 +25,7 @@
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
-#include <Poco/Ext/LevelFilterChannel.h>
+#include <daemon/LevelFilterChannel.h>
 #include <common/getThreadNumber.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/ConsoleChannel.h>
