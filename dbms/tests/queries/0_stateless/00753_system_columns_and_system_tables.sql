@@ -1,8 +1,8 @@
 CREATE DATABASE IF NOT EXISTS test;
-DROP TABLE IF EXISTS test.check_system_tables;
+DROP TABLE IF EXISTS check_system_tables;
 
 -- Check MergeTree declaration in new format
-CREATE TABLE test.check_system_tables
+CREATE TABLE check_system_tables
   (
     name1 UInt8,
     name2 UInt8,
@@ -22,10 +22,10 @@ FROM system.columns
 WHERE table = 'check_system_tables'
 FORMAT PrettyCompactNoEscapes;
 
-DROP TABLE IF EXISTS test.check_system_tables;
+DROP TABLE IF EXISTS check_system_tables;
 
 -- Check VersionedCollapsingMergeTree
-CREATE TABLE test.check_system_tables
+CREATE TABLE check_system_tables
   (
     date Date,
     value String,
@@ -45,10 +45,10 @@ FROM system.columns
 WHERE table = 'check_system_tables'
 FORMAT PrettyCompactNoEscapes;
 
-DROP TABLE IF EXISTS test.check_system_tables;
+DROP TABLE IF EXISTS check_system_tables;
 
 -- Check MergeTree declaration in old format
-CREATE TABLE test.check_system_tables
+CREATE TABLE check_system_tables
   (
     Event Date,
     UserId UInt32,
@@ -65,4 +65,4 @@ FROM system.columns
 WHERE table = 'check_system_tables'
 FORMAT PrettyCompactNoEscapes;
 
-DROP TABLE IF EXISTS test.check_system_tables;
+DROP TABLE IF EXISTS check_system_tables;
