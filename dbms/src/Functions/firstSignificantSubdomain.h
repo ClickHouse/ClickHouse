@@ -2,7 +2,7 @@
 
 #include <Functions/domain.h>
 #include <common/find_symbols.h>
-
+#include <Functions/tldLookup.h>
 
 namespace DB
 {
@@ -58,33 +58,16 @@ struct ExtractFirstSignificantSubdomain
         if (!last_3_periods[2])
             last_3_periods[2] = begin - 1;
 
-        size_t size_of_second_subdomain_plus_period = last_3_periods[0] - last_3_periods[1];
-        if (size_of_second_subdomain_plus_period == 4 || size_of_second_subdomain_plus_period == 3)
-        {
-            /// We will key by four bytes that are either ".xyz" or ".xy.".
-            UInt32 key = unalignedLoad<UInt32>(last_3_periods[1]);
+	if (tldLookup::is_valid(last_3_periods[1] + 1, end - last_3_periods[1] - 1) != nullptr)
+	{
+            res_data += last_3_periods[2] + 1 - begin;
+            res_size = last_3_periods[1] - last_3_periods[2] - 1;
+	} else {
+            res_data += last_3_periods[1] + 1 - begin;
+            res_size = last_3_periods[0] - last_3_periods[1] - 1;
+	}
 
-            /// NOTE: assuming little endian.
-            /// NOTE: does the compiler generate SIMD code?
-            /// NOTE: for larger amount of cases we can use a perfect hash table (see 'gperf' as an example).
-            if (   key == '.' + 'c' * 0x100U + 'o' * 0x10000U + 'm' * 0x1000000U
-                || key == '.' + 'n' * 0x100U + 'e' * 0x10000U + 't' * 0x1000000U
-                || key == '.' + 'o' * 0x100U + 'r' * 0x10000U + 'g' * 0x1000000U
-                || key == '.' + 'b' * 0x100U + 'i' * 0x10000U + 'z' * 0x1000000U
-                || key == '.' + 'g' * 0x100U + 'o' * 0x10000U + 'v' * 0x1000000U
-                || key == '.' + 'm' * 0x100U + 'i' * 0x10000U + 'l' * 0x1000000U
-                || key == '.' + 'e' * 0x100U + 'd' * 0x10000U + 'u' * 0x1000000U
-                || key == '.' + 'c' * 0x100U + 'o' * 0x10000U + '.' * 0x1000000U)
-            {
-                res_data += last_3_periods[2] + 1 - begin;
-                res_size = last_3_periods[1] - last_3_periods[2] - 1;
-                return;
-            }
-        }
-
-        res_data += last_3_periods[1] + 1 - begin;
-        res_size = last_3_periods[0] - last_3_periods[1] - 1;
-    }
+   }
 };
 
 }

@@ -11,7 +11,7 @@ Build should work on Mac OS X 10.12.
 ## Install Required Compilers, Tools, and Libraries
 
 ```bash
-brew install cmake ninja gcc icu4c openssl libtool gettext readline
+brew install cmake ninja gcc icu4c openssl libtool gettext readline gperf
 ```
 
 ## Checkout ClickHouse Sources
