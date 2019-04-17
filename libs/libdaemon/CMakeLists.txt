@@ -5,8 +5,6 @@ add_library (daemon ${LINK_MODE}
     src/OwnPatternFormatter.cpp
     src/OwnFormattingChannel.cpp
     src/OwnSplitChannel.cpp
-    src/LevelFilterChannel.cpp
-    include/daemon/LevelFilterChannel.h
 
     include/daemon/BaseDaemon.h
     include/daemon/GraphiteWriter.h
