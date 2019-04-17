@@ -14,9 +14,9 @@
  * Thus we have 5 * 4 * 4 = 80 combinations.
  */
 
-DROP TABLE IF EXISTS test.nullable;
+DROP TABLE IF EXISTS nullable;
 
-CREATE VIEW test.nullable
+CREATE VIEW nullable
 AS SELECT
     1 AS constant_true,
     0 AS constant_false,
@@ -32,109 +32,109 @@ AS SELECT
 FROM system.numbers LIMIT 10;
 
 
-SELECT constant_true ? then_constant : else_constant AS res FROM test.nullable;
-SELECT constant_true ? then_constant : constant_null AS res FROM test.nullable;
-SELECT constant_true ? then_constant : else_non_constant AS res FROM test.nullable;
-SELECT constant_true ? then_constant : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_true ? then_constant : else_constant AS res FROM nullable;
+SELECT constant_true ? then_constant : constant_null AS res FROM nullable;
+SELECT constant_true ? then_constant : else_non_constant AS res FROM nullable;
+SELECT constant_true ? then_constant : else_non_constant_nullable AS res FROM nullable;
 
-SELECT constant_true ? constant_null : else_constant AS res FROM test.nullable;
-SELECT constant_true ? constant_null : constant_null AS res FROM test.nullable;
-SELECT constant_true ? constant_null : else_non_constant AS res FROM test.nullable;
-SELECT constant_true ? constant_null : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_true ? constant_null : else_constant AS res FROM nullable;
+SELECT constant_true ? constant_null : constant_null AS res FROM nullable;
+SELECT constant_true ? constant_null : else_non_constant AS res FROM nullable;
+SELECT constant_true ? constant_null : else_non_constant_nullable AS res FROM nullable;
 
-SELECT constant_true ? then_non_constant : else_constant AS res FROM test.nullable;
-SELECT constant_true ? then_non_constant : constant_null AS res FROM test.nullable;
-SELECT constant_true ? then_non_constant : else_non_constant AS res FROM test.nullable;
-SELECT constant_true ? then_non_constant : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_true ? then_non_constant : else_constant AS res FROM nullable;
+SELECT constant_true ? then_non_constant : constant_null AS res FROM nullable;
+SELECT constant_true ? then_non_constant : else_non_constant AS res FROM nullable;
+SELECT constant_true ? then_non_constant : else_non_constant_nullable AS res FROM nullable;
 
-SELECT constant_true ? then_non_constant_nullable : else_constant AS res FROM test.nullable;
-SELECT constant_true ? then_non_constant_nullable : constant_null AS res FROM test.nullable;
-SELECT constant_true ? then_non_constant_nullable : else_non_constant AS res FROM test.nullable;
-SELECT constant_true ? then_non_constant_nullable : else_non_constant_nullable AS res FROM test.nullable;
-
-
-SELECT constant_false ? then_constant : else_constant AS res FROM test.nullable;
-SELECT constant_false ? then_constant : constant_null AS res FROM test.nullable;
-SELECT constant_false ? then_constant : else_non_constant AS res FROM test.nullable;
-SELECT constant_false ? then_constant : else_non_constant_nullable AS res FROM test.nullable;
-
-SELECT constant_false ? constant_null : else_constant AS res FROM test.nullable;
-SELECT constant_false ? constant_null : constant_null AS res FROM test.nullable;
-SELECT constant_false ? constant_null : else_non_constant AS res FROM test.nullable;
-SELECT constant_false ? constant_null : else_non_constant_nullable AS res FROM test.nullable;
-
-SELECT constant_false ? then_non_constant : else_constant AS res FROM test.nullable;
-SELECT constant_false ? then_non_constant : constant_null AS res FROM test.nullable;
-SELECT constant_false ? then_non_constant : else_non_constant AS res FROM test.nullable;
-SELECT constant_false ? then_non_constant : else_non_constant_nullable AS res FROM test.nullable;
-
-SELECT constant_false ? then_non_constant_nullable : else_constant AS res FROM test.nullable;
-SELECT constant_false ? then_non_constant_nullable : constant_null AS res FROM test.nullable;
-SELECT constant_false ? then_non_constant_nullable : else_non_constant AS res FROM test.nullable;
-SELECT constant_false ? then_non_constant_nullable : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_true ? then_non_constant_nullable : else_constant AS res FROM nullable;
+SELECT constant_true ? then_non_constant_nullable : constant_null AS res FROM nullable;
+SELECT constant_true ? then_non_constant_nullable : else_non_constant AS res FROM nullable;
+SELECT constant_true ? then_non_constant_nullable : else_non_constant_nullable AS res FROM nullable;
 
 
-SELECT constant_null ? then_constant : else_constant AS res FROM test.nullable;
-SELECT constant_null ? then_constant : constant_null AS res FROM test.nullable;
-SELECT constant_null ? then_constant : else_non_constant AS res FROM test.nullable;
-SELECT constant_null ? then_constant : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_false ? then_constant : else_constant AS res FROM nullable;
+SELECT constant_false ? then_constant : constant_null AS res FROM nullable;
+SELECT constant_false ? then_constant : else_non_constant AS res FROM nullable;
+SELECT constant_false ? then_constant : else_non_constant_nullable AS res FROM nullable;
 
-SELECT constant_null ? constant_null : else_constant AS res FROM test.nullable;
-SELECT constant_null ? constant_null : constant_null AS res FROM test.nullable;
-SELECT constant_null ? constant_null : else_non_constant AS res FROM test.nullable;
-SELECT constant_null ? constant_null : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_false ? constant_null : else_constant AS res FROM nullable;
+SELECT constant_false ? constant_null : constant_null AS res FROM nullable;
+SELECT constant_false ? constant_null : else_non_constant AS res FROM nullable;
+SELECT constant_false ? constant_null : else_non_constant_nullable AS res FROM nullable;
 
-SELECT constant_null ? then_non_constant : else_constant AS res FROM test.nullable;
-SELECT constant_null ? then_non_constant : constant_null AS res FROM test.nullable;
-SELECT constant_null ? then_non_constant : else_non_constant AS res FROM test.nullable;
-SELECT constant_null ? then_non_constant : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_false ? then_non_constant : else_constant AS res FROM nullable;
+SELECT constant_false ? then_non_constant : constant_null AS res FROM nullable;
+SELECT constant_false ? then_non_constant : else_non_constant AS res FROM nullable;
+SELECT constant_false ? then_non_constant : else_non_constant_nullable AS res FROM nullable;
 
-SELECT constant_null ? then_non_constant_nullable : else_constant AS res FROM test.nullable;
-SELECT constant_null ? then_non_constant_nullable : constant_null AS res FROM test.nullable;
-SELECT constant_null ? then_non_constant_nullable : else_non_constant AS res FROM test.nullable;
-SELECT constant_null ? then_non_constant_nullable : else_non_constant_nullable AS res FROM test.nullable;
-
-
-SELECT cond_non_constant ? then_constant : else_constant AS res FROM test.nullable;
-SELECT cond_non_constant ? then_constant : constant_null AS res FROM test.nullable;
-SELECT cond_non_constant ? then_constant : else_non_constant AS res FROM test.nullable;
-SELECT cond_non_constant ? then_constant : else_non_constant_nullable AS res FROM test.nullable;
-
-SELECT cond_non_constant ? constant_null : else_constant AS res FROM test.nullable;
-SELECT cond_non_constant ? constant_null : constant_null AS res FROM test.nullable;
-SELECT cond_non_constant ? constant_null : else_non_constant AS res FROM test.nullable;
-SELECT cond_non_constant ? constant_null : else_non_constant_nullable AS res FROM test.nullable;
-
-SELECT cond_non_constant ? then_non_constant : else_constant AS res FROM test.nullable;
-SELECT cond_non_constant ? then_non_constant : constant_null AS res FROM test.nullable;
-SELECT cond_non_constant ? then_non_constant : else_non_constant AS res FROM test.nullable;
-SELECT cond_non_constant ? then_non_constant : else_non_constant_nullable AS res FROM test.nullable;
-
-SELECT cond_non_constant ? then_non_constant_nullable : else_constant AS res FROM test.nullable;
-SELECT cond_non_constant ? then_non_constant_nullable : constant_null AS res FROM test.nullable;
-SELECT cond_non_constant ? then_non_constant_nullable : else_non_constant AS res FROM test.nullable;
-SELECT cond_non_constant ? then_non_constant_nullable : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_false ? then_non_constant_nullable : else_constant AS res FROM nullable;
+SELECT constant_false ? then_non_constant_nullable : constant_null AS res FROM nullable;
+SELECT constant_false ? then_non_constant_nullable : else_non_constant AS res FROM nullable;
+SELECT constant_false ? then_non_constant_nullable : else_non_constant_nullable AS res FROM nullable;
 
 
-SELECT cond_non_constant_nullable ? then_constant : else_constant AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_constant : constant_null AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_constant : else_non_constant AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_constant : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_null ? then_constant : else_constant AS res FROM nullable;
+SELECT constant_null ? then_constant : constant_null AS res FROM nullable;
+SELECT constant_null ? then_constant : else_non_constant AS res FROM nullable;
+SELECT constant_null ? then_constant : else_non_constant_nullable AS res FROM nullable;
 
-SELECT cond_non_constant_nullable ? constant_null : else_constant AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? constant_null : constant_null AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? constant_null : else_non_constant AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? constant_null : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_null ? constant_null : else_constant AS res FROM nullable;
+SELECT constant_null ? constant_null : constant_null AS res FROM nullable;
+SELECT constant_null ? constant_null : else_non_constant AS res FROM nullable;
+SELECT constant_null ? constant_null : else_non_constant_nullable AS res FROM nullable;
 
-SELECT cond_non_constant_nullable ? then_non_constant : else_constant AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_non_constant : constant_null AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_non_constant : else_non_constant AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_non_constant : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_null ? then_non_constant : else_constant AS res FROM nullable;
+SELECT constant_null ? then_non_constant : constant_null AS res FROM nullable;
+SELECT constant_null ? then_non_constant : else_non_constant AS res FROM nullable;
+SELECT constant_null ? then_non_constant : else_non_constant_nullable AS res FROM nullable;
 
-SELECT cond_non_constant_nullable ? then_non_constant_nullable : else_constant AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_non_constant_nullable : constant_null AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_non_constant_nullable : else_non_constant AS res FROM test.nullable;
-SELECT cond_non_constant_nullable ? then_non_constant_nullable : else_non_constant_nullable AS res FROM test.nullable;
+SELECT constant_null ? then_non_constant_nullable : else_constant AS res FROM nullable;
+SELECT constant_null ? then_non_constant_nullable : constant_null AS res FROM nullable;
+SELECT constant_null ? then_non_constant_nullable : else_non_constant AS res FROM nullable;
+SELECT constant_null ? then_non_constant_nullable : else_non_constant_nullable AS res FROM nullable;
 
 
-DROP TABLE test.nullable;
+SELECT cond_non_constant ? then_constant : else_constant AS res FROM nullable;
+SELECT cond_non_constant ? then_constant : constant_null AS res FROM nullable;
+SELECT cond_non_constant ? then_constant : else_non_constant AS res FROM nullable;
+SELECT cond_non_constant ? then_constant : else_non_constant_nullable AS res FROM nullable;
+
+SELECT cond_non_constant ? constant_null : else_constant AS res FROM nullable;
+SELECT cond_non_constant ? constant_null : constant_null AS res FROM nullable;
+SELECT cond_non_constant ? constant_null : else_non_constant AS res FROM nullable;
+SELECT cond_non_constant ? constant_null : else_non_constant_nullable AS res FROM nullable;
+
+SELECT cond_non_constant ? then_non_constant : else_constant AS res FROM nullable;
+SELECT cond_non_constant ? then_non_constant : constant_null AS res FROM nullable;
+SELECT cond_non_constant ? then_non_constant : else_non_constant AS res FROM nullable;
+SELECT cond_non_constant ? then_non_constant : else_non_constant_nullable AS res FROM nullable;
+
+SELECT cond_non_constant ? then_non_constant_nullable : else_constant AS res FROM nullable;
+SELECT cond_non_constant ? then_non_constant_nullable : constant_null AS res FROM nullable;
+SELECT cond_non_constant ? then_non_constant_nullable : else_non_constant AS res FROM nullable;
+SELECT cond_non_constant ? then_non_constant_nullable : else_non_constant_nullable AS res FROM nullable;
+
+
+SELECT cond_non_constant_nullable ? then_constant : else_constant AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_constant : constant_null AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_constant : else_non_constant AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_constant : else_non_constant_nullable AS res FROM nullable;
+
+SELECT cond_non_constant_nullable ? constant_null : else_constant AS res FROM nullable;
+SELECT cond_non_constant_nullable ? constant_null : constant_null AS res FROM nullable;
+SELECT cond_non_constant_nullable ? constant_null : else_non_constant AS res FROM nullable;
+SELECT cond_non_constant_nullable ? constant_null : else_non_constant_nullable AS res FROM nullable;
+
+SELECT cond_non_constant_nullable ? then_non_constant : else_constant AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_non_constant : constant_null AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_non_constant : else_non_constant AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_non_constant : else_non_constant_nullable AS res FROM nullable;
+
+SELECT cond_non_constant_nullable ? then_non_constant_nullable : else_constant AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_non_constant_nullable : constant_null AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_non_constant_nullable : else_non_constant AS res FROM nullable;
+SELECT cond_non_constant_nullable ? then_non_constant_nullable : else_non_constant_nullable AS res FROM nullable;
+
+
+DROP TABLE nullable;

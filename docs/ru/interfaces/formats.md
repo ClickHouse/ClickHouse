@@ -638,6 +638,8 @@ struct Message {
 Protobuf - формат [Protocol Buffers](https://developers.google.com/protocol-buffers/).
 
 Формат нуждается во внешнем описании схемы. Схема кэшируется между запросами.
+ClickHouse поддерживает как синтаксис `proto2`, так и `proto3`; все типы полей (repeated/optional/required) поддерживаются.
+
 Пример использования формата:
 
 ```sql
@@ -663,9 +665,9 @@ message MessageType {
 };
 ```
 
-Соответствие между столбцами таблицы и полями сообщения Protocol Buffers устанавливается по имени,
+Соответствие между столбцами таблицы и полями сообщения `Protocol Buffers` устанавливается по имени,
 при этом игнорируется регистр букв и символы `_` (подчеркивание) и `.` (точка) считаются одинаковыми.
-Если типы столбцов не соответствуют точно типам полей сообщения Protocol Buffers, производится необходимая конвертация.
+Если типы столбцов не соответствуют точно типам полей сообщения `Protocol Buffers`, производится необходимая конвертация.
 
 Вложенные сообщения поддерживаются, например, для поля `z` в таком сообщении
 
@@ -682,17 +684,22 @@ message MessageType {
 ```
 
 ClickHouse попытается найти столбец с именем `x.y.z` (или `x_y_z`, или `X.y_Z` и т.п.).
-Вложенные сообщения удобно использовать в качестве соответствия для [вложенной структуры данных](../data_types/nested_data_structures/nested/).
+Вложенные сообщения удобно использовать в качестве соответствия для [вложенной структуры данных](../data_types/nested_data_structures/nested.md).
 
 Значения по умолчанию, определенные в схеме, например,
 
 ```
+syntax = "proto2";
+
 message MessageType {
   optional int32 result_per_page = 3 [default = 10];
 }
 ```
 
 не применяются; вместо них используются определенные в таблице [значения по умолчанию](../query_language/create.md#create-default-values).
+
+ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
+в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
 ## Схема формата {#formatschema}
 

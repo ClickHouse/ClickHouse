@@ -100,6 +100,7 @@ private:
           * It is appended to the main streams in UnionBlockInputStream or ParallelAggregatingBlockInputStream.
           */
         BlockInputStreamPtr stream_with_non_joined_data;
+        bool union_stream = false;
 
         BlockInputStreamPtr & firstStream() { return streams.at(0); }
 
@@ -116,6 +117,12 @@ private:
         bool hasMoreThanOneStream() const
         {
             return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
+        }
+
+        /// Resulting stream is mix of other streams data. Distinct and/or order guaranties are broken.
+        bool hasMixedStreams() const
+        {
+            return hasMoreThanOneStream() || union_stream;
         }
     };
 

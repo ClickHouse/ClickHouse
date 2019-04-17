@@ -1,7 +1,7 @@
-drop table if exists test.lc;
-create table test.lc (names Array(LowCardinality(String))) engine=MergeTree order by tuple();
-insert into test.lc values ([]);
-insert into test.lc select emptyArrayString();
-select * from test.lc;
-drop table if exists test.lc;
+drop table if exists lc;
+create table lc (names Array(LowCardinality(String))) engine=MergeTree order by tuple();
+insert into lc values ([]);
+insert into lc select emptyArrayString();
+select * from lc;
+drop table if exists lc;
 

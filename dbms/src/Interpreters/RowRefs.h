@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/RadixSort.h>
 #include <Columns/IColumn.h>
 
 #include <optional>
@@ -39,11 +40,11 @@ struct RowRefList : RowRef
  * references that can be returned by the lookup methods
  */
 
-template <typename T>
+template <typename _Entry, typename _Key>
 class SortedLookupVector
 {
 public:
-    using Base = std::vector<T>;
+    using Base = std::vector<_Entry>;
 
     // First stage, insertions into the vector
     template <typename U, typename ... TAllocatorParams>
@@ -54,7 +55,7 @@ public:
     }
 
     // Transition into second stage, ensures that the vector is sorted
-    typename Base::const_iterator upper_bound(const T & k)
+    typename Base::const_iterator upper_bound(const _Entry & k)
     {
         sort();
         return std::upper_bound(array.cbegin(), array.cend(), k);
@@ -81,7 +82,15 @@ private:
             std::lock_guard<std::mutex> l(lock);
             if (!sorted.load(std::memory_order_relaxed))
             {
-                std::sort(array.begin(), array.end());
+                /// TODO: It has been tested only for UInt32 yet. It needs to check UInt64, Float32/64.
+                if constexpr (std::is_same_v<_Key, UInt32>)
+                {
+                    if (!array.empty())
+                        radixSort<_Entry, _Key>(&array[0], array.size());
+                }
+                else
+                    std::sort(array.begin(), array.end());
+
                 sorted.store(true, std::memory_order_release);
             }
         }
@@ -94,7 +103,7 @@ public:
     template <typename T>
     struct Entry
     {
-        using LookupType = SortedLookupVector<Entry<T>>;
+        using LookupType = SortedLookupVector<Entry<T>, T>;
         using LookupPtr = std::unique_ptr<LookupType>;
         T asof_value;
         RowRef row_ref;
