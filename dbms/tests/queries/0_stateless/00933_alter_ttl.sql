@@ -9,6 +9,7 @@ insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 1);
 insert into test.ttl values (toDateTime('2000-10-10 00:00:00'), 2);
 insert into test.ttl values (toDateTime('2100-10-10 00:00:00'), 3);
 insert into test.ttl values (toDateTime('2100-10-10 00:00:00'), 4);
+select sleep(1) format Null; -- wait if very fast merge happen
 optimize table test.ttl partition 10 final;
 
 select * from test.ttl order by d;
