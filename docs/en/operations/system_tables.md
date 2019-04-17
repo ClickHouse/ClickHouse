@@ -98,7 +98,8 @@ Columns:
 
 Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which use in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
 
-Столбцы:
+Columns:
+
 - `config_name`     (String) - `graphite_rollup` parameter name.
 - `regexp`          (String) - A pattern for the metric name.
 - `function`        (String) - The name of the aggregating function.
@@ -200,6 +201,33 @@ Formats:
 - table (String) – Name of the table.
 
 - engine (String) – Name of the table engine without parameters.
+
+## system.part_log {#system_tables-part-log}
+
+The `system.part_log` table is created only if the [part_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
+
+This table contains information about the events that occurred with the [data parts](table_engines/custom_partitioning_key.md) in the [MergeTree](table_engines/mergetree.md) family tables. For instance, adding or merging data.
+
+The `system.part_log` table contains the following columns:
+
+- `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values: `NEW_PART` — inserting, `MERGE_PARTS` — merging, `DOWNLOAD_PART` — downloading, `REMOVE_PART` — removing or detaching using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition), `MUTATE_PART` — updating.
+- `event_date` (Date) — Event date.
+- `event_time` (DateTime) — Event time.
+- `duration_ms` (UInt64) — Duration.
+- `database` (String) — Name of the database the data part is in.
+- `table` (String) — Name of the table the data part is in.
+- `part_name` (String) — Name of the data part.
+- `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the 'all' value if the partitioning is by `tuple()`.
+- `rows` (UInt64) — The number of rows in the data part.
+- `size_in_bytes` (UInt64) — Size of the data part in bytes.
+- `merged_from` (Array(String)) — An array of names of the parts which the current part was made up from (after the merge).
+- `bytes_uncompressed` (UInt64) — Size of uncompressed bytes.
+- `read_rows` (UInt64) — The number of rows was read during the merge.
+- `read_bytes` (UInt64) — The number of bytes was read during the merge.
+- `error` (UInt16) — The code number of the occurred error.
+- `exception` (String) — Text message of the occurred error.
+
+The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
 
 ## system.processes
 
