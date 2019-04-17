@@ -28,14 +28,22 @@ void QueryPipeline::checkInitialized()
         throw Exception("QueryPipeline wasn't initialized.", ErrorCodes::LOGICAL_ERROR);
 }
 
-void QueryPipeline::checkSource(const ProcessorPtr & source)
+void QueryPipeline::checkSource(const ProcessorPtr & source, bool can_have_totals)
 {
     if (!source->getInputs().empty())
         throw Exception("Source for query pipeline shouldn't have any input, but " + source->getName() + " has " +
                         toString(source->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
 
-    if (source->getOutputs().size() != 1)
+    if (source->getOutputs().empty())
+        throw Exception("Source for query pipeline should have single output, but it doesn't have any",
+                ErrorCodes::LOGICAL_ERROR);
+
+    if (!can_have_totals && source->getOutputs().size() != 1)
         throw Exception("Source for query pipeline should have single output, but " + source->getName() + " has " +
+                        toString(source->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
+
+    if (source->getOutputs().size() > 2)
+        throw Exception("Source for query pipeline should have 1 or 2 outputs, but " + source->getName() + " has " +
                         toString(source->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
 
@@ -47,9 +55,11 @@ void QueryPipeline::init(Processors sources)
     if (sources.empty())
         throw Exception("Can't initialize pipeline with empty source list.", ErrorCodes::LOGICAL_ERROR);
 
+    std::vector<OutputPort *> totals;
+
     for (auto & source : sources)
     {
-        checkSource(source);
+        checkSource(source, true);
 
         auto & header = source->getOutputs().front().getHeader();
 
@@ -58,8 +68,30 @@ void QueryPipeline::init(Processors sources)
         else
             current_header = header;
 
+        if (source->getOutputs().size() > 1)
+        {
+            assertBlocksHaveEqualStructure(current_header, source->getOutputs().back().getHeader(), "QueryPipeline");
+            totals.emplace_back(&source->getOutputs().back());
+        }
+
         streams.emplace_back(&source->getOutputs().front());
         processors.emplace_back(std::move(source));
+    }
+
+    if (!totals.empty())
+    {
+        if (totals.size() == 1)
+            totals_having_port = totals.back();
+        else
+        {
+            auto resize = std::make_shared<ResizeProcessor>(current_header, totals.size(), 1);
+            auto in = resize->getInputs().begin();
+            for (auto & total : totals)
+                connect(*total, *(in++));
+
+            totals_having_port = &resize->getOutputs().front();
+            processors.emplace_back(std::move(resize));
+        }
     }
 }
 

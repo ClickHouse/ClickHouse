@@ -103,7 +103,7 @@ private:
     std::shared_ptr<ThreadPool> pool;
 
     void checkInitialized();
-    void checkSource(const ProcessorPtr & source);
+    void checkSource(const ProcessorPtr & source, bool can_have_totals);
     void concatDelayedStream();
 
     template <typename TProcessorGetter>
