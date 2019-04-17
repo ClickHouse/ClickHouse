@@ -1,12 +1,12 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/PODArray.h>
 
 namespace DB
 {
 
-class ReverseBlockInputStream : public IProfilingBlockInputStream
+class ReverseBlockInputStream : public IBlockInputStream
 {
 public:
     ReverseBlockInputStream(const BlockInputStreamPtr& input);
