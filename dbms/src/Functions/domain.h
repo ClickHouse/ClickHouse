@@ -15,25 +15,31 @@ inline StringRef getURLHost(const char * data, size_t size)
     Pos pos = data;
     Pos end = data + size;
 
-    if (!ignore_scheme || strncmp("www.", data, 4))
+    if (end == (pos = find_first_symbols<'/'>(pos, end)))
     {
-        if (end == (pos = find_first_symbols<'/'>(pos, end)))
+        if (ignore_scheme)
+            pos = data;
+        else
             return {};
-
-        if (pos != data)
-        {
-            StringRef scheme = getURLScheme(data, size);
-            Pos scheme_end = data + scheme.size;
-
-            // Colon must follows after scheme.
-            if (pos - scheme_end != 1 || *scheme_end != ':')
-                return {};
-        }
-
-        if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
-            return {};
-        pos += 2;
     }
+
+    if (pos != data)
+    {
+        StringRef scheme = getURLScheme(data, size);
+        Pos scheme_end = data + scheme.size;
+
+        // Colon must follows after scheme.
+        if (pos - scheme_end != 1 || *scheme_end != ':')
+            return {};
+    }
+
+    if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
+    {
+        if (!ignore_scheme)
+            return {};
+    }
+    else
+        pos += 2;
 
     const char * start_of_host = pos;
     for (; pos < end; ++pos)
