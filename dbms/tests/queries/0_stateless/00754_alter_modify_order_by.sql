@@ -6,7 +6,7 @@ ALTER TABLE test.old_style ADD COLUMN y UInt32, MODIFY ORDER BY (x, y); -- { ser
 DROP TABLE test.old_style;
 
 DROP TABLE IF EXISTS test.summing;
-CREATE TABLE test.summing(x UInt32, y UInt32, val UInt32) ENGINE SummingMergeTree ORDER BY (x, y);
+CREATE TABLE test.summing(x UInt32, y UInt32, val UInt32) ENGINE SummingMergeTree ORDER BY (x, y) SETTINGS index_granularity = 8192;
 
 /* Can't add an expression with existing column to ORDER BY. */
 ALTER TABLE test.summing MODIFY ORDER BY (x, y, -val); -- { serverError 36}

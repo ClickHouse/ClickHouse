@@ -37,7 +37,7 @@ CREATE TABLE cast
             'world' = 2
         )
     )
-) ENGINE = MergeTree ORDER BY e;
+) ENGINE = MergeTree ORDER BY e SETTINGS index_granularity = 8192;
 
 SHOW CREATE TABLE cast FORMAT TSVRaw;
 DESC TABLE cast;

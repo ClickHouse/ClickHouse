@@ -6,12 +6,12 @@ DROP TABLE IF EXISTS test.alter_compression_codec2;
 CREATE TABLE test.alter_compression_codec1 (
     somedate Date CODEC(LZ4),
     id UInt64 CODEC(NONE)
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/alter_compression_codecs', '1') PARTITION BY somedate ORDER BY id;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/alter_compression_codecs', '1') PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 8192;
 
 CREATE TABLE test.alter_compression_codec2 (
   somedate Date CODEC(LZ4),
   id UInt64 CODEC(NONE)
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/alter_compression_codecs', '2') PARTITION BY somedate ORDER BY id;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/alter_compression_codecs', '2') PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 8192;
 
 INSERT INTO test.alter_compression_codec1 VALUES('2018-01-01', 1);
 INSERT INTO test.alter_compression_codec1 VALUES('2018-01-01', 2);

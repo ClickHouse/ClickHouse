@@ -64,14 +64,43 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 
     ASTSetQuery::Changes & changes = storage_def.settings->changes;
 
-#define ADD_IF_ABSENT(NAME)                                                                                   \
-    if (std::find_if(changes.begin(), changes.end(),                                                          \
-                  [](const ASTSetQuery::Change & c) { return c.name == #NAME; })                              \
-            == changes.end())                                                                                 \
-        changes.push_back(ASTSetQuery::Change{#NAME, NAME.value});
 
-    APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_IF_ABSENT)
-#undef ADD_IF_ABSENT
+    /// Here we are checking immutable storage settings.
+    /// They are mutually exclusive so in first 'if' we check, that user specified only one of them.
+    String applied_setting_name;
+#define CHECK_DUPLICATES(NAME)                                                                                    \
+    if (std::find_if(changes.begin(), changes.end(),                                                              \
+                [](const auto & c) { return c.name == #NAME; }) != changes.end())                                 \
+    {                                                                                                             \
+        if (!applied_setting_name.empty())                                                                        \
+            throw Exception(                                                                                      \
+                std::string{"Mutually exclusive settings are specified '"} + #NAME                                \
+                        + "' and '" + applied_setting_name + "'",                                                 \
+                ErrorCodes::BAD_ARGUMENTS);                                                                       \
+        else                                                          \
+            applied_setting_name = #NAME;                                                                         \
+    }                                                                                                             \
+
+    APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(CHECK_DUPLICATES)
+#undef CHECK_DUPLICATES
+
+    /// If user doesn't specify any of them, then we choose first, which is not zero.
+    /// For rest of them we set zero.
+#define ADD_ONE_IF_ABSENT(NAME)                                           \
+    if (applied_setting_name.empty())                                     \
+    {                                                                     \
+        if (NAME.value != 0)                                              \
+        {                                                                 \
+            applied_setting_name = #NAME;                                 \
+            changes.push_back(ASTSetQuery::Change{#NAME, NAME.value});    \
+        }                                                                 \
+    }                                                                     \
+    else if (#NAME != applied_setting_name)                             \
+        NAME.set(0);                                                      \
+
+    APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(ADD_ONE_IF_ABSENT)
+#undef ADD_ONE_IF_ABSENT
+
 }
 
 }

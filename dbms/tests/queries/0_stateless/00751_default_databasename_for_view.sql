@@ -18,7 +18,7 @@ CREATE TABLE v (platform Enum8('a' = 0, 'b' = 1)) ENGINE = Memory;
 INSERT INTO u VALUES ('b');
 INSERT INTO v VALUES ('b');
 
-CREATE MATERIALIZED VIEW t_mv ENGINE = MergeTree ORDER BY date
+CREATE MATERIALIZED VIEW t_mv ENGINE = MergeTree ORDER BY date SETTINGS index_granularity = 8192
     AS SELECT date, platform, app FROM t
     WHERE app = (SELECT min(app) from u) AND platform = (SELECT (SELECT min(platform) from v));
 

@@ -20,7 +20,7 @@ CREATE TABLE cast1
             'world' = 2
         )
     )
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_cast', 'r1') ORDER BY e;
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_cast', 'r1') ORDER BY e SETTINGS index_granularity = 8192;
 
 SHOW CREATE TABLE cast1 FORMAT TSVRaw;
 DESC TABLE cast1;

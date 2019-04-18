@@ -9,7 +9,7 @@ CREATE TABLE test.compression_codec(
     somenum Float64 CODEC(ZSTD(2)),
     somestr FixedString(3) CODEC(LZ4HC(7)),
     othernum Int64 CODEC(Delta)
-) ENGINE = MergeTree() ORDER BY tuple();
+) ENGINE = MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 INSERT INTO test.compression_codec VALUES(1, 'hello', toDate('2018-12-14'), 1.1, 'aaa', 5);
 INSERT INTO test.compression_codec VALUES(2, 'world', toDate('2018-12-15'), 2.2, 'bbb', 6);
@@ -61,7 +61,7 @@ CREATE TABLE test.compression_codec_multiple (
     data String CODEC(ZSTD(2), NONE, Delta(2), LZ4HC, LZ4, LZ4, Delta(8)),
     ddd Date CODEC(NONE, NONE, NONE, Delta(1), LZ4, ZSTD, LZ4HC, LZ4HC),
     somenum Float64 CODEC(Delta(4), LZ4, LZ4, ZSTD(2), LZ4HC(5), ZSTD(3), ZSTD)
-) ENGINE = MergeTree() ORDER BY tuple();
+) ENGINE = MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 INSERT INTO test.compression_codec_multiple VALUES (1, 'world', toDate('2018-10-05'), 1.1), (2, 'hello', toDate('2018-10-01'), 2.2), (3, 'buy', toDate('2018-10-11'), 3.3);
 
@@ -87,7 +87,7 @@ CREATE TABLE test.compression_codec_multiple_more_types (
     id Decimal128(13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, Delta(2), Delta(4), Delta(1), LZ4HC),
     data FixedString(12) CODEC(ZSTD, ZSTD, Delta, Delta, Delta, NONE, NONE, NONE, LZ4HC),
     ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD, Delta(8))
-) ENGINE = MergeTree() ORDER BY tuple();
+) ENGINE = MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 SHOW CREATE TABLE test.compression_codec_multiple_more_types;
 
@@ -137,7 +137,7 @@ CREATE TABLE test.test_default_delta(
     othernum Int64 CODEC(Delta),
     yetothernum Float32 CODEC(Delta),
     ddd Nested (age UInt8, Name String, OName String, BName String) CODEC(Delta)
-) ENGINE = MergeTree() ORDER BY tuple();
+) ENGINE = MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 SHOW CREATE TABLE test.test_default_delta;
 

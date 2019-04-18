@@ -20,7 +20,7 @@ settings="$server_logs --log_queries=1 --log_query_threads=1 --log_profile_event
 
 $CLICKHOUSE_CLIENT $settings -n -q "
 DROP TABLE IF EXISTS null;
-CREATE TABLE null (i UInt8) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();"
+CREATE TABLE null (i UInt8) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple() SETTINGS index_granularity = 8192;"
 
 head -c 1000 /dev/zero | $CLICKHOUSE_CLIENT $settings --max_insert_block_size=10 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=1 -q "INSERT INTO null FORMAT RowBinary"
 

@@ -52,7 +52,8 @@ CREATE TABLE test.check_query_comment_column
   ) ENGINE = MergeTree()
         ORDER BY first_column
         PARTITION BY second_column
-        SAMPLE BY first_column;
+        SAMPLE BY first_column
+        SETTINGS index_granularity = 8192;
 
 SHOW CREATE TABLE test.check_query_comment_column;
 DESCRIBE TABLE test.check_query_comment_column;

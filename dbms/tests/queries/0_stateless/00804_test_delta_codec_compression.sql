@@ -6,12 +6,12 @@ DROP TABLE IF EXISTS test.default_codec_synthetic;
 CREATE TABLE test.delta_codec_synthetic
 (
     id UInt64 Codec(Delta, ZSTD)
-) ENGINE MergeTree() ORDER BY tuple();
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 CREATE TABLE test.default_codec_synthetic
 (
     id UInt64 Codec(ZSTD)
-) ENGINE MergeTree() ORDER BY tuple();
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 INSERT INTO test.delta_codec_synthetic SELECT number FROM system.numbers LIMIT 5000000;
 INSERT INTO test.default_codec_synthetic SELECT number FROM system.numbers LIMIT 5000000;
@@ -44,12 +44,12 @@ DROP TABLE IF EXISTS test.default_codec_float;
 CREATE TABLE test.delta_codec_float
 (
     id Float64 Codec(Delta, LZ4HC)
-) ENGINE MergeTree() ORDER BY tuple();
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 CREATE TABLE test.default_codec_float
 (
     id Float64 Codec(LZ4HC)
-) ENGINE MergeTree() ORDER BY tuple();
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 INSERT INTO test.delta_codec_float SELECT number FROM numbers(1547510400, 500000) WHERE number % 3 == 0 OR number % 5 == 0 OR number % 7 == 0 OR number % 11 == 0;
 INSERT INTO test.default_codec_float SELECT * from test.delta_codec_float;
@@ -82,12 +82,12 @@ DROP TABLE IF EXISTS test.default_codec_string;
 CREATE TABLE test.delta_codec_string
 (
     id Float64 Codec(Delta, LZ4)
-) ENGINE MergeTree() ORDER BY tuple();
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 CREATE TABLE test.default_codec_string
 (
     id Float64 Codec(LZ4)
-) ENGINE MergeTree() ORDER BY tuple();
+) ENGINE MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192;
 
 INSERT INTO test.delta_codec_string SELECT concat(toString(number), toString(number % 100)) FROM numbers(1547510400, 500000);
 INSERT INTO test.default_codec_string SELECT * from test.delta_codec_string;

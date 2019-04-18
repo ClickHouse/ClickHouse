@@ -168,9 +168,11 @@ struct MergeTreeSettings
     /** Minimal time in seconds, when merge with TTL can be repeated */                                       \
     M(SettingInt64, merge_with_ttl_timeout, 3600 * 24)
 
-    /// Settings that should not change after the creation of a table.
+/// Settings that should not change after the creation of a table.
+/// They are also mutually exclusive.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
-    M(index_granularity)
+    M(index_granularity)                           \
+    M(index_granularity_bytes)
 
 #define DECLARE(TYPE, NAME, DEFAULT) \
     TYPE NAME {DEFAULT};

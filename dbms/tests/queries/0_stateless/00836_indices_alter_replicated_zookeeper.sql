@@ -10,14 +10,14 @@ CREATE TABLE test.minmax_idx
     u64 UInt64,
     i32 Int32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/indices_alter1', 'r1')
-ORDER BY u64;
+ORDER BY u64 SETTINGS index_granularity = 8192;
 
 CREATE TABLE test.minmax_idx_r
 (
     u64 UInt64,
     i32 Int32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/indices_alter1', 'r2')
-ORDER BY u64;
+ORDER BY u64 SETTINGS index_granularity = 8192;
 
 INSERT INTO test.minmax_idx VALUES (1, 2);
 
@@ -75,7 +75,7 @@ CREATE TABLE test.minmax_idx2
     INDEX idx1 u64 + i32 TYPE minmax GRANULARITY 10,
     INDEX idx2 u64 * i32 TYPE minmax GRANULARITY 10
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/indices_alter2', 'r1')
-ORDER BY u64;
+ORDER BY u64 SETTINGS index_granularity = 8192;
 
 CREATE TABLE test.minmax_idx2_r
 (
@@ -84,7 +84,7 @@ CREATE TABLE test.minmax_idx2_r
     INDEX idx1 u64 + i32 TYPE minmax GRANULARITY 10,
     INDEX idx2 u64 * i32 TYPE minmax GRANULARITY 10
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/indices_alter2', 'r2')
-ORDER BY u64;
+ORDER BY u64 SETTINGS index_granularity = 8192;
 
 
 SHOW CREATE TABLE test.minmax_idx2;
