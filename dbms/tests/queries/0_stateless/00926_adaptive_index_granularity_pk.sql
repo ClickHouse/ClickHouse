@@ -54,32 +54,32 @@ SELECT '----00804----';
 SET max_rows_to_read = 0;
 SET force_primary_key = 0;
 
-DROP TABLE IF EXISTS test.large_alter_table;
-DROP TABLE IF EXISTS test.store_of_hash;
+DROP TABLE IF EXISTS test.large_alter_table_00926;
+DROP TABLE IF EXISTS test.store_of_hash_00926;
 
-CREATE TABLE test.large_alter_table (
+CREATE TABLE test.large_alter_table_00926 (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
     id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
     data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4)
 ) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity_bytes=40;
 
-INSERT INTO test.large_alter_table SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
+INSERT INTO test.large_alter_table_00926 SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
 
-CREATE TABLE test.store_of_hash (hash UInt64) ENGINE = Memory();
+CREATE TABLE test.store_of_hash_00926 (hash UInt64) ENGINE = Memory();
 
-INSERT INTO test.store_of_hash SELECT sum(cityHash64(*)) FROM test.large_alter_table;
+INSERT INTO test.store_of_hash_00926 SELECT sum(cityHash64(*)) FROM test.large_alter_table_00926;
 
-ALTER TABLE test.large_alter_table MODIFY COLUMN data CODEC(NONE, LZ4, LZ4HC, ZSTD);
+ALTER TABLE test.large_alter_table_00926 MODIFY COLUMN data CODEC(NONE, LZ4, LZ4HC, ZSTD);
 
-OPTIMIZE TABLE test.large_alter_table;
+OPTIMIZE TABLE test.large_alter_table_00926;
 
-DETACH TABLE test.large_alter_table;
-ATTACH TABLE test.large_alter_table;
+DETACH TABLE test.large_alter_table_00926;
+ATTACH TABLE test.large_alter_table_00926;
 
-INSERT INTO test.store_of_hash SELECT sum(cityHash64(*)) FROM test.large_alter_table;
+INSERT INTO test.store_of_hash_00926 SELECT sum(cityHash64(*)) FROM test.large_alter_table_00926;
 
-SELECT COUNT(hash) FROM test.store_of_hash;
-SELECT COUNT(DISTINCT hash) FROM test.store_of_hash;
+SELECT COUNT(hash) FROM test.store_of_hash_00926;
+SELECT COUNT(DISTINCT hash) FROM test.store_of_hash_00926;
 
-DROP TABLE IF EXISTS test.large_alter_table;
-DROP TABLE IF EXISTS test.store_of_hash;
+DROP TABLE IF EXISTS test.large_alter_table_00926;
+DROP TABLE IF EXISTS test.store_of_hash_00926;
