@@ -41,6 +41,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_rollup("ROLLUP");
     ParserKeyword s_cube("CUBE");
     ParserKeyword s_top("TOP");
+    ParserKeyword s_with_ties("WITH TIES");
     ParserKeyword s_offset("OFFSET");
 
     ParserNotEmptyExpressionList exp_list(false);
@@ -75,7 +76,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// SELECT [DISTINCT] [TOP N] expr list
+    /// SELECT [DISTINCT] [TOP N [WITH TIES]] expr list
     {
         if (!s_select.ignore(pos, expected))
             return false;
@@ -99,6 +100,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 if (!num.parse(pos, limit_length, expected))
                     return false;
             }
+
+            if (s_with_ties.ignore(pos, expected))
+                select_query->limit_with_ties = true;
         }
 
         if (!exp_list_for_select_clause.parse(pos, select_expression_list, expected))
@@ -180,7 +184,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list
+    /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES] | LIMIT count BY expr-list
     if (s_limit.ignore(pos, expected))
     {
         if (limit_length)
@@ -196,7 +200,12 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             limit_offset = limit_length;
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
+
+            if (s_with_ties.ignore(pos, expected))
+                select_query->limit_with_ties = true;
         }
+        else if (s_with_ties.ignore(pos, expected))
+            select_query->limit_with_ties = true;
         else if (s_by.ignore(pos, expected))
         {
             limit_by_value = limit_length;
@@ -212,7 +221,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    /// LIMIT length | LIMIT offset, length
+    /// LIMIT length [WITH TIES] | LIMIT offset, length [WITH TIES]
     if (s_limit.ignore(pos, expected))
     {
         if (!limit_by_value || limit_length)
@@ -229,7 +238,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
         }
+
+        if (s_with_ties.ignore(pos, expected))
+            select_query->limit_with_ties = true;
     }
+
+    // WITH TIES was used without ORDER BY
+    if (!order_expression_list && select_query->limit_with_ties)
+        return false;
 
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))
