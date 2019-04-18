@@ -1,4 +1,3 @@
-create database if not exists test;
 
 drop table if exists test_ins_arr;
 create table test_ins_arr (date Date, val Array(UInt64)) engine = MergeTree(date, (date), 8192);
