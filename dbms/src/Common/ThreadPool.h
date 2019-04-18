@@ -38,11 +38,11 @@ public:
     using Job = std::function<void()>;
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
-    explicit ThreadPoolImpl(size_t max_threads, DB::ThreadGroupStatusPtr thread_group_);
+    explicit ThreadPoolImpl(size_t max_threads, DB::ThreadGroupStatusPtr thread_group_ = nullptr);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
     /// Specify thread_group if thread pool is used for concrete query execution (or leave it it nullptr and attach to thread group manually).
-    ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size, DB::ThreadGroupStatusPtr thread_group_);
+    ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size, DB::ThreadGroupStatusPtr thread_group_ = nullptr);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
     /// If an exception in some thread was thrown, method silently returns, and exception will be rethrown only on call to 'wait' function.
