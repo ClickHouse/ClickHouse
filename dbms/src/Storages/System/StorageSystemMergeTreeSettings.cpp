@@ -20,7 +20,7 @@ void SystemMergeTreeSettings::fillData(MutableColumns & res_columns, const Conte
 {
     const MergeTreeSettings & settings = context.getMergeTreeSettings();
 
-#define ADD_SETTING(TYPE, NAME, DEFAULT)              \
+#define ADD_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)              \
     res_columns[0]->insert(#NAME);            \
     res_columns[1]->insert(settings.NAME.toString()); \
     res_columns[2]->insert(settings.NAME.changed);
