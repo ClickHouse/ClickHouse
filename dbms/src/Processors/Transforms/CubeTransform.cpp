@@ -39,6 +39,7 @@ Chunk CubeTransform::generate()
     if (mask)
     {
         --mask;
+        consumed_chunk = gen_chunk;
 
         auto columns = current_columns;
         for (size_t i = 0; i < keys.size(); ++i)
@@ -49,7 +50,7 @@ Chunk CubeTransform::generate()
         auto cube_block = params->aggregator.mergeBlocks(cube_blocks, false);
 
         auto num_rows = cube_block.rows();
-        consumed_chunk = Chunk(cube_block.getColumns(), num_rows);
+        gen_chunk = Chunk(cube_block.getColumns(), num_rows);
     }
 
     finalizeChunk(gen_chunk);
