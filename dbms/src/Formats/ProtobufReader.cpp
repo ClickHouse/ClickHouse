@@ -43,7 +43,7 @@ namespace
 
     void unknownFormat()
     {
-        throw Exception("Protobuf messages are corrupted or doesn't match the provided schema", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
+        throw Exception("Protobuf messages are corrupted or doesn't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
     }
 }
 
