@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
     extern const int TOP_AND_LIMIT_TOGETHER;
+    extern const int WITH_TIES_WITHOUT_ORDER_BY;
 }
 
 
@@ -243,9 +244,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->limit_with_ties = true;
     }
 
-    // WITH TIES was used without ORDER BY
+    /// WITH TIES was used without ORDER BY
     if (!order_expression_list && select_query->limit_with_ties)
-        return false;
+        throw Exception("Can not use WITH TIES without ORDER BY", ErrorCodes::WITH_TIES_WITHOUT_ORDER_BY);
 
     /// SETTINGS key1 = value1, key2 = value2, ...
     if (s_settings.ignore(pos, expected))

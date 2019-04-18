@@ -426,6 +426,7 @@ namespace ErrorCodes
     extern const int BROTLI_WRITE_FAILED = 449;
     extern const int BAD_TTL_EXPRESSION = 450;
     extern const int BAD_TTL_FILE = 451;
+    extern const int WITH_TIES_WITHOUT_ORDER_BY = 452;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
