@@ -90,8 +90,6 @@ private:
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
-    /// Each new thread will be attached to thread_group if it's not empty.
-    DB::ThreadGroupStatusPtr thread_group;
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
@@ -122,7 +120,7 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
 class GlobalThreadPool : public FreeThreadPool, public ext::singleton<GlobalThreadPool>
 {
 public:
-    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000, nullptr) {}
+    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000) {}
 };
 
 
