@@ -58,20 +58,22 @@ struct ExtractFirstSignificantSubdomain
         if (!last_3_periods[2])
             last_3_periods[2] = begin - 1;
 
-	auto end_of_level_domain = find_first_symbols<'/'>(last_3_periods[0], end); 
-	if (!end_of_level_domain)
-	{
-	    end_of_level_domain = end;
-	}
+        auto end_of_level_domain = find_first_symbols<'/'>(last_3_periods[0], end); 
+        if (!end_of_level_domain)
+        {
+            end_of_level_domain = end;
+        }
 
-	if (tldLookup::is_valid(last_3_periods[1] + 1, end_of_level_domain - last_3_periods[1] - 1) != nullptr)
-	{
+        if (tldLookup::is_valid(last_3_periods[1] + 1, end_of_level_domain - last_3_periods[1] - 1) != nullptr)
+        {
             res_data += last_3_periods[2] + 1 - begin;
             res_size = last_3_periods[1] - last_3_periods[2] - 1;
-	} else {
+	}
+        else
+        {
             res_data += last_3_periods[1] + 1 - begin;
             res_size = last_3_periods[0] - last_3_periods[1] - 1;
-	}
+        }
 
    }
 };
