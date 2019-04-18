@@ -46,7 +46,7 @@ UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_si
     return LZ4_compress_default(source, dest, source_size, LZ4_COMPRESSBOUND(source_size));
 }
 
-void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+void CompressionCodecLZ4::doDecompressData(const char * source, UInt32, char * dest, UInt32 uncompressed_size) const
 {
     if (LZ4_decompress_fast(source, dest, uncompressed_size) < 0)
         throw Exception("Cannot LZ4_decompress_safe", ErrorCodes::CANNOT_DECOMPRESS);
