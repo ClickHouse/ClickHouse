@@ -21,10 +21,10 @@ void CubeTransform::consume(Chunk chunk)
 
     current_columns = consumed_chunk.getColumns();
     current_zero_columns.clear();
-    current_zero_columns.reserve(current_columns.size());
+    current_zero_columns.reserve(keys.size());
 
-    for (auto & column : current_columns)
-        current_zero_columns.emplace_back(column->cloneEmpty()->cloneResized(num_rows));
+    for (auto key : keys)
+        current_zero_columns.emplace_back(current_columns[key]->cloneEmpty()->cloneResized(num_rows));
 }
 
 bool CubeTransform::canGenerate()
@@ -41,9 +41,9 @@ Chunk CubeTransform::generate()
         --mask;
 
         auto columns = current_columns;
-        for (size_t i = 0; i < columns.size(); ++i)
+        for (size_t i = 0; i < keys.size(); ++i)
             if (mask & (UInt64(1) << i))
-                columns[i] = current_zero_columns[i];
+                columns[keys[i]] = current_zero_columns[i];
 
         BlocksList cube_blocks = { getInputPort().getHeader().cloneWithColumns(columns) };
         auto cube_block = params->aggregator.mergeBlocks(cube_blocks, false);
