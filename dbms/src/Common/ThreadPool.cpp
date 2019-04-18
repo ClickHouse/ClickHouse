@@ -143,14 +143,6 @@ size_t ThreadPoolImpl<Thread>::active() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
-    if (thread_group)
-        DB::CurrentThread::attachTo(thread_group);
-
-    SCOPE_EXIT(
-        if (thread_group)
-            DB::CurrentThread::detachQueryIfNotDetached()
-    );
-
     while (true)
     {
         Job job;
