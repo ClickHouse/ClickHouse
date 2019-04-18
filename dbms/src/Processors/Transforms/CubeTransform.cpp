@@ -16,7 +16,7 @@ CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_
 void CubeTransform::consume(Chunk chunk)
 {
     consumed_chunk = std::move(chunk);
-    auto num_rows = current_chunk.getNumRows();
+    auto num_rows = consumed_chunk.getNumRows();
     mask = (UInt64(1) << keys.size()) - 1;
 
     current_columns = consumed_chunk.getColumns();
@@ -43,7 +43,7 @@ Chunk CubeTransform::generate()
 
         auto columns = current_columns;
         for (size_t i = 0; i < keys.size(); ++i)
-            if (mask & (UInt64(1) << i))
+            if ((mask & (UInt64(1) << i)) == 0)
                 columns[keys[i]] = current_zero_columns[i];
 
         BlocksList cube_blocks = { getInputPort().getHeader().cloneWithColumns(columns) };
