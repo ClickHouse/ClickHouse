@@ -121,26 +121,32 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
         auto transform = callProcessorGetter(current_header, getter, stream_type);
 
-        if (transform->getInputs().size() != 1)
-            throw Exception("Processor for query pipeline transform should have single input, "
-                            "but " + transform->getName() + " has " +
-                            toString(transform->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
+        if (transform)
+        {
+            if (transform->getInputs().size() != 1)
+                throw Exception("Processor for query pipeline transform should have single input, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getInputs().size()) + " inputs.", ErrorCodes::LOGICAL_ERROR);
 
-        if (transform->getOutputs().size() != 1)
-            throw Exception("Processor for query pipeline transform should have single output, "
-                            "but " + transform->getName() + " has " +
-                            toString(transform->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
+            if (transform->getOutputs().size() != 1)
+                throw Exception("Processor for query pipeline transform should have single output, "
+                                "but " + transform->getName() + " has " +
+                                toString(transform->getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
+        }
 
-        auto & out_header = transform->getOutputs().front().getHeader();
-
+        auto & out_header = transform ? transform->getOutputs().front().getHeader()
+                                      : stream->getHeader();
         if (header)
             assertBlocksHaveEqualStructure(header, out_header, "QueryPipeline");
         else
             header = out_header;
 
-        connect(*stream, transform->getInputs().front());
-        stream = &transform->getOutputs().front();
-        processors.emplace_back(std::move(transform));
+        if (transform)
+        {
+            connect(*stream, transform->getInputs().front());
+            stream = &transform->getOutputs().front();
+            processors.emplace_back(std::move(transform));
+        }
     };
 
     for (auto & stream : streams)

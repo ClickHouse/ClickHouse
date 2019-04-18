@@ -1729,8 +1729,11 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, true);
 
-    pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
+        if (stream_type != QueryPipeline::StreamType::Main)
+            return nullptr;
+
         if (modificator == Modificator::ROLLUP)
             return std::make_shared<RollupTransform>(header, std::move(transform_params));
         else
