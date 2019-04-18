@@ -39,18 +39,17 @@ Chunk CubeTransform::generate()
     if (mask)
     {
         --mask;
-        consumed_chunk = gen_chunk;
 
         auto columns = current_columns;
         for (size_t i = 0; i < keys.size(); ++i)
-            if ((mask & (UInt64(1) << i)) == 0)
+            if (mask & (UInt64(1) << i))
                 columns[keys[i]] = current_zero_columns[i];
 
         BlocksList cube_blocks = { getInputPort().getHeader().cloneWithColumns(columns) };
         auto cube_block = params->aggregator.mergeBlocks(cube_blocks, false);
 
         auto num_rows = cube_block.rows();
-        gen_chunk = Chunk(cube_block.getColumns(), num_rows);
+        consumed_chunk = Chunk(cube_block.getColumns(), num_rows);
     }
 
     finalizeChunk(gen_chunk);
