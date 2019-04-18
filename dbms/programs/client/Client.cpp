@@ -816,8 +816,7 @@ private:
             {
                 if (!old_settings)
                     old_settings.emplace(context.getSettingsRef());
-                for (const auto & change : settings_ast.as<ASTSetQuery>()->changes)
-                    context.setSetting(change.name, change.value);
+                context.applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
             };
             const auto * insert = parsed_query->as<ASTInsertQuery>();
             if (insert && insert->settings_ast)
@@ -847,7 +846,7 @@ private:
                     if (change.name == "profile")
                         current_profile = change.value.safeGet<String>();
                     else
-                        context.setSetting(change.name, change.value);
+                        context.applySettingChange(change);
                 }
             }
 

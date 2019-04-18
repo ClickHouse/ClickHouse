@@ -497,8 +497,7 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    auto readonly_before_query = settings.readonly;
-
+    SettingsChanges settings_changes;
     for (auto it = params.begin(); it != params.end(); ++it)
     {
         if (it->first == "database")
@@ -515,20 +514,12 @@ void HTTPHandler::processQuery(
         else
         {
             /// All other query parameters are treated as settings.
-            String value;
-            /// Setting is skipped if value wasn't changed.
-            if (!settings.tryGet(it->first, value) || it->second != value)
-            {
-                if (readonly_before_query == 1)
-                    throw Exception("Cannot override setting (" + it->first + ") in readonly mode", ErrorCodes::READONLY);
-
-                if (readonly_before_query && it->first == "readonly")
-                    throw Exception("Setting 'readonly' cannot be overrided in readonly mode", ErrorCodes::READONLY);
-
-                context.setSetting(it->first, it->second);
-            }
+            settings_changes.push_back({it->first, it->second});
         }
     }
+
+    context.checkSettingsConstraints(settings_changes);
+    context.applySettingsChanges(settings_changes);
 
     /// HTTP response compression is turned on only if the client signalled that they support it
     /// (using Accept-Encoding header) and 'enable_http_compression' setting is turned on.

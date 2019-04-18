@@ -36,6 +36,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Compiler.h>
+#include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -1027,27 +1028,53 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
-void Context::setSetting(const String & name, const Field & value)
+void Context::setSetting(const String & name, const String & value)
 {
+    auto lock = getLock();
     if (name == "profile")
     {
-        auto lock = getLock();
-        settings.setProfile(value.safeGet<String>(), *shared->users_config);
+        settings.setProfile(value, *shared->users_config);
+        return;
     }
-    else
-        settings.set(name, value);
+    settings.set(name, value);
 }
 
 
-void Context::setSetting(const String & name, const std::string & value)
+void Context::setSetting(const String & name, const Field & value)
 {
+    auto lock = getLock();
     if (name == "profile")
     {
-        auto lock = getLock();
-        settings.setProfile(value, *shared->users_config);
+        settings.setProfile(value.safeGet<String>(), *shared->users_config);
+        return;
     }
-    else
-        settings.set(name, value);
+    settings.set(name, value);
+}
+
+
+void Context::applySettingChange(const SettingChange & change)
+{
+    setSetting(change.name, change.value);
+}
+
+
+void Context::applySettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+        applySettingChange(change);
+}
+
+
+void Context::checkSettingsConstraints(const SettingChange & change)
+{
+    SettingsConstraints::check(settings, change);
+}
+
+
+void Context::checkSettingsConstraints(const SettingsChanges & changes)
+{
+    SettingsConstraints::check(settings, changes);
 }
 
 

@@ -25,12 +25,19 @@ namespace ErrorCodes
     extern const int UNKNOWN_LOG_LEVEL;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_SETTING;
 }
 
 template <typename IntType>
 String SettingInt<IntType>::toString() const
 {
     return DB::toString(value);
+}
+
+template <typename IntType>
+Field SettingInt<IntType>::toField() const
+{
+    return value;
 }
 
 template <typename IntType>
@@ -43,7 +50,10 @@ void SettingInt<IntType>::set(IntType x)
 template <typename IntType>
 void SettingInt<IntType>::set(const Field & x)
 {
-    set(applyVisitor(FieldVisitorConvertToNumber<IntType>(), x));
+    if (x.getType() == Field::Types::String)
+        set(get<const String &>(x));
+    else
+        set(applyVisitor(FieldVisitorConvertToNumber<IntType>(), x));
 }
 
 template <typename IntType>
@@ -53,17 +63,17 @@ void SettingInt<IntType>::set(const String & x)
 }
 
 template <typename IntType>
-void SettingInt<IntType>::set(ReadBuffer & buf)
+void SettingInt<IntType>::serialize(WriteBuffer & buf) const
+{
+    writeVarT(value, buf);
+}
+
+template <typename IntType>
+void SettingInt<IntType>::deserialize(ReadBuffer & buf)
 {
     IntType x = 0;
     readVarT(x, buf);
     set(x);
-}
-
-template <typename IntType>
-void SettingInt<IntType>::write(WriteBuffer & buf) const
-{
-    writeVarT(value, buf);
 }
 
 template struct SettingInt<UInt64>;
@@ -76,6 +86,11 @@ String SettingMaxThreads::toString() const
     return DB::toString(value);
 }
 
+Field SettingMaxThreads::toField() const
+{
+    return is_auto ? 0 : value;
+}
+
 void SettingMaxThreads::set(UInt64 x)
 {
     value = x ? x : getAutoValue();
@@ -86,7 +101,7 @@ void SettingMaxThreads::set(UInt64 x)
 void SettingMaxThreads::set(const Field & x)
 {
     if (x.getType() == Field::Types::String)
-        set(safeGet<const String &>(x));
+        set(get<const String &>(x));
     else
         set(safeGet<UInt64>(x));
 }
@@ -99,16 +114,16 @@ void SettingMaxThreads::set(const String & x)
         set(parse<UInt64>(x));
 }
 
-void SettingMaxThreads::set(ReadBuffer & buf)
+void SettingMaxThreads::serialize(WriteBuffer & buf) const
+{
+    writeVarUInt(is_auto ? 0 : value, buf);
+}
+
+void SettingMaxThreads::deserialize(ReadBuffer & buf)
 {
     UInt64 x = 0;
     readVarUInt(x, buf);
     set(x);
-}
-
-void SettingMaxThreads::write(WriteBuffer & buf) const
-{
-    writeVarUInt(is_auto ? 0 : value, buf);
 }
 
 void SettingMaxThreads::setAuto()
@@ -135,6 +150,11 @@ String SettingSeconds::toString() const
     return DB::toString(totalSeconds());
 }
 
+Field SettingSeconds::toField() const
+{
+    return totalSeconds();
+}
+
 void SettingSeconds::set(const Poco::Timespan & x)
 {
     value = x;
@@ -148,7 +168,10 @@ void SettingSeconds::set(UInt64 x)
 
 void SettingSeconds::set(const Field & x)
 {
-    set(safeGet<UInt64>(x));
+    if (x.getType() == Field::Types::String)
+        set(get<const String &>(x));
+    else
+        set(safeGet<UInt64>(x));
 }
 
 void SettingSeconds::set(const String & x)
@@ -156,22 +179,27 @@ void SettingSeconds::set(const String & x)
     set(parse<UInt64>(x));
 }
 
-void SettingSeconds::set(ReadBuffer & buf)
+void SettingSeconds::serialize(WriteBuffer & buf) const
+{
+    writeVarUInt(value.totalSeconds(), buf);
+}
+
+void SettingSeconds::deserialize(ReadBuffer & buf)
 {
     UInt64 x = 0;
     readVarUInt(x, buf);
     set(x);
 }
 
-void SettingSeconds::write(WriteBuffer & buf) const
-{
-    writeVarUInt(value.totalSeconds(), buf);
-}
-
 
 String SettingMilliseconds::toString() const
 {
     return DB::toString(totalMilliseconds());
+}
+
+Field SettingMilliseconds::toField() const
+{
+    return totalMilliseconds();
 }
 
 void SettingMilliseconds::set(const Poco::Timespan & x)
@@ -187,7 +215,10 @@ void SettingMilliseconds::set(UInt64 x)
 
 void SettingMilliseconds::set(const Field & x)
 {
-    set(safeGet<UInt64>(x));
+    if (x.getType() == Field::Types::String)
+        set(get<const String &>(x));
+    else
+        set(safeGet<UInt64>(x));
 }
 
 void SettingMilliseconds::set(const String & x)
@@ -195,22 +226,27 @@ void SettingMilliseconds::set(const String & x)
     set(parse<UInt64>(x));
 }
 
-void SettingMilliseconds::set(ReadBuffer & buf)
+void SettingMilliseconds::serialize(WriteBuffer & buf) const
+{
+    writeVarUInt(value.totalMilliseconds(), buf);
+}
+
+void SettingMilliseconds::deserialize(ReadBuffer & buf)
 {
     UInt64 x = 0;
     readVarUInt(x, buf);
     set(x);
 }
 
-void SettingMilliseconds::write(WriteBuffer & buf) const
-{
-    writeVarUInt(value.totalMilliseconds(), buf);
-}
-
 
 String SettingFloat::toString() const
 {
     return DB::toString(value);
+}
+
+Field SettingFloat::toField() const
+{
+    return value;
 }
 
 void SettingFloat::set(float x)
@@ -221,7 +257,10 @@ void SettingFloat::set(float x)
 
 void SettingFloat::set(const Field & x)
 {
-    set(applyVisitor(FieldVisitorConvertToNumber<float>(), x));
+    if (x.getType() == Field::Types::String)
+        set(get<const String &>(x));
+    else
+        set(applyVisitor(FieldVisitorConvertToNumber<float>(), x));
 }
 
 void SettingFloat::set(const String & x)
@@ -229,16 +268,16 @@ void SettingFloat::set(const String & x)
     set(parse<float>(x));
 }
 
-void SettingFloat::set(ReadBuffer & buf)
+void SettingFloat::serialize(WriteBuffer & buf) const
+{
+    writeBinary(toString(), buf);
+}
+
+void SettingFloat::deserialize(ReadBuffer & buf)
 {
     String x;
     readBinary(x, buf);
     set(x);
-}
-
-void SettingFloat::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
 }
 
 
@@ -261,6 +300,11 @@ String SettingLoadBalancing::toString() const
     return strings[static_cast<size_t>(value)];
 }
 
+Field SettingLoadBalancing::toField() const
+{
+    return toString();
+}
+
 void SettingLoadBalancing::set(LoadBalancing x)
 {
     value = x;
@@ -277,16 +321,16 @@ void SettingLoadBalancing::set(const String & x)
     set(getLoadBalancing(x));
 }
 
-void SettingLoadBalancing::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingLoadBalancing::write(WriteBuffer & buf) const
+void SettingLoadBalancing::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
+}
+
+void SettingLoadBalancing::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
 }
 
 
@@ -308,6 +352,11 @@ String SettingJoinStrictness::toString() const
     return strings[static_cast<size_t>(value)];
 }
 
+Field SettingJoinStrictness::toField() const
+{
+    return toString();
+}
+
 void SettingJoinStrictness::set(JoinStrictness x)
 {
     value = x;
@@ -324,16 +373,16 @@ void SettingJoinStrictness::set(const String & x)
     set(getJoinStrictness(x));
 }
 
-void SettingJoinStrictness::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingJoinStrictness::write(WriteBuffer & buf) const
+void SettingJoinStrictness::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
+}
+
+void SettingJoinStrictness::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
 }
 
 
@@ -360,6 +409,11 @@ String SettingTotalsMode::toString() const
     __builtin_unreachable();
 }
 
+Field SettingTotalsMode::toField() const
+{
+    return toString();
+}
+
 void SettingTotalsMode::set(TotalsMode x)
 {
     value = x;
@@ -376,17 +430,18 @@ void SettingTotalsMode::set(const String & x)
     set(getTotalsMode(x));
 }
 
-void SettingTotalsMode::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingTotalsMode::write(WriteBuffer & buf) const
+void SettingTotalsMode::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
 }
+
+void SettingTotalsMode::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
+}
+
 
 
 template <bool enable_mode_any>
@@ -422,6 +477,12 @@ String SettingOverflowMode<enable_mode_any>::toString() const
 }
 
 template <bool enable_mode_any>
+Field SettingOverflowMode<enable_mode_any>::toField() const
+{
+    return toString();
+}
+
+template <bool enable_mode_any>
 void SettingOverflowMode<enable_mode_any>::set(OverflowMode x)
 {
     value = x;
@@ -441,18 +502,19 @@ void SettingOverflowMode<enable_mode_any>::set(const String & x)
 }
 
 template <bool enable_mode_any>
-void SettingOverflowMode<enable_mode_any>::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-template <bool enable_mode_any>
-void SettingOverflowMode<enable_mode_any>::write(WriteBuffer & buf) const
+void SettingOverflowMode<enable_mode_any>::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
 }
+
+template <bool enable_mode_any>
+void SettingOverflowMode<enable_mode_any>::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
+}
+
 
 template struct SettingOverflowMode<false>;
 template struct SettingOverflowMode<true>;
@@ -476,6 +538,11 @@ String SettingDistributedProductMode::toString() const
     return strings[static_cast<size_t>(value)];
 }
 
+Field SettingDistributedProductMode::toField() const
+{
+    return toString();
+}
+
 void SettingDistributedProductMode::set(DistributedProductMode x)
 {
     value = x;
@@ -492,20 +559,25 @@ void SettingDistributedProductMode::set(const String & x)
     set(getDistributedProductMode(x));
 }
 
-void SettingDistributedProductMode::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingDistributedProductMode::write(WriteBuffer & buf) const
+void SettingDistributedProductMode::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
 }
 
+void SettingDistributedProductMode::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
+}
+
 
 String SettingString::toString() const
+{
+    return value;
+}
+
+Field SettingString::toField() const
 {
     return value;
 }
@@ -521,22 +593,27 @@ void SettingString::set(const Field & x)
     set(safeGet<const String &>(x));
 }
 
-void SettingString::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingString::write(WriteBuffer & buf) const
+void SettingString::serialize(WriteBuffer & buf) const
 {
     writeBinary(value, buf);
+}
+
+void SettingString::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
 }
 
 
 String SettingChar::toString() const
 {
     return String(1, value);
+}
+
+Field SettingChar::toField() const
+{
+    return toString();
 }
 
 void SettingChar::set(char x)
@@ -559,16 +636,16 @@ void SettingChar::set(const Field & x)
     set(s);
 }
 
-void SettingChar::set(ReadBuffer & buf)
+void SettingChar::serialize(WriteBuffer & buf) const
+{
+    writeBinary(toString(), buf);
+}
+
+void SettingChar::deserialize(ReadBuffer & buf)
 {
     String s;
     readBinary(s, buf);
     set(s);
-}
-
-void SettingChar::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
 }
 
 
@@ -588,6 +665,11 @@ String SettingDateTimeInputFormat::toString() const
     return strings[static_cast<size_t>(value)];
 }
 
+Field SettingDateTimeInputFormat::toField() const
+{
+    return toString();
+}
+
 void SettingDateTimeInputFormat::set(Value x)
 {
     value = x;
@@ -604,16 +686,16 @@ void SettingDateTimeInputFormat::set(const String & x)
     set(getValue(x));
 }
 
-void SettingDateTimeInputFormat::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingDateTimeInputFormat::write(WriteBuffer & buf) const
+void SettingDateTimeInputFormat::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
+}
+
+void SettingDateTimeInputFormat::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
 }
 
 
@@ -635,6 +717,11 @@ String SettingLogsLevel::toString() const
     return strings[static_cast<size_t>(value)];
 }
 
+Field SettingLogsLevel::toField() const
+{
+    return toString();
+}
+
 void SettingLogsLevel::set(Value x)
 {
     value = x;
@@ -651,16 +738,33 @@ void SettingLogsLevel::set(const String & x)
     set(getValue(x));
 }
 
-void SettingLogsLevel::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingLogsLevel::write(WriteBuffer & buf) const
+void SettingLogsLevel::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
 }
 
+void SettingLogsLevel::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
+}
+
+
+namespace details
+{
+    String SettingsCollectionUtils::deserializeName(ReadBuffer & buf)
+    {
+        String name;
+        readBinary(name, buf);
+        return name;
+    }
+
+    void SettingsCollectionUtils::serializeName(const StringRef & name, WriteBuffer & buf) { writeBinary(name, buf); }
+
+    void SettingsCollectionUtils::throwNameNotFound(const StringRef & name)
+    {
+        throw Exception("Unknown setting " + name.toString(), ErrorCodes::UNKNOWN_SETTING);
+    }
+}
 }
