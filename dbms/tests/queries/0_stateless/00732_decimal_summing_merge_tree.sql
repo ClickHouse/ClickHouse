@@ -1,4 +1,3 @@
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS decimal_sum;
 CREATE TABLE decimal_sum
 (
