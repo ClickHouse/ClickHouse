@@ -477,11 +477,15 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
     auto lazy_format = std::make_shared<LazyOutputFormat>(pipeline.getHeader());
     pipeline.setOutput(lazy_format);
 
-    ThreadPool pool(1, 1, 1);
+    ThreadPool pool(1, 1, 1, CurrentThread::getGroup());
     auto executor = pipeline.execute(num_threads);
     bool exception = false;
+
     pool.schedule([&]()
     {
+        CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
+        setThreadName("QueryPipelineEx");
+
         try
         {
             executor->execute();
