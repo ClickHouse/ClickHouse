@@ -16,11 +16,11 @@ namespace DB
 {
 
 class IColumn;
-class Field;
+
 
 /** Settings of query execution.
   */
-struct Settings
+struct Settings : public SettingsCollection<Settings>
 {
     /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
     /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
@@ -315,48 +315,18 @@ struct Settings
     \
     M(SettingUInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.") \
 
-#define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    TYPE NAME {DEFAULT};
-
-    APPLY_FOR_SETTINGS(DECLARE)
-
-#undef DECLARE
-
-    /// Set setting by name.
-    void set(const String & name, const Field & value);
-
-    /// Set setting by name. Read value, serialized in binary form from buffer (for inter-server communication).
-    void set(const String & name, ReadBuffer & buf);
-
-    /// Skip value, serialized in binary form in buffer.
-    void ignore(const String & name, ReadBuffer & buf);
-
-    /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
-    void set(const String & name, const String & value);
-
-    /// Get setting by name. Converts value to String.
-    String get(const String & name) const;
-
-    bool tryGet(const String & name, String & value) const;
+    DECLARE_SETTINGS_COLLECTION(APPLY_FOR_SETTINGS)
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
-      * The profile can also be set using the `set` functions, like the profile setting.
-      */
+     * The profile can also be set using the `set` functions, like the profile setting.
+     */
     void setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config);
 
     /// Load settings from configuration file, at "path" prefix in configuration.
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
-    /// Read settings from buffer. They are serialized as list of contiguous name-value pairs, finished with empty name.
-    /// If readonly=1 is set, ignore read settings.
-    void deserialize(ReadBuffer & buf);
-
-    /// Write changed settings to buffer. (For example, to be sent to remote server.)
-    void serialize(WriteBuffer & buf) const;
-
     /// Dumps profile events to two columns of type Array(String)
     void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
 };
-
 
 }

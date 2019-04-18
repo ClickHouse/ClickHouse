@@ -1,9 +1,16 @@
 #pragma once
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
-#include <Core/Types.h>
 #include <Core/SettingsCommon.h>
+
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
 
 
 namespace DB
@@ -14,7 +21,7 @@ class ASTStorage;
 /** Settings for the MergeTree family of engines.
   * Could be loaded from config or from a CREATE TABLE query (SETTINGS clause).
   */
-struct MergeTreeSettings
+struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 {
 
 #define APPLY_FOR_MERGE_TREE_SETTINGS(M) \
@@ -168,18 +175,12 @@ struct MergeTreeSettings
     /** Minimal time in seconds, when merge with TTL can be repeated */                                           \
     M(SettingInt64, merge_with_ttl_timeout, 3600 * 24, "")
 
+    DECLARE_SETTINGS_COLLECTION(APPLY_FOR_MERGE_TREE_SETTINGS)
+
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
     M(index_granularity)
 
-#define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    TYPE NAME {DEFAULT};
-
-    APPLY_FOR_MERGE_TREE_SETTINGS(DECLARE)
-
-#undef DECLARE
-
-public:
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// NOTE: will rewrite the AST to add immutable settings.

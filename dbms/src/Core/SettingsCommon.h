@@ -3,8 +3,12 @@
 #include <Poco/Timespan.h>
 #include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
+#include <common/StringRef.h>
+#include <Common/SettingsChanges.h>
 #include <Compression/CompressionInfo.h>
 #include <Core/Types.h>
+#include <ext/singleton.h>
+#include <unordered_map>
 
 
 namespace DB
@@ -36,8 +40,8 @@ struct SettingInt
     /// Serialize to a test string.
     String toString() const;
 
-    /// Serialize to binary stream suitable for transfer over network.
-    void write(WriteBuffer & buf) const;
+    /// Converts to a field.
+    Field toField() const;
 
     void set(IntType x);
 
@@ -47,8 +51,11 @@ struct SettingInt
     /// Read from text string.
     void set(const String & x);
 
+    /// Serialize to binary stream suitable for transfer over network.
+    void serialize(WriteBuffer & buf) const;
+
     /// Read from binary stream.
-    void set(ReadBuffer & buf);
+    void deserialize(ReadBuffer & buf);
 };
 
 using SettingUInt64 = SettingInt<UInt64>;
@@ -72,13 +79,14 @@ struct SettingMaxThreads
     SettingMaxThreads & operator= (UInt64 x) { set(x); return *this; }
 
     String toString() const;
+    Field toField() const;
 
     void set(UInt64 x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 
     void setAuto();
     UInt64 getAutoValue() const;
@@ -101,15 +109,16 @@ struct SettingSeconds
     Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
 
     String toString() const;
+    Field toField() const;
 
     void set(const Poco::Timespan & x);
 
     void set(UInt64 x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -126,13 +135,15 @@ struct SettingMilliseconds
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
 
     String toString() const;
+    Field toField() const;
 
     void set(const Poco::Timespan & x);
     void set(UInt64 x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
+
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -147,13 +158,14 @@ struct SettingFloat
     SettingFloat & operator= (float x) { set(x); return *this; }
 
     String toString() const;
+    Field toField() const;
 
     void set(float x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -185,13 +197,14 @@ struct SettingLoadBalancing
     static LoadBalancing getLoadBalancing(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(LoadBalancing x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -216,13 +229,14 @@ struct SettingJoinStrictness
     static JoinStrictness getJoinStrictness(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(JoinStrictness x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -251,13 +265,14 @@ struct SettingTotalsMode
     static TotalsMode getTotalsMode(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(TotalsMode x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -276,13 +291,14 @@ struct SettingOverflowMode
     static OverflowMode getOverflowMode(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(OverflowMode x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 /// The setting for executing distributed subqueries inside IN or JOIN sections.
@@ -307,12 +323,14 @@ struct SettingDistributedProductMode
     static DistributedProductMode getDistributedProductMode(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(DistributedProductMode x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
+
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -327,12 +345,13 @@ struct SettingString
     SettingString & operator= (const String & x) { set(x); return *this; }
 
     String toString() const;
+    Field toField() const;
 
     void set(const String & x);
     void set(const Field & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -348,13 +367,14 @@ public:
     SettingChar & operator= (char x) { set(x); return *this; }
 
     String toString() const;
+    Field toField() const;
 
     void set(char x);
     void set(const String & x);
     void set(const Field & x);
-    void set(ReadBuffer & buf);
 
-    void write(WriteBuffer & buf) const;
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -373,12 +393,14 @@ struct SettingDateTimeInputFormat
     static Value getValue(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(Value x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
+
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
 
 
@@ -408,12 +430,351 @@ public:
     static Value getValue(const String & s);
 
     String toString() const;
+    Field toField() const;
 
     void set(Value x);
     void set(const Field & x);
     void set(const String & x);
-    void set(ReadBuffer & buf);
-    void write(WriteBuffer & buf) const;
+
+    void serialize(WriteBuffer & buf) const;
+    void deserialize(ReadBuffer & buf);
 };
+
+
+namespace details
+{
+    struct SettingsCollectionUtils
+    {
+        static void serializeName(const StringRef & name, WriteBuffer & buf);
+        static String deserializeName(ReadBuffer & buf);
+        static void throwNameNotFound(const StringRef & name);
+    };
+}
+
+
+/** Template class to define collections of settings.
+  * Example of usage:
+  *
+  * mysettings.h:
+  * struct MySettings : public SettingsCollection<MySettings>
+  * {
+  * #   define APPLY_FOR_MYSETTINGS(M) \
+  *         M(SettingUInt64, a, 100, "Description of a") \
+  *         M(SettingFloat, f, 3.11, "Description of f") \
+  *         M(SettingString, s, "default", "Description of s")
+  *
+  *     DECLARE_SETTINGS_COLLECTION(MySettings, APPLY_FOR_MYSETTINGS)
+  * };
+  *
+  * mysettings.cpp:
+  * IMPLEMENT_SETTINGS_COLLECTION(MySettings, APPLY_FOR_MYSETTINGS)
+  */
+template <typename T>
+class SettingsCollection
+{
+private:
+    using Type = T;
+    using GetStringFunction = String (*)(const Type &);
+    using GetFieldFunction = Field (*)(const Type &);
+    using SetStringFunction = void (*)(Type &, const String &);
+    using SetFieldFunction = void (*)(Type &, const Field &);
+    using SerializeFunction = void (*)(const Type &, WriteBuffer & buf);
+    using DeserializeFunction = void (*)(Type &, ReadBuffer & buf);
+
+    struct MemberInfo
+    {
+        size_t offset_of_changed;
+        StringRef name;
+        StringRef description;
+        GetStringFunction get_string;
+        GetFieldFunction get_field;
+        SetStringFunction set_string;
+        SetFieldFunction set_field;
+        SerializeFunction serialize;
+        DeserializeFunction deserialize;
+        bool isChanged(const Type & collection) const { return *reinterpret_cast<const bool*>(reinterpret_cast<const UInt8*>(&collection) + offset_of_changed); }
+    };
+
+    using MemberInfos = std::vector<MemberInfo>;
+
+    class Layout
+    {
+    public:
+        size_t size() const { return infos.size(); }
+        const MemberInfo & operator[](size_t index) const { return infos[index]; }
+
+        static constexpr size_t npos = static_cast<size_t>(-1);
+
+        size_t find(const StringRef & name) const
+        {
+            auto map_it = by_name_map.find(name);
+            if (map_it == by_name_map.end())
+                return npos;
+            else
+                return map_it->second;
+        }
+
+        size_t findStrict(const StringRef & name) const
+        {
+            auto map_it = by_name_map.find(name);
+            if (map_it == by_name_map.end())
+                details::SettingsCollectionUtils::throwNameNotFound(name);
+            return map_it->second;
+        }
+
+        void addMemberInfo(MemberInfo && info)
+        {
+            size_t index = infos.size();
+            infos.emplace_back(info);
+            by_name_map.emplace(infos.back().name, index);
+        }
+
+    private:
+        MemberInfos infos;
+        std::unordered_map<StringRef, size_t> by_name_map;
+    };
+
+    static const Layout & getLayout();
+    Type & castThis() { return static_cast<Type &>(*this); }
+    const Type & castThis() const { return static_cast<const Type &>(*this); }
+
+public:
+    /// Provides access to a setting.
+    class reference
+    {
+    public:
+        const StringRef & getName() const { return member.name; }
+        const StringRef & getDescription() const { return member.description; }
+        bool isChanged() const { return member.isChanged(collection); }
+        Field getValue() const { return member.get_field(collection); }
+        String getValueAsString() const { return member.get_string(collection); }
+        void setValue(const Field & value) { member.set_field(collection, value); }
+        void setValue(const String & value) { member.set_string(collection, value); }
+
+        reference(Type & collection_, const MemberInfo & member_) : collection(collection_), member(member_) {}
+    private:
+        Type & collection;
+        const MemberInfo & member;
+    };
+
+    /// Provides read-only access to a setting.
+    class const_reference
+    {
+    public:
+        const StringRef & getName() const { return member.name; }
+        const StringRef & getDescription() const { return member.description; }
+        bool isChanged() const { return member.isChanged(collection); }
+        Field getValue() const { return member.get_field(collection); }
+        String getValueAsString() const { return member.get_string(collection); }
+
+        const_reference(const Type & collection_, const MemberInfo & member_) : collection(collection_), member(member_) {}
+    private:
+        const Type & collection;
+        const MemberInfo & member;
+    };
+
+    /// Returns number of settings.
+    size_t size() const { return getLayout().size(); }
+
+    /// Returns a setting by its zero-based index.
+    reference operator [](size_t index) { return reference(castThis(), getLayout()[index]); }
+    const_reference operator [](size_t index) const { return const_reference(castThis(), getLayout()[index]); }
+
+    /// Returns a setting by its name. Throws an exception if there is not setting with such name.
+    reference operator [](const String & name)
+    {
+        const Layout & layout = getLayout();
+        return reference(castThis(), layout[layout.findStrict(name)]);
+    }
+
+    const_reference operator [](const String & name) const
+    {
+        const Layout & layout = getLayout();
+        return const_reference(castThis(), layout[layout.findStrict(name)]);
+    }
+
+    /// Finds a setting by name and returns its index. Returns npos if not found.
+    size_t find(const String & name) const { return getLayout().find(name); }
+    static constexpr size_t npos = static_cast<size_t>(-1);
+
+    /// Finds a setting by name and returns its index. Throws an exception if not found.
+    size_t findStrict(const String & name) const { return getLayout().findStrict(name); }
+
+    /// Sets setting by name.
+    void set(const String & name, const Field & value) { (*this)[name].setValue(value); }
+
+    /// Sets setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
+    void set(const String & name, const String & value) { (*this)[name].setValue(value); }
+
+    /// Returns the value of a setting.
+    Field get(const String & name) const { return (*this)[name].getValue(); }
+
+    /// Returns the value of a setting converted to string.
+    String getAsString(const String & name) const { return (*this)[name].getValueAsString(); }
+
+    /// Returns the value of a setting.
+    bool tryGet(const String & name, Field & value) const
+    {
+        const Layout & layout = getLayout();
+        size_t index = layout.find(name);
+        if (index == npos)
+            return false;
+        value = layout[index].get_field(castThis());
+        return true;
+    }
+
+    /// Returns the value of a setting converted to string.
+    bool tryGet(const String & name, String & value) const
+    {
+        const Layout & layout = getLayout();
+        size_t index = layout.find(name);
+        if (index == npos)
+            return false;
+        value = layout[index].get_string(castThis());
+        return true;
+    }
+
+    /// Compares two collections of settings.
+    bool operator ==(const Type & rhs) const
+    {
+        const Layout & layout = getLayout();
+        for (size_t i = 0; i != layout.size(); ++i)
+        {
+            const auto & member = layout[i];
+            bool left_changed = member.isChanged(castThis());
+            bool right_changed = member.isChanged(rhs);
+            if (left_changed || right_changed)
+            {
+                if (left_changed != right_changed)
+                    return false;
+                if (member.get_field(castThis()) != member.get_field(rhs))
+                    return false;
+            }
+        }
+        return true;
+    }
+
+    bool operator !=(const Type & rhs) const
+    {
+        return !(*this == rhs);
+    }
+
+    /// Gathers all changed values (e.g. for applying them later to another collection of settings).
+    SettingsChanges changes() const
+    {
+        SettingsChanges found_changes;
+        const Layout & layout = getLayout();
+        for (size_t i = 0; i != layout.size(); ++i)
+        {
+            const auto & member = layout[i];
+            if (member.isChanged(castThis()))
+                found_changes.emplace_back(member.name.toString(), member.get_field(castThis()));
+        }
+        return found_changes;
+    }
+
+    /// Applies changes to the settings.
+    void applyChange(const SettingChange & change)
+    {
+        set(change.name, change.value);
+    }
+
+    void applyChanges(const SettingsChanges & changes)
+    {
+        for (const SettingChange & change : changes)
+            applyChange(change);
+    }
+
+    void copyChangesFrom(const Type & src)
+    {
+        const Layout & layout = getLayout();
+        for (size_t i = 0; i != layout.size(); ++i)
+        {
+            const auto & member = layout[i];
+            if (member.isChanged(src))
+                member.set_field(castThis(), member.get_field(src));
+        }
+    }
+
+    void copyChangesTo(Type & dest) const
+    {
+        dest.copyChangesFrom(castThis());
+    }
+
+    /// Writes the settings to buffer (e.g. to be sent to remote server).
+    /// Only changed settings are written. They are written as list of contiguous name-value pairs,
+    /// finished with empty name.
+    void serialize(WriteBuffer & buf) const
+    {
+        const Layout & layout = getLayout();
+        for (size_t i = 0; i != layout.size(); ++i)
+        {
+            const auto & member = layout[i];
+            if (member.isChanged(castThis()))
+            {
+                details::SettingsCollectionUtils::serializeName(member.name, buf);
+                member.serialize(castThis(), buf);
+            }
+        }
+        details::SettingsCollectionUtils::serializeName(StringRef{} /* empty string is a marker of the end of settings */, buf);
+    }
+
+    /// Reads the settings from buffer.
+    void deserialize(ReadBuffer & buf)
+    {
+        const Layout & layout = getLayout();
+        while (true)
+        {
+            String name = details::SettingsCollectionUtils::deserializeName(buf);
+            if (name.empty() /* empty string is a marker of the end of settings */)
+                break; \
+            const auto & member = layout[layout.findStrict(name)];
+            member.deserialize(castThis(), buf); \
+        }
+    }
+};
+
+#define DECLARE_SETTINGS_COLLECTION(APPLY_MACRO) \
+    APPLY_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
+
+
+#define IMPLEMENT_SETTINGS_COLLECTION(CLASS_NAME, APPLY_MACRO) \
+    template<> \
+    const SettingsCollection<CLASS_NAME>::Layout & SettingsCollection<CLASS_NAME>::getLayout() \
+    { \
+        struct Functions \
+        { \
+            APPLY_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
+        }; \
+        static const SettingsCollection<Type>::Layout single_instance = [] \
+        { \
+            SettingsCollection<Type>::Layout layout; \
+            APPLY_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
+            return layout; \
+        }(); \
+        return single_instance; \
+    }
+
+
+#define DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    TYPE NAME {DEFAULT};
+
+
+#define IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    static String NAME##_getString(const Type & collection) { return collection.NAME.toString(); } \
+    static Field NAME##_getField(const Type & collection) { return collection.NAME.toField(); } \
+    static void NAME##_setString(Type & collection, const String & value) { collection.NAME.set(value); } \
+    static void NAME##_setField(Type & collection, const Field & value) { collection.NAME.set(value); } \
+    static void NAME##_serialize(const Type & collection, WriteBuffer & buf) { collection.NAME.serialize(buf); } \
+    static void NAME##_deserialize(Type & collection, ReadBuffer & buf) { collection.NAME.deserialize(buf); }
+
+
+#define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
+    static_assert(std::is_same_v<decltype(std::declval<TYPE>().changed), bool>); \
+    layout.addMemberInfo({offsetof(Type, NAME.changed), \
+                          StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), \
+                          &Functions::NAME##_getString, &Functions::NAME##_getField, \
+                          &Functions::NAME##_setString, &Functions::NAME##_setField, \
+                          &Functions::NAME##_serialize, &Functions::NAME##_deserialize });
 
 }
