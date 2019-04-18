@@ -304,11 +304,11 @@ ClickHouse использует этот параметр при чтении д
 
 **Значение по умолчанию**: 0.
 
-## log_queries
+## log_queries {#settings-log-queries}
 
 Установка логгирования запроса.
 
-Запросы, переданные в ClickHouse с этой установкой, логгируются согласно правилам конфигурационного параметра сервера [query_log](../server_settings/settings.md) .
+Запросы, переданные в ClickHouse с этой установкой, логгируются согласно правилам конфигурационного параметра сервера [query_log](../server_settings/settings.md#server_settings-query-log).
 
 **Пример** :
 
