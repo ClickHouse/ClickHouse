@@ -286,12 +286,8 @@ void MutationsInterpreter::prepare(bool dry_run)
     {
         stages.emplace_back(context);
         for (const auto & column : affected_indices_columns)
-        {
             stages.back().column_to_updated.emplace(
-                    column,
-                    std::make_shared<ASTLiteral>(
-                            columns_desc.getPhysical(column).type->getName()));
-        }
+                    column, std::make_shared<ASTIdentifier>(column));
     }
 
 
