@@ -15,7 +15,7 @@ RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr par
 void RollupTransform::consume(Chunk chunk)
 {
     consumed_chunk = std::move(chunk);
-    last_removed_key = consumed_chunk.getNumColumns();
+    last_removed_key = keys.size();
 }
 
 bool RollupTransform::canGenerate()
@@ -30,10 +30,11 @@ Chunk RollupTransform::generate()
     if (last_removed_key)
     {
         --last_removed_key;
+        auto key = keys[last_removed_key];
 
         auto num_rows = gen_chunk.getNumRows();
         auto columns = gen_chunk.getColumns();
-        columns[last_removed_key] = columns[last_removed_key]->cloneEmpty()->cloneResized(num_rows);
+        columns[key] = columns[key]->cloneEmpty()->cloneResized(num_rows);
 
         BlocksList rollup_blocks = { getInputPort().getHeader().cloneWithColumns(columns) };
         auto rollup_block = params->aggregator.mergeBlocks(rollup_blocks, false);
