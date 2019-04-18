@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_COMPRESS;
+extern const int CANNOT_DECOMPRESS;
 extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
 extern const int ILLEGAL_CODEC_PARAMETER;
 }
@@ -47,7 +48,9 @@ UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_si
 
 void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
+    if (LZ4_decompress_fast(source, dest, uncompressed_size) < 0)
+        throw Exception("Cannot LZ4_decompress_safe", ErrorCodes::CANNOT_DECOMPRESS);
+    // LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
