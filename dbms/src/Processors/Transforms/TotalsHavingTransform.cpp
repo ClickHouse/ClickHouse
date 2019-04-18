@@ -51,14 +51,14 @@ TotalsHavingTransform::TotalsHavingTransform(
     , final(final_)
     , arena(std::make_shared<Arena>())
 {
-    /// Port for Totals.
-    outputs.emplace_back(outputs.front().getHeader(), this);
-
     if (!filter_column_name.empty())
         filter_column_pos = outputs.front().getHeader().getPositionByName(filter_column_name);
 
     finalized_header = getInputPort().getHeader();
     finalizeBlock(finalized_header);
+
+    /// Port for Totals.
+    outputs.emplace_back(finalized_header, this);
 
     /// Initialize current totals with initial state.
     current_totals.reserve(header.columns());

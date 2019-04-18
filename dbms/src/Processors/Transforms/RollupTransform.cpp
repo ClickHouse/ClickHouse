@@ -5,8 +5,7 @@ namespace DB
 {
 
 RollupTransform::RollupTransform(Block header, AggregatingTransformParamsPtr params_)
-    : IInflatingTransform(std::move(header)
-    , params_->getHeader())
+    : IInflatingTransform(std::move(header), params_->getHeader())
     , params(std::move(params_))
     , keys(params->params.keys)
 {
