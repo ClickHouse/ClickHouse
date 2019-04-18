@@ -13,6 +13,13 @@
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
 
+namespace DB
+{
+
+class ThreadGroupStatus;
+using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
+
+}
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -31,10 +38,11 @@ public:
     using Job = std::function<void()>;
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
-    explicit ThreadPoolImpl(size_t max_threads);
+    explicit ThreadPoolImpl(size_t max_threads, DB::ThreadGroupStatusPtr thread_group_);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
-    ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size);
+    /// Specify thread_group if thread pool is used for concrete query execution (or leave it it nullptr and attach to thread group manually).
+    ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size, DB::ThreadGroupStatusPtr thread_group_);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
     /// If an exception in some thread was thrown, method silently returns, and exception will be rethrown only on call to 'wait' function.
@@ -90,6 +98,8 @@ private:
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
+    /// Each new thread will be attached to thread_group if it's not empty.
+    DB::ThreadGroupStatusPtr thread_group;
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);
@@ -120,7 +130,7 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
 class GlobalThreadPool : public FreeThreadPool, public ext::singleton<GlobalThreadPool>
 {
 public:
-    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000) {}
+    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000, nullptr) {}
 };
 
 

@@ -12,12 +12,13 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
-#include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -586,7 +587,7 @@ PipelineExecutorPtr QueryPipeline::execute(size_t num_threads)
     if (executor)
         return executor;
 
-    pool = std::make_shared<ThreadPool>(num_threads, num_threads, num_threads);
+    pool = std::make_shared<ThreadPool>(num_threads, num_threads, num_threads, CurrentThread::getGroup());
     executor = std::make_shared<PipelineExecutor>(processors, pool.get());
 
     return executor;
