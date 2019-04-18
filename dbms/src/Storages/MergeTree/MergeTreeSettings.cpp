@@ -26,7 +26,7 @@ void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::U
     {
         String value = config.getString(config_elem + "." + key);
 
-#define SET(TYPE, NAME, DEFAULT) \
+#define SET(TYPE, NAME, DEFAULT, DESCRIPTION) \
         else if (key == #NAME) NAME.set(value);
 
         if (false) {}
@@ -43,7 +43,7 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
     {
         for (const ASTSetQuery::Change & setting : storage_def.settings->changes)
         {
-#define SET(TYPE, NAME, DEFAULT) \
+#define SET(TYPE, NAME, DEFAULT, DESCRIPTION) \
             else if (setting.name == #NAME) NAME.set(setting.value);
 
             if (false) {}
