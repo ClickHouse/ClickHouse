@@ -281,7 +281,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (query_analyzer->isRewriteSubqueriesPredicate())
         {
-            /// remake interpreter_subquery when PredicateOptimizer is rewrite subqueries and main table is subquery
+            /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
             if (is_subquery)
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                     table_expression,

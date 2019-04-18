@@ -1,7 +1,6 @@
 SET compile_expressions = 1;
 SET min_count_to_compile_expression = 1;
 SET optimize_move_to_prewhere = 0;
-SET enable_optimize_predicate_expression=0;
 
 DROP TABLE IF EXISTS dt;
 DROP TABLE IF EXISTS testx;
