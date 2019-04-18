@@ -44,7 +44,7 @@ Chunk CubeTransform::generate()
         auto size = keys.size();
         for (size_t i = 0; i < size; ++i)
             /// Reverse bit order to support previous behaviour.
-            if ((mask & (UInt64(1) << (size - i))) == 0)
+            if ((mask & (UInt64(1) << (size - i - 1))) == 0)
                 columns[keys[i]] = current_zero_columns[i];
 
         BlocksList cube_blocks = { getInputPort().getHeader().cloneWithColumns(columns) };
