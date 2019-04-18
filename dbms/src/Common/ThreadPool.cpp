@@ -1,11 +1,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 #include <iostream>
 #include <type_traits>
-#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -18,14 +15,14 @@ namespace DB
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, DB::ThreadGroupStatusPtr thread_group_)
-    : ThreadPoolImpl(max_threads, max_threads, max_threads, std::move(thread_group_))
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads)
+    : ThreadPoolImpl(max_threads, max_threads, max_threads)
 {
 }
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size, DB::ThreadGroupStatusPtr thread_group_)
-    : max_threads(max_threads), max_free_threads(max_free_threads), queue_size(queue_size), thread_group(std::move(thread_group_))
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size)
+    : max_threads(max_threads), max_free_threads(max_free_threads), queue_size(queue_size)
 {
 }
 
