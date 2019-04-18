@@ -339,7 +339,7 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
 │ [1,2,3,4,nan,nan,NULL,NULL]                   │
 └───────────────────────────────────────────────┘
 ```
-You can pass to the `arraySort` function the lambda function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
+You can use lambda functions with the `arraySort` function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
 
 ## arrayReverseSort(arr1)
 
@@ -356,7 +356,7 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
 └──────────────────────────────────────────────────────┘
 ```
 
-You can pass to the `arrayReverseSort` function the lambda function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
+You can use lambda functions with the `arrayReverseSort` function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
 
 ## arrayReduce(agg_func, arr1, ...)
 
