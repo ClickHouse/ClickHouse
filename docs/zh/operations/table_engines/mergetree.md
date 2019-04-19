@@ -127,7 +127,7 @@ ClickHouse 会为每个数据分片创建一个索引文件，索引文件包含
 
 你可以只用一单一大表并不断地一块块往里面加入数据 – `MergeTree` 引擎的就是为了这样的场景。
 
-## 主键和索引在查询中的表现 {#primary-keys-and-indexes-in-queriesko
+## 主键和索引在查询中的表现  {#primary-keys-and-indexes-in-queries}
 
 我们以 `(CounterID, Date)` 以主键。排序好的索引的图示会是下面这样：
 
