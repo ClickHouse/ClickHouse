@@ -8,6 +8,8 @@ namespace DB
 
 namespace detail
 {
+
+/// gets pointers to all columns of block, which were used for ORDER BY
 ColumnRawPtrs getBlockColumns(const Block & block, const SortDescription description)
 {
     size_t size = description.size();
@@ -24,6 +26,16 @@ ColumnRawPtrs getBlockColumns(const Block & block, const SortDescription descrip
 
     return res;
 }
+
+
+void setSharedBlockRowRef(SharedBlockRowRef &row_ref, SharedBlockPtr shared_block, ColumnRawPtrs *columns,
+        size_t row_num)
+{
+    row_ref.row_num = row_num;
+    row_ref.columns = columns;
+    row_ref.shared_block = shared_block;
+}
+
 }
 
 
@@ -48,7 +60,9 @@ Block LimitBlockInputStream::readImpl()
     Block res;
     UInt64 rows = 0;
 
-    if (with_ties && tiesRowRef.shared_block)
+    /// pos >= offset + limit and all rows in previous block were equal to ties_row_ref
+    /// so we check current block
+    if (with_ties && ties_row_ref.shared_block)
     {
         res = children.back()->read();
         rows = res.rows();
@@ -61,10 +75,10 @@ Block LimitBlockInputStream::readImpl()
         for (len = 0; len < rows; ++len)
         {
             SharedBlockRowRef currentRow;
-            setRowRef(currentRow, ptr, &columns, len);
-            if (currentRow != tiesRowRef)
+            setSharedBlockRowRef(currentRow, ptr, &columns, len);
+            if (currentRow != ties_row_ref)
             {
-                tiesRowRef.reset();
+                ties_row_ref.reset();
                 break;
             }
         }
@@ -117,20 +131,22 @@ Block LimitBlockInputStream::readImpl()
         static_cast<Int64>(limit) + static_cast<Int64>(offset) - static_cast<Int64>(pos) + static_cast<Int64>(rows)));
 
     SharedBlockPtr ptr = new detail::SharedBlock(std::move(res));
+
+    /// check if other rows in current block equals to last one in limit
     if (with_ties)
     {
         ColumnRawPtrs columns = getBlockColumns(*ptr, description);
-        setRowRef(tiesRowRef, ptr, &columns, start + length - 1);
+        setSharedBlockRowRef(ties_row_ref, ptr, &columns, start + length - 1);
 
-        for (size_t i = tiesRowRef.row_num + 1; i < rows; ++i)
+        for (size_t i = ties_row_ref.row_num + 1; i < rows; ++i)
         {
-            SharedBlockRowRef currentRow;
-            setRowRef(currentRow, ptr, &columns, i);
-            if (currentRow == tiesRowRef)
+            SharedBlockRowRef current_row;
+            setSharedBlockRowRef(current_row, ptr, &columns, i);
+            if (current_row == ties_row_ref)
                 ++length;
             else
             {
-                tiesRowRef.reset();
+                ties_row_ref.reset();
                 break;
             }
         }

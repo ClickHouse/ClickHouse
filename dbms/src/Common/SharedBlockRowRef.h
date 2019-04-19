@@ -79,12 +79,6 @@ struct SharedBlockRowRef
     size_t size() const { return empty() ? 0 : columns->size(); }
 };
 
-void setRowRef(SharedBlockRowRef & row_ref, SharedBlockPtr shared_block, ColumnRawPtrs * columns, size_t row_num)
-{
-    row_ref.row_num = row_num;
-    row_ref.columns = columns;
-    row_ref.shared_block = shared_block;
-}
 
 
 }
