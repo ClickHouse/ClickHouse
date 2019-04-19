@@ -34,6 +34,8 @@ void Settings::setProfile(const String & profile_name, const Poco::Util::Abstrac
 
     for (const std::string & key : config_keys)
     {
+        if (key == "constraints")
+            continue;
         if (key == "profile")   /// Inheritance of one profile from another.
             setProfile(config.getString(elem + "." + key), config);
         else

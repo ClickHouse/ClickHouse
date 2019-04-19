@@ -620,14 +620,22 @@ void Context::calculateUserSettings()
     /// NOTE: we ignore global_context settings (from which it is usually copied)
     /// NOTE: global_context settings are immutable and not auto updated
     settings = Settings();
+    settings_constraints = SettingsConstraints();
 
     /// 2) Apply settings from default profile
     auto default_profile_name = getDefaultProfileName();
     if (profile != default_profile_name)
-        settings.setProfile(default_profile_name, *shared->users_config);
+        setProfile(default_profile_name);
 
     /// 3) Apply settings from current user
+    setProfile(profile);
+}
+
+
+void Context::setProfile(const String & profile)
+{
     settings.setProfile(profile, *shared->users_config);
+    settings_constraints.setProfile(profile, *shared->users_config);
 }
 
 
@@ -1033,7 +1041,7 @@ void Context::setSetting(const String & name, const String & value)
     auto lock = getLock();
     if (name == "profile")
     {
-        settings.setProfile(value, *shared->users_config);
+        setProfile(value);
         return;
     }
     settings.set(name, value);
@@ -1045,7 +1053,7 @@ void Context::setSetting(const String & name, const Field & value)
     auto lock = getLock();
     if (name == "profile")
     {
-        settings.setProfile(value.safeGet<String>(), *shared->users_config);
+        setProfile(value.safeGet<String>());
         return;
     }
     settings.set(name, value);
@@ -1068,13 +1076,13 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraints(const SettingChange & change)
 {
-    SettingsConstraints::check(settings, change);
+    settings_constraints.check(settings, change);
 }
 
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes)
 {
-    SettingsConstraints::check(settings, changes);
+    settings_constraints.check(settings, changes);
 }
 
 

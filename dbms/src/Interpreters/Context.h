@@ -4,6 +4,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/SettingsConstraints.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
@@ -125,6 +126,7 @@ private:
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
+    SettingsConstraints settings_constraints;
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -483,6 +485,8 @@ private:
       * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
       */
     void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
+
+    void setProfile(const String & profile);
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
     ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;
