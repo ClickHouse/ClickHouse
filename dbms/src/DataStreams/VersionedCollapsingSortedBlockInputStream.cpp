@@ -46,7 +46,7 @@ void VersionedCollapsingSortedBlockInputStream::insertGap(size_t gap_size)
     }
 }
 
-void VersionedCollapsingSortedBlockInputStream::insertRow(size_t skip_rows, const RowRef & row, MutableColumns & merged_columns)
+void VersionedCollapsingSortedBlockInputStream::insertRow(size_t skip_rows, const SharedBlockRowRef & row, MutableColumns & merged_columns)
 {
     const auto & columns = row.shared_block->all_columns;
     for (size_t i = 0; i < num_columns; ++i)
@@ -109,7 +109,7 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
     {
         SortCursor current = queue.top();
 
-        RowRef next_key;
+        SharedBlockRowRef next_key;
 
         Int8 sign = static_cast<const ColumnInt8 &>(*current->all_columns[sign_column_number]).getData()[current->pos];
 
