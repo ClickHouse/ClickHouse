@@ -21,9 +21,13 @@ struct RangesInDataPart
         : data_part{data_part}, part_index_in_query{part_index_in_query}, ranges{ranges}
     {
     }
+
+    size_t getRowsCount() const
+    {
+        return data_part->index_granularity.getRowsCountInRanges(ranges);
+    }
 };
 
 using RangesInDataParts = std::vector<RangesInDataPart>;
-
 
 }

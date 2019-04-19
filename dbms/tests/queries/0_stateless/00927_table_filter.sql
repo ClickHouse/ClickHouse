@@ -1,6 +1,6 @@
-DROP TABLE IF EXISTS filtered_table1;
-DROP TABLE IF EXISTS filtered_table2;
-DROP TABLE IF EXISTS filtered_table3;
+DROP TABLE IF EXISTS test.filtered_table1;
+DROP TABLE IF EXISTS test.filtered_table2;
+DROP TABLE IF EXISTS test.filtered_table3;
 
 -- Filter: a = 1, values: (1, 0), (1, 1)
 CREATE TABLE test.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;

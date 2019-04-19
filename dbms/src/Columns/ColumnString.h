@@ -21,6 +21,7 @@ namespace DB
 class ColumnString final : public COWPtrHelper<IColumn, ColumnString>
 {
 public:
+    using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
 
 private:
