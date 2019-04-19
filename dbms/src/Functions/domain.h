@@ -9,18 +9,19 @@ namespace DB
 {
 
 /// Extracts host from given url.
-template <bool ignore_scheme = true>
 inline StringRef getURLHost(const char * data, size_t size)
 {
     Pos pos = data;
     Pos end = data + size;
 
-    if (end == (pos = find_first_symbols<'/'>(pos, end)))
+    Pos slash_pos = find_first_symbols<'/'>(pos, end);
+    if (slash_pos != end)
     {
-        if (ignore_scheme)
-            pos = data;
-        else
-            return {};
+        pos = slash_pos;
+    }
+    else
+    {
+        pos = data;
     }
 
     if (pos != data)
@@ -33,12 +34,8 @@ inline StringRef getURLHost(const char * data, size_t size)
             return {};
     }
 
-    if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
-    {
-        if (!ignore_scheme)
-            return {};
-    }
-    else
+    // Check with we still have // character from the scheme
+    if (!(end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/'))
         pos += 2;
 
     const char * start_of_host = pos;
