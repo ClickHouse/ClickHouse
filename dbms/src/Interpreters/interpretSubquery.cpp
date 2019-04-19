@@ -55,9 +55,8 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         const auto select_query = std::make_shared<ASTSelectQuery>();
         select_with_union_query->list_of_selects->children.push_back(select_query);
 
-        const auto select_expression_list = std::make_shared<ASTExpressionList>();
-        select_query->select_expression_list = select_expression_list;
-        select_query->children.emplace_back(select_query->select_expression_list);
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+        const auto select_expression_list = select_query->select();
 
         NamesAndTypesList columns;
 
