@@ -10,10 +10,10 @@
   *
   * Usage:
 
-    class Column : public COWPtr<Column>
+    class Column : public COW<Column>
     {
     private:
-        friend class COWPtr<Column>;
+        friend class COW<Column>;
 
         /// Leave all constructors in private section. They will be avaliable through 'create' method.
         Column();
@@ -63,7 +63,7 @@
   * Actually it is, if your values are small or if copying is done implicitly.
   * This is the case for string implementations.
   *
-  * In contrast, COWPtr is intended for the cases when you need to share states of large objects,
+  * In contrast, COW is intended for the cases when you need to share states of large objects,
   * (when you usually will use std::shared_ptr) but you also want precise control over modification
   * of this shared state.
   *
@@ -73,7 +73,7 @@
   *   to use std::unique_ptr for it somehow.
   */
 template <typename Derived>
-class COWPtr : public boost::intrusive_ref_counter<Derived>
+class COW : public boost::intrusive_ref_counter<Derived>
 {
 private:
     Derived * derived() { return static_cast<Derived *>(this); }
@@ -96,8 +96,8 @@ protected:
     private:
         using Base = IntrusivePtr<T>;
 
-        template <typename> friend class COWPtr;
-        template <typename, typename> friend class COWPtrHelper;
+        template <typename> friend class COW;
+        template <typename, typename> friend class COWHelper;
 
         explicit mutable_ptr(T * ptr) : Base(ptr) {}
 
@@ -115,7 +115,7 @@ protected:
 
         mutable_ptr() = default;
 
-        mutable_ptr(const std::nullptr_t *) {}
+        mutable_ptr(std::nullptr_t) {}
     };
 
 public:
@@ -128,8 +128,8 @@ protected:
     private:
         using Base = IntrusivePtr<const T>;
 
-        template <typename> friend class COWPtr;
-        template <typename, typename> friend class COWPtrHelper;
+        template <typename> friend class COW;
+        template <typename, typename> friend class COWHelper;
 
         explicit immutable_ptr(const T * ptr) : Base(ptr) {}
 
@@ -159,7 +159,7 @@ protected:
 
         immutable_ptr() = default;
 
-        immutable_ptr(const std::nullptr_t *) {}
+        immutable_ptr(std::nullptr_t) {}
     };
 
 public:
@@ -192,7 +192,7 @@ public:
 
     MutablePtr assumeMutable() const
     {
-        return const_cast<COWPtr*>(this)->getPtr();
+        return const_cast<COW*>(this)->getPtr();
     }
 
     Derived & assumeMutableRef() const
@@ -244,7 +244,7 @@ public:
       *
       * NOTE:
       * If you override 'mutate' method in inherited classes, don't forget to make it virtual in base class or to make it call a virtual method.
-      * (COWPtr itself doesn't force any methods to be virtual).
+      * (COW itself doesn't force any methods to be virtual).
       *
       * See example in "cow_compositions.cpp".
       */
@@ -255,22 +255,22 @@ public:
 /** Helper class to support inheritance.
   * Example:
   *
-  * class IColumn : public COWPtr<IColumn>
+  * class IColumn : public COW<IColumn>
   * {
-  *     friend class COWPtr<IColumn>;
+  *     friend class COW<IColumn>;
   *     virtual MutablePtr clone() const = 0;
   *     virtual ~IColumn() {}
   * };
   *
-  * class ConcreteColumn : public COWPtrHelper<IColumn, ConcreteColumn>
+  * class ConcreteColumn : public COWHelper<IColumn, ConcreteColumn>
   * {
-  *     friend class COWPtrHelper<IColumn, ConcreteColumn>;
+  *     friend class COWHelper<IColumn, ConcreteColumn>;
   * };
   *
   * Here is complete inheritance diagram:
   *
   * ConcreteColumn
-  *  COWPtrHelper<IColumn, ConcreteColumn>
+  *  COWHelper<IColumn, ConcreteColumn>
   *   IColumn
   *    CowPtr<IColumn>
   *     boost::intrusive_ref_counter<IColumn>
@@ -278,7 +278,7 @@ public:
   * See example in "cow_columns.cpp".
   */
 template <typename Base, typename Derived>
-class COWPtrHelper : public Base
+class COWHelper : public Base
 {
 private:
     Derived * derived() { return static_cast<Derived *>(this); }
