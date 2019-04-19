@@ -80,6 +80,9 @@ private:
     ///  but not finish them with \r\n, allowing to send more headers subsequently.
     void startSendHeaders();
 
+    // Used for write the header X-ClickHouse-progress
+    void writeHeaderProgress();
+
     /// This method finish headers with \r\n, allowing to start to send body.
     void finishSendHeaders();
 
