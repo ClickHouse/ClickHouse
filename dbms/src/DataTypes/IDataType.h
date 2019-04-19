@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Common/COWPtr.h>
+#include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Field.h>
 
@@ -17,8 +17,8 @@ class IDataType;
 struct FormatSettings;
 
 class IColumn;
-using ColumnPtr = COWPtr<IColumn>::Ptr;
-using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
+using ColumnPtr = COW<IColumn>::Ptr;
+using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
