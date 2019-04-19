@@ -803,7 +803,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
-            if (query.limitLength() && pipeline.hasMoreThanOneStream() && !query.distinct && !expressions.has_limit_by && !settings.extremes)
+            if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() && !query.distinct && !expressions.has_limit_by && !settings.extremes)
             {
                 executePreLimit(pipeline);
             }
@@ -879,8 +879,8 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
-    if (!query.distinct && !query.limitBy())
+    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY or WITH TIES.
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         return limit_length + limit_offset;
@@ -1083,11 +1083,12 @@ void InterpreterSelectQuery::executeFetchColumns(
 
     auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
 
-    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
+    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY, WITH TIES but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
      *  and also set the number of threads to 1.
      */
     if (!query.distinct
+        && !query.limit_with_ties
         && !query.prewhere()
         && !query.where()
         && !query.groupBy()
@@ -1511,7 +1512,7 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
         UInt64 limit_for_distinct = 0;
 
         /// If after this stage of DISTINCT ORDER BY is not executed, then you can get no more than limit_length + limit_offset of different rows.
-        if (!query.orderBy() || !before_order)
+        if ((!query.orderBy() || !before_order) && !query.limit_with_ties)
             limit_for_distinct = limit_length + limit_offset;
 
         pipeline.transform([&](auto & stream)
@@ -1546,8 +1547,8 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
 void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    /// If there is LIMIT
-    if (query.limitLength())
+    /// If there is LIMIT and no WITH TIES
+    if (query.limitLength() && !query.limit_with_ties)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
@@ -1624,13 +1625,15 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
             always_read_till_end = true;
 
+        SortDescription order_descr = getSortDescription(query);
+
         UInt64 limit_length;
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
 
         pipeline.transform([&](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end, false, query.limit_with_ties, order_descr);
         });
     }
 }
