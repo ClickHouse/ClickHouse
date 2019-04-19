@@ -460,11 +460,11 @@ Array elements set to `NULL` are handled as normal values.
 
 ## arraySort(arr)
 
-Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+Returns an array as result of sorting the elements of `arr` in ascending order.  
 
-The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to impove sorting efficiency.
+The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to improve sorting efficiency.
 
-Example:
+Example 1
 
 ``` sql
 SELECT arraySort([1, 3, 3, 0])
@@ -473,6 +473,17 @@ SELECT arraySort([1, 3, 3, 0])
 ┌─arraySort([1, 3, 3, 0])─┐
 │ [0,1,3,3]               │
 └─────────────────────────┘
+```
+
+Example 2
+
+``` sql
+SELECT arraySort(['hello', 'world', '!'])
+```
+```
+┌─arraySort(['hello', 'world', '!'])─┐
+│ ['!','hello','world']              │
+└────────────────────────────────────┘
 ```
 
 Note that NULLs and NaNs go last (NaNs go before NULLs). For example:
@@ -487,9 +498,30 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
 ```
 You can use lambda functions with the `arraySort` function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
 
-## arrayReverseSort(arr1)
+## arrayReverseSort(arr)
 
-Returns an array as result of sorting the elements of `arr1` in descending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+Returns an array as result of sorting the elements of `arr` in descending order.  
+
+Example 1
+
+``` sql
+SELECT arrayReverseSort([1, 3, 3, 0])
+```
+```
+┌─arrayReverseSort([1, 3, 3, 0])─┐
+│ [3,3,1,0]                      │
+└────────────────────────────────┘
+```
+
+Example 2
+``` sql
+SELECT arrayReverseSort(['hello', 'world', '!'])
+```
+```
+┌─arrayReverseSort(['hello', 'world', '!'])─┐
+│ ['world','hello','!']                     │
+└───────────────────────────────────────────┘
+```
 
 Note that NULLs and NaNs go last (NaNs go before NULLs). For example:
  
