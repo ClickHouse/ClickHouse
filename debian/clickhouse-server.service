@@ -5,7 +5,6 @@ Description=ClickHouse Server (analytic DBMS for big data)
 Type=simple
 User=clickhouse
 Group=clickhouse
-PermissionsStartOnly=true
 Restart=always
 RestartSec=30
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml

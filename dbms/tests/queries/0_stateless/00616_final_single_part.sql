@@ -1,4 +1,3 @@
-USE test;
 DROP TABLE IF EXISTS test;
 DROP TABLE IF EXISTS replacing;
 

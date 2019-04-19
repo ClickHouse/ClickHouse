@@ -137,11 +137,30 @@ else
         # Running test in parallel will fail some results (tests can create/fill/drop same tables)
         TEST_NPROC=${TEST_NPROC:=$(( `nproc || sysctl -n hw.ncpu || echo 2` * 2))}
         for i in `seq 1 ${TEST_NPROC}`; do
-             $CLICKHOUSE_TEST --order=random --testname &
+             $CLICKHOUSE_TEST --order=random --testname --tmp=$DATA_DIR/tmp/tmp${i} &
         done
         $CLICKHOUSE_PERFORMANCE_TEST &
     fi
-    ( [ "$TEST_RUN" ] && $CLICKHOUSE_TEST ) || ${TEST_TRUE:=false}
+
+    if [ "${TEST_RUN_PARALLEL}" ]; then
+        # Running test in parallel will fail some results (tests can create/fill/drop same tables)
+        TEST_NPROC=${TEST_NPROC:=$(( `nproc || sysctl -n hw.ncpu || echo 2` * 2))}
+        for i in `seq 1 ${TEST_NPROC}`; do
+             $CLICKHOUSE_TEST --testname --tmp=$DATA_DIR/tmp/tmp${i} --database=test${i} --parallel=${i}/${TEST_NPROC} &
+        done
+        for job in `jobs -p`; do
+            #echo wait $job
+            wait $job || let "FAIL+=1"
+        done
+
+        #echo $FAIL
+        if [ "$FAIL" != "0" ]; then
+            return $FAIL
+        fi
+    else
+        ( [ "$TEST_RUN" ] && $CLICKHOUSE_TEST ) || ${TEST_TRUE:=false}
+    fi
+
     ( [ "$TEST_PERF" ] && $CLICKHOUSE_PERFORMANCE_TEST $* ) || true
     #( [ "$TEST_DICT" ] && mkdir -p $DATA_DIR/etc/dictionaries/ && cd $CUR_DIR/external_dictionaries && python generate_and_test.py --port=$CLICKHOUSE_PORT_TCP --client=$CLICKHOUSE_CLIENT --source=$CUR_DIR/external_dictionaries/source.tsv --reference=$CUR_DIR/external_dictionaries/reference --generated=$DATA_DIR/etc/dictionaries/ --no_mysql --no_mongo ) || true
     $CLICKHOUSE_CLIENT_QUERY "SELECT event, value FROM system.events; SELECT metric, value FROM system.metrics; SELECT metric, value FROM system.asynchronous_metrics;"

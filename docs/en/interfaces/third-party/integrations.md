@@ -10,7 +10,9 @@
         - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         - [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
     - [PostgreSQL](https://www.postgresql.org)
+        - [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        - [pg2ch](https://github.com/mkabilov/pg2ch)
     - [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
         - [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 - Message queues
@@ -19,6 +21,9 @@
 - Object storages
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- Container orchestration
+    - [Kubernetes](https://kubernetes.io)
+        - [clickhouse-operator](https://github.com/Altinity/clickhouse-operator)
 - Configuration management
     - [puppet](https://puppet.com)
         - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
@@ -35,6 +40,8 @@
         - [clickhouse_exporter](https://github.com/hot-wifi/clickhouse_exporter) (uses [Go client](https://github.com/kshvakov/clickhouse/))
     - [Nagios](https://www.nagios.org/)
         - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    - [Zabbix](https://www.zabbix.com)
+        - [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     - [Sematext](https://sematext.com/)
         - [clickhouse integration](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
 - Logging
@@ -44,6 +51,9 @@
         - [loghouse](https://github.com/flant/loghouse) (for [Kubernetes](https://kubernetes.io))
     - [logagent](https://www.sematext.com/logagent)
         - [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
+- Geo
+    - [MaxMind](https://dev.maxmind.com/geoip/)
+        - [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
 ## Programming Language Ecosystems
 

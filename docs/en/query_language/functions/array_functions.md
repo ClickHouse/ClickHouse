@@ -499,7 +499,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1])
 
 ## arrayEnumerateDense(arr)
 
-Returns an array of the same size as the source array, indicating where each element first appears in the source array. For example: arrayEnumerateDense([10,20,10,30]) = [1,2,1,4].
+Returns an array of the same size as the source array, indicating where each element first appears in the source array. For example: arrayEnumerateDense([10,20,10,30]) = [1,2,1,3].
 
 ## arrayIntersect(arr)
 
