@@ -514,6 +514,7 @@ SELECT arrayReverseSort([1, 3, 3, 0])
 ```
 
 Example 2
+
 ``` sql
 SELECT arrayReverseSort(['hello', 'world', '!'])
 ```
