@@ -39,14 +39,13 @@ public:
     virtual ~IGradientComputer() = default;
 
     /// Adds computed gradient in new point (weights, bias) to batch_gradient
-    virtual void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
+    virtual void compute(std::vector<Float64> & batch_gradient, const std::vector<Float64> &weights, Float64 bias,
                          Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn **columns, size_t row_num) = 0;
 
-    /// Now we should use predict_block function instead of predict
-    virtual void predict_block(ColumnVector<Float64>::Container &container,
-                                 Block &block, const ColumnNumbers &arguments,
-                                 const std::vector<Float64> &weights,
-                                 Float64 bias) const = 0;
+    virtual void predict(ColumnVector<Float64>::Container &container,
+                         Block &block, const ColumnNumbers &arguments,
+                         const std::vector<Float64> &weights,
+                         Float64 bias) const = 0;
 };
 
 
@@ -56,48 +55,55 @@ public:
     LinearRegression()
     {}
 
-    void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
+    void compute(std::vector<Float64> & batch_gradient, const std::vector<Float64> &weights, Float64 bias,
                  Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn **columns, size_t row_num) override
     {
         Float64 derivative = (target - bias);
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            derivative -= weights[i] * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+//            auto value = static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+                auto value = (*columns[i])[row_num].get<Float64>();
+//            if ((*columns[i])[row_num].getType() == Field::Types::Float64)
+                derivative -= weights[i] * value;
+//            else
+//                derivative -= weights[i] * (*columns[i])[row_num].get<Float32>();
         }
         derivative *= (2 * learning_rate);
 
-        (*batch_gradient)[weights.size()] += derivative;
+        batch_gradient[weights.size()] += derivative;
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            (*batch_gradient)[i] +=
-                    derivative * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num]
-                        - 2 * l2_reg_coef * weights[i];
+//            auto value = static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+            auto value = (*columns[i])[row_num].get<Float64>();
+            batch_gradient[i] += derivative * value - 2 * l2_reg_coef * weights[i];
         }
     }
 
-    void predict_block(ColumnVector<Float64>::Container &container,
-                         Block &block,
-                         const ColumnNumbers &arguments,
-                         const std::vector<Float64> &weights, Float64 bias) const override
+    void predict(ColumnVector<Float64>::Container &container,
+                 Block &block,
+                 const ColumnNumbers &arguments,
+                 const std::vector<Float64> &weights, Float64 bias) const override
     {
         size_t rows_num = block.rows();
         std::vector<Float64> results(rows_num, bias);
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            ColumnPtr cur_col = block.getByPosition(arguments[i]).column;
+            ColumnPtr cur_col = block.safeGetByPosition(arguments[i]).column;
             for (size_t row_num = 0; row_num != rows_num; ++row_num)
             {
 
                 const auto &element = (*cur_col)[row_num];
-                if (element.getType() != Field::Types::Float64)
-                    throw Exception("Prediction arguments must be values of type Float",
+//                if (element.getType() != Field::Types::Float64)
+                if (!DB::Field::isSimpleNumeric(element.getType()))
+                    throw Exception("Prediction arguments must be have numeric type",
                                     ErrorCodes::BAD_ARGUMENTS);
 
                 results[row_num] += weights[i - 1] * element.get<Float64>();
             }
         }
 
+        container.reserve(rows_num);
         for (size_t row_num = 0; row_num != rows_num; ++row_num)
         {
             container.emplace_back(results[row_num]);
@@ -112,28 +118,28 @@ public:
     LogisticRegression()
     {}
 
-    void compute(std::vector<Float64> * batch_gradient, const std::vector<Float64> &weights, Float64 bias,
+    void compute(std::vector<Float64> & batch_gradient, const std::vector<Float64> & weights, Float64 bias,
                  Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn **columns, size_t row_num) override
     {
         Float64 derivative = bias;
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            derivative += weights[i] * static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+            auto value = static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+            derivative += weights[i] * value;
         }
         derivative *= target;
         derivative = exp(derivative);
 
-        (*batch_gradient)[weights.size()] += learning_rate * target / (derivative + 1);
+        batch_gradient[weights.size()] += learning_rate * target / (derivative + 1);
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            (*batch_gradient)[i] +=
-                    learning_rate * target *
-                    static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num] / (derivative + 1)
-                        - 2 * l2_reg_coef * weights[i];
+            auto value = static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+            batch_gradient[i] += learning_rate * target * value / (derivative + 1)
+                                    - 2 * l2_reg_coef * weights[i];
         }
     }
 
-    void predict_block(ColumnVector<Float64>::Container & container,
+    void predict(ColumnVector<Float64>::Container & container,
                          Block & block,
                          const ColumnNumbers & arguments,
                          const std::vector<Float64> & weights, Float64 bias) const override
@@ -143,17 +149,19 @@ public:
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            ColumnPtr cur_col = block.getByPosition(arguments[i]).column;
+            ColumnPtr cur_col = block.safeGetByPosition(arguments[i]).column;
             for (size_t row_num = 0; row_num != rows_num; ++row_num)
             {
                 const auto &element = (*cur_col)[row_num];
-                if (element.getType() != Field::Types::Float64)
-                    throw Exception("Prediction arguments must be values of type Float",
-                                    ErrorCodes::BAD_ARGUMENTS);
+//                if (element.getType() != Field::Types::Float64)
+                if (!DB::Field::isSimpleNumeric(element.getType()))
+                    throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
 
                 results[row_num] += weights[i - 1] * element.get<Float64>();
             }
         }
+
+        container.reserve(rows_num);
         for (size_t row_num = 0; row_num != rows_num; ++row_num)
         {
             container.emplace_back(1 / (1 + exp(-results[row_num])));
@@ -164,30 +172,35 @@ public:
 
 /**
 * IWeightsUpdater class defines the way to update current weights
-* and uses class GradientComputer on each iteration
+* and uses GradientComputer class on each iteration
 */
 class IWeightsUpdater
 {
 public:
     virtual ~IWeightsUpdater() = default;
 
-    virtual void add_to_batch(std::vector<Float64> * batch_gradient, std::shared_ptr<IGradientComputer> gc,
+    /// Calls GradientComputer to update current mini-batch
+    virtual void add_to_batch(std::vector<Float64> & batch_gradient, IGradientComputer & gradient_computer,
                               const std::vector<Float64> & weights, Float64 bias,
                               Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn **columns, size_t row_num)
     {
-        gc->compute(batch_gradient, weights, bias, learning_rate, l2_reg_coef, target, columns, row_num);
+        gradient_computer.compute(batch_gradient, weights, bias, learning_rate, l2_reg_coef, target, columns, row_num);
     }
 
+    /// Updates current weights according to the gradient from the last mini-batch
     virtual void update(UInt32 batch_size,
                         std::vector<Float64> & weights, Float64 & bias,
                         const std::vector<Float64> & gradient) = 0;
 
+    /// Used during the merge of two states
     virtual void merge(const IWeightsUpdater &, Float64, Float64)
     {}
 
+    /// Used for serialization when necessary
     virtual void write(WriteBuffer &) const
     {}
 
+    /// Used for serialization when necessary
     virtual void read(ReadBuffer &)
     {}
 };
@@ -275,13 +288,13 @@ public:
     Nesterov(Float64 alpha) : alpha_(alpha)
     {}
 
-    void add_to_batch(std::vector<Float64> * batch_gradient, std::shared_ptr<IGradientComputer> gc,
+    void add_to_batch(std::vector<Float64> & batch_gradient, IGradientComputer & gradient_computer,
                       const std::vector<Float64> & weights, Float64 bias,
                       Float64 learning_rate, Float64 l2_reg_coef, Float64 target, const IColumn ** columns, size_t row_num) override
     {
         if (accumulated_gradient.empty())
         {
-            accumulated_gradient.resize(batch_gradient->size(), Float64{0.0});
+            accumulated_gradient.resize(batch_gradient.size(), Float64{0.0});
         }
 
         std::vector<Float64> shifted_weights(weights.size());
@@ -291,7 +304,7 @@ public:
         }
         auto shifted_bias = bias + accumulated_gradient[weights.size()] * alpha_;
 
-        gc->compute(batch_gradient, shifted_weights, shifted_bias, learning_rate, l2_reg_coef, target, columns, row_num);
+        gradient_computer.compute(batch_gradient, shifted_weights, shifted_bias, learning_rate, l2_reg_coef, target, columns, row_num);
     }
 
     void update(UInt32 batch_size,
@@ -353,14 +366,14 @@ public:
                     Float64 l2_reg_coef,
                     UInt32 param_num,
                     UInt32 batch_capacity,
-                    std::shared_ptr<IGradientComputer> gc,
-                    std::shared_ptr<IWeightsUpdater> wu)
+                    std::shared_ptr<IGradientComputer> gradient_computer,
+                    std::shared_ptr<IWeightsUpdater> weights_updater)
     : learning_rate(learning_rate),
       l2_reg_coef(l2_reg_coef),
       batch_capacity(batch_capacity),
       batch_size(0),
-      gradient_computer(std::move(gc)),
-      weights_updater(std::move(wu))
+      gradient_computer(std::move(gradient_computer)),
+      weights_updater(std::move(weights_updater))
     {
         weights.resize(param_num, Float64{0.0});
         gradient_batch.resize(param_num + 1, Float64{0.0});
@@ -372,7 +385,7 @@ public:
         const auto &target = static_cast<const ColumnVector<Float64> &>(*columns[0]).getData()[row_num];
 
         /// Here we have columns + 1 as first column corresponds to target value, and others - to features
-        weights_updater->add_to_batch(&gradient_batch, gradient_computer,
+        weights_updater->add_to_batch(gradient_batch, *gradient_computer,
                                       weights, bias, learning_rate, l2_reg_coef, target, columns + 1, row_num);
 
         ++batch_size;
@@ -422,9 +435,9 @@ public:
         weights_updater->read(buf);
     }
 
-    void predict_block(ColumnVector<Float64>::Container &container, Block &block, const ColumnNumbers &arguments) const
+    void predict(ColumnVector<Float64>::Container &container, Block &block, const ColumnNumbers &arguments) const
     {
-        gradient_computer->predict_block(container, block, arguments, weights, bias);
+        gradient_computer->predict(container, block, arguments, weights, bias);
     }
 
 private:
@@ -482,8 +495,8 @@ public:
             learning_rate(learning_rate),
             l2_reg_coef(l2_reg_coef),
             batch_size(batch_size),
-            gc(std::move(gradient_computer)),
-            wu(std::move(weights_updater))
+            gradient_computer(std::move(gradient_computer)),
+            weights_updater(std::move(weights_updater))
             {}
 
     DataTypePtr getReturnType() const override
@@ -493,7 +506,7 @@ public:
 
     void create(AggregateDataPtr place) const override
     {
-        new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gc, wu);
+        new (place) Data(learning_rate, l2_reg_coef, param_num, batch_size, gradient_computer, weights_updater);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -516,7 +529,7 @@ public:
         this->data(place).read(buf);
     }
 
-    void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments) const
+    void predictValues(ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments) const override
     {
         if (arguments.size() != param_num + 1)
             throw Exception("Predict got incorrect number of arguments. Got: " +
@@ -525,7 +538,7 @@ public:
 
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
 
-        this->data(place).predict_block(column.getData(), block, arguments);
+        this->data(place).predict(column.getData(), block, arguments);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -542,8 +555,8 @@ private:
     Float64 learning_rate;
     Float64 l2_reg_coef;
     UInt32 batch_size;
-    std::shared_ptr<IGradientComputer> gc;
-    std::shared_ptr<IWeightsUpdater> wu;
+    std::shared_ptr<IGradientComputer> gradient_computer;
+    std::shared_ptr<IWeightsUpdater> weights_updater;
 };
 
 struct NameLinearRegression { static constexpr auto name = "LinearRegression"; };

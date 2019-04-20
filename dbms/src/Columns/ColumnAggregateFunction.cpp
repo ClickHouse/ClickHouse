@@ -35,6 +35,8 @@ void ColumnAggregateFunction::addArena(ArenaPtr arena_)
     arenas.push_back(arena_);
 }
 
+/// This function is used in convertToValues() and predictValues()
+/// and is written here to avoid repetitions
 bool ColumnAggregateFunction::convertion(MutableColumnPtr *res_) const
 {
     if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
@@ -109,27 +111,28 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
         return res;
     }
 
-    auto ML_function_Linear = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLinearRegression> *>(func.get());
-    auto ML_function_Logistic = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression> *>(func.get());
-    if (ML_function_Linear)
+//    auto ML_function_Linear = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLinearRegression> *>(func.get());
+//    auto ML_function_Logistic = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression> *>(func.get());
+    auto ML_function = func.get();
+    if (ML_function)
     {
         size_t row_num = 0;
         for (auto val : data)
         {
-            ML_function_Linear->predictResultInto(val, *res, block, arguments);
+            ML_function->predictValues(val, *res, block, arguments);
             ++row_num;
         }
 
     }
-    else if (ML_function_Logistic)
-    {
-        size_t row_num = 0;
-        for (auto val : data)
-        {
-            ML_function_Logistic->predictResultInto(val, *res, block, arguments);
-            ++row_num;
-        }
-    }
+//    else if (ML_function_Logistic)
+//    {
+//        size_t row_num = 0;
+//        for (auto val : data)
+//        {
+//            ML_function_Logistic->predictValues(val, *res, block, arguments);
+//            ++row_num;
+//        }
+//    }
     else
     {
         throw Exception("Illegal aggregate function is passed",
