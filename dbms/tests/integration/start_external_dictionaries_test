@@ -1,0 +1,5 @@
+sudo rm -r __pycache__/
+sudo rm -r .pytest_cache/
+sudo find . -name '*.pyc' -delete
+sudo -E pytest -ss test_external_dictionaries/
+
