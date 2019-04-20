@@ -200,6 +200,7 @@ public:
     template <typename T> struct TypeToEnum;
     template <Types::Which which> struct EnumToType;
 
+    static bool isSimpleNumeric(Types::Which which) { return which >= Types::UInt64 && which <= Types::Int128; }
     static bool IsDecimal(Types::Which which) { return which >= Types::Decimal32 && which <= Types::Decimal128; }
 
     Field()
