@@ -156,7 +156,7 @@ Here, a sample of 10% is taken from the second half of the data.
 
 ### ARRAY JOIN Clause {#select-array-join-clause}
 
-Allows executing `JOIN` with an array or nested data structure. Allows you to perform `JOIN` both with the external array and with the inner array in the table. The intent is similar to the [arrayJoin](functions/array_functions.md#array_functions-join) function, but its functionality is broader.
+Allows executing JOIN with an array or nested data structure. The intent is similar to the [arrayJoin](functions/array_join.md#functions_arrayjoin) function, but its functionality is broader.
 
 ``` sql
 SELECT <expr_list>
@@ -172,10 +172,10 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 
 Supported types of `ARRAY JOIN` are listed below:
 
-- `ARRAY JOIN` - Executes `JOIN` with an array or nested data structure. Empty arrays are not included in the result.
-- `LEFT ARRAY JOIN` - The result contains rows with empty arrays, unlike `ARRAY JOIN`. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
+- `ARRAY JOIN` - In this case, empty arrays are not included in the result of JOIN.
+- `LEFT ARRAY JOIN` - The result of JOIN contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
-The examples below demonstrate the usage of the `ARRAY JOIN` clause. Let's create a table with an [Array](../data_types/array.md) type column and insert values into it:
+The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let's create a table with an [Array](../data_types/array.md) type column and insert values into it:
 
 ``` sql
 CREATE TABLE arrays_test
@@ -195,7 +195,7 @@ VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
 └─────────────┴─────────┘
 ```
 
-The first example uses the `ARRAY JOIN` clause:
+The example below uses the `ARRAY JOIN` clause:
 
 ``` sql
 SELECT s, arr
@@ -212,7 +212,7 @@ ARRAY JOIN arr;
 └───────┴─────┘
 ```
 
-The second example uses the `LEFT ARRAY JOIN` clause:
+The next example uses the `LEFT ARRAY JOIN` clause:
 
 ``` sql
 SELECT s, arr
@@ -229,28 +229,6 @@ LEFT ARRAY JOIN arr;
 │ Goodbye     │   0 │
 └─────────────┴─────┘
 ``` 
-
-The following example uses `ARRAY JOIN` with an external array:
-
-``` sql
-SELECT s, arr_external
-FROM arrays_test 
-ARRAY JOIN [1, 2, 3] AS arr_external;
-```
-
-```
-┌─s───────────┬─arr_external─┐
-│ Hello       │            1 │
-│ Hello       │            2 │
-│ Hello       │            3 │
-│ World       │            1 │
-│ World       │            2 │
-│ World       │            3 │
-│ Goodbye     │            1 │
-│ Goodbye     │            2 │
-│ Goodbye     │            3 │
-└─────────────┴──────────────┘
-```
 
 #### Using Aliases
 
@@ -272,7 +250,29 @@ ARRAY JOIN arr AS a;
 └───────┴─────────┴───┘
 ```
 
-Multiple arrays of the same size can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the cartesian product). Example:
+Using aliases, you can perform `ARRAY JOIN` with an external array. For example:
+
+``` sql
+SELECT s, arr_external
+FROM arrays_test 
+ARRAY JOIN [1, 2, 3] AS arr_external;
+```
+
+```
+┌─s───────────┬─arr_external─┐
+│ Hello       │            1 │
+│ Hello       │            2 │
+│ Hello       │            3 │
+│ World       │            1 │
+│ World       │            2 │
+│ World       │            3 │
+│ Goodbye     │            1 │
+│ Goodbye     │            2 │
+│ Goodbye     │            3 │
+└─────────────┴──────────────┘
+```
+
+Multiple arrays can be comma-separated in the `ARRAY JOIN` clause. In this case, JOIN is performed with them simultaneously (the direct sum, not the cartesian product). Note that all the arrays must have the same size. Example:
 
 ``` sql
 SELECT s, arr, a, num, mapped
@@ -289,6 +289,8 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 │ World │ [3,4,5] │ 5 │   3 │      6 │
 └───────┴─────────┴───┴─────┴────────┘
 ```
+
+The example below uses the [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -383,7 +385,7 @@ ARRAY JOIN `nest.x`;
 └───────┴────────┴────────────┘
 ```
 
-An alias may be used for a nested data structure, in order to select either the `JOIN` result or the source array. Example:
+An alias may be used for a nested data structure, in order to select either the JOIN result or the source array. Example:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
