@@ -23,7 +23,7 @@
     public:
         /// Correctly use const qualifiers in your interface.
 
-        virtual ~IColumn() {}
+        virtual ~Column() {}
     };
 
   * It will provide 'create' and 'mutate' methods.
