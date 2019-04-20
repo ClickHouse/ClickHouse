@@ -20,10 +20,10 @@ using ConstNullMapPtr = const NullMap *;
 /// over a bitmap because columns are usually stored on disk as compressed
 /// files. In this regard, using a bitmap instead of a byte map would
 /// greatly complicate the implementation with little to no benefits.
-class ColumnNullable final : public COWPtrHelper<IColumn, ColumnNullable>
+class ColumnNullable final : public COWHelper<IColumn, ColumnNullable>
 {
 private:
-    friend class COWPtrHelper<IColumn, ColumnNullable>;
+    friend class COWHelper<IColumn, ColumnNullable>;
 
     ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_);
     ColumnNullable(const ColumnNullable &) = default;
@@ -32,7 +32,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWPtrHelper<IColumn, ColumnNullable>;
+    using Base = COWHelper<IColumn, ColumnNullable>;
     static Ptr create(const ColumnPtr & nested_column_, const ColumnPtr & null_map_)
     {
         return ColumnNullable::create(nested_column_->assumeMutable(), null_map_->assumeMutable());
@@ -106,16 +106,15 @@ public:
 
 
     /// Return the column that represents values.
-    IColumn & getNestedColumn() { return nested_column->assumeMutableRef(); }
+    IColumn & getNestedColumn() { return *nested_column; }
     const IColumn & getNestedColumn() const { return *nested_column; }
 
     const ColumnPtr & getNestedColumnPtr() const { return nested_column; }
 
     /// Return the column that represents the byte map.
-    //ColumnPtr & getNullMapColumnPtr() { return null_map; }
     const ColumnPtr & getNullMapColumnPtr() const { return null_map; }
 
-    ColumnUInt8 & getNullMapColumn() { return static_cast<ColumnUInt8 &>(null_map->assumeMutableRef()); }
+    ColumnUInt8 & getNullMapColumn() { return static_cast<ColumnUInt8 &>(*null_map); }
     const ColumnUInt8 & getNullMapColumn() const { return static_cast<const ColumnUInt8 &>(*null_map); }
 
     NullMap & getNullMapData() { return getNullMapColumn().getData(); }
@@ -134,8 +133,8 @@ public:
     void checkConsistency() const;
 
 private:
-    ColumnPtr nested_column;
-    ColumnPtr null_map;
+    WrappedPtr nested_column;
+    WrappedPtr null_map;
 
     template <bool negative>
     void applyNullMapImpl(const ColumnUInt8 & map);

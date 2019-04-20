@@ -7,7 +7,7 @@
 #include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 #include <Poco/Logger.h>
 
 
@@ -29,7 +29,7 @@ void CurrentThread::updatePerformanceCounters()
 ThreadStatus & CurrentThread::get()
 {
     if (unlikely(!current_thread))
-        throw Exception("Thread #" + std::to_string(Poco::ThreadNumber::get()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Thread #" + std::to_string(getThreadNumber()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
 
     return *current_thread;
 }

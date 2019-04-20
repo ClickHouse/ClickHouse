@@ -156,7 +156,7 @@ public:
 #endif
     }
 
-    bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * pos) const
     {
         static const Poco::UTF8Encoding utf8;
 
@@ -374,7 +374,7 @@ public:
 #endif
     }
 
-    bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -568,7 +568,7 @@ public:
 #endif
     }
 
-    bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))

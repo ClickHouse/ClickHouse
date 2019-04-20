@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -62,7 +63,7 @@ BlockInputStreams StorageView::read(
             current_inner_query = new_inner_query;
     }
 
-    res = InterpreterSelectWithUnionQuery(current_inner_query, context, column_names).executeWithMultipleStreams();
+    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams();
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
@@ -74,7 +75,7 @@ BlockInputStreams StorageView::read(
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
 {
-    auto * select_element = select_query->tables->children[0]->as<ASTTablesInSelectQueryElement>();
+    auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);

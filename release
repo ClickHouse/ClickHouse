@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # If you have "no space left" error, you can change the location of temporary files with BUILDPLACE environment variable.
 

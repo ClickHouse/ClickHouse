@@ -1,7 +1,7 @@
 #pragma once
 
 #include <map>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/Net/SocketAddress.h>

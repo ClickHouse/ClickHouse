@@ -23,12 +23,7 @@ namespace ErrorCodes
 /// where N >= 1.
 ///
 /// For all 1 <= i <= N, "cond_i" has type UInt8.
-/// Types of all the branches "then_i" and "else" are either of the following:
-///    - numeric types for which there exists a common type;
-///    - dates;
-///    - dates with time;
-///    - strings;
-///    - arrays of such types.
+/// Types of all the branches "then_i" and "else" have a common type.
 ///
 /// Additionally the arguments, conditions or branches, support nullable types
 /// and the NULL value, with a NULL condition treated as false.

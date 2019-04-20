@@ -306,21 +306,11 @@ void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
     dictionary.setShared(column_unique);
 }
 
-ColumnLowCardinality::MutablePtr ColumnLowCardinality::compact()
-{
-    auto positions = idx.getPositions();
-    /// Create column with new indexes and old dictionary.
-    auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), (*std::move(positions)).mutate());
-    /// Will create new dictionary.
-    column->compactInplace();
-
-    return column;
-}
-
 ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
     auto sub_positions = (*idx.getPositions()->cut(start, length)).mutate();
     /// Create column with new indexes and old dictionary.
+    /// Dictionary is shared, but will be recreated after compactInplace call.
     auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
     /// Will create new dictionary.
     column->compactInplace();
@@ -522,7 +512,7 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
     while (position > getMaxPositionForCurrentType())
         expandType();
 
-    positions->assumeMutableRef().insert(position);
+    positions->insert(position);
     checkSizeOfType();
 }
 
@@ -540,7 +530,7 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
             convertPositions<ColumnType>();
 
         if (size_of_type == sizeof(ColumnType))
-            positions->assumeMutableRef().insertRangeFrom(column, offset, limit);
+            positions->insertRangeFrom(column, offset, limit);
         else
         {
             auto copy = [&](auto cur_type)

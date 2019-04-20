@@ -22,7 +22,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <ext/range.h>
@@ -274,7 +274,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     if (!storage)
         return BlockInputStreams{
             InterpreterSelectQuery(modified_query_info.query, modified_context, std::make_shared<OneBlockInputStream>(header),
-                                   processed_stage, true).execute().in};
+                                   SelectQueryOptions(processed_stage).analyze()).execute().in};
 
     BlockInputStreams source_streams;
 
@@ -295,7 +295,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
         modified_context.getSettingsRef().max_threads = UInt64(streams_num);
         modified_context.getSettingsRef().max_streams_to_max_threads_ratio = 1;
 
-        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, Names{}, processed_stage};
+        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
         BlockInputStreamPtr interpreter_stream = interpreter.execute().in;
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
@@ -369,7 +369,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
         {
             StoragePtr storage = iterator->table();
 
-            if (query && query->as<ASTSelectQuery>()->prewhere_expression && !storage->supportsPrewhere())
+            if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
                 throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
 
             if (storage.get() != this)
@@ -429,7 +429,7 @@ Block StorageMerge::getQueryHeader(
         case QueryProcessingStage::Complete:
             return materializeBlock(InterpreterSelectQuery(
                 query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
-                                       processed_stage, true).getSampleBlock());
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }
@@ -440,7 +440,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
     Block before_block_header = source_stream->getHeader();
     source_stream = std::make_shared<ConvertingBlockInputStream>(context, source_stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
 
-    auto where_expression = query->as<ASTSelectQuery>()->where_expression;
+    auto where_expression = query->as<ASTSelectQuery>()->where();
 
     if (!where_expression)
         return;

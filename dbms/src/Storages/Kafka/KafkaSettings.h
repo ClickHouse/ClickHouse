@@ -3,7 +3,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 
 
 namespace DB

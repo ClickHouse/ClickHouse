@@ -197,7 +197,7 @@ bool Set::insertFromBlock(const Block & block)
             if (set_elements[i]->empty())
                 set_elements[i] = filtered_column;
             else
-                set_elements[i]->assumeMutableRef().insertRangeFrom(*filtered_column, 0, filtered_column->size());
+                set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
         }
     }
 

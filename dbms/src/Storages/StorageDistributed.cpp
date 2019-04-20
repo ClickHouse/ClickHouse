@@ -286,7 +286,8 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
+    Block header = materializeBlock(
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock());
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
@@ -470,12 +471,10 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (!select.where_expression)
-    {
+    if (!select.where())
         return nullptr;
-    }
 
-    const auto & blocks = evaluateExpressionOverConstantCondition(select.where_expression, sharding_key_expr);
+    const auto & blocks = evaluateExpressionOverConstantCondition(select.where(), sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
     if (!blocks)

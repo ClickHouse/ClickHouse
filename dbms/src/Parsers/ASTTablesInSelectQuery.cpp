@@ -145,6 +145,9 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
             case Strictness::All:
                 settings.ostr << "ALL ";
                 break;
+            case Strictness::Asof:
+                settings.ostr << "ASOF ";
+                break;
         }
     }
 

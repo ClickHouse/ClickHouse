@@ -208,7 +208,8 @@ target_link_libraries(hdfs3 ${LIBXML2_LIBRARY})
 # inherit from parent cmake
 target_include_directories(hdfs3 PRIVATE ${Boost_INCLUDE_DIRS})
 target_include_directories(hdfs3 PRIVATE ${Protobuf_INCLUDE_DIR})
-target_include_directories(hdfs3 PRIVATE ${OPENSSL_INCLUDE_DIR})
-
 target_link_libraries(hdfs3 ${Protobuf_LIBRARY})
-target_link_libraries(hdfs3 ${OPENSSL_LIBRARIES})
+if(OPENSSL_INCLUDE_DIR AND OPENSSL_LIBRARIES)
+    target_include_directories(hdfs3 PRIVATE ${OPENSSL_INCLUDE_DIR})
+    target_link_libraries(hdfs3 ${OPENSSL_LIBRARIES})
+endif()

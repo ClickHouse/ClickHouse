@@ -16,6 +16,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <iostream>
 
 
 namespace DB
@@ -112,14 +113,10 @@ void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & , const 
 
 void TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data & data)
 {
-    std::vector<ASTPtr *> out;
     if (join.using_expression_list)
-        out.push_back(&join.using_expression_list);
+        Visitor(data).visit(join.using_expression_list);
     else if (join.on_expression)
-        out.push_back(&join.on_expression);
-
-    for (ASTPtr * add_node : out)
-        Visitor(data).visit(*add_node);
+        Visitor(data).visit(join.on_expression);
 }
 
 void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr & , Data & data)
@@ -127,18 +124,16 @@ void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr
     if (auto join = select.join())
         extractJoinUsingColumns(join->table_join, data);
 
+#if 1 /// TODO: legacy?
     /// If the WHERE clause or HAVING consists of a single qualified column, the reference must be translated not only in children,
     /// but also in where_expression and having_expression.
-    std::vector<ASTPtr *> out;
-    if (select.prewhere_expression)
-        out.push_back(&select.prewhere_expression);
-    if (select.where_expression)
-        out.push_back(&select.where_expression);
-    if (select.having_expression)
-        out.push_back(&select.having_expression);
-
-    for (ASTPtr * add_node : out)
-        Visitor(data).visit(*add_node);
+    if (select.prewhere())
+        Visitor(data).visit(select.refPrewhere());
+    if (select.where())
+        Visitor(data).visit(select.refWhere());
+    if (select.having())
+        Visitor(data).visit(select.refHaving());
+#endif
 }
 
 static void addIdentifier(ASTs & nodes, const String & table_name, const String & column_name, AsteriskSemantic::RevertedAliasesPtr aliases)

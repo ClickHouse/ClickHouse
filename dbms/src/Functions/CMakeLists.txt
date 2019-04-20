@@ -20,7 +20,11 @@ target_link_libraries(clickhouse_functions
         ${METROHASH_LIBRARIES}
         murmurhash
         ${BASE64_LIBRARY}
-        ${OPENSSL_CRYPTO_LIBRARY})
+)
+
+if (OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
+endif()
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
 
@@ -60,3 +64,8 @@ if (USE_XXHASH)
     target_link_libraries(clickhouse_functions PRIVATE ${XXHASH_LIBRARY})
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${XXHASH_INCLUDE_DIR})
 endif()
+
+if (USE_HYPERSCAN)
+    target_link_libraries (clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
+    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
+endif ()
