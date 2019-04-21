@@ -208,6 +208,9 @@ private:
       */
     void initSettings();
 
+    /// gets ORDER BY description
+    SortDescription getSortDescription(const ASTSelectQuery & query);
+
     const SelectQueryOptions options;
     ASTPtr query_ptr;
     Context context;

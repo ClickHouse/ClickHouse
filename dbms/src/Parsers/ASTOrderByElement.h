@@ -15,15 +15,25 @@ public:
     int nulls_direction; /// Same as direction for NULLS LAST, opposite for NULLS FIRST.
     bool nulls_direction_was_explicitly_specified;
 
+    bool with_fill;
+    ASTPtr fill_from;
+    ASTPtr fill_to;
+    ASTPtr fill_step;
+
     /** Collation for locale-specific string comparison. If empty, then sorting done by bytes. */
     ASTPtr collation;
 
     ASTOrderByElement(
-        const int direction_, const int nulls_direction_, const bool nulls_direction_was_explicitly_specified_, ASTPtr & collation_)
+        const int direction_, const int nulls_direction_, const bool nulls_direction_was_explicitly_specified_,
+        ASTPtr & collation_, const bool with_fill_, ASTPtr & fill_from_, ASTPtr & fill_to_, ASTPtr & fill_step_)
         : direction(direction_)
         , nulls_direction(nulls_direction_)
         , nulls_direction_was_explicitly_specified(nulls_direction_was_explicitly_specified_)
         , collation(collation_)
+        , with_fill(with_fill_)
+        , fill_from(fill_from_)
+        , fill_to(fill_to_)
+        , fill_step(fill_step_)
     {
     }
 

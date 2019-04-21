@@ -74,6 +74,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
+    extern const int INVALID_WITH_FILL_EXPRESSION;
 }
 
 namespace
@@ -888,6 +889,34 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
     return 0;
 }
 
+static Float64 getWithFillFloatValue(const ASTPtr & node, const Context & context)
+{
+    const auto & [field, type] = evaluateConstantExpression(node, context);
+
+    if (!isNumber(type))
+        throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    Field converted = convertFieldToType(field, DataTypeFloat64());
+    if (converted.isNull())
+        throw Exception("The value " + applyVisitor(FieldVisitorToString(), field) + " of WITH FILL expression is not representable as Float64", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
+    return converted.safeGet<UInt64>();
+}
+
+static std::tuple<Float64, Float64, Float64> getWithFillParameters(const ASTOrderByElement & node, const Context & context)
+{
+    Float64 fill_from = 0;
+    Float64 fill_to = 0;
+    Float64 fill_step = 1;
+
+    if (node.fill_from)
+        fill_from = getWithFillFloatValue(node.fill_from, context);
+    if (node.fill_to)
+        fill_to = getWithFillFloatValue(node.fill_to, context);
+    if (node.fill_step)
+        fill_step = getWithFillFloatValue(node.fill_step, context);
+    return {fill_from, fill_to, fill_step};
+}
 
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
@@ -1412,7 +1441,7 @@ void InterpreterSelectQuery::executeExpression(Pipeline & pipeline, const Expres
 }
 
 
-static SortDescription getSortDescription(const ASTSelectQuery & query)
+SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery & query)
 {
     SortDescription order_descr;
     order_descr.reserve(query.orderBy()->children.size());
@@ -1425,7 +1454,14 @@ static SortDescription getSortDescription(const ASTSelectQuery & query)
         if (order_by_elem.collation)
             collator = std::make_shared<Collator>(order_by_elem.collation->as<ASTLiteral &>().value.get<String>());
 
-        order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+        if (order_by_elem.with_fill)
+        {
+            auto[fill_from, fill_to, fill_step] = getWithFillParameters(order_by_elem, context);
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator,
+                true, fill_from, fill_to, fill_step);
+        }
+        else
+            order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     return order_descr;
