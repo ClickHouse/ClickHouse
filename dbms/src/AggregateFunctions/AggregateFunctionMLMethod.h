@@ -394,7 +394,7 @@ public:
     void add(const IColumn **columns, size_t row_num)
     {
         /// first column stores target; features start from (columns + 1)
-        const auto &target = (*columns[0])[row_num].get<Float64>();
+        const auto target = (*columns[0])[row_num].get<Float64>();
         /// Here we have columns + 1 as first column corresponds to target value, and others - to features
         weights_updater->add_to_batch(gradient_batch, *gradient_computer,
                                       weights, bias, learning_rate, l2_reg_coef, target, columns + 1, row_num);
