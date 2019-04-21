@@ -553,6 +553,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
 
+    size_t sum_input_rows_upper_bound = merge_entry->total_rows_count;
+
     bool need_remove_expired_values = false;
     for (const MergeTreeData::DataPartPtr & part : parts)
         new_data_part->ttl_infos.update(part->ttl_infos);
@@ -561,7 +563,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (part_min_ttl && part_min_ttl <= time_of_merge)
         need_remove_expired_values = true;
 
-    size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
 
     MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate, need_remove_expired_values);
 
@@ -655,16 +656,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     ///  that is going in insertion order.
     std::shared_ptr<IBlockInputStream> merged_stream;
 
+    /// If merge is vertical we cannot calculate it
+    bool blocks_are_granules_size = (merge_alg == MergeAlgorithm::Vertical);
+
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
             merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Summing:
@@ -679,7 +683,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         case MergeTreeData::MergingParams::Replacing:
             merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
@@ -690,7 +694,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         case MergeTreeData::MergingParams::VersionedCollapsing:
             merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
     }
 
@@ -701,7 +705,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<TTLBlockInputStream>(merged_stream, data, new_data_part, time_of_merge);
 
     MergedBlockOutputStream to{
-        data, new_part_tmp_path, merging_columns, compression_codec, merged_column_to_size, data.settings.min_merge_bytes_to_use_direct_io};
+        data,
+        new_part_tmp_path,
+        merging_columns,
+        compression_codec,
+        merged_column_to_size,
+        data.settings.min_merge_bytes_to_use_direct_io,
+        blocks_are_granules_size};
 
     merged_stream->readPrefix();
     to.writePrefix();
@@ -788,7 +798,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
             MergedColumnOnlyOutputStream column_to(
-                data, column_gathered_stream.getHeader(), new_part_tmp_path, false, compression_codec, false, written_offset_columns);
+                data,
+                column_gathered_stream.getHeader(),
+                new_part_tmp_path,
+                false,
+                compression_codec,
+                false,
+                written_offset_columns,
+                to.getIndexGranularity()
+            );
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
@@ -967,7 +985,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             {
                 String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
                 files_to_skip.insert(stream_name + ".bin");
-                files_to_skip.insert(stream_name + ".mrk");
+                files_to_skip.insert(stream_name + data.index_granularity_info.marks_file_extension);
             };
 
             IDataType::SubstreamPath stream_path;
@@ -990,7 +1008,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
-            data, in_header, new_part_tmp_path, /* sync = */ false, compression_codec, /* skip_offsets = */ false, unused_written_offsets);
+            data,
+            in_header,
+            new_part_tmp_path,
+            /* sync = */ false,
+            compression_codec,
+            /* skip_offsets = */ false,
+            unused_written_offsets,
+            source_part->index_granularity
+        );
 
         in->readPrefix();
         out.writePrefix();
@@ -1033,7 +1059,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
         new_data_part->rows_count = source_part->rows_count;
-        new_data_part->marks_count = source_part->marks_count;
+        new_data_part->index_granularity = source_part->index_granularity;
         new_data_part->index = source_part->index;
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;
