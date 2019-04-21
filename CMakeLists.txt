@@ -181,7 +181,7 @@ include (cmake/use_libcxx.cmake)
 include (cmake/find_unwind.cmake)
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
-    option (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING "Use internal unwind library for exception handling" 1)
+    option (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING "Use internal unwind library for exception handling" ${USE_STATIC_LIBRARIES})
 endif ()
 
 # Set standard, system and compiler libraries explicitly.
@@ -221,6 +221,8 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_L
     else ()
         set (EXCEPTION_HANDLING_LIBRARY "-lgcc_eh")
     endif ()
+
+    message (STATUS "Using exception handling library: ${EXCEPTION_HANDLING_LIBRARY}")
 
     if (USE_LIBCXX)
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
@@ -371,7 +373,7 @@ if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
                 add_dependencies(${target_name} glibc-compatibility)
             endif ()
             if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
-                add_dependencies(${target_name} unwind_static)
+                add_dependencies(${target_name} ${UNWIND_LIBRARY})
             endif ()
         endif ()
     endfunction ()
