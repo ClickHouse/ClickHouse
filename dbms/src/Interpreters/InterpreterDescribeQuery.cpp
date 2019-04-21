@@ -52,6 +52,9 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "codec_expression";
     block.insert(col);
 
+    col.name = "ttl_expression";
+    block.insert(col);
+
     return block;
 }
 
@@ -118,6 +121,11 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             res_columns[5]->insert(column.codec->getCodecDesc());
         else
             res_columns[5]->insertDefault();
+
+        if (column.ttl)
+            res_columns[6]->insert(queryToString(column.ttl));
+        else
+            res_columns[6]->insertDefault();
     }
 
     return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));

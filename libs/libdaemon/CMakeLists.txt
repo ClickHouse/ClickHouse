@@ -23,6 +23,5 @@ if (USE_UNWIND)
 endif ()
 
 target_include_directories (daemon PUBLIC include)
-target_include_directories (daemon PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
 
 target_link_libraries (daemon PRIVATE clickhouse_common_io clickhouse_common_config common ${Poco_Net_LIBRARY} ${Poco_Util_LIBRARY} ${EXECINFO_LIBRARY} ${ELF_LIBRARY})
