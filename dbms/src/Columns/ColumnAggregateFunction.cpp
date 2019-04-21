@@ -103,36 +103,22 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
     return res;
 }
 
-MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const
 {
     MutableColumnPtr res;
-    if (convertion(&res))
-    {
-        return res;
-    }
+    convertion(&res);
 
-//    auto ML_function_Linear = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLinearRegression> *>(func.get());
-//    auto ML_function_Logistic = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression> *>(func.get());
     auto ML_function = func.get();
     if (ML_function)
     {
         size_t row_num = 0;
         for (auto val : data)
         {
-            ML_function->predictValues(val, *res, block, arguments);
+            ML_function->predictValues(val, *res, block, arguments, context);
             ++row_num;
         }
 
     }
-//    else if (ML_function_Logistic)
-//    {
-//        size_t row_num = 0;
-//        for (auto val : data)
-//        {
-//            ML_function_Logistic->predictValues(val, *res, block, arguments);
-//            ++row_num;
-//        }
-//    }
     else
     {
         throw Exception("Illegal aggregate function is passed",

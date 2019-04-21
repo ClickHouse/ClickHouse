@@ -29,10 +29,12 @@ class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(const Context &)
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionEvalMLMethod>();
+        return std::make_shared<FunctionEvalMLMethod>(context);
     }
+    FunctionEvalMLMethod(const Context & context) : context(context)
+    {}
 
     String getName() const override
     {
@@ -72,14 +74,13 @@ public:
 
         if (!column_with_states)
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                            + " of first argument of function "
-                            + getName(),
-                            ErrorCodes::ILLEGAL_COLUMN);
+                            + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         block.getByPosition(result).column =
-                typeid_cast<const ColumnAggregateFunction *>(&*column_with_states->getDataColumnPtr())->predictValues(block, arguments);
+                typeid_cast<const ColumnAggregateFunction *>(&*column_with_states->getDataColumnPtr())->predictValues(block, arguments, context);
     }
 
+    const Context & context;
 };
 
 void registerFunctionEvalMLMethod(FunctionFactory & factory)
