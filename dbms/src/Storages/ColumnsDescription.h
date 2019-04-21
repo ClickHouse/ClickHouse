@@ -18,6 +18,7 @@ struct ColumnDescription
     ColumnDefault default_desc;
     String comment;
     CompressionCodecPtr codec;
+    ASTPtr ttl;
 
     ColumnDescription() = default;
     ColumnDescription(String name_, DataTypePtr type_) : name(std::move(name_)), type(std::move(type_)) {}
@@ -57,6 +58,9 @@ public:
     NamesAndTypesList getAliases() const;
     /// ordinary + materialized + aliases.
     NamesAndTypesList getAll() const;
+
+    using ColumnTTLs = std::unordered_map<String, ASTPtr>;
+    ColumnTTLs getColumnTTLs() const;
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;

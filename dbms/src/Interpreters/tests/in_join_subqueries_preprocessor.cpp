@@ -52,11 +52,9 @@ private:
 };
 
 
-class InJoinSubqueriesPreprocessorMock : public DB::InJoinSubqueriesPreprocessor
+class CheckShardsAndTablesMock : public DB::InJoinSubqueriesPreprocessor::CheckShardsAndTables
 {
 public:
-    using DB::InJoinSubqueriesPreprocessor::InJoinSubqueriesPreprocessor;
-
     bool hasAtLeastTwoShards(const DB::IStorage & table) const override
     {
         if (!table.isRemote())
@@ -1181,13 +1179,11 @@ TestResult check(const TestEntry & entry)
         if (!parse(ast_input, entry.input))
             return TestResult(false, "parse error");
 
-        auto select_query = typeid_cast<DB::ASTSelectQuery *>(&*ast_input);
-
         bool success = true;
 
         try
         {
-            InJoinSubqueriesPreprocessorMock(context).process(select_query);
+            DB::InJoinSubqueriesPreprocessor(context, std::make_unique<CheckShardsAndTablesMock>()).visit(ast_input);
         }
         catch (const DB::Exception & ex)
         {

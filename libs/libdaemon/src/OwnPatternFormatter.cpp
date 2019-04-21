@@ -8,7 +8,7 @@
 #include <functional>
 #include <optional>
 #include <sys/time.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 #include <daemon/BaseDaemon.h>
 
 
