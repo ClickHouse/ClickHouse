@@ -165,10 +165,10 @@ MergeTreeData::MergeTreeData(
     /// Creating directories, if not exist.
     for (const String & path : getFullPaths())
     {
-        std::cerr << "Create path " << path << " by " << table_name << std::endl;
         Poco::File(path).createDirectories();
         Poco::File(path + "detached").createDirectory();
-        if (Poco::File{path + "format_version.txt"}.exists()) {
+        if (Poco::File{path + "format_version.txt"}.exists())
+        {
             if (!version_file_path.empty())
             {
                 LOG_ERROR(log, "Duplication of version file " << version_file_path << " and " << path << "format_file.txt");
@@ -179,9 +179,8 @@ MergeTreeData::MergeTreeData(
     }
 
     /// If not choose any
-    if (version_file_path.empty()) {
+    if (version_file_path.empty())
         version_file_path = schema.getDisks()[0]->getPath() + "format_version.txt";
-    }
 
     ///@TODO_IGR ASK LOGIC
     auto version_file_exists = Poco::File(version_file_path).exists();
@@ -1037,11 +1036,8 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
-    for (auto && full_data_path : getFullPaths()) {
+    for (auto && full_data_path : getFullPaths())
         Poco::File(full_data_path).remove(true);
-        std::cerr << full_data_path << " removed by " << table_name << std::endl;
-    }
-
 
     LOG_TRACE(log, "dropAllData: done.");
 }
@@ -2422,7 +2418,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 
 DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size)
 {
-//    std::cerr << "Exp size " << expected_size << std::endl;
     constexpr UInt64 SIZE_1MB = 1ull << 20; ///@TODO_IGR ASK Is it OK?
     constexpr UInt64 MAGIC_CONST = 1;
 
@@ -2648,15 +2643,16 @@ DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceAtDisk(UInt64 expect
     return schema.reserve(expected_size);
 }
 
-String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const {
+String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
+{
     return disk->getPath() + escapeForFileName(database_name) + '/' + escapeForFileName(table_name) + '/';
 }
 
-Strings MergeTreeData::getFullPaths() const {
+Strings MergeTreeData::getFullPaths() const
+{
     Strings res;
-    for (const auto & disk : schema.getDisks()) {
+    for (const auto & disk : schema.getDisks())
         res.push_back(getFullPathOnDisk(disk));
-    }
     return res;
 }
 

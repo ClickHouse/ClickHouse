@@ -171,7 +171,8 @@ public:
 
             std::lock_guard lock(DiskSpaceMonitor::mutex);
 
-            if (size > unreserved) {
+            if (size > unreserved)
+            {
                 /// Can not reserve, not enough space
                 ///@TODO_IGR ASK metric_increment?
                 size = 0;
