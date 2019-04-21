@@ -52,13 +52,16 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     }
     if (parameters.size() > 3)
     {
-        if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'SGD\'") {
+        if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'SGD\'")
+        {
             weights_updater = std::make_shared<StochasticGradientDescent>();
         }
-        else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Momentum\'") {
+        else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Momentum\'")
+        {
             weights_updater = std::make_shared<Momentum>();
         }
-        else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Nesterov\'") {
+        else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Nesterov\'")
+        {
             weights_updater = std::make_shared<Nesterov>();
         }
         else
