@@ -10,6 +10,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int INVALID_TEMPLATE_FORMAT;
+extern const int ATTEMPT_TO_READ_AFTER_EOF;
+extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -92,23 +94,32 @@ bool TemplateRowInputStream::read(MutableColumns & columns, RowReadExtension & e
 
 void TemplateRowInputStream::deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format)
 {
-    switch (col_format)
+    try
     {
-        case ColumnFormat::Default:
-        case ColumnFormat::Escaped:
-            type.deserializeAsTextEscaped(column, buf, settings);
-            break;
-        case ColumnFormat::Quoted:
-            type.deserializeAsTextQuoted(column, buf, settings);
-            break;
-        case ColumnFormat::Csv:
-            type.deserializeAsTextCSV(column, buf, settings);
-            break;
-        case ColumnFormat::Json:
-            type.deserializeAsTextJSON(column, buf, settings);
-            break;
-        default:
-            break;
+        switch (col_format)
+        {
+            case ColumnFormat::Default:
+            case ColumnFormat::Escaped:
+                type.deserializeAsTextEscaped(column, buf, settings);
+                break;
+            case ColumnFormat::Quoted:
+                type.deserializeAsTextQuoted(column, buf, settings);
+                break;
+            case ColumnFormat::Csv:
+                type.deserializeAsTextCSV(column, buf, settings);
+                break;
+            case ColumnFormat::Json:
+                type.deserializeAsTextJSON(column, buf, settings);
+                break;
+            default:
+                break;
+        }
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+            throwUnexpectedEof();
+        throw;
     }
 }
 
@@ -116,6 +127,9 @@ void TemplateRowInputStream::deserializeField(const IDataType & type, IColumn & 
 /// Otherwise returns false
 bool TemplateRowInputStream::checkForSuffix()
 {
+    if (unlikely(synced_after_error_at_last_row))
+        return true;
+
     StringRef suffix(format.delimiters.back());
     if (likely(!compareSuffixPart(suffix, buf.position(), buf.available())))
         return false;
@@ -126,7 +140,10 @@ bool TemplateRowInputStream::checkForSuffix()
         if (likely(!compareSuffixPart(suffix, peeked.begin(), peeked.size())))
             return false;
     }
-    return suffix.size == 0;
+
+    if (suffix.size)
+        throwUnexpectedEof();
+    return true;
 }
 
 /// Returns true if buffer contains only suffix and maybe some spaces after it
@@ -139,11 +156,12 @@ bool TemplateRowInputStream::compareSuffixPart(StringRef & suffix, BufferBase::P
             return false;
         if (likely(suffix != StringRef(pos, suffix.size)))
             return false;
-        suffix.size = 0;
-        pos += suffix.size;
+
         BufferBase::Position end = pos + available;
+        pos += suffix.size;
+        suffix.size = 0;
         while (pos != end)
-            if (!isWhitespaceASCII(*pos))
+            if (!isWhitespaceASCII(*pos++))
                 return false;
         return true;
     }
@@ -233,13 +251,33 @@ bool TemplateRowInputStream::isGarbageAfterField(size_t, ReadBuffer::Position)
 
 bool TemplateRowInputStream::allowSyncAfterError() const
 {
-    return !row_format.delimiters.back().empty();
+    return !row_format.delimiters.back().empty() || !settings.template_settings.row_between_delimiter.empty();
 }
 
 void TemplateRowInputStream::syncAfterError()
 {
-    StringRef delim(row_format.delimiters.back());
-    if (unlikely(!delim.size)) return;
+    skipToNextDelimiterOrEof(row_format.delimiters.back());
+    if (buf.eof())
+    {
+        synced_after_error_at_last_row = true;
+        return;
+    }
+    buf.ignore(row_format.delimiters.back().size());
+
+    skipSpaces();
+    if (checkForSuffix())
+        return;
+
+    skipToNextDelimiterOrEof(settings.template_settings.row_between_delimiter);
+    if (buf.eof())
+        synced_after_error_at_last_row = true;
+}
+
+/// Searches for delimiter in input stream and sets buffer position to the beginning of delimiter (if found) or EOF (if not)
+void TemplateRowInputStream::skipToNextDelimiterOrEof(const String & delimiter)
+{
+    StringRef delim(delimiter);
+    if (!delim.size) return;
     while (!buf.eof())
     {
         void* pos = memchr(buf.position(), *delim.data, buf.available());
@@ -248,12 +286,26 @@ void TemplateRowInputStream::syncAfterError()
             buf.position() += buf.available();
             continue;
         }
+
         buf.position() = static_cast<ReadBuffer::Position>(pos);
+
+        /// Peek data until we can compare it with whole delim
         while (buf.available() < delim.size && buf.peekNext());
-        if (buf.available() < delim.size || delim == StringRef(buf.position(), delim.size))
+
+        if (buf.available() < delim.size)
+            buf.position() += buf.available();      /// EOF, there is no delim
+        else if (delim != StringRef(buf.position(), delim.size))
+            ++buf.position();
+        else
             return;
-        ++buf.position();
     }
+}
+
+void TemplateRowInputStream::throwUnexpectedEof()
+{
+    throw Exception("Unexpected EOF while parsing row " + std::to_string(row_num) + ". "
+                    "Maybe last row has wrong format or input doesn't contain specified suffix before EOF.",
+                    ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
 
