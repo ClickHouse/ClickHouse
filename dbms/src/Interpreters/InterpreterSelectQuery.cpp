@@ -1547,8 +1547,8 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
 void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    /// If there is LIMIT and no WITH TIES
-    if (query.limitLength() && !query.limit_with_ties)
+    /// If there is LIMIT
+    if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
