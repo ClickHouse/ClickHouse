@@ -25,11 +25,11 @@ if (NOT USE_INTERNAL_UNWIND_LIBRARY)
     int main () {
        ucontext_t context;
        unw_cursor_t cursor;
-       unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME);
+       unw_init_local(&cursor, &context);
        return 0;
     }
-    " HAVE_UNW_INIT_LOCAL2)
-    if (NOT HAVE_UNW_INIT_LOCAL2)
+    " HAVE_UNW_INIT_LOCAL)
+    if (NOT HAVE_UNW_INIT_LOCAL)
        set(UNWIND_LIBRARY "")
        set(UNWIND_INCLUDE_DIR "")
     endif ()
@@ -38,7 +38,7 @@ endif ()
 
 if (UNWIND_LIBRARY AND UNWIND_INCLUDE_DIR)
     set (USE_UNWIND 1)
-elseif (CMAKE_SYSTEM MATCHES "Linux" AND NOT ARCH_ARM AND NOT ARCH_32)
+elseif (CMAKE_SYSTEM MATCHES "Linux" AND NOT ARCH_ARM AND NOT ARCH_32 AND NOT UNBUNDLED)
     set (USE_INTERNAL_UNWIND_LIBRARY 1)
 
     set (LIBUNWIND_ENABLE_SHARED OFF CACHE BOOL "")
