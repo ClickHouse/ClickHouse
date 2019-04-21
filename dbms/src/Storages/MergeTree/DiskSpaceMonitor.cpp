@@ -24,6 +24,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
     config.keys(config_prefix, keys);
 
     constexpr auto default_disk_name = "default";
+    bool has_default_disk = false;
     for (const auto & disk_name : keys)
     {
         if (!isAlphaNumeric(disk_name))
@@ -37,6 +38,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
 
         if (disk_name == default_disk_name)
         {
+            has_default_disk = true;
             if (!path.empty())
                 throw Exception("It is not possible to specify default disk path", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
             disks.emplace(disk_name, std::make_shared<const Disk>(disk_name, default_path, keep_free_space_bytes));
@@ -48,6 +50,8 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
             disks.emplace(disk_name, std::make_shared<const Disk>(disk_name, path, keep_free_space_bytes));
         }
     }
+    if (!has_default_disk)
+        disks.emplace(default_disk_name, std::make_shared<const Disk>(default_disk_name, default_path, 0));
 }
 
 const DiskPtr & DiskSelector::operator[](const String & name) const
@@ -83,9 +87,8 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
         }
     }
 
-    if (disks.empty()) {
+    if (disks.empty())
         throw Exception("Volume must contain at least one disk", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-    }
 
     auto has_max_bytes = config.has(config_prefix + ".max_data_part_size_bytes");
     auto has_max_ratio = config.has(config_prefix + ".max_data_part_size_ratio");
@@ -95,11 +98,15 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
     }
 
-    if (has_max_bytes) {
+    if (has_max_bytes)
+    {
         max_data_part_size = config.getUInt64(config_prefix + ".max_data_part_size_bytes");
-    } else if (has_max_ratio) {
+    }
+    else if (has_max_ratio)
+    {
         auto ratio = config.getDouble(config_prefix + ".max_data_part_size_bytes");
-        if (ratio < 0 and ratio > 1) {
+        if (ratio < 0 and ratio > 1)
+        {
             throw Exception("'max_data_part_size_bytes' have to be between 0 and 1",
                             ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         }
@@ -107,7 +114,9 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
         for (const auto & disk : disks)
             sum_size += disk->getTotalSpace();
         max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio);
-    } else {
+    }
+    else
+    {
         max_data_part_size = std::numeric_limits<UInt64>::max();
     }
 }
@@ -151,9 +160,8 @@ Schema::Schema(const Poco::Util::AbstractConfiguration & config, const std::stri
                             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         volumes.emplace_back(config, config_prefix + "." + name, disks);
     }
-    if (volumes.empty()) {
+    if (volumes.empty())
         throw Exception("Schema must contain at least one Volume", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-    }
 }
 
 Schema::Disks Schema::getDisks() const
