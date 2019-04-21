@@ -11,9 +11,9 @@ namespace DB
 class FillingBlockInputStream : public IBlockInputStream
 {
 public:
-    FillingBlockInputStream(const BlockInputStreamPtr & input, const SortDescription & description_);
+    FillingBlockInputStream(const BlockInputStreamPtr & input, const SortDescription & fill_description_);
 
-    String getName() const override { return "With fill"; }
+    String getName() const override { return "WithFill"; }
 
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
@@ -21,8 +21,9 @@ protected:
     Block readImpl() override;
 
 private:
-    const SortDescription description;
-    SharedBlockRowRef last_row_ref;
+    UInt64 pos = 0; /// total number of read rows
+    const SortDescription fill_description; /// contains only rows with WITH_FILL
+    SharedBlockRowRef last_row_ref; /// ref to last written row
 };
 
 

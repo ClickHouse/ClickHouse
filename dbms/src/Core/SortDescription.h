@@ -11,6 +11,17 @@ class Collator;
 namespace DB
 {
 
+struct FillColumnDescription
+{
+    /// All missed values in range [FROM, TO] will be filled
+    /// Range [FROM, TO] respects sorting direction
+    bool has_from = false;
+    bool has_to = false;
+    Field fill_from;        /// Fill value >= FILL_FROM
+    Field fill_to;          /// Fill value + STEP <= FILL_TO
+    Field fill_step;        /// Default = 1
+};
+
 /// Description of the sorting rule by one column.
 struct SortColumnDescription
 {
@@ -20,25 +31,23 @@ struct SortColumnDescription
     int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
                              /// To achieve NULLS LAST, set it equal to direction, to achieve NULLS FIRST, set it opposite.
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
-    bool with_fill;          /// If true, all missed values in range [FROM, TO] will be filled
-                             /// Range [FROM, TO] respects sorting direction
-    double fill_from;             /// Fill value >= FROM
-    double fill_to;               /// Fill value + STEP <= TO
-    double fill_step;             /// Default = 1
+    bool with_fill;
+    FillColumnDescription fill_description;
+
 
     SortColumnDescription(
             size_t column_number_, int direction_, int nulls_direction_,
             const std::shared_ptr<Collator> & collator_ = nullptr, bool with_fill_ = false,
-            double fill_from_ = 0, double fill_to_ = 0, double fill_step_ = 0)
+            FillColumnDescription fill_description_ = {})
             : column_number(column_number_), direction(direction_), nulls_direction(nulls_direction_), collator(collator_)
-            , with_fill(with_fill_), fill_from(fill_from_), fill_to(fill_to_), fill_step(fill_step_) {}
+            , with_fill(with_fill_), fill_description(fill_description_) {}
 
     SortColumnDescription(
             const std::string & column_name_, int direction_, int nulls_direction_,
             const std::shared_ptr<Collator> & collator_ = nullptr, bool with_fill_ = false,
-            double fill_from_ = 0, double fill_to_ = 0, double fill_step_ = 0)
+            FillColumnDescription fill_description_ = {})
             : column_name(column_name_), column_number(0), direction(direction_), nulls_direction(nulls_direction_)
-            , collator(collator_), with_fill(with_fill_), fill_from(fill_from_), fill_to(fill_to_), fill_step(fill_step_) {}
+            , collator(collator_), with_fill(with_fill_), fill_description(fill_description_) {}
 
     bool operator == (const SortColumnDescription & other) const
     {
