@@ -15,17 +15,8 @@ namespace DB
 class ActiveDataPartSet
 {
 public:
-    struct PartPathName
-    {
-        /// path + name is absolute path to DataPart
-        String path;
-        String name;
-    };
-    using PartPathNames = std::vector<PartPathName>;
-
-
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
-    ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const PartPathNames & names);
+    ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
     ActiveDataPartSet(const ActiveDataPartSet & other)
         : format_version(other.format_version)
@@ -52,7 +43,7 @@ public:
 
     /// Returns true if the part was actually added. If out_replaced_parts != nullptr, it will contain
     /// parts that were replaced from the set by the newly added part.
-    bool add(const String & path, const String & name, PartPathNames * out_replaced_parts = nullptr);
+    bool add(const String & name, Strings * out_replaced_parts = nullptr);
 
     bool remove(const MergeTreePartInfo & part_info)
     {
@@ -65,13 +56,13 @@ public:
     }
 
     /// If not found, return an empty string.
-    PartPathName getContainingPart(const MergeTreePartInfo & part_info) const;
-    PartPathName getContainingPart(const String & name) const;
+    String getContainingPart(const MergeTreePartInfo & part_info) const;
+    String getContainingPart(const String & name) const;
 
-    PartPathNames getPartsCoveredBy(const MergeTreePartInfo & part_info) const;
+    Strings getPartsCoveredBy(const MergeTreePartInfo & part_info) const;
 
     /// Returns parts in ascending order of the partition_id and block number.
-    PartPathNames getParts() const;
+    Strings getParts() const;
 
     size_t size() const;
 
@@ -79,9 +70,9 @@ public:
 
 private:
     MergeTreeDataFormatVersion format_version;
-    std::map<MergeTreePartInfo, PartPathName> part_info_to_name;
+    std::map<MergeTreePartInfo, String> part_info_to_name;
 
-    std::map<MergeTreePartInfo, PartPathName>::const_iterator getContainingPartImpl(const MergeTreePartInfo & part_info) const;
+    std::map<MergeTreePartInfo, String>::const_iterator getContainingPartImpl(const MergeTreePartInfo & part_info) const;
 };
 
 }

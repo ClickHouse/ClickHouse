@@ -192,7 +192,7 @@ public:
         part_check_thread.enqueuePart(part_name, delay_to_check_seconds);
     }
 
-    Strings getDataPaths() const override { return {full_path}; }
+    Strings getDataPaths() const override { return data.getFullPaths(); }
 
     ASTPtr getPartitionKeyAST() const override { return data.partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return data.getSortingKeyAST(); }
@@ -236,7 +236,6 @@ private:
 
     String database_name;
     String table_name;
-    String full_path;
 
     String zookeeper_path;
     String replica_name;
@@ -554,7 +553,7 @@ protected:
         const String & zookeeper_path_,
         const String & replica_name_,
         bool attach,
-        const String & path_, const String & database_name_, const String & name_,
+        const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
         const IndicesDescription & indices_,
         Context & context_,

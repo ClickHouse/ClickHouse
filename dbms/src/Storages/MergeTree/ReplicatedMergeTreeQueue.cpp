@@ -32,8 +32,8 @@ void ReplicatedMergeTreeQueue::addVirtualParts(const MergeTreeData::DataParts & 
 
     for (const auto & part : parts)
     {
-        current_parts.add("/", part->name);
-        virtual_parts.add("/", part->name);
+        current_parts.add(part->name);
+        virtual_parts.add(part->name);
     }
 }
 
@@ -122,7 +122,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
 {
     for (const String & virtual_part_name : entry->getVirtualPartNames())
     {
-        virtual_parts.add("/", virtual_part_name);
+        virtual_parts.add(virtual_part_name);
         updateMutationsPartsToDo(virtual_part_name, /* add = */ true);
     }
 
@@ -192,13 +192,13 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     {
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
-            ActiveDataPartSet::PartPathNames replaced_parts;
-            current_parts.add(String("/"), virtual_part_name, &replaced_parts);
+            Strings replaced_parts;
+            current_parts.add(virtual_part_name, &replaced_parts);
 
             /// Each part from `replaced_parts` should become Obsolete as a result of executing the entry.
             /// So it is one less part to mutate for each mutation with block number greater than part_info.getDataVersion()
-            for (const auto & replaced_part : replaced_parts)
-                updateMutationsPartsToDo(replaced_part.name, /* add = */ false);
+            for (const String & replaced_part_name : replaced_parts)
+                updateMutationsPartsToDo(replaced_part_name, /* add = */ false);
         }
 
         String drop_range_part_name;
@@ -539,9 +539,9 @@ static size_t countPartsToMutate(
         /// because they are not consecutive in `parts`.
         MergeTreePartInfo covering_part_info(
             partition_id, 0, block_num, MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
-        for (const auto & covered_part : parts.getPartsCoveredBy(covering_part_info))
+        for (const String & covered_part_name : parts.getPartsCoveredBy(covering_part_info))
         {
-            auto part_info = MergeTreePartInfo::fromPartName(covered_part.name, parts.getFormatVersion());
+            auto part_info = MergeTreePartInfo::fromPartName(covered_part_name, parts.getFormatVersion());
             if (part_info.getDataVersion() < block_num)
                 ++count;
         }
@@ -1306,7 +1306,7 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)
 {
     std::lock_guard lock(state_mutex);
-    virtual_parts.add("/", part_name);
+    virtual_parts.add(part_name);
 }
 
 
@@ -1572,7 +1572,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
             return false;
         }
 
-        if (prev_virtual_parts.getContainingPart(part->info).name.empty())
+        if (prev_virtual_parts.getContainingPart(part->info).empty())
         {
             if (out_reason)
                 *out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
@@ -1610,7 +1610,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     {
         /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
         /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
-        String containing_part = queue.virtual_parts.getContainingPart(part->info).name;
+        String containing_part = queue.virtual_parts.getContainingPart(part->info);
         if (containing_part != part->name)
         {
             if (out_reason)
@@ -1625,11 +1625,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
             left->info.partition_id, left_max_block + 1, right_min_block - 1,
             MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
-        auto tmp = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
-        Strings covered;
-        for (auto & elem : tmp)
-            covered.push_back(elem.name);
-
+        Strings covered = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
         if (!covered.empty())
         {
             if (out_reason)
@@ -1671,7 +1667,7 @@ std::optional<Int64> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersio
 
     std::lock_guard lock(queue.state_mutex);
 
-    if (queue.virtual_parts.getContainingPart(part->info).name != part->name)
+    if (queue.virtual_parts.getContainingPart(part->info) != part->name)
         return {};
 
     auto in_partition = queue.mutations_by_partition.find(part->info.partition_id);

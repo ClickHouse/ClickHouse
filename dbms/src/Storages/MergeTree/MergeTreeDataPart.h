@@ -28,12 +28,12 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const String & path_, const String & name_, const MergeTreePartInfo & info_)
-        : storage(storage_), full_path(path_), name(name_), info(info_)
+    MergeTreeDataPart(const MergeTreeData & storage_, const DiskPtr & disk_, const String & name_, const MergeTreePartInfo & info_)
+        : storage(storage_), disk(disk_), name(name_), info(info_)
     {
     }
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & path_, const String & name_);
+    MergeTreeDataPart(MergeTreeData & storage_, const DiskPtr & disk_, const String & name_);
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -86,7 +86,7 @@ struct MergeTreeDataPart
 
     const MergeTreeData & storage;
 
-    String full_path;
+    DiskPtr disk;
     String name;
     MergeTreePartInfo info;
 

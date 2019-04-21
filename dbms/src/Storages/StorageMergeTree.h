@@ -101,7 +101,6 @@ public:
     Names getColumnsRequiredForFinal() const override { return data.getColumnsRequiredForSortingKey(); }
 
 private:
-    String path;
     String database_name;
     String table_name;
 
@@ -168,7 +167,6 @@ protected:
       * See MergeTreeData constructor for comments on parameters.
       */
     StorageMergeTree(
-        const String & path_,
         const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,

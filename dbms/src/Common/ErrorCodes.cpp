@@ -422,6 +422,8 @@ namespace ErrorCodes
     extern const int CANNOT_MPROTECT = 445;
     extern const int FUNCTION_NOT_ALLOWED = 446;
     extern const int HYPERSCAN_CANNOT_SCAN_TEXT = 447;
+    extern const int UNKNOWN_SCHEMA = 448;
+    extern const int UNKNOWN_DISK = 449;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
