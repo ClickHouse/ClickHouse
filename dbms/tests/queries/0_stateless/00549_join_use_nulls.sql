@@ -1,9 +1,9 @@
 SET join_use_nulls = 1;
 
-DROP TABLE IF EXISTS test.null;
-CREATE TABLE test.null (k UInt64, a String, b Nullable(String)) ENGINE = Log;
+DROP TABLE IF EXISTS null;
+CREATE TABLE null (k UInt64, a String, b Nullable(String)) ENGINE = Log;
 
-INSERT INTO test.null SELECT
+INSERT INTO null SELECT
     k,
     a,
     b
@@ -25,6 +25,6 @@ ANY LEFT JOIN
 ) USING (k)
 ORDER BY k ASC;
 
-SELECT * FROM test.null ORDER BY k, a, b;
+SELECT * FROM null ORDER BY k, a, b;
 
-DROP TABLE test.null;
+DROP TABLE null;

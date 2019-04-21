@@ -1,5 +1,3 @@
-USE test;
-
 select groupArray(s) from (select sum(n) s from (select toDecimal32(1, 2) as n));
 select groupArray(s) from (select sum(n) s from (select toDecimal64(1, 5) as n));
 select groupArray(s) from (select sum(n) s from (select toDecimal128(1, 10) as n));

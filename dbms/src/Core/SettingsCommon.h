@@ -167,6 +167,9 @@ enum class LoadBalancing
     NEAREST_HOSTNAME,
     /// replicas are walked through strictly in order; the number of errors does not matter
     IN_ORDER,
+    /// if first replica one has higher number of errors,
+    ///   pick a random one from replicas with minimum number of errors
+    FIRST_OR_RANDOM,
 };
 
 struct SettingLoadBalancing

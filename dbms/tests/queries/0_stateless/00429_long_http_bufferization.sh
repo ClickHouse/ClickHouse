@@ -89,9 +89,9 @@ check_cli_and_http
 
 function cmp_http_compression() {
     $CLICKHOUSE_CLIENT -q "`query $1`" > ${CLICKHOUSE_TMP}/res0
-    ch_url 'compress=1' $1 | clickhouse-compressor --decompress > ${CLICKHOUSE_TMP}/res1
-    ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" $1 | clickhouse-compressor --decompress > ${CLICKHOUSE_TMP}/res2
-    ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" $1 | clickhouse-compressor --decompress > ${CLICKHOUSE_TMP}/res3
+    ch_url 'compress=1' $1 | ${CLICKHOUSE_BINARY}-compressor --decompress > ${CLICKHOUSE_TMP}/res1
+    ch_url "compress=1&buffer_size=$2&wait_end_of_query=0" $1 | ${CLICKHOUSE_BINARY}-compressor --decompress > ${CLICKHOUSE_TMP}/res2
+    ch_url "compress=1&buffer_size=$2&wait_end_of_query=1" $1 | ${CLICKHOUSE_BINARY}-compressor --decompress > ${CLICKHOUSE_TMP}/res3
     cmp ${CLICKHOUSE_TMP}/res0 ${CLICKHOUSE_TMP}/res1
     cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res2
     cmp ${CLICKHOUSE_TMP}/res1 ${CLICKHOUSE_TMP}/res3
