@@ -27,7 +27,9 @@ public:
 private:
     void deserializeField(const IDataType & type, IColumn & column, ColumnFormat col_format);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
+
     bool checkForSuffix();
+    void throwUnexpectedEof();
     bool compareSuffixPart(StringRef & suffix, BufferBase::Position pos, size_t available);
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
@@ -35,6 +37,8 @@ private:
                              ReadBuffer::Position & curr_pos) override;
     bool isGarbageAfterField(size_t after_col_idx, ReadBuffer::Position pos) override;
     void writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim);
+
+    void skipToNextDelimiterOrEof(const String& delimeter);
 
 private:
     PeekableReadBuffer buf;
@@ -44,6 +48,7 @@ private:
     ParsedTemplateFormat format;
     ParsedTemplateFormat row_format;
     const bool ignore_spaces;
+    bool synced_after_error_at_last_row = false;
 };
 
 }

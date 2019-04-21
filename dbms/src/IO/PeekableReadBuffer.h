@@ -26,41 +26,27 @@ public:
 
     bool peekNext()
     {
-        if (sub_buf.eof())
-            return false;
-
-        size_t offset = peeked_size ? this->offset() : 0;
-        size_t available = peeked_size ? sub_buf.buffer().size() : this->available();
-        Position sub_buf_pos = peeked_size ? sub_buf.buffer().begin() : pos;
-        size_t new_size = peeked_size + available;
-
-        if (memory.size() < new_size)
+        if (!readFromOwnMemory())
         {
-            if (available < offset && 2 * (peeked_size - offset) <= memory.size())
-            {
-                /// Move unread data to the beginning of own memory instead of resize own memory
-                peeked_size -= offset;
-                new_size -= offset;
-                memmove(memory.data(), memory.data() + offset, peeked_size);
-                working_buffer.resize(peeked_size);
-                pos = memory.data();
-                bytes += offset;
-                offset = 0;
-            }
-            else
-            {
-                if (unread_limit < new_size)
-                    throw DB::Exception("trying to peek too much data", ErrorCodes::MEMORY_LIMIT_EXCEEDED);
-                memory.resize(new_size);
-            }
+            bytes += pos - sub_buf.buffer().begin();
+            sub_buf.position() = pos;
+        }
+        size_t available = sub_buf.available();
+        if (!available)
+        {
+            bool res = sub_buf.next();
+            if (!readFromOwnMemory())
+                BufferBase::set(sub_buf.buffer().begin(), sub_buf.buffer().size(), sub_buf.offset());
+            return res;
         }
 
+        size_t offset = resizeOwnMemoryIfNecessary(available);
+
         /// Save unread data from sub-buffer to own memory
-        memcpy(memory.data() + peeked_size, sub_buf_pos, available);
-        peeked_size = new_size;
-        bytes += sub_buf_pos - sub_buf.buffer().begin();
+        memcpy(memory.data() + peeked_size, sub_buf.position(), available);
+        peeked_size += available;
         /// Switch to reading from own memory (or just update size if already switched)
-        BufferBase::set(memory.data(), new_size, offset);
+        BufferBase::set(memory.data(), peeked_size, offset);
 
         sub_buf.position() += available;
         return sub_buf.next();
@@ -75,7 +61,7 @@ private:
     bool nextImpl() override
     {
         bool res = true;
-        if (peeked_size)
+        if (readFromOwnMemory())
         {
             /// All copied data have been read from own memory, continue reading from sub_buf
             peeked_size = 0;
@@ -91,6 +77,35 @@ private:
         /// Switch to reading from sub_buf (or just update it if already switched)
         BufferBase::set(sub_working.begin(), sub_working.size(), 0);
         return res;
+    }
+
+    inline bool readFromOwnMemory() const
+    {
+        return peeked_size;
+    }
+
+    size_t resizeOwnMemoryIfNecessary(size_t bytes_to_append)
+    {
+        size_t offset = readFromOwnMemory() ? this->offset() : 0;
+        size_t new_size = peeked_size + bytes_to_append;
+        if (memory.size() < new_size)
+        {
+            if (bytes_to_append < offset && 2 * (peeked_size - offset) <= memory.size())
+            {
+                /// Move unread data to the beginning of own memory instead of resize own memory
+                peeked_size -= offset;
+                memmove(memory.data(), memory.data() + offset, peeked_size);
+                bytes += offset;
+                return 0;
+            }
+            else
+            {
+                if (unread_limit < new_size)
+                    throw DB::Exception("trying to peek too much data", ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+                memory.resize(new_size);
+            }
+        }
+        return offset;
     }
 
     ReadBuffer & sub_buf;
