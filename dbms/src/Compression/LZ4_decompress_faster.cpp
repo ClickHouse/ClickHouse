@@ -14,6 +14,10 @@
 #include <emmintrin.h>
 #endif
 
+#ifdef __AVX__
+#include <immintrin.h>
+#endif
+
 #ifdef __SSSE3__
 #include <tmmintrin.h>
 #endif
@@ -341,45 +345,188 @@ template <> void inline wildCopy<16>(UInt8 * dst, const UInt8 * src, UInt8 * dst
 template <> void inline copyOverlap<16, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16(op, match, offset); }
 template <> void inline copyOverlap<16, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16Shuffle(op, match, offset); }
 
+inline void copy32(UInt8 * dst, const UInt8 * src)
+{
+#if defined(__AVX__)
+    _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst),
+        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src)));
+#elif defined(__SSE2__)
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + 16),
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 16)));
+#else
+    memcpy(dst, src, 16);
+#endif
+}
+
+inline void wildCopy32(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
+{
+    do
+    {
+        copy32(dst, src);
+        dst += 32;
+        src += 32;
+    } while (dst < dst_end);
+}
+
+template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
+template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
+
+inline void copyUsingOffset(UInt8 * dst, const UInt8 * src, UInt8 * dst_end, const size_t offset)
+{
+    UInt8 v[8];
+    switch (offset)
+    {
+        case 1:
+            memset(v, *src, 8);
+            goto copy_loop;
+        case 2:
+            memcpy(v, src, 2);
+            memcpy(&v[2], src, 2);
+            memcpy(&v[4], &v[0], 4);
+            goto copy_loop;
+        case 4:
+            memcpy(v, src, 4);
+            memcpy(&v[4], src, 4);
+            goto copy_loop;
+        default:
+            if (offset < 8)
+            {
+                copyOverlap<8, false>(dst, src, offset);
+                dst += 8;
+            }
+            else
+            {
+                memcpy(dst, src, 8);
+                dst += 8;
+                src += 8;
+            }
+            wildCopy<8>(dst, src, dst_end);
+            return;
+    }
+copy_loop:
+    memcpy(dst, v, 8);
+    dst += 8;
+    while (dst < dst_end)
+    {
+        memcpy(dst, v, 8);
+        dst += 8;
+    }
+}
 
 /// See also https://stackoverflow.com/a/30669632
 
 
-template <size_t copy_amount, bool use_shuffle>
+/// use_optimized_new_lz4_version is for the new optimized LZ4 decompression that was introduced in LZ4 1.9.0
+/// With experiments it turned out to be faster for big columns, so we decided to add it to the statistics choice.
+
+template <size_t copy_amount, size_t guaranteed_minimal_dest_size, bool use_shuffle, bool use_optimized_new_lz4_version>
 void NO_INLINE decompressImpl(
      const char * const source,
      char * const dest,
+     [[maybe_unused]] size_t source_size,
      size_t dest_size)
 {
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
+    [[maybe_unused]] const UInt8 * const input_end = reinterpret_cast<const UInt8 *>(source) + source_size;
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
+    UInt8 * copy_end;
+    unsigned token;
+    size_t length;
+    size_t offset;
+    const UInt8 * match;
+
+    auto continue_read_length = [&]
+    {
+        unsigned s;
+        do
+        {
+            s = *ip++;
+            length += s;
+        } while (unlikely(s == 255));
+    };
+
+    if (use_optimized_new_lz4_version)
+    {
+        if (guaranteed_minimal_dest_size >= 64 || dest_size >= 64)
+        {
+            while (1)
+            {
+                /// Get literal length.
+                token = *ip++;
+                length = token >> 4;
+                if (length == 0x0F)
+                {
+                    continue_read_length();
+                    copy_end = op + length;
+                    if (copy_end > output_end - 32 || ip + length > input_end - 32)
+                        goto literal_copy;
+                    wildCopy<32>(op, ip, copy_end);
+                    ip += length;
+                    op = copy_end;
+                }
+                else
+                {
+                    copy_end = op + length;
+                    if (ip > input_end - 17)
+                        goto literal_copy;
+                    copy<16>(op, ip);
+                    ip += length;
+                    op = copy_end;
+                }
+
+                offset = unalignedLoad<UInt16>(ip);
+                ip += 2;
+                match = op - offset;
+
+                /// Get match length.
+                length = token & 0x0F;
+                if (length == 0x0F)
+                {
+                    continue_read_length();
+                    length += 4;
+                    if (op + length >= output_end - 64)
+                        goto match_copy;
+                }
+                else
+                {
+                    length += 4;
+                    if (op + length >= output_end - 64)
+                        goto match_copy;
+                    if (offset >= 8)
+                    {
+                        memcpy(op, match, 8);
+                        memcpy(op + 8, match + 8, 8);
+                        memcpy(op + 16, match + 16, 2);
+                        op += length;
+                        continue;
+                    }
+                }
+
+                /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
+                copy_end = op + length;
+                if (unlikely(offset < 16))
+                    copyUsingOffset(op, match, copy_end, offset);
+                else
+                    wildCopy<32>(op, match, copy_end);
+
+                op = copy_end;
+            }
+        }
+    }
 
     while (1)
     {
-        size_t length;
-
-        auto continue_read_length = [&]
-        {
-            unsigned s;
-            do
-            {
-                s = *ip++;
-                length += s;
-            } while (unlikely(s == 255));
-        };
-
         /// Get literal length.
-
-        const unsigned token = *ip++;
+        token = *ip++;
         length = token >> 4;
         if (length == 0x0F)
             continue_read_length();
-
         /// Copy literals.
-
-        UInt8 * copy_end = op + length;
-
+        copy_end = op + length;
+literal_copy:
         /// input: Hello, world
         ///        ^-ip
         /// output: xyz
@@ -390,8 +537,7 @@ void NO_INLINE decompressImpl(
         ///              ^-ip
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
-
-        wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
+        wildCopy<copy_amount>(op, ip, copy_end);
 
         ip += length;
         op = copy_end;
@@ -400,20 +546,18 @@ void NO_INLINE decompressImpl(
             return;
 
         /// Get match offset.
-
-        size_t offset = unalignedLoad<UInt16>(ip);
+        offset = unalignedLoad<UInt16>(ip);
         ip += 2;
-        const UInt8 * match = op - offset;
+        match = op - offset;
 
         /// Get match length.
-
         length = token & 0x0F;
         if (length == 0x0F)
             continue_read_length();
         length += 4;
 
+match_copy:
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
-
         copy_end = op + length;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
@@ -432,7 +576,6 @@ void NO_INLINE decompressImpl(
             ///
             /// output: HelloHelloHel
             ///            ^-match   ^-op
-
             copyOverlap<copy_amount, use_shuffle>(op, match, offset);
         }
         else
@@ -453,7 +596,6 @@ void NO_INLINE decompressImpl(
 
 }
 
-
 void decompress(
     const char * const source,
     char * const dest,
@@ -463,9 +605,9 @@ void decompress(
 {
     if (source_size == 0 || dest_size == 0)
         return;
-
+    static constexpr size_t small_block_threshold = 32768;
     /// Don't run timer if the block is too small.
-    if (dest_size >= 32768)
+    if (dest_size >= small_block_threshold)
     {
         size_t best_variant = statistics.select();
 
@@ -474,11 +616,13 @@ void decompress(
         Stopwatch watch;
 
         if (best_variant == 0)
-            decompressImpl<16, true>(source, dest, dest_size);
+            decompressImpl<16, small_block_threshold, true, false>(source, dest, source_size, dest_size);
         if (best_variant == 1)
-            decompressImpl<16, false>(source, dest, dest_size);
+            decompressImpl<16, small_block_threshold, false, false>(source, dest, source_size, dest_size);
         if (best_variant == 2)
-            decompressImpl<8, true>(source, dest, dest_size);
+            decompressImpl<8, small_block_threshold, true, false>(source, dest, source_size, dest_size);
+        if (best_variant == 3)
+            decompressImpl<8, small_block_threshold, false, true>(source, dest, source_size, dest_size);
 
         watch.stop();
 
@@ -488,7 +632,7 @@ void decompress(
     }
     else
     {
-        decompressImpl<8, false>(source, dest, dest_size);
+        decompressImpl<8, 0, false, false>(source, dest, source_size, dest_size);
     }
 }
 
