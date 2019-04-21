@@ -428,6 +428,7 @@ namespace ErrorCodes
     extern const int BAD_TTL_FILE = 451;
     extern const int WITH_TIES_WITHOUT_ORDER_BY = 452;
     extern const int INVALID_WITH_FILL_EXPRESSION = 453;
+    extern const int FILL_STEP_ZERO_VALUE = 454;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

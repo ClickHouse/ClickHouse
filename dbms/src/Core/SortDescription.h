@@ -22,8 +22,8 @@ struct SortColumnDescription
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
     bool with_fill;          /// If true, all missed values in range [FROM, TO] will be filled
                              /// Range [FROM, TO] respects sorting direction
-    double fill_from;             /// Value >= FROM
-    double fill_to;               /// Value + STEP <= TO
+    double fill_from;             /// Fill value >= FROM
+    double fill_to;               /// Fill value + STEP <= TO
     double fill_step;             /// Default = 1
 
     SortColumnDescription(

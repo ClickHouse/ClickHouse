@@ -22,6 +22,7 @@
 #include <DataStreams/CubeBlockInputStream.h>
 #include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/FillingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -75,6 +76,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int FILL_STEP_ZERO_VALUE;
 }
 
 namespace
@@ -715,6 +717,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeLimitBy(pipeline);
                 }
 
+                executeWithFill(pipeline);
+
                 if (query.limitLength())
                     executePreLimit(pipeline);
             }
@@ -840,6 +844,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
               */
             executeExtremes(pipeline);
 
+            executeWithFill(pipeline);
+
             executeLimit(pipeline);
         }
     }
@@ -915,6 +921,10 @@ static std::tuple<Float64, Float64, Float64> getWithFillParameters(const ASTOrde
         fill_to = getWithFillFloatValue(node.fill_to, context);
     if (node.fill_step)
         fill_step = getWithFillFloatValue(node.fill_step, context);
+
+    if (!fill_step)
+        throw Exception("STEP value can not be zero", ErrorCodes::FILL_STEP_ZERO_VALUE);
+
     return {fill_from, fill_to, fill_step};
 }
 
@@ -1457,6 +1467,24 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
         if (order_by_elem.with_fill)
         {
             auto[fill_from, fill_to, fill_step] = getWithFillParameters(order_by_elem, context);
+
+            if (order_by_elem.direction == -1)
+            {
+                /// if DESC, then STEP < 0, FROM > TO
+                fill_step = std::min(fill_step, fill_step * -1);
+                auto from = fill_from;
+                fill_from = std::max(fill_from, fill_to);
+                fill_to = std::min(from, fill_to);
+            }
+            else
+            {
+                /// if ASC, then STEP > 0, FROM < TO
+                fill_step = std::max(fill_step, fill_step * -1);
+                auto from = fill_from;
+                fill_from = std::min(fill_from, fill_to);
+                fill_to = std::max(from, fill_to);
+            }
+
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator,
                 true, fill_from, fill_to, fill_step);
         }
@@ -1589,7 +1617,7 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false);
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false, query.limit_with_ties, getSortDescription(query));
         });
     }
 }
@@ -1670,6 +1698,30 @@ void InterpreterSelectQuery::executeLimit(Pipeline & pipeline)
         pipeline.transform([&](auto & stream)
         {
             stream = std::make_shared<LimitBlockInputStream>(stream, limit_length, limit_offset, always_read_till_end, false, query.limit_with_ties, order_descr);
+        });
+    }
+}
+
+
+void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
+{
+    auto & query = getSelectQuery();
+    if (query.orderBy())
+    {
+        SortDescription order_descr = getSortDescription(query);
+        SortDescription fill_descr;
+        for (auto & desc : order_descr)
+        {
+            if (desc.with_fill)
+                fill_descr.push_back(desc);
+        }
+
+        if (!fill_descr.size())
+            return;
+
+        pipeline.transform([&](auto & stream)
+        {
+            stream = std::make_shared<FillingBlockInputStream>(stream, fill_descr);
         });
     }
 }
