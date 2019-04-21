@@ -366,3 +366,5 @@ select 'arrayPopFront(arr1)';
 select arr1, arrayPopFront(arr1) from test.array_functions;
 select 'arrayPopBack(arr1)';
 select arr1, arrayPopBack(arr1) from test.array_functions;
+
+DROP TABLE if exists test.array_functions;
