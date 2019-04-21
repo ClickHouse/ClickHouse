@@ -10,3 +10,4 @@ insert into test.table select number, number / 8192 from system.numbers limit 10
 alter table test.table add column def UInt64;
 select * from test.table prewhere val > 2 format Null;
 
+drop table if exists test.table;

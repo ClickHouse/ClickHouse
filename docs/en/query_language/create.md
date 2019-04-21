@@ -124,7 +124,7 @@ PARTITION BY dt
 ORDER BY (path, ts)
 ```
 
-### Temporary Tables
+## Temporary Tables
 
 ClickHouse supports temporary tables which have the following characteristics:
 

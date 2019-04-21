@@ -40,7 +40,7 @@ INSERT INTO t FORMAT TabSeparated
 
 С помощью консольного клиента или HTTP интерфейса можно вставлять данные отдельно от запроса. Как это сделать, читайте в разделе "[Интерфейсы](../interfaces/index.md#interfaces)".
 
-### Вставка результатов `SELECT`
+### Вставка результатов `SELECT` {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
