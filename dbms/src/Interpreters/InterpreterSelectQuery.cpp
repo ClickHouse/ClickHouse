@@ -895,37 +895,38 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
     return 0;
 }
 
-static Float64 getWithFillFloatValue(const ASTPtr & node, const Context & context)
+static Field getWithFillFieldValue(const ASTPtr & node, const Context & context)
 {
     const auto & [field, type] = evaluateConstantExpression(node, context);
 
     if (!isNumber(type))
         throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
-    Field converted = convertFieldToType(field, DataTypeFloat64());
-    if (converted.isNull())
-        throw Exception("The value " + applyVisitor(FieldVisitorToString(), field) + " of WITH FILL expression is not representable as Float64", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
-
-    return converted.safeGet<UInt64>();
+    return field;
 }
 
-static std::tuple<Float64, Float64, Float64> getWithFillParameters(const ASTOrderByElement & node, const Context & context)
+static FillColumnDescription getWithFillDescription(const ASTOrderByElement &node, const Context &context)
 {
-    Float64 fill_from = 0;
-    Float64 fill_to = 0;
-    Float64 fill_step = 1;
-
+    FillColumnDescription descr;
     if (node.fill_from)
-        fill_from = getWithFillFloatValue(node.fill_from, context);
+    {
+        descr.has_from = true;
+        descr.fill_from = getWithFillFieldValue(node.fill_from, context);
+    }
     if (node.fill_to)
-        fill_to = getWithFillFloatValue(node.fill_to, context);
+    {
+        descr.has_to = true;
+        descr.fill_to = getWithFillFieldValue(node.fill_to, context);
+    }
     if (node.fill_step)
-        fill_step = getWithFillFloatValue(node.fill_step, context);
+        descr.fill_step = getWithFillFieldValue(node.fill_step, context);
+    else
+        descr.fill_step = 1;
 
-    if (!fill_step)
+    if (descr.fill_step == 0)
         throw Exception("STEP value can not be zero", ErrorCodes::FILL_STEP_ZERO_VALUE);
 
-    return {fill_from, fill_to, fill_step};
+    return descr;
 }
 
 void InterpreterSelectQuery::executeFetchColumns(
@@ -1466,27 +1467,23 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
 
         if (order_by_elem.with_fill)
         {
-            auto[fill_from, fill_to, fill_step] = getWithFillParameters(order_by_elem, context);
+            FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context);
 
             if (order_by_elem.direction == -1)
             {
                 /// if DESC, then STEP < 0, FROM > TO
-                fill_step = std::min(fill_step, fill_step * -1);
-                auto from = fill_from;
-                fill_from = std::max(fill_from, fill_to);
-                fill_to = std::min(from, fill_to);
+                if (fill_desc.has_from && fill_desc.has_to && fill_desc.fill_from < fill_desc.fill_to)
+                    std::swap(fill_desc.fill_from, fill_desc.fill_to);
             }
             else
             {
                 /// if ASC, then STEP > 0, FROM < TO
-                fill_step = std::max(fill_step, fill_step * -1);
-                auto from = fill_from;
-                fill_from = std::min(fill_from, fill_to);
-                fill_to = std::max(from, fill_to);
+                if (fill_desc.has_from && fill_desc.has_to && fill_desc.fill_from > fill_desc.fill_to)
+                    std::swap(fill_desc.fill_from, fill_desc.fill_to);
             }
 
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator,
-                true, fill_from, fill_to, fill_step);
+                true, fill_desc);
         }
         else
             order_descr.emplace_back(name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
@@ -1717,7 +1714,7 @@ void InterpreterSelectQuery::executeWithFill(Pipeline & pipeline)
                 fill_descr.push_back(desc);
         }
 
-        if (!fill_descr.size())
+        if (fill_descr.empty())
             return;
 
         pipeline.transform([&](auto & stream)

@@ -1,9 +1,10 @@
 #pragma once
 
 #include <algorithm>
-#include "../Core/Block.h"
-#include "../../../contrib/boost/boost/smart_ptr/intrusive_ptr.hpp"
-#include "../Columns/IColumn.h"
+#include <Core/Block.h>
+#include <Core/SortDescription.h>
+#include <Columns/IColumn.h>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 
 
 namespace DB
@@ -97,7 +98,7 @@ struct SharedBlockRowRef
     }
 
 
-    static void setSharedBlockRowRef(SharedBlockRowRef &row_ref, SharedBlockPtr shared_block, ColumnRawPtrs *columns,
+    static void setSharedBlockRowRef(SharedBlockRowRef & row_ref, SharedBlockPtr & shared_block, ColumnRawPtrs * columns,
                               size_t row_num)
     {
         row_ref.row_num = row_num;

@@ -31,9 +31,10 @@ Block LimitBlockInputStream::readImpl()
     /// so we check current block
     if (with_ties && ties_row_ref.shared_block)
     {
-        res = children.back()->read();
         rows = res.rows();
         pos += rows;
+        res = children.back()->read();
+
 
         SharedBlockPtr ptr = new detail::SharedBlock(std::move(res));
         ColumnRawPtrs columns = SharedBlockRowRef::getBlockColumns(*ptr, description);
@@ -41,9 +42,9 @@ Block LimitBlockInputStream::readImpl()
 
         for (len = 0; len < rows; ++len)
         {
-            SharedBlockRowRef currentRow;
-            SharedBlockRowRef::setSharedBlockRowRef(currentRow, ptr, &columns, len);
-            if (currentRow != ties_row_ref)
+            SharedBlockRowRef current_row;
+            SharedBlockRowRef::setSharedBlockRowRef(current_row, ptr, &columns, len);
+            if (current_row != ties_row_ref)
             {
                 ties_row_ref.reset();
                 break;
