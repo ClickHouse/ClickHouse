@@ -284,7 +284,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (query_analyzer->isRewriteSubqueriesPredicate())
         {
-            /// remake interpreter_subquery when PredicateOptimizer is rewrite subqueries and main table is subquery
+            /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
             if (is_subquery)
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                     table_expression,
@@ -765,11 +765,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
 
-                need_second_distinct_pass = query.distinct && pipeline.hasMoreThanOneStream();
+                need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
             }
             else
             {
-                need_second_distinct_pass = query.distinct && pipeline.hasMoreThanOneStream();
+                need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
 
                 if (query.group_by_with_totals && !aggregate_final)
                 {
@@ -1598,6 +1598,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
         pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
+        pipeline.union_stream = true;
     }
     else if (pipeline.stream_with_non_joined_data)
     {

@@ -218,11 +218,11 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
 static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQuery & select)
 {
     if (!select.tables())
-        return {};
+        return nullptr;
 
     const auto & tables_in_select_query = select.tables()->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
-        return {};
+        return nullptr;
 
     const ASTTablesInSelectQueryElement * joined_table = nullptr;
     for (const auto & child : tables_in_select_query.children)

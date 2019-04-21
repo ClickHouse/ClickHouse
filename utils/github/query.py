@@ -7,9 +7,55 @@ class Query:
     '''Implements queries to the Github API using GraphQL
     '''
 
-    def __init__(self, token, max_page_size=100):
+    def __init__(self, token, max_page_size=100, min_page_size=5):
         self._token = token
         self._max_page_size = max_page_size
+        self._min_page_size = min_page_size
+
+    _MEMBERS = '''
+    {{
+        organization(login: "{organization}") {{
+            team(slug: "{team}") {{
+                members(first: {max_page_size} {next}) {{
+                    pageInfo {{
+                        hasNextPage
+                        endCursor
+                    }}
+                    nodes {{
+                        login
+                    }}
+                }}
+            }}
+        }}
+    }}
+    '''
+    def get_members(self, organization, team):
+        '''Get all team members for organization
+
+        Returns:
+            logins: a list of members' logins
+        '''
+        logins = []
+        not_end = True
+        query = Query._MEMBERS.format(organization=organization,
+                                      team=team,
+                                      max_page_size=self._max_page_size,
+                                      next='')
+
+        while not_end:
+            result = self._run(query)['organization']['team']
+            if result is None:
+                break
+            result = result['members']
+            not_end = result['pageInfo']['hasNextPage']
+            query = Query._MEMBERS.format(organization=organization,
+                                          team=team,
+                                          max_page_size=self._max_page_size,
+                                          next=f'after: "{result["pageInfo"]["endCursor"]}"')
+
+            logins += [node['login'] for node in result['nodes']]
+
+        return logins
 
     _LABELS = '''
     {{
@@ -39,20 +85,89 @@ class Query:
             labels: a list of JSON nodes with the name and color fields
         '''
         labels = [label for label in pull_request['labels']['nodes']]
-        not_end = bool(pull_request['labels']['pageInfo']['hasNextPage'])
-        query = Query._LABELS.format(number=pull_request['number'], max_page_size=self._max_page_size, next=f'after: "{pull_request["labels"]["pageInfo"]["endCursor"]}"')
+        not_end = pull_request['labels']['pageInfo']['hasNextPage']
+        query = Query._LABELS.format(number = pull_request['number'],
+                                     max_page_size = self._max_page_size,
+                                     next=f'after: "{pull_request["labels"]["pageInfo"]["endCursor"]}"')
 
         while not_end:
-            result = self._run(query)['data']['repository']['pullRequest']['labels']
+            result = self._run(query)['repository']['pullRequest']['labels']
             not_end = result['pageInfo']['hasNextPage']
+            query = Query._LABELS.format(number=pull_request['number'],
+                                         max_page_size=self._max_page_size,
+                                         next=f'after: "{result["pageInfo"]["endCursor"]}"')
 
             labels += [label for label in result['nodes']]
 
-            query = Query._LABELS.format(number=pull_request['number'], max_page_size=self._max_page_size, next=f'after: "{result["pageInfo"]["endCursor"]}"')
-
         return labels
 
-    _MAX_PULL_REQUESTS = 5
+    _TIMELINE = '''
+    {{
+        repository(owner: "yandex" name: "ClickHouse") {{
+            pullRequest(number: {number}) {{
+                timeline(first: {max_page_size} {next}) {{
+                    pageInfo {{
+                        hasNextPage
+                        endCursor
+                    }}
+                    nodes {{
+                        ... on CrossReferencedEvent {{
+                            isCrossRepository
+                            source {{
+                                ... on PullRequest {{
+                                    number
+                                    baseRefName
+                                    merged
+                                    labels(first: {max_page_size}) {{
+                                        pageInfo {{
+                                            hasNextPage
+                                            endCursor
+                                        }}
+                                        nodes {{
+                                            name
+                                            color
+                                        }}
+                                    }}
+                                }}
+                            }}
+                            target {{
+                                ... on PullRequest {{
+                                    number
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+        }}
+    }}
+    '''
+    def get_timeline(self, pull_request):
+        '''Fetchs all cross-reference events from pull-request's timeline
+
+        Args:
+            pull_request: JSON object returned by `get_pull_requests()`
+
+        Returns:
+            events: a list of JSON nodes for CrossReferenceEvent
+        '''
+        events = [event for event in pull_request['timeline']['nodes'] if event and event['source']]
+        not_end = pull_request['timeline']['pageInfo']['hasNextPage']
+        query = Query._TIMELINE.format(number = pull_request['number'],
+                                       max_page_size = self._max_page_size,
+                                       next=f'after: "{pull_request["timeline"]["pageInfo"]["endCursor"]}"')
+
+        while not_end:
+            result = self._run(query)['repository']['pullRequest']['timeline']
+            not_end = result['pageInfo']['hasNextPage']
+            query = Query._TIMELINE.format(number=pull_request['number'],
+                                           max_page_size=self._max_page_size,
+                                           next=f'after: "{result["pageInfo"]["endCursor"]}"')
+
+            events += [event for event in result['nodes'] if event and event['source']]
+
+        return events
+
     _PULL_REQUESTS = '''
     {{
         repository(owner: "yandex" name: "ClickHouse") {{
@@ -67,11 +182,17 @@ class Query:
                             }}
                             nodes {{
                                 oid
-                                associatedPullRequests(first: {max_pull_requests}) {{
+                                associatedPullRequests(first: {min_page_size}) {{
                                     totalCount
                                     nodes {{
                                         ... on PullRequest {{
                                             number
+                                            author {{
+                                                login
+                                            }}
+                                            mergedBy {{
+                                                login
+                                            }}
                                             url
                                             baseRefName
                                             baseRepository {{
@@ -79,14 +200,8 @@ class Query:
                                             }}
                                             mergeCommit {{
                                                 oid
-                                                author {{
-                                                    user {{
-                                                        id
-                                                    }}
-                                                    name
-                                                }}
                                             }}
-                                            labels(first: {max_page_size}) {{
+                                            labels(first: {min_page_size}) {{
                                                 pageInfo {{
                                                     hasNextPage
                                                     endCursor
@@ -94,6 +209,34 @@ class Query:
                                                 nodes {{
                                                     name
                                                     color
+                                                }}
+                                            }}
+                                            timeline(first: {min_page_size}) {{
+                                                pageInfo {{
+                                                    hasNextPage
+                                                    endCursor
+                                                }}
+                                                nodes {{
+                                                    ... on CrossReferencedEvent {{
+                                                        isCrossRepository
+                                                        source {{
+                                                            ... on PullRequest {{
+                                                                number
+                                                                baseRefName
+                                                                merged
+                                                                labels(first: 0) {{
+                                                                    nodes {{
+                                                                        name
+                                                                    }}
+                                                                }}
+                                                            }}
+                                                        }}
+                                                        target {{
+                                                            ... on PullRequest {{
+                                                                number
+                                                            }}
+                                                        }}
+                                                    }}
                                                 }}
                                             }}
                                         }}
@@ -107,26 +250,30 @@ class Query:
         }}
     }}
     '''
-    def get_pull_requests(self, before_commit, author):
+    def get_pull_requests(self, before_commit, login):
         '''Get all merged pull-requests from the HEAD of default branch to the last commit (excluding)
 
         Args:
             before_commit (string-convertable): commit sha of the last commit (excluding)
-            author (string): filter pull-requests by author name
+            login (string): filter pull-requests by user login
 
         Returns:
             pull_requests: a list of JSON nodes with pull-requests' details
         '''
         pull_requests = []
-        query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size, max_pull_requests=Query._MAX_PULL_REQUESTS, next='')
         not_end = True
-        user_id = self.get_user(author) if author else None
+        query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size,
+                                            min_page_size=self._min_page_size,
+                                            next='')
 
         while not_end:
-            result = self._run(query)['data']['repository']['defaultBranchRef']
+            result = self._run(query)['repository']['defaultBranchRef']
             default_branch_name = result['name']
             result = result['target']['history']
             not_end = result['pageInfo']['hasNextPage']
+            query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size,
+                                                min_page_size=self._min_page_size,
+                                                next=f'after: "{result["pageInfo"]["endCursor"]}"')
 
             for commit in result['nodes']:
                 if str(commit['oid']) == str(before_commit):
@@ -134,17 +281,15 @@ class Query:
                     break
 
                 # TODO: fetch all pull-requests that were merged in a single commit.
-                assert commit['associatedPullRequests']['totalCount'] <= Query._MAX_PULL_REQUESTS, \
+                assert commit['associatedPullRequests']['totalCount'] <= self._min_page_size, \
                     f'there are {commit["associatedPullRequests"]["totalCount"]} pull-requests merged in commit {commit["oid"]}'
 
                 for pull_request in commit['associatedPullRequests']['nodes']:
                     if(pull_request['baseRepository']['nameWithOwner'] == 'yandex/ClickHouse' and
                        pull_request['baseRefName'] == default_branch_name and
                        pull_request['mergeCommit']['oid'] == commit['oid'] and
-                       (not user_id or pull_request['mergeCommit']['author']['user']['id'] == user_id)):
+                       (not login or pull_request['author']['login'] == login)):
                         pull_requests.append(pull_request)
-
-            query = Query._PULL_REQUESTS.format(max_page_size=self._max_page_size, max_pull_requests=Query._MAX_PULL_REQUESTS, next=f'after: "{result["pageInfo"]["endCursor"]}"')
 
         return pull_requests
 
@@ -163,19 +308,7 @@ class Query:
         Returns:
             name (string): branch name
         '''
-        return self._run(Query._DEFAULT)['data']['repository']['defaultBranchRef']['name']
-
-    _USER = '''
-    {{
-        user(login: "{login}") {{
-            id
-        }}
-    }}
-    '''
-    def get_user(self, login):
-        '''Returns id by user login
-        '''
-        return self._run(Query._USER.format(login=login))['data']['user']['id']
+        return self._run(Query._DEFAULT)['repository']['defaultBranchRef']['name']
 
     def _run(self, query):
         from requests.adapters import HTTPAdapter
@@ -203,6 +336,10 @@ class Query:
         headers = {'Authorization': f'bearer {self._token}'}
         request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
         if request.status_code == 200:
-            return request.json()
+            result = request.json()
+            if 'errors' in result:
+                raise Exception(f'Errors occured: {result["errors"]}')
+            return result['data']
         else:
-            raise Exception(f'Query failed with code {request.status_code}: {query}')
+            import json
+            raise Exception(f'Query failed with code {request.status_code}:\n{json.dumps(request.json(), indent=4)}')

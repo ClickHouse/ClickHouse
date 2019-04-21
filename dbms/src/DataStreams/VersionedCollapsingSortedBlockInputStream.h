@@ -178,7 +178,7 @@ public:
     VersionedCollapsingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_,
         const String & sign_column_, size_t max_block_size_,
-        WriteBuffer * out_row_sources_buf_ = nullptr);
+        WriteBuffer * out_row_sources_buf_ = nullptr, bool average_block_sizes_ = false);
 
     String getName() const override { return "VersionedCollapsingSorted"; }
 

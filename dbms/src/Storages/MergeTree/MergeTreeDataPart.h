@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -29,10 +30,7 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
-        : storage(storage_), name(name_), info(info_)
-    {
-    }
+    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_);
 
     MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
 
@@ -95,7 +93,6 @@ struct MergeTreeDataPart
     mutable String relative_path;
 
     size_t rows_count = 0;
-    size_t marks_count = 0;
     std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
                                             /// Is used from several threads without locks (it is changed with ALTER).
                                             /// May not contain size of checksums.txt and columns.txt
@@ -187,6 +184,10 @@ struct MergeTreeDataPart
 
     MergeTreePartition partition;
 
+    /// Amount of rows between marks
+    /// As index always loaded into memory
+    MergeTreeIndexGranularity index_granularity;
+
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
     /// Currently this index is built using only columns required by partition expression, but in principle it
@@ -275,6 +276,7 @@ struct MergeTreeDataPart
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
+    UInt64 getMarksCount() const;
 
 private:
     /// Reads columns names and types from columns.txt
@@ -283,7 +285,10 @@ private:
     /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
-    /// Loads index file. Also calculates this->marks_count if marks_count = 0
+    /// Loads marks index granularity into memory
+    void loadIndexGranularity();
+
+    /// Loads index file.
     void loadIndex();
 
     /// Load rows count for this part from disk (for the newer storage format version).
