@@ -356,7 +356,9 @@ inline void copy32(UInt8 * dst, const UInt8 * src)
     _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + 16),
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 16)));
 #else
+    /// This is from reference implementation, actually there can be issues if we write 32 for ARM processor
     memcpy(dst, src, 16);
+    memcpy(dst + 16, src + 16, 16);
 #endif
 }
 
@@ -448,6 +450,9 @@ void NO_INLINE decompressImpl(
         } while (unlikely(s == 255));
     };
 
+    /// Don't use `if constexpr` here because compilers start warning about unused labels
+    /// And I don't want to insert pragma push etc. Codegen is the same because of dead code elimination.
+    /// TODO(danlark) Generalize this branch with copy_amount etc.
     if (use_optimized_new_lz4_version)
     {
         if (guaranteed_minimal_dest_size >= 64 || dest_size >= 64)
