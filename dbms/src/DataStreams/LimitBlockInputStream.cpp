@@ -6,39 +6,6 @@
 namespace DB
 {
 
-namespace detail
-{
-
-/// gets pointers to all columns of block, which were used for ORDER BY
-ColumnRawPtrs getBlockColumns(const Block & block, const SortDescription description)
-{
-    size_t size = description.size();
-    ColumnRawPtrs res;
-    res.reserve(size);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        const IColumn * column = !description[i].column_name.empty()
-                ? block.getByName(description[i].column_name).column.get()
-                : block.safeGetByPosition(description[i].column_number).column.get();
-        res.emplace_back(column);
-    }
-
-    return res;
-}
-
-
-void setSharedBlockRowRef(SharedBlockRowRef &row_ref, SharedBlockPtr shared_block, ColumnRawPtrs *columns,
-        size_t row_num)
-{
-    row_ref.row_num = row_num;
-    row_ref.columns = columns;
-    row_ref.shared_block = shared_block;
-}
-
-}
-
-
 
 LimitBlockInputStream::LimitBlockInputStream(
     const BlockInputStreamPtr & input, UInt64 limit_, UInt64 offset_, bool always_read_till_end_,
@@ -69,13 +36,13 @@ Block LimitBlockInputStream::readImpl()
         pos += rows;
 
         SharedBlockPtr ptr = new detail::SharedBlock(std::move(res));
-        ColumnRawPtrs columns = getBlockColumns(*ptr, description);
+        ColumnRawPtrs columns = SharedBlockRowRef::getBlockColumns(*ptr, description);
         UInt64 len;
 
         for (len = 0; len < rows; ++len)
         {
             SharedBlockRowRef currentRow;
-            setSharedBlockRowRef(currentRow, ptr, &columns, len);
+            SharedBlockRowRef::setSharedBlockRowRef(currentRow, ptr, &columns, len);
             if (currentRow != ties_row_ref)
             {
                 ties_row_ref.reset();
@@ -135,13 +102,13 @@ Block LimitBlockInputStream::readImpl()
     /// check if other rows in current block equals to last one in limit
     if (with_ties)
     {
-        ColumnRawPtrs columns = getBlockColumns(*ptr, description);
-        setSharedBlockRowRef(ties_row_ref, ptr, &columns, start + length - 1);
+        ColumnRawPtrs columns = SharedBlockRowRef::getBlockColumns(*ptr, description);
+        SharedBlockRowRef::setSharedBlockRowRef(ties_row_ref, ptr, &columns, start + length - 1);
 
         for (size_t i = ties_row_ref.row_num + 1; i < rows; ++i)
         {
             SharedBlockRowRef current_row;
-            setSharedBlockRowRef(current_row, ptr, &columns, i);
+            SharedBlockRowRef::setSharedBlockRowRef(current_row, ptr, &columns, i);
             if (current_row == ties_row_ref)
                 ++length;
             else

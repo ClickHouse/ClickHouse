@@ -179,6 +179,7 @@ private:
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(Pipeline & pipeline);
+    void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
     void executeUnion(Pipeline & pipeline);
