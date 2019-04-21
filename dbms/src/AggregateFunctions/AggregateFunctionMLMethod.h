@@ -86,7 +86,8 @@ public:
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
-            if (!isNumber(cur_col.type)) {
+            if (!isNumber(cur_col.type))
+            {
                 throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
             }
 
@@ -152,7 +153,8 @@ public:
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
-            if (!isNumber(cur_col.type)) {
+            if (!isNumber(cur_col.type))
+            {
                 throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
             }
 
