@@ -47,7 +47,6 @@ namespace ActionLocks
 
 
 StorageMergeTree::StorageMergeTree(
-    const String & path_,
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
@@ -62,17 +61,14 @@ StorageMergeTree::StorageMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : path(path_), database_name(database_name_), table_name(table_name_),
+    : database_name(database_name_), table_name(table_name_),
     global_context(context_), background_pool(context_.getBackgroundPool()),
-    data(database_name, table_name, path_, columns_, indices_,
+    data(database_name, table_name, columns_, indices_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
          sample_by_ast_, merging_params_, settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
-    if (path_.empty())
-        throw Exception("MergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
-
     data.loadDataParts(has_force_restore_data_flag);
 
     if (!attach && !data.getDataParts().empty())
@@ -176,11 +172,11 @@ void StorageMergeTree::truncate(const ASTPtr &, const Context &)
     data.clearOldPartsFromFilesystem();
 }
 
-void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
+void StorageMergeTree::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name)
 {
-    data.rename(new_path_to_db, new_table_name);
+    data.rename(new_database_name, new_table_name);
 
-    path = new_path_to_db + escapeForFileName(new_table_name) + '/';
+    database_name = new_database_name;
     table_name = new_table_name;
 
     /// NOTE: Logger names are not updated.
@@ -332,7 +328,7 @@ public:
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     auto reservation = data.reserveSpaceForPart(0);  ///@TODO_IGR ASK What expected size of mutated part? what size should we reserve?
-    MergeTreeMutationEntry entry(commands, reservation->getPath(), data.insert_increment.get());
+    MergeTreeMutationEntry entry(commands, data.getFullPathOnDisk(reservation->getDisk2()), data.insert_increment.get());
     String file_name;
     {
         std::lock_guard lock(currently_merging_mutex);
@@ -956,22 +952,22 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
     String source_dir = "detached/";
 
-    const auto full_paths = data.getFullPaths();
+    std::map<String, DiskPtr> name_to_disk;
 
     /// Let's make a list of parts to add.
-    ActiveDataPartSet::PartPathNames parts;
+    Strings parts;
     if (attach_part)
     {
-        for (const String & full_path : full_paths)
-            parts.push_back(ActiveDataPartSet::PartPathName{full_path, partition_id});
+        parts.push_back(partition_id);
     }
     else
     {
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
-        ///@TODO_IGR ASK ActiveDataPartSet without path? Is it possible here?
         ActiveDataPartSet active_parts(data.format_version);
-        for (const String & full_path : full_paths)
+        const auto disks = data.schema.getDisks();
+        for (const DiskPtr & disk : disks)
         {
+            const auto full_path = data.getFullPathOnDisk(disk);
             for (Poco::DirectoryIterator it = Poco::DirectoryIterator(full_path + source_dir); it != Poco::DirectoryIterator(); ++it)
             {
                 const String & name = it.name();
@@ -982,21 +978,22 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
                     continue;
                 }
                 LOG_DEBUG(log, "Found part " << name);
-                active_parts.add(full_path, name);  ///@TODO_IGR ASK full_path? full_path + detached?
+                active_parts.add(name);
+                name_to_disk[name] = disk;
             }
         }
         LOG_DEBUG(log, active_parts.size() << " of them are active");
         parts = active_parts.getParts();
     }
 
-    for (const auto & source_part : parts)
+    for (const auto & source_part_name : parts)
     {
-        String source_path = source_dir + source_part.name;
+        const auto & source_part_disk = name_to_disk[source_part_name];
 
         LOG_DEBUG(log, "Checking data");
-        MergeTreeData::MutableDataPartPtr part = data.loadPartAndFixMetadata(source_part.path, source_part.name);
+        MergeTreeData::MutableDataPartPtr part = data.loadPartAndFixMetadata(source_part_disk, source_part_name);
 
-        LOG_INFO(log, "Attaching part " << source_part.name << " from " << source_path);
+        LOG_INFO(log, "Attaching part " << source_part_name << " from " << data.getFullPathOnDisk(source_part_disk));
         data.renameTempPartAndAdd(part, &increment);
 
         LOG_INFO(log, "Finished attaching part");

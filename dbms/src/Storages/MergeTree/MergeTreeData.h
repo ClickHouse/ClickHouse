@@ -304,7 +304,6 @@ public:
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
     /// attach - whether the existing table is attached or the new table is created.
     MergeTreeData(const String & database_, const String & table_,
-                  const String & path_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
                   Context & context_,
@@ -363,8 +362,6 @@ public:
     String getDatabaseName() const { return database_name; }
 
     String getTableName() const { return table_name; }
-
-    DiskSpaceMonitor::ReservationPtr reserveSpaceForPart(UInt64 expected_size) const; ///@TODO_IGR ASK Is it realy const?
 
     String getLogName() const { return log_name; }
 
@@ -476,7 +473,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_path, const String & new_table_name);
+    void rename(const String & new_database_name, const String & new_table_name);
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
@@ -527,7 +524,7 @@ public:
     Names getColumnsRequiredForSampling() const { return columns_required_for_sampling; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const String & path, const String & relative_path);
+    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -567,9 +564,13 @@ public:
     MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
                                                            const MergeTreePartInfo & dst_part_info);
 
-    DiskSpaceMonitor::ReservationPtr reserveSpaceAtDisk(UInt64 expected_size) const; ///@TODO_IGR ASK Maybe set this method as private?
+    String getFullPathOnDisk(const DiskPtr & disk) const;
 
-    Strings getFullPaths() const { return schema.getFullPaths(); }
+    Strings getFullPaths() const;
+
+    DiskSpaceMonitor::ReservationPtr reserveSpaceAtDisk(UInt64 expected_size);
+
+    DiskSpaceMonitor::ReservationPtr reserveSpaceForPart(UInt64 expected_size);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -635,10 +636,6 @@ private:
 
     String database_name;
     String table_name;
-
-    /// Defalt storage path. Always contain format_version.txt
-    ///                      Can contain data if specified in schema
-    String full_path;
 
     Schema schema;
 
