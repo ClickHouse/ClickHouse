@@ -34,7 +34,7 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     auto l2_reg_coef = Float64(0.01);
     UInt32 batch_size = 1;
 
-    std::shared_ptr<IWeightsUpdater> weights_updater = std::make_unique<StochasticGradientDescent>();
+    std::shared_ptr<IWeightsUpdater> weights_updater = std::make_shared<StochasticGradientDescent>();
     std::shared_ptr<IGradientComputer> gradient_computer;
 
     if (!parameters.empty())

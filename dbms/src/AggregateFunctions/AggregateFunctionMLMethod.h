@@ -87,7 +87,7 @@ public:
         {
             const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
             if (!isNumber(cur_col.type)) {
-                throw Exception("Prediction arguments must be have numeric type", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
             }
 
             /// If column type is already Float64 then castColumn simply returns it
@@ -153,7 +153,7 @@ public:
         {
             const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
             if (!isNumber(cur_col.type)) {
-                throw Exception("Prediction arguments must be have numeric type", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
             }
 
             /// If column type is already Float64 then castColumn simply returns it
