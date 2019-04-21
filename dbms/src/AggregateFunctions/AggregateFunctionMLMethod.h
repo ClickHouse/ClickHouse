@@ -14,6 +14,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/castColumn.h>
 
 #include <cmath>
 #include <exception>
@@ -45,7 +46,7 @@ public:
     virtual void predict(ColumnVector<Float64>::Container &container,
                          Block &block, const ColumnNumbers &arguments,
                          const std::vector<Float64> &weights,
-                         Float64 bias) const = 0;
+                         Float64 bias, const Context & context) const = 0;
 };
 
 
@@ -61,19 +62,14 @@ public:
         Float64 derivative = (target - bias);
         for (size_t i = 0; i < weights.size(); ++i)
         {
-//            auto value = static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
-                auto value = (*columns[i])[row_num].get<Float64>();
-//            if ((*columns[i])[row_num].getType() == Field::Types::Float64)
-                derivative -= weights[i] * value;
-//            else
-//                derivative -= weights[i] * (*columns[i])[row_num].get<Float32>();
+            auto value = (*columns[i])[row_num].get<Float64>();
+            derivative -= weights[i] * value;
         }
         derivative *= (2 * learning_rate);
 
         batch_gradient[weights.size()] += derivative;
         for (size_t i = 0; i < weights.size(); ++i)
         {
-//            auto value = static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
             auto value = (*columns[i])[row_num].get<Float64>();
             batch_gradient[i] += derivative * value - 2 * l2_reg_coef * weights[i];
         }
@@ -82,24 +78,30 @@ public:
     void predict(ColumnVector<Float64>::Container &container,
                  Block &block,
                  const ColumnNumbers &arguments,
-                 const std::vector<Float64> &weights, Float64 bias) const override
+                 const std::vector<Float64> &weights, Float64 bias, const Context & context) const override
     {
         size_t rows_num = block.rows();
         std::vector<Float64> results(rows_num, bias);
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            ColumnPtr cur_col = block.safeGetByPosition(arguments[i]).column;
+            const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
+            if (!isNumber(cur_col.type)) {
+                throw Exception("Prediction arguments must be have numeric type", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            /// If column type is already Float64 then castColumn simply returns it
+            auto features_col_ptr = castColumn(cur_col, std::make_shared<DataTypeFloat64>(), context);
+            auto features_column = typeid_cast<const ColumnFloat64 *>(features_col_ptr.get());
+
+            if (!features_column)
+            {
+                throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
+            }
+
             for (size_t row_num = 0; row_num != rows_num; ++row_num)
             {
-
-                const auto &element = (*cur_col)[row_num];
-//                if (element.getType() != Field::Types::Float64)
-                if (!DB::Field::isSimpleNumeric(element.getType()))
-                    throw Exception("Prediction arguments must be have numeric type",
-                                    ErrorCodes::BAD_ARGUMENTS);
-
-                results[row_num] += weights[i - 1] * element.get<Float64>();
+                results[row_num] += weights[i - 1] * features_column->getElement(row_num);
             }
         }
 
@@ -124,7 +126,7 @@ public:
         Float64 derivative = bias;
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            auto value = static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+            auto value = (*columns[i])[row_num].get<Float64>();
             derivative += weights[i] * value;
         }
         derivative *= target;
@@ -133,7 +135,7 @@ public:
         batch_gradient[weights.size()] += learning_rate * target / (derivative + 1);
         for (size_t i = 0; i < weights.size(); ++i)
         {
-            auto value = static_cast<const ColumnVector<Float64> &>(*columns[i]).getData()[row_num];
+            auto value = (*columns[i])[row_num].get<Float64>();
             batch_gradient[i] += learning_rate * target * value / (derivative + 1)
                                     - 2 * l2_reg_coef * weights[i];
         }
@@ -142,22 +144,30 @@ public:
     void predict(ColumnVector<Float64>::Container & container,
                          Block & block,
                          const ColumnNumbers & arguments,
-                         const std::vector<Float64> & weights, Float64 bias) const override
+                         const std::vector<Float64> & weights, Float64 bias, const Context & context) const override
     {
         size_t rows_num = block.rows();
         std::vector<Float64> results(rows_num, bias);
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            ColumnPtr cur_col = block.safeGetByPosition(arguments[i]).column;
+            const ColumnWithTypeAndName & cur_col = block.getByPosition(arguments[i]);
+            if (!isNumber(cur_col.type)) {
+                throw Exception("Prediction arguments must be have numeric type", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            /// If column type is already Float64 then castColumn simply returns it
+            auto features_col_ptr = castColumn(cur_col, std::make_shared<DataTypeFloat64>(), context);
+            auto features_column = typeid_cast<const ColumnFloat64 *>(features_col_ptr.get());
+
+            if (!features_column)
+            {
+                throw Exception("Unexpectedly cannot dynamically cast features column " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
+            }
+
             for (size_t row_num = 0; row_num != rows_num; ++row_num)
             {
-                const auto &element = (*cur_col)[row_num];
-//                if (element.getType() != Field::Types::Float64)
-                if (!DB::Field::isSimpleNumeric(element.getType()))
-                    throw Exception("Prediction arguments must have numeric type", ErrorCodes::BAD_ARGUMENTS);
-
-                results[row_num] += weights[i - 1] * element.get<Float64>();
+                results[row_num] += weights[i - 1] * features_column->getElement(row_num);
             }
         }
 
@@ -382,8 +392,7 @@ public:
     void add(const IColumn **columns, size_t row_num)
     {
         /// first column stores target; features start from (columns + 1)
-        const auto &target = static_cast<const ColumnVector<Float64> &>(*columns[0]).getData()[row_num];
-
+        const auto &target = (*columns[0])[row_num].get<Float64>();
         /// Here we have columns + 1 as first column corresponds to target value, and others - to features
         weights_updater->add_to_batch(gradient_batch, *gradient_computer,
                                       weights, bias, learning_rate, l2_reg_coef, target, columns + 1, row_num);
@@ -435,9 +444,9 @@ public:
         weights_updater->read(buf);
     }
 
-    void predict(ColumnVector<Float64>::Container &container, Block &block, const ColumnNumbers &arguments) const
+    void predict(ColumnVector<Float64>::Container &container, Block &block, const ColumnNumbers &arguments, const Context & context) const
     {
-        gradient_computer->predict(container, block, arguments, weights, bias);
+        gradient_computer->predict(container, block, arguments, weights, bias, context);
     }
 
 private:
@@ -490,14 +499,14 @@ public:
                                        UInt32 batch_size,
                                        const DataTypes & arguments_types,
                                        const Array & params)
-            : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params),
-            param_num(param_num),
-            learning_rate(learning_rate),
-            l2_reg_coef(l2_reg_coef),
-            batch_size(batch_size),
-            gradient_computer(std::move(gradient_computer)),
-            weights_updater(std::move(weights_updater))
-            {}
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionMLMethod<Data, Name>>(arguments_types, params),
+        param_num(param_num),
+        learning_rate(learning_rate),
+        l2_reg_coef(l2_reg_coef),
+        batch_size(batch_size),
+        gradient_computer(std::move(gradient_computer)),
+        weights_updater(std::move(weights_updater))
+        {}
 
     DataTypePtr getReturnType() const override
     {
@@ -529,7 +538,7 @@ public:
         this->data(place).read(buf);
     }
 
-    void predictValues(ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments) const override
+    void predictValues(ConstAggregateDataPtr place, IColumn & to, Block & block, const ColumnNumbers & arguments, const Context & context) const override
     {
         if (arguments.size() != param_num + 1)
             throw Exception("Predict got incorrect number of arguments. Got: " +
@@ -538,7 +547,7 @@ public:
 
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
 
-        this->data(place).predict(column.getData(), block, arguments);
+        this->data(place).predict(column.getData(), block, arguments, context);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

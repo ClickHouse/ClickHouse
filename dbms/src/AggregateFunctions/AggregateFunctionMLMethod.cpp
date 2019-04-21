@@ -24,9 +24,6 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
 
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
-//        if (!WhichDataType(argument_types[i]).isFloat64())
-//            throw Exception("Illegal type " + argument_types[i]->getName() + " of argument " + std::to_string(i) + "for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-//        if (!WhichDataType(argument_types[i]).isNumeric())
         if (!isNumber(argument_types[i]))
             throw Exception("Argument " + std::to_string(i) + " of type " + argument_types[i]->getName() + " must be numeric for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -55,28 +52,20 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     }
     if (parameters.size() > 3)
     {
-        if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{1.0})
-        {
+        if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'SGD\'") {
             weights_updater = std::make_shared<StochasticGradientDescent>();
         }
-        else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{2.0})
-        {
+        else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Momentum\'") {
             weights_updater = std::make_shared<Momentum>();
         }
-        else if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[3]) == Float64{3.0})
-        {
+        else if (applyVisitor(FieldVisitorToString(), parameters[3]) == "\'Nesterov\'") {
             weights_updater = std::make_shared<Nesterov>();
-
         }
         else
         {
             throw Exception("Invalid parameter for weights updater", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
     }
-//    else
-//    {
-//        weights_updater = std::make_unique<StochasticGradientDescent>();
-//    }
 
     if (std::is_same<Method, FuncLinearRegression>::value)
     {
@@ -90,7 +79,6 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     {
         throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
-
 
     return std::make_shared<Method>(argument_types.size() - 1,
                                     gradient_computer, weights_updater,

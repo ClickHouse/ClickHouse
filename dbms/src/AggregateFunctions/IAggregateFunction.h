@@ -96,8 +96,10 @@ public:
 
     /// This function is used for machine learning methods
     virtual void predictValues(ConstAggregateDataPtr /* place */, IColumn & /*to*/,
-                               Block & /*block*/, const ColumnNumbers & /*arguments*/) const
-    {}
+                               Block & /*block*/, const ColumnNumbers & /*arguments*/, const Context & /*context*/) const
+    {
+        throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /** Returns true for aggregate functions of type -State.
       * They are executed as other aggregate functions, but not finalized (return an aggregation state that can be combined with another).
