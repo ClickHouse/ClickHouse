@@ -7,6 +7,7 @@
 - ReplicatedReplacingMergeTree
 - ReplicatedAggregatingMergeTree
 - ReplicatedCollapsingMergeTree
+- ReplicatedVersionedCollapsingMergeTree
 - ReplicatedGraphiteMergeTree
 
 副本是表级别的，不是整个服务器级的。所以，服务器里可以同时有复制表和非复制表。
@@ -52,26 +53,22 @@
 
 对于非常大的集群，你可以把不同的 ZooKeeper 集群用于不同的分片。然而，即使 Yandex.Metrica 集群（大约300台服务器）也证明还不需要这么做。
 
-
 复制是多主异步。 `INSERT` 语句（以及 `ALTER` ）可以发给任意可用的服务器。数据会先插入到执行该语句的服务器上，然后被复制到其他服务器。由于它是异步的，在其他副本上最近插入的数据会有一些延迟。如果部分副本不可用，则数据在其可用时再写入。副本可用的情况下，则延迟时长是通过网络传输压缩数据块所需的时间。
 
 默认情况下，INSERT 语句仅等待一个副本写入成功后返回。如果数据只成功写入一个副本后该副本所在的服务器不再存在，则存储的数据会丢失。要启用数据写入多个副本才确认返回，使用 `insert_quorum` 选项。
 
-
 单个数据块写入是原子的。 INSERT 的数据按每块最多 `max_insert_block_size = 1048576` 行进行分块，换句话说，如果 `INSERT` 插入的行少于 1048576，则该 INSERT 是原子的。
-
 
 数据块会去重。对于被多次写的相同数据块（大小相同且具有相同顺序的相同行的数据块），该块仅会写入一次。这样设计的原因是万一在网络故障时客户端应用程序不知道数据是否成功写入DB，此时可以简单地重复 `INSERT` 。把相同的数据发送给多个副本 INSERT 并不会有问题。因为这些 `INSERT` 是完全相同的（会被去重）。去重参数参看服务器设置 [merge_tree](../server_settings/settings.md) 。（注意：Replicated\*MergeTree 才会去重，不需要 zookeeper 的不带 MergeTree 不会去重）
 
 在复制期间，只有要插入的源数据通过网络传输。进一步的数据转换（合并）会在所有副本上以相同的方式进行处理执行。这样可以最大限度地减少网络使用，这意味着即使副本在不同的数据中心，数据同步也能工作良好。（能在不同数据中心中的同步数据是副本机制的主要目标。）
-
 
 你可以给数据做任意多的副本。Yandex.Metrica 在生产中使用双副本。某一些情况下，给每台服务器都使用 RAID-5 或 RAID-6 和 RAID-10。是一种相对可靠和方便的解决方案。
 
 系统会监视副本数据同步情况，并能在发生故障后恢复。故障转移是自动的（对于小的数据差异）或半自动的（当数据差异很大时，这可能意味是有配置错误）。
 
 
-## 创建复制表
+## 创建复制表 {#creating-replicated-tables}
 
 
 在表引擎名称上加上 `Replicated` 前缀。例如：`ReplicatedMergeTree`。
