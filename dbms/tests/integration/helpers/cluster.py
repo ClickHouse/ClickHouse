@@ -316,6 +316,8 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_mongo_cmd + ['up', '-d', '--force-recreate'])
             self.wait_mongo_to_start(30)
 
+        import pdb
+        pdb.set_trace()
         subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
         start_deadline = time.time() + 20.0 # seconds

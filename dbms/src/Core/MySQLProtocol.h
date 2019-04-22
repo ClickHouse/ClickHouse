@@ -4,6 +4,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 #include <Core/Types.h>
+#include <Poco/RandomStream.h>
 #include <random>
 #include <sstream>
 
@@ -27,7 +28,7 @@ const size_t MYSQL_ERRMSG_SIZE = 512;
 
 namespace Authentication
 {
-    const String ClearText = "mysql_clear_password";
+    const String CachingSHA2 = "caching_sha2_password";
 }
 
 enum CharacterSet
@@ -253,16 +254,16 @@ class Handshake : public WritePacket
     uint32_t status_flags;
     String auth_plugin_data;
 public:
-    explicit Handshake(uint32_t connection_id, String server_version)
-        : protocol_version(0xa), server_version(std::move(server_version)), connection_id(connection_id), capability_flags(
-        CLIENT_PROTOCOL_41
-        | CLIENT_SECURE_CONNECTION
-        | CLIENT_PLUGIN_AUTH
-        | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
-        | CLIENT_CONNECT_WITH_DB
-        | CLIENT_DEPRECATE_EOF), character_set(63), status_flags(0)
+    explicit Handshake(uint32_t connection_id, String server_version, String auth_plugin_data)
+        : protocol_version(0xa)
+        , server_version(std::move(server_version))
+        , connection_id(connection_id)
+        , capability_flags(CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
+            | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF)
+        , character_set(CharacterSet::utf8_general_ci)
+        , status_flags(0)
+        , auth_plugin_data(auth_plugin_data)
     {
-        auth_plugin_data.resize(SCRAMBLE_LENGTH);
     }
 
     String getPayload() const override
@@ -276,11 +277,10 @@ public:
         result.append(reinterpret_cast<const char *>(&character_set), 1);
         result.append(reinterpret_cast<const char *>(&status_flags), 2);
         result.append((reinterpret_cast<const char *>(&capability_flags)) + 2, 2);
-        result.append(1, SCRAMBLE_LENGTH + 1);
-        result.append(1, 0x0);
+        result.append(1, auth_plugin_data.size());
         result.append(10, 0x0);
-        result.append(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, SCRAMBLE_LENGTH - AUTH_PLUGIN_DATA_PART_1_LENGTH));
-        result.append(Authentication::ClearText);
+        result.append(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, auth_plugin_data.size() - AUTH_PLUGIN_DATA_PART_1_LENGTH));
+        result.append(Authentication::CachingSHA2);
         result.append(1, 0x0);
         return result;
     }
@@ -354,6 +354,32 @@ public:
         result.append(1, 0xfe);
         writeNulTerminatedString(result, plugin_name);
         result.append(auth_plugin_data);
+        return result;
+    }
+};
+
+class AuthSwitchResponse : public ReadPacket
+{
+public:
+    String value;
+
+    void readPayload(String s) override
+    {
+        value = std::move(s);
+    }
+};
+
+class AuthMoreData : public WritePacket
+{
+    String data;
+public:
+    AuthMoreData(String data): data(std::move(data)) {}
+
+    String getPayload() const override
+    {
+        String result;
+        result.append(1, 0x01);
+        result.append(data);
         return result;
     }
 };

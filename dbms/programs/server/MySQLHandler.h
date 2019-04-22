@@ -3,6 +3,7 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Core/MySQLProtocol.h>
+#include <openssl/evp.h>
 #include "IServer.h"
 
 
@@ -13,14 +14,24 @@ namespace DB
 class MySQLHandler : public Poco::Net::TCPServerConnection
 {
 public:
-    MySQLHandler(IServer & server_, const Poco::Net::StreamSocket & socket_)
-        : Poco::Net::TCPServerConnection(socket_), server(server_), log(&Poco::Logger::get("MySQLHandler")),
-          connection_context(server.context()), connection_id(last_connection_id++)
+    MySQLHandler(
+        IServer & server_,
+        const Poco::Net::StreamSocket & socket_,
+        RSA * public_key,
+        RSA * private_key)
+            : Poco::Net::TCPServerConnection(socket_)
+            , server(server_)
+            , log(&Poco::Logger::get("MySQLHandler"))
+            , connection_context(server.context())
+            , connection_id(last_connection_id++)
+            , public_key(public_key)
+            , private_key(private_key)
     {
     }
 
     void run() final;
 
+private:
     void comQuery(String payload);
 
     void comFieldList(String payload);
@@ -29,7 +40,10 @@ public:
 
     void comInitDB(String payload);
 
-private:
+    static String generateScramble();
+
+    void authenticate(const MySQLProtocol::HandshakeResponse &, const String & scramble);
+
     IServer & server;
     Poco::Logger * log;
     Context connection_context;
@@ -41,6 +55,8 @@ private:
     uint32_t capabilities;
 
     static uint32_t last_connection_id;
+
+    RSA * public_key, * private_key;
 };
 
 }

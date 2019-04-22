@@ -45,22 +45,24 @@ def golang_container():
 def test_mysql_client(mysql_client, server_address):
     # type: (Container, str) -> None
     code, (stdout, stderr) = mysql_client.exec_run('''
-        mysql --protocol tcp -h {host} -P {port} default -u default --enable-cleartext-plugin --password=123
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
         -e "select 1 as a;"
         -e "select 'тест' as b;"
     '''.format(host=server_address, port=server_port), demux=True)
 
+    import pdb
+    pdb.set_trace()
     assert stdout == 'a\n1\nb\nтест\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
-        mysql --protocol tcp -h {host} -P {port} default -u default --enable-cleartext-plugin --password=abc -e "select 1 as a;"
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=abc -e "select 1 as a;"
     '''.format(host=server_address, port=server_port), demux=True)
 
     assert stderr == 'mysql: [Warning] Using a password on the command line interface can be insecure.\n' \
                      'ERROR 193 (00000): Wrong password for user default\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
-        mysql --protocol tcp -h {host} -P {port} default -u default --enable-cleartext-plugin --password=123
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
         -e "use system;"
         -e "select count(*) from (select name from tables limit 1);"
         -e "use system2;"
