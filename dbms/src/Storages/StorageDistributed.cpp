@@ -67,7 +67,7 @@ namespace ErrorCodes
 
 namespace ActionLocks
 {
-    extern const StorageActionBlockType PartsSend;
+    extern const StorageActionBlockType DistributedSend;
 }
 
 namespace
@@ -511,7 +511,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
 
 ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
 {
-    if (type == ActionLocks::PartsSend)
+    if (type == ActionLocks::DistributedSend)
         return monitors_blocker.cancel();
     return {};
 }

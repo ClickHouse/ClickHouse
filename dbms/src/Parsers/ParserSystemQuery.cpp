@@ -49,6 +49,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
+        case Type::SYNC_DISTRIBUTED:
             if (!parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table))
                 return false;
             break;
@@ -61,6 +62,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
+        case Type::STOP_DISTRIBUTED_SENDS:
+        case Type::START_DISTRIBUTED_SENDS:
             parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table);
             break;
 

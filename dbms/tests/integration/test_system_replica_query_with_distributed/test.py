@@ -27,7 +27,7 @@ def started_cluster():
 
 
 def test_start_and_stop_replica_send(started_cluster):
-    node1.query("SYSTEM STOP REPLICATED SENDS distributed_table;")
+    node1.query("SYSTEM STOP DISTRIBUTED SENDS distributed_table;")
 
     node1.query("INSERT INTO distributed_table VALUES (0, 'node1')")
     node1.query("INSERT INTO distributed_table VALUES (1, 'node2')")
@@ -35,7 +35,7 @@ def test_start_and_stop_replica_send(started_cluster):
     # Write only to this node when stop replicated sends
     assert node1.query("SELECT COUNT() FROM distributed_table").rstrip() == '1'
 
-    node1.query("SYSTEM START REPLICATED SENDS distributed_table;")
-    node1.query("SYSTEM SYNC REPLICA distributed_table;")
+    node1.query("SYSTEM START DISTRIBUTED SENDS distributed_table;")
+    node1.query("SYSTEM SYNC DISTRIBUTED distributed_table;")
     assert node1.query("SELECT COUNT() FROM distributed_table").rstrip() == '2'
 
