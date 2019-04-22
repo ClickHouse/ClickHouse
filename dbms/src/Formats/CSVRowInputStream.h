@@ -40,7 +40,7 @@ private:
     IndexesMap column_indexes_by_names;
 
     using OptionalIndexes = std::vector<std::optional<size_t>>;
-    OptionalIndexes input_fields_with_indexes;
+    OptionalIndexes column_indexes_for_input_fields;
 
     std::vector<UInt8> read_columns;
     std::vector<size_t> columns_to_fill_with_default_values;
