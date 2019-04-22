@@ -1,8 +1,8 @@
 # MergeTree {#table_engines-mergetree}
 
-Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及该家族（`*MergeTree`）中的其他引擎。
+Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及该系列（`*MergeTree`）中的其他引擎。
 
-`MergeTree` 引擎家族的基本理念如下。当你有巨量数据要插入到表中，你要高效地一批批写入数据分片，并希望这些数据分片在后台按照一定规则合并。相比在插入时不断修改（重写）数据进存储，这种策略会高效很多。
+`MergeTree` 引擎系列的基本理念如下。当你有巨量数据要插入到表中，你要高效地一批批写入数据片段，并希望这些数据片段在后台按照一定规则合并。相比在插入时不断修改（重写）数据进存储，这种策略会高效很多。
 
 主要特点:
 
@@ -16,14 +16,14 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
 - 支持数据副本。
 
-    `ReplicatedMergeTree` 家族的表便是用于此。更多信息，请参阅 [数据副本](replication.md) 一节。
+    `ReplicatedMergeTree` 系列的表便是用于此。更多信息，请参阅 [数据副本](replication.md) 一节。
 
 - 支持数据采样。
 
     需要的话，你可以给表设置一个采样方法。
 
 !!! 注意
-    [Merge](merge.md) 引擎并不属于 `*MergeTree` 家族。
+    [Merge](merge.md) 引擎并不属于 `*MergeTree` 系列。
 
 
 ## 建表  {#table_engine-mergetree-creating-a-table}
@@ -70,8 +70,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 - `SETTINGS` — 影响 `MergeTree` 性能的额外参数：
     - `index_granularity` — 索引粒度。即索引中相邻『标记』间的数据行数。默认值，8192 。该列表中所有可用的参数可以从这里查看 [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h) 。
-    - `use_minimalistic_part_header_in_zookeeper` — 数据分片头在 ZooKeeper 中的存储方式。如果设置了 `use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考『服务配置参数』这章中的 [设置描述](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
-    - `min_merge_bytes_to_use_direct_io` — 使用直接 I/O 来操作磁盘的合并操作时要求的最小数据量。合并数据分片时，ClickHouse 会计算要被合并的所有数据的总存储空间。如果大小超过了 `min_merge_bytes_to_use_direct_io` 设置的字节数，则 ClickHouse 将使用直接 I/O 接口（`O_DIRECT` 选项）对磁盘读写。如果设置 `min_merge_bytes_to_use_direct_io = 0` ，则会禁用直接 I/O。默认值：`10 * 1024 * 1024 * 1024` 字节。
+    - `use_minimalistic_part_header_in_zookeeper` — 数据片段头在 ZooKeeper 中的存储方式。如果设置了 `use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考『服务配置参数』这章中的 [设置描述](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
+    - `min_merge_bytes_to_use_direct_io` — 使用直接 I/O 来操作磁盘的合并操作时要求的最小数据量。合并数据片段时，ClickHouse 会计算要被合并的所有数据的总存储空间。如果大小超过了 `min_merge_bytes_to_use_direct_io` 设置的字节数，则 ClickHouse 将使用直接 I/O 接口（`O_DIRECT` 选项）对磁盘读写。如果设置 `min_merge_bytes_to_use_direct_io = 0` ，则会禁用直接 I/O。默认值：`10 * 1024 * 1024 * 1024` 字节。
 
 **示例配置**
 
@@ -117,13 +117,13 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 
 ## 数据存储
 
-表由按主键排序的数据 *分片* 组成。
+表由按主键排序的数据 *片段* 组成。
 
-当数据被插入到表中时，会分成数据分片并按主键的字典序排序。例如，主键是 `(CounterID, Date)` 时，分片中数据按 `CounterID` 排序，具有相同 `CounterID` 的部分按 `Date` 排序。
+当数据被插入到表中时，会分成数据片段并按主键的字典序排序。例如，主键是 `(CounterID, Date)` 时，片段中数据按 `CounterID` 排序，具有相同 `CounterID` 的部分按 `Date` 排序。
 
-不同分区的数据会被分成不同的分片，ClickHouse 在后台合并数据分片以便更高效存储。不会合并来自不同分区的数据分片。这个合并机制并不保证相同主键的所有行都会合并到同一个数据分片中。
+不同分区的数据会被分成不同的片段，ClickHouse 在后台合并数据片段以便更高效存储。不会合并来自不同分区的数据片段。这个合并机制并不保证相同主键的所有行都会合并到同一个数据片段中。
 
-ClickHouse 会为每个数据分片创建一个索引文件，索引文件包含每个索引行（『标记』）的主键值。索引行号定义为 `n * index_granularity` 。最大的 `n` 等于总行数除以 `index_granularity` 的值的整数部分。对于每列，跟主键相同的索引行处也会写入『标记』。这些『标记』让你可以直接找到数据所在的列。
+ClickHouse 会为每个数据片段创建一个索引文件，索引文件包含每个索引行（『标记』）的主键值。索引行号定义为 `n * index_granularity` 。最大的 `n` 等于总行数除以 `index_granularity` 的值的整数部分。对于每列，跟主键相同的索引行处也会写入『标记』。这些『标记』让你可以直接找到数据所在的列。
 
 你可以只用一单一大表并不断地一块块往里面加入数据 – `MergeTree` 引擎的就是为了这样的场景。
 
@@ -166,7 +166,7 @@ ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主
 
 - 改善数据压缩。
 
-    ClickHouse 以主键排序分片数据，所以，数据的一致性越高，压缩越好。
+    ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
 
 - [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里，数据合并时，会有额外的处理逻辑。
 
@@ -177,7 +177,7 @@ ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主
 
 ### 选择跟排序键不一样主键
 
-指定一个跟排序键（用于排序数据分片中行的表达式）
+指定一个跟排序键（用于排序数据片段中行的表达式）
 不一样的主键（用于计算写到索引文件的每个标记值的表达式）是可以的。
 这种情况下，主键表达式元组必须是排序键表达式元组的一个前缀。
 
@@ -192,7 +192,7 @@ ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主
 这种情况下，主键中仅预留少量列保证高效范围扫描，
 剩下的维度列放到排序键元组里。这样是合理的。
 
-[排序键的修改](../../query_language/alter.md) 是轻量级的操作，因为一个新列同时被加入到表里和排序键后时，已存在的数据分片并不需要修改。由于旧的排序键是新排序键的前缀，并且刚刚添加的列中没有数据，因此在表修改时的数据对于新旧的排序键来说都是有序的。
+[排序键的修改](../../query_language/alter.md) 是轻量级的操作，因为一个新列同时被加入到表里和排序键后时，已存在的数据片段并不需要修改。由于旧的排序键是新排序键的前缀，并且刚刚添加的列中没有数据，因此在表修改时的数据对于新旧的排序键来说都是有序的。
 
 ### 索引和分区在查询中的应用
 
@@ -238,7 +238,7 @@ SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 ```
 
-`*MergeTree` 家族的表都能指定跳数索引。
+`*MergeTree` 系列的表都能指定跳数索引。
 
 这些索引是由数据块按粒度分割后的每部分在指定表达式上汇总信息 `granularity_value` 组成（粒度大小用表引擎里 `index_granularity` 的指定）。
 这些汇总信息有助于用 `where` 语句跳过大片不满足的数据，从而减少 `SELECT` 查询从磁盘读取的数据量，
@@ -292,7 +292,7 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 ## 并发数据访问
 
-应对表的并发访问，我们使用多版本机制。换言之，当同时读和更新表时，数据从当前查询到的一组分片中读取。没有冗长的的锁。插入不会阻碍读取。
+应对表的并发访问，我们使用多版本机制。换言之，当同时读和更新表时，数据从当前查询到的一组片段中读取。没有冗长的的锁。插入不会阻碍读取。
 
 对表的读操作是自动并行的。
 
