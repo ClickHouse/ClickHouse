@@ -102,19 +102,12 @@ def dump_report(destination, suite, test_case, report):
             report_root.append(report_suite)
             report_file.write(et.tostring(report_root, encoding = "UTF-8", xml_declaration=True, pretty_print=True))
 
-def colored(text, color=None, on_color=None, attrs=None):
+def colored(text, args, color=None, on_color=None, attrs=None):
        if sys.stdout.isatty() or args.force_color:
            return termcolor.colored(text, color, on_color, attrs)
        else:
            return text
 
-OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
-CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
-
-MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", "red", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
 SERVER_DIED = False
 exit_code = 0
@@ -124,6 +117,14 @@ exit_code = 0
 def run_tests_array(all_tests_with_params):
     all_tests, suite, suite_dir, suite_tmp_dir, run_total = all_tests_with_params
     global SERVER_DIED
+
+    OP_SQUARE_BRACKET = colored("[", args, attrs=['bold'])
+    CL_SQUARE_BRACKET = colored("]", args, attrs=['bold'])
+
+    MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", args, "red", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", args, "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", args, "green", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", args, "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
 
     passed_total = 0
     skipped_total = 0
@@ -279,7 +280,7 @@ def run_tests_array(all_tests_with_params):
                                 if os.path.exists(stderr_file):
                                     os.remove(stderr_file)
         except KeyboardInterrupt as e:
-            print(colored("Break tests execution", "red"))
+            print(colored("Break tests execution", args, "red"))
             raise e
         except:
             import traceback
@@ -298,10 +299,10 @@ def run_tests_array(all_tests_with_params):
     failures_total = failures_total + failures
 
     if failures_total > 0:
-        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), "red", attrs=["bold"]))
+        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
         exit_code = 1
     else:
-        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), "green", attrs=["bold"]))
+        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
 
 server_logs_level = "warning"
 
@@ -454,14 +455,14 @@ def main(args):
         processlist = get_processlist(args.client_with_database)
         if processlist:
             server_pid = get_server_pid(os.getenv("CLICKHOUSE_PORT_TCP", '9000'))
-            print(colored("\nFound hung queries in processlist:", "red", attrs=["bold"]))
+            print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(processlist)
             if server_pid:
                 print("\nStacktraces of all threads:")
                 print(get_stacktraces(server_pid))
             exit_code = 1
         else:
-            print(colored("\nNo queries hung.", "green", attrs=["bold"]))
+            print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
     sys.exit(exit_code)
 
