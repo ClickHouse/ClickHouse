@@ -2,6 +2,7 @@
 #include <Poco/Util/Application.h>
 #include <ext/unlock_guard.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/config.h>
 #include <Common/SipHash.h>
 #include <Common/ShellCommand.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -261,6 +262,9 @@ void Compiler::compile(
             " -I " << compiler_headers << "/dbms/src/"
             " -isystem " << compiler_headers << "/contrib/cityhash102/include/"
             " -isystem " << compiler_headers << "/contrib/libpcg-random/include/"
+        #if USE_LFALLOC
+            " -isystem " << compiler_headers << "/contrib/lfalloc/src/"
+        #endif
             " -isystem " << compiler_headers << INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
             " -isystem " << compiler_headers << INTERNAL_Poco_Foundation_INCLUDE_DIR
             " -isystem " << compiler_headers << INTERNAL_Boost_INCLUDE_DIRS

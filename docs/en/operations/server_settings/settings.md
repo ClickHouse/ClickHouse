@@ -489,31 +489,18 @@ Keys for server/client settings:
 ```
 
 
-## part_log
+## part_log {#server_settings-part-log}
 
 Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
-Queries are logged in the ClickHouse table, not in a separate file.
-
-Columns in the log:
-
-- event_time – Date of the event.
-- duration_ms – Duration of the event.
-- event_type – Type of event. 1 – new data part; 2 – merge result; 3 – data part downloaded from replica; 4 – data part deleted.
-- database_name – The name of the database.
-- table_name – Name of the table.
-- part_name – Name of the data part.
-- partition_id – The identifier of the partition.
-- size_in_bytes – Size of the data part in bytes.
-- merged_from – An array of names of data parts that make up the merge (also used when downloading a merged part).
-- merge_time_ms – Time spent on the merge.
+Queries are logged in the [system.part_log](../system_tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
-- database – Name of the database.
-- table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
-- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 **Example**
 
@@ -541,18 +528,18 @@ The path to the directory containing data.
 ```
 
 
-## query_log
+## query_log {#server_settings-query-log}
 
 Setting for logging queries received with the [log_queries=1](../settings/settings.md) setting.
 
-Queries are logged in the ClickHouse table, not in a separate file.
+Queries are logged in the [system.query_log](../system_tables.md#system_tables-query-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
-- database – Name of the database.
-- table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
-- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table the queries will be logged in. 
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 

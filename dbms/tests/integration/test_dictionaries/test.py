@@ -29,6 +29,7 @@ def setup_module(module):
 def started_cluster():
     try:
         cluster.start()
+        instance.query("CREATE DATABASE IF NOT EXISTS dict ENGINE=Dictionary")
         test_table.create_clickhouse_source(instance)
         for line in TSV(instance.query('select name from system.dictionaries')).lines:
             print line,
@@ -122,6 +123,7 @@ def test_select_all_from_cached(cached_dictionary_structure):
     print test_table.process_diff(diff)
     assert not diff
 
+
 def test_null_value(started_cluster):
     query = instance.query
 
@@ -132,3 +134,14 @@ def test_null_value(started_cluster):
     # Check, that empty null_value interprets as default value
     assert TSV(query("select dictGetUInt64('clickhouse_cache', 'UInt64_', toUInt64(12121212))")) == TSV("0")
     assert TSV(query("select dictGetDateTime('clickhouse_cache', 'DateTime_', toUInt64(12121212))")) == TSV("0000-00-00 00:00:00")
+
+
+def test_dictionary_dependency(started_cluster):
+    query = instance.query
+    
+    assert query("SELECT dictGetString('dep_x', 'String_', toUInt64(1))") == "10577349846663553072\n"
+    assert query("SELECT dictGetString('dep_y', 'String_', toUInt64(1))") == "10577349846663553072\n"
+    assert query("SELECT dictGetString('dep_z', 'String_', toUInt64(1))") == "10577349846663553072\n"
+    assert query("SELECT dictGetString('dep_x', 'String_', toUInt64(12121212))") == "XX\n"
+    assert query("SELECT dictGetString('dep_y', 'String_', toUInt64(12121212))") == "YY\n"
+    assert query("SELECT dictGetString('dep_z', 'String_', toUInt64(12121212))") == "ZZ\n"

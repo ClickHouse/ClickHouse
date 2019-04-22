@@ -25,9 +25,9 @@ namespace ErrorCodes
 }
 
 template <typename ColumnType>
-class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<ColumnType>>
+class ColumnUnique final : public COWHelper<IColumnUnique, ColumnUnique<ColumnType>>
 {
-    friend class COWPtrHelper<IColumnUnique, ColumnUnique<ColumnType>>;
+    friend class COWHelper<IColumnUnique, ColumnUnique<ColumnType>>;
 
 private:
     explicit ColumnUnique(MutableColumnPtr && holder, bool is_nullable);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <Common/COWPtr.h>
+#include <Common/COW.h>
 #include <Common/PODArray.h>
 #include <Common/Exception.h>
 #include <common/StringRef.h>
@@ -24,13 +24,13 @@ class Arena;
 class ColumnGathererStream;
 
 /// Declares interface to store columns in memory.
-class IColumn : public COWPtr<IColumn>
+class IColumn : public COW<IColumn>
 {
 private:
-    friend class COWPtr<IColumn>;
+    friend class COW<IColumn>;
 
     /// Creates the same column with the same data.
-    /// This is internal method to use from COWPtr.
+    /// This is internal method to use from COW.
     /// It performs shallow copy with copy-ctor and not useful from outside.
     /// If you want to copy column for modification, look at 'mutate' method.
     virtual MutablePtr clone() const = 0;
@@ -250,7 +250,7 @@ public:
 
     /// Size of memory, allocated for column.
     /// This is greater or equals to byteSize due to memory reservation in containers.
-    /// Zero, if could be determined.
+    /// Zero, if could not be determined.
     virtual size_t allocatedBytes() const = 0;
 
     /// Make memory region readonly with mprotect if it is large enough.
