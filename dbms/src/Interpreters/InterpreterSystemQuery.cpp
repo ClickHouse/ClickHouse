@@ -23,6 +23,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
 #include <algorithm>
+#include "InterpreterSystemQuery.h"
 
 
 namespace DB
@@ -43,6 +44,7 @@ namespace ActionLocks
     extern StorageActionBlockType PartsFetch;
     extern StorageActionBlockType PartsSend;
     extern StorageActionBlockType ReplicationQueue;
+    extern StorageActionBlockType DistributedSend;
 }
 
 
@@ -195,8 +197,17 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_REPLICATION_QUEUES:
             startStopAction(context, query, ActionLocks::ReplicationQueue, true);
             break;
+        case Type::STOP_DISTRIBUTED_SENDS:
+            startStopAction(context, query, ActionLocks::DistributedSend, false);
+            break;
+        case Type::START_DISTRIBUTED_SENDS:
+            startStopAction(context, query, ActionLocks::DistributedSend, true);
+            break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
+            break;
+        case Type::SYNC_DISTRIBUTED:
+            syncDistributed(query);
             break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
@@ -304,12 +315,21 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
 
     StoragePtr table = context.getTable(database_name, table_name);
 
-    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(table.get()))
-        storage_distributed->syncReplicaSends();
-    else if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
         storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.value.milliseconds());
     else
         throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+}
+
+void InterpreterSystemQuery::syncDistributed(ASTSystemQuery & query)
+{
+    String database_name = !query.target_database.empty() ? query.target_database : context.getCurrentDatabase();
+    String & table_name = query.target_table;
+
+    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
+        storage_distributed->syncReplicaSends();
+    else
+        throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

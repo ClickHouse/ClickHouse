@@ -89,11 +89,14 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 
 void StorageDistributedDirectoryMonitor::syncReplicaSends()
 {
-    if (quit || monitor_blocker.isCancelled())
-        throw Exception("Cancelled sync distributed sync replica sends.", ErrorCodes::ABORTED);
+    if (!quit)
+    {
+        if (monitor_blocker.isCancelled())
+            throw Exception("Cancelled sync distributed sends.", ErrorCodes::ABORTED);
 
-    std::unique_lock lock{mutex};
-    findFiles();
+        std::unique_lock lock{mutex};
+        findFiles();
+    }
 }
 
 void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
@@ -139,6 +142,10 @@ void StorageDistributedDirectoryMonitor::run()
                     std::chrono::milliseconds{max_sleep_time});
                 tryLogCurrentException(getLoggerName().data());
             }
+        }
+        else
+        {
+            LOG_DEBUG(log, "Skipping send data over distributed table.");
         }
 
         if (do_sleep)
