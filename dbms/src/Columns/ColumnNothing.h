@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class ColumnNothing final : public COWPtrHelper<IColumnDummy, ColumnNothing>
+class ColumnNothing final : public COWHelper<IColumnDummy, ColumnNothing>
 {
 private:
-    friend class COWPtrHelper<IColumnDummy, ColumnNothing>;
+    friend class COWHelper<IColumnDummy, ColumnNothing>;
 
     ColumnNothing(size_t s_)
     {
