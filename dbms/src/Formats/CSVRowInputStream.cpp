@@ -122,7 +122,8 @@ void CSVRowInputStream::setupAllColumnsByTableSchema()
 }
 
 
-void CSVRowInputStream::addInputColumn(const String & column_name) {
+void CSVRowInputStream::addInputColumn(const String & column_name)
+{
     const auto column_it = column_indexes_by_names.find(column_name);
     if (column_it == column_indexes_by_names.end())
     {
@@ -187,7 +188,7 @@ void CSVRowInputStream::readPrefix()
 
                 addInputColumn(column_name);
             }
-            while(checkChar(format_settings.csv.delimiter, istr));
+            while (checkChar(format_settings.csv.delimiter, istr));
 
             skipDelimiter(istr, format_settings.csv.delimiter, true);
         }

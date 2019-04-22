@@ -79,7 +79,8 @@ void TabSeparatedRowInputStream::setupAllColumnsByTableSchema()
 }
 
 
-void TabSeparatedRowInputStream::addInputColumn(const String & column_name) {
+void TabSeparatedRowInputStream::addInputColumn(const String & column_name)
+{
     const auto column_it = column_indexes_by_names.find(column_name);
     if (column_it == column_indexes_by_names.end())
     {
@@ -145,7 +146,7 @@ void TabSeparatedRowInputStream::readPrefix()
                 readEscapedString(column_name, istr);
                 addInputColumn(column_name);
             }
-            while(checkChar('\t', istr));
+            while (checkChar('\t', istr));
 
             if (!istr.eof())
             {
