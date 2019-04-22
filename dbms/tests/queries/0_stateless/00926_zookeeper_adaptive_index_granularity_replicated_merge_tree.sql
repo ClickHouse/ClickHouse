@@ -35,7 +35,7 @@ SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule2' 
 
 SELECT distinct(marks) from system.parts WHERE table = 'zero_rows_per_granule1' and database='test' and active=1;
 
-SELECT sleep(0.5) Format Null;
+SELECT sleep(0.7) Format Null;
 
 OPTIMIZE TABLE test.zero_rows_per_granule2 FINAL;
 
@@ -92,7 +92,7 @@ SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule2' 
 
 SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule1' and database='test' and active=1;
 
-SELECT sleep(0.5) Format Null;
+SELECT sleep(0.7) Format Null;
 
 OPTIMIZE TABLE test.four_rows_per_granule2 FINAL;
 
@@ -180,7 +180,7 @@ ATTACH TABLE test.adaptive_granularity_alter1;
 
 INSERT INTO test.adaptive_granularity_alter1 (p, k, v1, v2) VALUES ('2018-05-15', 100, 1000, 'aaaa'), ('2018-05-16', 101, 3000, 'bbbb'), ('2018-05-17', 102, 5000, 'cccc'), ('2018-05-19', 103, 7000, 'dddd');
 
-SELECT sleep(0.5) Format Null;
+SELECT sleep(0.7) Format Null;
 
 OPTIMIZE TABLE test.adaptive_granularity_alter1 FINAL;
 

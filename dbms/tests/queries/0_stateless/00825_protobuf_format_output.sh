@@ -51,4 +51,6 @@ SELECT 'STRINGS->';
 SELECT * FROM table_00825 ORDER BY name FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format:StrPerson';
 SELECT 'SYNTAX2->';
 SELECT * FROM table_00825 ORDER BY name FORMAT Protobuf SETTINGS format_schema = '$CURDIR/00825_protobuf_format_syntax2:Syntax2Person';
+
+DROP TABLE IF EXISTS table_00825;
 EOF

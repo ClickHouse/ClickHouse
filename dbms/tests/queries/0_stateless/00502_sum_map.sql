@@ -1,6 +1,5 @@
 SET send_logs_level = 'none';
 
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS sum_map;
 CREATE TABLE sum_map(date Date, timeslot DateTime, statusMap Nested(status UInt16, requests UInt64)) ENGINE = Log;
 
