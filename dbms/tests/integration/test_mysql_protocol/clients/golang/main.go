@@ -18,7 +18,7 @@ func main() {
 	flag.Parse()
 
 	logger := log.New(os.Stderr, "", 0)
-	dataSource := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?allowCleartextPasswords=1", *user, *password, *host, *port, *database)
+	dataSource := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", *user, *password, *host, *port, *database)
 	db, err := sql.Open("mysql", dataSource)
 
 	if err != nil {
@@ -50,11 +50,6 @@ func main() {
 			logger.Fatal(err)
 		}
 
-		err = rows.Err()
-		if err != nil {
-			logger.Fatal(err)
-		}
-
 		err = rows.Close()
 		if err != nil {
 			logger.Fatal(err)
@@ -74,7 +69,7 @@ func main() {
 			}
 			fmt.Println(x)
 		}
-		return nil
+		return rows.Err()
 	}
 	runQuery("select number as a from system.numbers limit 2", processRows)
 
@@ -88,7 +83,7 @@ func main() {
 			}
 			fmt.Println(name, a)
 		}
-		return nil
+		return rows.Err()
 	}
 	runQuery("select name, 1 as a from system.tables where name == 'tables'", processRows)
 
