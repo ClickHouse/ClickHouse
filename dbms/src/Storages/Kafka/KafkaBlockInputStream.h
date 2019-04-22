@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <IO/DelimitedReadBuffer.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/Kafka/StorageKafka.h>
@@ -27,8 +26,7 @@ private:
     Context context;
     UInt64 max_block_size;
 
-    ConsumerPtr consumer;
-    std::unique_ptr<DelimitedReadBuffer> buffer;
+    BufferPtr buffer;
     bool broken = true, claimed = false;
 };
 
