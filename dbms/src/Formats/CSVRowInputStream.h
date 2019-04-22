@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <unordered_map>
+
 #include <Core/Block.h>
 #include <Formats/IRowInputStream.h>
 #include <Formats/FormatSettings.h>
