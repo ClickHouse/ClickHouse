@@ -20,6 +20,7 @@ add_library (common ${LINK_MODE}
     src/getMemoryAmount.cpp
     src/demangle.cpp
     src/setTerminalEcho.cpp
+    src/getThreadNumber.cpp
 
     include/common/Types.h
     include/common/DayNum.h
@@ -40,6 +41,7 @@ add_library (common ${LINK_MODE}
     include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
+    include/common/getThreadNumber.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -93,8 +95,6 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
 endif ()
 
 target_link_libraries (common
-        PRIVATE
-    pocoext
         PUBLIC
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}

@@ -136,6 +136,9 @@ void fillIndexGranularityImpl(
     if (index_granularity_for_block == 0) /// very rare case when index granularity bytes less then single row
         index_granularity_for_block = 1;
 
+    /// We should be less or equal than fixed index granularity
+    index_granularity_for_block = std::min(fixed_index_granularity_rows, index_granularity_for_block);
+
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
         index_granularity.appendMark(index_granularity_for_block);
 

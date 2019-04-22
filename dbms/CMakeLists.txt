@@ -185,8 +185,6 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
-        PRIVATE
-    pocoext
         PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
@@ -236,7 +234,6 @@ target_link_libraries (dbms
         PRIVATE
     clickhouse_dictionaries_embedded
         PUBLIC
-    pocoext
     ${MYSQLXX_LIBRARY}
         PRIVATE
     ${BTRIE_LIBRARIES}

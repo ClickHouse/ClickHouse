@@ -247,15 +247,16 @@ LoadBalancing SettingLoadBalancing::getLoadBalancing(const String & s)
     if (s == "random")           return LoadBalancing::RANDOM;
     if (s == "nearest_hostname") return LoadBalancing::NEAREST_HOSTNAME;
     if (s == "in_order")         return LoadBalancing::IN_ORDER;
+    if (s == "first_or_random")  return LoadBalancing::FIRST_OR_RANDOM;
 
-    throw Exception("Unknown load balancing mode: '" + s + "', must be one of 'random', 'nearest_hostname', 'in_order'",
+    throw Exception("Unknown load balancing mode: '" + s + "', must be one of 'random', 'nearest_hostname', 'in_order', 'first_or_random'",
         ErrorCodes::UNKNOWN_LOAD_BALANCING);
 }
 
 String SettingLoadBalancing::toString() const
 {
-    const char * strings[] = {"random", "nearest_hostname", "in_order"};
-    if (value < LoadBalancing::RANDOM || value > LoadBalancing::IN_ORDER)
+    const char * strings[] = {"random", "nearest_hostname", "in_order", "first_or_random"};
+    if (value < LoadBalancing::RANDOM || value > LoadBalancing::FIRST_OR_RANDOM)
         throw Exception("Unknown load balancing mode", ErrorCodes::UNKNOWN_LOAD_BALANCING);
     return strings[static_cast<size_t>(value)];
 }
