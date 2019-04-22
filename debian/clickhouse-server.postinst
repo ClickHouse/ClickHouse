@@ -11,8 +11,9 @@ CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
 EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 
-
 OS=${OS=`lsb_release -is 2>/dev/null || uname -s ||:`}
+
+. /usr/share/debconf/confmodule
 
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
 
@@ -84,6 +85,8 @@ Please fix this and reinstall this package." >&2
     fi
 
     if [ -d ${CLICKHOUSE_CONFDIR} ]; then
+        mkdir -p ${CLICKHOUSE_CONFDIR}/users.d
+        mkdir -p ${CLICKHOUSE_CONFDIR}/config.d
         rm -fv ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
     fi
 
@@ -119,4 +122,15 @@ Please fix this and reinstall this package." >&2
     if [ -d "${CLICKHOUSE_DATADIR_FROM_CONFIG}/build" ]; then
         rm -f ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.cpp ${CLICKHOUSE_DATADIR_FROM_CONFIG}/build/*.so ||:
     fi
+
+    db_get clickhouse-server/default-password
+    defaultpassword="$RET"
+    if [ -n "$defaultpassword" ]; then
+        echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+    fi
+
+    # everything went well, so now let's reset the password
+    db_set clickhouse-server/default-password ""
+    # ... done with debconf here
+    db_stop
 fi

@@ -6,7 +6,7 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 
 
 namespace ProfileEvents
@@ -61,6 +61,9 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const Settings * settings
         get_priority = [](size_t i) { return i; };
         break;
     case LoadBalancing::RANDOM:
+        break;
+    case LoadBalancing::FIRST_OR_RANDOM:
+        get_priority = [](size_t i) -> size_t { return i >= 1; };
         break;
     }
 
@@ -133,6 +136,9 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
         get_priority = [](size_t i) { return i; };
         break;
     case LoadBalancing::RANDOM:
+        break;
+    case LoadBalancing::FIRST_OR_RANDOM:
+        get_priority = [](size_t i) -> size_t { return i >= 1; };
         break;
     }
 

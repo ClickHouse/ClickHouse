@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Interpreters/AggregateDescription.h>
-#include <Interpreters/Settings.h>
 #include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/AggregateDescription.h>
+#include <Core/Settings.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Parsers/IAST_fwd.h>
+
 
 namespace DB
 {
@@ -15,9 +17,6 @@ struct ExpressionActionsChain;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-using ASTs = std::vector<ASTPtr>;
 struct ASTTableJoin;
 
 class IBlockInputStream;
@@ -211,7 +210,6 @@ public:
 
 private:
     ASTPtr query;
-    ASTSelectQuery * select_query;
     const Context & context;
     const ExtractedSettings settings;
     StoragePtr storage; /// The main table in FROM clause, if exists.

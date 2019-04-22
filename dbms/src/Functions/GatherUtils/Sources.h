@@ -8,13 +8,23 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/UTF8Helpers.h>
 
 #include <Functions/GatherUtils/IArraySource.h>
 #include <Functions/GatherUtils/IValueSource.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/FunctionHelpers.h>
 
-namespace DB::GatherUtils
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
+namespace GatherUtils
 {
 
 template <typename T>
@@ -264,6 +274,92 @@ struct StringSource
         if (offset > elem_size)
             return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
+    }
+};
+
+
+/// Differs to StringSource by having 'offest' and 'length' in code points instead of bytes in getSlice* methods.
+/** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
+  * substring:
+  *      hello
+  * ^-----^ - offset -10, length 7, result: "he"
+  * substringUTF8:
+  *      hello
+  *      ^-----^ - offset -10, length 7, result: "hello"
+  * This may be subject for change.
+  */
+struct UTF8StringSource : public StringSource
+{
+    using StringSource::StringSource;
+
+    static const ColumnString::Char * skipCodePointsForward(const ColumnString::Char * pos, size_t size, const ColumnString::Char * end)
+    {
+        for (size_t i = 0; i < size && pos < end; ++i)
+            pos += UTF8::seqLength(*pos);   /// NOTE pos may become greater than end. It is Ok due to padding in PaddedPODArray.
+        return pos;
+    }
+
+    static const ColumnString::Char * skipCodePointsBackward(const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin)
+    {
+        for (size_t i = 0; i < size && pos > begin; ++i)
+        {
+            --pos;
+            if (pos == begin)
+                break;
+            UTF8::syncBackward(pos, begin);
+        }
+        return pos;
+    }
+
+    Slice getSliceFromLeft(size_t offset) const
+    {
+        auto begin = &elements[prev_offset];
+        auto end = elements.data() + offsets[row_num] - 1;
+        auto res_begin = skipCodePointsForward(begin, offset, end);
+
+        if (res_begin >= end)
+            return {begin, 0};
+
+        return {res_begin, size_t(end - res_begin)};
+    }
+
+    Slice getSliceFromLeft(size_t offset, size_t length) const
+    {
+        auto begin = &elements[prev_offset];
+        auto end = elements.data() + offsets[row_num] - 1;
+        auto res_begin = skipCodePointsForward(begin, offset, end);
+
+        if (res_begin >= end)
+            return {begin, 0};
+
+        auto res_end = skipCodePointsForward(res_begin, length, end);
+
+        if (res_end >= end)
+            return {res_begin, size_t(end - res_begin)};
+
+        return {res_begin, size_t(res_end - res_begin)};
+    }
+
+    Slice getSliceFromRight(size_t offset) const
+    {
+        auto begin = &elements[prev_offset];
+        auto end = elements.data() + offsets[row_num] - 1;
+        auto res_begin = skipCodePointsBackward(end, offset, begin);
+
+        return {res_begin, size_t(end - res_begin)};
+    }
+
+    Slice getSliceFromRight(size_t offset, size_t length) const
+    {
+        auto begin = &elements[prev_offset];
+        auto end = elements.data() + offsets[row_num] - 1;
+        auto res_begin = skipCodePointsBackward(end, offset, begin);
+        auto res_end = skipCodePointsForward(res_begin, length, end);
+
+        if (res_end >= end)
+            return {res_begin, size_t(end - res_begin)};
+
+        return {res_begin, size_t(res_end - res_begin)};
     }
 };
 
@@ -658,5 +754,7 @@ struct NullableValueSource : public ValueSource
         return slice;
     }
 };
+
+}
 
 }

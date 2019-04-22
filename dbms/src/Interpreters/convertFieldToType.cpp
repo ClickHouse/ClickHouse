@@ -51,16 +51,10 @@ namespace
 template <typename From, typename To>
 static Field convertNumericTypeImpl(const Field & from)
 {
-    From value = from.get<From>();
-
-    /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
-    if (isNaN(value) && std::is_floating_point_v<To>)
-        return value;
-
-    if (!accurate::equalsOp(value, To(value)))
+    To result;
+    if (!accurate::convertNumeric(from.get<From>(), result))
         return {};
-
-    return To(value);
+    return result;
 }
 
 template <typename To>

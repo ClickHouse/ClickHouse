@@ -26,14 +26,13 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
             continue;
         }
 
-        const auto default_it = storage.getColumns().defaults.find(column_name);
-        /// columns has no explicit default expression
-        if (default_it == std::end(storage.getColumns().defaults))
+        const auto column_default = storage.getColumns().getDefault(column_name);
+        if (!column_default)
             continue;
 
         /// collect identifiers required for evaluation
         IdentifierNameSet identifiers;
-        default_it->second.expression->collectIdentifierNames(identifiers);
+        column_default->expression->collectIdentifierNames(identifiers);
 
         for (const auto & identifier : identifiers)
         {

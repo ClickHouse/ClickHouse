@@ -122,11 +122,6 @@ override_dh_install:
 	touch $(DESTDIR)/etc/clickhouse-server/metrika/config.xml
 	touch $(DESTDIR)/etc/clickhouse-server/metrika/users.xml
 
-	# todo: remove after removing clickhouse-server-base package:
-	mkdir -p $(DESTDIR)/etc/init.d $(DESTDIR)/etc/cron.d
-	cp debian/clickhouse-server.init $(DESTDIR)/etc/init.d/clickhouse-server
-	cp debian/clickhouse-server.cron.d $(DESTDIR)/etc/cron.d/clickhouse-server
-
 	dh_install --list-missing --sourcedir=$(DESTDIR)
 
 override_dh_auto_install:

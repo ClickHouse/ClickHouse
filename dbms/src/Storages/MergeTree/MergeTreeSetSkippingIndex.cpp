@@ -225,19 +225,19 @@ SetIndexCondition::SetIndexCondition(
             key_columns.insert(name);
     }
 
-    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query.query);
+    const auto & select = query.query->as<ASTSelectQuery &>();
 
     /// Replace logical functions with bit functions.
     /// Working with UInt8: last bit = can be true, previous = can be false.
-    if (select.where_expression && select.prewhere_expression)
+    if (select.where() && select.prewhere())
         expression_ast = makeASTFunction(
                 "and",
-                select.where_expression->clone(),
-                select.prewhere_expression->clone());
-    else if (select.where_expression)
-        expression_ast = select.where_expression->clone();
-    else if (select.prewhere_expression)
-        expression_ast = select.prewhere_expression->clone();
+                select.where()->clone(),
+                select.prewhere()->clone());
+    else if (select.where())
+        expression_ast = select.where()->clone();
+    else if (select.prewhere())
+        expression_ast = select.prewhere()->clone();
     else
         expression_ast = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 
@@ -298,8 +298,7 @@ void SetIndexCondition::traverseAST(ASTPtr & node) const
 {
     if (operatorFromAST(node))
     {
-        auto * func = typeid_cast<ASTFunction *>(&*node);
-        auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+        auto & args = node->as<ASTFunction>()->arguments->children;
 
         for (auto & arg : args)
             traverseAST(arg);
@@ -314,13 +313,13 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
 {
     /// Function, literal or column
 
-    if (typeid_cast<const ASTLiteral *>(node.get()))
+    if (node->as<ASTLiteral>())
         return true;
 
-    if (const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
+    if (const auto * identifier = node->as<ASTIdentifier>())
         return key_columns.count(identifier->getColumnName()) != 0;
 
-    if (auto * func = typeid_cast<ASTFunction *>(node.get()))
+    if (auto * func = node->as<ASTFunction>())
     {
         if (key_columns.count(func->getColumnName()))
         {
@@ -329,7 +328,7 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
             return true;
         }
 
-        ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+        auto & args = func->arguments->children;
 
         for (auto & arg : args)
             if (!atomFromAST(arg))
@@ -344,11 +343,11 @@ bool SetIndexCondition::atomFromAST(ASTPtr & node) const
 bool SetIndexCondition::operatorFromAST(ASTPtr & node) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
-    auto * func = typeid_cast<ASTFunction *>(&*node);
+    auto * func = node->as<ASTFunction>();
     if (!func)
         return false;
 
-    ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+    auto & args = func->arguments->children;
 
     if (func->name == "not")
     {
@@ -419,12 +418,12 @@ static bool checkAtomName(const String & name)
 
 bool SetIndexCondition::checkASTUseless(const ASTPtr &node, bool atomic) const
 {
-    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (const auto * func = node->as<ASTFunction>())
     {
         if (key_columns.count(func->getColumnName()))
             return false;
 
-        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+        const ASTs & args = func->arguments->children;
 
         if (func->name == "and" || func->name == "indexHint")
             return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
@@ -438,9 +437,9 @@ bool SetIndexCondition::checkASTUseless(const ASTPtr &node, bool atomic) const
             return std::any_of(args.begin(), args.end(),
                     [this, &atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
     }
-    else if (const auto * literal = typeid_cast<const ASTLiteral *>(node.get()))
+    else if (const auto * literal = node->as<ASTLiteral>())
         return !atomic && literal->value.get<bool>();
-    else if (const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
+    else if (const auto * identifier = node->as<ASTIdentifier>())
         return key_columns.find(identifier->getColumnName()) == key_columns.end();
     else
         return true;
@@ -463,11 +462,16 @@ IndexConditionPtr MergeTreeSetSkippingIndex::createIndexCondition(
     return std::make_shared<SetIndexCondition>(query, context, *this);
 };
 
+bool MergeTreeSetSkippingIndex::mayBenefitFromIndexForIn(const ASTPtr &) const
+{
+    return false;
+}
+
 
 std::unique_ptr<IMergeTreeIndex> setIndexCreator(
-        const NamesAndTypesList & new_columns,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context)
+    const NamesAndTypesList & new_columns,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
@@ -476,8 +480,7 @@ std::unique_ptr<IMergeTreeIndex> setIndexCreator(
     if (!node->type->arguments || node->type->arguments->children.size() != 1)
         throw Exception("Set index must have exactly one argument.", ErrorCodes::INCORRECT_QUERY);
     else if (node->type->arguments->children.size() == 1)
-        max_rows = typeid_cast<const ASTLiteral &>(
-                *node->type->arguments->children[0]).value.get<size_t>();
+        max_rows = node->type->arguments->children[0]->as<ASTLiteral &>().value.get<size_t>();
 
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());

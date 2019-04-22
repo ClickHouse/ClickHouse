@@ -197,7 +197,7 @@ bool Set::insertFromBlock(const Block & block)
             if (set_elements[i]->empty())
                 set_elements[i] = filtered_column;
             else
-                set_elements[i]->assumeMutableRef().insertRangeFrom(*filtered_column, 0, filtered_column->size());
+                set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
         }
     }
 
@@ -205,13 +205,13 @@ bool Set::insertFromBlock(const Block & block)
 }
 
 
-static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const Context & context)
+static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, const Context & context)
 {
-    if (ASTLiteral * lit = typeid_cast<ASTLiteral *>(node.get()))
+    if (const auto * lit = node->as<ASTLiteral>())
     {
         return convertFieldToType(lit->value, type);
     }
-    else if (typeid_cast<ASTFunction *>(node.get()))
+    else if (node->as<ASTFunction>())
     {
         std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(node, context);
         return convertFieldToType(value_raw.first, type, value_raw.second.get());
@@ -235,7 +235,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     DataTypePtr tuple_type;
     Row tuple_values;
-    ASTExpressionList & list = typeid_cast<ASTExpressionList &>(*node);
+    const auto & list = node->as<ASTExpressionList &>();
     for (auto & elem : list.children)
     {
         if (num_columns == 1)
@@ -245,7 +245,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
             if (!value.isNull())
                 columns[0]->insert(value);
         }
-        else if (ASTFunction * func = typeid_cast<ASTFunction *>(elem.get()))
+        else if (const auto * func = elem->as<ASTFunction>())
         {
             Field function_result;
             const TupleBackend * tuple = nullptr;

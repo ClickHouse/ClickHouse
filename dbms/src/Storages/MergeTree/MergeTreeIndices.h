@@ -95,6 +95,9 @@ public:
     /// gets filename without extension
     String getFileName() const { return INDEX_FILE_PREFIX + name; }
 
+    /// Checks whether the column is in data skipping index.
+    virtual bool mayBenefitFromIndexForIn(const ASTPtr & node) const = 0;
+
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 

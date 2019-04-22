@@ -40,6 +40,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->predicate = predicate->clone();
         res->children.push_back(res->predicate);
     }
+    if (ttl)
+    {
+        res->ttl = ttl->clone();
+        res->children.push_back(res->ttl);
+    }
 
     return res;
 }
@@ -173,6 +178,11 @@ void ASTAlterCommand::formatImpl(
         column->formatImpl(settings, state, frame);
         settings.ostr << " " << (settings.hilite ? hilite_none : "");
         comment->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_TTL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
+        ttl->formatImpl(settings, state, frame);
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

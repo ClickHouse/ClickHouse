@@ -414,7 +414,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
                 any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
             }
-            else if (array_join_is_left && !unaligned_array_join)
+            else if (array_join_is_left)
             {
                 for (const auto & name : array_joined_columns)
                 {

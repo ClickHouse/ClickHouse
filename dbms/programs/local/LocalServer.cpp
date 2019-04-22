@@ -369,7 +369,7 @@ void LocalServer::setupUsers()
 
 static void showClientVersion()
 {
-    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << '\n';
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
 }
 
 std::string LocalServer::getHelpHeader() const

@@ -44,6 +44,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TYPE_MISMATCH;
+    extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** Functions that use plug-ins (external) dictionaries.
@@ -165,7 +167,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnUInt8::create(key_col_with_type.column->size());
@@ -351,7 +353,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnString::create();
@@ -578,7 +580,7 @@ private:
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
         ColumnPtr key_col = key_col_with_type.column->convertToFullColumnIfConst();
 
-        const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
+        const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
         auto out = ColumnString::create();
@@ -813,7 +815,7 @@ private:
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
-            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumns();
+            const auto & key_columns = static_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
             const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
             auto out = ColumnVector<Type>::create(key_columns.front()->size());
@@ -1075,7 +1077,7 @@ private:
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
         ColumnPtr key_col = key_col_with_type.column->convertToFullColumnIfConst();
 
-        const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
+        const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumnsCopy();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
 
         /// @todo detect when all key columns are constant

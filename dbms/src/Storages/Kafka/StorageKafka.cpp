@@ -81,7 +81,7 @@ StorageKafka::StorageKafka(
     row_delimiter(row_delimiter_),
     schema_name(global_context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), max_block_size(max_block_size_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
-    semaphore(0, num_consumers_), mutex(), consumers(),
+    semaphore(0, num_consumers_),
     skip_broken(skip_broken_)
 {
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
@@ -124,12 +124,8 @@ void StorageKafka::startup()
 {
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        // Create a consumer and subscribe to topics
-        auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
-        consumer->subscribe(topics);
-
-        // Make consumer available
-        pushConsumer(consumer);
+        // Make buffer available
+        pushBuffer(createBuffer());
         ++num_created_consumers;
     }
 
@@ -146,8 +142,8 @@ void StorageKafka::shutdown()
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto consumer = claimConsumer();
-        // FIXME: not sure if really close consumers here, and if we really need to close them here.
+        auto buffer = claimBuffer();
+        // FIXME: not sure if we really close consumers here, and if we really need to close them here.
     }
 
     LOG_TRACE(log, "Waiting for cleanup");
@@ -203,14 +199,29 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
     return conf;
 }
 
-ConsumerPtr StorageKafka::claimConsumer()
+BufferPtr StorageKafka::createBuffer()
 {
-    return tryClaimConsumer(-1L);
+    // Create a consumer and subscribe to topics
+    auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
+    consumer->subscribe(topics);
+
+    // Limit the number of batched messages to allow early cancellations
+    const Settings & settings = global_context.getSettingsRef();
+    size_t batch_size = max_block_size;
+    if (!batch_size)
+        batch_size = settings.max_block_size.value;
+
+    return std::make_shared<DelimitedReadBuffer>(new ReadBufferFromKafkaConsumer(consumer, log, batch_size), row_delimiter);
 }
 
-ConsumerPtr StorageKafka::tryClaimConsumer(long wait_ms)
+BufferPtr StorageKafka::claimBuffer()
 {
-    // Wait for the first free consumer
+    return tryClaimBuffer(-1L);
+}
+
+BufferPtr StorageKafka::tryClaimBuffer(long wait_ms)
+{
+    // Wait for the first free buffer
     if (wait_ms >= 0)
     {
         if (!semaphore.tryWait(wait_ms))
@@ -219,17 +230,17 @@ ConsumerPtr StorageKafka::tryClaimConsumer(long wait_ms)
     else
         semaphore.wait();
 
-    // Take the first available consumer from the list
+    // Take the first available buffer from the list
     std::lock_guard lock(mutex);
-    auto consumer = consumers.back();
-    consumers.pop_back();
-    return consumer;
+    auto buffer = buffers.back();
+    buffers.pop_back();
+    return buffer;
 }
 
-void StorageKafka::pushConsumer(ConsumerPtr consumer)
+void StorageKafka::pushBuffer(BufferPtr buffer)
 {
     std::lock_guard lock(mutex);
-    consumers.push_back(consumer);
+    buffers.push_back(buffer);
     semaphore.set();
 }
 
@@ -303,7 +314,6 @@ bool StorageKafka::streamToViews()
     insert->table = table_name;
     insert->no_destination = true; // Only insert into dependent views
 
-    // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
     if (block_size == 0)
@@ -409,7 +419,7 @@ void registerStorageKafka(StorageFactory & factory)
         String brokers;
         if (args_count >= 1)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[0].get());
+            const auto * ast = engine_args[0]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 brokers = safeGet<String>(ast->value);
@@ -429,7 +439,7 @@ void registerStorageKafka(StorageFactory & factory)
         if (args_count >= 2)
         {
             engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
-            topic_list = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+            topic_list = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         }
         else if (kafka_settings.kafka_topic_list.changed)
         {
@@ -447,7 +457,7 @@ void registerStorageKafka(StorageFactory & factory)
         if (args_count >= 3)
         {
             engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
-            group = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
+            group = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         }
         else if (kafka_settings.kafka_group_name.changed)
         {
@@ -460,7 +470,7 @@ void registerStorageKafka(StorageFactory & factory)
         {
             engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
 
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[3].get());
+            const auto * ast = engine_args[3]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 format = safeGet<String>(ast->value);
@@ -481,7 +491,7 @@ void registerStorageKafka(StorageFactory & factory)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
 
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[4].get());
+            const auto * ast = engine_args[4]->as<ASTLiteral>();
             String arg;
             if (ast && ast->value.getType() == Field::Types::String)
             {
@@ -515,7 +525,7 @@ void registerStorageKafka(StorageFactory & factory)
         {
             engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
 
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[5].get());
+            const auto * ast = engine_args[5]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 schema = safeGet<String>(ast->value);
@@ -534,7 +544,7 @@ void registerStorageKafka(StorageFactory & factory)
         UInt64 num_consumers = 1;
         if (args_count >= 7)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[6].get());
+            const auto * ast = engine_args[6]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 num_consumers = safeGet<UInt64>(ast->value);
@@ -553,7 +563,7 @@ void registerStorageKafka(StorageFactory & factory)
         UInt64 max_block_size = 0;
         if (args_count >= 8)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[7].get());
+            const auto * ast = engine_args[7]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 max_block_size = static_cast<size_t>(safeGet<UInt64>(ast->value));
@@ -572,7 +582,7 @@ void registerStorageKafka(StorageFactory & factory)
         size_t skip_broken = 0;
         if (args_count >= 9)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[8].get());
+            const auto * ast = engine_args[8]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 skip_broken = static_cast<size_t>(safeGet<UInt64>(ast->value));

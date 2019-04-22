@@ -51,6 +51,8 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c.`
 
+`a NOT BETWEEN b AND c` – The same as `a < b OR a > c.`
+
 ## Operators for Working With Data Sets
 
 *See the section [IN operators](select.md#select-in-operators).*
@@ -62,6 +64,67 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 `a GLOBAL IN ...` – The `globalIn(a, b) function.`
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b) function.`
+
+## Operator for Working With Dates and Times
+
+``` sql
+EXTRACT(part FROM date);
+```
+
+Extracts a part from a given date. For example, you can retrieve a month from a given date, or a second from a time.
+
+The `part` parameter specifies which part of the date to retrieve. The following values are available:
+
+- `DAY` — The day of the month. Possible values: 1–31.
+- `MONTH` — The number of a month. Possible values: 1–12.
+- `YEAR` — The year.
+- `SECOND` — The second. Possible values: 0–59.
+- `MINUTE` — The minute. Possible values: 0–59.
+- `HOUR` — The hour. Possible values: 0–23.
+
+The `part` parameter is case-insensitive.
+
+The `date` parameter specifies the date or the time to process. Either [Date](../data_types/date.md) or [DateTime](../data_types/datetime.md) type is supported.
+
+Examples:
+
+``` sql
+SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
+SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
+SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+```
+
+In the following example we create a table and insert into it a value with the `DateTime` type. 
+
+``` sql
+CREATE TABLE test.Orders
+(
+    OrderId UInt64, 
+    OrderName String, 
+    OrderDate DateTime
+)
+ENGINE = Log;
+```
+
+``` sql
+INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
+```
+``` sql
+SELECT 
+    toYear(OrderDate) AS OrderYear, 
+    toMonth(OrderDate) AS OrderMonth, 
+    toDayOfMonth(OrderDate) AS OrderDay, 
+    toHour(OrderDate) AS OrderHour, 
+    toMinute(OrderDate) AS OrderMinute,
+    toSecond(OrderDate) AS OrderSecond
+FROM test.Orders;
+
+┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
+│      2008 │         10 │       11 │        13 │          23 │          44 │
+└───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
+```
+
+You can see more examples in [tests](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
 
 ## Logical Negation Operator
 

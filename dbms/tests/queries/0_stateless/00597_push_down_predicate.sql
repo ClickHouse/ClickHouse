@@ -18,11 +18,28 @@ SELECT 1 AS id WHERE id = 1;
 SELECT arrayJoin([1,2,3]) AS id WHERE id = 1;
 SELECT * FROM test.test WHERE id = 1;
 
-SELECT '-------Need push down-------';
+SELECT '-------Forbid push down-------';
 
--- Optimize predicate expressions without tables
-ANALYZE SELECT * FROM system.one ANY LEFT JOIN (SELECT 0 AS dummy) USING dummy WHERE 1;
-SELECT * FROM system.one ANY LEFT JOIN (SELECT 0 AS dummy) USING dummy WHERE 1;
+-- ARRAY JOIN
+ANALYZE SELECT count() FROM (SELECT [number] a, [number * 2] b FROM system.numbers LIMIT 1) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b);
+SELECT count() FROM (SELECT [number] a, [number * 2] b FROM system.numbers LIMIT 1) AS t ARRAY JOIN a, b WHERE NOT ignore(a + b);
+
+-- LEFT JOIN
+ANALYZE SELECT a, b FROM (SELECT 1 AS a) ANY LEFT JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+SELECT a, b FROM (SELECT 1 AS a) ANY LEFT JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+
+-- RIGHT JOIN
+ANALYZE SELECT a, b FROM (SELECT 1 AS a, 1 as b) ANY RIGHT JOIN (SELECT 1 AS a) USING (a) WHERE b = 0;
+SELECT a, b FROM (SELECT 1 AS a, 1 as b) ANY RIGHT JOIN (SELECT 1 AS a) USING (a) WHERE b = 0;
+
+-- FULL JOIN
+ANALYZE SELECT a, b FROM (SELECT 1 AS a) ANY FULL JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+SELECT a, b FROM (SELECT 1 AS a) ANY FULL JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+
+ANALYZE SELECT a, b FROM (SELECT 1 AS a, 1 AS b) ANY FULL JOIN (SELECT 1 AS a) USING (a) WHERE b = 0;
+SELECT a, b FROM (SELECT 1 AS a) ANY FULL JOIN (SELECT 1 AS a, 1 AS b) USING (a) WHERE b = 0;
+
+SELECT '-------Need push down-------';
 
 ANALYZE SELECT toString(value) AS value FROM (SELECT 1 AS value) WHERE value = '1';
 SELECT toString(value) AS value FROM (SELECT 1 AS value) WHERE value = '1';
@@ -107,6 +124,9 @@ SELECT * FROM (SELECT * FROM test.test) ANY LEFT JOIN (SELECT * FROM test.test) 
 -- Compatibility test
 ANALYZE SELECT * FROM (SELECT toInt8(1) AS id, toDate('2000-01-01') AS date FROM system.numbers LIMIT 1) ANY LEFT JOIN (SELECT * FROM test.test) AS b USING date, id WHERE b.date = toDate('2000-01-01');
 SELECT * FROM (SELECT toInt8(1) AS id, toDate('2000-01-01') AS date FROM system.numbers LIMIT 1) ANY LEFT JOIN (SELECT * FROM test.test) AS b USING date, id WHERE b.date = toDate('2000-01-01');
+
+ANALYZE SELECT * FROM (SELECT * FROM (SELECT * FROM test.test) AS a ANY LEFT JOIN (SELECT * FROM test.test) AS b  ON  a.id = b.id) WHERE id = 1;
+SELECT * FROM (SELECT * FROM (SELECT * FROM test.test) AS a ANY LEFT JOIN (SELECT * FROM test.test) AS b  ON  a.id = b.id) WHERE id = 1;
 
 DROP TABLE IF EXISTS test.test;
 DROP TABLE IF EXISTS test.test_view;

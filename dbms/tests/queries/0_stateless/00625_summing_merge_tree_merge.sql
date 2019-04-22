@@ -1,6 +1,6 @@
-DROP TABLE IF EXISTS test.tab ;
+DROP TABLE IF EXISTS tab_00625;
 
-CREATE TABLE test.tab
+CREATE TABLE tab_00625
 (
     date Date, 
     key UInt32, 
@@ -10,7 +10,7 @@ CREATE TABLE test.tab
 )
 ENGINE = SummingMergeTree(date, (date, key), 1);
 
-INSERT INTO test.tab SELECT 
+INSERT INTO tab_00625 SELECT 
     today(), 
     number, 
     [toUInt16(number)], 
@@ -18,7 +18,7 @@ INSERT INTO test.tab SELECT
 FROM system.numbers 
 LIMIT 8190;
 
-INSERT INTO test.tab SELECT 
+INSERT INTO tab_00625 SELECT 
     today(), 
     number + 8190, 
     [toUInt16(number)], 
@@ -26,4 +26,4 @@ INSERT INTO test.tab SELECT
 FROM system.numbers 
 LIMIT 10;
 
-OPTIMIZE TABLE test.tab;
+OPTIMIZE TABLE tab_00625;
