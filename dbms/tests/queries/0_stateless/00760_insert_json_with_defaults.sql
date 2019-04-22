@@ -1,6 +1,5 @@
 SET input_format_defaults_for_omitted_fields=1;
 
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS defaults;
 CREATE TABLE defaults
 (

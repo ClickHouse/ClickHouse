@@ -23,3 +23,4 @@ alter table test.ttl modify column a Int ttl d + interval 1 day;
 desc table test.ttl;
 alter table test.ttl modify column d Int ttl d + interval 1 day; -- { serverError 44}
 
+drop table if exists test.ttl;
