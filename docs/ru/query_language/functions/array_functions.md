@@ -198,7 +198,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr)
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 Возвращает массив \[1, 2, 3, ..., length(arr)\]
 
