@@ -64,7 +64,7 @@ TabSeparatedRowInputStream::TabSeparatedRowInputStream(
         column_indexes_by_names.emplace(column_info.name, i);
     }
 
-    input_fields_with_indexes.reserve(num_columns);
+    column_indexes_for_input_fields.reserve(num_columns);
     read_columns.assign(num_columns, false);
 }
 
@@ -72,10 +72,10 @@ TabSeparatedRowInputStream::TabSeparatedRowInputStream(
 void TabSeparatedRowInputStream::setupAllColumnsByTableSchema()
 {
     read_columns.assign(header.columns(), true);
-    input_fields_with_indexes.resize(header.columns());
+    column_indexes_for_input_fields.resize(header.columns());
 
-    for (size_t i = 0; i < input_fields_with_indexes.size(); ++i)
-        input_fields_with_indexes[i] = i;
+    for (size_t i = 0; i < column_indexes_for_input_fields.size(); ++i)
+        column_indexes_for_input_fields[i] = i;
 }
 
 
@@ -85,13 +85,13 @@ void TabSeparatedRowInputStream::addInputColumn(const String & column_name) {
     {
         if (format_settings.skip_unknown_fields)
         {
-            input_fields_with_indexes.push_back(std::nullopt);
+            column_indexes_for_input_fields.push_back(std::nullopt);
             return;
         }
 
         throw Exception(
             "Unknown field found in TSV header: '" + column_name + "' " +
-            "at position " + std::to_string(input_fields_with_indexes.size()) +
+            "at position " + std::to_string(column_indexes_for_input_fields.size()) +
             "\nSet the 'input_format_skip_unknown_fields' parameter explicitly to ignore and proceed",
             ErrorCodes::INCORRECT_DATA
         );
@@ -103,7 +103,7 @@ void TabSeparatedRowInputStream::addInputColumn(const String & column_name) {
         throw Exception("Duplicate field found while parsing TSV header: " + column_name, ErrorCodes::INCORRECT_DATA);
 
     read_columns[column_index] = true;
-    input_fields_with_indexes.emplace_back(column_index);
+    column_indexes_for_input_fields.emplace_back(column_index);
 }
 
 
@@ -139,9 +139,9 @@ void TabSeparatedRowInputStream::readPrefix()
     {
         if (format_settings.with_names_use_header)
         {
+            String column_name;
             do
             {
-                String column_name;
                 readEscapedString(column_name, istr);
                 addInputColumn(column_name);
             }
@@ -156,7 +156,7 @@ void TabSeparatedRowInputStream::readPrefix()
         else
         {
             setupAllColumnsByTableSchema();
-            skipTSVRow(istr, input_fields_with_indexes.size());
+            skipTSVRow(istr, column_indexes_for_input_fields.size());
         }
     }
     else
@@ -164,7 +164,7 @@ void TabSeparatedRowInputStream::readPrefix()
 
     if (with_types)
     {
-        skipTSVRow(istr, input_fields_with_indexes.size());
+        skipTSVRow(istr, column_indexes_for_input_fields.size());
     }
 }
 
@@ -176,9 +176,9 @@ bool TabSeparatedRowInputStream::read(MutableColumns & columns, RowReadExtension
 
     updateDiagnosticInfo();
 
-    for (size_t input_position = 0; input_position < input_fields_with_indexes.size(); ++input_position)
+    for (size_t input_position = 0; input_position < column_indexes_for_input_fields.size(); ++input_position)
     {
-        const auto & column_index = input_fields_with_indexes[input_position];
+        const auto & column_index = column_indexes_for_input_fields[input_position];
         if (column_index)
         {
             data_types[*column_index]->deserializeAsTextEscaped(*columns[*column_index], istr, format_settings);
@@ -190,7 +190,7 @@ bool TabSeparatedRowInputStream::read(MutableColumns & columns, RowReadExtension
         }
 
         /// skip separators
-        if (input_position + 1 < input_fields_with_indexes.size())
+        if (input_position + 1 < column_indexes_for_input_fields.size())
         {
             assertChar('\t', istr);
         }
@@ -273,7 +273,7 @@ String TabSeparatedRowInputStream::getDiagnosticInfo()
 bool OPTIMIZE(1) TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
     MutableColumns & columns, WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
-    for (size_t input_position = 0; input_position < input_fields_with_indexes.size(); ++input_position)
+    for (size_t input_position = 0; input_position < column_indexes_for_input_fields.size(); ++input_position)
     {
         if (input_position == 0 && istr.eof())
         {
@@ -281,9 +281,9 @@ bool OPTIMIZE(1) TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
             return false;
         }
 
-        if (input_fields_with_indexes[input_position].has_value())
+        if (column_indexes_for_input_fields[input_position].has_value())
         {
-            const auto & column_index = *input_fields_with_indexes[input_position];
+            const auto & column_index = *column_indexes_for_input_fields[input_position];
             const auto & current_column_type = data_types[column_index];
 
             out << "Column " << input_position << ", " << std::string((input_position < 10 ? 2 : input_position < 100 ? 1 : 0), ' ')
@@ -364,7 +364,7 @@ bool OPTIMIZE(1) TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(
         }
 
         /// Delimiters
-        if (input_position + 1 == input_fields_with_indexes.size())
+        if (input_position + 1 == column_indexes_for_input_fields.size())
         {
             if (!istr.eof())
             {
