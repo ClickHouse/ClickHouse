@@ -194,8 +194,7 @@ target_link_libraries (clickhouse_common_io
     ${CITYHASH_LIBRARIES}
         PRIVATE
     ${ZLIB_LIBRARIES}
-    ${EXECINFO_LIBRARY}
-    ${ELF_LIBRARY}
+    ${EXECINFO_LIBRARIES}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE

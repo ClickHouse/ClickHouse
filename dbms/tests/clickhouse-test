@@ -19,7 +19,7 @@ from time import sleep
 from errno import ESRCH
 import termcolor
 from random import random
-import commands
+import subprocess
 
 
 MESSAGES_TO_RETRY = [
@@ -145,7 +145,7 @@ def main(args):
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
 
     if args.zookeeper is None:
-        code, out = commands.getstatusoutput(args.extract_from_config +" --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        code, out = subprocess.getstatusoutput(args.extract_from_config +" --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -155,7 +155,7 @@ def main(args):
             args.zookeeper = False
 
     if args.shard is None:
-        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
+        code, out = subprocess.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
         if out:
             args.shard = True
         else:
@@ -166,7 +166,7 @@ def main(args):
     failures_total = 0
 
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+    clickhouse_proc_create.communicate(("CREATE DATABASE IF NOT EXISTS " + args.database).encode())
     if args.database != "test":
         clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
         clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
