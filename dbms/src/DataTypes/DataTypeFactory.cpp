@@ -174,6 +174,7 @@ void registerDataTypeAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
+void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
 
 
@@ -195,6 +196,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
+    registerDataTypeDomainBool(*this);
     registerDataTypeDomainIPv4AndIPv6(*this);
 }
 
