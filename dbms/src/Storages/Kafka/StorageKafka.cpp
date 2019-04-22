@@ -81,7 +81,7 @@ StorageKafka::StorageKafka(
     row_delimiter(row_delimiter_),
     schema_name(global_context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), max_block_size(max_block_size_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
-    semaphore(0, num_consumers_), mutex(), consumers(),
+    semaphore(0, num_consumers_),
     skip_broken(skip_broken_)
 {
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
@@ -124,12 +124,8 @@ void StorageKafka::startup()
 {
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        // Create a consumer and subscribe to topics
-        auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
-        consumer->subscribe(topics);
-
-        // Make consumer available
-        pushConsumer(consumer);
+        // Make buffer available
+        pushBuffer(createBuffer());
         ++num_created_consumers;
     }
 
@@ -146,8 +142,8 @@ void StorageKafka::shutdown()
     // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto consumer = claimConsumer();
-        // FIXME: not sure if really close consumers here, and if we really need to close them here.
+        auto buffer = claimBuffer();
+        // FIXME: not sure if we really close consumers here, and if we really need to close them here.
     }
 
     LOG_TRACE(log, "Waiting for cleanup");
@@ -203,14 +199,29 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
     return conf;
 }
 
-ConsumerPtr StorageKafka::claimConsumer()
+BufferPtr StorageKafka::createBuffer()
 {
-    return tryClaimConsumer(-1L);
+    // Create a consumer and subscribe to topics
+    auto consumer = std::make_shared<cppkafka::Consumer>(createConsumerConfiguration());
+    consumer->subscribe(topics);
+
+    // Limit the number of batched messages to allow early cancellations
+    const Settings & settings = global_context.getSettingsRef();
+    size_t batch_size = max_block_size;
+    if (!batch_size)
+        batch_size = settings.max_block_size.value;
+
+    return std::make_shared<DelimitedReadBuffer>(new ReadBufferFromKafkaConsumer(consumer, log, batch_size), row_delimiter);
 }
 
-ConsumerPtr StorageKafka::tryClaimConsumer(long wait_ms)
+BufferPtr StorageKafka::claimBuffer()
 {
-    // Wait for the first free consumer
+    return tryClaimBuffer(-1L);
+}
+
+BufferPtr StorageKafka::tryClaimBuffer(long wait_ms)
+{
+    // Wait for the first free buffer
     if (wait_ms >= 0)
     {
         if (!semaphore.tryWait(wait_ms))
@@ -219,17 +230,17 @@ ConsumerPtr StorageKafka::tryClaimConsumer(long wait_ms)
     else
         semaphore.wait();
 
-    // Take the first available consumer from the list
+    // Take the first available buffer from the list
     std::lock_guard lock(mutex);
-    auto consumer = consumers.back();
-    consumers.pop_back();
-    return consumer;
+    auto buffer = buffers.back();
+    buffers.pop_back();
+    return buffer;
 }
 
-void StorageKafka::pushConsumer(ConsumerPtr consumer)
+void StorageKafka::pushBuffer(BufferPtr buffer)
 {
     std::lock_guard lock(mutex);
-    consumers.push_back(consumer);
+    buffers.push_back(buffer);
     semaphore.set();
 }
 
@@ -303,7 +314,6 @@ bool StorageKafka::streamToViews()
     insert->table = table_name;
     insert->no_destination = true; // Only insert into dependent views
 
-    // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
     if (block_size == 0)
