@@ -6,10 +6,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/mergetree_mutations.lib
 
 ${CLICKHOUSE_CLIENT} --multiquery << EOF
-DROP TABLE IF EXISTS test.mutations;
-DROP TABLE IF EXISTS test.for_subquery;
-
-USE test;
+DROP TABLE IF EXISTS mutations;
+DROP TABLE IF EXISTS for_subquery;
 
 CREATE TABLE mutations(x UInt32, y UInt32) ENGINE MergeTree ORDER BY x;
 INSERT INTO mutations VALUES (123, 1), (234, 2), (345, 3);
@@ -23,7 +21,7 @@ EOF
 
 wait_for_mutation "mutations" "mutation_3.txt"
 
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.mutations"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM mutations"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.mutations"
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.for_subquery"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE mutations"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE for_subquery"
