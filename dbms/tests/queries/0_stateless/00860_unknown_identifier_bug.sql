@@ -1,5 +1,3 @@
-USE test;
-
 DROP TABLE IF EXISTS appointment_events;
 CREATE TABLE appointment_events
 (
@@ -29,11 +27,11 @@ SELECT A._appointment_id,
        A._vacancy_id,
        A._set_at,
        A._job_requisition_id
-FROM test.appointment_events A ANY
+FROM appointment_events A ANY
 LEFT JOIN
   (SELECT _appointment_id,
           MAX(_set_at) AS max_set_at
-   FROM test.appointment_events
+   FROM appointment_events
    WHERE _status in ('Created', 'Transferred')
    GROUP BY _appointment_id ) B USING _appointment_id
 WHERE A._set_at = B.max_set_at;

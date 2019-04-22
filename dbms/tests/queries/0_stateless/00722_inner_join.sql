@@ -1,6 +1,5 @@
-CREATE DATABASE IF NOT EXISTS test;
-DROP TABLE IF EXISTS test.one;
-CREATE TABLE test.one(dummy UInt8) ENGINE = Memory;
+DROP TABLE IF EXISTS one;
+CREATE TABLE one(dummy UInt8) ENGINE = Memory;
 
 SELECT database, t.name
     FROM system.tables AS t
@@ -91,4 +90,4 @@ SELECT count()
     JOIN system.databases AS db ON db.name = t.database
     WHERE t.name = 'one';
 
-DROP TABLE test.one;
+DROP TABLE one;
