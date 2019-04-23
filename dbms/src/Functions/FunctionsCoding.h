@@ -1454,10 +1454,11 @@ public:
 };
 
 
-constexpr size_t IP_RANGE_TUPLE_SIZE = 2;
+constexpr size_t ip_range_tuple_size = 2;
 
 class FunctionIPv6CIDRtoIPv6Range : public IFunction
 {
+constexpr size_t bits_in_byte = 8;
 public:
     template <bool lower_range>
     static void setCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst, UInt8 bits_to_keep)
@@ -1466,18 +1467,29 @@ public:
  
         for (int offset = 0; offset != IPV6_BINARY_LENGTH; ++offset)
         {
-            const size_t new_byte_offset = byte_offset + 8;
+            const size_t new_byte_offset = byte_offset + bits_in_byte;
             if (bits_to_keep > new_byte_offset)
             {
                 dst[offset] = src[offset];
             }
             else
             {
-                const size_t shifts_bits = new_byte_offset - bits_to_keep > 8 ? 8 : new_byte_offset - bits_to_keep;
-                UInt8 byte_reference = lower_range ? 0 : std::numeric_limits<UInt8>::max();
+                /** Check how many bits we need to set the masks, if we got more bits who can be contain in one byte
+                  * with our current offset, we just clean the whole byte,
+                  */
+                const size_t shifts_bits = 
+                    new_byte_offset - bits_to_keep > bits_in_byte
+                    ? bits_in_byte
+                    : new_byte_offset - bits_to_keep;
+
+                const UInt8 byte_reference = lower_range ? 0 : std::numeric_limits<UInt8>::max();
                 
-                dst[offset] = ((src[offset] >> shifts_bits << shifts_bits))
-                    | (byte_reference >> (8 - shifts_bits));
+                /// Clean the bits we don't want on byte
+                const UInt16 src_byte_shift = (static_cast<UInt16>(src[offset]) >> shifts_bits) << shifts_bits;
+                /// Set the CIDR mask.
+                const UInt16 cidr_mask_byte_shift = static_cast<UInt16>(byte_reference) >> (bits_in_byte - shifts_bits);
+
+                dst[offset] = static_cast<UInt8>(src_byte_shift | cidr_mask_byte_shift);
             }
             byte_offset = new_byte_offset;
         }
@@ -1589,10 +1601,20 @@ public:
     static UInt32 setCIDRMask(UInt32 src, UInt8 bits_to_keep)
     {
         UInt32 byte_reference = lower_range ? 0 : std::numeric_limits<UInt32>::max();
-        UInt8 shifts_bits = 32 - bits_to_keep;
+        
+       if (bits_to_keep >= 32)
+            return src;
 
-        return (src >> shifts_bits << shifts_bits)
-            | (byte_reference >> bits_to_keep);
+        const UInt8 shifts_bits = 32 - bits_to_keep;
+
+        /** Using a 32 bits variable with a 32 shits or more is considered as UB
+          * with a 64 bits type casting solve the problem if the cidr mask = 0
+          * Reference : aSO/IEC 9899:1999 6.5.7 Bitwise shift operators
+          */
+        UInt64 src_byte_shift = (static_cast<UInt64>(src) >> shifts_bits) << shifts_bits;
+        UInt64 cidr_mask_byte_shift = static_cast<UInt64>(byte_reference) >> (bits_to_keep);
+
+        return static_cast<UInt32>(src_byte_shift | cidr_mask_byte_shift);
     }
 
     static constexpr auto name = "IPv4CIDRtoIPv4Range";
