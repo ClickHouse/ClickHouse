@@ -458,16 +458,14 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(arr)
+## arraySort([func,] arr, ...)
 
-Returns an array as result of sorting the elements of `arr` in ascending order.  
+Sorts the elements of the `arr` array in ascending order.  
 
-The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to improve sorting efficiency.
-
-Example 1
+Example of integer values sorting:
 
 ``` sql
-SELECT arraySort([1, 3, 3, 0])
+SELECT arraySort([1, 3, 3, 0]);
 ```
 ```
 ┌─arraySort([1, 3, 3, 0])─┐
@@ -475,10 +473,10 @@ SELECT arraySort([1, 3, 3, 0])
 └─────────────────────────┘
 ```
 
-Example 2
+Example of string values sorting:
 
 ``` sql
-SELECT arraySort(['hello', 'world', '!'])
+SELECT arraySort(['hello', 'world', '!']);
 ```
 ```
 ┌─arraySort(['hello', 'world', '!'])─┐
@@ -486,26 +484,57 @@ SELECT arraySort(['hello', 'world', '!'])
 └────────────────────────────────────┘
 ```
 
-Note that NULLs and NaNs go last (NaNs go before NULLs). For example:
- 
-``` sql
-SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
-```
-```
-┌─arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
-│ [1,2,3,4,nan,nan,NULL,NULL]                   │
-└───────────────────────────────────────────────┘
-```
-You can use lambda functions with the `arraySort` function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
-
-## arrayReverseSort(arr)
-
-Returns an array as result of sorting the elements of `arr` in descending order.  
-
-Example 1
+Consider the following sorting order for the `NULL`, `NaN` and `Inf` values:
 
 ``` sql
-SELECT arrayReverseSort([1, 3, 3, 0])
+SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
+```
+```
+┌─arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf])─┐
+│ [-inf,-4,1,2,3,inf,nan,nan,NULL,NULL]                     │
+└───────────────────────────────────────────────────────────┘
+```
+
+- `-Inf` values are first in the array.
+- `NULL` values are last in the array.
+- `NaN` values are right before `NULL`.
+- `Inf` values are right before `NaN`.
+
+Note that `arraySort` is a [high-order function](higher_order_functions.md). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array. Example is shown below.
+
+``` sql
+SELECT arraySort(lambda(tuple(x, y), y), ['hello', 'world'], [2, 1]) as res;
+```
+
+```
+┌─res────────────────┐
+│ ['world', 'hello'] │
+└────────────────────┘
+```
+
+The elements that are passed in the second array ([2, 1]), define a new position of each corresponding element from the source array (['hello', 'world']). So, 'hello' will be the second element in a result, and 'world' will be the first.
+
+Below is shown another example. It uses the arrow operator (`->`) to describe the lambda function:
+
+``` sql
+SELECT arraySort((x, y) -> y, [0, 1, 2], [2, 1, 3]) as res;
+```
+``` sql
+┌─res─────┐
+│ [1,0,2] │
+└─────────┘
+```
+
+To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
+
+## arrayReverseSort([func,] arr, ..)
+
+Sorts the elements of the `arr` array in descending order.  
+
+Example of integer values sorting:
+
+``` sql
+SELECT arrayReverseSort([1, 3, 3, 0]);
 ```
 ```
 ┌─arrayReverseSort([1, 3, 3, 0])─┐
@@ -513,10 +542,10 @@ SELECT arrayReverseSort([1, 3, 3, 0])
 └────────────────────────────────┘
 ```
 
-Example 2
+Example of string values sorting:
 
 ``` sql
-SELECT arrayReverseSort(['hello', 'world', '!'])
+SELECT arrayReverseSort(['hello', 'world', '!']);
 ```
 ```
 ┌─arrayReverseSort(['hello', 'world', '!'])─┐
@@ -524,18 +553,48 @@ SELECT arrayReverseSort(['hello', 'world', '!'])
 └───────────────────────────────────────────┘
 ```
 
-Note that NULLs and NaNs go last (NaNs go before NULLs). For example:
+Consider the following sorting order for the `NULL`, `NaN` and `Inf` values:
  
 ``` sql
-SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
+SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 ```
-```
-┌─arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
-│ [4,3,2,1,nan,nan,NULL,NULL]                          │
-└──────────────────────────────────────────────────────┘
+``` sql
+┌─res───────────────────────────────────┐
+│ [inf,3,2,1,-4,-inf,nan,nan,NULL,NULL] │
+└───────────────────────────────────────┘
 ```
 
-You can use lambda functions with the `arrayReverseSort` function. For details, see the [Higher-order Functions](higher_order_functions.md) section. 
+- `Inf` values are first in the array.
+- `NULL` values are last in the array.
+- `NaN` values are right before `NULL`.
+- `-Inf` values are right before `NaN`.
+
+Note that the `arrayReverseSort` is a [high-order function](higher_order_functions.md). You can pass a lambda function to it as the first argument. For example:
+
+``` sql
+SELECT arrayReverseSort(x, y) -> y, ['hello', 'world'], [2, 1]) as res;
+```
+``` sql
+┌─res───────────────┐
+│ ['hello','world'] │
+└───────────────────┘
+```
+
+In this case, the array is sorted in the following way:
+
+1. At first, the source array is sorted according to the result of the lambda function applied to the elements of the array. The elements that are passed in the second array ([2, 1]), define a new position of each corresponding element from the source array (['hello', 'world']). So, the intermediate result is an array ['world', 'hello'].
+2. The array that was sorted on the previous step is reversed. So, the result is ['hello', 'world'].
+                      
+Below is shown another example. 
+
+``` sql
+SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], [3, 1, 2]) AS res;
+```
+``` sql
+┌─res─────┐
+│ [4,5,3] │
+└─────────┘
+```
 
 ## arrayUniq(arr, ...)
 
