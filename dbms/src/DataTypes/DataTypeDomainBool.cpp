@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -40,9 +41,9 @@ public:
             );
 
         if (col->getData()[row_num])
-            ostr.write(str_true, sizeof(str_true));
+            ostr.write(str_true, sizeof(str_true) - 1);
         else
-            ostr.write(str_false, sizeof(str_false));
+            ostr.write(str_false, sizeof(str_false) - 1);
     }
 
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override
@@ -56,13 +57,17 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN
             );
 
-        char buffer[6] = {'\0'};
-        istr.read(buffer, sizeof(buffer) - 1);
+        bool value = false;
 
-        if (strcmp(buffer, str_true) == 0)
-            col->insert(1);
-        else if (strcmp(buffer, str_false) == 0)
-            col->insert(0);
+        if (
+            !istr.eof()
+            && (*istr.position() == 't' || *istr.position() == 'f')
+        )
+        {
+            readBoolTextWord(value, istr);
+
+            col->insert(value);
+        }
         else
             throw Exception(
                 "Invalid boolean value.",
