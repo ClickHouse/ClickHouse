@@ -1,18 +1,15 @@
 #pragma once
 
 #include <iostream>
-
+#include <fstream>
 #include <Core/Types.h>
 #include <Core/Protocol.h>
 #include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <IO/ConnectionTimeouts.h>
-
 #include <common/setTerminalEcho.h>
 #include <ext/scope_guard.h>
-
 #include <Poco/Util/AbstractConfiguration.h>
-
 
 namespace DB
 {
@@ -20,6 +17,24 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+bool tty_print(const std::string & string)
+{
+    if (isatty(STDERR_FILENO))
+    {
+        std::cerr << string;
+        return false;
+    }
+
+    std::ofstream ostrm("/dev/tty");
+    if (ostrm.good())
+    {
+        ostrm << string;
+        return false;
+    }
+
+    return true;
 }
 
 struct ConnectionParameters
@@ -66,14 +81,16 @@ struct ConnectionParameters
         }
         if (password_prompt)
         {
-            std::cout << "Password for user (" << user << "): ";
-            setTerminalEcho(false);
+            tty_print("Password for user (" + user + "): ");
 
+            setTerminalEcho(false);
             SCOPE_EXIT({
                 setTerminalEcho(true);
             });
+
             std::getline(std::cin, password);
-            std::cout << std::endl;
+
+            tty_print("\n");
         }
         compression = config.getBool("compression", true)
             ? Protocol::Compression::Enable
