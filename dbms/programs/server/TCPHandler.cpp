@@ -723,8 +723,7 @@ bool TCPHandler::receiveData()
             if (!(storage = query_context->tryGetExternalTable(external_table_name)))
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
-                storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}, ColumnCodecs{}});
+                storage = StorageMemory::create(external_table_name, ColumnsDescription{columns});
                 storage->startup();
                 query_context->addExternalTable(external_table_name, storage);
             }
@@ -768,7 +767,7 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
-            std::string method = query_context->getSettingsRef().network_compression_method;
+            std::string method = Poco::toUpper(query_context->getSettingsRef().network_compression_method.toString());
             std::optional<int> level;
             if (method == "ZSTD")
                 level = query_context->getSettingsRef().network_zstd_compression_level;

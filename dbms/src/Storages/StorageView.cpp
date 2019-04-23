@@ -3,6 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -54,7 +55,7 @@ BlockInputStreams StorageView::read(
     {
         auto new_inner_query = inner_query->clone();
         auto new_outer_query = query_info.query->clone();
-        auto new_outer_select = typeid_cast<ASTSelectQuery *>(new_outer_query.get());
+        auto * new_outer_select = new_outer_query->as<ASTSelectQuery>();
 
         replaceTableNameWithSubquery(new_outer_select, new_inner_query);
 
@@ -62,7 +63,7 @@ BlockInputStreams StorageView::read(
             current_inner_query = new_inner_query;
     }
 
-    res = InterpreterSelectWithUnionQuery(current_inner_query, context, column_names).executeWithMultipleStreams();
+    res = InterpreterSelectWithUnionQuery(current_inner_query, context, {}, column_names).executeWithMultipleStreams();
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
@@ -74,12 +75,12 @@ BlockInputStreams StorageView::read(
 
 void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery)
 {
-    ASTTablesInSelectQueryElement * select_element = static_cast<ASTTablesInSelectQueryElement *>(select_query->tables->children[0].get());
+    auto * select_element = select_query->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
 
     if (!select_element->table_expression)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
-    ASTTableExpression * table_expression = static_cast<ASTTableExpression *>(select_element->table_expression.get());
+    auto * table_expression = select_element->table_expression->as<ASTTableExpression>();
 
     if (!table_expression->database_and_table_name)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);

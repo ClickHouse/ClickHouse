@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=19.5.1.1
+ARG version=19.7.1.*
 ARG gosu_ver=1.10
 
 RUN apt-get update \
@@ -28,7 +28,7 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
-ADD https://github.com/tianon/gosu/releases/download/1.10/gosu-amd64 /bin/gosu
+ADD https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-amd64 /bin/gosu
 
 RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8

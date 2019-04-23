@@ -3,7 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Common/config.h>
 #include <Common/SipHash.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Core/Names.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>

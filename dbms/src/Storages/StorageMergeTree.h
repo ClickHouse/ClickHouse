@@ -27,12 +27,9 @@ public:
     void shutdown() override;
     ~StorageMergeTree() override;
 
-    std::string getName() const override
-    {
-        return data.merging_params.getModeName() + "MergeTree";
-    }
-
+    std::string getName() const override { return data.merging_params.getModeName() + "MergeTree"; }
     std::string getTableName() const override { return table_name; }
+    std::string getDatabaseName() const override { return database_name; }
 
     bool supportsSampling() const override { return data.supportsSampling(); }
     bool supportsPrewhere() const override { return data.supportsPrewhere(); }
@@ -184,6 +181,7 @@ protected:
         const ASTPtr & order_by_ast_,
         const ASTPtr & primary_key_ast_,
         const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
+        const ASTPtr & ttl_table_ast_,
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,
         bool has_force_restore_data_flag);

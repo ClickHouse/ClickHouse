@@ -12,7 +12,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
-#include <Common/COWPtr.h>
+#include <Common/COW.h>
 #include <Common/FieldVisitors.h>
 
 namespace DB
@@ -80,9 +80,9 @@ std::ostream & operator<<(std::ostream & stream, const IColumn & what)
     stream << "{";
     for (size_t i = 0; i < what.size(); ++i)
     {
-        stream << applyVisitor(FieldVisitorDump(), what[i]);
         if (i)
             stream << ", ";
+        stream << applyVisitor(FieldVisitorDump(), what[i]);
     }
     stream << "}";
 

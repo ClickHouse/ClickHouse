@@ -1,7 +1,6 @@
 #include "RWLock.h"
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
-#include <Poco/Ext/ThreadNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
@@ -169,8 +168,6 @@ RWLockImpl::LockHolderImpl::~LockHolderImpl()
         if (!parent_queue.empty())
             parent_queue.front().cv.notify_all();
     }
-
-    parent.reset();
 }
 
 

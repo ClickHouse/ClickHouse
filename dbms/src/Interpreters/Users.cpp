@@ -1,5 +1,4 @@
 #include <string.h>
-
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -7,7 +6,6 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/String.h>
-
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <IO/HexWriteBuffer.h>
@@ -16,12 +14,9 @@
 #include <Common/SimpleCache.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/Users.h>
-
-#include <openssl/sha.h>
-
 #include <common/logger_useful.h>
-
 #include <ext/scope_guard.h>
+#include <Common/config.h>
 
 
 namespace DB
@@ -318,6 +313,34 @@ User::User(const String & name_, const String & config_elem, const Poco::Util::A
         {
             const auto database_name = config.getString(config_sub_elem + "." + key);
             databases.insert(database_name);
+        }
+    }
+
+    /// Read properties per "database.table"
+    /// Only tables are expected to have properties, so that all the keys inside "database" are table names.
+    const auto config_databases = config_elem + ".databases";
+    if (config.has(config_databases))
+    {
+        Poco::Util::AbstractConfiguration::Keys database_names;
+        config.keys(config_databases, database_names);
+
+        /// Read tables within databases
+        for (const auto & database : database_names)
+        {
+            const auto config_database = config_databases + "." + database;
+            Poco::Util::AbstractConfiguration::Keys table_names;
+            config.keys(config_database, table_names);
+
+            /// Read table properties
+            for (const auto & table : table_names)
+            {
+                const auto config_filter = config_database + "." + table + ".filter";
+                if (config.has(config_filter))
+                {
+                    const auto filter_query = config.getString(config_filter);
+                    table_props[database][table]["filter"] = filter_query;
+                }
+            }
         }
     }
 }

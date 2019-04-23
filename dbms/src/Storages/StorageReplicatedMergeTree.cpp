@@ -54,6 +54,7 @@
 #include <thread>
 #include <future>
 
+#include <Parsers/queryToString.h>
 
 namespace ProfileEvents
 {
@@ -206,6 +207,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
+    const ASTPtr & ttl_table_ast_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
@@ -217,7 +219,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     data(database_name, table_name,
         full_path, columns_, indices_,
         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-        sample_by_ast_, merging_params_, settings_, true, attach,
+        sample_by_ast_, ttl_table_ast_, merging_params_,
+        settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()), queue(*this),
     fetcher(data),
@@ -397,8 +400,8 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
     {
         if (allow_alter &&
             (skip_sanity_checks ||
-             old_columns.ordinary.sizeOfDifference(columns_from_zk.ordinary) +
-             old_columns.materialized.sizeOfDifference(columns_from_zk.materialized) <= 2))
+             old_columns.getOrdinary().sizeOfDifference(columns_from_zk.getOrdinary()) +
+             old_columns.getMaterialized().sizeOfDifference(columns_from_zk.getMaterialized()) <= 2))
         {
             LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
@@ -424,6 +427,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     ASTPtr new_order_by_ast = data.order_by_ast;
     auto new_indices = data.getIndicesDescription();
+    ASTPtr new_ttl_table_ast = data.ttl_table_ast;
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
     {
@@ -452,9 +456,15 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.skip_indices_changed)
             new_indices = IndicesDescription::parse(metadata_diff.new_skip_indices);
 
+        if (metadata_diff.ttl_table_changed)
+        {
+            ParserExpression parser;
+            new_ttl_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0);
+        }
+
         storage_modifier = [&](IAST & ast)
         {
-            auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+            auto & storage_ast = ast.as<ASTStorage &>();
 
             if (!storage_ast.order_by)
                 throw Exception(
@@ -463,6 +473,9 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
             if (new_primary_key_ast.get() != data.primary_key_ast.get())
                 storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
+
+            if (new_ttl_table_ast.get() != data.ttl_table_ast.get())
+                storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
 
             storage_ast.set(storage_ast.order_by, new_order_by_ast);
         };
@@ -473,6 +486,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
     data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
+    data.setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 }
 
 
@@ -1077,6 +1091,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             future_merged_part, *merge_entry, entry.create_time, reserved_space.get(), entry.deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
+        data.removeEmptyColumnsFromPart(part);
 
         try
         {
@@ -1499,7 +1514,8 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     auto new_indices = getIndicesDescription();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast);
+    ASTPtr ignored_ttl_table_ast;
+    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
 
     size_t modified_parts = 0;
     auto parts = data.getDataParts();
@@ -1786,7 +1802,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             String source_replica_path = zookeeper_path + "/replicas/" + part_desc->replica;
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-            auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context.getSettingsRef());
+            auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
             auto [user, password] = global_context.getInterserverCredentials();
             String interserver_scheme = global_context.getInterserverScheme();
 
@@ -2655,7 +2671,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     if (auto part = data.getPartIfExists(part_info, {MergeTreeDataPart::State::Outdated, MergeTreeDataPart::State::Deleting}))
     {
-        LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
+        LOG_DEBUG(log, "Part " << part->name << " should be deleted after previous attempt before fetch");
         /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
         cleanup_thread.wakeup();
         return false;
@@ -2741,7 +2757,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     else
     {
         ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context.getSettingsRef());
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(global_context);
         auto user_password = global_context.getInterserverCredentials();
         String interserver_scheme = global_context.getInterserverScheme();
 
@@ -2959,7 +2975,7 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
     bool deduplicate = data.settings.replicated_deduplication_window != 0 && settings.insert_deduplicate;
 
     return std::make_shared<ReplicatedMergeTreeBlockOutputStream>(*this,
-        settings.insert_quorum, settings.insert_quorum_timeout.totalMilliseconds(), deduplicate);
+        settings.insert_quorum, settings.insert_quorum_timeout.totalMilliseconds(), settings.max_partitions_per_insert_block, deduplicate);
 }
 
 
@@ -3104,7 +3120,8 @@ void StorageReplicatedMergeTree::alter(
         IndicesDescription new_indices = data.getIndicesDescription();
         ASTPtr new_order_by_ast = data.order_by_ast;
         ASTPtr new_primary_key_ast = data.primary_key_ast;
-        params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
+        ASTPtr new_ttl_table_ast = data.ttl_table_ast;
+        params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != data.getColumns().toString())
@@ -3113,6 +3130,9 @@ void StorageReplicatedMergeTree::alter(
         ReplicatedMergeTreeTableMetadata new_metadata(data);
         if (new_order_by_ast.get() != data.order_by_ast.get())
             new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(new_order_by_ast));
+
+        if (new_ttl_table_ast.get() != data.ttl_table_ast.get())
+            new_metadata.ttl_table = serializeAST(*new_ttl_table_ast);
 
         String new_indices_str = new_indices.toString();
         if (new_indices_str != data.getIndicesDescription().toString())
@@ -3526,7 +3546,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     String partition_id;
 
     if (attach_part)
-        partition_id = typeid_cast<const ASTLiteral &>(*partition).value.safeGet<String>();
+        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
     else
         partition_id = data.getPartitionIDFromQuery(partition, query_context);
 
@@ -3577,7 +3597,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
         loaded_parts.push_back(data.loadPartAndFixMetadata(source_dir + part));
     }
 
-    ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, false);   /// TODO Allow to use quorum here.
+    ReplicatedMergeTreeBlockOutputStream output(*this, 0, 0, 0, false);   /// TODO Allow to use quorum here.
     for (auto & part : loaded_parts)
     {
         String old_name = part->name;
@@ -3941,21 +3961,29 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     if (leader == replica_name)
         throw Exception("Leader was suddenly changed or logical error.", ErrorCodes::LEADERSHIP_CHANGED);
 
+    /// SECONDARY_QUERY here means, that we received query from DDLWorker
+    /// there is no sense to send query to leader, because he will receive it from own DDLWorker
+    if (query_context.getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        LOG_DEBUG(log, "Not leader replica received query from DDLWorker, skipping it.");
+        return;
+    }
+
     ReplicatedMergeTreeAddress leader_address(getZooKeeper()->get(zookeeper_path + "/replicas/" + leader + "/host"));
 
     /// TODO: add setters and getters interface for database and table fields of AST
     auto new_query = query->clone();
-    if (auto * alter = typeid_cast<ASTAlterQuery *>(new_query.get()))
+    if (auto * alter = new_query->as<ASTAlterQuery>())
     {
         alter->database = leader_address.database;
         alter->table = leader_address.table;
     }
-    else if (auto * optimize = typeid_cast<ASTOptimizeQuery *>(new_query.get()))
+    else if (auto * optimize = new_query->as<ASTOptimizeQuery>())
     {
         optimize->database = leader_address.database;
         optimize->table = leader_address.table;
     }
-    else if (auto * drop = typeid_cast<ASTDropQuery *>(new_query.get()); drop->kind == ASTDropQuery::Kind::Truncate)
+    else if (auto * drop = new_query->as<ASTDropQuery>(); drop->kind == ASTDropQuery::Kind::Truncate)
     {
         drop->database = leader_address.database;
         drop->table    = leader_address.table;
@@ -3969,6 +3997,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     const auto & query_client_info = query_context.getClientInfo();
     String user = query_client_info.current_user;
     String password = query_client_info.current_password;
+
     if (auto address = findClusterAddress(leader_address); address)
     {
         user = address->user;
@@ -3979,7 +4008,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        user, password, timeouts, "ClickHouse replica");
+        user, password, timeouts, "Follower replica");
 
     std::stringstream new_query_ss;
     formatAST(*new_query, new_query_ss, false, true);

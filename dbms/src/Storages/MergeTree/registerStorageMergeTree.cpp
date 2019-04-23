@@ -37,7 +37,7 @@ namespace ErrorCodes
   */
 static Names extractColumnNames(const ASTPtr & node)
 {
-    const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(&*node);
+    const auto * expr_func = node->as<ASTFunction>();
 
     if (expr_func && expr_func->name == "tuple")
     {
@@ -476,7 +476,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (replicated)
     {
-        auto ast = typeid_cast<const ASTLiteral *>(engine_args[0].get());
+        const auto * ast = engine_args[0]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::String)
             zookeeper_path = safeGet<String>(ast->value);
         else
@@ -484,7 +484,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Path in ZooKeeper must be a string literal" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
 
-        ast = typeid_cast<const ASTLiteral *>(engine_args[1].get());
+        ast = engine_args[1]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::String)
             replica_name = safeGet<String>(ast->value);
         else
@@ -512,7 +512,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
-        if (!engine_args.empty() && !typeid_cast<const ASTLiteral *>(engine_args.back().get()))
+        if (!engine_args.empty() && !engine_args.back()->as<ASTLiteral>())
         {
             if (!getIdentifierName(engine_args.back(), merging_params.version_column))
                 throw Exception(
@@ -525,7 +525,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else if (merging_params.mode == MergeTreeData::MergingParams::Summing)
     {
         /// If the last element is not index_granularity or replica_name (a literal), then this is a list of summable columns.
-        if (!engine_args.empty() && !typeid_cast<const ASTLiteral *>(engine_args.back().get()))
+        if (!engine_args.empty() && !engine_args.back()->as<ASTLiteral>())
         {
             merging_params.columns_to_sum = extractColumnNames(engine_args.back());
             engine_args.pop_back();
@@ -537,7 +537,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         String error_msg = "Last parameter of GraphiteMergeTree must be name (in single quotes) of element in configuration file with Graphite options";
         error_msg += getMergeTreeVerboseHelp(is_extended_storage_def);
 
-        if (auto ast = typeid_cast<const ASTLiteral *>(engine_args.back().get()))
+        if (const auto * ast = engine_args.back()->as<ASTLiteral>())
         {
             if (ast->value.getType() != Field::Types::String)
                 throw Exception(error_msg, ErrorCodes::BAD_ARGUMENTS);
@@ -572,6 +572,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
+    ASTPtr ttl_table_ast;
     IndicesDescription indices_description;
     MergeTreeSettings storage_settings = args.context.getMergeTreeSettings();
 
@@ -593,10 +594,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             sample_by_ast = args.storage_def->sample_by->ptr();
 
+        if (args.storage_def->ttl_table)
+            ttl_table_ast = args.storage_def->ttl_table->ptr();
+
         if (args.query.columns_list && args.query.columns_list->indices)
             for (const auto & index : args.query.columns_list->indices->children)
                 indices_description.indices.push_back(
                         std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+
 
         storage_settings.loadFromQuery(*args.storage_def);
     }
@@ -618,7 +623,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         order_by_ast = engine_args[1];
 
-        auto ast = typeid_cast<const ASTLiteral *>(engine_args.back().get());
+        const auto * ast = engine_args.back()->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
             storage_settings.index_granularity = safeGet<UInt64>(ast->value);
         else
@@ -636,12 +641,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
             args.columns, indices_description,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, merging_params, storage_settings, args.has_force_restore_data_flag);
+            sample_by_ast, ttl_table_ast, merging_params, storage_settings,
+            args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.data_path, args.database_name, args.table_name, args.columns, indices_description,
             args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
-            primary_key_ast, sample_by_ast, merging_params, storage_settings, args.has_force_restore_data_flag);
+            primary_key_ast, sample_by_ast, ttl_table_ast, merging_params, storage_settings,
+            args.has_force_restore_data_flag);
 }
 
 

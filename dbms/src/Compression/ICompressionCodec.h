@@ -58,6 +58,9 @@ public:
     /// Read method byte from compressed source
     static UInt8 readMethod(const char * source);
 
+    /// Some codecs may use information about column type which appears after codec creation
+    virtual void useInfoAboutType(DataTypePtr /* data_type */) { }
+
 protected:
 
     /// Return size of compressed data without header

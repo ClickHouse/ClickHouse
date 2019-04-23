@@ -75,9 +75,9 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 {
     auto modified_query_ast = query->clone();
     if (table_function_ptr)
-        typeid_cast<ASTSelectQuery &>(*modified_query_ast).addTableFunction(table_function_ptr);
+        modified_query_ast->as<ASTSelectQuery &>().addTableFunction(table_function_ptr);
     else
-        typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
+        modified_query_ast->as<ASTSelectQuery &>().replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
@@ -286,7 +286,8 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
+    Block header = materializeBlock(
+        InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage)).getSampleBlock());
 
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
         ? ClusterProxy::SelectStreamFactory(
@@ -468,14 +469,12 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 /// using constraints from "WHERE" condition, otherwise returns `nullptr`
 ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
 {
-    const auto & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (!select.where_expression)
-    {
+    if (!select.where())
         return nullptr;
-    }
 
-    const auto & blocks = evaluateExpressionOverConstantCondition(select.where_expression, sharding_key_expr);
+    const auto & blocks = evaluateExpressionOverConstantCondition(select.where(), sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
     if (!blocks)
@@ -528,8 +527,8 @@ void registerStorageDistributed(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
 
-        String remote_database = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
-        String remote_table = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
+        String remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
         const auto & sharding_key = engine_args.size() == 4 ? engine_args[3] : nullptr;
 

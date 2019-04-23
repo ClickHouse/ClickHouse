@@ -65,21 +65,12 @@ StoragePtr DatabaseDictionary::tryGetTable(
     const Context & context,
     const String & table_name) const
 {
-    auto objects_map = context.getExternalDictionaries().getObjectsMap();
-    const auto & dictionaries = objects_map.get();
-
+    auto dict_ptr = context.getExternalDictionaries().tryGetDictionary(table_name);
+    if (dict_ptr)
     {
-        auto it = dictionaries.find(table_name);
-        if (it != dictionaries.end())
-        {
-            const auto & dict_ptr = std::static_pointer_cast<IDictionaryBase>(it->second.loadable);
-            if (dict_ptr)
-            {
-                const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
-                auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-                return StorageDictionary::create(table_name, ColumnsDescription{columns}, context, true, table_name);
-            }
-        }
+        const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
+        auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
+        return StorageDictionary::create(table_name, ColumnsDescription{columns}, context, true, table_name);
     }
 
     return {};

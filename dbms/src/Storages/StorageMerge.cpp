@@ -22,7 +22,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <ext/range.h>
@@ -274,7 +274,7 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     if (!storage)
         return BlockInputStreams{
             InterpreterSelectQuery(modified_query_info.query, modified_context, std::make_shared<OneBlockInputStream>(header),
-                                   processed_stage, true).execute().in};
+                                   SelectQueryOptions(processed_stage).analyze()).execute().in};
 
     BlockInputStreams source_streams;
 
@@ -289,13 +289,13 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
     }
     else if (processed_stage > storage->getQueryProcessingStage(modified_context))
     {
-        typeid_cast<ASTSelectQuery *>(modified_query_info.query.get())->replaceDatabaseAndTable(source_database, storage->getTableName());
+        modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, storage->getTableName());
 
         /// Maximum permissible parallelism is streams_num
         modified_context.getSettingsRef().max_threads = UInt64(streams_num);
         modified_context.getSettingsRef().max_streams_to_max_threads_ratio = 1;
 
-        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, Names{}, processed_stage};
+        InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
         BlockInputStreamPtr interpreter_stream = interpreter.execute().in;
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
@@ -369,7 +369,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
         {
             StoragePtr storage = iterator->table();
 
-            if (query && typeid_cast<ASTSelectQuery *>(query.get())->prewhere_expression && !storage->supportsPrewhere())
+            if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
                 throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
 
             if (storage.get() != this)
@@ -429,7 +429,7 @@ Block StorageMerge::getQueryHeader(
         case QueryProcessingStage::Complete:
             return materializeBlock(InterpreterSelectQuery(
                 query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
-                                       processed_stage, true).getSampleBlock());
+                SelectQueryOptions(processed_stage).analyze()).getSampleBlock());
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);
 }
@@ -440,7 +440,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
     Block before_block_header = source_stream->getHeader();
     source_stream = std::make_shared<ConvertingBlockInputStream>(context, source_stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
 
-    ASTPtr where_expression = typeid_cast<ASTSelectQuery *>(query.get())->where_expression;
+    auto where_expression = query->as<ASTSelectQuery>()->where();
 
     if (!where_expression)
         return;
@@ -491,8 +491,8 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.local_context);
 
-        String source_database = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
-        String table_name_regexp = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        String source_database = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        String table_name_regexp = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageMerge::create(
             args.table_name, args.columns,

@@ -1,5 +1,4 @@
-# Серверные настройки
-
+# Конфигурационные параметры сервера
 
 ## builtin_dictionaries_reload_interval
 
@@ -89,8 +88,8 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Путь:
 
--   Указывается абсолютным или относительно конфигурационного файла сервера.
--   Может содержать wildcard-ы \* и ?.
+- Указывается абсолютным или относительно конфигурационного файла сервера.
+- Может содержать wildcard-ы \* и ?.
 
 Смотрите также "[Внешние словари](../../query_language/dicts/external_dicts.md)".
 
@@ -118,7 +117,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## format_schema_path
+## format_schema_path {#server_settings-format_schema_path}
 
 Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../interfaces/formats.md#capnproto).
 
@@ -128,8 +127,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
   <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
-
-
 
 ## graphite {#server_settings-graphite}
 
@@ -197,7 +194,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Порт для обращений к серверу по протоколу HTTP(s).
 
-Если указан `https_port`, то требуется конфигурирование [openSSL](#openssl).
+Если указан `https_port`, то требуется конфигурирование [openSSL](#server_settings-openssl).
 
 Если указан `http_port`, то настройка openSSL игнорируется, даже если она задана.
 
@@ -431,7 +428,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## openSSL
+## openSSL {#server_settings-openssl}
 
 Настройки клиента/сервера SSL.
 
@@ -491,31 +488,18 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## part_log
+## part_log {#server_settings-part-log}
 
 Логгирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
-Запросы логгируются не в отдельный файл, а в таблицу ClickHouse.
-
-Столбцы лога:
-
-- event_time - Дата события.
-- duration_ms - Время события.
-- event_type - Тип события. 1 - кусок новый, 2 - результат мержа, 3 - кусок скачан с реплики, 4 - кусок удаляется.
-- database_name - Имя базы даных.
-- table_name - Имя таблицы.
-- part_name - Имя куска данных.
-- partition_id - Идентификатор партиции.
-- size_in_bytes - Размер куска данных в байтах.
-- merged_from - Массив имён кусков, из которых он образован при мерже (так же заполняется в случае скачивания уже смерженного куска).
-- merge_time_ms - Время, потраченное на мерж.
+Запросы логгируются не в отдельный файл, а в таблицу [system.part_log](../system_tables.md#system_tables-part-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логгирования используются следующие параметры:
 
-- database - Имя базы данных.
-- table - Имя таблицы.
-- partition_by - Устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md).
-- flush_interval_milliseconds - Период сброса данных из буфера в памяти в таблицу.
+- `database` — имя базы данных;
+- `table` — имя таблицы;
+- `partition_by` — устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md);
+- `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
 
 
 **Пример**
@@ -544,18 +528,18 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## query_log
+## query_log {#server_settings-query-log}
 
-Настройка логгирования запросов, принятых с настройкой [log_queries=1](../settings/settings.md).
+Настройка логирования запросов, принятых с настройкой [log_queries=1](../settings/settings.md).
 
-Запросы логгируются не в отдельный файл, а в таблицу ClickHouse.
+Запросы логируются не в отдельный файл, а в системную таблицу [system.query_log](../system_tables.md#system_tables-query-log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
-При настройке логгирования используются следующие параметры:
+При настройке логирования используются следующие параметры:
 
-- database - Имя базы данных.
-- table - Имя таблицы.
-- partition_by - Устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md).
-- flush_interval_milliseconds - Период сброса данных из буфера в памяти в таблицу.
+- `database` — имя базы данных;
+- `table` — имя таблицы, куда будет записываться лог;
+- `partition_by` — [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md) для таблицы с логами;
+- `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
 
 Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
 
@@ -612,6 +596,19 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <tcp_port>9000</tcp_port>
 ```
 
+## tcp_port_secure {#server_settings-tcp_port_secure}
+
+TCP порт для защищённого обмена данными с клиентами. Используйте с настройкой [OpenSSL](#server_settings-openssl).
+
+**Возможные значения**
+
+Положительное целое число.
+
+**Значение по умолчанию**
+
+```xml
+<tcp_port_secure>9440</tcp_port_secure>
+```
 
 ## tmp_path
 
@@ -627,7 +624,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## uncompressed_cache_size  {#server-settings-uncompressed_cache_size}
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
@@ -656,10 +653,10 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Путь к файлу, который содержит:
 
--   Конфигурации пользователей.
--   Права доступа.
--   Профили настроек.
--   Настройки квот.
+- Конфигурации пользователей.
+- Права доступа.
+- Профили настроек.
+- Настройки квот.
 
 **Пример**
 
@@ -696,5 +693,33 @@ ClickHouse использует ZooKeeper для хранения метадан
     </node>
 </zookeeper>
 ```
+
+## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
+
+Способ хранения заголовков кусков данных в ZooKeeper.
+
+Параметр применяется только к семейству таблиц `MergeTree`. Его можно установить:
+
+- Глобально в разделе [merge_tree](#server_settings-merge_tree) файла `config.xml`.
+
+    ClickHouse использует этот параметр для всех таблиц на сервере. Вы можете изменить настройку в любое время. Существующие таблицы изменяют свое поведение при изменении параметра.
+
+- Для каждой отдельной таблицы.
+
+    При создании таблицы укажите соответствующую [настройку движка](../table_engines/mergetree.md#table_engine-mergetree-creating-a-table). Поведение существующей таблицы с установленным параметром не изменяется даже при изменении глобального параметра.
+
+**Возможные значения**
+
+- 0 — функциональность выключена.
+- 1 — функциональность включена.
+
+Если `use_minimalistic_part_header_in_zookeeper = 1`, то [реплицированные](../table_engines/replication.md) таблицы хранят заголовки кусков данных в компактном виде, используя только одну `znode`. Если таблица содержит много столбцов, этот метод хранения значительно уменьшает объем данных, хранящихся в Zookeeper.
+
+!!! attention "Внимание"
+    После того как вы установили `use_minimalistic_part_header_in_zookeeper = 1`, невозможно откатить ClickHouse до версии, которая не поддерживает этот параметр. Будьте осторожны при обновлении ClickHouse на серверах в кластере. Не обновляйте все серверы сразу. Безопаснее проверять новые версии ClickHouse в тестовой среде или только на некоторых серверах кластера.
+
+    Заголовки частей данных, ранее сохранённые с этим параметром, не могут быть восстановлены в их предыдущем (некомпактном) представлении.
+
+**Значение по умолчанию**: 0.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->
