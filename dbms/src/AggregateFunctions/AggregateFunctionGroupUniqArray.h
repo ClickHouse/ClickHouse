@@ -78,7 +78,7 @@ public:
             for (auto & rhs_elem : rhs_set)
             {
                 if (cur_set.size() >= max_elems)
-                    return ;
+                    return;
                 cur_set.insert(rhs_elem.getValue());
             }
         }
