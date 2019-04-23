@@ -86,11 +86,11 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 ```
 
 
-## 数据处理
+## 数据处理 {#data-processing}
 
 当数据被插入到表中时，他们将被原样保存。ClickHouse 定期合并插入的数据片段，并在这个时候对所有具有相同主键的行中的列进行汇总，将这些行替换为包含汇总数据的一行记录。
 
-ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含具有相同主键的行，即单个总和将会是不完整的。因此，聚合函数 [sum()](../../query_language/agg_functions/reference.md#agg_function-sum) 和 `GROUP BY` 子句应该在（`SELECT`）查询语句中被使用，如上文中的例子所述。
+ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含具有相同主键的行，即单个汇总片段将会是不完整的。因此，聚合函数 [sum()](../../query_language/agg_functions/reference.md#agg_function-sum) 和 `GROUP BY` 子句应该在（`SELECT`）查询语句中被使用，如上文中的例子所述。
 
 ### 汇总的通用规则
 
