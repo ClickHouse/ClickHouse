@@ -8,6 +8,42 @@
 namespace DB
 {
 
+static inline bool isUnsafeCharUrl(char c)
+{
+    switch (c)
+    {
+        case ' ':
+        case '\t':
+        case '<':
+        case '>':
+        case '#':
+        case '%':
+        case '{':
+        case '}':
+        case '|':
+        case '\\':
+        case '^':
+        case '~':
+        case '[':
+        case ']':
+            return true;
+    }
+    return false;
+}
+
+static inline bool isEndOfUrl(char c)
+{
+    switch (c)
+    {
+        case ':':
+        case '/':
+        case '?':
+        case '#':
+            return true;
+    }
+    return false;
+}
+
 /// Extracts host from given url.
 inline StringRef getURLHost(const char * data, size_t size)
 {
@@ -39,13 +75,25 @@ inline StringRef getURLHost(const char * data, size_t size)
         pos += 2;
 
     const char * start_of_host = pos;
+    bool has_dot_delimiter = false;
     for (; pos < end; ++pos)
     {
         if (*pos == '@')
             start_of_host = pos + 1;
-        else if (*pos == ':' || *pos == '/' || *pos == '?' || *pos == '#')
+        else if (*pos == '.')
+        {
+            if (pos + 1 == end || isEndOfUrl(*(pos + 1)))
+                return StringRef{};
+            has_dot_delimiter = true;
+        }
+        else if (isEndOfUrl(*pos))
             break;
+        else if (isUnsafeCharUrl(*pos))
+            return StringRef{};
     }
+
+    if (!has_dot_delimiter)
+        return StringRef{};
 
     return (pos == start_of_host) ? StringRef{} : StringRef(start_of_host, pos - start_of_host);
 }
