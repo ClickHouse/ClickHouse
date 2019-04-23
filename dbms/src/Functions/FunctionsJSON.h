@@ -5,7 +5,9 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+
 #include <ext/range.h>
+#include <iostream>
 
 #ifdef __clang__
     #pragma clang diagnostic push
