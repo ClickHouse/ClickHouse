@@ -31,7 +31,7 @@ static inline bool isUnsafeCharUrl(char c)
     return false;
 }
 
-static inline bool isEndOfUrl(char c)
+static inline bool isCharEndOfUrl(char c)
 {
     switch (c)
     {
@@ -39,6 +39,22 @@ static inline bool isEndOfUrl(char c)
         case '/':
         case '?':
         case '#':
+            return true;
+    }
+    return false;
+}
+
+static inline bool isReservedCharUrl(char c)
+{
+    switch (c)
+    {
+        case ';':
+        case '/':
+        case '?':
+        case ':':
+        case '@':
+        case '=':
+        case '&':
             return true;
     }
     return false;
@@ -82,13 +98,13 @@ inline StringRef getURLHost(const char * data, size_t size)
             start_of_host = pos + 1;
         else if (*pos == '.')
         {
-            if (pos + 1 == end || isEndOfUrl(*(pos + 1)))
+            if (pos + 1 == end || isCharEndOfUrl(*(pos + 1)))
                 return StringRef{};
             has_dot_delimiter = true;
         }
         else if (isEndOfUrl(*pos))
             break;
-        else if (isUnsafeCharUrl(*pos))
+        else if (isUnsafeCharUrl(*pos) || isReservedCharUrl(*pos))
             return StringRef{};
     }
 
