@@ -1,0 +1,19 @@
+CREATE TABLE test.bool_test (`value` Bool) ENGINE = Memory
+false
+true
+false
+true
+false
+true
+{"value":false}
+{"value":true}
+{"value":false}
+{"value":true}
+{"value":false}
+{"value":true}
+0
+1
+0
+1
+0
+1
