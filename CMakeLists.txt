@@ -250,7 +250,7 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     endif()
 endif ()
 
-#Check if gperf was installed
+# Check if gperf was installed
 option (USE_GPERF "Use gperf function hash generator tool" ON)
 if (USE_GPERF)
     find_program(GPERF gperf)
