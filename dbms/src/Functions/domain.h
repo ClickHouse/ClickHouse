@@ -102,7 +102,7 @@ inline StringRef getURLHost(const char * data, size_t size)
                 return StringRef{};
             has_dot_delimiter = true;
         }
-        else if (isEndOfUrl(*pos))
+        else if (isCharEndOfUrl(*pos))
             break;
         else if (isUnsafeCharUrl(*pos) || isReservedCharUrl(*pos))
             return StringRef{};
