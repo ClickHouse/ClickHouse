@@ -57,20 +57,25 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN
             );
 
-        bool value = false;
-
-        if (
-            !istr.eof()
-            && (*istr.position() == 't' || *istr.position() == 'f')
-        )
+        if (!istr.eof())
         {
-            readBoolTextWord(value, istr);
+            bool value = false;
+
+            if (*istr.position() == 't' || *istr.position() == 'f')
+                readBoolTextWord(value, istr);
+            else if (*istr.position() == '1' || *istr.position() == '0')
+                readBoolText(value, istr);
+            else
+                throw Exception(
+                    "Invalid boolean value, should be true, false, 1, or 0.",
+                    ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
+                );
 
             col->insert(value);
         }
         else
             throw Exception(
-                "Invalid boolean value, expected true or false.",
+                "Expected boolean value but get EOF.",
                 ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
             );
     }
