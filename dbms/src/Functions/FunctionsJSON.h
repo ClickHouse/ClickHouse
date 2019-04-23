@@ -14,7 +14,9 @@
     #pragma clang diagnostic ignored "-Wold-style-cast"
 #endif
 
-#include <simdjson/jsonparser.h>
+// use singleheader version to avoid extra objects from simdjson
+#include <simdjson.h>
+#include <simdjson.cpp>
 
 #ifdef __clang__
     #pragma clang diagnostic pop
