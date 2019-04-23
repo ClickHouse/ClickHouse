@@ -100,6 +100,15 @@ protected:
         size_t number_of_rows,
         bool write_marks);
 
+    /// Write mark for column
+    void writeSingleMark(
+        const String & name,
+        const IDataType & type,
+        WrittenOffsetColumns & offset_columns,
+        bool skip_offsets,
+        size_t number_of_rows,
+        DB::IDataType::SubstreamPath & path);
+
     /// Count index_granularity for block and store in `index_granularity`
     void fillIndexGranularity(const Block & block);
 
@@ -193,6 +202,9 @@ private:
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
     MutableColumns index_columns;
+    /// Index columns values from the last row from the last block
+    /// It's written to index file in the `writeSuffixAndFinalizePart` method
+    std::vector<Field> last_index_row;
 
     std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;

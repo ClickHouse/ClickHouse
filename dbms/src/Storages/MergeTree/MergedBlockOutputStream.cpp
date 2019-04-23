@@ -155,6 +155,39 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
         index_granularity);
 }
 
+void IMergedBlockOutputStream::writeSingleMark(
+    const String & name,
+    const IDataType & type,
+    WrittenOffsetColumns & offset_columns,
+    bool skip_offsets,
+    size_t number_of_rows,
+    DB::IDataType::SubstreamPath & path)
+{
+     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+     {
+         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+         if (is_offsets && skip_offsets)
+             return;
+
+         String stream_name = IDataType::getFileNameForStream(name, substream_path);
+
+         /// Don't write offsets more than one time for Nested type.
+         if (is_offsets && offset_columns.count(stream_name))
+             return;
+
+         ColumnStream & stream = *column_streams[stream_name];
+
+         /// There could already be enough data to compress into the new block.
+         if (stream.compressed.offset() >= min_compress_block_size)
+             stream.compressed.next();
+
+         writeIntBinary(stream.plain_hashing.count(), stream.marks);
+         writeIntBinary(stream.compressed.offset(), stream.marks);
+         if (storage.index_granularity_info.is_adaptive)
+             writeIntBinary(number_of_rows, stream.marks);
+     }, path);
+}
+
 size_t IMergedBlockOutputStream::writeSingleGranule(
     const String & name,
     const IDataType & type,
@@ -168,32 +201,7 @@ size_t IMergedBlockOutputStream::writeSingleGranule(
     bool write_marks)
 {
     if (write_marks)
-    {
-        /// Write marks.
-        type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
-        {
-            bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-            if (is_offsets && skip_offsets)
-                return;
-
-            String stream_name = IDataType::getFileNameForStream(name, substream_path);
-
-            /// Don't write offsets more than one time for Nested type.
-            if (is_offsets && offset_columns.count(stream_name))
-                return;
-
-            ColumnStream & stream = *column_streams[stream_name];
-
-            /// There could already be enough data to compress into the new block.
-            if (stream.compressed.offset() >= min_compress_block_size)
-                stream.compressed.next();
-
-            writeIntBinary(stream.plain_hashing.count(), stream.marks);
-            writeIntBinary(stream.compressed.offset(), stream.marks);
-            if (storage.index_granularity_info.is_adaptive)
-                writeIntBinary(number_of_rows, stream.marks);
-        }, serialize_settings.path);
-    }
+        writeSingleMark(name, type, offset_columns, skip_offsets, number_of_rows, serialize_settings.path);
 
     type.serializeBinaryBulkWithMultipleStreams(column, from_row, number_of_rows, serialize_settings, serialization_state);
 
@@ -424,8 +432,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         const NamesAndTypesList * total_column_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
+
     /// Finish columns serialization.
-    if (!serialization_states.empty())
     {
         auto & settings = storage.global_context.getSettingsRef();
         IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -436,7 +444,10 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         for (size_t i = 0; i < columns_list.size(); ++i, ++it)
         {
             serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
-            it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
+            if (index_offset != 0)
+                writeSingleMark(it->name, *it->type, offset_columns, false, 0, serialize_settings.path);
+            if (serialization_states.size() > i)
+                it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
         }
     }
 
@@ -460,10 +471,20 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (index_stream)
     {
+        /// Otherwise we already written last mark
+        if (index_offset != 0)
+        {
+            for (size_t j = 0; j < index_columns.size(); ++j)
+                index_columns[j]->insert(last_index_row[j]);
+            writeBinary(last_index_row, *index_stream);
+            index_granularity.appendMark(0); /// last mark
+        }
+
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
         index_stream = nullptr;
+        last_index_row.clear();
     }
 
     for (auto & stream : skip_indices_streams)
@@ -620,6 +641,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         index_columns.resize(primary_key_column_names.size());
         for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
             index_columns[i] = primary_key_columns[i].column->cloneEmpty();
+        last_index_row.resize(primary_key_column_names.size());
     }
 
     if (serialization_states.empty())
@@ -759,6 +781,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 break;
         }
     }
+
+    /// store last index row to write final mark at the end of column
+    for (size_t j = 0, size = primary_key_columns.size(); j < size; ++j)
+        primary_key_columns[j].column->get(rows - 1, last_index_row[j]);
+
 
     index_offset = new_index_offset;
 }
