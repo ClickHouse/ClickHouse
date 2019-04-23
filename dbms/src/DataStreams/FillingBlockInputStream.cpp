@@ -19,7 +19,7 @@ ColumnRawPtrs getColumnsExcept(SharedBlockPtr & block_ptr, ColumnRawPtrs & excep
     for (size_t i = 0; i < block_ptr->columns(); ++i)
     {
         const IColumn * raw_col = block_ptr->safeGetByPosition(i).column.get();
-        if (std::find(except_columns.begin(), except_columns.end(), raw_col) != except_columns.end())
+        if (std::find(except_columns.begin(), except_columns.end(), raw_col) == except_columns.end())
             res.emplace_back(raw_col);
     }
 
@@ -78,18 +78,18 @@ FillingBlockInputStream::FillingBlockInputStream(
 
 Block FillingBlockInputStream::readImpl()
 {
-    Block cur_block;
+    Block old_block;
     UInt64 rows = 0;
 
-    cur_block = children.back()->read();
-    if (!cur_block)
-        return cur_block;
+    old_block = children.back()->read();
+    if (!old_block)
+        return old_block;
 
-    Block res_block = cur_block.cloneEmpty();
+    Block res_block = old_block.cloneEmpty();
 
-    rows = cur_block.rows();
+    rows = old_block.rows();
 
-    SharedBlockPtr old_block_ptr = new detail::SharedBlock(std::move(cur_block));
+    SharedBlockPtr old_block_ptr = new detail::SharedBlock(std::move(old_block));
     ColumnRawPtrs old_fill_columns = SharedBlockRowRef::getBlockColumns(*old_block_ptr, fill_description);
     ColumnRawPtrs old_rest_columns = detail::getColumnsExcept(old_block_ptr, old_fill_columns);
 
@@ -108,7 +108,6 @@ Block FillingBlockInputStream::readImpl()
         detail::copyRowFromColumns(old_fill_columns, res_fill_columns, 0);
         detail::copyRowFromColumns(old_rest_columns, res_rest_columns, 0);
     }
-    pos += rows;
 
     /// current block is not first, need to compare with row in other block
     if (!next_row_num)
@@ -118,11 +117,14 @@ Block FillingBlockInputStream::readImpl()
         for (; cnt_cols < fill_columns_size; ++cnt_cols)
         {
             Field step = fill_description[cnt_cols].fill_description.fill_step;
-            Field prev_val = (*last_row_ref.columns)[cnt_cols][last_row_ref.row_num];
+            Field next_val;
+            Field prev_val;
+            old_fill_columns[cnt_cols]->get(next_row_num, next_val);
+            (*last_row_ref.columns)[cnt_cols]->get(last_row_ref.row_num, prev_val);
             Field step_val = detail::sumTwoFields(prev_val, step);
-            Field next_val = old_fill_columns[cnt_cols][next_row_num];
             if (step_val >= next_val)
-                const_cast<IColumn *>(res_fill_columns[cnt_cols])->insertFrom(*old_fill_columns[cnt_cols], next_row_num);
+                const_cast<IColumn *>(res_fill_columns[cnt_cols])->insertFrom(
+                        *old_fill_columns[cnt_cols], next_row_num);
             else
             {
                 const_cast<IColumn *>(res_fill_columns[cnt_cols])->insert(step_val);
@@ -131,6 +133,7 @@ Block FillingBlockInputStream::readImpl()
         }
         /// create row number 0 in result block here
         detail::fillRestOfRow(cnt_cols, res_fill_columns, res_rest_columns, old_rest_columns, next_row_num);
+        ++pos;
     }
 
     /// number of last added row in result block
@@ -143,11 +146,14 @@ Block FillingBlockInputStream::readImpl()
         for (; cnt_cols < fill_columns_size; ++cnt_cols)
         {
             Field step = fill_description[cnt_cols].fill_description.fill_step;
-            Field prev_val = res_fill_columns[cnt_cols][last_row_num];
+            Field prev_val;
+            res_fill_columns[cnt_cols]->get(last_row_num, prev_val);
             Field step_val = detail::sumTwoFields(prev_val, step);
-            Field next_val = old_fill_columns[cnt_cols][next_row_num];
+            Field next_val;
+            old_fill_columns[cnt_cols]->get(next_row_num, next_val);
             if (step_val >= next_val)
-                const_cast<IColumn *>(res_fill_columns[cnt_cols])->insertFrom(*old_fill_columns[cnt_cols], next_row_num);
+                const_cast<IColumn *>(res_fill_columns[cnt_cols])->insertFrom(
+                        *old_fill_columns[cnt_cols], next_row_num);
             else
             {
                 const_cast<IColumn *>(res_fill_columns[cnt_cols])->insert(step_val);
@@ -158,6 +164,7 @@ Block FillingBlockInputStream::readImpl()
         /// create new row in result block, increment last_row_num
         detail::fillRestOfRow(cnt_cols, res_fill_columns, res_rest_columns, old_rest_columns, next_row_num);
         ++last_row_num;
+        ++pos;
     }
 
     /// finished current block, need to remember last row

@@ -909,15 +909,9 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement &nod
 {
     FillColumnDescription descr;
     if (node.fill_from)
-    {
-        descr.has_from = true;
         descr.fill_from = getWithFillFieldValue(node.fill_from, context);
-    }
     if (node.fill_to)
-    {
-        descr.has_to = true;
         descr.fill_to = getWithFillFieldValue(node.fill_to, context);
-    }
     if (node.fill_step)
         descr.fill_step = getWithFillFieldValue(node.fill_step, context);
     else
@@ -1472,13 +1466,13 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
             if (order_by_elem.direction == -1)
             {
                 /// if DESC, then STEP < 0, FROM > TO
-                if (fill_desc.has_from && fill_desc.has_to && fill_desc.fill_from < fill_desc.fill_to)
+                if (!fill_desc.fill_from.isNull() && !fill_desc.fill_to.isNull() && fill_desc.fill_from < fill_desc.fill_to)
                     std::swap(fill_desc.fill_from, fill_desc.fill_to);
             }
             else
             {
                 /// if ASC, then STEP > 0, FROM < TO
-                if (fill_desc.has_from && fill_desc.has_to && fill_desc.fill_from > fill_desc.fill_to)
+                if (!fill_desc.fill_from.isNull() && !fill_desc.fill_to.isNull() && fill_desc.fill_from > fill_desc.fill_to)
                     std::swap(fill_desc.fill_from, fill_desc.fill_to);
             }
 
@@ -1613,9 +1607,10 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
     if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
+        SortDescription sort_descr  = getSortDescription(query);
         pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
         {
-            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false, query.limit_with_ties, getSortDescription(query));
+            stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false, false, query.limit_with_ties, sort_descr);
         });
     }
 }

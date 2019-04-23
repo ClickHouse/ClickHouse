@@ -4,7 +4,7 @@
 #include <memory>
 #include <cstddef>
 #include <string>
-
+#include <Core/Field.h>
 
 class Collator;
 
@@ -15,8 +15,6 @@ struct FillColumnDescription
 {
     /// All missed values in range [FROM, TO] will be filled
     /// Range [FROM, TO] respects sorting direction
-    bool has_from = false;
-    bool has_to = false;
     Field fill_from;        /// Fill value >= FILL_FROM
     Field fill_to;          /// Fill value + STEP <= FILL_TO
     Field fill_step;        /// Default = 1
@@ -38,14 +36,14 @@ struct SortColumnDescription
     SortColumnDescription(
             size_t column_number_, int direction_, int nulls_direction_,
             const std::shared_ptr<Collator> & collator_ = nullptr, bool with_fill_ = false,
-            FillColumnDescription fill_description_ = {})
+            const FillColumnDescription & fill_description_ = {})
             : column_number(column_number_), direction(direction_), nulls_direction(nulls_direction_), collator(collator_)
             , with_fill(with_fill_), fill_description(fill_description_) {}
 
     SortColumnDescription(
             const std::string & column_name_, int direction_, int nulls_direction_,
             const std::shared_ptr<Collator> & collator_ = nullptr, bool with_fill_ = false,
-            FillColumnDescription fill_description_ = {})
+            const FillColumnDescription & fill_description_ = {})
             : column_name(column_name_), column_number(0), direction(direction_), nulls_direction(nulls_direction_)
             , collator(collator_), with_fill(with_fill_), fill_description(fill_description_) {}
 

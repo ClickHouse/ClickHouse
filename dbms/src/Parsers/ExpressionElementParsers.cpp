@@ -1343,7 +1343,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     node = std::make_shared<ASTOrderByElement>(
             direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node,
-            with_fill, fill_from, fill_to, fill_step);
+            with_fill_val, fill_from, fill_to, fill_step);
     node->children.push_back(expr_elem);
     if (locale_node)
         node->children.push_back(locale_node);
