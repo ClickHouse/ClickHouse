@@ -56,7 +56,7 @@ set(SRCS
     ${LIBXML2_SOURCE_DIR}/nanohttp.c
     ${LIBXML2_SOURCE_DIR}/schematron.c
 )
-add_library(libxml2 STATIC ${SRCS})
+add_library(libxml2 ${SRCS})
 
 target_link_libraries(libxml2 ${ZLIB_LIBRARIES})
 
