@@ -70,5 +70,5 @@ if (USE_HYPERSCAN)
     target_include_directories (clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
 endif ()
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx -mbmi")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mbmi2")
 target_include_directories(clickhouse_functions PRIVATE "${PROJECT_SOURCE_DIR}/contrib/simdjson/singleheader")
