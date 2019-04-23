@@ -70,7 +70,7 @@ public:
         }
         else
             throw Exception(
-                "Invalid boolean value.",
+                "Invalid boolean value, expected true or false.",
                 ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING
             );
     }
