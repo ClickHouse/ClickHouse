@@ -458,9 +458,9 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort([func,] arr, ...)
+## arraySort(\[func,\] arr, ...) {#array_functions-reverse-sort}
 
-Sorts the elements of the `arr` array in ascending order.  
+Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
 Example of integer values sorting:
 
@@ -500,10 +500,23 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 - `NaN` values are right before `NULL`.
 - `Inf` values are right before `NaN`.
 
-Note that `arraySort` is a [high-order function](higher_order_functions.md). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array. Example is shown below.
+Note that `arraySort` is a [higher-order function](higher_order_functions.md). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array. Example is shown below.
 
 ``` sql
-SELECT arraySort(lambda(tuple(x, y), y), ['hello', 'world'], [2, 1]) as res;
+SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
+```
+```
+┌─res─────┐
+│ [3,2,1] │
+└─────────┘
+```
+
+In this example, for each element of the source array, the lambda function returns the "weight" of the element that will be applied for sorting, that is, [1 –> -1, 2 –> -2, 3 –> -3]. Since the elements are sorted by increasing of their "weight", the result is [3, 2, 1].
+
+The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. For example:
+
+``` sql
+SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
 
 ```
@@ -512,24 +525,25 @@ SELECT arraySort(lambda(tuple(x, y), y), ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-The elements that are passed in the second array ([2, 1]), define a new position of each corresponding element from the source array (['hello', 'world']). So, 'hello' will be second element in a result, and 'world' will be first.
+Here, the elements that are passed in the second array ([2, 1]) define a new position of each corresponding element from the source array (['hello', 'world']), that is, ['hello' –> 2, 'world' –> 1]. So, 'hello' will be the second element in a result, and 'world' will be the first.
 
-Another example is shown below. It uses the arrow operator (`->`) to describe the lambda function:
+Another example is shown below. In this example, sorting order is specified by the string values:
 
 ``` sql
-SELECT arraySort((x, y) -> y, [0, 1, 2], [2, 1, 3]) as res;
+SELECT arraySort((x, y) -> y, [0, 1, 2], ['c', 'b', 'a']) as res;
 ```
 ``` sql
 ┌─res─────┐
-│ [1,0,2] │
+│ [2,1,0] │
 └─────────┘
 ```
 
-To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
+!!! note
+    To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 
-## arrayReverseSort([func,] arr, ..)
+## arrayReverseSort([func,] arr, ...) {#array_functions-reverse-sort}
 
-Sorts the elements of the `arr` array in descending order.  
+Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
 Example of integer values sorting:
 
@@ -569,10 +583,28 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 - `NaN` values are right before `NULL`.
 - `-Inf` values are right before `NaN`.
 
-Note that the `arrayReverseSort` is a [high-order function](higher_order_functions.md). You can pass a lambda function to it as the first argument. For example:
+Note that the `arrayReverseSort` is a [higher-order function](higher_order_functions.md). You can pass a lambda function to it as the first argument.
+
+Let's consider the following example:
 
 ``` sql
-SELECT arrayReverseSort(x, y) -> y, ['hello', 'world'], [2, 1]) as res;
+SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
+```
+```
+┌─res─────┐
+│ [1,2,3] │
+└─────────┘
+```
+
+The array is sorted in the following way:
+
+1. At first, the source array ([1, 2, 3]) is sorted according to the result of the lambda function applied to the elements of the array. The result is an array [3, 2, 1].
+2. Array that was sorted on the previous step, is reversed. So, the final result is [1, 2, 3].
+  
+The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. For example:
+
+``` sql
+SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 ```
 ``` sql
 ┌─res───────────────┐
@@ -580,19 +612,19 @@ SELECT arrayReverseSort(x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └───────────────────┘
 ```
 
-In this case, the array is sorted in the following way:
+In this example, the array is sorted in the following way:
 
-1. At first, the source array is sorted according to the result of the lambda function applied to the elements of the array. The elements that are passed in the second array ([2, 1]), define a new position of each corresponding element from the source array (['hello', 'world']). So, the intermediate result is an array ['world', 'hello'].
-2. The array that was sorted on the previous step is reversed. So, the result is ['hello', 'world'].
+1. At first, the source array (['hello', 'world']) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array ([2, 1]), define a new position of corresponding elements from the source array. The result is an array ['world', 'hello'].
+2. Array that was sorted on the previous step, is reversed. So, the final result is ['hello', 'world'].
                       
-Another example is shown below. 
+Another example is shown below. In this example, sorting order is specified by the string values: 
 
 ``` sql
-SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], [3, 1, 2]) AS res;
+SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], ['a', 'b', 'c']) AS res;
 ```
 ``` sql
 ┌─res─────┐
-│ [4,5,3] │
+│ [5,3,4] │
 └─────────┘
 ```
 
