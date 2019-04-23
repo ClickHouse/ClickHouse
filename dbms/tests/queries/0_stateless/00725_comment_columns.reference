@@ -1,36 +1,36 @@
-CREATE TABLE test.check_query_comment_column ( first_column UInt8 DEFAULT 1 COMMENT \'comment 1\',  fourth_column UInt8 COMMENT \'comment 4\',  fifth_column UInt8,  second_column UInt8 MATERIALIZED first_column COMMENT \'comment 2\',  third_column UInt8 ALIAS second_column COMMENT \'comment 3\') ENGINE = TinyLog
-first_column	UInt8	DEFAULT	1	comment 1	
-fourth_column	UInt8			comment 4	
-fifth_column	UInt8				
-second_column	UInt8	MATERIALIZED	first_column	comment 2	
-third_column	UInt8	ALIAS	second_column	comment 3	
+CREATE TABLE test.check_query_comment_column (`first_column` UInt8 DEFAULT 1 COMMENT \'comment 1\', `second_column` UInt8 MATERIALIZED first_column COMMENT \'comment 2\', `third_column` UInt8 ALIAS second_column COMMENT \'comment 3\', `fourth_column` UInt8 COMMENT \'comment 4\', `fifth_column` UInt8) ENGINE = TinyLog
+first_column	UInt8	DEFAULT	1	comment 1		
+second_column	UInt8	MATERIALIZED	first_column	comment 2		
+third_column	UInt8	ALIAS	second_column	comment 3		
+fourth_column	UInt8			comment 4		
+fifth_column	UInt8					
 ┌─table──────────────────────┬─name──────────┬─comment───┐
 │ check_query_comment_column │ first_column  │ comment 1 │
+│ check_query_comment_column │ second_column │ comment 2 │
+│ check_query_comment_column │ third_column  │ comment 3 │
 │ check_query_comment_column │ fourth_column │ comment 4 │
 │ check_query_comment_column │ fifth_column  │           │
-│ check_query_comment_column │ second_column │ comment 2 │
-│ check_query_comment_column │ third_column  │ comment 3 │
 └────────────────────────────┴───────────────┴───────────┘
-CREATE TABLE test.check_query_comment_column ( first_column UInt8 DEFAULT 1 COMMENT \'comment 1_1\',  fourth_column UInt8 COMMENT \'comment 4_1\',  fifth_column UInt8 COMMENT \'comment 5_1\',  second_column UInt8 MATERIALIZED first_column COMMENT \'comment 2_1\',  third_column UInt8 ALIAS second_column COMMENT \'comment 3_1\') ENGINE = TinyLog
+CREATE TABLE test.check_query_comment_column (`first_column` UInt8 DEFAULT 1 COMMENT \'comment 1_1\', `second_column` UInt8 MATERIALIZED first_column COMMENT \'comment 2_1\', `third_column` UInt8 ALIAS second_column COMMENT \'comment 3_1\', `fourth_column` UInt8 COMMENT \'comment 4_1\', `fifth_column` UInt8 COMMENT \'comment 5_1\') ENGINE = TinyLog
 ┌─table──────────────────────┬─name──────────┬─comment─────┐
 │ check_query_comment_column │ first_column  │ comment 1_2 │
-│ check_query_comment_column │ fourth_column │ comment 4_2 │
-│ check_query_comment_column │ fifth_column  │ comment 5_2 │
 │ check_query_comment_column │ second_column │ comment 2_2 │
 │ check_query_comment_column │ third_column  │ comment 3_2 │
+│ check_query_comment_column │ fourth_column │ comment 4_2 │
+│ check_query_comment_column │ fifth_column  │ comment 5_2 │
 └────────────────────────────┴───────────────┴─────────────┘
-CREATE TABLE test.check_query_comment_column ( first_column UInt8 DEFAULT 1 COMMENT \'comment 1_2\',  fourth_column UInt8 COMMENT \'comment 4_2\',  fifth_column UInt8 COMMENT \'comment 5_2\',  second_column UInt8 MATERIALIZED first_column COMMENT \'comment 2_2\',  third_column UInt8 ALIAS second_column COMMENT \'comment 3_2\') ENGINE = TinyLog
-CREATE TABLE test.check_query_comment_column ( first_column UInt8 COMMENT \'comment 1\',  second_column UInt8 COMMENT \'comment 2\',  third_column UInt8 COMMENT \'comment 3\') ENGINE = MergeTree() PARTITION BY second_column ORDER BY first_column SAMPLE BY first_column SETTINGS index_granularity = 8192
-first_column	UInt8			comment 1	
-second_column	UInt8			comment 2	
-third_column	UInt8			comment 3	
+CREATE TABLE test.check_query_comment_column (`first_column` UInt8 DEFAULT 1 COMMENT \'comment 1_2\', `second_column` UInt8 MATERIALIZED first_column COMMENT \'comment 2_2\', `third_column` UInt8 ALIAS second_column COMMENT \'comment 3_2\', `fourth_column` UInt8 COMMENT \'comment 4_2\', `fifth_column` UInt8 COMMENT \'comment 5_2\') ENGINE = TinyLog
+CREATE TABLE test.check_query_comment_column (`first_column` UInt8 COMMENT \'comment 1\', `second_column` UInt8 COMMENT \'comment 2\', `third_column` UInt8 COMMENT \'comment 3\') ENGINE = MergeTree() PARTITION BY second_column ORDER BY first_column SAMPLE BY first_column SETTINGS index_granularity = 8192
+first_column	UInt8			comment 1		
+second_column	UInt8			comment 2		
+third_column	UInt8			comment 3		
 ┌─table──────────────────────┬─name──────────┬─comment───┐
 │ check_query_comment_column │ first_column  │ comment 1 │
 │ check_query_comment_column │ second_column │ comment 2 │
 │ check_query_comment_column │ third_column  │ comment 3 │
 └────────────────────────────┴───────────────┴───────────┘
-CREATE TABLE test.check_query_comment_column ( first_column UInt8 COMMENT \'comment 1_2\',  second_column UInt8 COMMENT \'comment 2_2\',  third_column UInt8 COMMENT \'comment 3_2\') ENGINE = MergeTree() PARTITION BY second_column ORDER BY first_column SAMPLE BY first_column SETTINGS index_granularity = 8192
-CREATE TABLE test.check_query_comment_column ( first_column UInt8 COMMENT \'comment 1_3\',  second_column UInt8 COMMENT \'comment 2_3\',  third_column UInt8 COMMENT \'comment 3_3\') ENGINE = MergeTree() PARTITION BY second_column ORDER BY first_column SAMPLE BY first_column SETTINGS index_granularity = 8192
+CREATE TABLE test.check_query_comment_column (`first_column` UInt8 COMMENT \'comment 1_2\', `second_column` UInt8 COMMENT \'comment 2_2\', `third_column` UInt8 COMMENT \'comment 3_2\') ENGINE = MergeTree() PARTITION BY second_column ORDER BY first_column SAMPLE BY first_column SETTINGS index_granularity = 8192
+CREATE TABLE test.check_query_comment_column (`first_column` UInt8 COMMENT \'comment 1_3\', `second_column` UInt8 COMMENT \'comment 2_3\', `third_column` UInt8 COMMENT \'comment 3_3\') ENGINE = MergeTree() PARTITION BY second_column ORDER BY first_column SAMPLE BY first_column SETTINGS index_granularity = 8192
 ┌─table──────────────────────┬─name──────────┬─comment─────┐
 │ check_query_comment_column │ first_column  │ comment 1_3 │
 │ check_query_comment_column │ second_column │ comment 2_3 │

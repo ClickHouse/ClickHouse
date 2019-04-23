@@ -33,7 +33,6 @@ ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_time.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_tls.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/gnutls.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/ma_schannel.c
-${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/openssl.c
 #${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/schannel.c
 #${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/auth_gssapi_client.c
 #${MARIADB_CLIENT_SOURCE_DIR}/plugins/auth/dialog.c
@@ -55,12 +54,19 @@ ${MARIADB_CLIENT_SOURCE_DIR}/plugins/pvio/pvio_socket.c
 ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/libmariadb/ma_client_plugin.c
 )
 
+if(OPENSSL_LIBRARIES)
+    list(APPEND SRCS ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/openssl.c)
+endif()
+
 add_library(mysqlclient STATIC ${SRCS})
 
-target_link_libraries(mysqlclient ${OPENSSL_LIBRARIES})
+if(OPENSSL_LIBRARIES)
+    target_link_libraries(mysqlclient ${OPENSSL_LIBRARIES})
+    target_compile_definitions(mysqlclient PRIVATE -D HAVE_OPENSSL -D HAVE_TLS)
+endif()
 
 target_include_directories(mysqlclient PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include)
 target_include_directories(mysqlclient PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/common/include)
 target_include_directories(mysqlclient PUBLIC ${MARIADB_CLIENT_SOURCE_DIR}/include)
 
-target_compile_definitions(mysqlclient PRIVATE -D THREAD -D HAVE_OPENSSL -D HAVE_TLS)
+target_compile_definitions(mysqlclient PRIVATE -D THREAD)

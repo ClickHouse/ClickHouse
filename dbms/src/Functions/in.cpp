@@ -106,7 +106,7 @@ public:
         auto set_types = set->getDataTypes();
         if (tuple && (set_types.size() != 1 || !set_types[0]->equals(*type_tuple)))
         {
-            const Columns & tuple_columns = tuple->getColumns();
+            const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)

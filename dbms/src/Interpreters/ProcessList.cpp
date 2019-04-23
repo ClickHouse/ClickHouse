@@ -1,5 +1,5 @@
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -38,7 +38,7 @@ static bool isUnlimitedQuery(const IAST * ast)
         return false;
 
     /// It is KILL QUERY
-    if (typeid_cast<const ASTKillQueryQuery *>(ast))
+    if (ast->as<ASTKillQueryQuery>())
         return true;
 
     /// It is SELECT FROM system.processes
@@ -46,12 +46,12 @@ static bool isUnlimitedQuery(const IAST * ast)
     /// False negative: USE system; SELECT * FROM processes;
     /// False positive: SELECT * FROM system.processes CROSS JOIN (SELECT ...)
 
-    if (auto ast_selects = typeid_cast<const ASTSelectWithUnionQuery *>(ast))
+    if (const auto * ast_selects = ast->as<ASTSelectWithUnionQuery>())
     {
         if (!ast_selects->list_of_selects || ast_selects->list_of_selects->children.empty())
             return false;
 
-        auto ast_select = typeid_cast<const ASTSelectQuery *>(ast_selects->list_of_selects->children[0].get());
+        const auto * ast_select = ast_selects->list_of_selects->children[0]->as<ASTSelectQuery>();
         if (!ast_select)
             return false;
 

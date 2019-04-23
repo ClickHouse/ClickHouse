@@ -17,6 +17,7 @@ import psycopg2
 import requests
 import base64
 import pymongo
+import urllib
 
 import docker
 from docker.errors import ContainerError
@@ -482,6 +483,10 @@ class ClickHouseInstance:
     def get_query_request(self, *args, **kwargs):
         return self.client.get_query_request(*args, **kwargs)
 
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    def http_query(self, sql, data=None):
+        return urllib.urlopen("http://"+self.ip_address+":8123/?query="+urllib.quote(sql,safe=''), data).read()
+
     def restart_clickhouse(self, stop_start_wait_sec=5):
         if not self.stay_alive:
             raise Exception("clickhouse can be restarted only with stay_alive=True instance")
@@ -500,6 +505,10 @@ class ClickHouseInstance:
         if exit_code:
             raise Exception('Cmd "{}" failed! Return code {}. Output: {}'.format(' '.join(cmd), exit_code, output))
         return output
+
+    def contains_in_log(self, substring):
+        result = self.exec_in_container(["bash", "-c", "grep '{}' /var/log/clickhouse-server/clickhouse-server.log || true".format(substring)])
+        return len(result) > 0
 
     def copy_file_to_container(self, local_path, dest_path):
         with open(local_path, 'r') as fdata:

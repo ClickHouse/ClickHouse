@@ -1,6 +1,6 @@
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>

@@ -1,5 +1,17 @@
+option (ENABLE_SSL "Enable ssl" ON)
+
+if (ENABLE_SSL)
+
 if(NOT ARCH_32)
     option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
+endif()
+
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/ssl/CMakeLists.txt")
+    if(USE_INTERNAL_SSL_LIBRARY)
+        message(WARNING "submodule contrib/ssl is missing. to fix try run: \n git submodule update --init --recursive")
+    endif()
+    set(USE_INTERNAL_SSL_LIBRARY 0)
+    set(MISSING_INTERNAL_SSL_LIBRARY 1)
 endif()
 
 set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
@@ -28,7 +40,7 @@ if (NOT USE_INTERNAL_SSL_LIBRARY)
     endif ()
 endif ()
 
-if (NOT OPENSSL_FOUND)
+if (NOT OPENSSL_FOUND AND NOT MISSING_INTERNAL_SSL_LIBRARY)
     set (USE_INTERNAL_SSL_LIBRARY 1)
     set (OPENSSL_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/ssl")
     set (OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
@@ -43,4 +55,11 @@ if (NOT OPENSSL_FOUND)
     set (OPENSSL_FOUND 1)
 endif ()
 
-message (STATUS "Using ssl=${OPENSSL_FOUND}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")
+if(OPENSSL_FOUND)
+    # we need keep OPENSSL_FOUND for many libs in contrib
+    set(USE_SSL 1)
+endif()
+
+endif ()
+
+message (STATUS "Using ssl=${USE_SSL}: ${OPENSSL_INCLUDE_DIR} : ${OPENSSL_LIBRARIES}")

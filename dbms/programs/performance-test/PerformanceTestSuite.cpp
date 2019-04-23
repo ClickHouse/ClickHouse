@@ -25,7 +25,7 @@
 #include <Interpreters/Context.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/UseSSL.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
 
@@ -298,6 +298,8 @@ std::unordered_map<std::string, std::vector<std::size_t>> getTestQueryIndexes(co
 {
     std::unordered_map<std::string, std::vector<std::size_t>> result;
     const auto & options = parsed_opts.options;
+    if (options.empty())
+        return result;
     for (size_t i = 0; i < options.size() - 1; ++i)
     {
         const auto & opt = options[i];

@@ -1,14 +1,15 @@
 #pragma once
 
 #include <string>
+#include <memory>
 #include <Core/Types.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
-class IAST;
 class IStorage;
 class ASTSelectQuery;
 class Context;
@@ -34,16 +35,26 @@ class Context;
 class InJoinSubqueriesPreprocessor
 {
 public:
-    InJoinSubqueriesPreprocessor(const Context & context) : context(context) {}
-    void process(ASTSelectQuery * query) const;
+    struct CheckShardsAndTables
+    {
+        using Ptr = std::unique_ptr<CheckShardsAndTables>;
 
-    /// These methods could be overriden for the need of the unit test.
-    virtual bool hasAtLeastTwoShards(const IStorage & table) const;
-    virtual std::pair<std::string, std::string> getRemoteDatabaseAndTableName(const IStorage & table) const;
-    virtual ~InJoinSubqueriesPreprocessor() {}
+        /// These methods could be overriden for the need of the unit test.
+        virtual bool hasAtLeastTwoShards(const IStorage & table) const;
+        virtual std::pair<std::string, std::string> getRemoteDatabaseAndTableName(const IStorage & table) const;
+        virtual ~CheckShardsAndTables() {}
+    };
+
+    InJoinSubqueriesPreprocessor(const Context & context, CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
+        : context(context)
+        , checker(std::move(_checker))
+    {}
+
+    void visit(ASTPtr & query) const;
 
 private:
     const Context & context;
+    CheckShardsAndTables::Ptr checker;
 };
 
 

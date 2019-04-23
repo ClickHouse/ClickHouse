@@ -4,7 +4,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsNumber.h>
