@@ -5,9 +5,18 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <ext/range.h>
+
+#ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wold-style-cast"
+#endif
 
 #include <simdjson/jsonparser.h>
-#include <ext/range.h>
+
+#ifdef __clang__
+    #pragma clang diagnostic pop
+#endif
 
 
 namespace DB
