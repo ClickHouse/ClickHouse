@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-class DataTypeDomainIPv4 : public DataTypeDomainWithSimpleSerialization
+class DataTypeDomainIPv4 final : public DataTypeDomainWithSimpleSerialization
 {
 public:
     const char * getName() const override
@@ -56,14 +56,14 @@ public:
         UInt32 ipv4_value = 0;
         if (!parseIPv4(buffer, reinterpret_cast<unsigned char *>(&ipv4_value)))
         {
-            throw Exception("Invalid IPv4 value.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+            throw Exception(String("Invalid ") + getName() + " value.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
         }
 
         col->insert(ipv4_value);
     }
 };
 
-class DataTypeDomainIPv6 : public DataTypeDomainWithSimpleSerialization
+class DataTypeDomainIPv6 final : public DataTypeDomainWithSimpleSerialization
 {
 public:
     const char * getName() const override

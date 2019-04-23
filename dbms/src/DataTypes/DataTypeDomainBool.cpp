@@ -17,7 +17,7 @@ namespace ErrorCodes
 namespace
 {
 
-class DataTypeDomainBool : public DataTypeDomainWithSimpleSerialization
+class DataTypeDomainBool final : public DataTypeDomainWithSimpleSerialization
 {
 private:
     static constexpr char str_true[5] = "true";
@@ -51,7 +51,7 @@ public:
 
         if (!col)
             throw Exception(
-                String(getName()) + " domain can only deserialize columns of type UInt32."
+                String(getName()) + " domain can only deserialize columns of type UInt8."
                     + column.getName(),
                 ErrorCodes::ILLEGAL_COLUMN
             );
