@@ -512,9 +512,9 @@ SELECT arraySort(lambda(tuple(x, y), y), ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-The elements that are passed in the second array ([2, 1]), define a new position of each corresponding element from the source array (['hello', 'world']). So, 'hello' will be the second element in a result, and 'world' will be the first.
+The elements that are passed in the second array ([2, 1]), define a new position of each corresponding element from the source array (['hello', 'world']). So, 'hello' will be second element in a result, and 'world' will be first.
 
-Below is shown another example. It uses the arrow operator (`->`) to describe the lambda function:
+Another example is shown below. It uses the arrow operator (`->`) to describe the lambda function:
 
 ``` sql
 SELECT arraySort((x, y) -> y, [0, 1, 2], [2, 1, 3]) as res;
@@ -585,7 +585,7 @@ In this case, the array is sorted in the following way:
 1. At first, the source array is sorted according to the result of the lambda function applied to the elements of the array. The elements that are passed in the second array ([2, 1]), define a new position of each corresponding element from the source array (['hello', 'world']). So, the intermediate result is an array ['world', 'hello'].
 2. The array that was sorted on the previous step is reversed. So, the result is ['hello', 'world'].
                       
-Below is shown another example. 
+Another example is shown below. 
 
 ``` sql
 SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], [3, 1, 2]) AS res;
