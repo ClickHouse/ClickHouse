@@ -51,15 +51,34 @@ public:
     }
 };
 
-class JSONTypeImpl : public JSONNullableImplBase<DataTypeUInt8>
+class JSONTypeImpl : public JSONNullableImplBase<DataTypeString>
 {
 public:
     static constexpr auto name{"jsonType"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
-        // types: [{"sltfn
-        return pjh.get_type();
+        switch (pjh.get_type())
+        {
+            case '[':
+                return "Array";
+            case '{':
+                return "Object";
+            case '"':
+                return "String";
+            case 'l':
+                return "Int64";
+            case 'd':
+                return "Float64";
+            case 't':
+                return "Bool";
+            case 'f':
+                return "Bool";
+            case 'n':
+                return "Null";
+            default:
+                return "Unknown";
+        }
     }
 };
 
