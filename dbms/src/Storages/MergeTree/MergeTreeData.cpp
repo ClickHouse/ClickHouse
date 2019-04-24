@@ -15,6 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/MarkInCompressedFile.h>
 #include <Formats/ValuesRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
@@ -84,6 +85,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int BAD_TTL_EXPRESSION;
 }
 
 
@@ -97,17 +99,19 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
+    const ASTPtr & ttl_table_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : global_context(context_),
+    index_granularity_info(settings_),
     merging_params(merging_params_),
-    index_granularity(settings_.index_granularity),
     settings(settings_),
     partition_by_ast(partition_by_ast_),
     sample_by_ast(sample_by_ast_),
+    ttl_table_ast(ttl_table_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     schema(context_.getSchema(settings.storage_schema_name)),
@@ -159,6 +163,8 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
+    setTTLExpressions(columns_.getColumnTTLs(), ttl_table_ast_);
+
     // format_file always contained on default disk
     String version_file_path;
 
@@ -205,9 +211,33 @@ MergeTreeData::MergeTreeData(
         format_version = 0;
 
     if (format_version < min_format_version)
-        throw Exception(
-            "MergeTree data format version on disk doesn't support custom partitioning",
-            ErrorCodes::METADATA_MISMATCH);
+    {
+        if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
+            throw Exception(
+                "MergeTree data format version on disk doesn't support custom partitioning",
+                ErrorCodes::METADATA_MISMATCH);
+    }
+
+}
+
+
+MergeTreeData::IndexGranularityInfo::IndexGranularityInfo(const MergeTreeSettings & settings)
+    : fixed_index_granularity(settings.index_granularity)
+    , index_granularity_bytes(settings.index_granularity_bytes)
+{
+    /// Granularity is fixed
+    if (index_granularity_bytes == 0)
+    {
+        is_adaptive = false;
+        mark_size_in_bytes = sizeof(UInt64) * 2;
+        marks_file_extension = ".mrk";
+    }
+    else
+    {
+        is_adaptive = true;
+        mark_size_in_bytes = sizeof(UInt64) * 3;
+        marks_file_extension = ".mrk2";
+    }
 }
 
 
@@ -504,6 +534,98 @@ void MergeTreeData::initPartitionKey()
                    minmax_idx_time_column_pos = -1;
                 }
             }
+        }
+    }
+}
+
+namespace
+{
+
+void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name)
+{
+    for (const auto & action : ttl_expression->getActions())
+    {
+        if (action.type == ExpressionAction::APPLY_FUNCTION)
+        {
+            IFunctionBase & func = *action.function_base;
+            if (!func.isDeterministic())
+                throw Exception("TTL expression cannot contain non-deterministic functions, "
+                    "but contains function " + func.getName(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
+    bool has_date_column = false;
+    for (const auto & elem : ttl_expression->getRequiredColumnsWithTypes())
+    {
+        if (typeid_cast<const DataTypeDateTime *>(elem.type.get()) || typeid_cast<const DataTypeDate *>(elem.type.get()))
+        {
+            has_date_column = true;
+            break;
+        }
+    }
+
+    if (!has_date_column)
+        throw Exception("TTL expression should use at least one Date or DateTime column", ErrorCodes::BAD_TTL_EXPRESSION);
+
+    const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
+
+    if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
+        && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
+    {
+        throw Exception("TTL expression result column should have DateTime or Date type, but has "
+            + result_column.type->getName(), ErrorCodes::BAD_TTL_EXPRESSION);
+    }
+}
+
+}
+
+
+void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
+        const ASTPtr & new_ttl_table_ast, bool only_check)
+{
+    auto create_ttl_entry = [this](ASTPtr ttl_ast) -> TTLEntry
+    {
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
+        auto expr = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
+
+        String result_column = ttl_ast->getColumnName();
+        checkTTLExpression(expr, result_column);
+
+        return {expr, result_column};
+    };
+
+    if (!new_column_ttls.empty())
+    {
+        NameSet columns_ttl_forbidden;
+
+        if (partition_key_expr)
+            for (const auto & col : partition_key_expr->getRequiredColumns())
+                columns_ttl_forbidden.insert(col);
+
+        if (sorting_key_expr)
+            for (const auto & col : sorting_key_expr->getRequiredColumns())
+                columns_ttl_forbidden.insert(col);
+
+        for (const auto & [name, ast] : new_column_ttls)
+        {
+            if (columns_ttl_forbidden.count(name))
+                throw Exception("Trying to set ttl for key column " + name, ErrorCodes::ILLEGAL_COLUMN);
+            else
+            {
+                auto new_ttl_entry = create_ttl_entry(ast);
+                if (!only_check)
+                    ttl_entries_by_name.emplace(name, new_ttl_entry);
+            }
+        }
+    }
+
+    if (new_ttl_table_ast)
+    {
+        auto new_ttl_table_entry = create_ttl_entry(new_ttl_table_ast);
+        if (!only_check)
+        {
+            ttl_table_ast = new_ttl_table_ast;
+            ttl_table_entry = new_ttl_table_entry;
         }
     }
 }
@@ -1105,7 +1227,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     auto new_indices = getIndicesDescription();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
-    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
+    ASTPtr new_ttl_table_ast = ttl_table_ast;
+    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
     if (getIndicesDescription().empty() && !new_indices.empty() &&
             !context.getSettingsRef().allow_experimental_data_skipping_indices)
@@ -1191,11 +1314,12 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast,
             new_columns, new_indices, /* only_check = */ true);
 
+    setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast, /* only_check = */ true);
+
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
     NameToNameMap unused_map;
     bool unused_bool;
-
     createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
             getIndicesDescription().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
 }
@@ -1227,7 +1351,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
         if (!new_indices_set.count(index.name))
         {
             out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
+            out_rename_map["skp_idx_" + index.name + index_granularity_info.marks_file_extension] = "";
         }
     }
 
@@ -1256,7 +1380,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     if (--stream_counts[file_name] == 0)
                     {
                         out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + ".mrk"] = "";
+                        out_rename_map[file_name + index_granularity_info.marks_file_extension] = "";
                     }
                 }, {});
             }
@@ -1331,7 +1455,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
                     out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + ".mrk"] = original_file_name + ".mrk";
+                    out_rename_map[temporary_file_name + index_granularity_info.marks_file_extension] = original_file_name + index_granularity_info.marks_file_extension;
                 }, {});
         }
 
@@ -1452,7 +1576,14 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
         ///@TODO_IGR ASK Why dont we use part->relative_path?
         MergedColumnOnlyOutputStream out(
-            *this, in.getHeader(), part->getFullPath(), true /* sync */, compression_codec, true /* skip_offsets */, unused_written_offsets);
+            *this,
+            in.getHeader(),
+            part->getFullPath(),
+            true /* sync */,
+            compression_codec,
+            true /* skip_offsets */,
+            unused_written_offsets,
+            part->index_granularity);
 
         in.readPrefix();
         out.writePrefix();
@@ -1492,6 +1623,32 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     }
 
     return transaction;
+}
+
+void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
+{
+    auto & empty_columns = data_part->empty_columns;
+    if (empty_columns.empty())
+        return;
+
+    NamesAndTypesList new_columns;
+    for (const auto & [name, type] : data_part->columns)
+        if (!empty_columns.count(name))
+            new_columns.emplace_back(name, type);
+
+    std::stringstream log_message;
+    for (auto it = empty_columns.begin(); it != empty_columns.end(); ++it)
+    {
+        if (it != empty_columns.begin())
+            log_message << ", ";
+        log_message << *it;
+    }
+
+    LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
+
+    if (auto transaction = alterDataPart(data_part, new_columns, getIndicesDescription().indices, false))
+        transaction->commit();
+    empty_columns.clear();
 }
 
 void MergeTreeData::freezeAll(const String & with_name, const Context & context)
@@ -2198,8 +2355,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const Di
     /// Check the data while we are at it.
     if (part->checksums.empty())
     {
-        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types, skip_indices);
-
+        part->checksums = checkDataPart(part, false, primary_key_data_types, skip_indices);
         {
             WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
             part->checksums.write(out);

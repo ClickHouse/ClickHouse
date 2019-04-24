@@ -16,7 +16,6 @@
 #include <Common/ThreadPool.h>
 
 
-
 namespace DB
 {
 
@@ -29,6 +28,8 @@ enum class BackgroundProcessingPoolTaskResult
     ERROR,
     NOTHING_TO_DO,
 };
+
+
 /** Using a fixed number of threads, perform an arbitrary number of tasks in an infinite loop.
   * In this case, one task can run simultaneously from different threads.
   * Designed for tasks that perform continuous background work (for example, merge).
@@ -43,7 +44,6 @@ public:
     using Task = std::function<TaskResult()>;
     using TaskInfo = BackgroundProcessingPoolTaskInfo;
     using TaskHandle = std::shared_ptr<TaskInfo>;
-
 
 
     BackgroundProcessingPool(int size_);

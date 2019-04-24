@@ -30,51 +30,53 @@ void callWithType(AsofRowRefs::Type which, F && f)
 } // namespace
 
 
-void AsofRowRefs::insert(Type type, LookupLists & lookup_data, const IColumn * asof_column, const Block * block, size_t row_num)
+AsofRowRefs::AsofRowRefs(Type type)
 {
     auto call = [&](const auto & t)
     {
-        using T = std::decay_t<decltype(t)>;
-        using LookupType = typename Entry<T>::LookupType;
-
-        auto * column = typeid_cast<const ColumnVector<T> *>(asof_column);
-        T key = column->getElement(row_num);
-        auto entry = Entry<T>(key, RowRef(block, row_num));
-
-        std::lock_guard<std::mutex> lock(lookup_data.mutex);
-
-        if (!lookups)
-        {
-            lookup_data.lookups.push_back(Lookups());
-            lookup_data.lookups.back() = LookupType();
-            lookups = &lookup_data.lookups.back();
-        }
-        std::get<LookupType>(*lookups).insert(entry);
+      using T = std::decay_t<decltype(t)>;
+      using LookupType = typename Entry<T>::LookupType;
+      lookups = std::make_unique<LookupType>();
     };
 
     callWithType(type, call);
 }
 
-const RowRef * AsofRowRefs::findAsof(Type type, const LookupLists & lookup_data, const IColumn * asof_column, size_t row_num) const
+void AsofRowRefs::insert(Type type, const IColumn * asof_column, const Block * block, size_t row_num)
+{
+    auto call = [&](const auto & t)
+    {
+        using T = std::decay_t<decltype(t)>;
+        using LookupPtr = typename Entry<T>::LookupPtr;
+
+        auto * column = typeid_cast<const ColumnVector<T> *>(asof_column);
+        T key = column->getElement(row_num);
+        auto entry = Entry<T>(key, RowRef(block, row_num));
+        std::get<LookupPtr>(lookups)->insert(entry);
+    };
+
+    callWithType(type, call);
+}
+
+const RowRef * AsofRowRefs::findAsof(Type type, const IColumn * asof_column, size_t row_num) const
 {
     const RowRef * out = nullptr;
 
     auto call = [&](const auto & t)
     {
         using T = std::decay_t<decltype(t)>;
-        using LookupType = typename Entry<T>::LookupType;
+        using LookupPtr = typename Entry<T>::LookupPtr;
 
         auto * column = typeid_cast<const ColumnVector<T> *>(asof_column);
         T key = column->getElement(row_num);
+        auto & typed_lookup = std::get<LookupPtr>(lookups);
 
-        std::lock_guard<std::mutex> lock(lookup_data.mutex);
+        // The first thread that calls upper_bound ensures that the data is sorted
+        auto it = typed_lookup->upper_bound(Entry<T>(key));
 
-        if (!lookups)
-            return;
-
-        auto & typed_lookup = std::get<LookupType>(*lookups);
-        auto it = typed_lookup.upper_bound(Entry<T>(key));
-        if (it != typed_lookup.cbegin())
+        // cbegin() is safe to call now because the array is immutable after sorting
+        // hence the pointer to a entry can be returned
+        if (it != typed_lookup->cbegin())
             out = &((--it)->row_ref);
     };
 

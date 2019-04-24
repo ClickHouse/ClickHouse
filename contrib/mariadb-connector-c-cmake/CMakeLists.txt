@@ -2,7 +2,7 @@ set(MARIADB_CLIENT_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/mariadb-connector-c)
 set(MARIADB_CLIENT_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/mariadb-connector-c)
 
 set(SRCS
-${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/bmove_upp.c
+#${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/bmove_upp.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/get_password.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_alloc.c
 ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/ma_array.c
@@ -58,10 +58,10 @@ if(OPENSSL_LIBRARIES)
     list(APPEND SRCS ${MARIADB_CLIENT_SOURCE_DIR}/libmariadb/secure/openssl.c)
 endif()
 
-add_library(mysqlclient STATIC ${SRCS})
+add_library(mysqlclient ${SRCS})
 
 if(OPENSSL_LIBRARIES)
-    target_link_libraries(mysqlclient ${OPENSSL_LIBRARIES})
+    target_link_libraries(mysqlclient PRIVATE ${OPENSSL_LIBRARIES})
     target_compile_definitions(mysqlclient PRIVATE -D HAVE_OPENSSL -D HAVE_TLS)
 endif()
 

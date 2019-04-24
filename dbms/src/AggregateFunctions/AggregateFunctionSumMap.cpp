@@ -24,8 +24,7 @@ struct WithoutOverflowPolicy
     static DataTypePtr promoteType(const DataTypePtr & data_type)
     {
         if (!data_type->canBePromoted())
-            throw new Exception{"Values to be summed are expected to be Numeric, Float or Decimal.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception{"Values to be summed are expected to be Numeric, Float or Decimal.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return data_type->promoteNumericType();
     }

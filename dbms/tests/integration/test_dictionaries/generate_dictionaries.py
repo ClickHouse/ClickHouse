@@ -1,4 +1,5 @@
 import os
+import glob
 import difflib
 
 files = ['key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv']
@@ -181,6 +182,10 @@ def generate_dictionaries(path, structure):
 
     file_names = []
 
+    # Add ready dictionaries.
+    file_names.extend(glob.glob(os.path.join(path, "*dictionary_preset*.xml")))
+
+    # Generate dictionaries.
     for (name, key_idx, has_parent), (source, layout) in zip(structure, sources_and_layouts):
         filename = os.path.join(path, 'dictionary_%s.xml' % name)
         file_names.append(filename)

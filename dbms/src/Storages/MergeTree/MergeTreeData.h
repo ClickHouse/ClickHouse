@@ -286,6 +286,32 @@ public:
         String getModeName() const;
     };
 
+    /// Meta information about index granularity
+    struct IndexGranularityInfo
+    {
+        /// Marks file extension '.mrk' or '.mrk2'
+        String marks_file_extension;
+
+        /// Size of one mark in file two or three size_t numbers
+        UInt8 mark_size_in_bytes;
+
+        /// Is stride in rows between marks non fixed?
+        bool is_adaptive;
+
+        /// Fixed size in rows of one granule if index_granularity_bytes is zero
+        size_t fixed_index_granularity;
+
+        /// Approximate bytes size of one granule
+        size_t index_granularity_bytes;
+
+        IndexGranularityInfo(const MergeTreeSettings & settings);
+
+        String getMarksFilePath(const String & column_path) const
+        {
+            return column_path + marks_file_extension;
+        }
+    };
+
 
     /// Attach the table corresponding to the directory in full_path inside schema (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
@@ -312,6 +338,7 @@ public:
                   const ASTPtr & order_by_ast_,
                   const ASTPtr & primary_key_ast_,
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
+                  const ASTPtr & ttl_table_ast_,
                   const MergingParams & merging_params_,
                   const MergeTreeSettings & settings_,
                   bool require_part_metadata_,
@@ -492,6 +519,9 @@ public:
         const IndicesASTs & new_indices,
         bool skip_sanity_checks);
 
+    /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
+    void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
+
     /// Freezes all parts.
     void freezeAll(const String & with_name, const Context & context);
 
@@ -512,6 +542,7 @@ public:
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
+    bool hasTableTTL() const { return ttl_table_ast != nullptr; }
 
     ASTPtr getSortingKeyAST() const { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const { return primary_key_expr_ast; }
@@ -575,6 +606,7 @@ public:
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;
+    IndexGranularityInfo index_granularity_info;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
@@ -607,10 +639,20 @@ public:
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
+    struct TTLEntry
+    {
+        ExpressionActionsPtr expression;
+        String result_column;
+    };
+
+    using TTLEntriesByName = std::unordered_map<String, TTLEntry>;
+    TTLEntriesByName ttl_entries_by_name;
+
+    TTLEntry ttl_table_entry;
+
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 
-    const size_t index_granularity;
     const MergeTreeSettings settings;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
@@ -631,6 +673,7 @@ private:
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
+    ASTPtr ttl_table_ast;
 
     bool require_part_metadata;
 
@@ -741,6 +784,9 @@ private:
                                         const IndicesDescription & indices_description, bool only_check = false);
 
     void initPartitionKey();
+
+    void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
+                           const ASTPtr & new_ttl_table_ast, bool only_check = false);
 
     /// Expression for column type conversion.
     /// If no conversions are needed, out_expression=nullptr.
