@@ -82,7 +82,7 @@ public:
             case 'f':
                 return "Bool";
             case 'n':
-                return "Nothing";
+                return "Null";
             default:
                 return "Unknown";
         }
