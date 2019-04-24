@@ -4,7 +4,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ClientInfo.h>
-#include <Interpreters/SettingsConstraints.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/LRUCache.h>
@@ -79,6 +78,8 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
+class SettingsConstraints;
+
 
 #if USE_EMBEDDED_COMPILER
 
@@ -126,7 +127,7 @@ private:
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
-    SettingsConstraints settings_constraints;
+    std::shared_ptr<const SettingsConstraints> settings_constraints;
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -163,8 +164,8 @@ public:
     static Context createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
-    Context(const Context &) = default;
-    Context & operator=(const Context &) = default;
+    Context(const Context &);
+    Context & operator=(const Context &);
     ~Context();
 
     String getPath() const;
