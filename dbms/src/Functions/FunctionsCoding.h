@@ -1,5 +1,4 @@
 #pragma once
-#include <bitset>
 
 #include <Common/hex.h>
 #include <Common/formatIPv6.h>
@@ -1606,10 +1605,10 @@ public:
 
         /** Using a 32 bits variable with a 32 shits or more is considered as UB
           * with a 64 bits type casting solve the problem if the cidr mask = 0
-          * Reference : aSO/IEC 9899:1999 6.5.7 Bitwise shift operators
+          * Reference : ISO/IEC 9899:1999 6.5.7 Bitwise shift operators P.3
           */
-        UInt64 src_byte_shift = (static_cast<UInt64>(src) >> shifts_bits) << shifts_bits;
-        UInt64 cidr_mask_byte_shift = static_cast<UInt64>(byte_reference) >> (bits_to_keep);
+        const UInt64 src_byte_shift = (static_cast<UInt64>(src) >> shifts_bits) << shifts_bits;
+        const UInt64 cidr_mask_byte_shift = static_cast<UInt64>(byte_reference) >> (bits_to_keep);
 
         return static_cast<UInt32>(src_byte_shift | cidr_mask_byte_shift);
     }
