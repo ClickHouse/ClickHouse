@@ -9,8 +9,8 @@ RUN apt-get --allow-unauthenticated update -y \
             bash \
             fakeroot \
             cmake \
-            curl \
             ccache \
+            curl \
             gcc-7 \
             g++-7 \
             gcc-8 \
@@ -61,6 +61,5 @@ RUN apt-get --allow-unauthenticated update -y \
             odbcinst \
             tzdata
 
-
-
-CMD /bin/bash -x build/release --no-pbuilder && mv /*.deb /output && mv *.changes /output && mv *.buildinfo /output
+COPY build.sh /
+CMD ["/bin/bash", "/build.sh"]

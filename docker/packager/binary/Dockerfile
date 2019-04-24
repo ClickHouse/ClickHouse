@@ -8,6 +8,7 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             bash \
             cmake \
+            ccache \
             curl \
             gcc-7 \
             g++-7 \
@@ -32,7 +33,6 @@ RUN apt-get update -y \
             libreadline-dev \
             ninja-build \
             git \
-            ccache \
             tzdata
 
 COPY build.sh /
