@@ -57,8 +57,6 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
 {
-
-
     Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
@@ -98,59 +96,14 @@ BlockIO InterpreterInsertQuery::execute()
 
     auto table_lock = table->lockStructureForShare(true, context.getCurrentQueryId());
 
-    /// We create a pipeline of several streams, into which we will write data.
-    BlockOutputStreamPtr out;
-
-    out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
-
-    /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
-    /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
-    {
-        out = std::make_shared<SquashingBlockOutputStream>(
-            out, table->getSampleBlock(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-    }
-    auto query_sample_block = getSampleBlock(query, table);
-
-    /// Actually we don't know structure of input blocks from query/table,
-    /// because some clients break insertion protocol (columns != header)
-    out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, query_sample_block, table->getSampleBlock(), table->getColumns().getDefaults(), context);
-
-    auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
-    out_wrapper->setProcessListElement(context.getProcessListElement());
-    out = std::move(out_wrapper);
-
     BlockIO res;
-    res.out = std::move(out);
+    Block query_sample_block = getSampleBlock(query, table);
 
-    /// What type of query: INSERT or INSERT SELECT?
-    if (query.select)
-    {
-        /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
-        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, SelectQueryOptions(QueryProcessingStage::Complete, 1)};
-
-        res.in = interpreter_select.execute().in;
-
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, res.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
-
-        res.out = nullptr;
-
-        if (!allow_materialized)
-        {
-            Block in_header = res.in->getHeader();
-            for (const auto & column : table->getColumns())
-                if (column.default_desc.kind == ColumnDefaultKind::Materialized && in_header.has(column.name))
-                    throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
-        }
-    }
-    else if (query.data && !query.has_tail) /// can execute without additional data
-    {
-        res.in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, query_sample_block, context);
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
-        res.out = nullptr;
-    }
+    /// INSERT INTO DATA or INSERT SELECT?
+    if (BlockInputStreamPtr source_input = tryCreateSourceInputStream(query, table, query_sample_block))
+        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(source_input, createOutputStream(query, table, query_sample_block));
+    else
+        res.out = createOutputStream(query, table, query_sample_block);
 
     return res;
 }
@@ -173,6 +126,61 @@ std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
 {
     const auto & query = query_ptr->as<ASTInsertQuery &>();
     return {query.database, query.table};
+}
+
+BlockOutputStreamPtr InterpreterInsertQuery::createOutputStream(const ASTInsertQuery & query, const StoragePtr & table, const Block & sample_block)
+{
+    const Block & table_sample_block = table->getSampleBlock();
+    const ColumnDefaults & table_default_columns = table->getColumns().getDefaults();
+    
+    /// We create a pipeline of several streams, into which we will write data.
+    BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
+        query.database, query.table, table, context, query_ptr, query.no_destination);
+
+    /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
+    /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
+    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
+    {
+        UInt64 min_insert_block_size_rows = context.getSettingsRef().min_insert_block_size_rows;
+        UInt64 min_insert_block_size_bytes = context.getSettingsRef().min_insert_block_size_bytes;
+        out = std::make_shared<SquashingBlockOutputStream>(out, table_sample_block, min_insert_block_size_rows, min_insert_block_size_bytes);
+    }
+
+    /// Actually we don't know structure of input blocks from query/table,
+    /// because some clients break insertion protocol (columns != header)
+    out = std::make_shared<AddingDefaultBlockOutputStream>(out, sample_block, table_sample_block, table_default_columns, context);
+    return std::make_shared<CountingBlockOutputStream>(out, context.getProcessListElement());
+}
+
+BlockInputStreamPtr InterpreterInsertQuery::tryCreateSourceInputStream(
+    const ASTInsertQuery & query, const StoragePtr & table, const Block & sample_block)
+{
+    BlockInputStreamPtr in;
+
+    if (query.data && !query.has_tail) /// can execute without additional data
+    {
+        in = std::make_shared<InputStreamFromASTInsertQuery>(query_ptr, nullptr, sample_block, context);
+    }
+    else if (query.select)
+    {
+        /// Passing 1 as subquery_depth will disable limiting size of intermediate result.
+        SelectQueryOptions select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
+        InterpreterSelectWithUnionQuery interpreter_select{query.select, context, select_query_options};
+
+        in = interpreter_select.execute().in;
+        in = std::make_shared<ConvertingBlockInputStream>(context, in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+
+        if (!allow_materialized)
+        {
+            Block in_header = in->getHeader();
+            for (const auto &column : table->getColumns())
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized && in_header.has(column.name))
+                    throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.",
+                                    ErrorCodes::ILLEGAL_COLUMN);
+        }
+    }
+
+    return in;
 }
 
 }
