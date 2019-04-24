@@ -12,6 +12,10 @@
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wold-style-cast"
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+    #pragma clang diagnostic ignored "-Wheader-hygiene"
+    #pragma clang diagnostic ignored "-Wgnu-label-as-value"
+    #pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #endif
 
 // use singleheader version to avoid extra objects from simdjson
