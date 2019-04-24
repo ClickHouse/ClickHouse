@@ -161,50 +161,53 @@ SAMPLE 1/10 OFFSET 1/2
 
 ### Секция ARRAY JOIN {#select-array-join-clause}
 
-Позволяет выполнить JOIN с массивом или вложенной структурой данных. Смысл похож на функцию arrayJoin, но функциональность более широкая.
+Позволяет выполнить `JOIN` с массивом или вложенной структурой данных. Смысл похож на функцию [arrayJoin](functions/array_join.md#functions_arrayjoin), но функциональность более широкая.
 
-`ARRAY JOIN` - это, по сути, `INNER JOIN` с массивом. Пример:
-
+``` sql
+SELECT <expr_list>
+FROM <left_subquery>
+[LEFT] ARRAY JOIN <array>
+[WHERE|PREWHERE <expr>]
+...
 ```
-:) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
+В запросе может быть указано не более одной секции `ARRAY JOIN`.
+
+При использовании `ARRAY JOIN`, порядок выполнения запроса оптимизируется. Несмотря на то что секция `ARRAY JOIN` всегда указывается перед выражением `WHERE / PREWHERE`, преобразование `JOIN` может быть выполнено как до выполнения выражения `WHERE / PREWHERE` (если результат необходим в этом выражении), так и после (чтобы уменьшить объем расчетов). Порядок обработки контролируется оптимизатором запросов.
+
+Секция `ARRAY JOIN` поддерживает следующие формы записи:
+
+- `ARRAY JOIN` — в этом случае результат `JOIN` не будет содержать пустые массивы;
+- `LEFT ARRAY JOIN` — пустые массивы попадут в результат выполнения `JOIN`. В качестве значения для пустых массивов устанавливается значение по умолчанию. Обычно это 0, пустая строка или NULL, в зависимости от типа элементов массива.
+
+Рассмотрим примеры использования `ARRAY JOIN` и `LEFT ARRAY JOIN`. Для начала создадим таблицу, содержащую столбец с типом [Array](../data_types/array.md), и добавим в него значение:
+
+``` sql
 CREATE TABLE arrays_test
 (
     s String,
     arr Array(UInt8)
-) ENGINE = Memory
+) ENGINE = Memory;
 
-Ok.
+INSERT INTO arrays_test
+VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
+```
+```
+┌─s───────────┬─arr─────┐
+│ Hello       │ [1,2]   │
+│ World       │ [3,4,5] │
+│ Goodbye     │ []      │
+└─────────────┴─────────┘
+```
 
-0 rows in set. Elapsed: 0.001 sec.
+В примере ниже используется `ARRAY JOIN`:
 
-:) INSERT INTO arrays_test VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', [])
-
-INSERT INTO arrays_test VALUES
-
-Ok.
-
-3 rows in set. Elapsed: 0.001 sec.
-
-:) SELECT * FROM arrays_test
-
-SELECT *
-FROM arrays_test
-
-┌─s───────┬─arr─────┐
-│ Hello   │ [1,2]   │
-│ World   │ [3,4,5] │
-│ Goodbye │ []      │
-└─────────┴─────────┘
-
-3 rows in set. Elapsed: 0.001 sec.
-
-:) SELECT s, arr FROM arrays_test ARRAY JOIN arr
-
+``` sql
 SELECT s, arr
 FROM arrays_test
-ARRAY JOIN arr
-
+ARRAY JOIN arr;
+```
+```
 ┌─s─────┬─arr─┐
 │ Hello │   1 │
 │ Hello │   2 │
@@ -212,19 +215,37 @@ ARRAY JOIN arr
 │ World │   4 │
 │ World │   5 │
 └───────┴─────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-Для массива в секции ARRAY JOIN может быть указан алиас. В этом случае, элемент массива будет доступен под этим алиасом, а сам массив - под исходным именем. Пример:
+Следующий пример использует `LEFT ARRAY JOIN`:
 
+``` sql
+SELECT s, arr
+FROM arrays_test 
+LEFT ARRAY JOIN arr;
 ```
-:) SELECT s, arr, a FROM arrays_test ARRAY JOIN arr AS a
+``` 
+┌─s───────────┬─arr─┐
+│ Hello       │   1 │
+│ Hello       │   2 │
+│ World       │   3 │
+│ World       │   4 │
+│ World       │   5 │
+│ Goodbye     │   0 │
+└─────────────┴─────┘
+``` 
 
+#### Использование алиасов
+
+Для массива в секции `ARRAY JOIN` может быть указан алиас. В этом случае, элемент массива будет доступен под этим алиасом, а сам массив — под исходным именем. Пример:
+
+``` sql
 SELECT s, arr, a
 FROM arrays_test
-ARRAY JOIN arr AS a
+ARRAY JOIN arr AS a;
+```
 
+``` 
 ┌─s─────┬─arr─────┬─a─┐
 │ Hello │ [1,2]   │ 1 │
 │ Hello │ [1,2]   │ 2 │
@@ -232,19 +253,39 @@ ARRAY JOIN arr AS a
 │ World │ [3,4,5] │ 4 │
 │ World │ [3,4,5] │ 5 │
 └───────┴─────────┴───┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-В секции ARRAY JOIN может быть указано несколько массивов одинаковых размеров через запятую. В этом случае, JOIN делается с ними одновременно (прямая сумма, а не прямое произведение). Пример:
+Используя алиасы, можно выполнять `JOIN` с внешними массивами:
+
+``` sql
+SELECT s, arr_external
+FROM arrays_test 
+ARRAY JOIN [1, 2, 3] AS arr_external;
+```
 
 ```
-:) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
+┌─s───────────┬─arr_external─┐
+│ Hello       │            1 │
+│ Hello       │            2 │
+│ Hello       │            3 │
+│ World       │            1 │
+│ World       │            2 │
+│ World       │            3 │
+│ Goodbye     │            1 │
+│ Goodbye     │            2 │
+│ Goodbye     │            3 │
+└─────────────┴──────────────┘
+```
 
+В секции `ARRAY JOIN` можно указать через запятую сразу несколько массивов. В этом случае, `JOIN` делается с ними одновременно (прямая сумма, а не прямое произведение). Обратите внимание, массивы должны быть одинаковых размеров. Примеры:
+
+``` sql
 SELECT s, arr, a, num, mapped
 FROM arrays_test
-ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(lambda(tuple(x), plus(x, 1)), arr) AS mapped
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped;
+```
 
+```
 ┌─s─────┬─arr─────┬─a─┬─num─┬─mapped─┐
 │ Hello │ [1,2]   │ 1 │   1 │      2 │
 │ Hello │ [1,2]   │ 2 │   2 │      3 │
@@ -252,15 +293,17 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(lambda(tuple(x), plus(
 │ World │ [3,4,5] │ 4 │   2 │      5 │
 │ World │ [3,4,5] │ 5 │   3 │      6 │
 └───────┴─────────┴───┴─────┴────────┘
+```
 
-5 rows in set. Elapsed: 0.002 sec.
+В примере ниже используется функция [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate):
 
-:) SELECT s, arr, a, num, arrayEnumerate(arr) FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
-
+``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
 FROM arrays_test
-ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
+ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
+```
 
+```
 ┌─s─────┬─arr─────┬─a─┬─num─┬─arrayEnumerate(arr)─┐
 │ Hello │ [1,2]   │ 1 │   1 │ [1,2]               │
 │ Hello │ [1,2]   │ 2 │   2 │ [1,2]               │
@@ -268,54 +311,40 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
 │ World │ [3,4,5] │ 4 │   2 │ [1,2,3]             │
 │ World │ [3,4,5] │ 5 │   3 │ [1,2,3]             │
 └───────┴─────────┴───┴─────┴─────────────────────┘
-
-5 rows in set. Elapsed: 0.002 sec.
 ```
 
-ARRAY JOIN также работает с вложенными структурами данных. Пример:
+#### ARRAY JOIN с вложенными структурами данных
 
-```
-:) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
+`ARRAY JOIN` также работает с [вложенными структурами данных](../data_types/nested_data_structures/nested.md). Пример:
 
+``` sql
 CREATE TABLE nested_test
 (
     s String,
     nest Nested(
     x UInt8,
     y UInt32)
-) ENGINE = Memory
+) ENGINE = Memory;
 
-Ok.
+INSERT INTO nested_test
+VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], []);
+```
 
-0 rows in set. Elapsed: 0.006 sec.
-
-:) INSERT INTO nested_test VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], [])
-
-INSERT INTO nested_test VALUES
-
-Ok.
-
-3 rows in set. Elapsed: 0.001 sec.
-
-:) SELECT * FROM nested_test
-
-SELECT *
-FROM nested_test
-
+``` 
 ┌─s───────┬─nest.x──┬─nest.y─────┐
 │ Hello   │ [1,2]   │ [10,20]    │
 │ World   │ [3,4,5] │ [30,40,50] │
 │ Goodbye │ []      │ []         │
 └─────────┴─────────┴────────────┘
+```
 
-3 rows in set. Elapsed: 0.001 sec.
-
-:) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest
-
+``` sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
-ARRAY JOIN nest
+ARRAY JOIN nest;
+```
 
+``` 
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -323,19 +352,17 @@ ARRAY JOIN nest
 │ World │      4 │     40 │
 │ World │      5 │     50 │
 └───────┴────────┴────────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-При указании имени вложенной структуры данных в ARRAY JOIN, смысл такой же, как ARRAY JOIN со всеми элементами-массивами, из которых она состоит. Пример:
+При указании имени вложенной структуры данных в `ARRAY JOIN`, смысл такой же, как `ARRAY JOIN` со всеми элементами-массивами, из которых она состоит. Пример:
 
-```
-:) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
-
+``` sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
-ARRAY JOIN `nest.x`, `nest.y`
+ARRAY JOIN `nest.x`, `nest.y`;
+```
 
+``` 
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -343,19 +370,17 @@ ARRAY JOIN `nest.x`, `nest.y`
 │ World │      4 │     40 │
 │ World │      5 │     50 │
 └───────┴────────┴────────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
 Такой вариант тоже имеет смысл:
 
-```
-:) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x
-
+``` sql
 SELECT s, `nest.x`, `nest.y`
 FROM nested_test
-ARRAY JOIN `nest.x`
+ARRAY JOIN `nest.x`;
+```
 
+``` 
 ┌─s─────┬─nest.x─┬─nest.y─────┐
 │ Hello │      1 │ [10,20]    │
 │ Hello │      2 │ [10,20]    │
@@ -363,19 +388,17 @@ ARRAY JOIN `nest.x`
 │ World │      4 │ [30,40,50] │
 │ World │      5 │ [30,40,50] │
 └───────┴────────┴────────────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-Алиас для вложенной структуры данных можно использовать, чтобы выбрать как результат JOIN-а, так и исходный массив. Пример:
+Алиас для вложенной структуры данных можно использовать, чтобы выбрать как результат `JOIN`-а, так и исходный массив. Пример:
 
-```
-:) SELECT s, n.x, n.y, nest.x, nest.y FROM nested_test ARRAY JOIN nest AS n
-
+``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
 FROM nested_test
-ARRAY JOIN nest AS n
+ARRAY JOIN nest AS n;
+```
 
+``` 
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
@@ -383,19 +406,17 @@ ARRAY JOIN nest AS n
 │ World │   4 │  40 │ [3,4,5] │ [30,40,50] │
 │ World │   5 │  50 │ [3,4,5] │ [30,40,50] │
 └───────┴─────┴─────┴─────────┴────────────┘
-
-5 rows in set. Elapsed: 0.001 sec.
 ```
 
-Пример использования функции arrayEnumerate:
+Пример использования функции [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate):
 
-```
-:) SELECT s, n.x, n.y, nest.x, nest.y, num FROM nested_test ARRAY JOIN nest AS n, arrayEnumerate(nest.x) AS num
-
+``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
 FROM nested_test
-ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
+ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
+```
 
+``` 
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │   2 │
@@ -403,15 +424,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 │ World │   4 │  40 │ [3,4,5] │ [30,40,50] │   2 │
 │ World │   5 │  50 │ [3,4,5] │ [30,40,50] │   3 │
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
-
-5 rows in set. Elapsed: 0.002 sec.
 ```
-
-В запросе может быть указано не более одной секции ARRAY JOIN.
-
-Соответствующее преобразование может выполняться как до секции WHERE/PREWHERE (если его результат нужен в этой секции), так и после выполнения WHERE/PREWHERE (чтобы уменьшить объём вычислений).
-
-
 
 ### Секция JOIN {#select-join}
 

@@ -55,13 +55,13 @@ private:
 
 /// A ColumnVector for Decimals
 template <typename T>
-class ColumnDecimal final : public COWPtrHelper<ColumnVectorHelper, ColumnDecimal<T>>
+class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
     static_assert(IsDecimalNumber<T>);
 
 private:
     using Self = ColumnDecimal;
-    friend class COWPtrHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<ColumnVectorHelper, Self>;
 
 public:
     using Container = DecimalPaddedPODArray<T>;
