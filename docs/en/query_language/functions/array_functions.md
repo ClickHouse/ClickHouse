@@ -513,9 +513,9 @@ SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
 └─────────┘
 ```
 
-In this example, for each element of the source array, the lambda function returns the "weight" of the element that will be applied for sorting, that is, [1 –> -1, 2 –> -2, 3 –> -3]. Since the elements are sorted by increasing of their "weight", the result is [3, 2, 1].
+For each element of the source array, the lambda function returns the sorting key, that is, [1 –> -1, 2 –> -2, 3 –> -3]. Since the `arraySort` function sorts the keys in ascending order, the result is [3, 2, 1]. Thus, the `(x) –> -x` lambda function sets the [descending order](#array_functions-reverse-sort) in a sorting. 
 
-The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. For example:
+The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
 ``` sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
@@ -527,9 +527,9 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Here, the elements that are passed in the second array ([2, 1]) define a new position of each corresponding element from the source array (['hello', 'world']), that is, ['hello' –> 2, 'world' –> 1]. So, 'hello' will be the second element in a result, and 'world' will be the first.
+Here, the elements that are passed in the second array ([2, 1]) define a sorting key for the corresponding element from the source array (['hello', 'world']), that is, ['hello' –> 2, 'world' –> 1]. Since the lambda function doesn't use `x`, actual values of the source array don't affect the order in the result. So, 'hello' will be the second element in the result, and 'world' will be the first.
 
-Another examples are shown below.
+Other examples are shown below.
 
 ``` sql
 SELECT arraySort((x, y) -> y, [0, 1, 2], ['c', 'b', 'a']) as res;
@@ -608,9 +608,9 @@ SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
 The array is sorted in the following way:
 
 1. At first, the source array ([1, 2, 3]) is sorted according to the result of the lambda function applied to the elements of the array. The result is an array [3, 2, 1].
-2. Array that was sorted on the previous step, is reversed. So, the final result is [1, 2, 3].
+2. Array that is obtained on the previous step, is reversed. So, the final result is [1, 2, 3].
   
-The lambda function can accept multiple arguments. In this case, you need to pass the `arraySort` function several arrays of identical length that the arguments of lambda function will correspond to. For example:
+The lambda function can accept multiple arguments. In this case, you need to pass the `arrayReverseSort` function several arrays of identical length that the arguments of lambda function will correspond to. The resulting array will consist of elements from the first input array; elements from the next input array(s) specify the sorting keys. For example:
 
 ``` sql
 SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
@@ -623,10 +623,10 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 In this example, the array is sorted in the following way:
 
-1. At first, the source array (['hello', 'world']) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array ([2, 1]), define a new position of corresponding elements from the source array. The result is an array ['world', 'hello'].
+1. At first, the source array (['hello', 'world']) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array ([2, 1]), define the sorting keys for corresponding elements from the source array. The result is an array ['world', 'hello'].
 2. Array that was sorted on the previous step, is reversed. So, the final result is ['hello', 'world'].
                       
-Another examples are shown below. 
+Other examples are shown below. 
 
 ``` sql
 SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], ['a', 'b', 'c']) AS res;
