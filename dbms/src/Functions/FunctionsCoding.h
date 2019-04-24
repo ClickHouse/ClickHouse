@@ -1458,17 +1458,14 @@ constexpr size_t ip_range_tuple_size = 2;
 
 class FunctionIPv6CIDRtoIPv6Range : public IFunction
 {
-constexpr size_t bits_in_byte = 8;
+static constexpr size_t bits_in_uint8 = 8;
 public:
     template <bool lower_range>
     static void setCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst, UInt8 bits_to_keep)
     {
-        size_t byte_offset = 0;
- 
-        for (int offset = 0; offset != IPV6_BINARY_LENGTH; ++offset)
+        for (size_t offset = 0, byte_offset = bits_in_uint8; offset != IPV6_BINARY_LENGTH; ++offset, byte_offset += bits_in_uint8)
         {
-            const size_t new_byte_offset = byte_offset + bits_in_byte;
-            if (bits_to_keep > new_byte_offset)
+            if (bits_to_keep > byte_offset)
             {
                 dst[offset] = src[offset];
             }
@@ -1478,20 +1475,19 @@ public:
                   * with our current offset, we just clean the whole byte,
                   */
                 const size_t shifts_bits = 
-                    new_byte_offset - bits_to_keep > bits_in_byte
-                    ? bits_in_byte
-                    : new_byte_offset - bits_to_keep;
+                    byte_offset - bits_to_keep > bits_in_uint8
+                    ? bits_in_uint8
+                    : byte_offset - bits_to_keep;
 
-                const UInt8 byte_reference = lower_range ? 0 : std::numeric_limits<UInt8>::max();
+                constexpr UInt8 byte_reference = lower_range ? 0 : std::numeric_limits<UInt8>::max();
                 
                 /// Clean the bits we don't want on byte
                 const UInt16 src_byte_shift = (static_cast<UInt16>(src[offset]) >> shifts_bits) << shifts_bits;
                 /// Set the CIDR mask.
-                const UInt16 cidr_mask_byte_shift = static_cast<UInt16>(byte_reference) >> (bits_in_byte - shifts_bits);
+                const UInt16 cidr_mask_byte_shift = static_cast<UInt16>(byte_reference) >> (bits_in_uint8 - shifts_bits);
 
                 dst[offset] = static_cast<UInt8>(src_byte_shift | cidr_mask_byte_shift);
             }
-            byte_offset = new_byte_offset;
         }
     }
 
@@ -1519,8 +1515,7 @@ public:
                             + " of second argument of function " + getName()
                             + ", expected numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        decltype(arguments) return_type
-        {
+        decltype(arguments) return_type = {
             std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH),
             std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH)
         };
@@ -1555,7 +1550,7 @@ public:
             const auto size = col_ip_in->size();
             const auto & vec_in = col_ip_in->getChars();
  
-            Columns tuple_columns(IP_RANGE_TUPLE_SIZE);
+            Columns tuple_columns(ip_range_tuple_size);
 
             auto col_res_lower_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
             auto col_res_upper_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
@@ -1596,16 +1591,18 @@ public:
 
 class FunctionIPv4CIDRtoIPv4Range : public IFunction
 {
+static constexpr size_t bits_in_uint32 = 32;
+
 public:
     template <bool lower_range>
     static UInt32 setCIDRMask(UInt32 src, UInt8 bits_to_keep)
     {
         UInt32 byte_reference = lower_range ? 0 : std::numeric_limits<UInt32>::max();
         
-       if (bits_to_keep >= 32)
+        if (bits_to_keep >= bits_in_uint32)
             return src;
 
-        const UInt8 shifts_bits = 32 - bits_to_keep;
+        const UInt8 shifts_bits = bits_in_uint32 - bits_to_keep;
 
         /** Using a 32 bits variable with a 32 shits or more is considered as UB
           * with a 64 bits type casting solve the problem if the cidr mask = 0
@@ -1640,11 +1637,7 @@ public:
                             + " of second argument of function " + getName()
                             + ", expected numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        decltype(arguments) return_type
-        {
-            std::make_shared<DataTypeUInt32>(),
-            std::make_shared<DataTypeUInt32>()
-        };
+        decltype(arguments) return_type = { std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeUInt32>() };
         return std::make_shared<DataTypeTuple>(return_type);
     }
 
@@ -1669,7 +1662,7 @@ public:
             const auto size = col_ip_in->size();
             const auto & vec_in = col_ip_in->getData();
  
-            Columns tuple_columns(IP_RANGE_TUPLE_SIZE);
+            Columns tuple_columns(ip_range_tuple_size);
 
             auto col_res_lower_range = ColumnUInt32::create();
             auto col_res_upper_range = ColumnUInt32::create();
