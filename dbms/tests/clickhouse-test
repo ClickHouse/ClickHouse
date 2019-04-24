@@ -116,6 +116,7 @@ exit_code = 0
 #def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
 def run_tests_array(all_tests_with_params):
     all_tests, suite, suite_dir, suite_tmp_dir, run_total = all_tests_with_params
+    global exit_code
     global SERVER_DIED
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=['bold'])
@@ -393,7 +394,7 @@ def main(args):
         suite = suite_re_obj.group(1)
         if os.path.isdir(suite_dir):
 
-            if 'stateful' in suite and not is_data_present():
+            if 'stateful' in suite and not args.no_stateful and not is_data_present():
                 print("Won't run stateful tests because test data wasn't loaded.")
                 continue
             if 'stateless' in suite and args.no_stateless:
