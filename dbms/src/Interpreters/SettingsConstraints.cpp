@@ -42,7 +42,7 @@ void SettingsConstraints::setMaxValue(const String & name, const Field & max_val
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change) const
 {
-    size_t index = current_settings.find(change.name);
+    size_t index = current_settings.findIndex(change.name);
     if (index == Settings::npos)
         return;
     // We store `change.value` to `temp_settings` to ensure it's converted to the correct type.
