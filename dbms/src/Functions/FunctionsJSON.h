@@ -9,24 +9,25 @@
 #include <ext/range.h>
 #include <iostream>
 
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wunknown-warning-option"
-    #pragma clang diagnostic ignored "-Wold-style-cast"
-    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-    #pragma clang diagnostic ignored "-Wheader-hygiene"
-    #pragma clang diagnostic ignored "-Wgnu-label-as-value"
-    #pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#ifdef __AVX2__
+    #ifdef __clang__
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Wunknown-warning-option"
+        #pragma clang diagnostic ignored "-Wold-style-cast"
+        #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+        #pragma clang diagnostic ignored "-Wheader-hygiene"
+        #pragma clang diagnostic ignored "-Wgnu-label-as-value"
+        #pragma clang diagnostic ignored "-Wextra-semi-stmt"
+    #endif
+
+    // use singleheader version to avoid extra objects from simdjson
+    #include <simdjson.h>
+    #include <simdjson.cpp>
+
+    #ifdef __clang__
+        #pragma clang diagnostic pop
+    #endif
 #endif
-
-// use singleheader version to avoid extra objects from simdjson
-#include <simdjson.h>
-#include <simdjson.cpp>
-
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
-
 
 namespace DB
 {
@@ -35,6 +36,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -51,6 +53,7 @@ private:
     mutable std::vector<Action> actions;
     mutable DataTypePtr virtual_type;
 
+#ifdef __AVX2__
     bool tryMove(ParsedJson::iterator & pjh, Action action, const Field & accessor)
     {
         switch (action)
@@ -93,6 +96,7 @@ private:
 
         return true;
     }
+#endif
 
 public:
     static constexpr auto name = Impl::name;
@@ -151,6 +155,7 @@ public:
             return Impl::getType();
     }
 
+#ifdef __AVX2__
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) override
     {
         MutableColumnPtr to{block.getByPosition(result_pos).type->createColumn()};
@@ -212,5 +217,11 @@ public:
 
         block.getByPosition(result_pos).column = std::move(to);
     }
+#else
+    void executeImpl(Block &, const ColumnNumbers &, size_t, size_t) override
+    {
+        throw Exception{"Function " + getName() + " is not supported without AVX2", ErrorCodes::NOT_IMPLEMENTED};
+    }
+#endif
 };
 }

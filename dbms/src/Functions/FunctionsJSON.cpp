@@ -16,7 +16,9 @@ class JSONNullableImplBase
 public:
     static DataTypePtr getType() { return std::make_shared<DataTypeNullable>(std::make_shared<T>()); }
 
+#ifdef __AVX2__
     static Field getDefault() { return {}; }
+#endif
 };
 
 class JSONHasImpl : public JSONNullableImplBase<DataTypeUInt8>
@@ -24,7 +26,9 @@ class JSONHasImpl : public JSONNullableImplBase<DataTypeUInt8>
 public:
     static constexpr auto name{"jsonHas"};
 
+#ifdef __AVX2__
     static Field getValue(ParsedJson::iterator &) { return {1}; }
+#endif
 };
 
 class JSONLengthImpl : public JSONNullableImplBase<DataTypeUInt64>
@@ -32,6 +36,7 @@ class JSONLengthImpl : public JSONNullableImplBase<DataTypeUInt64>
 public:
     static constexpr auto name{"jsonLength"};
 
+#ifdef __AVX2__
     static Field getValue(ParsedJson::iterator & pjh)
     {
         if (!pjh.is_object_or_array())
@@ -49,6 +54,7 @@ public:
 
         return {size};
     }
+#endif
 };
 
 class JSONTypeImpl : public JSONNullableImplBase<DataTypeString>
@@ -56,6 +62,7 @@ class JSONTypeImpl : public JSONNullableImplBase<DataTypeString>
 public:
     static constexpr auto name{"jsonType"};
 
+#ifdef __AVX2__
     static Field getValue(ParsedJson::iterator & pjh)
     {
         switch (pjh.get_type())
@@ -80,6 +87,7 @@ public:
                 return "Unknown";
         }
     }
+#endif
 };
 
 class JSONExtractImpl
@@ -120,6 +128,7 @@ public:
         throw Exception{"Unsupported return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
 
+#ifdef __AVX2__
     static Field getDefault(const DataTypePtr & type)
     {
         WhichDataType which{type};
@@ -235,6 +244,7 @@ public:
         // should not reach
         throw Exception{"Unsupported return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
     }
+#endif
 };
 
 class JSONExtractUIntImpl : public JSONNullableImplBase<DataTypeUInt64>
@@ -242,6 +252,7 @@ class JSONExtractUIntImpl : public JSONNullableImplBase<DataTypeUInt64>
 public:
     static constexpr auto name{"jsonExtractUInt"};
 
+#ifdef __AVX2__
     static Field getValue(ParsedJson::iterator & pjh)
     {
         if (pjh.is_integer())
@@ -249,6 +260,7 @@ public:
         else
             return getDefault();
     }
+#endif
 };
 
 class JSONExtractIntImpl : public JSONNullableImplBase<DataTypeInt64>
@@ -256,6 +268,7 @@ class JSONExtractIntImpl : public JSONNullableImplBase<DataTypeInt64>
 public:
     static constexpr auto name{"jsonExtractInt"};
 
+#ifdef __AVX2__
     static Field getValue(ParsedJson::iterator & pjh)
     {
         if (pjh.is_integer())
@@ -263,6 +276,7 @@ public:
         else
             return getDefault();
     }
+#endif
 };
 
 class JSONExtractFloatImpl : public JSONNullableImplBase<DataTypeFloat64>
@@ -270,6 +284,7 @@ class JSONExtractFloatImpl : public JSONNullableImplBase<DataTypeFloat64>
 public:
     static constexpr auto name{"jsonExtractFloat"};
 
+#ifdef __AVX2__
     static Field getValue(ParsedJson::iterator & pjh)
     {
         if (pjh.is_double())
@@ -277,6 +292,7 @@ public:
         else
             return getDefault();
     }
+#endif
 };
 
 class JSONExtractBoolImpl : public JSONNullableImplBase<DataTypeUInt8>
@@ -284,6 +300,7 @@ class JSONExtractBoolImpl : public JSONNullableImplBase<DataTypeUInt8>
 public:
     static constexpr auto name{"jsonExtractBool"};
 
+#ifdef __AVX2__
     static Field getValue(ParsedJson::iterator & pjh)
     {
         if (pjh.get_type() == 't')
@@ -293,6 +310,7 @@ public:
         else
             return getDefault();
     }
+#endif
 };
 
 // class JSONExtractRawImpl: public JSONNullableImplBase<DataTypeString>
@@ -300,10 +318,12 @@ public:
 // public:
 //     static constexpr auto name {"jsonExtractRaw"};
 
+// #ifdef __AVX2__
 //     static Field getValue(ParsedJson::iterator & pjh)
 //     {
 //         //
 //     }
+// #endif
 // };
 
 class JSONExtractStringImpl : public JSONNullableImplBase<DataTypeString>
@@ -311,6 +331,7 @@ class JSONExtractStringImpl : public JSONNullableImplBase<DataTypeString>
 public:
     static constexpr auto name{"jsonExtractString"};
 
+#ifdef __AVX2__
     static Field getValue(ParsedJson::iterator & pjh)
     {
         if (pjh.is_string())
@@ -318,6 +339,7 @@ public:
         else
             return getDefault();
     }
+#endif
 };
 
 void registerFunctionsJSON(FunctionFactory & factory)

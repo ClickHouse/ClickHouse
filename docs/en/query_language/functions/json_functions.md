@@ -58,7 +58,7 @@ There is currently no support for code points in the format `\uXXXX\uYYYY` that 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->
 
-The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. AVX2 Instruction Set is required. The assumption 2 mentioned above still applies.
 
 ## jsonHas(params[, accessors]...)
 
