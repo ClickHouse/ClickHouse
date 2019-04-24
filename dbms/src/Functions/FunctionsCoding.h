@@ -1547,29 +1547,29 @@ public:
                                 ", expected FixedString(" + toString(IPV6_BINARY_LENGTH) + ")",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto size = col_ip_in->size();
             const auto & vec_in = col_ip_in->getChars();
- 
+            const auto size = vec_in.size();
+
             Columns tuple_columns(ip_range_tuple_size);
 
             auto col_res_lower_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
             auto col_res_upper_range = ColumnFixedString::create(IPV6_BINARY_LENGTH);
 
             ColumnString::Chars & vec_res_lower_range = col_res_lower_range->getChars();
-            vec_res_lower_range.resize(size * uuid_bytes_length);
+            vec_res_lower_range.resize(size);
 
             ColumnString::Chars & vec_res_upper_range = col_res_upper_range->getChars();
-            vec_res_upper_range.resize(size * uuid_bytes_length);
+            vec_res_upper_range.resize(size);
 
-            for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += IPV6_BINARY_LENGTH, ++i)
+            for (size_t offset = 0; offset < col_ip_in->size(); ++offset)
             {
-                const size_t offset_array = offset * IPV6_BINARY_LENGTH;
+                const size_t offset_ipv6 = offset * IPV6_BINARY_LENGTH;
                 UInt8 cidr = col_const_cidr_in
                     ? col_const_cidr_in->getValue<UInt8>()
                     : col_cidr_in->getData()[offset];
 
-                setCIDRMask<true>(&vec_in[offset_array], &vec_res_lower_range[offset_array], cidr);
-                setCIDRMask<false>(&vec_in[offset_array], &vec_res_upper_range[offset_array], cidr);
+                setCIDRMask<true>(&vec_in[offset_ipv6], &vec_res_lower_range[offset_ipv6], cidr);
+                setCIDRMask<false>(&vec_in[offset_ipv6], &vec_res_upper_range[offset_ipv6], cidr);
             }
 
             tuple_columns[0] = std::move(col_res_lower_range);
