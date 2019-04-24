@@ -58,6 +58,7 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
+    const ASTPtr & ttl_table_ast_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
@@ -65,7 +66,8 @@ StorageMergeTree::StorageMergeTree(
     global_context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name, columns_, indices_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-         sample_by_ast_, merging_params_, settings_, false, attach),
+         sample_by_ast_, ttl_table_ast_, merging_params_,
+         settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -212,7 +214,8 @@ void StorageMergeTree::alter(
     auto new_indices = data.getIndicesDescription();
     ASTPtr new_order_by_ast = data.order_by_ast;
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
+    ASTPtr new_ttl_table_ast = data.ttl_table_ast;
+    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
@@ -234,12 +237,17 @@ void StorageMergeTree::alter(
 
         if (new_primary_key_ast.get() != data.primary_key_ast.get())
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
+
+        if (new_ttl_table_ast.get() != data.ttl_table_ast.get())
+            storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
     };
 
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
 
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
+
+    data.setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();
@@ -545,6 +553,7 @@ bool StorageMergeTree::merge(
             future_part, *merge_entry, time(nullptr),
             merging_tagger->reserved_space.get(), deduplicate);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
+        data.removeEmptyColumnsFromPart(new_part);
 
         merging_tagger->is_successful = true;
         write_part_log({});
@@ -795,7 +804,8 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto new_indices = getIndicesDescription();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast);
+    ASTPtr ignored_ttl_table_ast;
+    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)

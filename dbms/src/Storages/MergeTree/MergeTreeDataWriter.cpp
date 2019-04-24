@@ -4,8 +4,11 @@
 #include <Common/Exception.h>
 #include <Interpreters/AggregationCommon.h>
 #include <IO/HashingWriteBuffer.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDate.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/File.h>
+#include <Common/typeid_cast.h>
 
 
 namespace ProfileEvents
@@ -69,6 +72,34 @@ void buildScatterSelector(
         if (partitions_count > 1)
             selector[i] = it->getSecond();
     }
+}
+
+/// Computes ttls and updates ttl infos
+void updateTTL(const MergeTreeData::TTLEntry & ttl_entry, MergeTreeDataPart::TTLInfos & ttl_infos, Block & block, const String & column_name)
+{
+    if (!block.has(ttl_entry.result_column))
+        ttl_entry.expression->execute(block);
+
+    auto & ttl_info = (column_name.empty() ? ttl_infos.table_ttl : ttl_infos.columns_ttl[column_name]);
+
+    const auto & current = block.getByName(ttl_entry.result_column);
+
+    const IColumn * column = current.column.get();
+    if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(column))
+    {
+        const auto & date_lut = DateLUT::instance();
+        for (const auto & val : column_date->getData())
+            ttl_info.update(date_lut.fromDayNum(DayNum(val)));
+    }
+    else if (const ColumnUInt32 * column_date_time = typeid_cast<const ColumnUInt32 *>(column))
+    {
+        for (const auto & val : column_date_time->getData())
+            ttl_info.update(val);
+    }
+    else
+        throw Exception("Unexpected type of result ttl column", ErrorCodes::LOGICAL_ERROR);
+
+    ttl_infos.updatePartMinTTL(ttl_info.min);
 }
 
 }
@@ -215,6 +246,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         else
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
+
+    if (data.hasTableTTL())
+        updateTTL(data.ttl_table_entry, new_data_part->ttl_infos, block, "");
+
+    for (const auto & [name, ttl_entry] : data.ttl_entries_by_name)
+        updateTTL(ttl_entry, new_data_part->ttl_infos, block, name);
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.

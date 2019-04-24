@@ -127,7 +127,7 @@ private:
 
     MergeAlgorithm chooseMergeAlgorithm(
         const MergeTreeData::DataPartsVector & parts,
-        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate) const;
+        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const;
 
 private:
     MergeTreeData & data;
@@ -137,6 +137,9 @@ private:
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
+
+    /// Last time when TTLMergeSelector has been used
+    time_t last_merge_with_ttl = 0;
 };
 
 

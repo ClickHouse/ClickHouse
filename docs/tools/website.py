@@ -33,7 +33,7 @@ def minify_website(args):
                 continue
 
             logging.info('Minifying %s', path)
-            with open(path, 'r') as f:
+            with open(path, 'rb') as f:
                 content = f.read().decode('utf-8')
             if filename.endswith('.html'):
                 content = htmlmin.minify(content, remove_empty_space=False)
@@ -41,5 +41,5 @@ def minify_website(args):
                 content = cssmin.cssmin(content)
             elif filename.endswith('.js'):
                 content = jsmin.jsmin(content)
-            with open(path, 'w') as f:
+            with open(path, 'wb') as f:
                 f.write(content.encode('utf-8'))

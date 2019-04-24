@@ -233,6 +233,9 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0);
         }
 
+        if (column.ttl)
+            column_declaration->ttl = column.ttl;
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 
@@ -346,6 +349,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 
         if (col_decl.codec)
             column.codec = CompressionCodecFactory::instance().get(col_decl.codec, column.type);
+
+        if (col_decl.ttl)
+            column.ttl = col_decl.ttl;
 
         res.add(std::move(column));
     }

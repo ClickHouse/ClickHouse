@@ -12,7 +12,7 @@ services:
         - label:disable
 
   kafka1:
-    image: confluentinc/cp-kafka:4.1.0
+    image: confluentinc/cp-kafka:5.2.0
     hostname: kafka1
     ports:
         - "9092:9092"

@@ -54,7 +54,7 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdgz.c
 )
 
-add_library(rdkafka ${LINK_MODE} ${SRCS})
+add_library(rdkafka ${SRCS})
 target_include_directories(rdkafka SYSTEM PUBLIC include)
 target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})         # Because weird logic with "include_next" is used.
 target_include_directories(rdkafka SYSTEM PRIVATE ${ZSTD_INCLUDE_DIR}/common)   # Because wrong path to "zstd_errors.h" is used.

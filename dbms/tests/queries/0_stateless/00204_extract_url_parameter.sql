@@ -1,1 +1,1 @@
-SELECT extractURLParameter('http://test.com/?testq=aaa&q=111', 'q');
+SELECT extractURLParameter('http://com/?testq=aaa&q=111', 'q');
