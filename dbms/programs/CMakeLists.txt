@@ -44,7 +44,7 @@ macro(clickhouse_program_add_library name)
     set(CLICKHOUSE_${name_uc}_INCLUDE ${CLICKHOUSE_${name_uc}_INCLUDE} PARENT_SCOPE)
 
     if(NOT CLICKHOUSE_ONE_SHARED)
-        add_library(clickhouse-${name}-lib ${LINK_MODE} ${CLICKHOUSE_${name_uc}_SOURCES})
+        add_library(clickhouse-${name}-lib ${CLICKHOUSE_${name_uc}_SOURCES})
 
         set(_link ${CLICKHOUSE_${name_uc}_LINK}) # can't use ${} in if()
         if(_link)
