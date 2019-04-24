@@ -1,4 +1,4 @@
-add_library (daemon ${LINK_MODE}
+add_library (daemon
     src/BaseDaemon.cpp
     src/GraphiteWriter.cpp
     src/ExtendedLogChannel.cpp
