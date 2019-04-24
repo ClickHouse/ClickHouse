@@ -298,6 +298,8 @@ private:
 
 
 Context::Context() = default;
+Context::Context(const Context &) = default;
+Context & Context::operator=(const Context &) = default;
 
 
 Context Context::createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory)
@@ -620,7 +622,7 @@ void Context::calculateUserSettings()
     /// NOTE: we ignore global_context settings (from which it is usually copied)
     /// NOTE: global_context settings are immutable and not auto updated
     settings = Settings();
-    settings_constraints = SettingsConstraints();
+    settings_constraints = nullptr;
 
     /// 2) Apply settings from default profile
     auto default_profile_name = getDefaultProfileName();
@@ -635,7 +637,11 @@ void Context::calculateUserSettings()
 void Context::setProfile(const String & profile)
 {
     settings.setProfile(profile, *shared->users_config);
-    settings_constraints.setProfile(profile, *shared->users_config);
+
+    auto new_constraints
+        = settings_constraints ? std::make_shared<SettingsConstraints>(*settings_constraints) : std::make_shared<SettingsConstraints>();
+    new_constraints->setProfile(profile, *shared->users_config);
+    settings_constraints = std::move(new_constraints);
 }
 
 
@@ -1076,13 +1082,15 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraints(const SettingChange & change)
 {
-    settings_constraints.check(settings, change);
+    if (settings_constraints)
+        settings_constraints->check(settings, change);
 }
 
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes)
 {
-    settings_constraints.check(settings, changes);
+    if (settings_constraints)
+        settings_constraints->check(settings, changes);
 }
 
 
