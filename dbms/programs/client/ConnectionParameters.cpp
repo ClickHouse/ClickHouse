@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 /// Print string to screen even if stdout/stderr redirected
-void tryPrintTTY(const std::string & string)
+static void tryPrintTTY(const std::string & string)
 {
     if (isatty(STDERR_FILENO))
     {
