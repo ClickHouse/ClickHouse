@@ -482,6 +482,7 @@ private:
             if (config().getBool("always_load_suggestion_data", false))
             {
 #if USE_READLINE
+                SCOPE_EXIT({ Suggest::instance().finalize(); });
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 #else
                 throw Exception("Command line suggestions cannot work without readline", ErrorCodes::BAD_ARGUMENTS);
