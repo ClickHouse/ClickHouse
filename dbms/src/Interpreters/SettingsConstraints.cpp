@@ -18,6 +18,20 @@ namespace ErrorCodes
 namespace
 {
     thread_local Settings temp_settings;
+
+    Field convertSettingValueToComparableType(const Field & value, size_t setting_index)
+    {
+        auto && temp_setting = temp_settings[setting_index];
+        temp_setting.setValue(value);
+        return temp_setting.getValue();
+    }
+
+    Field convertSettingValueToComparableType(const String & value, size_t setting_index)
+    {
+        auto && temp_setting = temp_settings[setting_index];
+        temp_setting.setValue(value);
+        return temp_setting.getValue();
+    }
 }
 
 
@@ -29,25 +43,87 @@ SettingsConstraints & SettingsConstraints::operator=(SettingsConstraints && src)
 SettingsConstraints::~SettingsConstraints() = default;
 
 
+void SettingsConstraints::clear()
+{
+    constraints_by_index.clear();
+}
+
+
+void SettingsConstraints::setReadOnly(const String & name, bool read_only)
+{
+    size_t setting_index = Settings::findIndexStrict(name);
+    getConstraintRef(setting_index).read_only = read_only;
+}
+
+void SettingsConstraints::setMinValue(const String & name, const String & min_value)
+{
+    size_t setting_index = Settings::findIndexStrict(name);
+    getConstraintRef(setting_index).min_value = convertSettingValueToComparableType(min_value, setting_index);
+}
+
+void SettingsConstraints::setMinValue(const String & name, const Field & min_value)
+{
+    size_t setting_index = Settings::findIndexStrict(name);
+    getConstraintRef(setting_index).min_value = convertSettingValueToComparableType(min_value, setting_index);
+}
+
 void SettingsConstraints::setMaxValue(const String & name, const String & max_value)
 {
-    max_settings.set(name, max_value);
+    size_t setting_index = Settings::findIndexStrict(name);
+    getConstraintRef(setting_index).max_value = convertSettingValueToComparableType(max_value, setting_index);
 }
 
 void SettingsConstraints::setMaxValue(const String & name, const Field & max_value)
 {
-    max_settings.set(name, max_value);
+    size_t setting_index = Settings::findIndexStrict(name);
+    getConstraintRef(setting_index).max_value = convertSettingValueToComparableType(max_value, setting_index);
 }
 
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change) const
 {
-    size_t index = current_settings.findIndex(change.name);
-    if (index == Settings::npos)
+    const String & name = change.name;
+    size_t setting_index = Settings::findIndex(name);
+    if (setting_index == Settings::npos)
         return;
-    // We store `change.value` to `temp_settings` to ensure it's converted to the correct type.
-    temp_settings[index].setValue(change.value);
-    checkImpl(current_settings, index);
+
+    Field new_value = convertSettingValueToComparableType(change.value, setting_index);
+    Field current_value = current_settings.get(setting_index);
+
+    /// Setting isn't checked if value wasn't changed.
+    if (current_value == new_value)
+        return;
+
+    if (!current_settings.allow_ddl && name == "allow_ddl")
+        throw Exception("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+
+    /** The `readonly` value is understood as follows:
+      * 0 - everything allowed.
+      * 1 - only read queries can be made; you can not change the settings.
+      * 2 - You can only do read queries and you can change the settings, except for the `readonly` setting.
+      */
+    if (current_settings.readonly == 1)
+        throw Exception("Cannot modify '" + name + "' setting in readonly mode", ErrorCodes::READONLY);
+
+    if (current_settings.readonly > 1 && name == "readonly")
+        throw Exception("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
+
+    const Constraint * constraint = tryGetConstraint(setting_index);
+    if (constraint)
+    {
+        if (constraint->read_only)
+            throw Exception("Setting " + name + " should not be changed", ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+
+        if (!constraint->min_value.isNull() && (new_value < constraint->min_value))
+            throw Exception(
+                "Setting " + name + " shouldn't be less than " + applyVisitor(FieldVisitorToString(), constraint->min_value),
+                ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+
+        if (!constraint->max_value.isNull() && (new_value > constraint->max_value))
+            throw Exception(
+                "Setting " + name + " shouldn't be greater than " + applyVisitor(FieldVisitorToString(), constraint->max_value),
+                ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
+    }
 }
 
 
@@ -58,42 +134,20 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
 }
 
 
-void SettingsConstraints::checkImpl(const Settings & current_settings, size_t index) const
+SettingsConstraints::Constraint & SettingsConstraints::getConstraintRef(size_t index)
 {
-    const auto & new_setting = temp_settings[index];
-    Field new_value = new_setting.getValue();
+    auto it = constraints_by_index.find(index);
+    if (it == constraints_by_index.end())
+        it = constraints_by_index.emplace(index, Constraint{}).first;
+    return it->second;
+}
 
-    const auto & current_setting = current_settings[index];
-    Field current_value = current_setting.getValue();
-
-    /// Setting isn't checked if value wasn't changed.
-    if (current_value == new_value)
-        return;
-
-    const StringRef & name = new_setting.getName();
-    if (!current_settings.allow_ddl && name == "allow_ddl")
-        throw Exception("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
-
-    /** The `readonly` value is understood as follows:
-      * 0 - everything allowed.
-      * 1 - only read queries can be made; you can not change the settings.
-      * 2 - You can only do read queries and you can change the settings, except for the `readonly` setting.
-      */
-    if (current_settings.readonly == 1)
-        throw Exception("Cannot modify '" + name.toString() + "' setting in readonly mode", ErrorCodes::READONLY);
-
-    if (current_settings.readonly > 1 && name == "readonly")
-        throw Exception("Cannot modify 'readonly' setting in readonly mode", ErrorCodes::READONLY);
-
-    const auto & max_setting = max_settings[index];
-    if (max_setting.isChanged())
-    {
-        Field max_value = max_setting.getValue();
-        if (new_value > max_value)
-            throw Exception(
-                "Setting " + name.toString() + " shouldn't be greater than " + applyVisitor(FieldVisitorToString(), max_value),
-                ErrorCodes::SETTING_CONSTRAINT_VIOLATION);
-    }
+const SettingsConstraints::Constraint * SettingsConstraints::tryGetConstraint(size_t index) const
+{
+    auto it = constraints_by_index.find(index);
+    if (it == constraints_by_index.end())
+        return nullptr;
+    return &it->second;
 }
 
 
@@ -124,9 +178,13 @@ void SettingsConstraints::loadFromConfig(const String & path_to_constraints, con
         config.keys(path_to_name, constraint_types);
         for (const String & constraint_type : constraint_types)
         {
-            String path_to_type = path_to_name + "." + constraint_type;
-            if (constraint_type == "max")
-                setMaxValue(name, config.getString(path_to_type));
+            auto get_constraint_value = [&]{ return config.getString(path_to_name + "." + constraint_type); };
+            if (constraint_type == "min")
+                setMinValue(name, get_constraint_value());
+            else if (constraint_type == "max")
+                setMaxValue(name, get_constraint_value());
+            else if (constraint_type == "readonly")
+                setReadOnly(name, true);
             else
                 throw Exception("Setting " + constraint_type + " value for " + name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
         }

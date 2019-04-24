@@ -3,10 +3,15 @@
     <profiles>
         <default>
             <max_memory_usage>10000000000</max_memory_usage>
+            <force_index_by_date>0</force_index_by_date>
             <constraints>
                 <max_memory_usage>
+                    <min>5000000000</min>
                     <max>20000000000</max>
                 </max_memory_usage>
+               <force_index_by_date>
+                   <readonly/>
+               </force_index_by_date>
             </constraints>
         </default>
     </profiles>
