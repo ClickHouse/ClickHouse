@@ -1,4 +1,4 @@
-add_library (mysqlxx ${LINK_MODE}
+add_library (mysqlxx
     src/Connection.cpp
     src/Exception.cpp
     src/Query.cpp

@@ -134,7 +134,7 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctio
 list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
 list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
 
-add_library(clickhouse_common_io ${LINK_MODE} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
@@ -194,8 +194,7 @@ target_link_libraries (clickhouse_common_io
     ${CITYHASH_LIBRARIES}
         PRIVATE
     ${ZLIB_LIBRARIES}
-    ${EXECINFO_LIBRARY}
-    ${ELF_LIBRARY}
+    ${EXECINFO_LIBRARIES}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE

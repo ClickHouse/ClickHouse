@@ -1,8 +1,9 @@
+
 add_definitions(-Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor -U_LIBCPP_DEBUG)
 
 link_directories(${LLVM_LIBRARY_DIRS})
 
-add_library(clickhouse-compiler-lib ${LINK_MODE}
+add_library(clickhouse-compiler-lib
     driver.cpp
     cc1_main.cpp
     cc1as_main.cpp
@@ -46,7 +47,7 @@ ${REQUIRED_LLVM_LIBRARIES}
 #PollyISL
 #PollyPPCG
 
-PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
+PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARIES} Threads::Threads
 ${MALLOC_LIBRARIES}
 ${GLIBC_COMPATIBILITY_LIBRARIES}
 ${MEMCPY_LIBRARIES}
