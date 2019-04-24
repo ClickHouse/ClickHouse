@@ -124,7 +124,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
 
     if cache:
         result.append("CCACHE_DIR=/ccache")
+        result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
+        result.append("CCACHE_COMPILERCHECK=content")
 
     if distcc_hosts:
         hosts_with_params = ["{}/24,lzo".format(host) for host in distcc_hosts] + ["localhost/`nproc`"]
