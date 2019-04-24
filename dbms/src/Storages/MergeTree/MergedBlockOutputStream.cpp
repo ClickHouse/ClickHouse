@@ -166,14 +166,19 @@ void IMergedBlockOutputStream::writeSingleMark(
      type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
      {
          bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+         std::cerr << "Writing single mark for name:" << name << " is offsets:" << is_offsets << std::endl;
          if (is_offsets && skip_offsets)
              return;
 
          String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
+         std::cerr << "Stream name:" << stream_name << " found in offset column:" << offset_columns.count(stream_name) << std::endl;
          /// Don't write offsets more than one time for Nested type.
          if (is_offsets && offset_columns.count(stream_name))
+         {
+             std::cerr << "Do not write offsets\n";
              return;
+         }
 
          ColumnStream & stream = *column_streams[stream_name];
 
@@ -433,6 +438,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
 
+    bool trailing_mark_written = false;
     /// Finish columns serialization.
     {
         auto & settings = storage.global_context.getSettingsRef();
@@ -444,11 +450,35 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         for (size_t i = 0; i < columns_list.size(); ++i, ++it)
         {
             serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
-            if (index_offset != 0)
+
+            if (index_offset != 0 && rows_count > 1)
+            {
+                std::cerr << "Writing trailing mark for column:" << it->name << " SETTINGS SIZE:" << serialize_settings.path.size() << std::endl;
                 writeSingleMark(it->name, *it->type, offset_columns, false, 0, serialize_settings.path);
-            if (serialization_states.size() > i)
+                trailing_mark_written = true;
+            }
+            if (!serialization_states.empty())
+            {
+                std::cerr << "SERIALIZING SUFFIX FOR COLUMN:" << it->name <<    std::endl;
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
+            }
+            it->type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
+                {
+                    bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
+                    if (is_offsets)
+                    {
+                        String stream_name = IDataType::getFileNameForStream(it->name, substream_path);
+                        offset_columns.insert(stream_name);
+                    }
+                }, serialize_settings.path);
+
         }
+    }
+
+    if (trailing_mark_written)
+    {
+        std::cerr << "Adding trailing mark, marks size:" << index_granularity.getMarksCount() << std::endl;
+        index_granularity.appendMark(0); /// last mark
     }
 
     /// Finish skip index serialization
@@ -472,17 +502,23 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     if (index_stream)
     {
         /// Otherwise we already written last mark
-        if (index_offset != 0)
+        if (index_offset != 0 && rows_count > 1)
         {
+            std::cerr << "Index columns" << index_columns.size() << std::endl;
+            std::cerr << "Last index row:" << last_index_row.size() << std::endl;
+            std::cerr << "Stream count before:" << index_stream->count() << std::endl;
             for (size_t j = 0; j < index_columns.size(); ++j)
+            {
                 index_columns[j]->insert(last_index_row[j]);
-            writeBinary(last_index_row, *index_stream);
-            index_granularity.appendMark(0); /// last mark
+                writeBinaryWithoutType(last_index_row[j], *index_stream);
+            }
+            std::cerr << "Stream count after:" << index_stream->count() << std::endl;
         }
 
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
         checksums.files["primary.idx"].file_hash = index_stream->getHash();
+        std::cerr << "Index size:" << checksums.files["primary.idx"].file_size  << std::endl;
         index_stream = nullptr;
         last_index_row.clear();
     }
@@ -866,6 +902,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
     }
 
+    std::cerr << "Total MARKS COUNT:" << index_granularity.getMarksCount() << std::endl;
     MergeTreeData::DataPart::Checksums checksums;
 
     for (auto & column_stream : column_streams)
