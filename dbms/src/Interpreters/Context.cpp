@@ -1644,7 +1644,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
         auto & config = getConfigRef();
 
         if (config.has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, config_name);
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
         else
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
     }
