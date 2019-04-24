@@ -28,7 +28,7 @@ bool printTTY(const std::string & string)
         return false;
     }
 
-    std::ofstream ostrm("/dev/tty");
+    std::ofstream ostrm("/dev/tty", O_NOCTTY);
     if (ostrm.good())
     {
         ostrm << string;
