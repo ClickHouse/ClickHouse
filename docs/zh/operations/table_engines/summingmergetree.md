@@ -31,11 +31,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **子句**
 
-创建 `SummingMergeTree` 表时，需要与创建 `MergeTree` 表时相同的子句。
+创建 `SummingMergeTree` 表时，需要与创建 `MergeTree` 表时相同的[子句](mergetree.md)。
 
 <details markdown="1"><summary>已弃用的建表方法</summary>
 
-!!! 注意
+!!! attention "注意"
     不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
 ```
@@ -49,7 +49,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 除 `columns` 外的所有参数都与 `MergeTree` 中的含义相同。
 
-- `columns` — 包含将要被汇总的列的列名的元组。可选参数。有关说明，请参阅上面的文字。
+- `columns` — 包含将要被汇总的列的列名的元组。可选参数。有关说明，请参阅上文。
 </details>
 
 ## 用法示例
