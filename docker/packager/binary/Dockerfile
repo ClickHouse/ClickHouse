@@ -32,6 +32,8 @@ RUN apt-get update -y \
             libreadline-dev \
             ninja-build \
             git \
+            ccache \
             tzdata
 
-CMD mkdir -p build/build_result && cd build/build_result && cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS && ninja && mv ./dbms/programs/clickhouse* /output && mv ./dbms/unit_tests_dbms /output
+COPY build.sh /
+CMD ["/bin/bash", "/build.sh"]

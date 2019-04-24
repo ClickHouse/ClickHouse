@@ -10,6 +10,7 @@ RUN apt-get --allow-unauthenticated update -y \
             fakeroot \
             cmake \
             curl \
+            ccache \
             gcc-7 \
             g++-7 \
             gcc-8 \
@@ -62,4 +63,4 @@ RUN apt-get --allow-unauthenticated update -y \
 
 
 
-CMD /bin/bash build/release --no-pbuilder && mv /*.deb /output && mv *.changes /output && mv *.buildinfo /output
+CMD /bin/bash -x build/release --no-pbuilder && mv /*.deb /output && mv *.changes /output && mv *.buildinfo /output
