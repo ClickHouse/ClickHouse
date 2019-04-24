@@ -107,12 +107,16 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     result = []
     cmake_flags = ' $CMAKE_FLAGS '
 
+    cc = compiler
+    cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
     if package_type == "deb":
-        result.append("DEB_CC={}".format(compiler))
-        result.append("DEB_CXX={}".format(compiler.replace('gcc', 'g++').replace('clang', 'clang++')))
+        result.append("DEB_CC={}".format(cc))
+        result.append("DEB_CXX={}".format(cxx))
     elif package_type == "binary":
-        cmake_flags += ' -DCMAKE_C_COMPILER=`which {}` '.format(compiler)
-        cmake_flags += ' -DCMAKE_CXX_COMPILER=`which {}` '.format(compiler.replace('gcc', 'g++').replace('clang', 'clang++'))
+        result.append("CC={}".format(cc))
+        result.append("CXX={}".format(cxx))
+        cmake_flags += ' -DCMAKE_C_COMPILER=`which {}` '.format(cc)
+        cmake_flags += ' -DCMAKE_CXX_COMPILER=`which {}` '.format(cxx)
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))
@@ -127,6 +131,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         result.append("CCACHE_BASEDIR=/build")
         result.append("CCACHE_NOHASHDIR=true")
         result.append("CCACHE_COMPILERCHECK=content")
+        # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
         hosts_with_params = ["{}/24,lzo".format(host) for host in distcc_hosts] + ["localhost/`nproc`"]
