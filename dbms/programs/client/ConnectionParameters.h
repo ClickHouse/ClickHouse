@@ -4,11 +4,13 @@
 #include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
 
-namespace Poco::Util { class AbstractConfiguration; }
+namespace Poco::Util
+{
+class AbstractConfiguration;
+}
 
 namespace DB
 {
-
 struct ConnectionParameters
 {
     std::string host;
