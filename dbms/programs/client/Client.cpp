@@ -479,6 +479,7 @@ private:
         }
         else
         {
+            /// This is intended for testing purposes.
             if (config().getBool("always_load_suggestion_data", false))
             {
 #if USE_READLINE
