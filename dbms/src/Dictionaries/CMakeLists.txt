@@ -14,7 +14,7 @@ add_headers_and_sources(clickhouse_dictionaries ${CMAKE_CURRENT_BINARY_DIR}/gene
 list(REMOVE_ITEM clickhouse_dictionaries_sources DictionaryFactory.cpp DictionarySourceFactory.cpp DictionaryStructure.cpp)
 list(REMOVE_ITEM clickhouse_dictionaries_headers DictionaryFactory.h DictionarySourceFactory.h DictionaryStructure.h)
 
-add_library(clickhouse_dictionaries ${LINK_MODE} ${clickhouse_dictionaries_sources})
+add_library(clickhouse_dictionaries ${clickhouse_dictionaries_sources})
 target_link_libraries(clickhouse_dictionaries PRIVATE dbms clickhouse_common_io ${BTRIE_LIBRARIES} PUBLIC Threads::Threads)
 
 if(Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
