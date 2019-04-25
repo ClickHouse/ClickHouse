@@ -87,6 +87,12 @@ struct SettingMaxThreads
     UInt64 getAutoValueImpl() const;
 };
 
+struct SettingMaxAlterThreads: public SettingMaxThreads
+{
+    SettingMaxAlterThreads(UInt64 x = 0):
+        SettingMaxThreads(x)
+    {}
+};
 
 struct SettingSeconds
 {
