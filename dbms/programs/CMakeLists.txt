@@ -209,11 +209,6 @@ else ()
         install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-obfuscator DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-obfuscator)
     endif ()
-    if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-        # just to be able to run integration tests
-        add_custom_target (clickhouse-odbc-bridge-copy ALL COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_CURRENT_BINARY_DIR}/odbc-bridge/clickhouse-odbc-bridge clickhouse-odbc-bridge DEPENDS clickhouse-odbc-bridge)
-    endif ()
-
 
     # install always because depian package want this files:
     add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
