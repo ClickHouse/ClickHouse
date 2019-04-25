@@ -350,8 +350,9 @@ CREATE TABLE IF NOT EXISTS example_table
 - If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 Enabling the option can affect the performance of inserts.
-!!! note "Warning"
-In version 18.6-19.4 the option was called `insert_sample_with_metadata`.
+
+!!! note "Note"
+In versions 18.6-19.4 the option was called `insert_sample_with_metadata`.
     
 
 ### Selecting Data
