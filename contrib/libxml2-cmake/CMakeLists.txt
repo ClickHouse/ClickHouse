@@ -48,7 +48,7 @@ set(SRCS
     ${LIBXML2_SOURCE_DIR}/parserInternals.c
     ${LIBXML2_SOURCE_DIR}/xmlwriter.c
     ${LIBXML2_SOURCE_DIR}/xmlunicode.c
-    #${LIBXML2_SOURCE_DIR}/runxmlconf.c
+    ${LIBXML2_SOURCE_DIR}/runxmlconf.c
     ${LIBXML2_SOURCE_DIR}/xmlmemory.c
     ${LIBXML2_SOURCE_DIR}/nanoftp.c
     ${LIBXML2_SOURCE_DIR}/xmlschemastypes.c
