@@ -43,13 +43,13 @@ using Arenas = std::vector<ArenaPtr>;
   *  specifying which individual values should be destroyed and which ones should not.
   * Clearly, this method would have a substantially non-zero price.
   */
-class ColumnAggregateFunction final : public COWPtrHelper<IColumn, ColumnAggregateFunction>
+class ColumnAggregateFunction final : public COWHelper<IColumn, ColumnAggregateFunction>
 {
 public:
     using Container = PaddedPODArray<AggregateDataPtr>;
 
 private:
-    friend class COWPtrHelper<IColumn, ColumnAggregateFunction>;
+    friend class COWHelper<IColumn, ColumnAggregateFunction>;
 
     /// Memory pools. Aggregate states are allocated from them.
     Arenas arenas;
@@ -156,6 +156,8 @@ public:
     size_t byteSize() const override;
 
     size_t allocatedBytes() const override;
+
+    void protect() override;
 
     void insertRangeFrom(const IColumn & from, size_t start, size_t length) override;
 

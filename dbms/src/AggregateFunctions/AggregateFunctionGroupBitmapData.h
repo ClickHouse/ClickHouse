@@ -6,6 +6,7 @@
 #include <boost/noncopyable.hpp>
 #include <roaring.hh>
 #include <Common/HashTable/SmallTable.h>
+#include <Common/PODArray.h>
 
 namespace DB
 {

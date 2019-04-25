@@ -61,6 +61,7 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
+    const ASTPtr & ttl_table_ast_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
@@ -69,7 +70,8 @@ StorageMergeTree::StorageMergeTree(
     data(database_name, table_name,
          full_path, columns_, indices_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-         sample_by_ast_, merging_params_, settings_, false, attach),
+         sample_by_ast_, ttl_table_ast_, merging_params_,
+         settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -128,9 +130,9 @@ BlockInputStreams StorageMergeTree::read(
     return reader.read(column_names, query_info, context, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & /*context*/)
+BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<MergeTreeBlockOutputStream>(*this);
+    return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -235,11 +237,12 @@ void StorageMergeTree::alter(
     const AlterCommands & params,
     const String & current_database_name,
     const String & current_table_name,
-    const Context & context)
+    const Context & context,
+    TableStructureWriteLockHolder & table_lock_holder)
 {
     if (!params.is_mutable())
     {
-        auto table_soft_lock = lockStructureForAlter(context.getCurrentQueryId());
+        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
         auto new_indices = getIndicesDescription();
         params.apply(new_columns);
@@ -251,7 +254,7 @@ void StorageMergeTree::alter(
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
     auto merge_blocker = merger_mutator.actions_blocker.cancel();
 
-    auto table_soft_lock = lockDataForAlter(context.getCurrentQueryId());
+    lockNewDataStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     data.checkAlter(params, context);
 
@@ -259,27 +262,33 @@ void StorageMergeTree::alter(
     auto new_indices = data.getIndicesDescription();
     ASTPtr new_order_by_ast = data.order_by_ast;
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
+    ASTPtr new_ttl_table_ast = data.ttl_table_ast;
+    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
     auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
 
-    auto table_hard_lock = lockStructureForAlter(context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
     {
-        auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+        auto & storage_ast = ast.as<ASTStorage &>();
 
         if (new_order_by_ast.get() != data.order_by_ast.get())
             storage_ast.set(storage_ast.order_by, new_order_by_ast);
 
         if (new_primary_key_ast.get() != data.primary_key_ast.get())
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
+
+        if (new_ttl_table_ast.get() != data.ttl_table_ast.get())
+            storage_ast.set(storage_ast.ttl_table, new_ttl_table_ast);
     };
 
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
 
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
+
+    data.setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();
@@ -485,7 +494,7 @@ bool StorageMergeTree::merge(
     bool deduplicate,
     String * out_disable_reason)
 {
-    auto structure_lock = lockStructure(true, RWLockImpl::NO_QUERY);
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     FutureMergedMutatedPart future_part;
 
@@ -578,6 +587,7 @@ bool StorageMergeTree::merge(
             future_part, *merge_entry, time(nullptr),
             merging_tagger->reserved_space.get(), deduplicate);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
+        data.removeEmptyColumnsFromPart(new_part);
 
         merging_tagger->is_successful = true;
         write_part_log({});
@@ -595,7 +605,7 @@ bool StorageMergeTree::merge(
 
 bool StorageMergeTree::tryMutatePart()
 {
-    auto structure_lock = lockStructure(true, RWLockImpl::NO_QUERY);
+    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
 
     FutureMergedMutatedPart future_part;
     MutationCommands commands;
@@ -722,7 +732,11 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
             data.clearOldPartsFromFilesystem();
-            data.clearOldTemporaryDirectories();
+            {
+                /// TODO: Implement tryLockStructureForShare.
+                auto lock_structure = lockStructureForShare(false, "");
+                data.clearOldTemporaryDirectories();
+            }
             clearOldMutations();
         }
 
@@ -807,7 +821,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto merge_blocker = merger_mutator.actions_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
-    auto lock_read_structure = lockStructure(false, context.getCurrentQueryId());
+    auto lock_read_structure = lockStructureForShare(false, context.getCurrentQueryId());
 
     String partition_id = data.getPartitionIDFromQuery(partition, context);
     auto parts = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
@@ -822,7 +836,8 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto new_indices = getIndicesDescription();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
-    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast);
+    ASTPtr ignored_ttl_table_ast;
+    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast, ignored_ttl_table_ast);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
@@ -912,7 +927,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockStructure(false, context.getCurrentQueryId());
+                auto lock = lockStructureForShare(false, context.getCurrentQueryId());
                 data.freezePartition(command.partition, command.with_name, context);
             }
             break;
@@ -923,7 +938,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructure(false, context.getCurrentQueryId());
+                auto lock = lockStructureForShare(false, context.getCurrentQueryId());
                 data.freezeAll(command.with_name, context);
             }
             break;
@@ -941,7 +956,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = merger_mutator.actions_blocker.cancel();
         /// Waits for completion of merge and does not start new ones.
-        auto lock = lockForAlter(context.getCurrentQueryId());
+        auto lock = lockExclusively(context.getCurrentQueryId());
 
         String partition_id = data.getPartitionIDFromQuery(partition, context);
 
@@ -973,7 +988,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
     String partition_id;
 
     if (attach_part)
-        partition_id = typeid_cast<const ASTLiteral &>(*partition).value.safeGet<String>();
+        partition_id = partition->as<ASTLiteral &>().value.safeGet<String>();
     else
         partition_id = data.getPartitionIDFromQuery(partition, context);
 
@@ -1024,8 +1039,8 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
 {
-    auto lock1 = lockStructure(false, context.getCurrentQueryId());
-    auto lock2 = source_table->lockStructure(false, context.getCurrentQueryId());
+    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock2 = source_table->lockStructureForShare(false, context.getCurrentQueryId());
 
     Stopwatch watch;
     MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);

@@ -1,42 +1,42 @@
-col1	UInt8	DEFAULT	0		
-col1	UInt32				
-col2	UInt64	DEFAULT	col1 + 1		
-col3	UInt64	MATERIALIZED	col1 + 2		
-col4	UInt64	ALIAS	col1 + 3		
+col1	UInt8	DEFAULT	0			
+col1	UInt32					
+col2	UInt64	DEFAULT	col1 + 1			
+col3	UInt64	MATERIALIZED	col1 + 2			
+col4	UInt64	ALIAS	col1 + 3			
 10	11
 12	13
 99
-payload	String				
-date	Date	MATERIALIZED	today()		
-key	UInt64	MATERIALIZED	0 * rand()		
+payload	String					
+date	Date	MATERIALIZED	today()			
+key	UInt64	MATERIALIZED	0 * rand()			
 hello clickhouse
-payload	String				
-date	Date	MATERIALIZED	today()		
-key	UInt64	MATERIALIZED	0 * rand()		
-payload_length	UInt64	MATERIALIZED	length(payload)		
+payload	String					
+date	Date	MATERIALIZED	today()			
+key	UInt64	MATERIALIZED	0 * rand()			
+payload_length	UInt64	MATERIALIZED	length(payload)			
 hello clickhouse	16
 hello clickhouse	16
 some string	11
 hello clickhouse	16
 some string	11
-payload	String				
-payload_length	UInt64	DEFAULT	length(payload)		
-date	Date	MATERIALIZED	today()		
-key	UInt64	MATERIALIZED	0 * rand()		
+payload	String					
+date	Date	MATERIALIZED	today()			
+key	UInt64	MATERIALIZED	0 * rand()			
+payload_length	UInt64	DEFAULT	length(payload)			
 hello clickhouse	16
 some string	11
-payload	String				
-payload_length	UInt16	DEFAULT	length(payload) % 65535		
-date	Date	MATERIALIZED	today()		
-key	UInt64	MATERIALIZED	0 * rand()		
+payload	String					
+date	Date	MATERIALIZED	today()			
+key	UInt64	MATERIALIZED	0 * rand()			
+payload_length	UInt16	DEFAULT	length(payload) % 65535			
 hello clickhouse	16
 some string	11
-payload	String				
-payload_length	UInt16	DEFAULT	CAST(length(payload), \'UInt16\')		
-date	Date	MATERIALIZED	today()		
-key	UInt64	MATERIALIZED	0 * rand()		
-payload	String				
-date	Date	MATERIALIZED	today()		
-key	UInt64	MATERIALIZED	0 * rand()		
+payload	String					
+date	Date	MATERIALIZED	today()			
+key	UInt64	MATERIALIZED	0 * rand()			
+payload_length	UInt16	DEFAULT	CAST(length(payload), \'UInt16\')			
+payload	String					
+date	Date	MATERIALIZED	today()			
+key	UInt64	MATERIALIZED	0 * rand()			
 hello clickhouse
 some string

@@ -39,19 +39,19 @@ class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateT
 
 
 template <bool is_weighted>
-static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, UInt64 threshold, const Array & params)
+static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, UInt64 threshold, UInt64 load_factor, const Array & params)
 {
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::Date)
-        return new AggregateFunctionTopKDate<is_weighted>(threshold, {argument_type}, params);
+        return new AggregateFunctionTopKDate<is_weighted>(threshold, load_factor, {argument_type}, params);
     if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionTopKDateTime<is_weighted>(threshold, {argument_type}, params);
+        return new AggregateFunctionTopKDateTime<is_weighted>(threshold, load_factor, {argument_type}, params);
 
     /// Check that we can use plain version of AggregateFunctionTopKGeneric
     if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-        return new AggregateFunctionTopKGeneric<true, is_weighted>(threshold, argument_type, params);
+        return new AggregateFunctionTopKGeneric<true, is_weighted>(threshold, load_factor, argument_type, params);
     else
-        return new AggregateFunctionTopKGeneric<false, is_weighted>(threshold, argument_type, params);
+        return new AggregateFunctionTopKGeneric<false, is_weighted>(threshold, load_factor, argument_type, params);
 }
 
 
@@ -65,19 +65,28 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
     else
     {
         assertBinary(name, argument_types);
-        if (!isNumber(argument_types[1]))
-            throw Exception("The second argument for aggregate function 'topKWeighted' must have numeric type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!isInteger(argument_types[1]))
+            throw Exception("The second argument for aggregate function 'topKWeighted' must have integer type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    UInt64 threshold = 10;  /// default value
+    UInt64 threshold = 10;  /// default values
+    UInt64 load_factor = 3;
 
     if (!params.empty())
     {
-        if (params.size() != 1)
-            throw Exception("Aggregate function " + name + " requires one parameter or less.",
+        if (params.size() > 2)
+            throw Exception("Aggregate function " + name + " requires two parameters or less.",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
+        if (params.size() == 2)
+        {
+            load_factor = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
+
+            if (load_factor < 1)
+                throw Exception("Too small parameter for aggregate function " + name + ". Minimum: 1",
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        }
 
         if (k > TOP_K_MAX_SIZE)
             throw Exception("Too large parameter for aggregate function " + name + ". Maximum: " + toString(TOP_K_MAX_SIZE),
@@ -90,10 +99,10 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
         threshold = k;
     }
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(*argument_types[0], threshold, argument_types, params));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(*argument_types[0], threshold, load_factor, argument_types, params));
 
     if (!res)
-        res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types[0], threshold, params));
+        res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types[0], threshold, load_factor, params));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() +

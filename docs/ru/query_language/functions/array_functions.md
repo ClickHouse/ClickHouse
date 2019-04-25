@@ -12,7 +12,7 @@
 Тип результата - UInt8.
 Функция также работает для строк.
 
-## length
+## length {#array_functions-length}
 
 Возвращает количество элементов в массиве.
 Тип результата - UInt64.
@@ -198,7 +198,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr)
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 Возвращает массив \[1, 2, 3, ..., length(arr)\]
 

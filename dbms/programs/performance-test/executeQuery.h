@@ -4,7 +4,7 @@
 #include "TestStopConditions.h"
 #include <Common/InterruptListener.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Client/Connection.h>
 
 namespace DB

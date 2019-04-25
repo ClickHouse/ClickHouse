@@ -1,7 +1,11 @@
-project (ClickHouse)
-cmake_minimum_required (VERSION 3.3)
-
+project(ClickHouse)
+cmake_minimum_required(VERSION 3.3)
+cmake_policy(SET CMP0023 NEW)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
+set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
+set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
 option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
 if(ENABLE_IPO)
@@ -37,9 +41,6 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURC
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
-# Write compile_commands.json
-set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-
 include (cmake/find_ccache.cmake)
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -49,7 +50,6 @@ endif ()
 string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
-set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
@@ -59,7 +59,7 @@ if (NOT MAKE_STATIC_LIBRARIES)
 endif ()
 
 if (SPLIT_SHARED_LIBRARIES)
-    set (LINK_MODE SHARED)
+    set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
 endif ()
 
 if (USE_STATIC_LIBRARIES)
@@ -98,10 +98,6 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
 
     if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-        if (GLIBC_COMPATIBILITY)
-            message (STATUS "Some symbols from glibc will be replaced for compatibility")
-            link_libraries(glibc-compatibility)
-        endif ()
     endif ()
 endif ()
 
@@ -144,7 +140,7 @@ if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-mar
 endif()
 
 if (ARCH_NATIVE)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 endif ()
 
 # Special options for better optimized code with clang
@@ -176,6 +172,67 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 
 
 include (cmake/use_libcxx.cmake)
+
+
+# Set standard, system and compiler libraries explicitly.
+# This is intended for more control of what we are linking.
+
+set (DEFAULT_LIBS "")
+if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
+    # Note: this probably has no effect, but I'm not an expert in CMake.
+    set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
+    set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
+
+    # Disable default linked libraries.
+    set (DEFAULT_LIBS "-nodefaultlibs")
+
+    # We need builtins from Clang's RT even without libcxx - for ubsan+int128. See https://bugs.llvm.org/show_bug.cgi?id=16404
+    set (BUILTINS_LIB_PATH "")
+    if (COMPILER_CLANG)
+        execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif ()
+
+    # Add C++ libraries.
+    #
+    # This consist of:
+    # - C++ standard library (like implementation of std::string);
+    # - C++ ABI implementation (functions for exceptions like __cxa_throw, RTTI, etc);
+    # - functions for internal implementation of exception handling (stack unwinding based on DWARF info; TODO replace with bundled libunwind);
+    # - compiler builtins (example: functions for implementation of __int128 operations);
+    #
+    # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
+    if (USE_LIBCXX)
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+    else ()
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+    endif ()
+
+    # Linking with GLIBC prevents portability of binaries to older systems.
+    # We overcome this behaviour by statically linking with our own implementation of all new symbols (that don't exist in older Libc or have infamous "symbol versioning").
+    # The order of linking is important: 'glibc-compatibility' must be before libc but after all other libraries.
+    if (GLIBC_COMPATIBILITY)
+        message (STATUS "Some symbols from glibc will be replaced for compatibility")
+
+        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+        set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
+
+        # FIXME: glibc-compatibility may be non-static in some builds!
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
+    endif ()
+
+    # Add Libc. GLIBC is actually a collection of interdependent libraries.
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lrt -ldl -lpthread -lm -lc")
+
+    # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
+
+    message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+endif ()
+
+if (DEFAULT_LIBS)
+    # Add default libs to all targets as the last dependency.
+    set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
+endif ()
+
 
 if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -259,6 +316,8 @@ include (cmake/find_pdqsort.cmake)
 include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
+include (cmake/find_hyperscan.cmake)
+include (cmake/find_lfalloc.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
@@ -284,3 +343,30 @@ add_subdirectory (utils)
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
+
+if (GLIBC_COMPATIBILITY)
+    # FIXME: actually glibc-compatibility should always be built first,
+    #        because it's unconditionally linked via $DEFAULT_LIBS,
+    #        and these looks like the first places that get linked.
+    function (add_glibc_compat target_name)
+        if (TARGET ${target_name})
+            add_dependencies(${target_name} glibc-compatibility)
+        endif ()
+    endfunction ()
+
+    add_glibc_compat(ltdl)
+    add_glibc_compat(zlibstatic)
+    add_glibc_compat(jemalloc)
+    add_glibc_compat(unwind)
+    add_glibc_compat(memcpy)
+    add_glibc_compat(Foundation)
+    add_glibc_compat(common)
+    add_glibc_compat(gtest)
+    add_glibc_compat(lz4)
+    add_glibc_compat(zstd)
+    add_glibc_compat(snappy)
+    add_glibc_compat(arrow)
+    add_glibc_compat(protoc)
+    add_glibc_compat(thrift_static)
+    add_glibc_compat(boost_regex_internal)
+endif ()

@@ -77,51 +77,6 @@ std::string extractTableName(const std::string & nested_name)
 }
 
 
-NamesAndTypesList flatten(const NamesAndTypesList & names_and_types)
-{
-    std::unordered_map<std::string, std::vector<std::string>> dummy;
-    return flattenWithMapping(names_and_types, dummy);
-}
-
-
-NamesAndTypesList flattenWithMapping(const NamesAndTypesList & names_and_types, std::unordered_map<std::string, std::vector<std::string>> & mapping)
-{
-    NamesAndTypesList res;
-
-    for (const auto & name_type : names_and_types)
-    {
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get()))
-        {
-            if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(type_arr->getNestedType().get()))
-            {
-                const DataTypes & elements = type_tuple->getElements();
-                const Strings & names = type_tuple->getElementNames();
-                size_t tuple_size = elements.size();
-
-                for (size_t i = 0; i < tuple_size; ++i)
-                {
-                    String nested_name = concatenateName(name_type.name, names[i]);
-                    mapping[name_type.name].push_back(nested_name);
-                    res.emplace_back(nested_name, std::make_shared<DataTypeArray>(elements[i]));
-                }
-            }
-            else
-            {
-                mapping[name_type.name].push_back(name_type.name);
-                res.push_back(name_type);
-            }
-        }
-        else
-        {
-            mapping[name_type.name].push_back(name_type.name);
-            res.push_back(name_type);
-        }
-    }
-
-    return res;
-
-}
-
 Block flatten(const Block & block)
 {
     Block res;
@@ -146,7 +101,7 @@ Block flatten(const Block & block)
                 const ColumnPtr & column_offsets = column_array->getOffsetsPtr();
 
                 const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(column_array->getData());
-                const Columns & element_columns = column_tuple.getColumns();
+                const auto & element_columns = column_tuple.getColumns();
 
                 for (size_t i = 0; i < tuple_size; ++i)
                 {

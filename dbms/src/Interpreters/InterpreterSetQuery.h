@@ -1,15 +1,14 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
 {
 
 class Context;
-class IAST;
 class ASTSetQuery;
-using ASTPtr = std::shared_ptr<IAST>;
 
 
 /** Change one or several settings for the session or just for the current context.

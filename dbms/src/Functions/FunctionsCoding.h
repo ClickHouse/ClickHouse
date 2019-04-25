@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -123,8 +124,8 @@ public:
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

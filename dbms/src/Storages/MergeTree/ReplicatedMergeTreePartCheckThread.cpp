@@ -202,7 +202,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructure(false, RWLockImpl::NO_QUERY);
+        auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
             part->columns, part->checksums);
@@ -233,8 +233,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
 
                 checkDataPart(
-                    storage.data.getFullPath() + part_name,
-                    storage.data.index_granularity,
+                    part,
                     true,
                     storage.data.primary_key_data_types,
                     storage.data.skip_indices,

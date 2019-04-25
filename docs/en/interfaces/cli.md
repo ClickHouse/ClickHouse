@@ -13,7 +13,7 @@ Connected to ClickHouse server version 0.0.26176.
 
 The client supports command-line options and configuration files. For more information, see "[Configuring](#interfaces_cli_configuration)".
 
-## Usage
+## Usage {#cli_usage}
 
 The client can be used in interactive and non-interactive (batch) mode.
 To use batch mode, specify the 'query' parameter, or send data to 'stdin' (it verifies that 'stdin' is not a terminal), or both.
@@ -100,7 +100,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
 - Defined in the `-config-file` parameter.
 - `./clickhouse-client.xml`
-- `\~/.clickhouse-client/config.xml`
+- `~/.clickhouse-client/config.xml`
 - `/etc/clickhouse-client/config.xml`
 
 Example of a config file:

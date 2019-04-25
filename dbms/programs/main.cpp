@@ -1,3 +1,4 @@
+#include <new>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -17,12 +18,6 @@
 #include <gperftools/malloc_extension.h> // Y_IGNORE
 #endif
 
-#if ENABLE_CLICKHOUSE_SERVER
-#include "server/Server.h"
-#endif
-#if ENABLE_CLICKHOUSE_LOCAL
-#include "local/LocalServer.h"
-#endif
 #include <Common/StringUtils/StringUtils.h>
 
 /// Universal executable for various clickhouse applications
@@ -145,6 +140,10 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 
 int main(int argc_, char ** argv_)
 {
+    /// Reset new handler to default (that throws std::bad_alloc)
+    /// It is needed because LLVM library clobbers it.
+    std::set_new_handler(nullptr);
+
 #if USE_EMBEDDED_COMPILER
     if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
         return mainEntryClickHouseClang(argc_, argv_);

@@ -153,7 +153,7 @@ template <typename A, typename B>
 struct NumIfImpl<A, B, NumberTraits::Error>
 {
 private:
-    static void throw_error()
+    [[noreturn]] static void throw_error()
     {
         throw Exception("Internal logic error: invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -545,14 +545,14 @@ private:
         Columns col2_contents;
 
         if (const ColumnTuple * tuple1 = typeid_cast<const ColumnTuple *>(arg1.column.get()))
-            col1_contents = tuple1->getColumns();
+            col1_contents = tuple1->getColumnsCopy();
         else if (const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg1.column.get()))
             col1_contents = convertConstTupleToConstantElements(*const_tuple);
         else
             return false;
 
         if (const ColumnTuple * tuple2 = typeid_cast<const ColumnTuple *>(arg2.column.get()))
-            col2_contents = tuple2->getColumns();
+            col2_contents = tuple2->getColumnsCopy();
         else if (const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(arg2.column.get()))
             col2_contents = convertConstTupleToConstantElements(*const_tuple);
         else

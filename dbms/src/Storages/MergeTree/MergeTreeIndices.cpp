@@ -65,10 +65,18 @@ std::unique_ptr<IMergeTreeIndex> setIndexCreator(
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context);
 
+std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
+        const NamesAndTypesList & columns,
+        std::shared_ptr<ASTIndexDeclaration> node,
+        const Context & context);
+
+
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
     registerIndex("minmax", minmaxIndexCreator);
     registerIndex("set", setIndexCreator);
+    registerIndex("ngrambf_v1", bloomFilterIndexCreator);
+    registerIndex("tokenbf_v1", bloomFilterIndexCreator);
 }
 
 }

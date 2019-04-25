@@ -93,9 +93,9 @@
     </div>
 </div>
 <div id="announcement" class="colored-block">
-    <div class="page">
-        Upcoming ClickHouse Community Meetups: <a class="announcement-link" href="https://www.eventbrite.com/e/clickhouse-meetup-in-madrid-registration-55376746339" rel="external nofollow" target="_blank">Madrid</a> on April 2
-    </div>
+     <div class="page">
+         Upcoming ClickHouse Meetups: <a class="announcement-link" href="https://www.facebook.com/events/386638262181785/" rel="external nofollow" target="_blank">Limassol</a> on May 7 and <a class="announcement-link" href="https://www.huodongxing.com/event/2483759276200" rel="external nofollow" target="_blank">Beijing</a> on June 8
+     </div>
 </div>
 <div class="page">
     <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
@@ -225,7 +225,7 @@
 
     <h2 id="hardware-efficient">Hardware Efficient</h2>
 
-    <p>ClickHouse processes typical analytical queries two to three orders of magnitude faster than traditional
+    <p>ClickHouse processes typical analytical queries two to three orders of magnitude faster than traditional
         row-oriented systems with the same available I/O throughput. The system's columnar storage format allows fitting
         more hot data in RAM, which leads to a shorter response times.</p>
 
@@ -319,7 +319,7 @@
         <li><a href="https://www.slideshare.net/glebus/using-clickhouse-for-experimentation-104247173"
                rel="external nofollow" target="_blank">ClickHouse for Experimentation</a> at Spotify</li>
         <li><a href="https://blog.qrator.net/en/clickhouse-ddos-mitigation_37/"
-               rel="external nofollow" target="_blank">ClickHouse DB in DDoS mitigation</a></li>
+               rel="external nofollow" target="_blank">ClickHouse DB in DDoS mitigation</a> at Qrator</li>
         <li><a href="https://translate.yandex.com/translate?url=https%3A%2F%2Fhabrahabr.ru%2Fpost%2F322620%2F&amp;lang=ru-en"
                rel="external nofollow" target="_blank">Migrating to Yandex ClickHouse</a> by LifeStreet <span class="grey">(machine translation from Russian)</span></li>
         <li><a href="https://translate.yandex.com/translate?url=http%3A%2F%2Fsouslecapot.net%2F2018%2F11%2F21%2Fpatrick-chatain-vp-engineering-chez-contentsquare-penser-davantage-amelioration-continue-que-revolution-constante%2F&lang=fr-en"
@@ -404,7 +404,7 @@
     <code id="packages-install">
 <pre>
 sudo apt-get install dirmngr    # optional
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 
 echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
@@ -447,6 +447,8 @@ clickhouse-client
         <li>Follow official <a
                href="https://twitter.com/ClickHouseDB"
                rel="external nofollow" target="_blank">Twitter account</a>.</li>
+        <li>Open <a href="https://github.com/yandex/ClickHouse/issues/new/choose"
+                    rel="external nofollow" target="_blank">GitHub issue</a> if you have a bug report or feature request.</li>
         <li>Or email Yandex ClickHouse team directly at
             <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
             You can also <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a> to meet us in person.</li>

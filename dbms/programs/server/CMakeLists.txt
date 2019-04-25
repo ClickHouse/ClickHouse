@@ -10,7 +10,7 @@ set(CLICKHOUSE_SERVER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/TCPHandler.cpp
    )
 
-set(CLICKHOUSE_SERVER_LINK PRIVATE clickhouse_dictionaries clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY})
+set(CLICKHOUSE_SERVER_LINK PRIVATE clickhouse_dictionaries clickhouse_common_io PUBLIC daemon PRIVATE clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY})
 if (USE_POCO_NETSSL)
     set(CLICKHOUSE_SERVER_LINK ${CLICKHOUSE_SERVER_LINK} PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif ()

@@ -49,7 +49,7 @@ private:
             ProfileEvents::increment(ProfileEvents::ArenaAllocChunks);
             ProfileEvents::increment(ProfileEvents::ArenaAllocBytes, size_);
 
-            begin = reinterpret_cast<char *>(Allocator::alloc(size_));
+            begin = reinterpret_cast<char *>(Allocator<false>::alloc(size_));
             pos = begin;
             end = begin + size_ - pad_right;
             prev = prev_;
@@ -57,7 +57,7 @@ private:
 
         ~Chunk()
         {
-            Allocator::free(begin, size());
+            Allocator<false>::free(begin, size());
 
             if (prev)
                 delete prev;
