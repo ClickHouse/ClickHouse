@@ -33,6 +33,7 @@ private:
 
     bool is_generating_finished = false;
     bool is_stream_finished = false;
+    bool is_stream_started = false;
 };
 
 }

@@ -85,6 +85,12 @@ Chunk SourceFromInputStream::generate()
     if (is_stream_finished)
         return {};
 
+    if (!is_stream_started)
+    {
+        stream->readPrefix();
+        is_stream_started = true;
+    }
+
     auto block = stream->read();
     if (!block)
     {
