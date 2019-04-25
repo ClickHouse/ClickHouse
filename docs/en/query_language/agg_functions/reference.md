@@ -369,9 +369,12 @@ Optional parameters:
 - The default value for substituting in empty positions.
 - The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
 
-## groupUniqArray(x)
+## groupUniqArray(x), groupUniqArray(max_size)(x)
 
 Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
+
+The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
+For example, `groupUniqArray (1) (x)` is equivalent to `[any (x)]`.
 
 ## quantile(level)(x)
 

@@ -40,6 +40,9 @@ Query::Query(const Query & other) : std::ostream(0), conn(other.conn)
 
 Query & Query::operator= (const Query & other)
 {
+    if (this == &other)
+        return *this;
+
     conn = other.conn;
 
     seekp(0);
