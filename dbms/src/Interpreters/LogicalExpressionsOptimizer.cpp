@@ -123,7 +123,7 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
                     bool flag = value.first.column->getBool(0);
                     /// TODO: deal with the alias, but here we just ignore the alais by Short circuit evaluation
                     /// `1 or anything` always return 1, `0 and anything` always return 0
-                    if ((flag && is_or) || (!flag && !is_or))
+                    if (flag == is_or)
                     {
                         ASTPtr replace_ast_ptr = std::make_shared<ASTLiteral>(flag);
                         replaceAST(node, replace_ast_ptr);
