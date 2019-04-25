@@ -12,6 +12,15 @@ namespace Poco
     }
 }
 
+namespace boost
+{
+    namespace program_options
+    {
+        class options_description;
+    }
+}
+
+
 namespace DB
 {
 
@@ -327,6 +336,10 @@ struct Settings : public SettingsCollection<Settings>
 
     /// Dumps profile events to two columns of type Array(String)
     void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
+
+    /// Adds program options to set the settings from a command line.
+    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
+    void addProgramOptions(boost::program_options::options_description & options);
 };
 
 }

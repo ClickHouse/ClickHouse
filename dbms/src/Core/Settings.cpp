@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <string.h>
+#include <boost/program_options/options_description.hpp>
 
 
 namespace DB
@@ -65,17 +66,20 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
 
     size_t size = 0;
 
-#define ADD_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)               \
-    if (!changed_only || NAME.changed)                              \
-    {                                                               \
-        if (column_names)                                           \
-            column_names->getData().insertData(#NAME, strlen(#NAME)); \
-        if (column_values)                                          \
-            column_values->getData().insert(NAME.toString());       \
-        ++size;                                                     \
+    for (const auto & setting : *this)
+    {
+        if (!changed_only || setting.isChanged())
+        {
+            if (column_names)
+            {
+                StringRef name = setting.getName();
+                column_names->getData().insertData(name.data, name.size);
+            }
+            if (column_values)
+                column_values->getData().insert(setting.getValueAsString());
+            ++size;
+        }
     }
-    APPLY_FOR_SETTINGS(ADD_SETTING)
-#undef ADD_SETTING
 
     if (column_names)
     {
@@ -90,6 +94,19 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
     {
         auto & offsets = column_values->getOffsets();
         offsets.push_back(offsets.back() + size);
+    }
+}
+
+void Settings::addProgramOptions(boost::program_options::options_description & options)
+{
+    for (size_t index = 0; index != Settings::size(); ++index)
+    {
+        auto on_program_option
+            = boost::function1<void, const std::string &>([this, index](const std::string & value) { set(index, value); });
+        options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+            Settings::getNameByIndex(index).data,
+            boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
+            Settings::getDescriptionByIndex(index).data)));
     }
 }
 
