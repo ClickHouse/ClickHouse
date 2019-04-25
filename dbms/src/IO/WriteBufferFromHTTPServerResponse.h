@@ -67,6 +67,7 @@ private:
 
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
+    bool had_update = false;
 
     Progress accumulated_progress;
     size_t send_progress_interval_ms = 100;

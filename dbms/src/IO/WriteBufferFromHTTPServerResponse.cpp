@@ -41,6 +41,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
     if (headers_finished_sending)
         return;
     
+    had_update = false;
     WriteBufferFromOwnString progress_string_writer;
     accumulated_progress.writeJSON(progress_string_writer);
 
@@ -53,7 +54,8 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 {
     if (!headers_finished_sending)
     {
-        writeHeaderProgress();
+        if (had_update)
+            writeHeaderProgress();
         headers_finished_sending = true;
 
         if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
@@ -179,7 +181,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     if (headers_finished_sending)
         return;
 
-    accumulated_progress.incrementPiecewiseAtomically(progress);
+    had_update = accumulated_progress.incrementPiecewiseAtomically(progress);
 
     if (progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {

@@ -39,7 +39,7 @@ public:
     void onProgress(const Progress & current_progress) override { stream->onProgress(current_progress); }
     String getContentType() const override              { return stream->getContentType(); }
 
-protected:
+public:
     BlockOutputStreamPtr stream;
     Progress progress;
     ProgressCallback progress_callback;

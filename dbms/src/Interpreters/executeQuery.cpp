@@ -316,6 +316,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.written_rows = info.written_rows;
                 elem.written_bytes = info.written_bytes;
 
+                auto progress_callback = context.getProgressCallback();
+                
+                if (progress_callback)
+                    progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
+
                 elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
 
                 if (stream_in)
@@ -328,7 +333,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
                 else if (stream_out) /// will be used only for ordinary INSERT queries
                 {
-                    if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
+                    if (auto counting_stream = dynamic_cast<CountingBlockOutputStream *>(stream_out))
                     {
                         /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().rows;
