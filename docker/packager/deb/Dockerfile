@@ -32,6 +32,7 @@ RUN apt-get --allow-unauthenticated update -y \
             liblld-8-dev \
             libicu-dev \
             libreadline-dev \
+            gperf \
             ninja-build \
             perl \
             pkg-config \
