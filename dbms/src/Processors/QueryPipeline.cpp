@@ -120,7 +120,7 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
         if (!stream)
             return;
 
-        auto transform = callProcessorGetter(current_header, getter, stream_type);
+        auto transform = callProcessorGetter(stream->getHeader(), getter, stream_type);
 
         if (transform)
         {
