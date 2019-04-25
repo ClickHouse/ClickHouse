@@ -34,8 +34,8 @@ namespace LZ4
 namespace
 {
 
-template <size_t N, bool use_avx> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
-template <size_t N, bool use_avx> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
+template <size_t N, bool USE_AVX> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
+template <size_t N, bool USE_AVX> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
 template <size_t N, bool USE_SHUFFLE> [[maybe_unused]] void copyOverlap(UInt8 * op, const UInt8 *& match, const size_t offset);
 
 
@@ -46,6 +46,9 @@ inline void copy8(UInt8 * dst, const UInt8 * src)
 
 inline void wildCopy8(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
+#if defined(__clang__)
+    #pragma nounroll
+#endif
     do
     {
         copy8(dst, src);
@@ -232,6 +235,9 @@ inline void copy16(UInt8 * dst, const UInt8 * src)
 
 inline void wildCopy16(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
+#if defined(__clang__)
+    #pragma nounroll
+#endif
     do
     {
         copy16(dst, src);
@@ -361,8 +367,12 @@ inline void copy32(UInt8 * dst, const UInt8 * src)
 #elif defined(__SSE2__)
     if constexpr (use_avx)
     {
-        __asm__ volatile("vmovups (%0), %%ymm0" : : "r"(src));
-        __asm__ volatile("vmovups %%ymm0, (%0)" : "=r"(dst));
+        __asm__ volatile(
+            "vmovups (%1), %%ymm0\n\t"
+            "vmovups %%ymm0, (%0)"
+            :  /* output */
+            : "r"(dst), "r"(src) /* input */
+            : "%ymm0"); /* clobber_registers */
     }
     else
     {
@@ -379,6 +389,9 @@ inline void copy32(UInt8 * dst, const UInt8 * src)
 template <bool use_avx>
 inline void wildCopy32(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
+#if defined(__clang__)
+    #pragma nounroll
+#endif
     do
     {
         copy32<use_avx>(dst, src);
@@ -427,7 +440,7 @@ template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match,
 
 /// See also https://stackoverflow.com/a/30669632
 
-
+/// NO_INLINE is vital for hiding avx instructions
 template <size_t copy_amount, bool use_shuffle, bool use_avx>
 void NO_INLINE decompressImpl(
      const char * const source,
@@ -438,6 +451,9 @@ void NO_INLINE decompressImpl(
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
 
+#if defined(__clang__)
+    #pragma nounroll
+#endif
     while (1)
     {
         size_t length;
@@ -551,34 +567,23 @@ void decompress(
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
     {
-        bool have_AVX = DB::Cpu::CpuFlagsCache::have_AVX;
-        size_t best_variant = statistics.select();
+        const bool have_AVX = DB::Cpu::CpuFlagsCache::have_AVX;
+        size_t best_variant = statistics.select(PerformanceStatistics::NUM_ELEMENTS - !have_AVX);
 
         /// Run the selected method and measure time.
 
         Stopwatch watch;
-        if (have_AVX)
-        {
-            if (best_variant == 0)
-                decompressImpl<16, true, true>(source, dest, dest_size);
-            if (best_variant == 1)
-                decompressImpl<16, false, true>(source, dest, dest_size);
-            if (best_variant == 2)
-                decompressImpl<8, true, true>(source, dest, dest_size);
-            if (best_variant == 3)
-                decompressImpl<32, false, true>(source, dest, dest_size);
-        }
-        else
-        {
-            if (best_variant == 0)
-                decompressImpl<16, true, false>(source, dest, dest_size);
-            if (best_variant == 1)
-                decompressImpl<16, false, false>(source, dest, dest_size);
-            if (best_variant == 2)
-                decompressImpl<8, true, false>(source, dest, dest_size);
-            if (best_variant == 3)
-                decompressImpl<32, false, false>(source, dest, dest_size);
-        }
+        if (best_variant == 0)
+            decompressImpl<16, true, false>(source, dest, dest_size);
+        if (best_variant == 1)
+            decompressImpl<16, false, false>(source, dest, dest_size);
+        if (best_variant == 2)
+            decompressImpl<8, true, false>(source, dest, dest_size);
+        if (best_variant == 3)
+            decompressImpl<32, false, false>(source, dest, dest_size);
+        /// If we don't have avx, we just never be here becase we select from NUM_EMELENTS minus one, be careful to add new methods
+        if (best_variant == 4)
+            decompressImpl<32, false, true>(source, dest, dest_size);
 
         watch.stop();
 
@@ -631,7 +636,6 @@ void statistics(
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
-
     while (1)
     {
         size_t length;
