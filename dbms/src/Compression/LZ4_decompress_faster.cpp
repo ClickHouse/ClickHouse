@@ -1,9 +1,11 @@
 #include "LZ4_decompress_faster.h"
 
+#include <lz4.h>
 #include <string.h>
 #include <iostream>
 #include <random>
 #include <algorithm>
+#include <Core/CpuId.h>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
 #include <common/likely.h>
@@ -14,18 +16,17 @@
 #include <emmintrin.h>
 #endif
 
-#ifdef __AVX__
-#include <immintrin.h>
-#endif
-
 #ifdef __SSSE3__
 #include <tmmintrin.h>
+#endif
+
+#ifdef __AVX__
+#include <immintrin.h>
 #endif
 
 #ifdef __aarch64__
 #include <arm_neon.h>
 #endif
-
 
 namespace LZ4
 {
@@ -33,8 +34,8 @@ namespace LZ4
 namespace
 {
 
-template <size_t N> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
-template <size_t N> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
+template <size_t N, bool use_avx> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
+template <size_t N, bool use_avx> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
 template <size_t N, bool USE_SHUFFLE> [[maybe_unused]] void copyOverlap(UInt8 * op, const UInt8 *& match, const size_t offset);
 
 
@@ -209,8 +210,10 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
 
 
 
-template <> void inline copy<8>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
-template <> void inline wildCopy<8>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); }
+template <> void inline copy<8, false>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
+template <> void inline copy<8, true>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
+template <> void inline wildCopy<8, false>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); }
+template <> void inline wildCopy<8, true>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); }
 template <> void inline copyOverlap<8, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); }
 template <> void inline copyOverlap<8, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8Shuffle(op, match, offset); }
 
@@ -340,198 +343,126 @@ inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
 #endif
 
 
-template <> void inline copy<16>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); }
-template <> void inline wildCopy<16>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); }
+template <> void inline copy<16, false>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); }
+template <> void inline copy<16, true>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); }
+template <> void inline wildCopy<16, false>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); }
+template <> void inline wildCopy<16, true>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); }
 template <> void inline copyOverlap<16, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16(op, match, offset); }
 template <> void inline copyOverlap<16, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16Shuffle(op, match, offset); }
 
+
+template <bool use_avx>
 inline void copy32(UInt8 * dst, const UInt8 * src)
 {
-#if defined(__AVX__)
+    (void)use_avx;
+#ifdef __AVX__
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst),
-        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src)));
+            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src)));
 #elif defined(__SSE2__)
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + 16),
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 16)));
+    if constexpr (use_avx)
+    {
+        __asm__ volatile("vmovups (%0), %%ymm0" : : "r"(src));
+        __asm__ volatile("vmovups %%ymm0, (%0)" : "=r"(dst));
+    }
+    else
+    {
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + 16),
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 16)));
+    }
 #else
-    /// This is from reference implementation, actually there can be issues if we write 32 for ARM processor
-    memcpy(dst, src, 16);
-    memcpy(dst + 16, src + 16, 16);
+    memcpy(dst, src, 32);
 #endif
 }
 
+template <bool use_avx>
 inline void wildCopy32(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
     do
     {
-        copy32(dst, src);
+        copy32<use_avx>(dst, src);
         dst += 32;
         src += 32;
     } while (dst < dst_end);
 }
 
-template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
-template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
-
-inline void copyUsingOffset(UInt8 * dst, const UInt8 * src, UInt8 * dst_end, const size_t offset)
+inline void copyOverlap32(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
-    UInt8 v[8];
-    switch (offset)
-    {
-        case 1:
-            memset(v, *src, 8);
-            goto copy_loop;
-        case 2:
-            memcpy(v, src, 2);
-            memcpy(&v[2], src, 2);
-            memcpy(&v[4], &v[0], 4);
-            goto copy_loop;
-        case 4:
-            memcpy(v, src, 4);
-            memcpy(&v[4], src, 4);
-            goto copy_loop;
-        default:
-            if (offset < 8)
-            {
-                copyOverlap<8, false>(dst, src, offset);
-                dst += 8;
-            }
-            else
-            {
-                memcpy(dst, src, 8);
-                dst += 8;
-                src += 8;
-            }
-            wildCopy<8>(dst, src, dst_end);
-            return;
-    }
-copy_loop:
-    memcpy(dst, v, 8);
-    dst += 8;
-    while (dst < dst_end)
-    {
-        memcpy(dst, v, 8);
-        dst += 8;
-    }
+    /// 4 % n.
+    static constexpr int shift1[]
+        = { 0,  1,  2,  1,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+
+    /// 8 % n - 4 % n
+    static constexpr int shift2[]
+        = { 0,  0,  0,  1,  0, -1, -2, -3, -4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4,  4 };
+
+    /// 16 % n - 8 % n
+    static constexpr int shift3[]
+        = { 0,  0,  0, -1,  0, -2,  2,  1,  8, -1, -2, -3, -4, -5, -6, -7,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8 };
+
+    /// 32 % n - 16 % n
+    static constexpr int shift4[]
+        = { 0,  0,  0,  1,  0,  1, -2,  2,  0, -2, -4,  5,  4,  3,  2,  1,  0, -1, -2, -3, -4, -5, -6, -7, -8, -9,-10,-11,-12,-13,-14,-15 };
+
+    op[0] = match[0];
+    op[1] = match[1];
+    op[2] = match[2];
+    op[3] = match[3];
+
+    match += shift1[offset];
+    memcpy(op + 4, match, 4);
+    match += shift2[offset];
+    memcpy(op + 8, match, 8);
+    match += shift3[offset];
+    memcpy(op + 16, match, 16);
+    match += shift4[offset];
 }
+
+template <> void inline copy<32, false>(UInt8 * dst, const UInt8 * src) { copy32<false>(dst, src); }
+template <> void inline copy<32, true>(UInt8 * dst, const UInt8 * src) { copy32<true>(dst, src); }
+template <> void inline wildCopy<32, false>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32<false>(dst, src, dst_end); }
+template <> void inline wildCopy<32, true>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32<true>(dst, src, dst_end); }
+template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32(op, match, offset); }
 
 /// See also https://stackoverflow.com/a/30669632
 
 
-/// use_optimized_new_lz4_version is for the new optimized LZ4 decompression that was introduced in LZ4 1.9.0
-/// With experiments it turned out to be faster for big columns, so we decided to add it to the statistics choice.
-
-template <size_t copy_amount, size_t guaranteed_minimal_dest_size, bool use_shuffle, bool use_optimized_new_lz4_version>
+template <size_t copy_amount, bool use_shuffle, bool use_avx>
 void NO_INLINE decompressImpl(
      const char * const source,
      char * const dest,
-     [[maybe_unused]] size_t source_size,
      size_t dest_size)
 {
     const UInt8 * ip = reinterpret_cast<const UInt8 *>(source);
-    [[maybe_unused]] const UInt8 * const input_end = reinterpret_cast<const UInt8 *>(source) + source_size;
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
-    UInt8 * copy_end;
-    unsigned token;
-    size_t length;
-    size_t offset;
-    const UInt8 * match;
-
-    auto continue_read_length = [&]
-    {
-        unsigned s;
-        do
-        {
-            s = *ip++;
-            length += s;
-        } while (unlikely(s == 255));
-    };
-
-    /// Don't use `if constexpr` here because compilers start warning about unused labels
-    /// And I don't want to insert pragma push etc. Codegen is the same because of dead code elimination.
-    /// TODO(danlark) Generalize this branch with copy_amount etc.
-    if (use_optimized_new_lz4_version)
-    {
-        if (guaranteed_minimal_dest_size >= 64 || dest_size >= 64)
-        {
-            while (1)
-            {
-                /// Get literal length.
-                token = *ip++;
-                length = token >> 4;
-                if (length == 0x0F)
-                {
-                    continue_read_length();
-                    copy_end = op + length;
-                    if (copy_end > output_end - 32 || ip + length > input_end - 32)
-                        goto literal_copy;
-                    wildCopy<32>(op, ip, copy_end);
-                    ip += length;
-                    op = copy_end;
-                }
-                else
-                {
-                    copy_end = op + length;
-                    if (ip > input_end - 17)
-                        goto literal_copy;
-                    copy<16>(op, ip);
-                    ip += length;
-                    op = copy_end;
-                }
-
-                offset = unalignedLoad<UInt16>(ip);
-                ip += 2;
-                match = op - offset;
-
-                /// Get match length.
-                length = token & 0x0F;
-                if (length == 0x0F)
-                {
-                    continue_read_length();
-                    length += 4;
-                    if (op + length >= output_end - 64)
-                        goto match_copy;
-                }
-                else
-                {
-                    length += 4;
-                    if (op + length >= output_end - 64)
-                        goto match_copy;
-                    if (offset >= 8)
-                    {
-                        memcpy(op, match, 8);
-                        memcpy(op + 8, match + 8, 8);
-                        memcpy(op + 16, match + 16, 2);
-                        op += length;
-                        continue;
-                    }
-                }
-
-                /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
-                copy_end = op + length;
-                if (unlikely(offset < 16))
-                    copyUsingOffset(op, match, copy_end, offset);
-                else
-                    wildCopy<32>(op, match, copy_end);
-
-                op = copy_end;
-            }
-        }
-    }
 
     while (1)
     {
+        size_t length;
+
+        auto continue_read_length = [&]
+        {
+            unsigned s;
+            do
+            {
+                s = *ip++;
+                length += s;
+            } while (unlikely(s == 255));
+        };
+
         /// Get literal length.
-        token = *ip++;
+
+        const unsigned token = *ip++;
         length = token >> 4;
         if (length == 0x0F)
             continue_read_length();
+
         /// Copy literals.
-        copy_end = op + length;
-literal_copy:
+
+        UInt8 * copy_end = op + length;
+
         /// input: Hello, world
         ///        ^-ip
         /// output: xyz
@@ -542,7 +473,8 @@ literal_copy:
         ///              ^-ip
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
-        wildCopy<copy_amount>(op, ip, copy_end);
+
+        wildCopy<copy_amount, use_avx>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         ip += length;
         op = copy_end;
@@ -551,18 +483,20 @@ literal_copy:
             return;
 
         /// Get match offset.
-        offset = unalignedLoad<UInt16>(ip);
+
+        size_t offset = unalignedLoad<UInt16>(ip);
         ip += 2;
-        match = op - offset;
+        const UInt8 * match = op - offset;
 
         /// Get match length.
+
         length = token & 0x0F;
         if (length == 0x0F)
             continue_read_length();
         length += 4;
 
-match_copy:
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
+
         copy_end = op + length;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
@@ -581,25 +515,27 @@ match_copy:
             ///
             /// output: HelloHelloHel
             ///            ^-match   ^-op
+
             copyOverlap<copy_amount, use_shuffle>(op, match, offset);
         }
         else
         {
-            copy<copy_amount>(op, match);
+            copy<copy_amount, use_avx>(op, match);
             match += copy_amount;
         }
 
         op += copy_amount;
 
-        copy<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
+        copy<copy_amount, use_avx>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
         if (length > copy_amount * 2)
-            wildCopy<copy_amount>(op + copy_amount, match + copy_amount, copy_end);
+            wildCopy<copy_amount, use_avx>(op + copy_amount, match + copy_amount, copy_end);
 
         op = copy_end;
     }
 }
 
 }
+
 
 void decompress(
     const char * const source,
@@ -610,24 +546,39 @@ void decompress(
 {
     if (source_size == 0 || dest_size == 0)
         return;
-    static constexpr size_t small_block_threshold = 32768;
+
+
     /// Don't run timer if the block is too small.
-    if (dest_size >= small_block_threshold)
+    if (dest_size >= 32768)
     {
+        bool have_AVX = DB::Cpu::CpuFlagsCache::have_AVX;
         size_t best_variant = statistics.select();
 
         /// Run the selected method and measure time.
 
         Stopwatch watch;
-
-        if (best_variant == 0)
-            decompressImpl<16, small_block_threshold, true, false>(source, dest, source_size, dest_size);
-        if (best_variant == 1)
-            decompressImpl<16, small_block_threshold, false, false>(source, dest, source_size, dest_size);
-        if (best_variant == 2)
-            decompressImpl<8, small_block_threshold, true, false>(source, dest, source_size, dest_size);
-        if (best_variant == 3)
-            decompressImpl<8, small_block_threshold, false, true>(source, dest, source_size, dest_size);
+        if (have_AVX)
+        {
+            if (best_variant == 0)
+                decompressImpl<16, true, true>(source, dest, dest_size);
+            if (best_variant == 1)
+                decompressImpl<16, false, true>(source, dest, dest_size);
+            if (best_variant == 2)
+                decompressImpl<8, true, true>(source, dest, dest_size);
+            if (best_variant == 3)
+                decompressImpl<32, false, true>(source, dest, dest_size);
+        }
+        else
+        {
+            if (best_variant == 0)
+                decompressImpl<16, true, false>(source, dest, dest_size);
+            if (best_variant == 1)
+                decompressImpl<16, false, false>(source, dest, dest_size);
+            if (best_variant == 2)
+                decompressImpl<8, true, false>(source, dest, dest_size);
+            if (best_variant == 3)
+                decompressImpl<32, false, false>(source, dest, dest_size);
+        }
 
         watch.stop();
 
@@ -637,7 +588,7 @@ void decompress(
     }
     else
     {
-        decompressImpl<8, 0, false, false>(source, dest, source_size, dest_size);
+        decompressImpl<8, false, false>(source, dest, dest_size);
     }
 }
 

@@ -34,7 +34,7 @@ namespace LZ4
   *  that is allowed to read/write.
   * This value is a little overestimation.
   */
-static constexpr size_t ADDITIONAL_BYTES_AT_END_OF_BUFFER = 32;
+static constexpr size_t ADDITIONAL_BYTES_AT_END_OF_BUFFER = 64;
 
 
 /** When decompressing uniform sequence of blocks (for example, blocks from one file),
