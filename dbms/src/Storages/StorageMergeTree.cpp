@@ -4,7 +4,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
 #include <Common/ThreadPool.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/localBackup.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
