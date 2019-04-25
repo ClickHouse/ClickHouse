@@ -193,8 +193,8 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 }
 
 
-std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepare_alter_transactions(
-    const ColumnsDescription& new_columns, const IndicesDescription& new_indices, const Context & context)
+std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepareAlterTransactions(
+    const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context)
 {
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions(parts.size());
@@ -212,7 +212,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
             [this, i, &transactions, &part, columns_for_parts, new_indices = new_indices.indices]
             {
                 if (auto transaction = this->data.alterDataPart(part, columns_for_parts, new_indices, false))
-                    transactions[i] = (std::move(transaction));
+                    transactions[i] = std::move(transaction);
             }
         );
 
@@ -221,7 +221,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     thread_pool.wait();
 
     auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
-        [](const MergeTreeData::AlterDataPartTransactionPtr& transaction)
+        [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
         {
             return transaction == nullptr;
         }
@@ -261,7 +261,7 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
 
-    auto transactions = prepare_alter_transactions(new_columns, new_indices, context);
+    auto transactions = prepareAlterTransactions(new_columns, new_indices, context);
 
     auto table_hard_lock = lockStructureForAlter(context.getCurrentQueryId());
 
@@ -282,7 +282,7 @@ void StorageMergeTree::alter(
     data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
 
     for (auto & transaction : transactions)
-            transaction->commit();
+        transaction->commit();
 
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
