@@ -10,6 +10,7 @@ Build-Depends: debhelper (>= 9),
                libc6-dev,
                libicu-dev,
                libreadline-dev,
+               gperf,
                tzdata
 Standards-Version: 3.9.8
 
