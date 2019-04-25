@@ -179,7 +179,7 @@ bool haveOSXSAVE() noexcept
 
 bool haveAVX() noexcept
 {
-#if defined(_x86_)
+#if defined(__x86_64__) || defined(__i386__)
     // http://www.intel.com/content/dam/www/public/us/en/documents/manuals/64-ia-32-architectures-optimization-manual.pdf
     // https://bugs.chromium.org/p/chromium/issues/detail?id=375968
     return haveOSXSAVE()                           // implies haveXSAVE()
