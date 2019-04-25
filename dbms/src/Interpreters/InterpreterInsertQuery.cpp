@@ -99,7 +99,11 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
     Block query_sample_block = getSampleBlock(query, table);
 
-    /// INSERT INTO DATA or INSERT SELECT?
+    /// NOTE:
+    /// For the log family engine(this may be true for all engines, because clickhouse reads are always based on snapshot)
+    /// the read always holds lock resource only in the Interpreter and releases it during data processing,
+    /// but for the write, the lock resource is held until the query is completed.
+    /// To avoid deadlocks, we should first create BockInputStream for INSERT INTO SELECT
     if (BlockInputStreamPtr source_input = tryCreateSourceInputStream(query, table, query_sample_block))
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(source_input, createOutputStream(query, table, query_sample_block));
     else
@@ -132,7 +136,7 @@ BlockOutputStreamPtr InterpreterInsertQuery::createOutputStream(const ASTInsertQ
 {
     const Block & table_sample_block = table->getSampleBlock();
     const ColumnDefaults & table_default_columns = table->getColumns().getDefaults();
-    
+
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
         query.database, query.table, table, context, query_ptr, query.no_destination);
@@ -173,7 +177,7 @@ BlockInputStreamPtr InterpreterInsertQuery::tryCreateSourceInputStream(
         if (!allow_materialized)
         {
             Block in_header = in->getHeader();
-            for (const auto &column : table->getColumns())
+            for (const auto & column : table->getColumns())
                 if (column.default_desc.kind == ColumnDefaultKind::Materialized && in_header.has(column.name))
                     throw Exception("Cannot insert column " + column.name + ", because it is MATERIALIZED column.",
                                     ErrorCodes::ILLEGAL_COLUMN);
