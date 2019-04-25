@@ -18,14 +18,12 @@ NamesAndTypesList SystemMergeTreeSettings::getNamesAndTypes()
 
 void SystemMergeTreeSettings::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    const MergeTreeSettings & settings = context.getMergeTreeSettings();
-
-#define ADD_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)              \
-    res_columns[0]->insert(#NAME);            \
-    res_columns[1]->insert(settings.NAME.toString()); \
-    res_columns[2]->insert(settings.NAME.changed);
-    APPLY_FOR_MERGE_TREE_SETTINGS(ADD_SETTING)
-#undef ADD_SETTING
+    for (const auto & setting : context.getMergeTreeSettings())
+    {
+        res_columns[0]->insert(setting.getName().toString());
+        res_columns[1]->insert(setting.getValueAsString());
+        res_columns[2]->insert(setting.isChanged());
+    }
 }
 
 }

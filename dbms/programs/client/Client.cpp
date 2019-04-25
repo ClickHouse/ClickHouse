@@ -217,11 +217,12 @@ private:
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
-            context.setSetting(#NAME, config().getString(#NAME));
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
+        for (auto && setting : context.getSettingsRef())
+        {
+            const String & name = setting.getName().toString();
+            if (config().has(name) && !setting.isChanged())
+                setting.setValue(config().getString(name));
+        }
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
@@ -1614,8 +1615,6 @@ public:
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
-
         /// Main commandline options related to client functionality and all parameters from Settings.
         po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
@@ -1658,9 +1657,9 @@ public:
             ("compression", po::value<bool>(), "enable or disable compression")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
-            APPLY_FOR_SETTINGS(DECLARE_SETTING)
         ;
-#undef DECLARE_SETTING
+
+        context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
         po::options_description external_description("External tables options");
@@ -1676,6 +1675,8 @@ public:
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
+        po::notify(options);
+
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
@@ -1726,15 +1727,14 @@ public:
             }
         }
 
-        /// Extract settings from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)                \
-        if (options.count(#NAME))                                        \
-        {                                                                \
-            context.setSetting(#NAME, options[#NAME].as<std::string>()); \
-            config().setString(#NAME, options[#NAME].as<std::string>()); \
+        /// Copy settings-related program options to config.
+        /// TODO: Is this code necessary?
+        for (const auto & setting : context.getSettingsRef())
+        {
+            const String name = setting.getName().toString();
+            if (options.count(name))
+                config().setString(name, options[name].as<std::string>());
         }
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
 
         if (options.count("config-file") && options.count("config"))
             throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
