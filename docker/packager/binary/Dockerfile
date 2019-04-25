@@ -32,6 +32,7 @@ RUN apt-get update -y \
             libicu-dev \
             libreadline-dev \
             ninja-build \
+            gperf \
             git \
             tzdata
 
