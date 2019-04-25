@@ -350,7 +350,7 @@ CREATE TABLE IF NOT EXISTS example_table
 - If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 !!! note "Warning"
-    Use this option carefully. Enabling it negatively affects the performance of the ClickHouse server.
+    If `insert_sample_with_metadata = 1`, ClickHouse consume more computational resources, when processing queries, than if `insert_sample_with_metadata = 0`.
 
 ### Selecting Data
 

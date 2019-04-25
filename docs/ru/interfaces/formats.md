@@ -350,7 +350,7 @@ CREATE TABLE IF NOT EXISTS example_table
 - Если `insert_sample_with_metadata = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
 !!! note "Предупреждение"
-    Используйте эту опцию осторожно. Её включение негативно влияет на производительность сервера ClickHouse.
+    Если `insert_sample_with_metadata = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `insert_sample_with_metadata = 0`.
 
 ### Выборка данных
 
