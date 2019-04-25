@@ -18,24 +18,20 @@ namespace ErrorCodes
 }
 
 /// Print string to screen even if stdout/stderr redirected
-/// Return false if print sucessful
-/// Return true if some error happens (maybe TODO: some error code)
-bool printTTY(const std::string & string)
+static void tryPrintTTY(const std::string & string)
 {
     if (isatty(STDERR_FILENO))
     {
         std::cerr << string;
-        return false;
+        return;
     }
 
     std::ofstream ostrm("/dev/tty");
     if (ostrm.good())
     {
         ostrm << string;
-        return false;
+        return;
     }
-
-    return true;
 }
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
@@ -66,14 +62,14 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     }
     if (password_prompt)
     {
-        printTTY("Password for user (" + user + "): ");
+        tryPrintTTY("Password for user (" + user + "): ");
 
         setTerminalEcho(false);
         SCOPE_EXIT({ setTerminalEcho(true); });
 
         std::getline(std::cin, password);
 
-        printTTY("\n");
+        tryPrintTTY("\n");
     }
     compression = config.getBool("compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
