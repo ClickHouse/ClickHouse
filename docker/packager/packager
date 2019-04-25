@@ -105,7 +105,7 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
 
 def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official):
     result = []
-    cmake_flags = ' $CMAKE_FLAGS '
+    cmake_flags = ['$CMAKE_FLAGS']
 
     cc = compiler
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
@@ -115,8 +115,8 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     elif package_type == "binary":
         result.append("CC={}".format(cc))
         result.append("CXX={}".format(cxx))
-        cmake_flags += ' -DCMAKE_C_COMPILER=`which {}` '.format(cc)
-        cmake_flags += ' -DCMAKE_CXX_COMPILER=`which {}` '.format(cxx)
+        cmake_flags.append('-DCMAKE_C_COMPILER=`which {}`'.format(cc))
+        cmake_flags.append('-DCMAKE_CXX_COMPILER=`which {}`'.format(cxx))
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))
@@ -140,10 +140,10 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
 
     if unbundled:
-        cmake_flags += ' -DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0 '
+        cmake_flags.append('-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0')
 
     if split_binary:
-        cmake_flags += ' -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1 '
+        cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
 
     if version:
         result.append("VERSION_STRING='{}'".format(version))
@@ -152,9 +152,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         result.append("AUTHOR='{}'".format(author))
 
     if official:
-        cmake_flags += ' -DYANDEX_OFFICIAL_BUILD=1 '
+        cmake_flags.append('-DYANDEX_OFFICIAL_BUILD=1')
 
-    result.append('CMAKE_FLAGS="' + cmake_flags + '"')
+    result.append('CMAKE_FLAGS="' + ' '.join(cmake_flags) + '"')
 
     return result
 
@@ -170,7 +170,7 @@ if __name__ == "__main__":
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
     parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
-    parser.add_argument("--ccache_dir", default= os.getenv("HOME") + '/.ccache')
+    parser.add_argument("--ccache_dir", default= os.getenv("HOME", "") + '/.ccache')
     parser.add_argument("--distcc-hosts", nargs="+")
     parser.add_argument("--force-build-image", action="store_true")
     parser.add_argument("--version")
