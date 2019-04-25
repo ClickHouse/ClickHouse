@@ -311,6 +311,13 @@ size_t ColumnArray::allocatedBytes() const
 }
 
 
+void ColumnArray::protect()
+{
+    getData().protect();
+    getOffsets().protect();
+}
+
+
 bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 {
     if (offsets == other.offsets)
@@ -569,7 +576,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
 
     /// Make temporary arrays for each components of Tuple, then filter and collect back.
 
-    size_t tuple_size = tuple.getColumns().size();
+    size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
         throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);
@@ -802,12 +809,12 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
 
     for (size_t i = 0; i < col_size; ++i)
     {
-        /// How much to replicate the array.
+        /// How many times to replicate the array.
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
-        /// The number of rows in the array.
+        /// The number of strings in the array.
         size_t value_size = src_offsets[i] - prev_src_offset;
-        /// Number of characters in rows of the array, including zero/null bytes.
-        size_t sum_chars_size = value_size == 0 ? 0 : (src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset);
+        /// Number of characters in strings of the array, including zero bytes.
+        size_t sum_chars_size = src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
 
         for (size_t j = 0; j < size_to_replicate; ++j)
         {
@@ -817,7 +824,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
             size_t prev_src_string_offset_local = prev_src_string_offset;
             for (size_t k = 0; k < value_size; ++k)
             {
-                /// Size of one row.
+                /// Size of single string.
                 size_t chars_size = src_string_offsets[k + prev_src_offset] - prev_src_string_offset_local;
 
                 current_res_string_offset += chars_size;
@@ -828,7 +835,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
 
             if (sum_chars_size)
             {
-                /// Copies the characters of the array of rows.
+                /// Copies the characters of the array of strings.
                 res_chars.resize(res_chars.size() + sum_chars_size);
                 memcpySmallAllowReadWriteOverflow15(
                     &res_chars[res_chars.size() - sum_chars_size], &src_chars[prev_src_string_offset], sum_chars_size);
@@ -934,7 +941,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 
     /// Make temporary arrays for each components of Tuple. In the same way as for Nullable.
 
-    size_t tuple_size = tuple.getColumns().size();
+    size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
         throw Exception("Logical error: empty tuple", ErrorCodes::LOGICAL_ERROR);

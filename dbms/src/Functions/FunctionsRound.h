@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
-
+#include "IFunction.h"
 #include <Common/intExp.h>
 #include <cmath>
 #include <type_traits>
@@ -119,6 +119,8 @@ struct IntegerRoundingComputation
                 return x;
             }
         }
+
+        __builtin_unreachable();
     }
 
     static ALWAYS_INLINE T compute(T x, T scale)
@@ -132,6 +134,8 @@ struct IntegerRoundingComputation
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
         }
+
+        __builtin_unreachable();
     }
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)

@@ -291,6 +291,12 @@ size_t ColumnNullable::allocatedBytes() const
     return getNestedColumn().allocatedBytes() + getNullMapColumn().allocatedBytes();
 }
 
+void ColumnNullable::protect()
+{
+    getNestedColumn().protect();
+    getNullMapColumn().protect();
+}
+
 
 namespace
 {

@@ -1,9 +1,12 @@
 #pragma once
 
+
 #include <string.h>
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstdint>
 #include <type_traits>
@@ -64,15 +67,15 @@ struct RadixSortFloatTransform
 };
 
 
-template <typename Float>
+template <typename TElement>
 struct RadixSortFloatTraits
 {
-    using Element = Float;        /// The type of the element. It can be a structure with a key and some other payload. Or just a key.
-    using Key = Float;            /// The key to sort.
+    using Element = TElement;     /// The type of the element. It can be a structure with a key and some other payload. Or just a key.
+    using Key = Element;          /// The key to sort by.
     using CountType = uint32_t;   /// Type for calculating histograms. In the case of a known small number of elements, it can be less than size_t.
 
     /// The type to which the key is transformed to do bit operations. This UInt is the same size as the key.
-    using KeyBits = std::conditional_t<sizeof(Float) == 8, uint64_t, uint32_t>;
+    using KeyBits = std::conditional_t<sizeof(Key) == 8, uint64_t, uint32_t>;
 
     static constexpr size_t PART_SIZE_BITS = 8;    /// With what pieces of the key, in bits, to do one pass - reshuffle of the array.
 
@@ -87,7 +90,6 @@ struct RadixSortFloatTraits
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
 };
-
 
 template <typename KeyBits>
 struct RadixSortIdentityTransform
@@ -109,39 +111,47 @@ struct RadixSortSignedTransform
 };
 
 
-template <typename UInt>
+template <typename TElement>
 struct RadixSortUIntTraits
 {
-    using Element = UInt;
-    using Key = UInt;
+    using Element = TElement;
+    using Key = Element;
     using CountType = uint32_t;
-    using KeyBits = UInt;
+    using KeyBits = Key;
 
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortIdentityTransform<KeyBits>;
     using Allocator = RadixSortMallocAllocator;
 
-    /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
 };
 
-template <typename Int>
+
+template <typename TElement>
 struct RadixSortIntTraits
 {
-    using Element = Int;
-    using Key = Int;
+    using Element = TElement;
+    using Key = Element;
     using CountType = uint32_t;
-    using KeyBits = std::make_unsigned_t<Int>;
+    using KeyBits = std::make_unsigned_t<Key>;
 
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortSignedTransform<KeyBits>;
     using Allocator = RadixSortMallocAllocator;
 
-    /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
 };
+
+
+template <typename T>
+using RadixSortNumTraits =
+    std::conditional_t<std::is_integral_v<T>,
+        std::conditional_t<std::is_unsigned_v<T>,
+            RadixSortUIntTraits<T>,
+            RadixSortIntTraits<T>>,
+        RadixSortFloatTraits<T>>;
 
 
 template <typename Traits>
@@ -191,8 +201,8 @@ public:
             if (!Traits::Transform::transform_is_simple)
                 Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
 
-            for (size_t j = 0; j < NUM_PASSES; ++j)
-                ++histograms[j * HISTOGRAM_SIZE + getPart(j, keyToBits(Traits::extractKey(arr[i])))];
+            for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+                ++histograms[pass * HISTOGRAM_SIZE + getPart(pass, keyToBits(Traits::extractKey(arr[i])))];
         }
 
         {
@@ -201,31 +211,31 @@ public:
 
             for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
             {
-                for (size_t j = 0; j < NUM_PASSES; ++j)
+                for (size_t pass = 0; pass < NUM_PASSES; ++pass)
                 {
-                    size_t tmp = histograms[j * HISTOGRAM_SIZE + i] + sums[j];
-                    histograms[j * HISTOGRAM_SIZE + i] = sums[j] - 1;
-                    sums[j] = tmp;
+                    size_t tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
+                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
+                    sums[pass] = tmp;
                 }
             }
         }
 
         /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
-        for (size_t j = 0; j < NUM_PASSES; ++j)
+        for (size_t pass = 0; pass < NUM_PASSES; ++pass)
         {
-            Element * writer = j % 2 ? arr : swap_buffer;
-            Element * reader = j % 2 ? swap_buffer : arr;
+            Element * writer = pass % 2 ? arr : swap_buffer;
+            Element * reader = pass % 2 ? swap_buffer : arr;
 
             for (size_t i = 0; i < size; ++i)
             {
-                size_t pos = getPart(j, keyToBits(Traits::extractKey(reader[i])));
+                size_t pos = getPart(pass, keyToBits(Traits::extractKey(reader[i])));
 
                 /// Place the element on the next free position.
-                auto & dest = writer[++histograms[j * HISTOGRAM_SIZE + pos]];
+                auto & dest = writer[++histograms[pass * HISTOGRAM_SIZE + pos]];
                 dest = reader[i];
 
                 /// On the last pass, we do the reverse transformation.
-                if (!Traits::Transform::transform_is_simple && j == NUM_PASSES - 1)
+                if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
                     Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
             }
         }
@@ -240,24 +250,11 @@ public:
 };
 
 
-template <typename T>
-std::enable_if_t<std::is_unsigned_v<T> && std::is_integral_v<T>, void>
-radixSort(T * arr, size_t size)
-{
-    return RadixSort<RadixSortUIntTraits<T>>::execute(arr, size);
-}
+/// Helper functions for numeric types.
+/// Use RadixSort with custom traits for complex types instead.
 
 template <typename T>
-std::enable_if_t<std::is_signed_v<T> && std::is_integral_v<T>, void>
-radixSort(T * arr, size_t size)
+void radixSort(T * arr, size_t size)
 {
-    return RadixSort<RadixSortIntTraits<T>>::execute(arr, size);
+    RadixSort<RadixSortNumTraits<T>>::execute(arr, size);
 }
-
-template <typename T>
-std::enable_if_t<std::is_floating_point_v<T>, void>
-radixSort(T * arr, size_t size)
-{
-    return RadixSort<RadixSortFloatTraits<T>>::execute(arr, size);
-}
-

@@ -7,7 +7,7 @@ namespace DB
 {
 
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const String & schema, UInt64 max_block_size_)
+    StorageKafka & storage_, const Context & context_, const String & schema, size_t max_block_size_)
     : storage(storage_), context(context_), max_block_size(max_block_size_)
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context (JSON or TSKV)
@@ -24,36 +24,21 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
         return;
 
     if (broken)
-    {
-        LOG_TRACE(storage.log, "Re-joining claimed consumer after failure");
-        consumer->unsubscribe();
-    }
+        buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->unsubscribe();
 
-    storage.pushConsumer(consumer);
+    storage.pushBuffer(buffer);
 }
 
 void KafkaBlockInputStream::readPrefixImpl()
 {
-    consumer = storage.tryClaimConsumer(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
-    claimed = !!consumer;
+    buffer = storage.tryClaimBuffer(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+    claimed = !!buffer;
 
-    if (!consumer)
-        consumer = std::make_shared<cppkafka::Consumer>(storage.createConsumerConfiguration());
+    if (!buffer)
+        buffer = storage.createBuffer();
 
-    // While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
-    // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
-    if (consumer->get_subscription().empty())
-    {
-        using namespace std::chrono_literals;
+    buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->subscribe(storage.topics);
 
-        consumer->pause(); // don't accidentally read any messages
-        consumer->subscribe(storage.topics);
-        consumer->poll(5s);
-        consumer->resume();
-    }
-
-    buffer = std::make_unique<DelimitedReadBuffer>(
-        new ReadBufferFromKafkaConsumer(consumer, storage.log, max_block_size), storage.row_delimiter);
     addChild(FormatFactory::instance().getInput(storage.format_name, *buffer, storage.getSampleBlock(), context, max_block_size));
 
     broken = true;
@@ -66,4 +51,4 @@ void KafkaBlockInputStream::readSuffixImpl()
     broken = false;
 }
 
-} // namespace DB
+}

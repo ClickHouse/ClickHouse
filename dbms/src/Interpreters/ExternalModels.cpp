@@ -33,8 +33,7 @@ namespace
 
 ExternalModels::ExternalModels(
     std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
-    Context & context,
-    bool throw_on_error)
+    Context & context)
         : ExternalLoader(context.getConfigRef(),
                          externalModelsUpdateSettings,
                          getExternalModelsConfigSettings(),
@@ -43,11 +42,10 @@ ExternalModels::ExternalModels(
                          "external model"),
           context(context)
 {
-    init(throw_on_error);
 }
 
 std::unique_ptr<IExternalLoadable> ExternalModels::create(
-        const std::string & name, const Configuration & config, const std::string & config_prefix)
+        const std::string & name, const Configuration & config, const std::string & config_prefix) const
 {
     String type = config.getString(config_prefix + ".type");
     ExternalLoadableLifetime lifetime(config, config_prefix + ".lifetime");

@@ -123,9 +123,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
     ParserKeyword s_codec{"CODEC"};
+    ParserKeyword s_ttl{"TTL"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserCodec codec_parser;
+    ParserExpression expression_parser;
 
     /// mandatory column name
     ASTPtr name;
@@ -140,6 +142,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
+    ASTPtr ttl_expression;
 
     if (!s_default.check_without_moving(pos, expected) &&
         !s_materialized.check_without_moving(pos, expected) &&
@@ -178,6 +181,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    if (s_ttl.ignore(pos, expected))
+    {
+        if (!expression_parser.parse(pos, ttl_expression, expected))
+            return false;
+    }
+
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
     getIdentifierName(name, column_declaration->name);
@@ -205,6 +214,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         column_declaration->codec = codec_expression;
         column_declaration->children.push_back(std::move(codec_expression));
+    }
+
+    if (ttl_expression)
+    {
+        column_declaration->ttl = ttl_expression;
+        column_declaration->children.push_back(std::move(ttl_expression));
     }
 
     return true;
@@ -285,7 +300,7 @@ protected:
   * CREATE|ATTACH DATABASE db [ENGINE = engine]
   *
   * Or:
-  * CREATE|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+  * CREATE [OR REPLACE]|ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
   */
 class ParserCreateQuery : public IParserBase
 {

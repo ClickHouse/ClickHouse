@@ -213,7 +213,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
         if (!arguments)
         {
             node = makeASTFunction(function_name, node);
-            arguments = static_cast<ASTFunction &>(*node).arguments;
+            arguments = node->as<ASTFunction &>().arguments;
         }
 
         ASTPtr elem;
@@ -540,8 +540,7 @@ bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
 bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return nested_parser.parse(pos, node, expected)
-        && !typeid_cast<ASTExpressionList &>(*node).children.empty();
+    return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }
 
 

@@ -69,7 +69,7 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
-        Columns columns = column_tuple->getColumns();
+        auto columns = column_tuple->getColumns();
         for (auto & element : columns)
             element = recursiveRemoveLowCardinality(element);
         return ColumnTuple::create(columns);
@@ -142,7 +142,7 @@ ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const Data
                 throw Exception("Unexpected column " + column->getName() + " for type " + from_type->getName(),
                                 ErrorCodes::ILLEGAL_COLUMN);
 
-            Columns columns = column_tuple->getColumns();
+            auto columns = column_tuple->getColumns();
             auto & from_elements = from_tuple_type->getElements();
             auto & to_elements = to_tuple_type->getElements();
 

@@ -18,6 +18,7 @@ inc="-I. \
 -I./contrib/libmetrohash/src \
 -I./contrib/double-conversion \
 -I./contrib/cityhash102/include \
+-I./contrib/croaring \
 -I./contrib/murmurhash/include \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
@@ -47,13 +48,15 @@ inc="-I. \
 -I./libs/libmysqlxx/include \
 -I./libs/libcommon/include \
 -I${BUILD_DIR}/libs/libcommon/include \
--I./libs/libpocoext/include \
 -I./libs/libzkutil/include \
 -I./libs/libdaemon/include \
 -I./libs/consistent-hashing \
 -I./libs/consistent-hashing-sumbur \
 -I./contrib/libhdfs3/include \
 -I./contrib/base64/include \
+-I./contrib/protobuf/src \
+-I./contrib/cppkafka/include \
+-I./contrib/librdkafka-cmake/include \
 -I./contrib/lz4/lib \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
@@ -64,5 +67,5 @@ if [ -z $1 ]; then
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "
-    echo "#include <$1> \n int main() {return 0;}" | time --format "%e %M" ${CXX:=g++-7} -c -std=c++1z $inc -x c++ -
+    echo "#include <$1>\nint main() {return 0;}" | time --format "%e %M" ${CXX:=g++-7} -c -std=c++1z $inc -x c++ -
 fi

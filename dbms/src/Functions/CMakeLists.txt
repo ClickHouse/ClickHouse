@@ -7,7 +7,7 @@ add_headers_and_sources(clickhouse_functions .)
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
 
-add_library(clickhouse_functions ${LINK_MODE} ${clickhouse_functions_sources})
+add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
@@ -20,7 +20,11 @@ target_link_libraries(clickhouse_functions
         ${METROHASH_LIBRARIES}
         murmurhash
         ${BASE64_LIBRARY}
-        ${OPENSSL_CRYPTO_LIBRARY})
+)
+
+if (OPENSSL_CRYPTO_LIBRARY)
+    target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
+endif()
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR})
 
@@ -60,3 +64,8 @@ if (USE_XXHASH)
     target_link_libraries(clickhouse_functions PRIVATE ${XXHASH_LIBRARY})
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${XXHASH_INCLUDE_DIR})
 endif()
+
+if (USE_HYPERSCAN)
+    target_link_libraries (clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
+    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
+endif ()

@@ -3,7 +3,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <Interpreters/SettingsCommon.h>
+#include <Core/SettingsCommon.h>
 
 
 namespace DB
@@ -160,7 +160,13 @@ struct MergeTreeSettings
     M(SettingUInt64, finished_mutations_to_keep, 100)                                                         \
                                                                                                               \
     /** Minimal amount of bytes to enable O_DIRECT in merge (0 - disabled) */                                 \
-    M(SettingUInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024)
+    M(SettingUInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024)                            \
+                                                                                                              \
+    /** Approximate amount of bytes in single granule (0 - disabled) */                                       \
+    M(SettingUInt64, index_granularity_bytes, 0)                                                              \
+                                                                                                              \
+    /** Minimal time in seconds, when merge with TTL can be repeated */                                       \
+    M(SettingInt64, merge_with_ttl_timeout, 3600 * 24)
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \

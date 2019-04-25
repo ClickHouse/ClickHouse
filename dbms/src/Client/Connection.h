@@ -18,7 +18,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/TablesStatus.h>
 
 #include <Compression/ICompressionCodec.h>
@@ -271,7 +271,7 @@ private:
     void initBlockInput();
     void initBlockLogsInput();
 
-    void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
+    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };
 
 }

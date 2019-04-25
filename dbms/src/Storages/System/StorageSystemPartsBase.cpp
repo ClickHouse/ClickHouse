@@ -167,7 +167,7 @@ public:
             try
             {
                 /// For table not to be dropped and set of columns to remain constant.
-                info.table_lock = info.storage->lockStructure(false, query_id);
+                info.table_lock = info.storage->lockStructureForShare(false, query_id);
             }
             catch (const Exception & e)
             {
@@ -286,31 +286,21 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
     : name(std::move(name_))
 {
-    NamesAndTypesList aliases;
-    ColumnDefaults defaults;
+    ColumnsDescription columns(std::move(columns_));
+
     auto add_alias = [&](const String & alias_name, const String & column_name)
     {
-        DataTypePtr type;
-        for (const NameAndTypePair & col : columns_)
-        {
-            if (col.name == column_name)
-            {
-                type = col.type;
-                break;
-            }
-        }
-        if (!type)
-            throw Exception("No column " + column_name + " in table system." + name, ErrorCodes::LOGICAL_ERROR);
-
-        aliases.push_back({alias_name, type});
-        defaults[alias_name] = ColumnDefault{ColumnDefaultKind::Alias, std::make_shared<ASTIdentifier>(column_name)};
+        ColumnDescription column(alias_name, columns.get(column_name).type);
+        column.default_desc.kind = ColumnDefaultKind::Alias;
+        column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
+        columns.add(column);
     };
 
     /// Add aliases for old column names for backwards compatibility.
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
 
-    setColumns(ColumnsDescription(std::move(columns_), {}, std::move(aliases), std::move(defaults), ColumnComments{}, ColumnCodecs{}));
+    setColumns(columns);
 }
 
 }
