@@ -942,13 +942,28 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             bool may_be_true;
             if (range.end == marks_count)
             {
-                for (size_t i = 0; i < used_key_size; ++i)
+                size_t last_mark_rows_count = part->index_granularity.getMarkRows(marks_count - 1);
+                /// We sure about that range and can build interval precisely
+                if (last_mark_rows_count == 1)
                 {
-                    index[i]->get(range.begin, index_left[i]);
-                }
+                    for (size_t i = 0; i < used_key_size; ++i)
+                    {
+                        index[i]->get(range.begin, index_left[i]);
+                        index[i]->get(range.end - 1, index_right[i]);
+                    }
 
-                may_be_true = key_condition.mayBeTrueAfter(
-                    used_key_size, index_left.data(), data.primary_key_data_types);
+                    may_be_true = key_condition.mayBeTrueInRange(
+                        used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types);
+                }
+                else
+                {
+                    for (size_t i = 0; i < used_key_size; ++i)
+                    {
+                        index[i]->get(range.begin, index_left[i]);
+                    }
+                    may_be_true = key_condition.mayBeTrueAfter(
+                        used_key_size, index_left.data(), data.primary_key_data_types);
+                }
             }
             else
             {

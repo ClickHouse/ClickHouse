@@ -208,7 +208,7 @@ private:
     MutableColumns index_columns;
     /// Index columns values from the last row from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method
-    std::vector<Field> last_index_row;
+    ColumnsWithTypeAndName last_index_row;
 
     std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;

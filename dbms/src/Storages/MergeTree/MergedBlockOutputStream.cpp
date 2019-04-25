@@ -462,6 +462,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
                 std::cerr << "SERIALIZING SUFFIX FOR COLUMN:" << it->name <<    std::endl;
                 it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
             }
+
             it->type->enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
                 {
                     bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
@@ -509,10 +510,10 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
             std::cerr << "Stream count before:" << index_stream->count() << std::endl;
             for (size_t j = 0; j < index_columns.size(); ++j)
             {
-                index_columns[j]->insert(last_index_row[j]);
-                writeBinaryWithoutType(last_index_row[j], *index_stream);
+                auto & column = *last_index_row[j].column;
+                index_columns[j]->insertFrom(column, 0); /// it has only one element
+                last_index_row[j].type->serializeBinary(column, 0, *index_stream);
             }
-            std::cerr << "Stream count after:" << index_stream->count() << std::endl;
         }
 
         index_stream->next();
@@ -675,9 +676,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (index_columns.empty())
     {
         index_columns.resize(primary_key_column_names.size());
-        for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
-            index_columns[i] = primary_key_columns[i].column->cloneEmpty();
         last_index_row.resize(primary_key_column_names.size());
+        for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
+        {
+            index_columns[i] = primary_key_columns[i].column->cloneEmpty();
+            last_index_row[i] = primary_key_columns[i].cloneEmpty();
+        }
     }
 
     if (serialization_states.empty())
@@ -820,8 +824,14 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
     /// store last index row to write final mark at the end of column
     for (size_t j = 0, size = primary_key_columns.size(); j < size; ++j)
-        primary_key_columns[j].column->get(rows - 1, last_index_row[j]);
-
+    {
+        const IColumn & primary_column = *primary_key_columns[j].column.get();
+        auto mutable_column = std::move(*last_index_row[j].column).mutate();
+        if (!mutable_column->empty())
+            mutable_column->popBack(1);
+        mutable_column->insertFrom(primary_column, rows - 1);
+        last_index_row[j].column = std::move(mutable_column);
+    }
 
     index_offset = new_index_offset;
 }
@@ -902,7 +912,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
     }
 
-    std::cerr << "Total MARKS COUNT:" << index_granularity.getMarksCount() << std::endl;
+    std::cerr << "Total MARKS COUNT:" << index_granularity.getMarksCount() << " Current Mark:" << current_mark << std::endl;
     MergeTreeData::DataPart::Checksums checksums;
 
     for (auto & column_stream : column_streams)
