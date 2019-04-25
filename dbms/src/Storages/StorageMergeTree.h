@@ -133,7 +133,7 @@ private:
     BackgroundProcessingPool::TaskHandle background_task_handle;
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> prepare_alter_transactions(
-        const ColumnsDescription& new_columns, const IndicesDescription& new_indices, const size_t thread_pool_size);
+        const ColumnsDescription& new_columns, const IndicesDescription& new_indices, const Context & context);
 
     void loadMutations();
 
