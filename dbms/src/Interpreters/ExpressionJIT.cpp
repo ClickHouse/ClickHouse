@@ -77,7 +77,7 @@ namespace
     {
         const char * data = nullptr;
         const char * null = nullptr;
-        size_t stride;
+        size_t stride = 0;
     };
 
     struct ColumnDataPlaceholder

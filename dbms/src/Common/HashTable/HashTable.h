@@ -526,7 +526,7 @@ public:
     {
     public:
         Reader(DB::ReadBuffer & in_)
-        : in(in_)
+            : in(in_)
         {
         }
 
@@ -566,7 +566,7 @@ public:
         DB::ReadBuffer & in;
         Cell cell;
         size_t read_count = 0;
-        size_t size;
+        size_t size = 0;
         bool is_eof = false;
         bool is_initialized = false;
     };
