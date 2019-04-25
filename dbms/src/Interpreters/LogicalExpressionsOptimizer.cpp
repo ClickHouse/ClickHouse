@@ -122,6 +122,7 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
                 {
                     bool flag = value.first.column->getBool(0);
                     /// TODO: deal with the alias, but here we just ignore the alais by Short circuit evaluation
+                    /// `1 or anything` always return 1, `0 and anything` always return 0
                     if ((flag && is_or) || (!flag && !is_or))
                     {
                         ASTPtr replace_ast_ptr = std::make_shared<ASTLiteral>(flag);
@@ -149,18 +150,19 @@ std::pair<ColumnWithTypeAndName, bool> LogicalExpressionsOptimizer::tryExtractAn
             size_t position = 0;
             auto * func_args = typeid_cast<ASTExpressionList *>(function->arguments.get());
 
-            bool flag = true;
+            bool all_children_constant = true;
             for (auto & child : func_args->children)
             {
                 auto value = tryExtractAndReplaceConstColumn(child);
                 if (!value.second)
-                    flag = false;
+                    all_children_constant = false;
                 args.push_back(value.first);
                 args_position.push_back(position);
                 ++position;
             }
 
-            if (!flag)
+            /// we can't eval the function value unless all child are constant
+            if (!all_children_constant)
                 return std::make_pair(ColumnWithTypeAndName(), false);
 
             FunctionBuilderPtr func_builder = FunctionFactory::instance().tryGet(function->name, context);
@@ -199,14 +201,6 @@ void LogicalExpressionsOptimizer::replaceAST(ASTPtr & node, ASTPtr & replacer)
 {
     String node_alias = node->tryGetAlias();
     replacer->setAlias(node_alias);
-
-    if (select_query->where_expression && (node == select_query->where_expression))
-        select_query->where_expression = replacer;
-    if (select_query->prewhere_expression && (node == select_query->prewhere_expression))
-        select_query->prewhere_expression = replacer;
-    if (select_query->having_expression && (node == select_query->having_expression))
-        select_query->having_expression = replacer;
-
     node = replacer;
 }
 
