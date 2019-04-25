@@ -36,7 +36,7 @@ class DoubleConverter
 public:
     /** @todo Add commentary on how this constant is deduced.
      *    e.g. it's minus sign, integral zero, decimal point, up to 5 leading zeros and kBase10MaximalLength digits. */
-    static constexpr auto MAX_REPRESENTATION_LENGTH = 26;
+    static constexpr auto MAX_REPRESENTATION_LENGTH = 32;
     using BufferType = char[MAX_REPRESENTATION_LENGTH];
 
     static const auto & instance()
