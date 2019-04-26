@@ -1473,13 +1473,12 @@ public:
                 /** Check how many bits we need to set the masks, if we got more bits who can be contain in one byte
                   * with our current offset, we just clean the whole byte,
                   */
-                const size_t shifts_bits = 
-                    byte_offset - bits_to_keep > bits_in_uint8
+                const size_t shifts_bits = byte_offset - bits_to_keep > bits_in_uint8
                     ? bits_in_uint8
                     : byte_offset - bits_to_keep;
 
                 constexpr UInt8 byte_reference = lower_range ? 0 : std::numeric_limits<UInt8>::max();
-                
+ 
                 /// Clean the bits we don't want on byte
                 const UInt16 src_byte_shift = (static_cast<UInt16>(src[offset]) >> shifts_bits) << shifts_bits;
                 /// Set the CIDR mask.
@@ -1515,8 +1514,8 @@ public:
                             + ", expected numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         decltype(arguments) return_type = {
-            std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH),
-            std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH)
+            DataTypeFactory::instance().get("IPv6"),
+            DataTypeFactory::instance().get("IPv6")
         };
         return std::make_shared<DataTypeTuple>(return_type);
     }
@@ -1533,7 +1532,7 @@ public:
 
         const auto & col_type_name_cidr = block.getByPosition(arguments[1]);
         const ColumnPtr & column_cidr = col_type_name_cidr.column;
-        
+
         const auto col_const_cidr_in = checkAndGetColumnConst<ColumnUInt8>(column_cidr.get());
         const auto col_cidr_in = checkAndGetColumn<ColumnUInt8>(column_cidr.get());
 
@@ -1597,7 +1596,7 @@ public:
     static UInt32 setCIDRMask(UInt32 src, UInt8 bits_to_keep)
     {
         UInt32 byte_reference = lower_range ? 0 : std::numeric_limits<UInt32>::max();
-        
+
         if (bits_to_keep >= bits_in_uint32)
             return src;
 
@@ -1636,7 +1635,7 @@ public:
                             + " of second argument of function " + getName()
                             + ", expected numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        decltype(arguments) return_type = { std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeUInt32>() };
+        decltype(arguments) return_type = { DataTypeFactory::instance().get("IPv4"), DataTypeFactory::instance().get("IPv4") };
         return std::make_shared<DataTypeTuple>(return_type);
     }
 
@@ -1652,7 +1651,7 @@ public:
 
         const auto & col_type_name_cidr = block.getByPosition(arguments[1]);
         const ColumnPtr & column_cidr = col_type_name_cidr.column;
-        
+
         const auto col_const_cidr_in = checkAndGetColumnConst<ColumnUInt8>(column_cidr.get());
         const auto col_cidr_in = checkAndGetColumn<ColumnUInt8>(column_cidr.get());
 
@@ -1660,7 +1659,7 @@ public:
         {
             const auto size = col_ip_in->size();
             const auto & vec_in = col_ip_in->getData();
- 
+
             Columns tuple_columns(ip_range_tuple_size);
 
             auto col_res_lower_range = ColumnUInt32::create();
