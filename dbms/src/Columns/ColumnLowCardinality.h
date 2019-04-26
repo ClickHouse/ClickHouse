@@ -14,9 +14,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class ColumnLowCardinality final : public COWPtrHelper<IColumn, ColumnLowCardinality>
+class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
 {
-    friend class COWPtrHelper<IColumn, ColumnLowCardinality>;
+    friend class COWHelper<IColumn, ColumnLowCardinality>;
 
     ColumnLowCardinality(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
     ColumnLowCardinality(const ColumnLowCardinality & other) = default;
@@ -25,7 +25,7 @@ public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
-    using Base = COWPtrHelper<IColumn, ColumnLowCardinality>;
+    using Base = COWHelper<IColumn, ColumnLowCardinality>;
     static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false)
     {
         return ColumnLowCardinality::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);

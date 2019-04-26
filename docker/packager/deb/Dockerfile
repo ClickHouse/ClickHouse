@@ -9,6 +9,7 @@ RUN apt-get --allow-unauthenticated update -y \
             bash \
             fakeroot \
             cmake \
+            ccache \
             curl \
             gcc-7 \
             g++-7 \
@@ -31,6 +32,7 @@ RUN apt-get --allow-unauthenticated update -y \
             liblld-8-dev \
             libicu-dev \
             libreadline-dev \
+            gperf \
             ninja-build \
             perl \
             pkg-config \
@@ -61,6 +63,5 @@ RUN apt-get --allow-unauthenticated update -y \
             tzdata \
             gperf
 
-
-
-CMD /bin/bash build/release --no-pbuilder && mv /*.deb /output && mv *.changes /output && mv *.buildinfo /output
+COPY build.sh /
+CMD ["/bin/bash", "/build.sh"]

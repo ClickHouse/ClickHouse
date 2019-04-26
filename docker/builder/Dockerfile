@@ -14,6 +14,7 @@ RUN apt-get update -y \
             libicu-dev \
             liblld-6.0-dev \
             libreadline-dev \
+            gperf \
             ninja-build \
             perl \
             pkg-config \
