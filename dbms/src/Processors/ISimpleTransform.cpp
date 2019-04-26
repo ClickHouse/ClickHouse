@@ -31,7 +31,7 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     /// Output if has data.
     if (transformed)
     {
-        output.push(std::move(current_chunk));
+        output.pushData(std::move(current_data));
         transformed = false;
     }
 
@@ -57,8 +57,18 @@ ISimpleTransform::Status ISimpleTransform::prepare()
         if (!input.hasData())
             return Status::NeedData;
 
-        current_chunk = input.pull();
+        current_data = input.pullData();
         has_input = true;
+
+        if (std::holds_alternative<std::exception_ptr>(current_data))
+        {
+            /// Skip transform in case of exception.
+            has_input = false;
+            transformed = true;
+
+            /// No more data needed. Exception will be thrown (or swallowed) later.
+            input.setNotNeeded();
+        }
 
         if (set_input_not_needed_after_read)
             input.setNotNeeded();
@@ -70,15 +80,26 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
 void ISimpleTransform::work()
 {
-    transform(current_chunk);
+    try
+    {
+        transform(std::get<Chunk>(current_data));
+    }
+    catch (DB::Exception &)
+    {
+        current_data = std::current_exception();
+        transformed = true;
+        has_input = false;
+        return;
+    }
+
     has_input = false;
 
-    if (!skip_empty_chunks || current_chunk)
+    if (!skip_empty_chunks || std::get<Chunk>(current_data))
         transformed = true;
 
-    if (transformed && !current_chunk)
+    if (transformed && !std::get<Chunk>(current_data))
         /// Support invariant that chunks must have the same number of columns as header.
-        current_chunk = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
+        current_data = Chunk(getOutputPort().getHeader().cloneEmpty().getColumns(), 0);
 }
 
 }
