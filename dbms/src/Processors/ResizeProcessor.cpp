@@ -94,11 +94,24 @@ ResizeProcessor::Status ResizeProcessor::prepare()
         return Status::NeedData;
     };
 
+    /// Set all inputs needed in order to evenly process them.
+    /// Otherwise, in case num_outputs < num_inputs and chunks are consumed faster than produced,
+    ///   some inputs can be skipped.
+    auto set_all_unprocessed_inputs_needed = [&]()
+    {
+        for (; cur_input != inputs.end(); ++cur_input)
+            if (!cur_input->isFinished())
+                cur_input->setNeeded();
+    };
+
     while (cur_input != inputs.end() && cur_output != outputs.end())
     {
         auto output = get_next_out();
         if (output == outputs.end())
+        {
+            set_all_unprocessed_inputs_needed();
             return get_status_if_no_outputs();
+        }
 
         auto input = get_next_input();
         if (input == inputs.end())
@@ -108,7 +121,10 @@ ResizeProcessor::Status ResizeProcessor::prepare()
     }
 
     if (cur_output == outputs.end())
+    {
+        set_all_unprocessed_inputs_needed();
         return get_status_if_no_outputs();
+    }
 
     /// cur_input == inputs_end()
     return get_status_if_no_inputs();
