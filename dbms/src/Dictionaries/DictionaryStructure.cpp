@@ -21,6 +21,7 @@
 #include <unordered_set>
 #include <ext/range.h>
 
+using namespace Poco::XML;
 
 namespace DB
 {
@@ -400,14 +401,14 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
 
 void buildXMLRecursive(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const ASTKeyValueFunction * func)
 {
     if (func == nullptr)
         return;
 
-    Poco::AutoPtr<Poco::XML::Element> xml_element = doc->createElement(func->name);
+    AutoPtr<Element> xml_element(doc->createElement(func->name));
     root->appendChild(xml_element);
     const ASTExpressionList * ast_expr_list = typeid_cast<const ASTExpressionList *>(func->children[0].get());
     for (size_t index = 0; index != ast_expr_list->children.size(); ++index)
@@ -416,10 +417,11 @@ void buildXMLRecursive(
         if (ast_element->getID() == "pair")
         {
             const ASTPair * pair = typeid_cast<const ASTPair *>(ast_element);
-            Poco::AutoPtr<Poco::XML::Element> current_xml_element = doc->createElement(pair->first);
+            AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
             xml_element->appendChild(current_xml_element);
             const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(pair->second.get());
-            current_xml_element->appendChild(doc->createTextNode(literal->value.get<String>()));
+            AutoPtr<Text> value(doc->createTextNode(literal->value.get<String>()));
+            current_xml_element->appendChild(value);
         }
         else if (startsWith(ast_element->getID(), "KeyValueFunction"))
         {
@@ -434,8 +436,8 @@ void buildXMLRecursive(
 
 
 void addSourceFieldsFromAST(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const ASTCreateQuery & create)
 {
     if (create.dictionary_source == nullptr || create.dictionary_source->source == nullptr)
@@ -446,8 +448,8 @@ void addSourceFieldsFromAST(
 
 
 void addLayoutFieldsFromAST(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const ASTCreateQuery & create)
 {
     const auto * layout = create.dictionary_source->layout;
@@ -462,34 +464,37 @@ void addLayoutFieldsFromAST(
     if (layout_type.children.size() > 1)
         throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout type may contain only one parameter", ErrorCodes::BAD_ARGUMENTS);
 
-    Poco::AutoPtr<Poco::XML::Element> layout_element = doc->createElement("layout");
+    AutoPtr<Element> layout_element(doc->createElement("layout"));
     root->appendChild(layout_element);
-    Poco::AutoPtr<Poco::XML::Element> layout_type_element = doc->createElement(layout_type.name);
+    AutoPtr<Element> layout_type_element(doc->createElement(layout_type.name));
     layout_element->appendChild(layout_type_element);
 
     const auto * layout_parameter_expr_list = layout_type.children.at(0).get();
     if (layout_parameter_expr_list->children.size() == 1)
     {
         const ASTPair & pair = typeid_cast<const ASTPair &>(*layout_parameter_expr_list->children[0].get());
-        Poco::AutoPtr<Poco::XML::Element> layout_type_parameter_element = doc->createElement(pair.first);
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair.first));
         const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(pair.second.get());
-        layout_type_parameter_element->appendChild(doc->createTextNode(toString(literal->value.get<UInt64>())));
+        AutoPtr<Text> value(doc->createTextNode(toString(literal->value.get<UInt64>())));
+        layout_type_parameter_element->appendChild(value);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
 }
 
 
 void addLifetimeFieldsFromAST(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const ASTCreateQuery & create)
 {
     auto lifetime = ExternalLoadableLifetime(create.dictionary_source->lifetime);
-    Poco::AutoPtr<Poco::XML::Element> lifetime_element = doc->createElement("lifetime");
-    Poco::AutoPtr<Poco::XML::Element> min_element = doc->createElement("min");
-    Poco::AutoPtr<Poco::XML::Element> max_element = doc->createElement("max");
-    min_element->appendChild(doc->createTextNode(toString(lifetime.min_sec)));
-    max_element->appendChild(doc->createTextNode(toString(lifetime.max_sec)));
+    AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
+    AutoPtr<Element> min_element(doc->createElement("min"));
+    AutoPtr<Element> max_element(doc->createElement("max"));
+    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime.min_sec)));
+    min_element->appendChild(min_sec);
+    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime.max_sec)));
+    max_element->appendChild(max_sec);
     lifetime_element->appendChild(min_element);
     lifetime_element->appendChild(max_element);
     root->appendChild(lifetime_element);
@@ -497,8 +502,8 @@ void addLifetimeFieldsFromAST(
 
 
 void addAdditionalColumnFields(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const ASTColumnDeclaration * column_declaration)
 {
     const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(column_declaration->expr_list.get());
@@ -506,16 +511,17 @@ void addAdditionalColumnFields(
     {
         const auto * child = expr_list->children.at(index).get();
         const ASTPair * pair = typeid_cast<const ASTPair *>(child);
-        auto pair_element = doc->createElement(pair->first);
-        pair_element->appendChild(doc->createTextNode(queryToString(pair->second)));
+        AutoPtr<Element> pair_element(doc->createElement(pair->first));
+        AutoPtr<Text> value(doc->createTextNode(queryToString(pair->second)));
+        pair_element->appendChild(value);
         root->appendChild(pair_element);
     }
 }
 
 
 void addRangeFieldsFromAST(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const ASTKeyValueFunction * range)
 {
     const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(range->children.at(0).get());
@@ -526,18 +532,19 @@ void addRangeFieldsFromAST(
     {
         const auto * child = expr_list->children.at(index).get();
         const ASTPair * pair = typeid_cast<const ASTPair *>(child);
-        Poco::AutoPtr<Poco::XML::Element> name = doc->createElement("name");
-        name->appendChild(doc->createTextNode(queryToString(pair->second)));
+        AutoPtr<Element> name(doc->createElement("name"));
+        AutoPtr<Text> value(doc->createTextNode(queryToString(pair->second)));
+        name->appendChild(value);
 
         if (pair->first == "min")
         {
-            Poco::AutoPtr<Poco::XML::Element> range_min_element = doc->createElement("range_min");
+            AutoPtr<Element> range_min_element(doc->createElement("range_min"));
             range_min_element->appendChild(name);
             root->appendChild(range_min_element);
         }
         else if (pair->first == "max")
         {
-            Poco::AutoPtr<Poco::XML::Element> range_max_element = doc->createElement("range_max");
+            AutoPtr<Element> range_max_element(doc->createElement("range_max"));
             range_max_element->appendChild(name);
             root->appendChild(range_max_element);
         }
@@ -548,8 +555,8 @@ void addRangeFieldsFromAST(
 
 
 void addPrimaryKeyFieldsFromAST(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const IAST * primary_key)
 {
     const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(primary_key);
@@ -557,36 +564,39 @@ void addPrimaryKeyFieldsFromAST(
         throw Exception("Primary key may be only one column", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
     auto column_name = expr_list->children[0]->getColumnName();
-    Poco::AutoPtr<Poco::XML::Element> id_element = doc->createElement("id");
+    AutoPtr<Element> id_element(doc->createElement("id"));
     root->appendChild(id_element);
-    Poco::AutoPtr<Poco::XML::Element> name_element = doc->createElement("name");
+    AutoPtr<Element> name_element(doc->createElement("name"));
     id_element->appendChild(name_element);
-    name_element->appendChild(doc->createTextNode(column_name));
+    AutoPtr<Text> name(doc->createTextNode(column_name));
+    name_element->appendChild(name);
 }
 
 
 void addCompositeKeyFieldsFromAST(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const IAST * composite_key)
 {
     const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(composite_key);
     if (expr_list->children.size() == 0)
         throw Exception("Composite key should contain at least one element", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
-    Poco::AutoPtr<Poco::XML::Element> key_element = doc->createElement("key");
+    AutoPtr<Element> key_element(doc->createElement("key"));
     root->appendChild(key_element);
     for (size_t index = 0; index != expr_list->children.size(); ++index)
     {
         const auto * child = expr_list->children.at(index).get();
         const ASTPair * pair = typeid_cast<const ASTPair *>(child);
-        Poco::AutoPtr<Poco::XML::Element> attribute_element = doc->createElement("attribute");
-        Poco::AutoPtr<Poco::XML::Element> name_element = doc->createElement("name");
-        name_element->appendChild(doc->createTextNode(pair->first));
+        AutoPtr<Element> attribute_element(doc->createElement("attribute"));
+        AutoPtr<Element> name_element(doc->createElement("name"));
+        AutoPtr<Text> name(doc->createTextNode(pair->first));
+        name_element->appendChild(name);
         attribute_element->appendChild(name_element);
 
-        Poco::AutoPtr<Poco::XML::Element> type_element = doc->createElement("type");
-        type_element->appendChild(doc->createTextNode(queryToString(pair->second)));
+        AutoPtr<Element> type_element(doc->createElement("type"));
+        AutoPtr<Text> type(doc->createTextNode(queryToString(pair->second)));
+        type_element->appendChild(type);
         attribute_element->appendChild(type_element);
 
         key_element->appendChild(attribute_element);
@@ -594,15 +604,15 @@ void addCompositeKeyFieldsFromAST(
 }
 
 void addStructureFieldsFromAST(
-    Poco::AutoPtr<Poco::XML::Document> doc,
-    Poco::AutoPtr<Poco::XML::Element> root,
+    AutoPtr<Document> doc,
+    AutoPtr<Element> root,
     const ASTCreateQuery & create)
 {
     if (create.dictionary_source == nullptr)
         throw Exception("Dictionary structure is empty", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
     const auto * source = create.dictionary_source;
-    Poco::AutoPtr<Poco::XML::Element> structure_element = doc->createElement("structure");
+    AutoPtr<Element> structure_element(doc->createElement("structure"));
     root->appendChild(structure_element);
     if (source->primary_key)
         addPrimaryKeyFieldsFromAST(doc, structure_element, source->primary_key);
@@ -626,20 +636,23 @@ void addStructureFieldsFromAST(
         if (!column_declaration->type || !column_declaration->default_expression)
             throw Exception("Column declaration of dictionary should contain type and default expression", ErrorCodes::BAD_ARGUMENTS);
 
-        Poco::AutoPtr<Poco::XML::Element> attribute_element = doc->createElement("attribute");
+        AutoPtr<Element> attribute_element(doc->createElement("attribute"));
         structure_element->appendChild(attribute_element);
-        Poco::AutoPtr<Poco::XML::Element> name_element = doc->createElement("name");
-        name_element->appendChild(doc->createTextNode(column_declaration->name));
+        AutoPtr<Element> name_element(doc->createElement("name"));
+        AutoPtr<Text> name(doc->createTextNode(column_declaration->name));
+        name_element->appendChild(name);
         attribute_element->appendChild(name_element);
 
         // TODO: it would be great to check type
         auto type = typeid_cast<const ASTFunction *>(column_declaration->type.get())->name;
-        Poco::AutoPtr<Poco::XML::Element> type_element = doc->createElement("type");
-        type_element->appendChild(doc->createTextNode(type));
+        AutoPtr<Element> type_element(doc->createElement("type"));
+        AutoPtr<Text> type_text(doc->createTextNode(type));
+        type_element->appendChild(type_text);
         attribute_element->appendChild(type_element);
 
-        Poco::AutoPtr<Poco::XML::Element> null_value_element = doc->createElement("null_value");
-        null_value_element->appendChild(doc->createTextNode(queryToString(column_declaration->default_expression)));
+        AutoPtr<Element> null_value_element(doc->createElement("null_value"));
+        AutoPtr<Text> null_value(doc->createTextNode(queryToString(column_declaration->default_expression)));
+        null_value_element->appendChild(null_value);
         attribute_element->appendChild(null_value_element);
 
         addAdditionalColumnFields(doc, attribute_element, column_declaration);
@@ -648,17 +661,31 @@ void addStructureFieldsFromAST(
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(const ASTCreateQuery & create)
 {
-    Poco::AutoPtr<Poco::XML::Document> xml_document = new Poco::XML::Document();
-    Poco::AutoPtr<Poco::XML::Element> document_root = xml_document->createElement("dictionaries");
+    /*  NB! Here and in similar functions we often create new XML object (Element, Text)
+     *  and link it with some XML Element objects. And it is dangerous doing it in the following manner:
+     *  AutoPtr<Element> element(doc->createElement("some element"));
+     *  element->appendChild(doc->createTextNode("some text"));
+     *  The reason is that createTextNode method returns raw pointer and the user of a Poco library
+     *  must release that object himself with release() method. Otherwise, it leads to memory leaks.
+     *  You can read about it here: https://pocoproject.org/docs/Poco.XML.DOMObject.html
+     *
+     *  Instead of that recommended to use AutoPtr objects. So the good manner looks like:
+     *  Poco::AutoPtr<Poco::XML::Text> text_node = doc->createTextNode("some text");
+     *  element->appendChild(text_node);
+     */
+
+    AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());
+    AutoPtr<Poco::XML::Element> document_root(xml_document->createElement("dictionaries"));
     xml_document->appendChild(document_root);
-    Poco::AutoPtr<Poco::XML::Element> current_dictionary = xml_document->createElement("dictionary");
+    AutoPtr<Poco::XML::Element> current_dictionary(xml_document->createElement("dictionary"));
     document_root->appendChild(current_dictionary);
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> conf = new Poco::Util::XMLConfiguration();
+    AutoPtr<Poco::Util::XMLConfiguration> conf(new Poco::Util::XMLConfiguration());
     if (create.dictionary.empty())
         return conf;
 
-    Poco::AutoPtr<Poco::XML::Element> name_element = xml_document->createElement("name");
-    name_element->appendChild(xml_document->createTextNode("create.dictionary"));
+    AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
+    AutoPtr<Poco::XML::Text> dict_text(xml_document->createTextNode("create.dictionary"));
+    name_element->appendChild(dict_text);
     current_dictionary->appendChild(name_element);
 
     addSourceFieldsFromAST(xml_document, current_dictionary, create);
