@@ -67,7 +67,6 @@ private:
 
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
-    bool had_update = false;
 
     Progress accumulated_progress;
     size_t send_progress_interval_ms = 100;
@@ -83,6 +82,8 @@ private:
 
     // Used for write the header X-ClickHouse-progress
     void writeHeaderProgress();
+    // Used for write the header X-ClickHouse-summary
+    void writeHeaderSummary();
 
     /// This method finish headers with \r\n, allowing to start to send body.
     void finishSendHeaders();

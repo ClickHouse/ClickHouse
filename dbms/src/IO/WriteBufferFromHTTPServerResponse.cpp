@@ -36,14 +36,26 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
     }
 }
 
+void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
+{
+    if (headers_finished_sending)
+        return;
+    
+    WriteBufferFromOwnString progress_string_writer;
+    accumulated_progress.writeJSON(progress_string_writer);
+
+#if defined(POCO_CLICKHOUSE_PATCH)
+    *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
+#endif
+}
+
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
     if (headers_finished_sending)
         return;
     
-    had_update = false;
     WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
+    accumulated_progress.writeJSON<ReadProgressValueImpl>(progress_string_writer);
 
 #if defined(POCO_CLICKHOUSE_PATCH)
     *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
@@ -54,8 +66,7 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 {
     if (!headers_finished_sending)
     {
-        if (had_update)
-            writeHeaderProgress();
+        writeHeaderSummary();
         headers_finished_sending = true;
 
         if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_HEAD)
@@ -181,7 +192,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     if (headers_finished_sending)
         return;
 
-    had_update = accumulated_progress.incrementPiecewiseAtomically(progress);
+    accumulated_progress.incrementPiecewiseAtomically(progress);
 
     if (progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
     {

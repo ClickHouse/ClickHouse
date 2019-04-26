@@ -8,8 +8,7 @@
 
 namespace DB
 {
-
-void ProgressValues::read(ReadBuffer & in, UInt64 /*server_revision*/)
+void AllProgressValueImpl::read(ProgressValues & value, ReadBuffer & in, UInt64 /*server_revision*/)
 {
     size_t new_rows = 0;
     size_t new_bytes = 0;
@@ -23,65 +22,88 @@ void ProgressValues::read(ReadBuffer & in, UInt64 /*server_revision*/)
     readVarUInt(new_write_rows, in);
     readVarUInt(new_write_bytes, in);
  
-    rows = new_rows;
-    bytes = new_bytes;
-    total_rows = new_total_rows;
-    write_rows = new_write_rows;
-    write_bytes = new_write_bytes;
+    value.rows = new_rows;
+    value.bytes = new_bytes;
+    value.total_rows = new_total_rows;
+    value.write_rows = new_write_rows;
+    value.write_bytes = new_write_bytes;
 } 
 
 
-void ProgressValues::write(WriteBuffer & out, UInt64 /*client_revision*/) const
+void AllProgressValueImpl::write(const ProgressValues & value, WriteBuffer & out, UInt64 /*client_revision*/)
 {
-    writeVarUInt(rows, out);
-    writeVarUInt(bytes, out);
-    writeVarUInt(total_rows, out);
-    writeVarUInt(write_rows, out);
-    writeVarUInt(write_bytes, out);
+    writeVarUInt(value.rows, out);
+    writeVarUInt(value.bytes, out);
+    writeVarUInt(value.total_rows, out);
+    writeVarUInt(value.write_rows, out);
+    writeVarUInt(value.write_bytes, out);
 }
 
-
-void ProgressValues::writeJSON(WriteBuffer & out) const
+void AllProgressValueImpl::writeJSON(const ProgressValues & value, WriteBuffer & out)
 {
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
 
     writeCString("{\"read_rows\":\"", out);
-    writeText(rows, out);
+    writeText(value.rows, out);
     writeCString("\",\"read_bytes\":\"", out);
-    writeText(bytes, out);
+    writeText(value.bytes, out);
     writeCString("\",\"write_rows\":\"", out);
-    writeText(write_rows, out);
+    writeText(value.write_rows, out);
     writeCString("\",\"write_bytes\":\"", out);
-    writeText(write_bytes, out);
+    writeText(value.write_bytes, out);
     writeCString("\",\"total_rows\":\"", out);
-    writeText(total_rows, out);
+    writeText(value.total_rows, out);
     writeCString("\"}", out);
 }
 
-
-void Progress::read(ReadBuffer & in, UInt64 server_revision)
+/*
+void ReadProgressValueImpl::read(ProgressValues & value, ReadBuffer & in, UInt64 )
 {
-    ProgressValues values;
-    values.read(in, server_revision);
+    size_t new_rows = 0;
+    size_t new_bytes = 0;
+    size_t new_total_rows = 0;
+ 
+    readVarUInt(new_rows, in);
+    readVarUInt(new_bytes, in);
+    readVarUInt(new_total_rows, in);
+ 
+    value.rows = new_rows;
+    value.bytes = new_bytes;
+    value.total_rows = new_total_rows;
+} 
 
-    rows.store(values.rows, std::memory_order_relaxed);
-    bytes.store(values.bytes, std::memory_order_relaxed);
-    total_rows.store(values.total_rows, std::memory_order_relaxed);
-    write_rows.store(values.write_rows, std::memory_order_relaxed);
-    write_bytes.store(values.write_bytes, std::memory_order_relaxed);
+void ReadProgressValueImpl::write(const ProgressValues & value, WriteBuffer & out, UInt64)
+{
+    writeVarUInt(value.rows, out);
+    writeVarUInt(value.bytes, out);
+    writeVarUInt(value.total_rows, out);
+}
+*/
+void ReadProgressValueImpl::writeJSON(const ProgressValues & value, WriteBuffer & out)
+{
+    /// Numbers are written in double quotes (as strings) to avoid loss of precision
+    ///  of 64-bit integers after interpretation by JavaScript.
+
+    writeCString("{\"read_rows\":\"", out);
+    writeText(value.rows, out);
+    writeCString("\",\"read_bytes\":\"", out);
+    writeText(value.bytes, out);
+    writeCString("\",\"total_rows\":\"", out);
+    writeText(value.total_rows, out);
+    writeCString("\"}", out);
 }
 
-
-void Progress::write(WriteBuffer & out, UInt64 client_revision) const
+void WriteProgressValueImpl::writeJSON(const ProgressValues & value, WriteBuffer & out)
 {
-    getValues().write(out, client_revision);
-}
+    /// Numbers are written in double quotes (as strings) to avoid loss of precision
+    ///  of 64-bit integers after interpretation by JavaScript.
 
-
-void Progress::writeJSON(WriteBuffer & out) const
-{
-    getValues().writeJSON(out);
+    writeCString("{\"write_rows\":\"", out);
+    writeText(value.write_rows, out);
+    writeCString("\",\"write_bytes\":\"", out);
+    writeText(value.write_bytes, out);
+    writeCString("\"}", out);
 }
 
 }
