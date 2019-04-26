@@ -149,46 +149,33 @@ SELECT
 
 ## IPv4CIDRtoIPv4Range(ipv4, cidr),
 
-Accepts a UInt32 value interpreted as an IPv4 address in big endian and an UInt8 value containing the CIDR. Return a tuple with two UInt32 interpreted as an IPv4 address in big endian containing the lower range and the higher range of the subnet.
+Accepts an IPv4 and an UInt8 value containing the CIDR. Return a tuple with two IPv4 containing the lower range and the higher range of the subnet.
 
 
 ```sql
-WITH 
-    IPv4StringToNum('192.168.5.2') AS ipv4, 
-    IPv4CIDRtoIPv4Range(ipv4, 16) AS ip_range
-SELECT 
-    IPv4CIDRtoIPv4Range(ipv4, 16), 
-    IPv4NumToString(ip_range.1) AS lower_range, 
-    IPv4NumToString(ip_range.2) AS higher_range
-
+SELECT IPv4CIDRtoIPv4Range(toIPv4('192.168.5.2'), 16)
 ```
 
 ```
-┌─IPv4CIDRtoIPv4Range(ipv4, 16)─┬─lower_range─┬─higher_range────┐
-│ (3232235520,3232301055)       │ 192.168.0.0 │ 192.168.255.255 │
-└───────────────────────────────┴─────────────┴─────────────────┘
+┌─IPv4CIDRtoIPv4Range(toIPv4('192.168.5.2'), 16)─┐
+│ ('192.168.0.0','192.168.255.255')              │
+└────────────────────────────────────────────────┘
 ```
 
 
 ## IPv6CIDRtoIPv6Range(ipv6, cidr),
 
-Accepts a FixedString(16) value containing the IPv6 address in binary format and an UInt8 value containing the CIDR. Return a tuple with two FixedString(16) containing the lower range and the higher range of the subnet.
+Accepts an IPv6 and an UInt8 value containing the CIDR. Return a tuple with two IPv6 containing the lower range and the higher range of the subnet.
 
 
 ```sql
-WITH 
-    IPv6StringToNum('2001:0db8:0000:85a3:0000:0000:ac1f:8001') AS ipv6, 
-    IPv6CIDRtoIPv6Range(ipv6, 32) AS ip_range
-SELECT
-    IPv6NumToString(ip_range.1) AS lower_range, 
-    IPv6NumToString(ip_range.2) AS higher_range
-
+SELECT IPv6CIDRtoIPv6Range(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 ```
 
 ```
-┌─lower_range─┬─higher_range───────────────────────────┐
-│ 2001:db8::  │ 2001:db8:ffff:ffff:ffff:ffff:ffff:ffff │
-└─────────────┴────────────────────────────────────────┘
+┌─IPv6CIDRtoIPv6Range(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32)─┐
+│ ('2001:db8::','2001:db8:ffff:ffff:ffff:ffff:ffff:ffff')                    │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 
