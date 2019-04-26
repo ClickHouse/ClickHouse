@@ -2,6 +2,7 @@
 
 #include <Functions/domain.h>
 #include <common/find_symbols.h>
+#include <Common/config.h>
 #include <Functions/tldLookup.h>
 
 namespace DB
@@ -64,17 +65,18 @@ struct ExtractFirstSignificantSubdomain
             end_of_level_domain = end;
         }
 
+#if USE_GPERF
         if (tldLookup::is_valid(last_3_periods[1] + 1, end_of_level_domain - last_3_periods[1] - 1) != nullptr)
         {
             res_data += last_3_periods[2] + 1 - begin;
             res_size = last_3_periods[1] - last_3_periods[2] - 1;
-	}
+        }
         else
         {
             res_data += last_3_periods[1] + 1 - begin;
             res_size = last_3_periods[0] - last_3_periods[1] - 1;
         }
-
+#endif
    }
 };
 
