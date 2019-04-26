@@ -515,7 +515,7 @@ private:
         {
             auto it = by_name_map.find(name);
             if (it == by_name_map.end())
-                return static_cast<size_t>(-1);
+                return static_cast<size_t>(-1); // npos
             return it->second;
         }
 
