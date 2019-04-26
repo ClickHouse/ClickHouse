@@ -12,6 +12,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS_OR_BYTES;
+    extern const int QUOTA_EXPIRED;
+}
+
+static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception)
+{
+    /// Don't add additional info to limits and quota exceptions (to pass tests).
+    return exception.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES
+           && exception.code() != ErrorCodes::QUOTA_EXPIRED;
 }
 
 PipelineExecutor::PipelineExecutor(Processors processors, ThreadPool * pool)
@@ -166,15 +174,11 @@ static void executeJob(IProcessor * processor)
     {
         processor->work();
     }
-    catch (Exception & e)
+    catch (Exception & exception)
     {
-        /// Skip for limits (to pass tests).
-        if (e.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES)
-        {
-            e.addMessage("While executing " + processor->getName() + " ("
-                         + toString(reinterpret_cast<std::uintptr_t>(processor)) + ") ");
-        }
-
+        if (checkCanAddAdditionalInfoToException(exception))
+            exception.addMessage("While executing " + processor->getName() + " ("
+                                 + toString(reinterpret_cast<std::uintptr_t>(processor)) + ") ");
         throw;
     }
 }
@@ -340,11 +344,10 @@ void PipelineExecutor::execute()
     {
         executeImpl();
     }
-    catch (Exception & e)
+    catch (Exception & exception)
     {
-        /// Skip for limits (to pass tests)
-        if (e.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES)
-            e.addMessage("\nCurrent state:\n" + dumpPipeline());
+        if (checkCanAddAdditionalInfoToException(exception))
+            exception.addMessage("\nCurrent state:\n" + dumpPipeline());
 
         throw;
     }
@@ -355,7 +358,6 @@ void PipelineExecutor::execute()
             all_processors_finished = false;
 
     if (!all_processors_finished)
-        /// It seems that pipeline has stuck.
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
