@@ -59,7 +59,7 @@ ResizeProcessor::Status ResizeProcessor::prepare()
             inc_current_output();
         }
 
-        return current_output;
+        return outputs.end();
     };
 
     /// Find next input from where can pull.
@@ -83,7 +83,7 @@ ResizeProcessor::Status ResizeProcessor::prepare()
             inc_current_input();
         }
 
-        return current_input;
+        return inputs.end();
     };
 
     auto get_status_if_no_outputs = [&]() -> Status
