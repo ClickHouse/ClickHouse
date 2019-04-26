@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <vector>
+#include <variant>
+
 #include <Core/Block.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
@@ -26,7 +28,7 @@ protected:
     public:
         State() = default;
 
-        void push(Chunk chunk)
+        void pushData(std::variant<Chunk, std::exception_ptr> data_)
         {
             if (finished)
                 throw Exception("Cannot push block to finished port.", ErrorCodes::LOGICAL_ERROR);
@@ -37,11 +39,21 @@ protected:
             if (has_data)
                 throw Exception("Cannot push block to port which already has data.", ErrorCodes::LOGICAL_ERROR);
 
-            data = std::move(chunk);
+            data = std::move(data_);
             has_data = true;
         }
 
-        Chunk pull()
+        void push(Chunk chunk)
+        {
+            pushData(std::move(chunk));
+        }
+
+        void push(std::exception_ptr exception)
+        {
+            pushData(std::move(exception));
+        }
+
+        auto pullData()
         {
             if (!needed)
                 throw Exception("Cannot pull block from port which is not needed.", ErrorCodes::LOGICAL_ERROR);
@@ -50,7 +62,18 @@ protected:
                 throw Exception("Cannot pull block from port which has no data.", ErrorCodes::LOGICAL_ERROR);
 
             has_data = false;
+
             return std::move(data);
+        }
+
+        Chunk pull()
+        {
+            auto cur_data = pullData();
+
+            if (std::holds_alternative<std::exception_ptr>(cur_data))
+                std::rethrow_exception(std::move(std::get<std::exception_ptr>(cur_data)));
+
+            return std::move(std::get<Chunk>(cur_data));
         }
 
         bool hasData() const
@@ -77,7 +100,9 @@ protected:
         {
             finished = true;
             has_data = false;
-            data.clear();
+
+            if (std::holds_alternative<Chunk>(data))
+                std::get<Chunk>(data).clear();
         }
 
         /// Only empty ports are finished.
@@ -107,7 +132,7 @@ protected:
         bool isNeeded() const { return needed && !finished; }
 
     private:
-        Chunk data;
+        std::variant<Chunk, std::exception_ptr> data;
         /// Use special flag to check if block has data. This allows to send empty blocks between processors.
         bool has_data = false;
         /// Block is not needed right now, but may be will be needed later.
@@ -183,6 +208,15 @@ public:
 
         assumeConnected();
         return state->pull();
+    }
+
+    auto pullData()
+    {
+        if (version)
+            ++(*version);
+
+        assumeConnected();
+        return state->pullData();
     }
 
     bool isFinished() const
@@ -268,6 +302,23 @@ public:
         }
 
         state->push(std::move(chunk));
+    }
+
+    void push(std::exception_ptr exception)
+    {
+        if (version)
+            ++(*version);
+
+        assumeConnected();
+        state->push(std::move(exception));
+    }
+
+    void pushData(std::variant<Chunk, std::exception_ptr> data)
+    {
+        if (std::holds_alternative<std::exception_ptr>(data))
+            push(std::get<std::exception_ptr>(std::move(data)));
+        else
+            push(std::get<Chunk>(std::move(data)));
     }
 
     void finish()
