@@ -163,7 +163,7 @@ public:
         if (which.isFloat())
         {
             if (pjh.is_integer())
-                return {(double)pjh.get_integer()};
+                return {static_cast<double>(pjh.get_integer())};
             else if (pjh.is_double())
                 return {pjh.get_double()};
             else
