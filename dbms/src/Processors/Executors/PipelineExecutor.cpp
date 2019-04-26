@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_ROWS_OR_BYTES;
+}
+
 PipelineExecutor::PipelineExecutor(Processors processors, ThreadPool * pool)
     : processors(std::move(processors)), pool(pool), cancelled(false)
 {
@@ -163,8 +168,13 @@ static void executeJob(IProcessor * processor)
     }
     catch (Exception & e)
     {
-        e.addMessage("While executing " + processor->getName() + " ("
-                     + toString(reinterpret_cast<std::uintptr_t>(processor)) + ") ");
+        /// Skip for limits (to pass tests).
+        if (e.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES)
+        {
+            e.addMessage("While executing " + processor->getName() + " ("
+                         + toString(reinterpret_cast<std::uintptr_t>(processor)) + ") ");
+        }
+
         throw;
     }
 }
@@ -332,7 +342,10 @@ void PipelineExecutor::execute()
     }
     catch (Exception & e)
     {
-        e.addMessage("\nCurrent state:\n" + dumpPipeline());
+        /// Skip for limits (to pass tests)
+        if (e.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES)
+            e.addMessage("\nCurrent state:\n" + dumpPipeline());
+
         throw;
     }
 
