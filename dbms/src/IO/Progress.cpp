@@ -57,29 +57,6 @@ void AllProgressValueImpl::writeJSON(const ProgressValues & value, WriteBuffer &
     writeCString("\"}", out);
 }
 
-/*
-void ReadProgressValueImpl::read(ProgressValues & value, ReadBuffer & in, UInt64 )
-{
-    size_t new_rows = 0;
-    size_t new_bytes = 0;
-    size_t new_total_rows = 0;
- 
-    readVarUInt(new_rows, in);
-    readVarUInt(new_bytes, in);
-    readVarUInt(new_total_rows, in);
- 
-    value.rows = new_rows;
-    value.bytes = new_bytes;
-    value.total_rows = new_total_rows;
-} 
-
-void ReadProgressValueImpl::write(const ProgressValues & value, WriteBuffer & out, UInt64)
-{
-    writeVarUInt(value.rows, out);
-    writeVarUInt(value.bytes, out);
-    writeVarUInt(value.total_rows, out);
-}
-*/
 void ReadProgressValueImpl::writeJSON(const ProgressValues & value, WriteBuffer & out)
 {
     /// Numbers are written in double quotes (as strings) to avoid loss of precision

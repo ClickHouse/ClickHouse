@@ -333,7 +333,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
                 else if (stream_out) /// will be used only for ordinary INSERT queries
                 {
-                    if (auto counting_stream = dynamic_cast<CountingBlockOutputStream *>(stream_out))
+                    if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
                     {
                         /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().rows;
