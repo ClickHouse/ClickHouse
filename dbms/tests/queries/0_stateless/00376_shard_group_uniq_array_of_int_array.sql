@@ -5,5 +5,8 @@ CREATE TABLE test.group_uniq_arr_int ENGINE = Memory AS
 
 SELECT length(groupUniqArray(v)) FROM test.group_uniq_arr_int GROUP BY id ORDER BY id;
 SELECT length(groupUniqArray(v)) FROM remote('127.0.0.{2,3,4,5}', 'test', 'group_uniq_arr_int') GROUP BY id ORDER BY id;
+SELECT length(groupUniqArray(10)(v)) FROM test.group_uniq_arr_int GROUP BY id ORDER BY id;
+SELECT length(groupUniqArray(100000)(v)) FROM test.group_uniq_arr_int GROUP BY id ORDER BY id;
+
 
 DROP TABLE IF EXISTS test.group_uniq_arr_int;
