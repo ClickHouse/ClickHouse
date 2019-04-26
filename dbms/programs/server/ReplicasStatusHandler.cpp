@@ -85,7 +85,7 @@ void ReplicasStatusHandler::handleRequest(Poco::Net::HTTPServerRequest & request
 
             if (!response.sent())
             {
-        /// We have not sent anything yet and we don't even know if we need to compress response.
+                /// We have not sent anything yet and we don't even know if we need to compress response.
                 response.send() << getCurrentExceptionMessage(false) << std::endl;
             }
         }

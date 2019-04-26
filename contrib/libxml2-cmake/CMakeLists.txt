@@ -16,7 +16,7 @@ set(SRCS
     ${LIBXML2_SOURCE_DIR}/debugXML.c
     ${LIBXML2_SOURCE_DIR}/xpointer.c
     ${LIBXML2_SOURCE_DIR}/DOCBparser.c
-    ${LIBXML2_SOURCE_DIR}/xmlcatalog.c
+    #${LIBXML2_SOURCE_DIR}/xmlcatalog.c
     ${LIBXML2_SOURCE_DIR}/c14n.c
     ${LIBXML2_SOURCE_DIR}/xmlreader.c
     ${LIBXML2_SOURCE_DIR}/xmlstring.c
@@ -26,7 +26,7 @@ set(SRCS
     ${LIBXML2_SOURCE_DIR}/trionan.c
     ${LIBXML2_SOURCE_DIR}/pattern.c
     ${LIBXML2_SOURCE_DIR}/globals.c
-    ${LIBXML2_SOURCE_DIR}/xmllint.c
+    #${LIBXML2_SOURCE_DIR}/xmllint.c
     ${LIBXML2_SOURCE_DIR}/chvalid.c
     ${LIBXML2_SOURCE_DIR}/relaxng.c
     ${LIBXML2_SOURCE_DIR}/list.c
@@ -40,7 +40,7 @@ set(SRCS
     ${LIBXML2_SOURCE_DIR}/xmlschemas.c
     ${LIBXML2_SOURCE_DIR}/SAX2.c
     ${LIBXML2_SOURCE_DIR}/threads.c
-    ${LIBXML2_SOURCE_DIR}/runsuite.c
+    #${LIBXML2_SOURCE_DIR}/runsuite.c
     ${LIBXML2_SOURCE_DIR}/catalog.c
     ${LIBXML2_SOURCE_DIR}/uri.c
     ${LIBXML2_SOURCE_DIR}/xmlmodule.c
@@ -56,7 +56,7 @@ set(SRCS
     ${LIBXML2_SOURCE_DIR}/nanohttp.c
     ${LIBXML2_SOURCE_DIR}/schematron.c
 )
-add_library(libxml2 STATIC ${SRCS})
+add_library(libxml2 ${SRCS})
 
 target_link_libraries(libxml2 ${ZLIB_LIBRARIES})
 

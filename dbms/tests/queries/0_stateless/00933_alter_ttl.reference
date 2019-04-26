@@ -1,0 +1,5 @@
+CREATE TABLE test.ttl (`d` Date, `a` Int32) ENGINE = MergeTree PARTITION BY toDayOfMonth(d) ORDER BY a TTL d + toIntervalDay(1) SETTINGS index_granularity = 8192
+2100-10-10	3
+2100-10-10	4
+d	Date					
+a	Int32					d + toIntervalDay(1)

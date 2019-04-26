@@ -57,6 +57,8 @@ const char * auto_config_build[]
     "USE_BROTLI", "@USE_BROTLI@",
     "USE_SSL", "@USE_SSL@",
     "USE_HYPERSCAN", "@USE_HYPERSCAN@",
+    "USE_LFALLOC", "@USE_LFALLOC@",
+    "USE_LFALLOC_RANDOM_HINT", "@USE_LFALLOC_RANDOM_HINT@",
 
     nullptr, nullptr
 };

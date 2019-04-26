@@ -59,7 +59,7 @@ if (NOT MAKE_STATIC_LIBRARIES)
 endif ()
 
 if (SPLIT_SHARED_LIBRARIES)
-    set (LINK_MODE SHARED)
+    set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
 endif ()
 
 if (USE_STATIC_LIBRARIES)
@@ -326,6 +326,7 @@ include (cmake/find_hdfs3.cmake) # uses protobuf
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 include (cmake/find_hyperscan.cmake)
+include (cmake/find_lfalloc.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
