@@ -6,13 +6,13 @@
 
 #include <Core/Defines.h>
 
-
 namespace DB
 {
 
 class ReadBuffer;
 class WriteBuffer;
 
+struct AllProgressValueImpl;
 
 /// See Progress.
 struct ProgressValues
@@ -23,9 +23,40 @@ struct ProgressValues
     size_t write_rows;
     size_t write_bytes;   
 
-    void read(ReadBuffer & in, UInt64 server_revision);
-    void write(WriteBuffer & out, UInt64 client_revision) const;
-    void writeJSON(WriteBuffer & out) const;
+    template <typename ReadImpl = AllProgressValueImpl>
+    void read(ReadBuffer & in, UInt64 server_revision)
+    {
+        ReadImpl::read(*this, in, server_revision);
+    }
+
+    template <typename WriteImpl = AllProgressValueImpl>
+    void write(WriteBuffer & out, UInt64 client_revision) const
+    {
+        WriteImpl::write(*this, out, client_revision);
+    }
+
+    template <typename WriteJSONImpl = AllProgressValueImpl>
+    void writeJSON(WriteBuffer & out) const
+    {
+        WriteJSONImpl::writeJSON(*this, out);
+    }
+};
+
+struct AllProgressValueImpl
+{
+    static void read(ProgressValues & value, ReadBuffer & in, UInt64 server_revision);
+    static void write(const ProgressValues & value, WriteBuffer & out, UInt64 client_revision) ;
+    static void writeJSON(const ProgressValues & value, WriteBuffer & out);
+};
+
+struct ReadProgressValueImpl : public AllProgressValueImpl
+{
+    static void writeJSON(const ProgressValues & value, WriteBuffer & out);
+};
+
+struct WriteProgressValueImpl : public AllProgressValueImpl
+{
+    static void writeJSON(const ProgressValues & value, WriteBuffer & out);
 };
 
 struct ReadProgress
@@ -74,10 +105,14 @@ struct Progress
     Progress(WriteProgress write_progress)
         : write_rows(write_progress.write_rows), write_bytes(write_progress.write_bytes)  {}
 
+    template <typename T = AllProgressValueImpl>
     void read(ReadBuffer & in, UInt64 server_revision);
+
+    template <typename T = AllProgressValueImpl>
     void write(WriteBuffer & out, UInt64 client_revision) const;
 
     /// Progress in JSON format (single line, without whitespaces) is used in HTTP headers.
+    template <typename T = AllProgressValueImpl>
     void writeJSON(WriteBuffer & out) const;
 
     /// Each value separately is changed atomically (but not whole object).
@@ -143,6 +178,32 @@ struct Progress
         *this = std::move(other);
     }
 };
+
+template <typename T>
+void Progress::read(ReadBuffer & in, UInt64 server_revision)
+{
+    ProgressValues values;
+    values.read<T>(in, server_revision);
+
+    rows.store(values.rows, std::memory_order_relaxed);
+    bytes.store(values.bytes, std::memory_order_relaxed);
+    total_rows.store(values.total_rows, std::memory_order_relaxed);
+    write_rows.store(values.write_rows, std::memory_order_relaxed);
+    write_bytes.store(values.write_bytes, std::memory_order_relaxed);
+}
+
+template <typename T>
+void Progress::write(WriteBuffer & out, UInt64 client_revision) const
+{
+    getValues().write<T>(out, client_revision);
+}
+
+
+template <typename T>
+void Progress::writeJSON(WriteBuffer & out) const
+{
+    getValues().writeJSON<T>(out);
+}
 
 
 }
