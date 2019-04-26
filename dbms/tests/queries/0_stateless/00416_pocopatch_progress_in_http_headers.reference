@@ -1,6 +1,7 @@
 < X-ClickHouse-Progress: {"read_rows":"0","read_bytes":"0","total_rows":"10"}
 < X-ClickHouse-Progress: {"read_rows":"5","read_bytes":"40","total_rows":"10"}
 < X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows":"10"}
+< X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows":"10"}
 9
 < X-ClickHouse-Progress: {"read_rows":"1","read_bytes":"8","total_rows":"0"}
 < X-ClickHouse-Progress: {"read_rows":"2","read_bytes":"16","total_rows":"0"}
@@ -11,6 +12,7 @@
 < X-ClickHouse-Progress: {"read_rows":"7","read_bytes":"56","total_rows":"0"}
 < X-ClickHouse-Progress: {"read_rows":"8","read_bytes":"64","total_rows":"0"}
 < X-ClickHouse-Progress: {"read_rows":"9","read_bytes":"72","total_rows":"0"}
+< X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows":"0"}
 < X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"80","total_rows":"0"}
 0
 1
@@ -32,3 +34,4 @@
 7
 8
 9
+< X-ClickHouse-Summary: {"read_rows":"10","read_bytes":"80","write_rows":"10","write_bytes":"40","total_rows":"0"}
