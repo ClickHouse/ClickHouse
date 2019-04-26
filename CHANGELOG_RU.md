@@ -29,6 +29,7 @@
 * Теперь системная таблица `system.graphite_detentions` заполняется из конфигурационного файла для таблиц семейства `*GraphiteMergeTree`. [#4584](https://github.com/yandex/ClickHouse/pull/4584) ([Mikhail f. Shiryaev](https://github.com/Felixoid))
 * Функция `trigramDistance` переименована в функцию `ngramDistance`. Добавлено несколько функций с `CaseInsensitive` и `UTF`. [#4602](https://github.com/yandex/ClickHouse/pull/4602) ([Danila Kutenin](https://github.com/danlark1))
 * Улучшено вычисление вторичных индексов. [#4640](https://github.com/yandex/ClickHouse/pull/4640) ([Nikita Vasilev](https://github.com/nikvas0))
+* Теперь обычные колонки, а также колонки `DEFAULT`, `MATERIALIZED` и `ALIAS` хранятся в одном списке (исправляет issue [#2867](https://github.com/yandex/ClickHouse/issues/2867)). [#4707](https://github.com/yandex/ClickHouse/pull/4707) ([Alex Zatelepin](https://github.com/ztlpn))
 
 ### Исправления ошибок
 
@@ -39,7 +40,6 @@
 * Исправлен дедлок, который мог происходить при запросе `DROP DATABASE dictionary`. [#4701](https://github.com/yandex/ClickHouse/pull/4701) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Исправлено неопределенное поведение в функциях `median` и `quantile`. [#4702](https://github.com/yandex/ClickHouse/pull/4702) ([hcz](https://github.com/hczhcz))
 * Исправлено определение уровня сжатия при указании настройки `network_compression_method` в нижнем регистре. Было сломано в v19.1. [#4706](https://github.com/yandex/ClickHouse/pull/4706) ([proller](https://github.com/proller))
-* Теперь обычные колонки, а также колонки `DEFAULT`, `MATERIALIZED` и `ALIAS` хранятся в одном списке (исправляет issue [#2867](https://github.com/yandex/ClickHouse/issues/2867)). [#4707](https://github.com/yandex/ClickHouse/pull/4707) ([Alex Zatelepin](https://github.com/ztlpn))
 * Настройка `<timezone>UTC</timezone>` больше не игнорируется (исправляет issue [#4658](https://github.com/yandex/ClickHouse/issues/4658)). [#4718](https://github.com/yandex/ClickHouse/pull/4718) ([proller](https://github.com/proller))
 * Исправлено поведение функции `histogram` с `Distributed` таблицами. [#4741](https://github.com/yandex/ClickHouse/pull/4741) ([olegkv](https://github.com/olegkv))
 * Исправлено срабатывание thread-санитайзера с ошибкой `destroy of a locked mutex`. [#4742](https://github.com/yandex/ClickHouse/pull/4742) ([alexey-milovidov](https://github.com/alexey-milovidov))
@@ -108,7 +108,6 @@
 * Исправлен дедлок, который мог происходить при запросе `DROP DATABASE dictionary`. [#4701](https://github.com/yandex/ClickHouse/pull/4701) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Исправлено неопределенное поведение в функциях `median` и `quantile`. [#4702](https://github.com/yandex/ClickHouse/pull/4702) ([hcz](https://github.com/hczhcz))
 * Исправлено определение уровня сжатия при указании настройки `network_compression_method` в нижнем регистре. Было сломано в v19.1. [#4706](https://github.com/yandex/ClickHouse/pull/4706) ([proller](https://github.com/proller))
-* Теперь обычные колонки, а также колонки `DEFAULT`, `MATERIALIZED` и `ALIAS` хранятся в одном списке (исправляет issue [#2867](https://github.com/yandex/ClickHouse/issues/2867)). [#4707](https://github.com/yandex/ClickHouse/pull/4707) ([Alex Zatelepin](https://github.com/ztlpn))
 * Настройка `<timezone>UTC</timezone>` больше не игнорируется (исправляет issue [#4658](https://github.com/yandex/ClickHouse/issues/4658)). [#4718](https://github.com/yandex/ClickHouse/pull/4718) ([proller](https://github.com/proller))
 * Исправлено поведение функции `histogram` с `Distributed` таблицами. [#4741](https://github.com/yandex/ClickHouse/pull/4741) ([olegkv](https://github.com/olegkv))
 * Исправлено срабатывание thread-санитайзера с ошибкой `destroy of a locked mutex`. [#4742](https://github.com/yandex/ClickHouse/pull/4742) ([alexey-milovidov](https://github.com/alexey-milovidov))
@@ -134,6 +133,10 @@
 * Исправлено неправильное определение типов аргументов для агрегатных функций с `LowCardinality` аргументами (исправляет [#4919](https://github.com/yandex/ClickHouse/issues/4919)). [#4922](https://github.com/yandex/ClickHouse/pull/4922) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Исправлен результат функции `toISOWeek` для 1970 года. [#4988](https://github.com/yandex/ClickHouse/pull/4988) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Исправлено дублирование `DROP`, `TRUNCATE` и `OPTIMIZE` запросов, когда они выполнялись `ON CLUSTER` для семейства таблиц `ReplicatedMergeTree*`. [#4991](https://github.com/yandex/ClickHouse/pull/4991) ([alesapin](https://github.com/alesapin))
+
+### Улучшения
+
+* Теперь обычные колонки, а также колонки `DEFAULT`, `MATERIALIZED` и `ALIAS` хранятся в одном списке (исправляет issue [#2867](https://github.com/yandex/ClickHouse/issues/2867)). [#4707](https://github.com/yandex/ClickHouse/pull/4707) ([Alex Zatelepin](https://github.com/ztlpn))
 
 ## ClickHouse release 19.4.3.11, 2019-04-02
 
