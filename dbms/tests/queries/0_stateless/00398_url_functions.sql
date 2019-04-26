@@ -73,6 +73,8 @@ SELECT cutToFirstSignificantSubdomain('http://www.example.com/a/b/c?a=b');
 SELECT cutToFirstSignificantSubdomain('http://www.example.com/a/b/c?a=b#d=f');
 SELECT cutToFirstSignificantSubdomain('http://paul@www.example.com/a/b/c?a=b#d=f');
 SELECT cutToFirstSignificantSubdomain('//paul@www.example.com/a/b/c?a=b#d=f');
+SELECT cutToFirstSignificantSubdomain('www.example.com');
+SELECT cutToFirstSignificantSubdomain('example.com');
 
 SELECT '====CUT WWW====';
 SELECT cutWWW('http://www.example.com');
