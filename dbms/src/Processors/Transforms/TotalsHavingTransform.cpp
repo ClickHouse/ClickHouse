@@ -58,7 +58,7 @@ TotalsHavingTransform::TotalsHavingTransform(
     finalizeBlock(finalized_header);
 
     /// Port for Totals.
-    outputs.emplace_back(finalized_header, this);
+    outputs.emplace_back(outputs.front().getHeader(), this);
 
     /// Initialize current totals with initial state.
     current_totals.reserve(header.columns());
@@ -257,6 +257,13 @@ void TotalsHavingTransform::prepareTotals()
 
     totals = Chunk(std::move(current_totals), 1);
     finalizeChunk(totals);
+
+    if (expression)
+    {
+        auto block = finalized_header.cloneWithColumns(totals.detachColumns());
+        expression->execute(block);
+        totals = Chunk(block.getColumns(), 1);
+    }
 }
 
 }
