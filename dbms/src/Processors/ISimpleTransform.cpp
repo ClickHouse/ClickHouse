@@ -80,6 +80,9 @@ ISimpleTransform::Status ISimpleTransform::prepare()
 
 void ISimpleTransform::work()
 {
+    if (std::holds_alternative<std::exception_ptr>(current_data))
+        return;
+
     try
     {
         transform(std::get<Chunk>(current_data));
