@@ -12,10 +12,10 @@ namespace DB
 class ReverseBlockInputStream : public IBlockInputStream
 {
 public:
-    ReverseBlockInputStream(const BlockInputStreamPtr& input);
+    ReverseBlockInputStream(
+        const BlockInputStreamPtr& input);
 
     String getName() const override;
-
     Block getHeader() const override;
 
 protected:

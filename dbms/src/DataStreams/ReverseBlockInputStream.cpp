@@ -27,19 +27,20 @@ namespace DB
             return Block();
         }
 
-        PaddedPODArray<size_t> permutation;
+        IColumn::Permutation permutation;
 
-        for (size_t i = 0; i < result_block.rows(); ++i)
+        size_t rows_size = result_block.rows();
+        for (size_t i = 0; i < rows_size; ++i)
         {
-            permutation.emplace_back(result_block.rows() - 1 - i);
+            permutation.emplace_back(rows_size - 1 - i);
         }
 
-        for (auto iter = result_block.begin(); iter != result_block.end(); ++iter)
+        for (auto& block : result_block)
         {
-            iter->column = iter->column->permute(permutation, 0);
+            block.column = block.column->permute(permutation, 0);
         }
 
         return result_block;
     }
 
-} // namespace DB
+}
