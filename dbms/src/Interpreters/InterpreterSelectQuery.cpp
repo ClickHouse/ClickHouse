@@ -1448,50 +1448,36 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
         ASTPtr order_by_ptr = merge_tree.getSortingKeyAST();
         SortDescription prefix_order_descr;
         bool need_sorting = order_by_ptr->children.size() < order_descr.size();
-        for (size_t i = 0; i < std::min(order_descr.size(), order_by_ptr->children.size()); ++i)
+        size_t common_descr_size = std::min(order_descr.size(), order_by_ptr->children.size());
+        for (size_t i = 0; i < common_descr_size; ++i)
         {
-            String name = order_by_ptr->children[i]->getAliasOrColumnName(); 
+            String name = order_by_ptr->children[i]->getAliasOrColumnName();
             if (order_descr[i].column_name != name
                 || order_direction != order_descr[i].direction)
             {
                 need_sorting = true;
                 break;
-            } else {
+            } else
+            {
                 prefix_order_descr.push_back(order_descr[i]);
             }
         }
 
-        query_info.do_not_steal_task = true;
         if (need_sorting)
         {
-            if (!prefix_order_descr.empty())
+            pipeline.transform([&](auto & stream)
             {
-                pipeline.transform([&](auto & stream)
-                {
-                    stream = std::make_shared<FinishSortingBlockInputStream>(
-                        stream,
-                        prefix_order_descr,
-                        order_descr,
-                        settings.max_block_size,
-                        limit);
-                });
-            } else
-            {
-                pipeline.transform([&](auto & stream)
-                {
-                    auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
+                stream = std::make_shared<FinishSortingBlockInputStream>(
+                    stream,
+                    prefix_order_descr,
+                    order_descr,
+                    settings.max_block_size,
+                    limit);
+            });
+        }
 
-                    /// Limits on sorting
-                    IBlockInputStream::LocalLimits limits;
-                    limits.mode = IBlockInputStream::LIMITS_TOTAL;
-                    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
-                    sorting_stream->setLimits(limits);
-
-                    stream = sorting_stream;
-                });
-            }
-        }    
-
+        // in order to read blocks in fixed order
+        query_info.do_not_steal_task = true;
         if (order_direction == -1)
         {
             pipeline.transform([&](auto & stream)
