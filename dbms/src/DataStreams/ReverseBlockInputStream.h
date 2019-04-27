@@ -6,6 +6,9 @@
 namespace DB
 {
 
+/** Allows to read data in reverse order
+ *  Currently used in group by optimization
+ */
 class ReverseBlockInputStream : public IBlockInputStream
 {
 public:
@@ -19,4 +22,4 @@ protected:
     Block readImpl() override;
 };
 
-} // namespace DB
+}
