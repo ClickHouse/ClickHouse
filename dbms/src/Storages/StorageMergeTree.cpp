@@ -211,13 +211,9 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     size_t i = 0;
     for (const auto & part : parts)
     {
-        auto thread_group = CurrentThread::getGroup();
         thread_pool.schedule(
-            [this, i, &transactions, &part, columns_for_parts, thread_group, new_indices = new_indices.indices]
+            [this, i, &transactions, &part, columns_for_parts, new_indices = new_indices.indices]
             {
-                setThreadName("AlterTransactions");
-                if(thread_group)
-                    CurrentThread::attachToIfDetached(thread_group);
                 if (auto transaction = this->data.alterDataPart(part, columns_for_parts, new_indices, false))
                     transactions[i] = std::move(transaction);
             }
