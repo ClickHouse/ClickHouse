@@ -1,5 +1,6 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/FinishSortingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/LimitByBlockInputStream.h>
 #include <DataStreams/PartialSortingBlockInputStream.h>
@@ -1436,52 +1437,89 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
 {
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query);
-    UInt64 limit = getLimitForSorting(query, context);
 
+    UInt64 limit = getLimitForSorting(query, context);
     const Settings & settings = context.getSettingsRef();
 
     const auto& order_direction = order_descr.at(0).direction;
 
-    if (auto storage_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+    auto optimize_pk_order = [&](auto & merge_tree)
     {
-        bool need_sorting = false;
-        const auto& sorting_key_order = storage_merge_tree->getSortingKeyColumns();
-        if (!(sorting_key_order.size() < order_descr.size()) && !query.limitByValue() && !query.groupBy())
+        ASTPtr order_by_ptr = merge_tree.getSortingKeyAST();
+        SortDescription prefix_order_descr;
+        bool need_sorting = order_by_ptr->children.size() < order_descr.size();
+        for (size_t i = 0; i < std::min(order_descr.size(), order_by_ptr->children.size()); ++i)
         {
-            for (size_t i = 0; i < order_descr.size(); ++i)
+            String name = order_by_ptr->children[i]->getAliasOrColumnName(); 
+            if (order_descr[i].column_name != name
+                || order_direction != order_descr[i].direction)
             {
-                if (order_descr[i].column_name != sorting_key_order[i]
-                    || order_direction != order_descr[i].direction)
-                {
-                    need_sorting = true;
-                    break;
-                }
-            }
-
-             if (!need_sorting)
-            {
-                query_info.do_not_steal_task = true;
-
-                 pipeline.transform([&](auto & stream)
-                {
-                    stream = std::make_shared<AsynchronousBlockInputStream>(stream);
-                });
-
-                 if (order_direction == -1)
-                {
-                    pipeline.transform([&](auto & stream)
-                    {
-                        stream = std::make_shared<ReverseBlockInputStream>(stream);
-                    });
-                }
-                executeUnion(pipeline);
-                pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
-                    pipeline.firstStream(), order_descr, settings.max_block_size, limit,
-                    settings.max_bytes_before_remerge_sort,
-                    settings.max_bytes_before_external_sort, context.getTemporaryPath());
-                return;
+                need_sorting = true;
+                break;
+            } else {
+                prefix_order_descr.push_back(order_descr[i]);
             }
         }
+
+        query_info.do_not_steal_task = true;
+        if (need_sorting)
+        {
+            if (!prefix_order_descr.empty())
+            {
+                pipeline.transform([&](auto & stream)
+                {
+                    stream = std::make_shared<FinishSortingBlockInputStream>(
+                        stream,
+                        prefix_order_descr,
+                        order_descr,
+                        settings.max_block_size,
+                        limit);
+                });
+            } else
+            {
+                pipeline.transform([&](auto & stream)
+                {
+                    auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
+
+                    /// Limits on sorting
+                    IBlockInputStream::LocalLimits limits;
+                    limits.mode = IBlockInputStream::LIMITS_TOTAL;
+                    limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
+                    sorting_stream->setLimits(limits);
+
+                    stream = sorting_stream;
+                });
+            }
+        }    
+
+        if (order_direction == -1)
+        {
+            pipeline.transform([&](auto & stream)
+            {
+                stream = std::make_shared<AsynchronousBlockInputStream>(stream);
+            });
+            pipeline.transform([&](auto & stream)
+            {
+                stream = std::make_shared<ReverseBlockInputStream>(stream);
+            });
+        }
+        executeUnion(pipeline);
+        pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
+        pipeline.firstStream(), order_descr, settings.max_block_size, limit,
+        settings.max_bytes_before_remerge_sort,
+        settings.max_bytes_before_external_sort, context.getTemporaryPath());
+    };
+
+    if (settings.optimize_pk_order)
+    {
+        if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(storage.get()))
+        {
+            optimize_pk_order(*merge_tree);
+        } else if (const StorageReplicatedMergeTree * replicated_merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
+        {
+            optimize_pk_order(*replicated_merge_tree);
+        }
+        return;
     }
 
     pipeline.transform([&](auto & stream)
@@ -1506,7 +1544,6 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
         settings.max_bytes_before_remerge_sort,
         settings.max_bytes_before_external_sort, context.getTemporaryPath());
 }
-
 
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {
