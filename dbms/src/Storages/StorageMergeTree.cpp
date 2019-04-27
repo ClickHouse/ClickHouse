@@ -197,7 +197,9 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepareAlterTransactions(
     const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context)
 {
-    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+    auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted,
+                                    MergeTreeDataPartState::Committed,
+                                    MergeTreeDataPartState::Outdated});
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions(parts.size());
 
     const auto& columns_for_parts = new_columns.getAllPhysical();
