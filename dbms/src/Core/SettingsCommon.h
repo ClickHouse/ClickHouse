@@ -87,6 +87,7 @@ struct SettingMaxThreads
     UInt64 getAutoValueImpl() const;
 };
 
+
 struct SettingSeconds
 {
     Poco::Timespan value;
