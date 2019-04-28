@@ -358,7 +358,7 @@ static char* AllocWithMMap(uintptr_t sz, EMMapMode mode) {
     }
 #if defined(USE_LFALLOC_RANDOM_HINT)
     static thread_local std::mt19937_64 generator(std::random_device{}());
-    std::uniform_int_distribution<intptr_t> distr(areaStart, areaFinish - sz);
+    std::uniform_int_distribution<intptr_t> distr(areaStart, areaFinish - sz - 1);
     char* largeBlock;
     static constexpr size_t MaxAttempts = 100;
     size_t attempt = 0;
