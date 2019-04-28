@@ -169,7 +169,8 @@ MergeTreeData::MergeTreeData(
     String version_file_path;
 
     /// Creating directories, if not exist.
-    for (const String & path : getFullPaths())
+    auto paths = getFullPaths();
+    for (const String & path : paths)
     {
         Poco::File(path).createDirectories();
         Poco::File(path + "detached").createDirectory();
@@ -769,7 +770,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     std::vector<std::pair<String, DiskPtr>> part_names_with_disks;
     Poco::DirectoryIterator end;
-    for (auto disk_ptr : schema.getDisks())
+
+    auto disks = schema.getDisks();
+
+    for (auto disk_ptr : disks)
     {
         for (Poco::DirectoryIterator it(getFullPathOnDisk(disk_ptr)); it != end; ++it)
         {
@@ -1123,14 +1127,16 @@ void MergeTreeData::rename(const String & new_database_name, const String & new_
     auto old_file_table_name = escapeForFileName(table_name);
     auto new_file_table_name = escapeForFileName(new_table_name);
 
-    for (const auto & disk : schema.getDisks())
+    auto disks = schema.getDisks();
+
+    for (const auto & disk : disks)
     {
         auto new_full_path = disk->getPath() + new_file_db_name + '/' + new_file_table_name + '/';
         if (Poco::File{new_full_path}.exists())
             throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
     }
 
-    for (const auto & disk : schema.getDisks())
+    for (const auto & disk : disks)
     {
         auto full_path = disk->getPath() + old_file_db_name + '/' + old_file_table_name + '/';
         auto new_full_path = disk->getPath() + new_file_db_name + '/' + new_file_table_name + '/';
@@ -1158,7 +1164,9 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
-    for (auto && full_data_path : getFullPaths())
+    auto full_paths = getFullPaths();
+
+    for (auto && full_data_path : full_paths)
         Poco::File(full_data_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
@@ -2807,7 +2815,8 @@ String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 Strings MergeTreeData::getFullPaths() const
 {
     Strings res;
-    for (const auto & disk : schema.getDisks())
+    auto disks = schema.getDisks();
+    for (const auto & disk : disks)
         res.push_back(getFullPathOnDisk(disk));
     return res;
 }
