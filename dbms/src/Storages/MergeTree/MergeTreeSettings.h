@@ -24,7 +24,7 @@ class ASTStorage;
 struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 {
 
-#define APPLY_FOR_MERGE_TREE_SETTINGS(M) \
+#define LIST_OF_MERGE_TREE_SETTINGS(M) \
     M(SettingUInt64, index_granularity, 8192, "How many rows correspond to one primary key value.") \
     \
     /** Merge settings. */ \
@@ -79,7 +79,7 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     M(SettingUInt64, index_granularity_bytes, 0, "Approximate amount of bytes in single granule (0 - disabled).") \
     M(SettingInt64, merge_with_ttl_timeout, 3600 * 24, "Minimal time in seconds, when merge with TTL can be repeated.")
 
-    DECLARE_SETTINGS_COLLECTION(APPLY_FOR_MERGE_TREE_SETTINGS)
+    DECLARE_SETTINGS_COLLECTION(LIST_OF_MERGE_TREE_SETTINGS)
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
