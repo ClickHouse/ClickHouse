@@ -208,8 +208,11 @@ protected:
                     res_columns[res_index++]->insert(0u);  // is_temporary
 
                 if (columns_mask[src_index++])
-                    for (const String & path : table->getDataPaths())
+                {
+                    auto paths = table->getDataPaths();
+                    for (const String &path : paths)
                         res_columns[res_index++]->insert(path);
+                }
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(database->getTableMetadataPath(table_name));
