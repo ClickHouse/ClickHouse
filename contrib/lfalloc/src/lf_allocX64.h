@@ -360,13 +360,13 @@ static char* AllocWithMMap(uintptr_t sz, EMMapMode mode) {
     static thread_local std::mt19937_64 generator(std::random_device{}());
     std::uniform_int_distribution<intptr_t> distr(areaStart, areaFinish - sz);
     char* largeBlock;
-    static constexpr size_t maxAttempts = 10;
+    static constexpr size_t MaxAttempts = 100;
     size_t attempt = 0;
     do
     {
         largeBlock = (char*)mmap(reinterpret_cast<void*>(distr(generator)), sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
         ++attempt;
-    } while (uintptr_t(((char*)largeBlock - ALLOC_START) + sz) >= areaFinish && attempt < maxAttempts && munmap(largeBlock, sz) == 0);
+    } while (uintptr_t(((char*)largeBlock - ALLOC_START) + sz) >= areaFinish && attempt < MaxAttempts && munmap(largeBlock, sz) == 0);
 #else
     char* largeBlock = (char*)mmap(0, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 #endif
