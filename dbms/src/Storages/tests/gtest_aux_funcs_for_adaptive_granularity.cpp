@@ -55,7 +55,7 @@ TEST(AdaptiveIndexGranularity, FillGranularityToyTests)
     { /// Blocks with granule size
 
         MergeTreeIndexGranularity index_granularity;
-        fillIndexGranularityImpl(block1, 1, 1, true, 0, index_granularity);
+        fillIndexGranularityImpl(block1, 1, 100, true, 0, index_granularity);
         EXPECT_EQ(index_granularity.getMarksCount(), 1);
         for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
             EXPECT_EQ(index_granularity.getMarkRows(i), block1.rows());
@@ -79,7 +79,7 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
         auto block3 = getBlockWithSize(65536, 8);
         MergeTreeIndexGranularity index_granularity;
         for (const auto & block : {block1, block2, block3})
-            fillIndexGranularityImpl(block, 1024, 0, false, 0, index_granularity);
+            fillIndexGranularityImpl(block, 1024, 8192, false, 0, index_granularity);
 
         EXPECT_EQ(index_granularity.getMarksCount(), 192); /// granules
         for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
@@ -92,7 +92,7 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
         EXPECT_EQ(block1.rows() + block2.rows() + block3.rows(), 3136);
         MergeTreeIndexGranularity index_granularity;
         for (const auto & block : {block1, block2, block3})
-            fillIndexGranularityImpl(block, 1024, 0, false, 0, index_granularity);
+            fillIndexGranularityImpl(block, 1024, 8192, false, 0, index_granularity);
 
         EXPECT_EQ(index_granularity.getMarksCount(), 98); /// granules
         for (size_t i = 0; i < index_granularity.getMarksCount(); ++i)
@@ -110,7 +110,7 @@ TEST(AdaptiveIndexGranularity, FillGranularitySequenceOfBlocks)
         size_t index_offset = 0;
         for (const auto & block : {block1, block2, block3})
         {
-            fillIndexGranularityImpl(block, 16384, 0, false, index_offset, index_granularity);
+            fillIndexGranularityImpl(block, 16384, 8192, false, index_offset, index_granularity);
             index_offset = index_granularity.getLastMarkRows() - block.rows();
         }
         EXPECT_EQ(index_granularity.getMarksCount(), 1); /// granules

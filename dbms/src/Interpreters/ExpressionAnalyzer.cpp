@@ -36,7 +36,6 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Storages/StorageDistributed.h>
-#include <Storages/StorageMemory.h>
 #include <Storages/StorageJoin.h>
 
 #include <DataStreams/copyData.h>
