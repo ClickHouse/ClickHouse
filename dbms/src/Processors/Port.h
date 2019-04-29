@@ -26,9 +26,11 @@ protected:
     class State
     {
     public:
+        using Data = std::variant<Chunk, std::exception_ptr>;
+
         State() = default;
 
-        void pushData(std::variant<Chunk, std::exception_ptr> data_)
+        void pushData(Data data_)
         {
             if (finished)
                 throw Exception("Cannot push block to finished port.", ErrorCodes::LOGICAL_ERROR);
@@ -132,7 +134,7 @@ protected:
         bool isNeeded() const { return needed && !finished; }
 
     private:
-        std::variant<Chunk, std::exception_ptr> data;
+        Data data;
         /// Use special flag to check if block has data. This allows to send empty blocks between processors.
         bool has_data = false;
         /// Block is not needed right now, but may be will be needed later.
@@ -148,6 +150,8 @@ protected:
     IProcessor * processor = nullptr;
 
 public:
+    using Data = State::Data;
+
     Port(Block header) : header(std::move(header)) {}
     Port(Block header, IProcessor * processor) : header(std::move(header)), processor(processor) {}
 
@@ -210,7 +214,7 @@ public:
         return state->pull();
     }
 
-    auto pullData()
+    Data pullData()
     {
         if (version)
             ++(*version);
@@ -313,7 +317,7 @@ public:
         state->push(std::move(exception));
     }
 
-    void pushData(std::variant<Chunk, std::exception_ptr> data)
+    void pushData(Data data)
     {
         if (std::holds_alternative<std::exception_ptr>(data))
             push(std::get<std::exception_ptr>(std::move(data)));

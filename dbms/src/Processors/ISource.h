@@ -12,7 +12,8 @@ protected:
     OutputPort & output;
     bool has_input = false;
     bool finished = false;
-    Chunk current_chunk;
+    bool got_exception = false;
+    Port::Data current_chunk;
 
     virtual Chunk generate() = 0;
 
