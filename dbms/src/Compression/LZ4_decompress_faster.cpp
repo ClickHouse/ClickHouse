@@ -40,7 +40,7 @@ inline void copy8(UInt8 * dst, const UInt8 * src)
 
 inline void wildCopy8(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
-    /// Unrolling with clang doing >10% performance degrade.
+    /// Unrolling with clang is doing >10% performance degrade.
 #if defined(__clang__)
     #pragma nounroll
 #endif
@@ -225,7 +225,7 @@ inline void copy16(UInt8 * dst, const UInt8 * src)
 
 inline void wildCopy16(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
-    /// Unrolling with clang doing >10% performance degrade.
+    /// Unrolling with clang is doing >10% performance degrade.
 #if defined(__clang__)
     #pragma nounroll
 #endif
@@ -362,7 +362,7 @@ inline void copy32(UInt8 * dst, const UInt8 * src)
 
 inline void wildCopy32(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
-    /// Unrolling with clang doing >10% performance degrade.
+    /// Unrolling with clang is doing >10% performance degrade.
 #if defined(__clang__)
     #pragma nounroll
 #endif
@@ -424,7 +424,7 @@ void NO_INLINE decompressImpl(
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
 
-    /// Unrolling with clang doing >10% performance degrade.
+    /// Unrolling with clang is doing >10% performance degrade.
 #if defined(__clang__)
     #pragma nounroll
 #endif
