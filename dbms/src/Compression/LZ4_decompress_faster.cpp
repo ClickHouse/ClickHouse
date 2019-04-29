@@ -20,10 +20,6 @@
 #include <tmmintrin.h>
 #endif
 
-#ifdef __AVX__
-#include <immintrin.h>
-#endif
-
 #ifdef __aarch64__
 #include <arm_neon.h>
 #endif
@@ -34,8 +30,8 @@ namespace LZ4
 namespace
 {
 
-template <size_t N, bool USE_AVX> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
-template <size_t N, bool USE_AVX> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
+template <size_t N> [[maybe_unused]] void copy(UInt8 * dst, const UInt8 * src);
+template <size_t N> [[maybe_unused]] void wildCopy(UInt8 * dst, const UInt8 * src, UInt8 * dst_end);
 template <size_t N, bool USE_SHUFFLE> [[maybe_unused]] void copyOverlap(UInt8 * op, const UInt8 *& match, const size_t offset);
 
 
@@ -46,6 +42,7 @@ inline void copy8(UInt8 * dst, const UInt8 * src)
 
 inline void wildCopy8(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
+    /// Unrolling with clang doing >10% performance degrade.
 #if defined(__clang__)
     #pragma nounroll
 #endif
@@ -213,10 +210,8 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
 
 
 
-template <> void inline copy<8, false>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
-template <> void inline copy<8, true>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
-template <> void inline wildCopy<8, false>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); }
-template <> void inline wildCopy<8, true>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); }
+template <> void inline copy<8>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
+template <> void inline wildCopy<8>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); }
 template <> void inline copyOverlap<8, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); }
 template <> void inline copyOverlap<8, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8Shuffle(op, match, offset); }
 
@@ -231,10 +226,9 @@ inline void copy16(UInt8 * dst, const UInt8 * src)
 #endif
 }
 
-
-
 inline void wildCopy16(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
+    /// Unrolling with clang doing >10% performance degrade.
 #if defined(__clang__)
     #pragma nounroll
 #endif
@@ -349,52 +343,35 @@ inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
 #endif
 
 
-template <> void inline copy<16, false>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); }
-template <> void inline copy<16, true>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); }
-template <> void inline wildCopy<16, false>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); }
-template <> void inline wildCopy<16, true>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); }
+template <> void inline copy<16>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); }
+template <> void inline wildCopy<16>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); }
 template <> void inline copyOverlap<16, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16(op, match, offset); }
 template <> void inline copyOverlap<16, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16Shuffle(op, match, offset); }
 
 
-template <bool use_avx>
 inline void copy32(UInt8 * dst, const UInt8 * src)
 {
-    (void)use_avx;
-#ifdef __AVX__
-    _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst),
-            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src)));
-#elif defined(__SSE2__)
-    if constexpr (use_avx)
-    {
-        __asm__ volatile(
-            "vmovups (%1), %%ymm0\n\t"
-            "vmovups %%ymm0, (%0)"
-            :  /* output */
-            : "r"(dst), "r"(src) /* input */
-            : "%ymm0"); /* clobber_registers */
-    }
-    else
-    {
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
-        _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + 16),
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 16)));
-    }
+    /// There was an AVX here but with mash with SSE instructions, we got a big slowdown.
+#if defined(__SSE2__)
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + 16),
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 16)));
 #else
-    memcpy(dst, src, 32);
+    memcpy(dst, src, 16);
+    memcpy(dst + 16, src + 16, 16);
 #endif
 }
 
-template <bool use_avx>
 inline void wildCopy32(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
+    /// Unrolling with clang doing >10% performance degrade.
 #if defined(__clang__)
     #pragma nounroll
 #endif
     do
     {
-        copy32<use_avx>(dst, src);
+        copy32(dst, src);
         dst += 32;
         src += 32;
     } while (dst < dst_end);
@@ -432,16 +409,13 @@ inline void copyOverlap32(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift4[offset];
 }
 
-template <> void inline copy<32, false>(UInt8 * dst, const UInt8 * src) { copy32<false>(dst, src); }
-template <> void inline copy<32, true>(UInt8 * dst, const UInt8 * src) { copy32<true>(dst, src); }
-template <> void inline wildCopy<32, false>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32<false>(dst, src, dst_end); }
-template <> void inline wildCopy<32, true>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32<true>(dst, src, dst_end); }
+template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
+template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
 template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32(op, match, offset); }
 
 /// See also https://stackoverflow.com/a/30669632
 
-/// NO_INLINE is vital for hiding avx instructions
-template <size_t copy_amount, bool use_shuffle, bool use_avx>
+template <size_t copy_amount, bool use_shuffle>
 void NO_INLINE decompressImpl(
      const char * const source,
      char * const dest,
@@ -451,6 +425,7 @@ void NO_INLINE decompressImpl(
     UInt8 * op = reinterpret_cast<UInt8 *>(dest);
     UInt8 * const output_end = op + dest_size;
 
+    /// Unrolling with clang doing >10% performance degrade.
 #if defined(__clang__)
     #pragma nounroll
 #endif
@@ -490,7 +465,7 @@ void NO_INLINE decompressImpl(
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
-        wildCopy<copy_amount, use_avx>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
+        wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         ip += length;
         op = copy_end;
@@ -536,15 +511,15 @@ void NO_INLINE decompressImpl(
         }
         else
         {
-            copy<copy_amount, use_avx>(op, match);
+            copy<copy_amount>(op, match);
             match += copy_amount;
         }
 
         op += copy_amount;
 
-        copy<copy_amount, use_avx>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
+        copy<copy_amount>(op, match);   /// copy_amount + copy_amount - 1 - 4 * 2 bytes after buffer.
         if (length > copy_amount * 2)
-            wildCopy<copy_amount, use_avx>(op + copy_amount, match + copy_amount, copy_end);
+            wildCopy<copy_amount>(op + copy_amount, match + copy_amount, copy_end);
 
         op = copy_end;
     }
@@ -567,23 +542,19 @@ void decompress(
     /// Don't run timer if the block is too small.
     if (dest_size >= 32768)
     {
-        const bool have_AVX = DB::Cpu::CpuFlagsCache::have_AVX;
-        size_t best_variant = statistics.select(PerformanceStatistics::NUM_ELEMENTS - !have_AVX);
+        size_t best_variant = statistics.select();
 
         /// Run the selected method and measure time.
 
         Stopwatch watch;
         if (best_variant == 0)
-            decompressImpl<16, true, false>(source, dest, dest_size);
+            decompressImpl<16, true>(source, dest, dest_size);
         if (best_variant == 1)
-            decompressImpl<16, false, false>(source, dest, dest_size);
+            decompressImpl<16, false>(source, dest, dest_size);
         if (best_variant == 2)
-            decompressImpl<8, true, false>(source, dest, dest_size);
+            decompressImpl<8, true>(source, dest, dest_size);
         if (best_variant == 3)
-            decompressImpl<32, false, false>(source, dest, dest_size);
-        /// If we don't have avx, we just never be here becase we select from NUM_EMELENTS minus one, be careful to add new methods
-        if (best_variant == 4)
-            decompressImpl<32, false, true>(source, dest, dest_size);
+            decompressImpl<32, false>(source, dest, dest_size);
 
         watch.stop();
 
@@ -593,7 +564,7 @@ void decompress(
     }
     else
     {
-        decompressImpl<8, false, false>(source, dest, dest_size);
+        decompressImpl<8, false>(source, dest, dest_size);
     }
 }
 
