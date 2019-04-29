@@ -28,7 +28,7 @@ void ITableDeclaration::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-    columns = std::move(columns_);
+    columns = columns_;
 }
 
 void ITableDeclaration::setIndicesDescription(IndicesDescription indices_)
