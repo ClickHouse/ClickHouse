@@ -124,16 +124,18 @@ ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
 }
 
 ColumnsDescription::ColumnsDescription(const ColumnsDescription & other)
-    : columns(other.columns)
 {
-    for (auto it = columns.begin(); it != columns.end(); ++it)
-        name_to_column.emplace(it->name, it);
+    *this = other;
 }
 
 ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & other)
 {
     if (&other != this)
-        *this = ColumnsDescription(other);
+    {
+        columns = other.columns;
+        for (auto it = columns.begin(); it != columns.end(); ++it)
+            name_to_column.emplace(it->name, it);
+    }
     return *this;
 }
 
