@@ -261,8 +261,8 @@ try
 
         std::vector<ProcessorPtr> processors = {source, expanding, sink};
 
-        PipelineExecutor executor(processors, pool);
-        executor.execute();
+        PipelineExecutor executor(processors);
+        executor.execute(pool);
 
         WriteBufferFromOStream out(std::cout);
         printPipeline(executor.getProcessors(), out);

@@ -259,8 +259,8 @@ try
 //        WriteBufferFromOStream out(std::cout);
 //        printPipeline(processors, out);
 
-        PipelineExecutor executor(processors, pool);
-        executor.execute();
+        PipelineExecutor executor(processors);
+        executor.execute(pool);
         sink->checkAllRead();
     };
 
@@ -347,8 +347,8 @@ try
 //        WriteBufferFromOStream out(std::cout);
 //        printPipeline(processors, out);
 
-        PipelineExecutor executor(processors, pool);
-        executor.execute();
+        PipelineExecutor executor(processors);
+        executor.execute(pool);
         sink->checkAllRead();
     };
 
