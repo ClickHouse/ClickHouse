@@ -540,39 +540,67 @@ void QueryPipeline::calcRowsBeforeLimit()
     /// TODO get from Remote
 
     UInt64 rows_before_limit_at_least = 0;
-    bool has_limit = false;
-
-    for (auto & processor : processors)
-    {
-        if (auto * limit = typeid_cast<const LimitTransform *>(processor.get()))
-        {
-            has_limit = true;
-            rows_before_limit_at_least += limit->getRowsBeforeLimitAtLeast();
-        }
-
-        if (auto * source = typeid_cast<SourceFromInputStream *>(processor.get()))
-        {
-            auto & info = source->getStream().getProfileInfo();
-            if (info.hasAppliedLimit())
-            {
-                has_limit = true;
-                rows_before_limit_at_least += info.getRowsBeforeLimit();
-            }
-        }
-    }
-
     UInt64 rows_before_limit = 0;
+
+    bool has_limit = false;
     bool has_partial_sorting = false;
 
-    for (auto & processor : processors)
+    std::unordered_set<IProcessor *> visited;
+
+    struct QueuedEntry
     {
-        if (auto * limit = typeid_cast<const PartialSortingTransform *>(processor.get()))
+        IProcessor * processor;
+        bool visited_limit;
+    };
+
+    std::queue<QueuedEntry> queue;
+
+    queue.push({ output_format, false });
+    visited.emplace(output_format);
+
+    while (!queue.empty())
+    {
+        auto processor = queue.front().processor;
+        auto visited_limit = queue.front().visited_limit;
+        queue.pop();
+
+        if (!visited_limit)
+        {
+            if (auto * limit = typeid_cast<const LimitTransform *>(processor))
+            {
+                has_limit = visited_limit = true;
+                rows_before_limit_at_least += limit->getRowsBeforeLimitAtLeast();
+            }
+
+            if (auto * source = typeid_cast<SourceFromInputStream *>(processor))
+            {
+                auto & info = source->getStream().getProfileInfo();
+                if (info.hasAppliedLimit())
+                {
+                    has_limit = visited_limit = true;
+                    rows_before_limit_at_least += info.getRowsBeforeLimit();
+                }
+            }
+        }
+
+        if (auto * sorting = typeid_cast<const PartialSortingTransform *>(processor))
         {
             has_partial_sorting = true;
-            rows_before_limit += limit->getNumReadRows();
+            rows_before_limit += sorting->getNumReadRows();
+
+            /// Don't go to children. Take rows_before_limit from last PartialSortingTransform.
+            continue;
+        }
+
+        for (auto & child_port : processor->getInputs())
+        {
+            auto * child_processor = &child_port.getOutputPort().getProcessor();
+            if (visited.emplace(child_processor).second)
+                queue.push({ child_processor, visited_limit });
         }
     }
 
+    /// Get num read rows from PartialSortingTransform if have it.
     if (has_limit)
         output_format->setRowsBeforeLimit(has_partial_sorting ? rows_before_limit : rows_before_limit_at_least);
 }
