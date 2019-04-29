@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 
-IMPLEMENT_SETTINGS_COLLECTION(Settings, APPLY_FOR_SETTINGS)
+IMPLEMENT_SETTINGS_COLLECTION(Settings, LIST_OF_SETTINGS)
 
 
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
