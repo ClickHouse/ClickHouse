@@ -23,8 +23,8 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUOTA_EXPIRED;
 }
 
-PipelineExecutor::PipelineExecutor(Processors processors, ThreadPool * pool)
-    : processors(std::move(processors)), pool(pool), cancelled(false)
+PipelineExecutor::PipelineExecutor(Processors processors)
+    : processors(std::move(processors)), cancelled(false)
 {
     buildGraph();
 }
@@ -137,7 +137,7 @@ void PipelineExecutor::processFinishedExecutionQueue()
     }
 }
 
-void PipelineExecutor::processFinishedExecutionQueueSafe()
+void PipelineExecutor::processFinishedExecutionQueueSafe(ThreadPool * pool)
 {
     if (pool)
     {
@@ -184,7 +184,7 @@ static void executeJob(IProcessor * processor)
     }
 }
 
-void PipelineExecutor::addJob(UInt64 pid)
+void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
 {
     if (pool)
     {
@@ -256,7 +256,7 @@ void PipelineExecutor::expandPipeline(UInt64 pid)
     }
 }
 
-void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
+void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, ThreadPool * pool)
 {
     auto & node = graph[pid];
     auto status = node.processor->prepare();
@@ -294,7 +294,7 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
         case IProcessor::Status::Ready:
         {
             node.status = ExecStatus::Executing;
-            addJob(pid);
+            addJob(pid, pool);
             break;
         }
         case IProcessor::Status::Async:
@@ -322,33 +322,33 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
     }
 }
 
-void PipelineExecutor::processPrepareQueue()
+void PipelineExecutor::processPrepareQueue(ThreadPool * pool)
 {
     while (!prepare_queue.empty())
     {
         UInt64 proc = prepare_queue.front();
         prepare_queue.pop();
 
-        prepareProcessor(proc, false);
+        prepareProcessor(proc, false, pool);
 
     }
 }
 
-void PipelineExecutor::processAsyncQueue()
+void PipelineExecutor::processAsyncQueue(ThreadPool * pool)
 {
     UInt64 num_processors = processors.size();
     for (UInt64 node = 0; node < num_processors; ++node)
         if (graph[node].status == ExecStatus::Async)
-            prepareProcessor(node, true);
+            prepareProcessor(node, true, pool);
 }
 
-void PipelineExecutor::execute()
+void PipelineExecutor::execute(ThreadPool * pool)
 {
     addChildlessProcessorsToQueue();
 
     try
     {
-        executeImpl();
+        executeImpl(pool);
     }
     catch (Exception & exception)
     {
@@ -367,13 +367,13 @@ void PipelineExecutor::execute()
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void PipelineExecutor::executeImpl()
+void PipelineExecutor::executeImpl(ThreadPool * pool)
 {
     while (!cancelled)
     {
-        processFinishedExecutionQueueSafe();
-        processPrepareQueue();
-        processAsyncQueue();
+        processFinishedExecutionQueueSafe(pool);
+        processPrepareQueue(pool);
+        processAsyncQueue(pool);
 
         if (prepare_queue.empty())
         {
