@@ -209,7 +209,6 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
 #endif
 
 
-
 template <> void inline copy<8>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); }
 template <> void inline wildCopy<8>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); }
 template <> void inline copyOverlap<8, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); }
@@ -409,9 +408,11 @@ inline void copyOverlap32(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift4[offset];
 }
 
+
 template <> void inline copy<32>(UInt8 * dst, const UInt8 * src) { copy32(dst, src); }
 template <> void inline wildCopy<32>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy32(dst, src, dst_end); }
 template <> void inline copyOverlap<32, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap32(op, match, offset); }
+
 
 /// See also https://stackoverflow.com/a/30669632
 
