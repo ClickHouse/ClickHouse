@@ -1,11 +1,9 @@
 #include "LZ4_decompress_faster.h"
 
-#include <lz4.h>
 #include <string.h>
 #include <iostream>
 #include <random>
 #include <algorithm>
-#include <Core/CpuId.h>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
 #include <common/likely.h>
