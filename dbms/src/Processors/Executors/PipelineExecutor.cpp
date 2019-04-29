@@ -5,6 +5,7 @@
 #include <Processors/printPipeline.h>
 #include <Common/EventCounter.h>
 #include <ext/scope_guard.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -187,7 +188,9 @@ void PipelineExecutor::addJob(UInt64 pid)
 {
     if (pool)
     {
-        auto job = [this, pid]()
+        auto thread_group = CurrentThread::getGroup();
+
+        auto job = [this, pid, thread_group]()
         {
             SCOPE_EXIT(
                 {
@@ -196,6 +199,9 @@ void PipelineExecutor::addJob(UInt64 pid)
                 }
                 event_counter.notify()
             );
+
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
 
             executeJob(graph[pid].processor);
         };
