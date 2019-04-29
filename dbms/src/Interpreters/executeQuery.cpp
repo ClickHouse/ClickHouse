@@ -622,8 +622,11 @@ void executeQuery(
 
             pipeline.setOutput(std::move(out));
 
-            auto executor = pipeline.execute(context.getSettingsRef().max_threads);
-            executor->execute();
+            auto executor = pipeline.execute();
+            {
+                ThreadPool pool(context.getSettingsRef().max_threads, CurrentThread::getGroup());
+                executor->execute(&pool);
+            }
             pipeline.finalize();
         }
     }

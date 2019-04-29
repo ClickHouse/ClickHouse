@@ -13,7 +13,6 @@ class PipelineExecutor
 {
 private:
     Processors processors;
-    ThreadPool * pool;
 
     struct Edge
     {
@@ -64,8 +63,8 @@ private:
     std::atomic_bool cancelled;
 
 public:
-    explicit PipelineExecutor(Processors processors, ThreadPool * pool = nullptr);
-    void execute();
+    explicit PipelineExecutor(Processors processors);
+    void execute(ThreadPool * pool = nullptr);
 
     String getName() const { return "PipelineExecutor"; }
 
@@ -85,15 +84,15 @@ private:
     /// Pipeline execution related methods.
     void addChildlessProcessorsToQueue();
     void processFinishedExecutionQueue();
-    void processFinishedExecutionQueueSafe();
+    void processFinishedExecutionQueueSafe(ThreadPool * pool);
     bool addProcessorToPrepareQueueIfUpdated(Edge & edge);
-    void processPrepareQueue();
-    void processAsyncQueue();
-    void addJob(UInt64 pid);
+    void processPrepareQueue(ThreadPool * pool);
+    void processAsyncQueue(ThreadPool * pool);
+    void addJob(UInt64 pid, ThreadPool * pool);
     void addAsyncJob(UInt64 pid);
-    void prepareProcessor(size_t pid, bool async);
+    void prepareProcessor(size_t pid, bool async, ThreadPool * pool);
 
-    void executeImpl();
+    void executeImpl(ThreadPool * pool);
 
     String dumpPipeline() const;
 };
