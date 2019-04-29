@@ -529,11 +529,11 @@ ASTPtr DatabaseOrdinary::getCreateDictionaryQueryImpl(
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
-        bool has_table = tryGetDictionary(context, dictionary_name) != nullptr;
-
-        auto msg = has_table
-                   ? "There is no CREATE DICTIONARY query for dictionary "
-                   : "There is no metadata file for dictionary ";
+        std::string msg;
+        if (tryGetDictionary(context, dictionary_name))
+            msg = "There is no CREATE DICTIONARY query for dictionary ";
+        else
+            msg = "There is dictionary in metadata ";
 
         throw Exception(msg + dictionary_name, ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
     }
@@ -551,11 +551,11 @@ ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context,
     if (!ast && throw_on_error)
     {
         /// Handle system.* tables for which there are no table.sql files.
-        bool has_table = tryGetTable(context, table_name) != nullptr;
-
-        auto msg = has_table
-                   ? "There is no CREATE TABLE query for table "
-                   : "There is no metadata file for table ";
+        std::string msg;
+        if (tryGetTable(context, table_name))
+            msg = "There is no CREATE TABLE query for table ";
+        else
+            msg = "There is no metadata file for table ";
 
         throw Exception(msg + table_name, ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
     }
