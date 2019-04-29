@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_COLLECTION(MergeTreeSettings, APPLY_FOR_MERGE_TREE_SETTINGS)
+IMPLEMENT_SETTINGS_COLLECTION(MergeTreeSettings, LIST_OF_MERGE_TREE_SETTINGS)
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {

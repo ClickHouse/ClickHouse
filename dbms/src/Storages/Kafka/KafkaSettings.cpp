@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
 }
 
-IMPLEMENT_SETTINGS_COLLECTION(KafkaSettings, APPLY_FOR_KAFKA_SETTINGS)
+IMPLEMENT_SETTINGS_COLLECTION(KafkaSettings, LIST_OF_KAFKA_SETTINGS)
 
 void KafkaSettings::loadFromQuery(ASTStorage & storage_def)
 {

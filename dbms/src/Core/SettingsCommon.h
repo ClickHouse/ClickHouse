@@ -5,7 +5,6 @@
 #include <Formats/FormatSettings.h>
 #include <common/StringRef.h>
 #include <Common/SettingsChanges.h>
-#include <Compression/CompressionInfo.h>
 #include <Core/Types.h>
 #include <ext/singleton.h>
 #include <unordered_map>
@@ -26,16 +25,16 @@ class WriteBuffer;
   *  and the remote server will use its default value.
   */
 
-template <typename IntType>
-struct SettingInt
+template <typename Type>
+struct SettingNumber
 {
-    IntType value;
+    Type value;
     bool changed = false;
 
-    SettingInt(IntType x = 0) : value(x) {}
+    SettingNumber(Type x = 0) : value(x) {}
 
-    operator IntType() const { return value; }
-    SettingInt & operator= (IntType x) { set(x); return *this; }
+    operator Type() const { return value; }
+    SettingNumber & operator= (Type x) { set(x); return *this; }
 
     /// Serialize to a test string.
     String toString() const;
@@ -43,7 +42,7 @@ struct SettingInt
     /// Converts to a field.
     Field toField() const;
 
-    void set(IntType x);
+    void set(Type x);
 
     /// Read from SQL literal.
     void set(const Field & x);
@@ -58,9 +57,10 @@ struct SettingInt
     void deserialize(ReadBuffer & buf);
 };
 
-using SettingUInt64 = SettingInt<UInt64>;
-using SettingInt64 = SettingInt<Int64>;
-using SettingBool = SettingUInt64;
+using SettingUInt64 = SettingNumber<UInt64>;
+using SettingInt64 = SettingNumber<Int64>;
+using SettingFloat = SettingNumber<float>;
+using SettingBool = SettingNumber<bool>;
 
 
 /** Unlike SettingUInt64, supports the value of 'auto' - the number of processor cores without taking into account SMT.
@@ -90,248 +90,42 @@ struct SettingMaxThreads
 
     void setAuto();
     UInt64 getAutoValue() const;
-
-    /// Executed once for all time. Executed from one thread.
-    UInt64 getAutoValueImpl() const;
 };
 
 
-struct SettingSeconds
+enum class SettingTimespanIO { MILLISECOND, SECOND };
+
+template <SettingTimespanIO io_unit>
+struct SettingTimespan
 {
     Poco::Timespan value;
     bool changed = false;
 
-    SettingSeconds(UInt64 seconds = 0) : value(seconds, 0) {}
+    SettingTimespan(UInt64 x = 0) : value(x * microseconds_per_io_unit) {}
 
     operator Poco::Timespan() const { return value; }
-    SettingSeconds & operator= (const Poco::Timespan & x) { set(x); return *this; }
+    SettingTimespan & operator= (const Poco::Timespan & x) { set(x); return *this; }
 
     Poco::Timespan::TimeDiff totalSeconds() const { return value.totalSeconds(); }
-
-    String toString() const;
-    Field toField() const;
-
-    void set(const Poco::Timespan & x);
-
-    void set(UInt64 x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
-};
-
-
-struct SettingMilliseconds
-{
-    Poco::Timespan value;
-    bool changed = false;
-
-    SettingMilliseconds(UInt64 milliseconds = 0) : value(milliseconds * 1000) {}
-
-    operator Poco::Timespan() const { return value; }
-    SettingMilliseconds & operator= (const Poco::Timespan & x) { set(x); return *this; }
-
     Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
 
     String toString() const;
     Field toField() const;
 
     void set(const Poco::Timespan & x);
+
     void set(UInt64 x);
     void set(const Field & x);
     void set(const String & x);
 
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
+
+    static constexpr UInt64 microseconds_per_io_unit = (io_unit == SettingTimespanIO::MILLISECOND) ? 1000 : 1000000;
 };
 
-
-struct SettingFloat
-{
-    float value;
-    bool changed = false;
-
-    SettingFloat(float x = 0) : value(x) {}
-
-    operator float() const { return value; }
-    SettingFloat & operator= (float x) { set(x); return *this; }
-
-    String toString() const;
-    Field toField() const;
-
-    void set(float x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
-};
-
-
-/// TODO: X macro
-enum class LoadBalancing
-{
-    /// among replicas with a minimum number of errors selected randomly
-    RANDOM = 0,
-    /// a replica is selected among the replicas with the minimum number of errors
-    /// with the minimum number of distinguished characters in the replica name and local hostname
-    NEAREST_HOSTNAME,
-    /// replicas are walked through strictly in order; the number of errors does not matter
-    IN_ORDER,
-    /// if first replica one has higher number of errors,
-    ///   pick a random one from replicas with minimum number of errors
-    FIRST_OR_RANDOM,
-};
-
-struct SettingLoadBalancing
-{
-    LoadBalancing value;
-    bool changed = false;
-
-    SettingLoadBalancing(LoadBalancing x) : value(x) {}
-
-    operator LoadBalancing() const { return value; }
-    SettingLoadBalancing & operator= (LoadBalancing x) { set(x); return *this; }
-
-    static LoadBalancing getLoadBalancing(const String & s);
-
-    String toString() const;
-    Field toField() const;
-
-    void set(LoadBalancing x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
-};
-
-
-enum class JoinStrictness
-{
-    Unspecified = 0, /// Query JOIN without strictness will throw Exception.
-    ALL, /// Query JOIN without strictness -> ALL JOIN ...
-    ANY, /// Query JOIN without strictness -> ANY JOIN ...
-};
-
-
-struct SettingJoinStrictness
-{
-    JoinStrictness value;
-    bool changed = false;
-
-    SettingJoinStrictness(JoinStrictness x) : value(x) {}
-
-    operator JoinStrictness() const { return value; }
-    SettingJoinStrictness & operator= (JoinStrictness x) { set(x); return *this; }
-
-    static JoinStrictness getJoinStrictness(const String & s);
-
-    String toString() const;
-    Field toField() const;
-
-    void set(JoinStrictness x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
-};
-
-
-/// Which rows should be included in TOTALS.
-enum class TotalsMode
-{
-    BEFORE_HAVING            = 0, /// Count HAVING for all read rows;
-                                  ///  including those not in max_rows_to_group_by
-                                  ///  and have not passed HAVING after grouping.
-    AFTER_HAVING_INCLUSIVE    = 1, /// Count on all rows except those that have not passed HAVING;
-                                   ///  that is, to include in TOTALS all the rows that did not pass max_rows_to_group_by.
-    AFTER_HAVING_EXCLUSIVE    = 2, /// Include only the rows that passed and max_rows_to_group_by, and HAVING.
-    AFTER_HAVING_AUTO         = 3, /// Automatically select between INCLUSIVE and EXCLUSIVE,
-};
-
-struct SettingTotalsMode
-{
-    TotalsMode value;
-    bool changed = false;
-
-    SettingTotalsMode(TotalsMode x) : value(x) {}
-
-    operator TotalsMode() const { return value; }
-    SettingTotalsMode & operator= (TotalsMode x) { set(x); return *this; }
-
-    static TotalsMode getTotalsMode(const String & s);
-
-    String toString() const;
-    Field toField() const;
-
-    void set(TotalsMode x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
-};
-
-
-template <bool enable_mode_any>
-struct SettingOverflowMode
-{
-    OverflowMode value;
-    bool changed = false;
-
-    SettingOverflowMode(OverflowMode x = OverflowMode::THROW) : value(x) {}
-
-    operator OverflowMode() const { return value; }
-    SettingOverflowMode & operator= (OverflowMode x) { set(x); return *this; }
-
-    static OverflowMode getOverflowModeForGroupBy(const String & s);
-    static OverflowMode getOverflowMode(const String & s);
-
-    String toString() const;
-    Field toField() const;
-
-    void set(OverflowMode x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
-};
-
-/// The setting for executing distributed subqueries inside IN or JOIN sections.
-enum class DistributedProductMode
-{
-    DENY = 0,    /// Disable
-    LOCAL,       /// Convert to local query
-    GLOBAL,      /// Convert to global query
-    ALLOW        /// Enable
-};
-
-struct SettingDistributedProductMode
-{
-    DistributedProductMode value;
-    bool changed = false;
-
-    SettingDistributedProductMode(DistributedProductMode x) : value(x) {}
-
-    operator DistributedProductMode() const { return value; }
-    SettingDistributedProductMode & operator= (DistributedProductMode x) { set(x); return *this; }
-
-    static DistributedProductMode getDistributedProductMode(const String & s);
-
-    String toString() const;
-    Field toField() const;
-
-    void set(DistributedProductMode x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
-};
+using SettingSeconds = SettingTimespan<SettingTimespanIO::SECOND>;
+using SettingMilliseconds = SettingTimespan<SettingTimespanIO::MILLISECOND>;
 
 
 struct SettingString
@@ -378,30 +172,89 @@ public:
 };
 
 
-struct SettingDateTimeInputFormat
+/// Template class to define enum-based settings.
+template <typename EnumType, typename Tag = void>
+struct SettingEnum
 {
-    using Value = FormatSettings::DateTimeInputFormat;
-
-    Value value;
+    EnumType value;
     bool changed = false;
 
-    SettingDateTimeInputFormat(Value x) : value(x) {}
+    SettingEnum(EnumType x) : value(x) {}
 
-    operator Value() const { return value; }
-    SettingDateTimeInputFormat & operator= (Value x) { set(x); return *this; }
-
-    static Value getValue(const String & s);
+    operator EnumType() const { return value; }
+    SettingEnum & operator= (EnumType x) { set(x); return *this; }
 
     String toString() const;
-    Field toField() const;
+    Field toField() const { return toString(); }
 
-    void set(Value x);
-    void set(const Field & x);
+    void set(EnumType x) { value = x; changed = true; }
+    void set(const Field & x) { set(safeGet<const String &>(x)); }
     void set(const String & x);
 
     void serialize(WriteBuffer & buf) const;
     void deserialize(ReadBuffer & buf);
 };
+
+
+enum class LoadBalancing
+{
+    /// among replicas with a minimum number of errors selected randomly
+    RANDOM = 0,
+    /// a replica is selected among the replicas with the minimum number of errors
+    /// with the minimum number of distinguished characters in the replica name and local hostname
+    NEAREST_HOSTNAME,
+    /// replicas are walked through strictly in order; the number of errors does not matter
+    IN_ORDER,
+    /// if first replica one has higher number of errors,
+    ///   pick a random one from replicas with minimum number of errors
+    FIRST_OR_RANDOM,
+};
+using SettingLoadBalancing = SettingEnum<LoadBalancing>;
+
+
+enum class JoinStrictness
+{
+    Unspecified = 0, /// Query JOIN without strictness will throw Exception.
+    ALL, /// Query JOIN without strictness -> ALL JOIN ...
+    ANY, /// Query JOIN without strictness -> ANY JOIN ...
+};
+using SettingJoinStrictness = SettingEnum<JoinStrictness>;
+
+
+/// Which rows should be included in TOTALS.
+enum class TotalsMode
+{
+    BEFORE_HAVING            = 0, /// Count HAVING for all read rows;
+                                  ///  including those not in max_rows_to_group_by
+                                  ///  and have not passed HAVING after grouping.
+    AFTER_HAVING_INCLUSIVE    = 1, /// Count on all rows except those that have not passed HAVING;
+                                   ///  that is, to include in TOTALS all the rows that did not pass max_rows_to_group_by.
+    AFTER_HAVING_EXCLUSIVE    = 2, /// Include only the rows that passed and max_rows_to_group_by, and HAVING.
+    AFTER_HAVING_AUTO         = 3, /// Automatically select between INCLUSIVE and EXCLUSIVE,
+};
+using SettingTotalsMode = SettingEnum<TotalsMode>;
+
+
+/// The settings keeps OverflowMode which cannot be OverflowMode::ANY.
+using SettingOverflowMode = SettingEnum<OverflowMode>;
+struct SettingOverflowModeGroupByTag;
+
+/// The settings keeps OverflowMode which can be OverflowMode::ANY.
+using SettingOverflowModeGroupBy = SettingEnum<OverflowMode, SettingOverflowModeGroupByTag>;
+
+
+/// The setting for executing distributed subqueries inside IN or JOIN sections.
+enum class DistributedProductMode
+{
+    DENY = 0,    /// Disable
+    LOCAL,       /// Convert to local query
+    GLOBAL,      /// Convert to global query
+    ALLOW        /// Enable
+};
+using SettingDistributedProductMode = SettingEnum<DistributedProductMode>;
+
+
+using SettingDateTimeInputFormat = SettingEnum<FormatSettings::DateTimeInputFormat>;
 
 
 enum class LogsLevel
@@ -413,32 +266,7 @@ enum class LogsLevel
     debug,
     trace,
 };
-
-class SettingLogsLevel
-{
-public:
-    using Value = LogsLevel;
-
-    Value value;
-    bool changed = false;
-
-    SettingLogsLevel(Value x) : value(x) {}
-
-    operator Value() const { return value; }
-    SettingLogsLevel & operator= (Value x) { set(x); return *this; }
-
-    static Value getValue(const String & s);
-
-    String toString() const;
-    Field toField() const;
-
-    void set(Value x);
-    void set(const Field & x);
-    void set(const String & x);
-
-    void serialize(WriteBuffer & buf) const;
-    void deserialize(ReadBuffer & buf);
-};
+using SettingLogsLevel = SettingEnum<LogsLevel>;
 
 
 namespace details
@@ -777,20 +605,20 @@ public:
     }
 };
 
-#define DECLARE_SETTINGS_COLLECTION(APPLY_MACRO) \
-    APPLY_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
+#define DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS_MACRO) \
+    LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_COLLECTION_DECLARE_VARIABLES_HELPER_)
 
 
-#define IMPLEMENT_SETTINGS_COLLECTION(DERIVED_CLASS_NAME, APPLY_MACRO) \
+#define IMPLEMENT_SETTINGS_COLLECTION(DERIVED_CLASS_NAME, LIST_OF_SETTINGS_MACRO) \
     template<> \
     SettingsCollection<DERIVED_CLASS_NAME>::MemberInfos::MemberInfos() \
     { \
         using Derived = DERIVED_CLASS_NAME; \
         struct Functions \
         { \
-            APPLY_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
+            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_DEFINE_FUNCTIONS_HELPER_) \
         }; \
-        APPLY_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
+        LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_) \
     }
 
 
