@@ -24,8 +24,8 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
-    extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
-    extern const int UNKNOWN_EXCEPTION;
+extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
+extern const int UNKNOWN_EXCEPTION;
 }
 
 uint32_t MySQLHandler::last_connection_id = 0;
@@ -137,9 +137,11 @@ MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
     HandshakeResponse packet;
     char b[100]; /// Client can send either SSLRequest or HandshakeResponse.
     size_t pos = 0;
-    while (pos < 3) {
+    while (pos < 3)
+    {
         int ret = socket().receiveBytes(b + pos, 36 - pos);
-        if (ret == 0) {
+        if (ret == 0)
+        {
             throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 36.", ErrorCodes::CANNOT_READ_ALL_DATA);
         }
         pos += ret;
@@ -147,15 +149,20 @@ MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
 
     size_t packet_size = *reinterpret_cast<uint32_t *>(b) & 0xFFFFFF;
     LOG_TRACE(log, "packet size: " << packet_size);
-    if (packet_size == 32) {
+    if (packet_size == 32)
+    {
         ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
         packet_sender = PacketSender(*ss, 2);
         secure_connection = true;
         packet_sender.receivePacket(packet);
-    } else {
-        while (pos < 4 + packet_size) {
+    }
+    else
+    {
+        while (pos < 4 + packet_size)
+        {
             int ret = socket().receiveBytes(b + pos, 4 + packet_size - pos);
-            if (ret == 0) {
+            if (ret == 0)
+            {
                 throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: " + std::to_string(4 + packet_size) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
             }
             pos += ret;
@@ -170,17 +177,20 @@ String MySQLHandler::generateScramble()
 {
     String scramble(MySQLProtocol::SCRAMBLE_LENGTH, 0);
     Poco::RandomInputStream generator;
-    for (size_t i = 0; i < scramble.size(); i++) {
+    for (size_t i = 0; i < scramble.size(); i++)
+    {
         generator >> scramble[i];
     }
     return scramble;
 }
 
-void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, const String & scramble) {
+void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, const String & scramble)
+{
 
     String auth_response;
     AuthSwitchResponse response;
-    if (handshake_response.auth_plugin_name != Authentication::CachingSHA2) {
+    if (handshake_response.auth_plugin_name != Authentication::CachingSHA2)
+    {
         packet_sender.sendPacket(AuthSwitchRequest(Authentication::CachingSHA2, scramble + '\0'), true);
         packet_sender.receivePacket(response);
         auth_response = response.value;
@@ -199,7 +209,8 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     packet_sender.receivePacket(response);
     auth_response = response.value;
 
-    auto getOpenSSLError = []() -> String {
+    auto getOpenSSLError = []() -> String
+    {
         BIO * mem = BIO_new(BIO_s_mem());
         ERR_print_errors(mem);
         char * buf = nullptr;
@@ -260,7 +271,8 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         }
 
         password.resize(plaintext_size);
-        for (int i = 0; i < plaintext_size; i++) {
+        for (int i = 0; i < plaintext_size; i++)
+        {
             password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % scramble.size()]);
         }
     }
@@ -273,7 +285,8 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         LOG_TRACE(log, "Received empty password");
     }
 
-    if (!password.empty()) {
+    if (!password.empty())
+    {
         /// remove terminating null byte
         password.pop_back();
     }
