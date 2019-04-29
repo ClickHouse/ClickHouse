@@ -1,7 +1,6 @@
 #include "RWLock.h"
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
-#include <Poco/Ext/ThreadNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
@@ -38,8 +37,8 @@ class RWLockImpl::LockHolderImpl
     RWLock parent;
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
-    ThreadToHolder::iterator it_thread;
-    QueryIdToHolder::iterator it_query;
+    ThreadToHolder::key_type thread_id;
+    QueryIdToHolder::key_type query_id;
     CurrentMetrics::Increment active_client_increment;
 
     LockHolderImpl(RWLock && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client);
@@ -124,12 +123,12 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     LockHolder res(new LockHolderImpl(shared_from_this(), it_group, it_client));
 
     /// Insert myself (weak_ptr to the holder) to threads set to implement recursive lock
-    it_thread = thread_to_holder.emplace(this_thread_id, res).first;
-    res->it_thread = it_thread;
+    thread_to_holder.emplace(this_thread_id, res);
+    res->thread_id = this_thread_id;
 
     if (query_id != RWLockImpl::NO_QUERY)
-        it_query = query_id_to_holder.emplace(query_id, res).first;
-    res->it_query = it_query;
+        query_id_to_holder.emplace(query_id, res);
+    res->query_id = query_id;
 
     /// We are first, we should not wait anything
     /// If we are not the first client in the group, a notification could be already sent
@@ -152,10 +151,8 @@ RWLockImpl::LockHolderImpl::~LockHolderImpl()
     std::unique_lock lock(parent->mutex);
 
     /// Remove weak_ptrs to the holder, since there are no owners of the current lock
-    parent->thread_to_holder.erase(it_thread);
-
-    if (it_query != parent->query_id_to_holder.end())
-        parent->query_id_to_holder.erase(it_query);
+    parent->thread_to_holder.erase(thread_id);
+    parent->query_id_to_holder.erase(query_id);
 
     /// Removes myself from client list of our group
     it_group->clients.erase(it_client);

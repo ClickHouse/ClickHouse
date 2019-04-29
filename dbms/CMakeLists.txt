@@ -134,7 +134,7 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h   src/TableFunctio
 list (APPEND dbms_sources src/Dictionaries/DictionaryFactory.cpp src/Dictionaries/DictionarySourceFactory.cpp src/Dictionaries/DictionaryStructure.cpp)
 list (APPEND dbms_headers src/Dictionaries/DictionaryFactory.h   src/Dictionaries/DictionarySourceFactory.h   src/Dictionaries/DictionaryStructure.h)
 
-add_library(clickhouse_common_io ${LINK_MODE} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+add_library(clickhouse_common_io ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
@@ -185,8 +185,6 @@ target_link_libraries (clickhouse_common_io
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
     ${DOUBLE_CONVERSION_LIBRARIES}
-        PRIVATE
-    pocoext
         PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
@@ -196,8 +194,7 @@ target_link_libraries (clickhouse_common_io
     ${CITYHASH_LIBRARIES}
         PRIVATE
     ${ZLIB_LIBRARIES}
-    ${EXECINFO_LIBRARY}
-    ${ELF_LIBRARY}
+    ${EXECINFO_LIBRARIES}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
@@ -236,7 +233,6 @@ target_link_libraries (dbms
         PRIVATE
     clickhouse_dictionaries_embedded
         PUBLIC
-    pocoext
     ${MYSQLXX_LIBRARY}
         PRIVATE
     ${BTRIE_LIBRARIES}
@@ -261,8 +257,8 @@ if (USE_POCO_SQLODBC)
     target_link_libraries (clickhouse_common_io PRIVATE ${Poco_SQL_LIBRARY})
     target_link_libraries (dbms PRIVATE ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIR})
-        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIR} PUBLIC ${Poco_SQL_INCLUDE_DIR})
+        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQL_INCLUDE_DIR})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR} SYSTEM PUBLIC ${Poco_SQL_INCLUDE_DIR})
     endif()
 endif()
 
@@ -275,7 +271,7 @@ if (USE_POCO_DATAODBC)
     target_link_libraries (clickhouse_common_io PRIVATE ${Poco_Data_LIBRARY})
     target_link_libraries (dbms PRIVATE ${Poco_DataODBC_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIR})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
     endif()
 endif()
 

@@ -1,4 +1,3 @@
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS empty_summing;
 CREATE TABLE empty_summing (d Date, k UInt64, v Int8) ENGINE=SummingMergeTree(d, k, 8192);
 
