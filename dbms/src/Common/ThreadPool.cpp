@@ -1,8 +1,10 @@
 #include <Common/ThreadPool.h>
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 
 #include <iostream>
 #include <type_traits>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -140,6 +142,16 @@ size_t ThreadPoolImpl<Thread>::active() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
+    auto thread_group = DB::CurrentThread::getGroup();
+
+    if (thread_group)
+        DB::CurrentThread::attachToIfDetached(thread_group);
+
+    SCOPE_EXIT(
+            if (thread_group)
+                DB::CurrentThread::detachQueryIfNotDetached()
+    );
+
     while (true)
     {
         Job job;
