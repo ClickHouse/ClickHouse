@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnection.h>
+#include <Poco/Net/SecureStreamSocket.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Core/MySQLProtocol.h>
 #include <openssl/evp.h>
@@ -32,6 +33,9 @@ public:
     void run() final;
 
 private:
+    /// Enables SSL, if client requested.
+    MySQLProtocol::HandshakeResponse finishHandshake();
+
     void comQuery(String payload);
 
     void comFieldList(String payload);
@@ -57,6 +61,12 @@ private:
     static uint32_t last_connection_id;
 
     RSA * public_key, * private_key;
+
+    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<WriteBuffer> out;
+
+    bool secure_connection = false;
+    std::shared_ptr<Poco::Net::SecureStreamSocket> ss;
 };
 
 }

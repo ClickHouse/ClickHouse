@@ -3,8 +3,11 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
+#include <IO/ReadBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 #include <Core/Types.h>
 #include <Poco/RandomStream.h>
+#include <Poco/Net/StreamSocket.h>
 #include <random>
 #include <sstream>
 
@@ -46,6 +49,7 @@ enum Capability
 {
     CLIENT_CONNECT_WITH_DB = 0x00000008,
     CLIENT_PROTOCOL_41 = 0x00000200,
+    CLIENT_SSL = 0x00000800,
     CLIENT_TRANSACTIONS = 0x00002000, // TODO
     CLIENT_SESSION_TRACK = 0x00800000, // TODO
     CLIENT_SECURE_CONNECTION = 0x00008000,
@@ -128,6 +132,8 @@ public:
 class ReadPacket
 {
 public:
+    ReadPacket() = default;
+    ReadPacket(const ReadPacket &) = default;
     virtual void readPayload(String payload) = 0;
 
     virtual ~ReadPacket() = default;
@@ -140,11 +146,15 @@ public:
 class PacketSender
 {
 public:
-    PacketSender()
-    {}
+    size_t sequence_id = 0;
 
-    PacketSender(std::shared_ptr<ReadBuffer> in, std::shared_ptr<WriteBuffer> out)
-        : in(std::move(in)), out(std::move(out)), sequence_id(0), log(&Poco::Logger::get("MySQLHandler"))
+    PacketSender() = default;
+
+    explicit PacketSender(Poco::Net::StreamSocket & socket, size_t sequence_id=0)
+        : sequence_id(sequence_id)
+        , in(std::make_shared<ReadBufferFromPocoSocket>(socket))
+        , out(std::make_shared<WriteBufferFromPocoSocket>(socket))
+        , log(&Poco::Logger::get("MySQLHandler"))
     {
     }
 
@@ -230,7 +240,7 @@ private:
 
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
-    size_t sequence_id;
+
     Poco::Logger * log;
 };
 
@@ -259,7 +269,7 @@ public:
         , server_version(std::move(server_version))
         , connection_id(connection_id)
         , capability_flags(CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
-            | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF)
+            | CLIENT_CONNECT_WITH_DB | CLIENT_DEPRECATE_EOF | CLIENT_SSL)
         , character_set(CharacterSet::utf8_general_ci)
         , status_flags(0)
         , auth_plugin_data(auth_plugin_data)
@@ -286,6 +296,22 @@ public:
     }
 };
 
+class SSLRequest : public ReadPacket
+{
+public:
+    uint32_t capability_flags;
+    uint32_t max_packet_size;
+    uint8_t character_set;
+
+    void readPayload(String s) override
+    {
+        std::istringstream ss(s);
+        ss.readsome(reinterpret_cast<char *>(&capability_flags), 4);
+        ss.readsome(reinterpret_cast<char *>(&max_packet_size), 4);
+        ss.readsome(reinterpret_cast<char *>(&character_set), 1);
+    }
+};
+
 class HandshakeResponse : public ReadPacket
 {
 public:
@@ -296,6 +322,10 @@ public:
     String auth_response;
     String database;
     String auth_plugin_name;
+
+    HandshakeResponse() = default;
+
+    HandshakeResponse(const HandshakeResponse &) = default;
 
     void readPayload(String s) override
     {

@@ -13,8 +13,9 @@ from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
-cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, './configs'))
-node = cluster.add_instance('node')
+config_dir = os.path.join(SCRIPT_DIR, './configs')
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance('node', config_dir=config_dir)
 
 server_port = 9001
 
@@ -50,8 +51,6 @@ def test_mysql_client(mysql_client, server_address):
         -e "select 'тест' as b;"
     '''.format(host=server_address, port=server_port), demux=True)
 
-    import pdb
-    pdb.set_trace()
     assert stdout == 'a\n1\nb\nтест\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
