@@ -1637,8 +1637,12 @@ void InterpreterSelectQuery::executeHaving(Pipeline & pipeline, const Expression
 
 void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
 {
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
+
+        /// TODO: do we need to save filter there?
         return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having_expression->getColumnName(), false);
     });
 }
@@ -1731,7 +1735,7 @@ void InterpreterSelectQuery::executeRollupOrCube(QueryPipeline & pipeline, Modif
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type != QueryPipeline::StreamType::Main)
+        if (stream_type == QueryPipeline::StreamType::Totals)
             return nullptr;
 
         if (modificator == Modificator::ROLLUP)
