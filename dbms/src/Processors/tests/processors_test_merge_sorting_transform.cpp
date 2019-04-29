@@ -140,8 +140,8 @@ try
         connect(transform->getOutputs().front(), sink->getPort());
 
         std::vector<ProcessorPtr> processors = {source, transform, sink};
-        PipelineExecutor executor(processors, pool);
-        executor.execute();
+        PipelineExecutor executor(processors);
+        executor.execute(pool);
 
         WriteBufferFromOStream out(std::cout);
         printPipeline(executor.getProcessors(), out);
