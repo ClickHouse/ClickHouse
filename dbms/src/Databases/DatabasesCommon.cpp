@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -111,6 +112,9 @@ std::pair<String, DictionaryPtr> createDictionaryFromDefinition(
 {
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message, 0);
+    if (!ast || dynamic_cast<ASTCreateQuery*>(ast.get()) == nullptr)
+        throw Exception("Can't parse ASTCreateQuery", ErrorCodes::INCORRECT_QUERY);
+
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
     ast_create_query.database = database_name;
 
