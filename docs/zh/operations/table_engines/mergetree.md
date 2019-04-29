@@ -87,7 +87,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 <details markdown="1"><summary>已弃用的建表方法</summary>
 
-!!! 注意
+!!! attention "注意"
     不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
 ```

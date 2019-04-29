@@ -346,11 +346,10 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
-- If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
-- If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
+- If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
+- If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
-!!! note "Warning"
-    Use this option carefully. Enabling it negatively affects the performance of the ClickHouse server.
+Enabling the option can affect the performance of inserts.
 
 ### Selecting Data
 

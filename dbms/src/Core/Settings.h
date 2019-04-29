@@ -12,15 +12,24 @@ namespace Poco
     }
 }
 
+namespace boost
+{
+    namespace program_options
+    {
+        class options_description;
+    }
+}
+
+
 namespace DB
 {
 
 class IColumn;
-class Field;
+
 
 /** Settings of query execution.
   */
-struct Settings
+struct Settings : public SettingsCollection<Settings>
 {
     /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
     /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
@@ -153,7 +162,8 @@ struct Settings
     \
     M(SettingBool, add_http_cors_header, false, "Write add http CORS header.") \
     \
-    M(SettingBool, input_format_skip_unknown_fields, false, "Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats).") \
+    M(SettingBool, input_format_skip_unknown_fields, false, "Skip columns with unknown names from input data (it works for JSONEachRow, CSVWithNames, TSVWithNames and TSKV formats).") \
+    M(SettingBool, input_format_with_names_use_header, false, "For TSVWithNames and CSVWithNames input formats this controls whether format parser is to assume that column data appear in the input exactly as they are specified in the header.") \
     M(SettingBool, input_format_import_nested_json, false, "Map nested JSON data to nested tables (it works for JSONEachRow format).") \
     M(SettingBool, input_format_defaults_for_omitted_fields, false, "For input data calculate default expressions for omitted fields (it works for JSONEachRow format).") \
     \
@@ -314,48 +324,22 @@ struct Settings
     \
     M(SettingUInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.") \
 
-#define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    TYPE NAME {DEFAULT};
-
-    APPLY_FOR_SETTINGS(DECLARE)
-
-#undef DECLARE
-
-    /// Set setting by name.
-    void set(const String & name, const Field & value);
-
-    /// Set setting by name. Read value, serialized in binary form from buffer (for inter-server communication).
-    void set(const String & name, ReadBuffer & buf);
-
-    /// Skip value, serialized in binary form in buffer.
-    void ignore(const String & name, ReadBuffer & buf);
-
-    /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
-    void set(const String & name, const String & value);
-
-    /// Get setting by name. Converts value to String.
-    String get(const String & name) const;
-
-    bool tryGet(const String & name, String & value) const;
+    DECLARE_SETTINGS_COLLECTION(APPLY_FOR_SETTINGS)
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
-      * The profile can also be set using the `set` functions, like the profile setting.
-      */
+     * The profile can also be set using the `set` functions, like the profile setting.
+     */
     void setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config);
 
     /// Load settings from configuration file, at "path" prefix in configuration.
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
-    /// Read settings from buffer. They are serialized as list of contiguous name-value pairs, finished with empty name.
-    /// If readonly=1 is set, ignore read settings.
-    void deserialize(ReadBuffer & buf);
-
-    /// Write changed settings to buffer. (For example, to be sent to remote server.)
-    void serialize(WriteBuffer & buf) const;
-
     /// Dumps profile events to two columns of type Array(String)
     void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
-};
 
+    /// Adds program options to set the settings from a command line.
+    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
+    void addProgramOptions(boost::program_options::options_description & options);
+};
 
 }

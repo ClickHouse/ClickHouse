@@ -1,8 +1,5 @@
 #pragma once
 
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Core/Defines.h>
-#include <Core/Types.h>
 #include <Core/SettingsCommon.h>
 
 
@@ -14,7 +11,7 @@ class ASTStorage;
 /** Settings for the Kafka engine.
   * Could be loaded from a CREATE TABLE query (SETTINGS clause).
   */
-struct KafkaSettings
+struct KafkaSettings : public SettingsCollection<KafkaSettings>
 {
 
 #define APPLY_FOR_KAFKA_SETTINGS(M) \
@@ -28,14 +25,8 @@ struct KafkaSettings
     M(SettingUInt64, kafka_max_block_size, 0, "The maximum block size per table for Kafka engine.") \
     M(SettingUInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block")
 
-#define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    TYPE NAME {DEFAULT};
+    DECLARE_SETTINGS_COLLECTION(APPLY_FOR_KAFKA_SETTINGS)
 
-    APPLY_FOR_KAFKA_SETTINGS(DECLARE)
-
-#undef DECLARE
-
-public:
     void loadFromQuery(ASTStorage & storage_def);
 };
 
