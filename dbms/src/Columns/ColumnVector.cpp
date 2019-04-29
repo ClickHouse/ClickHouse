@@ -120,7 +120,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
                 for (UInt32 i = 0; i < s; ++i)
                     pairs[i] = {data[i], i};
 
-                RadixSort<RadixSortTraits<T>>::execute(pairs.data(), s);
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s);
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
