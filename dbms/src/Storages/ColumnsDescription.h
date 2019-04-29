@@ -37,7 +37,8 @@ public:
     explicit ColumnsDescription(NamesAndTypesList ordinary_);
     ColumnsDescription(const ColumnsDescription & other);
     ColumnsDescription & operator=(const ColumnsDescription & other);
-    ColumnsDescription(ColumnsDescription &&) noexcept = default;
+    ColumnsDescription(ColumnsDescription &&) noexcept;
+    ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String());

@@ -137,6 +137,18 @@ ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & ot
     return *this;
 }
 
+ColumnsDescription::ColumnsDescription(ColumnsDescription && other) noexcept {
+    *this = std::move(other);
+}
+
+ColumnsDescription & ColumnsDescription::operator=(ColumnsDescription && other) noexcept
+{
+    assert(&other != this);
+    columns = std::move(other.columns);
+    name_to_column = std::move(other.name_to_column);
+    return *this;
+}
+
 
 /// We are trying to find first column from end with name `column_name` or with a name beginning with `column_name` and ".".
 /// For example "fruits.bananas"
