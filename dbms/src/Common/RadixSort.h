@@ -203,6 +203,7 @@ private:
     {
         Element * end = arr + size;
         for (Element * i = arr + 1; i < end; ++i)
+        {
             if (Traits::less(Traits::extractKey(*i), Traits::extractKey(*(i - 1))))
             {
                 Element * j;
@@ -212,6 +213,7 @@ private:
                     *j = *(j - 1);
                 *j = tmp;
             }
+        }
     }
 
     /* Main MSD radix sort subroutine
