@@ -13,11 +13,18 @@
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
 
-namespace DB
+
+/// Callbacks which can be passed to ThreadPool.
+/// Are used to calculate metrics on thread.
+class ThreadPoolCallbacks
 {
-    class ThreadGroupStatus;
-    using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
-}
+public:
+    virtual void onThreadStart() = 0;
+    virtual void onThreadFinish() = 0;
+    virtual ~ThreadPoolCallbacks() = default;
+};
+
+using ThreadPoolCallbacksPtr = std::unique_ptr<ThreadPoolCallbacks>;
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -36,10 +43,10 @@ public:
     using Job = std::function<void()>;
 
     /// Size is constant. Up to num_threads are created on demand and then run until shutdown.
-    explicit ThreadPoolImpl(size_t max_threads, DB::ThreadGroupStatusPtr thread_group = nullptr);
+    explicit ThreadPoolImpl(size_t max_threads, ThreadPoolCallbacksPtr callbacks_ = nullptr);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
-    ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size, DB::ThreadGroupStatusPtr thread_group = nullptr);
+    ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size, ThreadPoolCallbacksPtr callbacks_ = nullptr);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
     /// If an exception in some thread was thrown, method silently returns, and exception will be rethrown only on call to 'wait' function.
@@ -95,7 +102,7 @@ private:
     std::list<Thread> threads;
     std::exception_ptr first_exception;
 
-    DB::ThreadGroupStatusPtr thread_group;
+    ThreadPoolCallbacksPtr callbacks;
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds);

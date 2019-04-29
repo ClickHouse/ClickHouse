@@ -32,6 +32,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Processors/Formats/LazyOutputFormat.h>
+#include <Interpreters/ThreadGroupThreadPoolCallbacks.h>
 
 #include "TCPHandler.h"
 
@@ -487,6 +488,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
         setThreadName("QueryPipelineEx");
 
+        /// Manually attach and detach thread_group in order to collect metrics after pool.wait() call.
         if (thread_group)
             CurrentThread::attachTo(thread_group);
 
@@ -495,7 +497,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                 CurrentThread::detachQueryIfNotDetached();
         );
 
-        ThreadPool inner_pool(num_threads, thread_group);
+        ThreadPool inner_pool(num_threads, std::make_unique<ThreadGroupThreadPoolCallbacks>(thread_group));
 
         try
         {
