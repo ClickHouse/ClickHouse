@@ -17,14 +17,14 @@ namespace DB
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads)
-    : ThreadPoolImpl(max_threads, max_threads, max_threads)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, DB::ThreadGroupStatusPtr thread_group)
+    : ThreadPoolImpl(max_threads, max_threads, max_threads, thread_group)
 {
 }
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size)
-    : max_threads(max_threads), max_free_threads(max_free_threads), queue_size(queue_size)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads, size_t max_free_threads, size_t queue_size, DB::ThreadGroupStatusPtr thread_group)
+    : max_threads(max_threads), max_free_threads(max_free_threads), queue_size(queue_size), thread_group(thread_group)
 {
 }
 
@@ -142,8 +142,6 @@ size_t ThreadPoolImpl<Thread>::active() const
 template <typename Thread>
 void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
-    auto thread_group = DB::CurrentThread::getGroup();
-
     if (thread_group)
         DB::CurrentThread::attachToIfDetached(thread_group);
 
