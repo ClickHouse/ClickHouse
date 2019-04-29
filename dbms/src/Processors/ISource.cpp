@@ -27,8 +27,15 @@ ISource::Status ISource::prepare()
     if (!has_input)
         return Status::Ready;
 
-    output.push(std::move(current_chunk));
+    output.pushData(std::move(current_chunk));
     has_input = false;
+
+    if (got_exception)
+    {
+        finished = true;
+        output.finish();
+        return Status::Finished;
+    }
 
     /// Now, we pushed to output, and it must be full.
     return Status::PortFull;
@@ -36,11 +43,20 @@ ISource::Status ISource::prepare()
 
 void ISource::work()
 {
-    current_chunk = generate();
-    if (!current_chunk)
-        finished = true;
-    else
+    try
+    {
+        current_chunk = generate();
+        if (!std::get<Chunk>(current_chunk))
+            finished = true;
+        else
+            has_input = true;
+    }
+    catch (Exception &)
+    {
+        current_chunk = std::current_exception();
         has_input = true;
+        got_exception = true;
+    }
 }
 
 }
