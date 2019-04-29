@@ -10,6 +10,8 @@
 #include <Common/NetException.h>
 #include <Poco/Crypto/RSAKey.h>
 #include <Poco/Crypto/CipherFactory.h>
+#include <Poco/Net/SecureStreamSocket.h>
+#include <Poco/Net/SSLManager.h>
 #include "MySQLHandler.h"
 #include <limits>
 
@@ -17,6 +19,8 @@
 namespace DB
 {
 using namespace MySQLProtocol;
+using Poco::Net::SecureStreamSocket;
+using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
@@ -31,11 +35,7 @@ void MySQLHandler::run()
 {
     connection_context = server.context();
 
-    {
-        auto in = std::make_shared<ReadBufferFromPocoSocket>(socket());
-        auto out = std::make_shared<WriteBufferFromPocoSocket>(socket());
-        packet_sender = PacketSender(in, out);
-    }
+    packet_sender = PacketSender(socket());
 
     try
     {
@@ -51,8 +51,7 @@ void MySQLHandler::run()
 
         LOG_TRACE(log, "Sent handshake");
 
-        HandshakeResponse handshake_response;
-        packet_sender.receivePacket(handshake_response);
+        HandshakeResponse handshake_response = finishHandshake();
 
         LOG_DEBUG(log, "Capabilities: " << handshake_response.capability_flags
                                         << "\nmax_packet_size: "
@@ -130,6 +129,42 @@ void MySQLHandler::run()
     }
 }
 
+MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
+{
+    /** Size of SSLRequest packet is 32 bytes.
+     *  If we read more, then we will read part of SSL handshake, and it will be impossible to start SSL connection using Poco.
+     */
+    HandshakeResponse packet;
+    char b[100]; /// Client can send either SSLRequest or HandshakeResponse.
+    size_t pos = 0;
+    while (pos < 3) {
+        int ret = socket().receiveBytes(b + pos, 36 - pos);
+        if (ret == 0) {
+            throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 36.", ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+        pos += ret;
+    }
+
+    size_t packet_size = *reinterpret_cast<uint32_t *>(b) & 0xFFFFFF;
+    LOG_TRACE(log, "packet size: " << packet_size);
+    if (packet_size == 32) {
+        ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
+        packet_sender = PacketSender(*ss, 2);
+        secure_connection = true;
+        packet_sender.receivePacket(packet);
+    } else {
+        while (pos < 4 + packet_size) {
+            int ret = socket().receiveBytes(b + pos, 4 + packet_size - pos);
+            if (ret == 0) {
+                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: " + std::to_string(4 + packet_size) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
+            }
+            pos += ret;
+        }
+        packet.readPayload(std::string(b + 4, packet_size));
+        packet_sender.sequence_id++;
+    }
+    return packet;
+}
 
 String MySQLHandler::generateScramble()
 {
@@ -167,11 +202,11 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     auto getOpenSSLError = []() -> String {
         BIO * mem = BIO_new(BIO_s_mem());
         ERR_print_errors(mem);
-        char * pem_buf = nullptr;
-        long pem_size = BIO_get_mem_data(mem, &pem_buf);
-        String pem(pem_buf, pem_size);
+        char * buf = nullptr;
+        long size = BIO_get_mem_data(mem, &buf);
+        String errors_str(buf, size);
         BIO_free(mem);
-        return pem;
+        return errors_str;
     };
 
     if (auth_response == "\2")
@@ -211,7 +246,7 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
      *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L4017
      */
 
-    if (!(auth_response.empty() || (auth_response.size() == 1 && auth_response[0] == '\0')))
+    if (!secure_connection && !(auth_response.empty() || (auth_response.size() == 1 && auth_response[0] == '\0')))
     {
         LOG_TRACE(log, "Received nonempty password");
         auto ciphertext = reinterpret_cast<unsigned char *>(auth_response.data());
@@ -228,6 +263,10 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         for (int i = 0; i < plaintext_size; i++) {
             password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % scramble.size()]);
         }
+    }
+    else if (secure_connection)
+    {
+        password = auth_response;
     }
     else
     {
