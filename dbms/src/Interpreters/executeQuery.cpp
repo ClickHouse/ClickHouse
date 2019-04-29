@@ -27,7 +27,8 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/executeQuery.h>
-#include "DNSCacheUpdater.h"
+#include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/ThreadGroupThreadPoolCallbacks.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -624,7 +625,8 @@ void executeQuery(
 
             auto executor = pipeline.execute();
             {
-                ThreadPool pool(context.getSettingsRef().max_threads, CurrentThread::getGroup());
+                ThreadPool pool(context.getSettingsRef().max_threads,
+                        std::make_unique<ThreadGroupThreadPoolCallbacks>(CurrentThread::getGroup()));
                 executor->execute(&pool);
             }
             pipeline.finalize();
