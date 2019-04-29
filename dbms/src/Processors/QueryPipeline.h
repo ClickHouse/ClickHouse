@@ -17,6 +17,9 @@ class Context;
 
 class IOutputFormat;
 
+class ThreadGroupStatus;
+using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
+
 class QueryPipeline
 {
 public:
@@ -60,7 +63,7 @@ public:
 
     void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
 
-    PipelineExecutorPtr execute(size_t num_threads);
+    PipelineExecutorPtr execute(size_t num_threads, ThreadGroupStatusPtr thread_group = nullptr);
 
     size_t getNumStreams() const { return streams.size() + (hasDelayedStream() ? 1 : 0); }
     size_t getNumMainStreams() const { return streams.size(); }

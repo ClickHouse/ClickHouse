@@ -577,7 +577,7 @@ void QueryPipeline::calcRowsBeforeLimit()
         output_format->setRowsBeforeLimit(has_partial_sorting ? rows_before_limit : rows_before_limit_at_least);
 }
 
-PipelineExecutorPtr QueryPipeline::execute(size_t num_threads)
+PipelineExecutorPtr QueryPipeline::execute(size_t num_threads, ThreadGroupStatusPtr thread_group)
 {
     checkInitialized();
 
@@ -587,7 +587,7 @@ PipelineExecutorPtr QueryPipeline::execute(size_t num_threads)
     if (executor)
         return executor;
 
-    pool = std::make_shared<ThreadPool>(num_threads, num_threads, num_threads);
+    pool = std::make_shared<ThreadPool>(num_threads, num_threads, num_threads, thread_group);
     executor = std::make_shared<PipelineExecutor>(processors, pool.get());
 
     return executor;
