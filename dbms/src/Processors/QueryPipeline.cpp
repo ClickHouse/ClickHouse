@@ -137,10 +137,14 @@ void QueryPipeline::addSimpleTransformImpl(const TProcessorGetter & getter)
 
         auto & out_header = transform ? transform->getOutputs().front().getHeader()
                                       : stream->getHeader();
-        if (header)
-            assertBlocksHaveEqualStructure(header, out_header, "QueryPipeline");
-        else
-            header = out_header;
+
+        if (stream_type != StreamType::Totals)
+        {
+            if (header)
+                assertBlocksHaveEqualStructure(header, out_header, "QueryPipeline");
+            else
+                header = out_header;
+        }
 
         if (transform)
         {
