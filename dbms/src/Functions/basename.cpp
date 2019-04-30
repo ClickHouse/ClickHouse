@@ -6,6 +6,10 @@
 namespace DB
 {
 
+/** Extract substring after the last slash or backslash.
+  * If there is no slashes, return the string unchanged.
+  * It is used to extract filename from path.
+  */
 struct ExtractBasename
 {
     static size_t getReserveLengthForElement() { return 16; } /// Just a guess.
