@@ -1995,11 +1995,8 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
     if (query.limit_length)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-        pipeline.transform([&, limit = limit_length + limit_offset](auto & stream, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+        pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
         {
-            if (stream_type == QueryPipeline::StreamType::Totals)
-                return nullptr;
-
             stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false);
         });
     }
@@ -2013,8 +2010,11 @@ void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline)
     if (query.limit_length)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-        pipeline.addSimpleTransform([&, limit = limit_length + limit_offset](const Block & header)
+        pipeline.addSimpleTransform([&, limit = limit_length + limit_offset](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
         {
+            if (stream_type == QueryPipeline::StreamType::Totals)
+                return nullptr;
+
             return std::make_shared<LimitTransform>(header, limit, 0);
         });
     }
