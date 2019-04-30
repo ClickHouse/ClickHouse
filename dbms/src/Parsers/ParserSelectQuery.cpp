@@ -60,7 +60,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr group_expression_list;
     ASTPtr having_expression;
     ASTPtr order_expression_list;
-    ASTPtr limit_by_value;
+    ASTPtr limit_by_length;
+    ASTPtr limit_by_offset;
     ASTPtr limit_by_expression_list;
     ASTPtr limit_offset;
     ASTPtr limit_length;
@@ -180,7 +181,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list
+    /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
     if (s_limit.ignore(pos, expected))
     {
         if (limit_length)
@@ -197,17 +198,19 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!exp_elem.parse(pos, limit_length, expected))
                 return false;
         }
-        else if (s_by.ignore(pos, expected))
-        {
-            limit_by_value = limit_length;
-            limit_length = nullptr;
-
-            if (!exp_list.parse(pos, limit_by_expression_list, expected))
-                return false;
-        }
         else if (s_offset.ignore(pos, expected))
         {
             if (!exp_elem.parse(pos, limit_offset, expected))
+                return false;
+        }
+        if (s_by.ignore(pos, expected))
+        {
+            limit_by_length = limit_length;
+            limit_by_offset = limit_offset;
+            limit_length = nullptr;
+            limit_offset = nullptr;
+
+            if (!exp_list.parse(pos, limit_by_expression_list, expected))
                 return false;
         }
     }
@@ -215,7 +218,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// LIMIT length | LIMIT offset, length
     if (s_limit.ignore(pos, expected))
     {
-        if (!limit_by_value || limit_length)
+        if (!limit_by_length|| limit_length)
             return false;
 
         ParserToken s_comma(TokenType::Comma);
@@ -227,6 +230,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             limit_offset = limit_length;
             if (!exp_elem.parse(pos, limit_length, expected))
+                return false;
+        }
+        else if (s_offset.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, limit_offset, expected))
                 return false;
         }
     }
@@ -248,7 +256,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::HAVING, std::move(having_expression));
     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_expression_list));
-    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_VALUE, std::move(limit_by_value));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, std::move(limit_by_offset));
+    select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, std::move(limit_by_length));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_BY, std::move(limit_by_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(limit_offset));
     select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length));

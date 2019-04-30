@@ -39,12 +39,13 @@ clickhouse_program_add_library(odbc-bridge)
 # For this reason, we disabling -rdynamic linker flag. But we do it in strange way:
 SET(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
 
-add_executable (clickhouse-odbc-bridge odbc-bridge.cpp)
+add_executable(clickhouse-odbc-bridge odbc-bridge.cpp)
+set_target_properties(clickhouse-odbc-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
 
 clickhouse_program_link_split_binary(odbc-bridge)
 
-install (TARGETS clickhouse-odbc-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+install(TARGETS clickhouse-odbc-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
-if (ENABLE_TESTS)
-    add_subdirectory (tests)
-endif ()
+if(ENABLE_TESTS)
+    add_subdirectory(tests)
+endif()
