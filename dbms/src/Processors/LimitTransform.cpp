@@ -6,12 +6,11 @@ namespace DB
 
 LimitTransform::LimitTransform(
     const Block & header, size_t limit, size_t offset,
-    bool always_read_till_end, bool do_count_rows_before_limit)
+    bool always_read_till_end)
     : IProcessor({header}, {header})
     , input(inputs.front()), output(outputs.front())
     , limit(limit), offset(offset)
     , always_read_till_end(always_read_till_end)
-    , do_count_rows_before_limit(do_count_rows_before_limit)
 {
 }
 
@@ -74,8 +73,7 @@ LimitTransform::Status LimitTransform::prepare()
     has_block = true;
 
     auto rows = current_chunk.getNumRows();
-    if (do_count_rows_before_limit)
-        rows_before_limit_at_least += rows;
+    rows_before_limit_at_least += rows;
 
     /// Skip block (for 'always_read_till_end' case).
     if (pushing_is_finished)
