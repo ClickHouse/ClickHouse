@@ -718,8 +718,11 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             {
                 if constexpr (pipeline_with_processors)
                 {
-                    pipeline.addSimpleTransform([&](const Block & block)
+                    pipeline.addSimpleTransform([&](const Block & block, QueryPipeline::StreamType stream_type) -> ProcessorPtr
                     {
+                        if (stream_type == QueryPipeline::StreamType::Totals)
+                            return nullptr;
+
                         return std::make_shared<FilterTransform>(
                             block,
                             expressions.filter_info->actions,
