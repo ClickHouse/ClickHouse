@@ -1756,8 +1756,11 @@ void InterpreterSelectQuery::executeExpression(Pipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
 {
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
+
         return std::make_shared<ExpressionTransform>(header, expression);
     });
 }
@@ -1837,8 +1840,11 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline)
     pipeline.resize(1);
 
     /// Merge the sorted blocks.
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
+
         return std::make_shared<MergeSortingTransform>(
                 header, order_descr, settings.max_block_size, limit,
                 settings.max_bytes_before_remerge_sort,
@@ -1951,8 +1957,11 @@ void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool befo
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
 
-        pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
         {
+            if (stream_type == QueryPipeline::StreamType::Totals)
+                return nullptr;
+
             return std::make_shared<DistinctTransform>(header, limits, limit_for_distinct, columns);
         });
     }
@@ -1986,8 +1995,11 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
     if (query.limit_length)
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
-        pipeline.transform([&, limit = limit_length + limit_offset](auto & stream)
+        pipeline.transform([&, limit = limit_length + limit_offset](auto & stream, QueryPipeline::StreamType stream_type) -> ProcessorPtr
         {
+            if (stream_type == QueryPipeline::StreamType::Totals)
+                return nullptr;
+
             stream = std::make_shared<LimitBlockInputStream>(stream, limit, 0, false);
         });
     }
@@ -2039,8 +2051,11 @@ void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
 
     UInt64 value = getLimitUIntValue(query.limit_by_value, context);
 
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
+
         return std::make_shared<LimitByTransform>(header, value, columns);
     });
 }
@@ -2131,11 +2146,13 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
         UInt64 limit_offset;
         std::tie(limit_length, limit_offset) = getLimitLengthAndOffset(query, context);
 
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
         {
-            bool do_count_rows_before_limit = stream_type == QueryPipeline::StreamType::Main;
+            if (stream_type != QueryPipeline::StreamType::Main)
+                return nullptr;
+
             return std::make_shared<LimitTransform>(
-                    header, limit_length, limit_offset, always_read_till_end, do_count_rows_before_limit);
+                    header, limit_length, limit_offset, always_read_till_end, true);
         });
     }
 }

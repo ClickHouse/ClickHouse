@@ -23,15 +23,10 @@ private:
 
     UInt64 rows_before_limit_at_least = 0;
 
-    /// Do we need calculate rows_before_limit_at_least value?
-    /// Used to skip total row when count rows_before_limit_at_least.
-    bool do_count_rows_before_limit;
-
 public:
     LimitTransform(
         const Block & header, size_t limit, size_t offset,
-        bool always_read_till_end = false,
-        bool do_count_rows_before_limit = true);
+        bool always_read_till_end = false);
 
     String getName() const override { return "Limit"; }
 

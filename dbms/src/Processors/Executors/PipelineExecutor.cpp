@@ -346,7 +346,7 @@ void PipelineExecutor::execute(ThreadPool * pool)
         /// Wait for all tasks to finish in case of exception.
         /// pool->wait shouldn't throw because pool uses exception-handled tasks.
         SCOPE_EXIT(
-                if(pool)
+                if (pool)
                     pool->wait();
         );
 
