@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <memory>
 #include <unordered_map>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -15,6 +16,9 @@ struct PreparedSetKey
     /// if left hand sides of the IN operators have different types).
     static PreparedSetKey forLiteral(const IAST & ast, DataTypes types_)
     {
+        for (auto & type : types_)
+            type = recursiveRemoveLowCardinality(type);
+
         PreparedSetKey key;
         key.ast_hash = ast.getTreeHash();
         key.types = std::move(types_);
