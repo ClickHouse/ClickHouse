@@ -1915,8 +1915,11 @@ void InterpreterSelectQuery::executeProjection(Pipeline & pipeline, const Expres
 
 void InterpreterSelectQuery::executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression)
 {
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
+        if (stream_type == QueryPipeline::StreamType::Totals)
+            return nullptr;
+
        return std::make_shared<ExpressionTransform>(header, expression);
     });
 }
