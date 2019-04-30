@@ -2015,7 +2015,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline)
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         pipeline.addSimpleTransform([&, limit = limit_length + limit_offset](const Block & header)
         {
-            return std::make_shared<LimitTransform>(header, limit, 0, false);
+            return std::make_shared<LimitTransform>(header, limit, 0);
         });
     }
 }
@@ -2152,7 +2152,7 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
                 return nullptr;
 
             return std::make_shared<LimitTransform>(
-                    header, limit_length, limit_offset, always_read_till_end, true);
+                    header, limit_length, limit_offset, always_read_till_end);
         });
     }
 }
