@@ -5,17 +5,12 @@
 namespace DB
 {
 
-static Block transformHeader(
-    Block header,
-    const ExpressionActionsPtr & expression,
-    const String & filter_column_name,
-    bool remove_filter_column)
+static void replaceFilterToConstant(Block & block, const String & filter_column_name)
 {
-    expression->execute(header);
     ConstantFilterDescription constant_filter_description;
 
-    auto filter_column = header.getPositionByName(filter_column_name);
-    auto & column_elem = header.safeGetByPosition(filter_column);
+    auto filter_column = block.getPositionByName(filter_column_name);
+    auto & column_elem = block.safeGetByPosition(filter_column);
 
     /// Isn't the filter already constant?
     if (column_elem.column)
@@ -26,11 +21,22 @@ static Block transformHeader(
     {
         /// Replace the filter column to a constant with value 1.
         FilterDescription filter_description_check(*column_elem.column);
-        column_elem.column = column_elem.type->createColumnConst(header.rows(), 1u);
+        column_elem.column = column_elem.type->createColumnConst(block.rows(), 1u);
     }
+}
+
+static Block transformHeader(
+    Block header,
+    const ExpressionActionsPtr & expression,
+    const String & filter_column_name,
+    bool remove_filter_column)
+{
+    expression->execute(header);
 
     if (remove_filter_column)
         header.erase(filter_column_name);
+    else
+        replaceFilterToConstant(header, filter_column_name);
 
     return header;
 }
@@ -45,8 +51,13 @@ FilterTransform::FilterTransform(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column)
 {
-    transformed_header = transformHeader(getInputPort().getHeader(), expression, filter_column_name, false);
+    transformed_header = getInputPort().getHeader();
+    expression->execute(transformed_header);
     filter_column_position = transformed_header.getPositionByName(filter_column_name);
+
+    auto & column = transformed_header.getByPosition(filter_column_position).column;
+    if (column)
+        constant_filter_description = ConstantFilterDescription(*column);
 }
 
 IProcessor::Status FilterTransform::prepare()
