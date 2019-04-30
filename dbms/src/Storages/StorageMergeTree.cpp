@@ -200,7 +200,8 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted,
                                     MergeTreeDataPartState::Committed,
                                     MergeTreeDataPartState::Outdated});
-    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions(parts.size());
+    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
+    transactions.reserve(parts.size());
 
     const auto& columns_for_parts = new_columns.getAllPhysical();
 
@@ -208,28 +209,17 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     size_t thread_pool_size = std::min<size_t>(parts.size(), settings.max_alter_threads);
     ThreadPool thread_pool(thread_pool_size);
 
-    size_t i = 0;
     for (const auto & part : parts)
     {
+        transactions.push_back(MergeTreeData::AlterDataPartTransactionPtr(new MergeTreeData::AlterDataPartTransaction(part)));
         thread_pool.schedule(
-            [this, i, &transactions, &part, columns_for_parts, new_indices = new_indices.indices]
+            [this, &transaction = transactions.back(), columns_for_parts, new_indices = new_indices.indices]
             {
-                if (auto transaction = this->data.alterDataPart(part, columns_for_parts, new_indices, false))
-                    transactions[i] = std::move(transaction);
+                this->data.alterDataPart(columns_for_parts, new_indices, false, transaction);
             }
         );
-
-        ++i;
     }
     thread_pool.wait();
-
-    auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
-        [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
-        {
-            return transaction == nullptr;
-        }
-    );
-    transactions.erase(erase_pos, transactions.end());
 
     return transactions;
 }
@@ -846,7 +836,9 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_indices.indices, false))
+        MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
+        data.alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
+        if (transaction->isValid())
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);
