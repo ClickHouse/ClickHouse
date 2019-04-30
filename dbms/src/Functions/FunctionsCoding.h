@@ -1478,7 +1478,7 @@ public:
                     : byte_offset - bits_to_keep;
 
                 constexpr UInt8 byte_reference = lower_range ? 0 : std::numeric_limits<UInt8>::max();
- 
+
                 /// Clean the bits we don't want on byte
                 const UInt16 src_byte_shift = (static_cast<UInt16>(src[offset]) >> shifts_bits) << shifts_bits;
                 /// Set the CIDR mask.
