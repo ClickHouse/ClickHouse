@@ -133,6 +133,7 @@ ColumnsDescription & ColumnsDescription::operator=(const ColumnsDescription & ot
     if (&other != this)
     {
         columns = other.columns;
+        name_to_column.clear();
         for (auto it = columns.begin(); it != columns.end(); ++it)
             name_to_column.emplace(it->name, it);
     }
