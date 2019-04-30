@@ -188,9 +188,7 @@ void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
 {
     if (pool)
     {
-        auto thread_group = CurrentThread::getGroup();
-
-        auto job = [this, pid, thread_group]()
+        auto job = [this, pid]()
         {
             SCOPE_EXIT(
                 {
@@ -199,9 +197,6 @@ void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
                 }
                 event_counter.notify()
             );
-
-            if (thread_group)
-                CurrentThread::attachToIfDetached(thread_group);
 
             executeJob(graph[pid].processor);
         };
