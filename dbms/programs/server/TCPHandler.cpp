@@ -480,7 +480,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 
     ThreadPool pool(1);
     auto executor = pipeline.execute();
-    bool exception = false;
+    std::atomic_bool exception = false;
     auto thread_group = CurrentThread::getGroup();
 
     pool.schedule([&]()
