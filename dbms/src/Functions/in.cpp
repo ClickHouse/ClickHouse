@@ -84,7 +84,7 @@ public:
 
         Block block_of_key_columns;
 
-        /// First argument may be tuple or single column.
+        /// First argument may be a tuple or a single column.
         const ColumnWithTypeAndName & left_arg = block.getByPosition(arguments[0]);
         const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(left_arg.column.get());
         const ColumnConst * const_tuple = checkAndGetColumnConst<ColumnTuple>(left_arg.column.get());
