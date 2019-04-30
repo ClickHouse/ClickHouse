@@ -310,6 +310,7 @@ private:
     using SetFieldFunction = void (*)(Derived &, const Field &);
     using SerializeFunction = void (*)(const Derived &, WriteBuffer & buf);
     using DeserializeFunction = void (*)(Derived &, ReadBuffer & buf);
+    using CastValueWithoutApplyingFunction = Field (*)(const Field &);
 
     struct MemberInfo
     {
@@ -322,6 +323,8 @@ private:
         SetFieldFunction set_field;
         SerializeFunction serialize;
         DeserializeFunction deserialize;
+        CastValueWithoutApplyingFunction cast_value_without_applying;
+
         bool isChanged(const Derived & collection) const { return *reinterpret_cast<const bool*>(reinterpret_cast<const UInt8*>(&collection) + offset_of_changed); }
     };
 
@@ -449,10 +452,11 @@ public:
     static size_t size() { return members().size(); }
 
     /// Returns name of a setting by its index (0..size()-1).
-    static StringRef getNameByIndex(size_t index) { return members()[index].name; }
+    static StringRef getName(size_t index) { return members()[index].name; }
 
-    /// Returns description of a setting by its index.
-    static StringRef getDescriptionByIndex(size_t index) { return members()[index].description; }
+    /// Returns description of a setting.
+    static StringRef getDescription(size_t index) { return members()[index].description; }
+    static StringRef getDescription(const String & name) { return members().findStrict(name)->description; }
 
     /// Searches a setting by its name; returns `npos` if not found.
     static size_t findIndex(const String & name) { return members().findIndex(name); }
@@ -460,6 +464,11 @@ public:
 
     /// Searches a setting by its name; throws an exception if not found.
     static size_t findIndexStrict(const String & name) { return members().findIndexStrict(name); }
+
+    /// Casts a value to a type according to a specified setting without actual changing this settings.
+    /// E.g. for SettingInt64 it casts Field to Field::Types::Int64.
+    static Field castValueWithoutApplying(size_t index, const Field & value) { return members()[index].cast_value_without_applying(value); }
+    static Field castValueWithoutApplying(const String & name, const Field & value) { return members().findStrict(name)->cast_value_without_applying(value); }
 
     iterator begin() { return iterator(castToDerived(), members().begin()); }
     const_iterator begin() const { return const_iterator(castToDerived(), members().begin()); }
@@ -632,7 +641,8 @@ public:
     static void NAME##_setString(Derived & collection, const String & value) { collection.NAME.set(value); } \
     static void NAME##_setField(Derived & collection, const Field & value) { collection.NAME.set(value); } \
     static void NAME##_serialize(const Derived & collection, WriteBuffer & buf) { collection.NAME.serialize(buf); } \
-    static void NAME##_deserialize(Derived & collection, ReadBuffer & buf) { collection.NAME.deserialize(buf); }
+    static void NAME##_deserialize(Derived & collection, ReadBuffer & buf) { collection.NAME.deserialize(buf); } \
+    static Field NAME##_castValueWithoutApplying(const Field & value) { TYPE temp{DEFAULT}; temp.set(value); return temp.toField(); }
 
 
 #define IMPLEMENT_SETTINGS_COLLECTION_ADD_MEMBER_INFO_HELPER_(TYPE, NAME, DEFAULT, DESCRIPTION) \
@@ -640,7 +650,8 @@ public:
     add({offsetof(Derived, NAME.changed), \
          StringRef(#NAME, strlen(#NAME)), StringRef(#DESCRIPTION, strlen(#DESCRIPTION)), \
          &Functions::NAME##_getString, &Functions::NAME##_getField, \
-        &Functions::NAME##_setString, &Functions::NAME##_setField, \
-        &Functions::NAME##_serialize, &Functions::NAME##_deserialize });
+         &Functions::NAME##_setString, &Functions::NAME##_setField, \
+         &Functions::NAME##_serialize, &Functions::NAME##_deserialize, \
+         &Functions::NAME##_castValueWithoutApplying });
 
 }

@@ -104,9 +104,9 @@ void Settings::addProgramOptions(boost::program_options::options_description & o
         auto on_program_option
             = boost::function1<void, const std::string &>([this, index](const std::string & value) { set(index, value); });
         options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            Settings::getNameByIndex(index).data,
+            Settings::getName(index).data,
             boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
-            Settings::getDescriptionByIndex(index).data)));
+            Settings::getDescription(index).data)));
     }
 }
 
