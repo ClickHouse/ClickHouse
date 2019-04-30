@@ -1535,8 +1535,9 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = data.alterDataPart(part, columns_for_parts, new_indices.indices, false);
-        if (!transaction)
+        MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
+        data.alterDataPart(columns_for_parts, new_indices.indices, false, transaction);
+        if (!transaction->isValid())
             continue;
 
         updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);

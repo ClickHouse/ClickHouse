@@ -1435,14 +1435,14 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
     }
 }
 
-MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
-    const DataPartPtr & part,
+void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     const IndicesASTs & new_indices,
-    bool skip_sanity_checks)
+    bool skip_sanity_checks,
+    AlterDataPartTransactionPtr& transaction)
 {
     ExpressionActionsPtr expression;
-    AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
+    const auto& part = transaction->getDataPart();
     bool force_update_metadata;
     createConvertExpression(part, part->columns, new_columns,
             getIndicesDescription().indices, new_indices,
@@ -1504,7 +1504,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     if (transaction->rename_map.empty() && !force_update_metadata)
     {
         transaction->clear();
-        return nullptr;
+        return;
     }
 
     /// Apply the expression and write the result to temporary files.
@@ -1573,7 +1573,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
     }
 
-    return transaction;
+    return;
 }
 
 void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
@@ -1596,9 +1596,11 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
     }
 
     LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
-
-    if (auto transaction = alterDataPart(data_part, new_columns, getIndicesDescription().indices, false))
+    AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(data_part));
+    alterDataPart(new_columns, getIndicesDescription().indices, false, transaction);
+    if (transaction->isValid())
         transaction->commit();
+
     empty_columns.clear();
 }
 
@@ -1607,10 +1609,21 @@ void MergeTreeData::freezeAll(const String & with_name, const Context & context)
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
 
+bool MergeTreeData::AlterDataPartTransaction::isValid() const
+{
+    return data_part != nullptr;
+}
+
+void MergeTreeData::AlterDataPartTransaction::clear()
+{
+    data_part = nullptr;
+}
+
 void MergeTreeData::AlterDataPartTransaction::commit()
 {
     if (!data_part)
         return;
+
     try
     {
         std::unique_lock<std::shared_mutex> lock(data_part->columns_lock);
@@ -1668,6 +1681,8 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
 MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 {
+    alter_lock.unlock();
+
     try
     {
         if (!data_part)

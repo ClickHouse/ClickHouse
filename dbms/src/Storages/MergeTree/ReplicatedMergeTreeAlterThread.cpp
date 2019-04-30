@@ -150,8 +150,9 @@ void ReplicatedMergeTreeAlterThread::run()
                 /// Update the part and write result to temporary files.
                 /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                 /// node /flags/force_alter.
-                auto transaction = storage.data.alterDataPart(part, columns_for_parts, indices_for_parts.indices, false);
-                if (!transaction)
+                MergeTreeData::AlterDataPartTransactionPtr transaction(new MergeTreeData::AlterDataPartTransaction(part));
+                storage.data.alterDataPart(columns_for_parts, indices_for_parts.indices, false, transaction);
+                if (!transaction->isValid())
                     continue;
 
                 storage.updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);
