@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Core/Types.h>
 
 #if defined(__x86_64__) || defined(__i386__)
