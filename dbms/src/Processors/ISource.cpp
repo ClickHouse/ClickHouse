@@ -43,7 +43,7 @@ ISource::Status ISource::prepare()
 
 void ISource::work()
 {
-    try
+///    try
     {
         current_chunk = generate();
         if (!std::get<Chunk>(current_chunk))
@@ -51,12 +51,12 @@ void ISource::work()
         else
             has_input = true;
     }
-    catch (Exception &)
-    {
-        current_chunk = std::current_exception();
-        has_input = true;
-        got_exception = true;
-    }
+//    catch (Exception &)
+//    {
+//        current_chunk = std::current_exception();
+//        has_input = true;
+//        got_exception = true;
+//    }
 }
 
 }
