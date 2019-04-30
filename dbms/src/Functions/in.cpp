@@ -73,11 +73,6 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    bool useDefaultImplementationForNulls() const override
-    {
-        return false;
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// Second argument must be ColumnSet.
