@@ -15,26 +15,6 @@ namespace ErrorCodes
     extern const int SETTING_CONSTRAINT_VIOLATION;
 }
 
-namespace
-{
-    thread_local Settings temp_settings;
-
-    Field convertSettingValueToComparableType(const Field & value, size_t setting_index)
-    {
-        auto && temp_setting = temp_settings[setting_index];
-        temp_setting.setValue(value);
-        return temp_setting.getValue();
-    }
-
-    Field convertSettingValueToComparableType(const String & value, size_t setting_index)
-    {
-        auto && temp_setting = temp_settings[setting_index];
-        temp_setting.setValue(value);
-        return temp_setting.getValue();
-    }
-}
-
-
 SettingsConstraints::SettingsConstraints() = default;
 SettingsConstraints::SettingsConstraints(const SettingsConstraints & src) = default;
 SettingsConstraints & SettingsConstraints::operator=(const SettingsConstraints & src) = default;
@@ -55,28 +35,16 @@ void SettingsConstraints::setReadOnly(const String & name, bool read_only)
     getConstraintRef(setting_index).read_only = read_only;
 }
 
-void SettingsConstraints::setMinValue(const String & name, const String & min_value)
-{
-    size_t setting_index = Settings::findIndexStrict(name);
-    getConstraintRef(setting_index).min_value = convertSettingValueToComparableType(min_value, setting_index);
-}
-
 void SettingsConstraints::setMinValue(const String & name, const Field & min_value)
 {
     size_t setting_index = Settings::findIndexStrict(name);
-    getConstraintRef(setting_index).min_value = convertSettingValueToComparableType(min_value, setting_index);
-}
-
-void SettingsConstraints::setMaxValue(const String & name, const String & max_value)
-{
-    size_t setting_index = Settings::findIndexStrict(name);
-    getConstraintRef(setting_index).max_value = convertSettingValueToComparableType(max_value, setting_index);
+    getConstraintRef(setting_index).min_value = Settings::castValueWithoutApplying(setting_index, min_value);
 }
 
 void SettingsConstraints::setMaxValue(const String & name, const Field & max_value)
 {
     size_t setting_index = Settings::findIndexStrict(name);
-    getConstraintRef(setting_index).max_value = convertSettingValueToComparableType(max_value, setting_index);
+    getConstraintRef(setting_index).max_value = Settings::castValueWithoutApplying(setting_index, max_value);
 }
 
 
@@ -87,7 +55,7 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
     if (setting_index == Settings::npos)
         return;
 
-    Field new_value = convertSettingValueToComparableType(change.value, setting_index);
+    Field new_value = Settings::castValueWithoutApplying(setting_index, change.value);
     Field current_value = current_settings.get(setting_index);
 
     /// Setting isn't checked if value wasn't changed.
