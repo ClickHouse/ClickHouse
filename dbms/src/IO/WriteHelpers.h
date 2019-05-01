@@ -669,6 +669,38 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
             date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
 }
 
+/// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
+template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
+inline void writeDateTime64Text(UInt64 datetime64, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    if (unlikely(!datetime64))
+    {
+        static const char s[] =
+            {
+                '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
+                between_date_time_delimiter,
+                '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
+                fractional_time_delimiter,
+                '0', '0', '0', '0', '0', '0', '0', '0', '0'
+            };
+        buf.write(s, sizeof(s));
+        return;
+    }
+
+    const UInt32 NANOS_PER_SECOND = 1000 * 1000 * 1000;
+    time_t datetime = datetime64 / NANOS_PER_SECOND;
+    auto nanos_since_second = static_cast<UInt32>(datetime64 % NANOS_PER_SECOND);
+
+    const auto & values = date_lut.getValues(datetime64);
+    writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
+        LocalDateTime(values.year, values.month, values.day_of_month,
+                      date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
+
+    buf.write(fractional_time_delimiter);
+    writeIntText(nanos_since_second, buf);
+}
+
+
 
 /// Methods for output in binary format.
 template <typename T>

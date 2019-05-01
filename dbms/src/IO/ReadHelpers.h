@@ -622,6 +622,15 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
     readDateTimeTextImpl<void>(datetime, buf, date_lut);
 }
 
+inline void readDateTime64Text(UInt64 & datetime64, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    time_t datetime = 0;
+    readDateTimeTextImpl<void>(datetime, buf, date_lut);
+    buf.ignore(); // ignore the "."
+    readIntText(datetime64, buf);
+    datetime64 += 1000 * 1000 * 1000 * datetime;
+}
+
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
     return readDateTimeTextImpl<bool>(datetime, buf, date_lut);
