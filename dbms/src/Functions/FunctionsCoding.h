@@ -1453,13 +1453,19 @@ public:
 };
 
 
+enum Bound
+{
+    Lower,
+    Upper
+};
+
 constexpr size_t ip_range_tuple_size = 2;
 
-class FunctionIPv6CIDRtoIPv6Range : public IFunction
+class FunctionIPv6CIDRToRange : public IFunction
 {
-static constexpr size_t bits_in_uint8 = 8;
+    static constexpr size_t bits_in_uint8 = 8;
 public:
-    template <bool lower_range>
+    template <Bound bound>
     static void setCIDRMask(const UInt8 * __restrict src, UInt8 * __restrict dst, UInt8 bits_to_keep)
     {
         for (size_t offset = 0, byte_offset = bits_in_uint8; offset != IPV6_BINARY_LENGTH; ++offset, byte_offset += bits_in_uint8)
@@ -1477,7 +1483,7 @@ public:
                     ? bits_in_uint8
                     : byte_offset - bits_to_keep;
 
-                constexpr UInt8 byte_reference = lower_range ? 0 : std::numeric_limits<UInt8>::max();
+                constexpr UInt8 byte_reference = bound == Lower ? 0 : std::numeric_limits<UInt8>::max();
 
                 /// Clean the bits we don't want on byte
                 const UInt16 src_byte_shift = (static_cast<UInt16>(src[offset]) >> shifts_bits) << shifts_bits;
@@ -1490,8 +1496,8 @@ public:
     }
 
 
-    static constexpr auto name = "IPv6CIDRtoIPv6Range";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6CIDRtoIPv6Range>(); }
+    static constexpr auto name = "IPv6CIDRToRange";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6CIDRToRange>(); }
 
     String getName() const override { return name; }
 
@@ -1566,8 +1572,8 @@ public:
                     ? col_const_cidr_in->getValue<UInt8>()
                     : col_cidr_in->getData()[offset];
 
-                setCIDRMask<true>(&vec_in[offset_ipv6], &vec_res_lower_range[offset_ipv6], cidr);
-                setCIDRMask<false>(&vec_in[offset_ipv6], &vec_res_upper_range[offset_ipv6], cidr);
+                setCIDRMask<Lower>(&vec_in[offset_ipv6], &vec_res_lower_range[offset_ipv6], cidr);
+                setCIDRMask<Upper>(&vec_in[offset_ipv6], &vec_res_upper_range[offset_ipv6], cidr);
             }
 
             tuple_columns[0] = std::move(col_res_lower_range);
@@ -1587,15 +1593,16 @@ public:
     }
 };
 
-class FunctionIPv4CIDRtoIPv4Range : public IFunction
+
+class FunctionIPv4CIDRToRange : public IFunction
 {
 static constexpr size_t bits_in_uint32 = 32;
 
 public:
-    template <bool lower_range>
+    template <Bound bound>
     static UInt32 setCIDRMask(UInt32 src, UInt8 bits_to_keep)
     {
-        UInt32 byte_reference = lower_range ? 0 : std::numeric_limits<UInt32>::max();
+        UInt32 byte_reference = bound == Lower ? 0 : std::numeric_limits<UInt32>::max();
 
         if (bits_to_keep >= bits_in_uint32)
             return src;
@@ -1612,8 +1619,8 @@ public:
         return static_cast<UInt32>(src_byte_shift | cidr_mask_byte_shift);
     }
 
-    static constexpr auto name = "IPv4CIDRtoIPv4Range";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4CIDRtoIPv4Range>(); }
+    static constexpr auto name = "IPv4CIDRToRange";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv4CIDRToRange>(); }
 
     String getName() const override { return name; }
 
@@ -1677,8 +1684,8 @@ public:
                     ? col_const_cidr_in->getValue<UInt8>()
                     : col_cidr_in->getData()[i];
 
-                vec_res_lower_range[i] = setCIDRMask<true>(vec_in[i], cidr);
-                vec_res_upper_range[i] = setCIDRMask<false>(vec_in[i], cidr);
+                vec_res_lower_range[i] = setCIDRMask<Lower>(vec_in[i], cidr);
+                vec_res_upper_range[i] = setCIDRMask<Upper>(vec_in[i], cidr);
             }
 
             tuple_columns[0] = std::move(col_res_lower_range);
