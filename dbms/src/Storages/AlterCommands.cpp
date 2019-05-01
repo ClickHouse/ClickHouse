@@ -203,30 +203,31 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     }
     else if (type == MODIFY_COLUMN)
     {
-        ColumnDescription & column = columns_description.get(column_name);
-
-        if (codec)
+        columns_description.modify(column_name, [&](ColumnDescription & column)
         {
-            /// User doesn't specify data type, it means that datatype doesn't change
-            /// let's use info about old type
-            if (data_type == nullptr)
-                codec->useInfoAboutType(column.type);
-            column.codec = codec;
-        }
+            if (codec)
+            {
+                /// User doesn't specify data type, it means that datatype doesn't change
+                /// let's use info about old type
+                if (data_type == nullptr)
+                    codec->useInfoAboutType(column.type);
+                column.codec = codec;
+            }
 
-        if (!is_mutable())
-        {
-            column.comment = comment;
-            return;
-        }
+            if (!is_mutable())
+            {
+                column.comment = comment;
+                return;
+            }
 
-        if (ttl)
-            column.ttl = ttl;
+            if (ttl)
+                column.ttl = ttl;
 
-        column.type = data_type;
+            column.type = data_type;
 
-        column.default_desc.kind = default_kind;
-        column.default_desc.expression = default_expression;
+            column.default_desc.kind = default_kind;
+            column.default_desc.expression = default_expression;
+        });
     }
     else if (type == MODIFY_ORDER_BY)
     {
@@ -241,7 +242,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     }
     else if (type == COMMENT_COLUMN)
     {
-        columns_description.get(column_name).comment = comment;
+        columns_description.modify(column_name, [&](ColumnDescription & column) { column.comment = comment; });
     }
     else if (type == ADD_INDEX)
     {
