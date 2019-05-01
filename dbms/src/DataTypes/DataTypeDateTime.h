@@ -68,21 +68,7 @@ struct DataTypeDateTime : DataTypeDateTimeBase<UInt32> {
 };
 
 struct DataTypeDateTime64 : DataTypeDateTimeBase<UInt64> {
-    enum class Precision {
-        Millis,
-        Micros,
-        Nanos,
-    };
-    static constexpr UInt32 MILLIS_PER_SECOND = 1000;
-    static constexpr UInt32 MICROS_PER_SECOND = 1000 * 1000;
-    static constexpr UInt32 NANOS_PER_SECOND = 1000 * 1000 * 1000;
-
-    DataTypeDateTime64(const std::string & time_zone_name = "", const std::string & precision_name = "");
-
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
-private:
-    const Precision precision;
+    using DataTypeDateTimeBase::DataTypeDateTimeBase;
 };
 
 }
