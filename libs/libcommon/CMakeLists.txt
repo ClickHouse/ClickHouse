@@ -1,7 +1,7 @@
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
 
-add_library (apple_rt
+add_library(apple_rt
     src/apple_rt.cpp
     include/port/clock.h
 )
@@ -10,7 +10,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library (common ${LINK_MODE}
+add_library(common
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
