@@ -512,9 +512,7 @@ public:
     /// Returns an object allowing to rename temporary files to permanent files.
     /// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
     /// If no data transformations are necessary, returns nullptr.
-//    AlterDataPartTransactionPtr
     void alterDataPart(
-//        const DataPartPtr & part,
         const NamesAndTypesList & new_columns,
         const IndicesASTs & new_indices,
         bool skip_sanity_checks,

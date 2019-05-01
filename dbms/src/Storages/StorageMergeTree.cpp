@@ -221,6 +221,14 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     }
     thread_pool.wait();
 
+    auto erase_pos = std::remove_if(transactions.begin(), transactions.end(),
+        [](const MergeTreeData::AlterDataPartTransactionPtr & transaction)
+        {
+            return !transaction->isValid();
+        }
+    );
+    transactions.erase(erase_pos, transactions.end());
+
     return transactions;
 }
 
