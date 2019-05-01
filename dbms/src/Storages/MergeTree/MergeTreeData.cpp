@@ -1609,6 +1609,7 @@ void MergeTreeData::freezeAll(const String & with_name, const Context & context)
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
 
+
 bool MergeTreeData::AlterDataPartTransaction::isValid() const
 {
     return data_part != nullptr;
