@@ -2,15 +2,28 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
-#include <Storages/ColumnDefault.h>
 #include <Core/Block.h>
+#include <Common/Exception.h>
+#include <Storages/ColumnDefault.h>
 #include <Storages/ColumnCodec.h>
 #include <optional>
+
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/member.hpp>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
+/// Description of a single table column (in CREATE TABLE for example).
 struct ColumnDescription
 {
     String name;
@@ -30,15 +43,13 @@ struct ColumnDescription
     void readText(ReadBuffer & buf);
 };
 
+
+/// Description of multiple table columns (in CREATE TABLE for example).
 class ColumnsDescription
 {
 public:
     ColumnsDescription() = default;
     explicit ColumnsDescription(NamesAndTypesList ordinary_);
-    ColumnsDescription(const ColumnsDescription & other);
-    ColumnsDescription & operator=(const ColumnsDescription & other);
-    ColumnsDescription(ColumnsDescription &&) noexcept;
-    ColumnsDescription & operator=(ColumnsDescription && other) noexcept;
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String());
@@ -50,8 +61,8 @@ public:
     bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
 
-    std::list<ColumnDescription>::const_iterator begin() const { return columns.begin(); }
-    std::list<ColumnDescription>::const_iterator end() const { return columns.end(); }
+    auto begin() const { return columns.begin(); }
+    auto end() const { return columns.end(); }
 
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
@@ -64,8 +75,17 @@ public:
 
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
-    ColumnDescription & get(const String & column_name);
     const ColumnDescription & get(const String & column_name) const;
+
+    template <typename F>
+    void modify(const String & column_name, F && f)
+    {
+        auto it = columns.get<1>().find(column_name);
+        if (it == columns.get<1>().end())
+            throw Exception("Cannot find column " + column_name + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
+        if (!columns.get<1>().modify(it, std::forward<F>(f)))
+            throw Exception("Cannot modify ColumnDescription for column " + column_name + ": column name cannot be changed", ErrorCodes::LOGICAL_ERROR);
+    }
 
     /// ordinary + materialized.
     NamesAndTypesList getAllPhysical() const;
@@ -83,11 +103,15 @@ public:
     String toString() const;
     static ColumnsDescription parse(const String & str);
 
-    static const ColumnsDescription * loadFromContext(const Context & context, const String & db, const String & table);
+    /// Keep the sequence of columns and allow to lookup by name.
+    using Container = boost::multi_index_container<
+        ColumnDescription,
+        boost::multi_index::indexed_by<
+            boost::multi_index::sequenced<>,
+            boost::multi_index::ordered_unique<boost::multi_index::member<ColumnDescription, String, &ColumnDescription::name>>>>;
 
 private:
-    std::list<ColumnDescription> columns;
-    std::unordered_map<String, std::list<ColumnDescription>::iterator> name_to_column;
+    Container columns;
 };
 
 }
