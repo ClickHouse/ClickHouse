@@ -4,11 +4,11 @@
 			"value": "4611686018427387904"
 value
 value
-Cannot execute SET query in readonly mode.
+Cannot modify 'output_format_json_quote_64bit_integers' setting in readonly mode
 			"name": "value",
 			"value": "9223372036854775808"
 			"name": "value",
 			"value": 9223372036854775808
 value
 value
-Cannot override setting
+Cannot modify 'output_format_json_quote_64bit_integers' setting in readonly mode
