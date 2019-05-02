@@ -211,7 +211,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
 
     for (const auto & part : parts)
     {
-        transactions.push_back(MergeTreeData::AlterDataPartTransactionPtr(new MergeTreeData::AlterDataPartTransaction(part)));
+        transactions.push_back(std::make_unique<MergeTreeData::AlterDataPartTransaction>(part));
         thread_pool.schedule(
             [this, &transaction = transactions.back(), columns_for_parts, new_indices = new_indices.indices]
             {
