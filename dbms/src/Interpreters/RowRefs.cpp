@@ -18,8 +18,10 @@ void callWithType(AsofRowRefs::Type which, F && f)
 {
     switch (which)
     {
-        case AsofRowRefs::Type::key32:  return f(UInt32());
-        case AsofRowRefs::Type::key64:  return f(UInt64());
+        case AsofRowRefs::Type::keyu32:  return f(UInt32());
+        case AsofRowRefs::Type::keyu64:  return f(UInt64());
+        case AsofRowRefs::Type::keyi32:  return f(Int32());
+        case AsofRowRefs::Type::keyi64:  return f(Int64());
         case AsofRowRefs::Type::keyf32: return f(Float32());
         case AsofRowRefs::Type::keyf64: return f(Float64());
     }
@@ -89,12 +91,22 @@ std::optional<AsofRowRefs::Type> AsofRowRefs::getTypeSize(const IColumn * asof_c
     if (typeid_cast<const ColumnVector<UInt32> *>(asof_column))
     {
         size = sizeof(UInt32);
-        return Type::key32;
+        return Type::keyu32;
     }
     else if (typeid_cast<const ColumnVector<UInt64> *>(asof_column))
     {
         size = sizeof(UInt64);
-        return Type::key64;
+        return Type::keyu64;
+    }
+    else if (typeid_cast<const ColumnVector<Int32> *>(asof_column))
+    {
+        size = sizeof(Int32);
+        return Type::keyi32;
+    }
+    else if (typeid_cast<const ColumnVector<Int64> *>(asof_column))
+    {
+        size = sizeof(Int64);
+        return Type::keyi64;
     }
     else if (typeid_cast<const ColumnVector<Float32> *>(asof_column))
     {

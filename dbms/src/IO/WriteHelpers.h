@@ -733,7 +733,7 @@ inline void writeDateTimeText(DateTime64 datetime64, WriteBuffer & buf, const Da
 
     buf.write(fractional_time_delimiter);
 
-    char data[9];
+    char data[10];
     int written = sprintf(data, "%09d", c.nanos);
     writeText(&data[0], static_cast<size_t>(written), buf);
 }

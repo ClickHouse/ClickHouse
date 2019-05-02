@@ -79,9 +79,11 @@ struct DateTime64 {
 
     Components split() const;
     explicit DateTime64(Components c);
+    explicit DateTime64(Type tt) : t{tt} {}
     explicit operator bool() const {
         return t != 0;
     }
+    Type get() const { return t; }
 private:
     Type t;
 };
