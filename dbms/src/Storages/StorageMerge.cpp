@@ -402,7 +402,7 @@ void StorageMerge::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     params.apply(new_columns);
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(new_columns);

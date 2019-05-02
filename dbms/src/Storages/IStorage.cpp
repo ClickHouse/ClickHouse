@@ -15,7 +15,7 @@ void IStorage::alter(const AlterCommands & params, const String & database_name,
 
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     params.apply(new_columns);
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
