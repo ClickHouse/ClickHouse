@@ -28,8 +28,8 @@ void registerFunctionsCoding(FunctionFactory & factory)
     factory.registerFunction<FunctionBitmaskToArray>();
     factory.registerFunction<FunctionToIPv4>();
     factory.registerFunction<FunctionToIPv6>();
-    factory.registerFunction<FunctionIPv6CIDRtoIPv6Range>();
-    factory.registerFunction<FunctionIPv4CIDRtoIPv4Range>();
+    factory.registerFunction<FunctionIPv6CIDRToRange>();
+    factory.registerFunction<FunctionIPv4CIDRToRange>();
 }
 
 }
