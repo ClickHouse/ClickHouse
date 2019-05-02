@@ -422,6 +422,7 @@ public:
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
 
+    size_t getPartsCount() const;
     size_t getMaxPartsCountForPartition() const;
 
     /// Get min value of part->info.getDataVersion() for all active parts.
