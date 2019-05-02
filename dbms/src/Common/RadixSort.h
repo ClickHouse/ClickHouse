@@ -43,70 +43,6 @@ struct RadixSortMallocAllocator
 };
 
 
-template <typename KeyBits>
-struct RadixSortIdentityTransform
-{
-    static constexpr bool transform_is_simple = true;
-
-    static KeyBits forward(KeyBits x)     { return x; }
-    static KeyBits backward(KeyBits x)    { return x; }
-};
-
-
-
-template <typename TElement>
-struct RadixSortUIntTraits
-{
-    using Element = TElement;
-    using Key = Element;
-    using CountType = uint32_t;
-    using KeyBits = Key;
-
-    static constexpr size_t PART_SIZE_BITS = 8;
-
-    using Transform = RadixSortIdentityTransform<KeyBits>;
-    using Allocator = RadixSortMallocAllocator;
-
-    static Key & extractKey(Element & elem) { return elem; }
-
-    static bool less(Key x, Key y)
-    {
-        return x < y;
-    }
-};
-
-
-template <typename KeyBits>
-struct RadixSortSignedTransform
-{
-    static constexpr bool transform_is_simple = true;
-
-    static KeyBits forward(KeyBits x)     { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
-    static KeyBits backward(KeyBits x)    { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
-};
-
-template <typename TElement>
-struct RadixSortIntTraits
-{
-    using Element = TElement;
-    using Key = Element;
-    using CountType = uint32_t;
-    using KeyBits = std::make_unsigned_t<Key>;
-
-    static constexpr size_t PART_SIZE_BITS = 8;
-
-    using Transform = RadixSortSignedTransform<KeyBits>;
-    using Allocator = RadixSortMallocAllocator;
-
-    static Key & extractKey(Element & elem) { return elem; }
-
-    static bool less(Key x, Key y)
-    {
-        return x < y;
-    }
-};
-
-
 /** A transformation that transforms the bit representation of a key into an unsigned integer number,
   *  that the order relation over the keys will match the order relation over the obtained unsigned numbers.
   * For floats this conversion does the following:
@@ -154,7 +90,73 @@ struct RadixSortFloatTraits
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
 
-    // TODO: Correct handling of NaNs, NULLs, etc
+    /// Used when fallback to comparison based sorting is needed.
+    /// TODO: Correct handling of NaNs, NULLs, etc
+    static bool less(Key x, Key y)
+    {
+        return x < y;
+    }
+};
+
+
+template <typename KeyBits>
+struct RadixSortIdentityTransform
+{
+    static constexpr bool transform_is_simple = true;
+
+    static KeyBits forward(KeyBits x)     { return x; }
+    static KeyBits backward(KeyBits x)    { return x; }
+};
+
+
+
+template <typename TElement>
+struct RadixSortUIntTraits
+{
+    using Element = TElement;
+    using Key = Element;
+    using CountType = uint32_t;
+    using KeyBits = Key;
+
+    static constexpr size_t PART_SIZE_BITS = 8;
+
+    using Transform = RadixSortIdentityTransform<KeyBits>;
+    using Allocator = RadixSortMallocAllocator;
+
+    static Key & extractKey(Element & elem) { return elem; }
+
+    static bool less(Key x, Key y)
+    {
+        return x < y;
+    }
+};
+
+
+template <typename KeyBits>
+struct RadixSortSignedTransform
+{
+    static constexpr bool transform_is_simple = true;
+
+    static KeyBits forward(KeyBits x)     { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
+    static KeyBits backward(KeyBits x)    { return x ^ (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)); }
+};
+
+
+template <typename TElement>
+struct RadixSortIntTraits
+{
+    using Element = TElement;
+    using Key = Element;
+    using CountType = uint32_t;
+    using KeyBits = std::make_unsigned_t<Key>;
+
+    static constexpr size_t PART_SIZE_BITS = 8;
+
+    using Transform = RadixSortSignedTransform<KeyBits>;
+    using Allocator = RadixSortMallocAllocator;
+
+    static Key & extractKey(Element & elem) { return elem; }
+
     static bool less(Key x, Key y)
     {
         return x < y;
@@ -220,9 +222,9 @@ private:
      * Puts elements to buckets based on PASS-th digit, then recursively calls insertion sort or itself on the buckets
      */
     template <size_t PASS>
-    static inline void radixSortMSDInternal(Element *arr, size_t size, size_t limit)
+    static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
     {
-        Element *last_list[HISTOGRAM_SIZE + 1];
+        Element * last_list[HISTOGRAM_SIZE + 1];
         Element ** last = last_list + 1;
         size_t count[HISTOGRAM_SIZE] = {0};
 
@@ -295,7 +297,7 @@ private:
 
     // A helper to choose sorting algorithm based on array length
     template <size_t PASS>
-    static inline void radixSortMSDInternalHelper(Element *arr, size_t size, size_t limit)
+    static inline void radixSortMSDInternalHelper(Element * arr, size_t size, size_t limit)
     {
         if (size <= INSERTION_SORT_THRESHOLD)
             insertionSortInternal(arr, size);
@@ -304,8 +306,8 @@ private:
     }
 
 public:
-    // Least significant digit radix sort (stable)
-    static void executeLSD(Element *arr, size_t size)
+    /// Least significant digit radix sort (stable)
+    static void executeLSD(Element * arr, size_t size)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
 
@@ -400,7 +402,7 @@ public:
      * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
      * SOFTWARE.
      */
-    static void executeMSD(Element *arr, size_t size, size_t limit)
+    static void executeMSD(Element * arr, size_t size, size_t limit)
     {
         limit = std::min(limit, size);
         radixSortMSDInternalHelper<NUM_PASSES - 1>(arr, size, limit);
