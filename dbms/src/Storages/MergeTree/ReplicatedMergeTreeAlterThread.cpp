@@ -143,7 +143,7 @@ void ReplicatedMergeTreeAlterThread::run()
                 parts = storage.data.getDataParts();
 
             const auto columns_for_parts = storage.getColumns().getAllPhysical();
-            const auto indices_for_parts = storage.getIndicesDescription();
+            const auto indices_for_parts = storage.getIndices();
 
             for (const MergeTreeData::DataPartPtr & part : parts)
             {
