@@ -2152,6 +2152,18 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 }
 
 
+size_t MergeTreeData::getPartsCount() const
+{
+    auto lock = lockParts();
+
+    size_t res = 0;
+    for (const auto & part [[maybe_unused]] : getDataPartsStateRange(DataPartState::Committed))
+        ++res;
+
+    return res;
+}
+
+
 size_t MergeTreeData::getMaxPartsCountForPartition() const
 {
     auto lock = lockParts();
@@ -2184,7 +2196,7 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
     auto lock = lockParts();
 
     std::optional<Int64> result;
-    for (const DataPartPtr & part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (!result || *result > part->info.getDataVersion())
             result = part->info.getDataVersion();
@@ -2196,18 +2208,25 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 {
-    const size_t parts_count = getMaxPartsCountForPartition();
-    if (parts_count < settings.parts_to_delay_insert)
-        return;
-
-    if (parts_count >= settings.parts_to_throw_insert)
+    const size_t parts_count_in_total = getPartsCount();
+    if (parts_count_in_total >= settings.max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
+        throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
+    }
+
+    const size_t parts_count_in_partition = getMaxPartsCountForPartition();
+    if (parts_count_in_partition < settings.parts_to_delay_insert)
+        return;
+
+    if (parts_count_in_partition >= settings.parts_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
 
     const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
-    const size_t k = 1 + parts_count - settings.parts_to_delay_insert; /// from 1 to max_k
+    const size_t k = 1 + parts_count_in_partition - settings.parts_to_delay_insert; /// from 1 to max_k
     const double delay_milliseconds = ::pow(settings.max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
@@ -2216,7 +2235,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
     LOG_INFO(log, "Delaying inserting block by "
-        << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count << " parts");
+        << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count_in_partition << " parts");
 
     if (until)
         until->tryWait(delay_milliseconds);
@@ -2226,12 +2245,19 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 
 void MergeTreeData::throwInsertIfNeeded() const
 {
-    const size_t parts_count = getMaxPartsCountForPartition();
-
-    if (parts_count >= settings.parts_to_throw_insert)
+    const size_t parts_count_in_total = getPartsCount();
+    if (parts_count_in_total >= settings.max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
+        throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
+    }
+
+    const size_t parts_count_in_partition = getMaxPartsCountForPartition();
+
+    if (parts_count_in_partition >= settings.parts_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
 }
 

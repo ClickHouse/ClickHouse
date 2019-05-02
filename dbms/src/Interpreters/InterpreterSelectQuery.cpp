@@ -1562,18 +1562,18 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    if (!query.limitByValue() || !query.limitBy())
+    if (!query.limitByLength() || !query.limitBy())
         return;
 
     Names columns;
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
-
-    UInt64 value = getLimitUIntValue(query.limitByValue(), context);
+    UInt64 length = getLimitUIntValue(query.limitByLength(), context);
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context) : 0);
 
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<LimitByBlockInputStream>(stream, value, columns);
+        stream = std::make_shared<LimitByBlockInputStream>(stream, length, offset, columns);
     });
 }
 
