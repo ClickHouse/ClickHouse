@@ -200,6 +200,7 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted,
                                     MergeTreeDataPartState::Committed,
                                     MergeTreeDataPartState::Outdated});
+    //std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions(parts.size());
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
     transactions.reserve(parts.size());
 
@@ -209,13 +210,16 @@ std::vector<MergeTreeData::AlterDataPartTransactionPtr> StorageMergeTree::prepar
     size_t thread_pool_size = std::min<size_t>(parts.size(), settings.max_alter_threads);
     ThreadPool thread_pool(thread_pool_size);
 
+
     for (const auto & part : parts)
-    {
         transactions.push_back(std::make_unique<MergeTreeData::AlterDataPartTransaction>(part));
+
+    for(size_t i = 0; i < parts.size(); ++i)
+    {
         thread_pool.schedule(
-            [this, &transaction = transactions.back(), columns_for_parts, new_indices = new_indices.indices]
+            [this, i, &transactions, &columns_for_parts, &new_indices = new_indices.indices]
             {
-                this->data.alterDataPart(columns_for_parts, new_indices, false, transaction);
+                this->data.alterDataPart(columns_for_parts, new_indices, false, transactions[i]);
             }
         );
     }
