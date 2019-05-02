@@ -639,7 +639,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
             throw Exception("Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
-    auto res = DictionaryFactory::instance().create(dictionary_name, create, context);
+    auto res = DictionaryFactory::instance().create(dictionary_name, create, context.getGlobalContext());
     database->createDictionary(context, dictionary_name, res, query_ptr);
     return {};
 }
