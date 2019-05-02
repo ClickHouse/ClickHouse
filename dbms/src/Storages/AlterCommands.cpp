@@ -214,7 +214,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
                 column.codec = codec;
             }
 
-            if (!is_mutable())
+            if (!isMutable())
             {
                 column.comment = comment;
                 return;
@@ -306,7 +306,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool AlterCommand::is_mutable() const
+bool AlterCommand::isMutable() const
 {
     if (type == COMMENT_COLUMN)
         return false;
@@ -328,6 +328,7 @@ void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescr
     for (const AlterCommand & command : *this)
         if (!command.ignore)
             command.apply(new_columns_description, new_indices_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+
     columns_description = std::move(new_columns_description);
     indices_description = std::move(new_indices_description);
     order_by_ast = std::move(new_order_by_ast);
@@ -495,7 +496,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
                     /// column has no associated alter command, let's create it
                     /// add a new alter command to modify existing column
                     this->emplace_back(AlterCommand{AlterCommand::MODIFY_COLUMN,
-                        column.name, explicit_type, column.default_desc.kind, column.default_desc.expression});
+                        column.name, explicit_type, column.default_desc.kind, column.default_desc.expression, {}, {}, {}, {}});
 
                     command = &back();
                 }
@@ -534,11 +535,11 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
     columns_description = std::move(out_columns_description);
 }
 
-bool AlterCommands::is_mutable() const
+bool AlterCommands::isMutable() const
 {
     for (const auto & param : *this)
     {
-        if (param.is_mutable())
+        if (param.isMutable())
             return true;
     }
 
