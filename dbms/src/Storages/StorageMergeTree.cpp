@@ -290,7 +290,10 @@ void StorageMergeTree::alter(
     data.setTTLExpressions(new_columns.getColumnTTLs(), new_ttl_table_ast);
 
     for (auto & transaction : transactions)
+    {
         transaction->commit();
+        transaction.reset();
+    }
 
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
@@ -856,7 +859,10 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         return;
 
     for (auto & transaction : transactions)
+    {
         transaction->commit();
+        transaction.reset();
+    }
 
     /// Recalculate columns size (not only for the modified column)
     data.recalculateColumnSizes();
