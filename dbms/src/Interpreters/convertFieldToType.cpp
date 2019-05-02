@@ -136,12 +136,26 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
+DateTime64::Type stringToDateTime64(const String & s)
+{
+    ReadBufferFromString in(s);
+    DateTime64 datetime64 {0};
+
+    readDateTimeText(datetime64, in);
+    if (!in.eof())
+        throw Exception("String is too long for DateTime64: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
+
+    return datetime64.get();
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
     WhichDataType which_type(type);
     WhichDataType which_from_type;
     if (from_type_hint)
         which_from_type = WhichDataType(*from_type_hint);
+
+    std::cout << "which_type=" << (int)which_type.idx << " which_from_type=" << (int)which_from_type.idx << std::endl;
 
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
@@ -152,6 +166,10 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
     }
+//    else if (which_type.isDateTime64())
+//    {
+//        throw Exception{"DateTime64 conversion not yet done error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
+//    }
     else if (type.isValueRepresentedByNumber())
     {
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
@@ -186,6 +204,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             {
                 /// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
                 return stringToDateTime(src.get<const String &>());
+            }
+            else if (which_type.isDateTime64())
+            {
+                /// Convert 'YYYY-MM-DD hh:mm:ss.NNNNNNNNN' Strings to DateTime
+                return stringToDateTime64(src.get<const String &>());
             }
             else if (which_type.isUUID())
             {

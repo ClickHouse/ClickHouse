@@ -527,6 +527,7 @@ struct WhichDataType
 
     bool isDate() const { return idx == TypeIndex::Date; }
     bool isDateTime() const { return idx == TypeIndex::DateTime; }
+    bool isDateTime64() const { return idx == TypeIndex::DateTime64; }
     bool isDateOrDateTime() const { return isDate() || isDateTime(); }
 
     bool isString() const { return idx == TypeIndex::String; }
