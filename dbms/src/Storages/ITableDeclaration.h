@@ -16,8 +16,8 @@ public:
     virtual const ColumnsDescription & getColumns() const { return columns; }
     virtual void setColumns(ColumnsDescription columns_);
 
-    virtual const IndicesDescription & getIndicesDescription() const { return indices; }
-    virtual void setIndicesDescription(IndicesDescription indices_);
+    virtual const IndicesDescription & getIndices() const { return indices; }
+    virtual void setIndices(IndicesDescription indices_);
 
     /// NOTE: These methods should include virtual columns, but should NOT include ALIAS columns
     /// (they are treated separately).
