@@ -1612,16 +1612,18 @@ void MergeTreeData::freezeAll(const String & with_name, const Context & context)
 
 bool MergeTreeData::AlterDataPartTransaction::isValid() const
 {
-    return data_part != nullptr;
+    return valid && data_part;
 }
 
 void MergeTreeData::AlterDataPartTransaction::clear()
 {
-    data_part = nullptr;
+    valid = false;
 }
 
 void MergeTreeData::AlterDataPartTransaction::commit()
 {
+    if (!isValid())
+        return;
     if (!data_part)
         return;
 
@@ -1682,13 +1684,14 @@ void MergeTreeData::AlterDataPartTransaction::commit()
 
 MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
 {
-    alter_lock.unlock();
+
+    if (!isValid())
+        return;
+    if (!data_part)
+        return;
 
     try
     {
-        if (!data_part)
-            return;
-
         LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->relative_path);
 
         String path = data_part->getFullPath();

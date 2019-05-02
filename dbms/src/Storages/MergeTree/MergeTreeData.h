@@ -235,6 +235,9 @@ public:
         friend class MergeTreeData;
         void clear();
 
+        bool valid = true;
+
+        //don't interchange order of data_part & alter_lock
         DataPartPtr data_part;
         DataPartsLock alter_lock;
 
