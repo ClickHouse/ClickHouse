@@ -28,6 +28,8 @@
 
 #include <Formats/FormatSettings.h>
 
+#include <DataTypes/DataTypeDateTime.h>
+
 
 namespace DB
 {
@@ -531,6 +533,42 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     buf.write(s, sizeof(s));
 }
 
+/// Methods for output in binary format.
+template <typename T>
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
+writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+
+inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+
+
+/// Methods for outputting the value in text form for a tab-separated format.
+template <typename T>
+inline std::enable_if_t<std::is_integral_v<T>, void>
+writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
+
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, void>
+writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
+
+inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
+
+/// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
+template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
+
+/// unlike the method for std::string
+/// assumes here that `x` is a null-terminated string.
+inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
+inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
+
 /// in YYYY-MM-DD format
 template <char delimiter = '-'>
 inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
@@ -654,11 +692,11 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
     if (unlikely(!datetime))
     {
         static const char s[] =
-        {
-            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
-            between_date_time_delimiter,
-            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'
-        };
+            {
+                '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
+                between_date_time_delimiter,
+                '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0'
+            };
         buf.write(s, sizeof(s));
         return;
     }
@@ -666,12 +704,12 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
     const auto & values = date_lut.getValues(datetime);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
-            date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
+                      date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
 }
 
 /// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
-inline void writeDateTime64Text(UInt64 datetime64, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void writeDateTimeText(DateTime64 datetime64, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
     if (unlikely(!datetime64))
     {
@@ -687,56 +725,19 @@ inline void writeDateTime64Text(UInt64 datetime64, WriteBuffer & buf, const Date
         return;
     }
 
-    const UInt32 NANOS_PER_SECOND = 1000 * 1000 * 1000;
-    time_t datetime = datetime64 / NANOS_PER_SECOND;
-    auto nanos_since_second = static_cast<UInt32>(datetime64 % NANOS_PER_SECOND);
-
-    const auto & values = date_lut.getValues(datetime64);
+    auto c = datetime64.split();
+    const auto & values = date_lut.getValues(c.datetime);
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
-                      date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
+                      date_lut.toHour(c.datetime), date_lut.toMinute(c.datetime), date_lut.toSecond(c.datetime)), buf);
 
     buf.write(fractional_time_delimiter);
-    writeIntText(nanos_since_second, buf);
+
+    char data[9];
+    int written = sprintf(data, "%09d", c.nanos);
+    writeText(&data[0], static_cast<size_t>(written), buf);
 }
 
-
-
-/// Methods for output in binary format.
-template <typename T>
-inline std::enable_if_t<std::is_arithmetic_v<T>, void>
-writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-
-inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-
-
-/// Methods for outputting the value in text form for a tab-separated format.
-template <typename T>
-inline std::enable_if_t<std::is_integral_v<T>, void>
-writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
-
-template <typename T>
-inline std::enable_if_t<std::is_floating_point_v<T>, void>
-writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
-
-inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
-
-/// Implemented as template specialization (not function overload) to avoid preference over templates on arithmetic types above.
-template <> inline void writeText<bool>(const bool & x, WriteBuffer & buf) { writeBoolText(x, buf); }
-
-/// unlike the method for std::string
-/// assumes here that `x` is a null-terminated string.
-inline void writeText(const char * x, WriteBuffer & buf) { writeEscapedString(x, strlen(x), buf); }
-inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEscapedString(x, size, buf); }
 
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }

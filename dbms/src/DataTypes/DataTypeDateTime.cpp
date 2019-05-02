@@ -21,6 +21,21 @@
 namespace DB
 {
 
+static constexpr UInt32 NANOS_PER_SECOND = 1000 * 1000 * 1000;
+
+DateTime64::Components DateTime64::split() const
+{
+    auto datetime = static_cast<time_t>(t / NANOS_PER_SECOND);
+    auto nanos = static_cast<UInt32>(t % NANOS_PER_SECOND);
+    return Components { datetime, nanos };
+}
+
+DateTime64::DateTime64(DateTime64::Components c)
+    : t {c.datetime * NANOS_PER_SECOND + c.nanos}
+{
+    assert(c.nanos >= 0 and c.nanos < NANOS_PER_SECOND);
+}
+
 template<typename NumberBase>
 struct TypeGetter;
 
@@ -28,6 +43,8 @@ template<>
 struct TypeGetter<UInt32> {
     using Type = time_t;
     using Column = ColumnUInt32;
+//    static_assert(sizeof(Column::value_type) == sizeof(Type));
+
     static constexpr TypeIndex Index = TypeIndex::DateTime;
     static constexpr const char * Name = "DateTime";
 
@@ -37,14 +54,16 @@ struct TypeGetter<UInt32> {
 };
 
 template<>
-struct TypeGetter<UInt64> {
-    using Type = UInt64;
+struct TypeGetter<DateTime64::Type> {
+    using Type = DateTime64::Type;
     using Column = ColumnUInt64;
+    static_assert(sizeof(Column::value_type) == sizeof(Type));
+
     static constexpr TypeIndex Index = TypeIndex::DateTime64;
     static constexpr const char * Name = "DateTime64";
 
     static void write(Type datetime64, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance()) {
-        writeDateTime64Text(datetime64, buf, date_lut);
+        writeDateTimeText(datetime64, buf, date_lut);
     }
 };
 
@@ -82,8 +101,7 @@ TypeIndex DataTypeDateTimeBase<NumberBase>::getTypeId() const
 template<typename NumberBase>
 void DataTypeDateTimeBase<NumberBase>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    using TG = TypeGetter<NumberBase>;
-    TG::write(static_cast<const typename TG::Column &>(column).getData()[row_num], ostr, time_zone);
+    writeDateTimeText(static_cast<const typename TypeGetter<NumberBase>::Column &>(column).getData()[row_num], ostr, time_zone);
 }
 
 template<typename NumberBase>
@@ -106,12 +124,12 @@ static inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings 
     }
 }
 
-static inline void readText(UInt64 & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & /*utc_time_zone*/)
+static inline void readText(DateTime64 & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & /*utc_time_zone*/)
 {
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTime64Text(x, istr, time_zone);
+            readDateTimeText(x, istr, time_zone);
             return;
         default:
             return;
