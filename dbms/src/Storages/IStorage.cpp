@@ -9,7 +9,7 @@ void IStorage::alter(const AlterCommands & params, const String & database_name,
 {
     for (const auto & param : params)
     {
-        if (param.is_mutable())
+        if (param.isMutable())
             throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
