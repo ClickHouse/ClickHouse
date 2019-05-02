@@ -1233,7 +1233,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
 
     for (const AlterCommand & command : commands)
     {
-        if (!command.is_mutable())
+        if (!command.isMutable())
         {
             continue;
         }
