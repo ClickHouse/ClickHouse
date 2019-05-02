@@ -27,6 +27,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 
+#include <DataTypes/DataTypeDateTime.h>
+
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdouble-promotion"
@@ -622,13 +624,15 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
     readDateTimeTextImpl<void>(datetime, buf, date_lut);
 }
 
-inline void readDateTime64Text(UInt64 & datetime64, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void readDateTimeText(DateTime64 & datetime64, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    time_t datetime = 0;
-    readDateTimeTextImpl<void>(datetime, buf, date_lut);
+    DateTime64::Components c;
+    readDateTimeTextImpl<void>(c.datetime, buf, date_lut);
     buf.ignore(); // ignore the "."
-    readIntText(datetime64, buf);
-    datetime64 += 1000 * 1000 * 1000 * datetime;
+    auto remaining = buf.available();
+    readIntText(c.nanos, buf);
+    c.nanos *= static_cast<UInt32>(std::pow(10, 9 - remaining));
+    datetime64 = DateTime64(c);
 }
 
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
