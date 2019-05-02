@@ -406,7 +406,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
     if (!only_check)
     {
-        setColumns(new_columns);
+        setColumns(std::move(new_columns));
 
         order_by_ast = new_order_by_ast;
         sorting_key_columns = std::move(new_sorting_key_columns);
