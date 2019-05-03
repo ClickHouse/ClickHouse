@@ -20,7 +20,6 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
-#include "../../Core/Types.h"
 
 
 namespace DB
