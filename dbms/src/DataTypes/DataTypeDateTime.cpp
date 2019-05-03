@@ -43,30 +43,25 @@ template<>
 struct TypeGetter<UInt32> {
     using Type = time_t;
     using Column = ColumnUInt32;
-//    static_assert(sizeof(Column::value_type) == sizeof(Type));
+    using Convertor = time_t;
+
+    // This is not actually true, which is bad form as it truncates the value from time_t (long int) into uint32_t
+    // static_assert(sizeof(Column::value_type) == sizeof(Type));
 
     static constexpr TypeIndex Index = TypeIndex::DateTime;
     static constexpr const char * Name = "DateTime";
-
-    static void write(Type datetime, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
-    {
-        writeDateTimeText(datetime, buf, date_lut);
-    }
 };
 
 template<>
 struct TypeGetter<DateTime64::Type> {
     using Type = DateTime64::Type;
     using Column = ColumnUInt64;
+    using Convertor = DateTime64;
+
     static_assert(sizeof(Column::value_type) == sizeof(Type));
 
     static constexpr TypeIndex Index = TypeIndex::DateTime64;
     static constexpr const char * Name = "DateTime64";
-
-    static void write(DateTime64::Type t, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
-    {
-        writeDateTimeText(DateTime64(t), buf, date_lut);
-    }
 };
 
 template<typename NumberBase>
@@ -104,7 +99,7 @@ template<typename NumberBase>
 void DataTypeDateTimeBase<NumberBase>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     using TG = TypeGetter<NumberBase>;
-    TG::write(static_cast<const typename TG::Column &>(column).getData()[row_num], ostr, time_zone);
+    writeDateTimeText(typename TG::Convertor(static_cast<const typename TG::Column &>(column).getData()[row_num]), ostr, time_zone);
 }
 
 template<typename NumberBase>
