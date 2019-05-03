@@ -31,7 +31,7 @@ void ITableDeclaration::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void ITableDeclaration::setIndicesDescription(IndicesDescription indices_)
+void ITableDeclaration::setIndices(IndicesDescription indices_)
 {
     indices = std::move(indices_);
 }
