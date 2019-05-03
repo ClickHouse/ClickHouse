@@ -155,8 +155,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (from_type_hint)
         which_from_type = WhichDataType(*from_type_hint);
 
-    std::cout << "which_type=" << (int)which_type.idx << " which_from_type=" << (int)which_from_type.idx << std::endl;
-
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
@@ -166,10 +164,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
     }
-//    else if (which_type.isDateTime64())
-//    {
-//        throw Exception{"DateTime64 conversion not yet done error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
-//    }
     else if (type.isValueRepresentedByNumber())
     {
         if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
