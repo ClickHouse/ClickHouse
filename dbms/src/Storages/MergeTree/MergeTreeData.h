@@ -538,8 +538,6 @@ public:
       */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
-
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
@@ -548,13 +546,14 @@ public:
     ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
+    ASTPtr getSamplingKeyAST() const override { return sample_by_ast; }
 
+    Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
     Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
+    Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
 
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
-    ASTPtr getSamplingExpression() const { return sample_by_ast; }
-    Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
