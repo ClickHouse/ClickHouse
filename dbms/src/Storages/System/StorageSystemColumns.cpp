@@ -36,10 +36,10 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
         { "comment",                    std::make_shared<DataTypeString>() },
         { "is_in_partition_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_sorting_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_sampling_key", std::make_shared<DataTypeUInt8>() },
-        { "compression_codec", std::make_shared<DataTypeString>() },
+        { "is_in_sorting_key",   std::make_shared<DataTypeUInt8>() },
+        { "is_in_primary_key",   std::make_shared<DataTypeUInt8>() },
+        { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
+        { "compression_codec",   std::make_shared<DataTypeString>() },
     }));
 }
 
