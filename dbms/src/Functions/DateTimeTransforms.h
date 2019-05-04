@@ -45,6 +45,12 @@ struct ToDateImpl
 {
     static constexpr auto name = "toDate";
 
+    static inline UInt16 execute(DateTime64::Type t, const DateLUTImpl & time_zone)
+    {
+        std::cout << "converting DateTime64 t=" << t << " " << name << std::endl;
+        return UInt16(time_zone.toDayNum(DateTime64(t).split().datetime));
+    }
+
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         std::cout << "converting UInt32 t=" << t << " " << name << std::endl;

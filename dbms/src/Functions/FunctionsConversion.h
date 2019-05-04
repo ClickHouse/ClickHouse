@@ -188,6 +188,9 @@ struct ToDateTransform32Or64
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDate, Name>
     : DateTimeTransformImpl<UInt32, UInt16, ToDateImpl> {};
 
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate, Name>
+    : DateTimeTransformImpl<DateTime64::Type, UInt16, ToDateImpl> {};
+
 /** Special case of converting (U)Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to Date.
   * If number is less than 65536, then it is treated as DayNum, and if greater or equals, then as unix timestamp.
   * It's a bit illogical, as we actually have two functions in one.

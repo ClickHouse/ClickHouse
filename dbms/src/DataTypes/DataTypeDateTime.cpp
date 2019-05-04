@@ -21,21 +21,6 @@
 namespace DB
 {
 
-static constexpr UInt32 NANOS_PER_SECOND = 1000 * 1000 * 1000;
-
-DateTime64::Components DateTime64::split() const
-{
-    auto datetime = static_cast<time_t>(t / NANOS_PER_SECOND);
-    auto nanos = static_cast<UInt32>(t % NANOS_PER_SECOND);
-    return Components { datetime, nanos };
-}
-
-DateTime64::DateTime64(DateTime64::Components c)
-    : t {c.datetime * NANOS_PER_SECOND + c.nanos}
-{
-    assert(c.nanos >= 0 and c.nanos < NANOS_PER_SECOND);
-}
-
 template<typename NumberBase>
 struct TypeGetter;
 
@@ -99,7 +84,6 @@ template<typename NumberBase>
 void DataTypeDateTimeBase<NumberBase>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     using TG = TypeGetter<NumberBase>;
-    std::cout << "serializing text for DataTypeDateTimeBase = " << TG::Name << " tz=" << time_zone.getTimeZone() << std::endl;
     writeDateTimeText(typename TG::Convertor(static_cast<const typename TG::Column &>(column).getData()[row_num]), ostr, time_zone);
 }
 

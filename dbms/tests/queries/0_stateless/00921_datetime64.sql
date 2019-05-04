@@ -1,21 +1,14 @@
 USE test;
 
 DROP TABLE IF EXISTS A;
--- DROP TABLE IF EXISTS B;
 
-CREATE TABLE A(t DateTime64, a Float64) ENGINE = MergeTree() ORDER BY t;
--- INSERT INTO A(t,a) VALUES (1,1),(50000,3);
-INSERT INTO A(t,a) VALUES ('2019-05-03 11:25:25.123456789',5);
--- INSERT INTO A(t,a) VALUES (1556841600034000001,5);
--- INSERT INTO A(t,a) VALUES (now64(),5);
+CREATE TABLE A(t DateTime64) ENGINE = MergeTree() ORDER BY t;
+INSERT INTO A(t) VALUES (1556879125123456789);
+INSERT INTO A(t) VALUES ('2019-05-03 11:25:25.123456789');
 
--- 1556841600034
+SELECT toString(t, 'UTC'), toDate(t), toStartOfDay(t), toStartOfQuarter(t), toTime(t), toStartOfMinute(t) FROM A ORDER BY t;
 
-
--- CREATE TABLE B(k UInt32, t DateTime64, b Float64) ENGINE = MergeTree() ORDER BY (k, t);
--- INSERT INTO B(k,t,b) VALUES (2,40000,3);
-
-SELECT toString(t, 'UTC'), toDate(t), toStartOfDay(t), toStartOfQuarter(t), toTime(t), toStartOfMinute(t), a FROM A ORDER BY t;
-
--- DROP TABLE B;
 DROP TABLE A;
+ -- issue toDate does a reinterpret_cast of the datetime64 which is incorrect
+-- for the example above, it returns 2036-08-23 which is 0x5F15 days after epoch
+-- the datetime64 is 0x159B2550CB345F15
