@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE alter_table (a UInt8, b Int16, c Float32, d 
 
 function thread1()
 {
-    while true; do $CLICKHOUSE_CLIENT --query "SELECT * FROM system.columns FORMAT Null"; done
+    while true; do $CLICKHOUSE_CLIENT --query "SELECT name FROM system.columns UNION ALL SELECT name FROM system.columns FORMAT Null"; done
 }
 
 function thread2()
@@ -24,8 +24,14 @@ function thread2()
 export -f thread1;
 export -f thread2;
 
-timeout 5 bash -c thread1 &
-timeout 5 bash -c thread2 &
+timeout 5 bash -c thread1 > /dev/null &
+timeout 5 bash -c thread1 > /dev/null &
+timeout 5 bash -c thread1 > /dev/null &
+timeout 5 bash -c thread1 > /dev/null &
+timeout 5 bash -c thread2 > /dev/null &
+timeout 5 bash -c thread2 > /dev/null &
+timeout 5 bash -c thread2 > /dev/null &
+timeout 5 bash -c thread2 > /dev/null &
 
 wait
 
