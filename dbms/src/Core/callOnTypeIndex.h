@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <Core/Types.h>
+#include <DataTypes/DataTypeDateTime.h>
 
 namespace DB
 {
@@ -71,6 +72,7 @@ bool callOnBasicType(TypeIndex number, F && f)
         {
             case TypeIndex::Date:         return f(TypePair<T, UInt16>());
             case TypeIndex::DateTime:     return f(TypePair<T, UInt32>());
+            case TypeIndex::DateTime64:   return f(TypePair<T, DateTime64>());
             default:
                 break;
         }
@@ -145,8 +147,6 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 
 
 class DataTypeDate;
-class DataTypeDateTime;
-class DataTypeDateTime64;
 class DataTypeString;
 class DataTypeFixedString;
 class DataTypeUUID;

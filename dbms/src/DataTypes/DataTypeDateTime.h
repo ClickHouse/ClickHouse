@@ -5,6 +5,13 @@
 
 class DateLUTImpl;
 
+
+template <class, template <class, class...> class>
+struct is_instance : public std::false_type {};
+
+template <class...Ts, template <class, class...> class U>
+struct is_instance<U<Ts...>, U> : public std::true_type {};
+
 namespace DB
 {
 
