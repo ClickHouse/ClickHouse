@@ -730,7 +730,7 @@ String MergeTreeData::MergingParams::getModeName() const
 }
 
 
-Int64 MergeTreeData::getMaxBlockNumber()
+Int64 MergeTreeData::getMaxBlockNumber() const
 {
     auto lock = lockParts();
 
