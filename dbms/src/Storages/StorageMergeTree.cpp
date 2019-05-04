@@ -200,11 +200,11 @@ void StorageMergeTree::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    if (!params.is_mutable())
+    if (!params.isMutable())
     {
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
         auto new_columns = getColumns();
-        auto new_indices = getIndicesDescription();
+        auto new_indices = getIndices();
         params.apply(new_columns);
         context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
         setColumns(std::move(new_columns));
@@ -219,7 +219,7 @@ void StorageMergeTree::alter(
     data.checkAlter(params, context);
 
     auto new_columns = data.getColumns();
-    auto new_indices = data.getIndicesDescription();
+    auto new_indices = data.getIndices();
     ASTPtr new_order_by_ast = data.order_by_ast;
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     ASTPtr new_ttl_table_ast = data.ttl_table_ast;
@@ -800,7 +800,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     alter_command.column_name = get<String>(column_name);
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;

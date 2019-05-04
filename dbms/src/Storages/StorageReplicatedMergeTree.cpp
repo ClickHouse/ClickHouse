@@ -426,7 +426,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 {
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     ASTPtr new_order_by_ast = data.order_by_ast;
-    auto new_indices = data.getIndicesDescription();
+    auto new_indices = data.getIndices();
     ASTPtr new_ttl_table_ast = data.ttl_table_ast;
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
@@ -1511,7 +1511,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     alter_command.column_name = entry.column_name;
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
     ASTPtr ignored_ttl_table_ast;
@@ -3117,7 +3117,7 @@ void StorageReplicatedMergeTree::alter(
         data.checkAlter(params, query_context);
 
         ColumnsDescription new_columns = data.getColumns();
-        IndicesDescription new_indices = data.getIndicesDescription();
+        IndicesDescription new_indices = data.getIndices();
         ASTPtr new_order_by_ast = data.order_by_ast;
         ASTPtr new_primary_key_ast = data.primary_key_ast;
         ASTPtr new_ttl_table_ast = data.ttl_table_ast;
@@ -3135,7 +3135,7 @@ void StorageReplicatedMergeTree::alter(
             new_metadata.ttl_table = serializeAST(*new_ttl_table_ast);
 
         String new_indices_str = new_indices.toString();
-        if (new_indices_str != data.getIndicesDescription().toString())
+        if (new_indices_str != data.getIndices().toString())
             new_metadata.skip_indices = new_indices_str;
 
         String new_metadata_str = new_metadata.toString();

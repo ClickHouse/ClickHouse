@@ -406,7 +406,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
     if (!only_check)
     {
-        setColumns(new_columns);
+        setColumns(std::move(new_columns));
 
         order_by_ast = new_order_by_ast;
         sorting_key_columns = std::move(new_sorting_key_columns);
@@ -420,7 +420,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
         primary_key_sample = std::move(new_primary_key_sample);
         primary_key_data_types = std::move(new_primary_key_data_types);
 
-        setIndicesDescription(indices_description);
+        setIndices(indices_description);
         skip_indices = std::move(new_indices);
 
         primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
@@ -1177,13 +1177,13 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
     commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
-    if (getIndicesDescription().empty() && !new_indices.empty() &&
+    if (getIndices().empty() && !new_indices.empty() &&
             !context.getSettingsRef().allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
@@ -1233,7 +1233,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
 
     for (const AlterCommand & command : commands)
     {
-        if (!command.is_mutable())
+        if (!command.isMutable())
         {
             continue;
         }
@@ -1274,7 +1274,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     NameToNameMap unused_map;
     bool unused_bool;
     createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
-            getIndicesDescription().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
+            getIndices().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -1445,7 +1445,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
     bool force_update_metadata;
     createConvertExpression(part, part->columns, new_columns,
-            getIndicesDescription().indices, new_indices,
+            getIndices().indices, new_indices,
             expression, transaction->rename_map, force_update_metadata);
 
     size_t num_files_to_modify = transaction->rename_map.size();
@@ -1597,7 +1597,7 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
 
     LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
 
-    if (auto transaction = alterDataPart(data_part, new_columns, getIndicesDescription().indices, false))
+    if (auto transaction = alterDataPart(data_part, new_columns, getIndices().indices, false))
         transaction->commit();
     empty_columns.clear();
 }
@@ -2133,6 +2133,18 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 }
 
 
+size_t MergeTreeData::getPartsCount() const
+{
+    auto lock = lockParts();
+
+    size_t res = 0;
+    for (const auto & part [[maybe_unused]] : getDataPartsStateRange(DataPartState::Committed))
+        ++res;
+
+    return res;
+}
+
+
 size_t MergeTreeData::getMaxPartsCountForPartition() const
 {
     auto lock = lockParts();
@@ -2165,7 +2177,7 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
     auto lock = lockParts();
 
     std::optional<Int64> result;
-    for (const DataPartPtr & part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (!result || *result > part->info.getDataVersion())
             result = part->info.getDataVersion();
@@ -2177,18 +2189,25 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 {
-    const size_t parts_count = getMaxPartsCountForPartition();
-    if (parts_count < settings.parts_to_delay_insert)
-        return;
-
-    if (parts_count >= settings.parts_to_throw_insert)
+    const size_t parts_count_in_total = getPartsCount();
+    if (parts_count_in_total >= settings.max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
+        throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
+    }
+
+    const size_t parts_count_in_partition = getMaxPartsCountForPartition();
+    if (parts_count_in_partition < settings.parts_to_delay_insert)
+        return;
+
+    if (parts_count_in_partition >= settings.parts_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
 
     const size_t max_k = settings.parts_to_throw_insert - settings.parts_to_delay_insert; /// always > 0
-    const size_t k = 1 + parts_count - settings.parts_to_delay_insert; /// from 1 to max_k
+    const size_t k = 1 + parts_count_in_partition - settings.parts_to_delay_insert; /// from 1 to max_k
     const double delay_milliseconds = ::pow(settings.max_delay_to_insert * 1000, static_cast<double>(k) / max_k);
 
     ProfileEvents::increment(ProfileEvents::DelayedInserts);
@@ -2197,7 +2216,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
     CurrentMetrics::Increment metric_increment(CurrentMetrics::DelayedInserts);
 
     LOG_INFO(log, "Delaying inserting block by "
-        << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count << " parts");
+        << std::fixed << std::setprecision(4) << delay_milliseconds << " ms. because there are " << parts_count_in_partition << " parts");
 
     if (until)
         until->tryWait(delay_milliseconds);
@@ -2207,12 +2226,19 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 
 void MergeTreeData::throwInsertIfNeeded() const
 {
-    const size_t parts_count = getMaxPartsCountForPartition();
-
-    if (parts_count >= settings.parts_to_throw_insert)
+    const size_t parts_count_in_total = getPartsCount();
+    if (parts_count_in_total >= settings.max_parts_in_total)
     {
         ProfileEvents::increment(ProfileEvents::RejectedInserts);
-        throw Exception("Too many parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
+        throw Exception("Too many parts (" + toString(parts_count_in_total) + ") in all partitions in total. This indicates wrong choice of partition key. The threshold can be modified with 'max_parts_in_total' setting in <merge_tree> element in config.xml or with per-table setting.", ErrorCodes::TOO_MANY_PARTS);
+    }
+
+    const size_t parts_count_in_partition = getMaxPartsCountForPartition();
+
+    if (parts_count_in_partition >= settings.parts_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        throw Exception("Too many parts (" + toString(parts_count_in_partition) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
     }
 }
 
