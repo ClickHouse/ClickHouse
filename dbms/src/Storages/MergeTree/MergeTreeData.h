@@ -345,10 +345,19 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-    /// Load the set of data parts from disk. Call once - immediately after the object is created.
-    void loadDataParts(bool skip_sanity_checks);
+    ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
+    ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
+    ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
+    ASTPtr getSamplingKeyAST() const override { return sample_by_ast; }
+
+    Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
+    Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
+    Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
+    Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
+    Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
 
     bool supportsPrewhere() const override { return true; }
+    bool supportsSampling() const override { return sample_by_ast != nullptr; }
 
     bool supportsFinal() const override
     {
@@ -360,8 +369,6 @@ public:
     }
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const override;
-
-    Int64 getMaxBlockNumber();
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -389,8 +396,13 @@ public:
     String getDatabaseName() const override { return database_name; }
     String getTableName() const override { return table_name; }
 
+    /// Load the set of data parts from disk. Call once - immediately after the object is created.
+    void loadDataParts(bool skip_sanity_checks);
+
     String getFullPath() const { return full_path; }
     String getLogName() const { return log_name; }
+
+    Int64 getMaxBlockNumber() const;
 
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
@@ -542,18 +554,6 @@ public:
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     bool hasSkipIndices() const { return !skip_indices.empty(); }
     bool hasTableTTL() const { return ttl_table_ast != nullptr; }
-
-    ASTPtr getPartitionKeyAST() const override { return partition_by_ast; }
-    ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
-    ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
-    ASTPtr getSamplingKeyAST() const override { return sample_by_ast; }
-
-    Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
-    Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
-    Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
-    Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
-
-    bool supportsSampling() const override { return sample_by_ast != nullptr; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
