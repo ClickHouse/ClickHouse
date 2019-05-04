@@ -216,6 +216,7 @@ struct FormatImpl
 {
     static void execute(const typename DataType::FieldType x, WriteBuffer & wb, const DataType *, const DateLUTImpl *)
     {
+        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<>" << std::endl;
         writeText(x, wb);
     }
 };
@@ -225,6 +226,7 @@ struct FormatImpl<DataTypeDate>
 {
     static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
     {
+        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDate> v=" << x << std::endl;
         writeDateText(DayNum(x), wb);
     }
 };
@@ -234,9 +236,21 @@ struct FormatImpl<DataTypeDateTime>
 {
     static void execute(const DataTypeDateTime::FieldType x, WriteBuffer & wb, const DataTypeDateTime *, const DateLUTImpl * time_zone)
     {
+        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDateTime> v=" << x << " tz=" << time_zone->getTimeZone() << std::endl;
         writeDateTimeText(x, wb, *time_zone);
     }
 };
+
+template <>
+struct FormatImpl<DataTypeDateTime64>
+{
+    static void execute(const DataTypeDateTime64::FieldType x, WriteBuffer & wb, const DataTypeDateTime64 *, const DateLUTImpl * time_zone)
+    {
+        std::cout << "!!!!!!!!!!!!!!!!!!!!!!! performing FormatImpl<DataTypeDateTime64> v=" << x << " tz=" << (void*)time_zone << std::endl;
+        writeDateTimeText(DateTime64(x), wb, *time_zone);
+    }
+};
+
 
 template <typename FieldType>
 struct FormatImpl<DataTypeEnum<FieldType>>
@@ -276,13 +290,14 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
+        std::cout << "!!!!!!!!!!!!!!!!! executing to string convertImpl " << std::endl;
         const auto & col_with_type_and_name = block.getByPosition(arguments[0]);
         const auto & type = static_cast<const FromDataType &>(*col_with_type_and_name.type);
 
         const DateLUTImpl * time_zone = nullptr;
 
         /// For argument of DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
+        if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
         if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
@@ -293,11 +308,14 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
+            std::cout << "vec_form size=" << size << " bytes=" << vec_from.allocated_bytes() << std::endl;
 
             if constexpr (std::is_same_v<FromDataType, DataTypeDate>)
                 data_to.resize(size * (strlen("YYYY-MM-DD") + 1));
             else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
                 data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
+            else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
+                data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.nnnnnnnnn") + 1));
             else
                 data_to.resize(size * 3);   /// Arbitary
 
@@ -816,7 +834,7 @@ public:
                     || std::is_same_v<Name, NameToUnixTimestamp>;
 
                 if (!(to_date_or_time
-                    || (std::is_same_v<Name, NameToString> && WhichDataType(arguments[0].type).isDateTime())))
+                    || (std::is_same_v<Name, NameToString> && (WhichDataType(arguments[0].type).isDateTime() || WhichDataType(arguments[0].type).isDateTime64()))))
                 {
                     throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                         + toString(arguments.size()) + ", should be 1.",
@@ -826,6 +844,8 @@ public:
 
             if (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+            else if (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                return std::make_shared<DataTypeDateTime64>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
             else
                 return std::make_shared<ToDataType>();
         }
@@ -907,12 +927,15 @@ private:
             }
             else
                 ConvertImpl<LeftDataType, RightDataType, Name>::execute(block, arguments, result, input_rows_count);
+
+            std::cout << "finished running convertImpl " << std::endl;
             return true;
         };
 
         bool done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call);
         if (!done)
         {
+            std::cout << "not done yet, falling back on generic conversion" << std::endl;
             /// Generic conversion of any type to String.
             if (std::is_same_v<ToDataType, DataTypeString>)
             {

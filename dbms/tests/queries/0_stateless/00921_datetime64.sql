@@ -10,7 +10,7 @@ INSERT INTO A(k,t,a) VALUES (2,'2019-05-03 00:25:25.123456789',5);
 CREATE TABLE B(k UInt32, t DateTime64, b Float64) ENGINE = MergeTree() ORDER BY (k, t);
 INSERT INTO B(k,t,b) VALUES (2,40000,3);
 
-SELECT k, t, a, b FROM A ASOF LEFT JOIN B USING(k,t) ORDER BY (k,t);
+SELECT k, toString(A.t, 'Europe/Moscow'), a, b FROM A ASOF LEFT JOIN B USING(k,t) ORDER BY (k,t);
 
 DROP TABLE B;
 DROP TABLE A;
