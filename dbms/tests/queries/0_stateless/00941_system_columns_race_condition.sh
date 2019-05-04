@@ -24,14 +24,22 @@ function thread2()
 export -f thread1;
 export -f thread2;
 
-timeout 5 bash -c thread1 2> /dev/null &
-timeout 5 bash -c thread1 2> /dev/null &
-timeout 5 bash -c thread1 2> /dev/null &
-timeout 5 bash -c thread1 2> /dev/null &
-timeout 5 bash -c thread2 2> /dev/null &
-timeout 5 bash -c thread2 2> /dev/null &
-timeout 5 bash -c thread2 2> /dev/null &
-timeout 5 bash -c thread2 2> /dev/null &
+timeout 15 bash -c thread1 2> /dev/null &
+timeout 15 bash -c thread1 2> /dev/null &
+timeout 15 bash -c thread1 2> /dev/null &
+timeout 15 bash -c thread1 2> /dev/null &
+timeout 15 bash -c thread2 2> /dev/null &
+timeout 15 bash -c thread2 2> /dev/null &
+timeout 15 bash -c thread2 2> /dev/null &
+timeout 15 bash -c thread2 2> /dev/null &
+timeout 15 bash -c thread1 2> /dev/null &
+timeout 15 bash -c thread1 2> /dev/null &
+timeout 15 bash -c thread1 2> /dev/null &
+timeout 15 bash -c thread1 2> /dev/null &
+timeout 15 bash -c thread2 2> /dev/null &
+timeout 15 bash -c thread2 2> /dev/null &
+timeout 15 bash -c thread2 2> /dev/null &
+timeout 15 bash -c thread2 2> /dev/null &
 
 wait
 
