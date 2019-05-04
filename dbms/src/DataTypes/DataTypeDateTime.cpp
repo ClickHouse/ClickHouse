@@ -99,6 +99,7 @@ template<typename NumberBase>
 void DataTypeDateTimeBase<NumberBase>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     using TG = TypeGetter<NumberBase>;
+    std::cout << "serializing text for DataTypeDateTimeBase = " << TG::Name << " tz=" << time_zone.getTimeZone() << std::endl;
     writeDateTimeText(typename TG::Convertor(static_cast<const typename TG::Column &>(column).getData()[row_num]), ostr, time_zone);
 }
 

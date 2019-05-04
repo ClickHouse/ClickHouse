@@ -146,6 +146,7 @@ inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
 
 class DataTypeDate;
 class DataTypeDateTime;
+class DataTypeDateTime64;
 class DataTypeString;
 class DataTypeFixedString;
 class DataTypeUUID;
@@ -178,6 +179,7 @@ bool callOnIndexAndDataType(TypeIndex number, F && f)
 
         case TypeIndex::Date:           return f(TypePair<DataTypeDate, T>());
         case TypeIndex::DateTime:       return f(TypePair<DataTypeDateTime, T>());
+        case TypeIndex::DateTime64:     return f(TypePair<DataTypeDateTime64, T>());
 
         case TypeIndex::String:         return f(TypePair<DataTypeString, T>());
         case TypeIndex::FixedString:    return f(TypePair<DataTypeFixedString, T>());
