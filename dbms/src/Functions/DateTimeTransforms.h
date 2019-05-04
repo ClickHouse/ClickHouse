@@ -5,7 +5,7 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
-
+#include <DataTypes/DataTypeDateTime.h>
 
 namespace DB
 {
@@ -47,10 +47,12 @@ struct ToDateImpl
 
     static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
+        std::cout << "converting UInt32 t=" << t << " " << name << std::endl;
         return UInt16(time_zone.toDayNum(t));
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
     {
+        std::cout << "converting UInt16 d=" << d << " " << name << std::endl;
         return d;
     }
 

@@ -15,6 +15,17 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+template<class Transform>
+struct WithDateTime64Converter : public Transform {
+    static inline auto execute(DataTypeDateTime64::FieldType t, const DateLUTImpl & time_zone)
+    {
+        auto x = DateTime64(t);
+        auto res = Transform::execute(static_cast<UInt32>(x.split().datetime), time_zone);
+        std::cout << "calling through datetime64 wrapper v=" << x.get() << "tz= " << time_zone.getTimeZone() << " result=" << res << std::endl;
+        return res;
+    }
+};
+
 
 /// See DateTimeTransforms.h
 template <typename ToDataType, typename Transform>
@@ -67,8 +78,8 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         /// For DateTime, if time zone is specified, attach it to type.
-        if (std::is_same_v<ToDataType, DataTypeDateTime>)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+        if constexpr (is_instance<ToDataType, DataTypeDateTimeBase>{})
+            return std::make_shared<ToDataType>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
         else
             return std::make_shared<ToDataType>();
     }
@@ -85,6 +96,8 @@ public:
             DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
         else if (which.isDateTime())
             DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
+        else if (which.isDateTime64())
+            DateTimeTransformImpl<DataTypeDateTime64::FieldType, typename ToDataType::FieldType, WithDateTime64Converter<Transform>>::execute(block, arguments, result, input_rows_count);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
