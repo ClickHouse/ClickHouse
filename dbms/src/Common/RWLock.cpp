@@ -4,6 +4,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
+#include <common/logger_useful.h>
+
 
 namespace ProfileEvents
 {
@@ -37,7 +39,6 @@ class RWLockImpl::LockHolderImpl
     RWLock parent;
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
-    ThreadToHolder::key_type thread_id;
     QueryIdToHolder::key_type query_id;
     CurrentMetrics::Increment active_client_increment;
 
@@ -55,6 +56,8 @@ public:
 
 RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id)
 {
+    Logger * log = &Logger::get("RWLock");
+
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     CurrentMetrics::Increment waiting_client_increment((type == Read) ? CurrentMetrics::RWLockWaitingReaders
                                                                       : CurrentMetrics::RWLockWaitingWriters);
@@ -71,20 +74,18 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
 
     std::unique_lock lock(mutex);
 
+    LOG_TRACE(log, "Get lock " << static_cast<void*>(this) << " " << (type == Read ? "Read" : "Write") << " for query " << query_id);
+
     /// Check if the same query is acquiring previously acquired lock
     LockHolder existing_holder_ptr;
 
-    auto this_thread_id = std::this_thread::get_id();
-    auto it_thread = thread_to_holder.find(this_thread_id);
-
     auto it_query = query_id_to_holder.end();
     if (query_id != RWLockImpl::NO_QUERY)
+    {
         it_query = query_id_to_holder.find(query_id);
-
-    if (it_thread != thread_to_holder.end())
-        existing_holder_ptr = it_thread->second.lock();
-    else if (it_query != query_id_to_holder.end())
-        existing_holder_ptr = it_query->second.lock();
+        if (it_query != query_id_to_holder.end())
+            existing_holder_ptr = it_query->second.lock();
+    }
 
     if (existing_holder_ptr)
     {
@@ -92,6 +93,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
         if (type != Read || existing_holder_ptr->it_group->type != Read)
             throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
 
+        LOG_TRACE(log, "Returning existing lock " << static_cast<void*>(this) << " " << (type == Read ? "Read" : "Write") << " for query " << query_id);
         return existing_holder_ptr;
     }
 
@@ -120,12 +122,10 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
         throw;
     }
 
+    LOG_TRACE(log, "Creating new lock " << static_cast<void*>(this) << " " << (type == Read ? "Read" : "Write") << " for query " << query_id);
     LockHolder res(new LockHolderImpl(shared_from_this(), it_group, it_client));
 
-    /// Insert myself (weak_ptr to the holder) to threads set to implement recursive lock
-    thread_to_holder.emplace(this_thread_id, res);
-    res->thread_id = this_thread_id;
-
+    /// Insert myself (weak_ptr to the holder) to queries set to implement recursive lock
     if (query_id != RWLockImpl::NO_QUERY)
         query_id_to_holder.emplace(query_id, res);
     res->query_id = query_id;
@@ -139,6 +139,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     }
 
     /// Wait a notification
+    LOG_TRACE(log, "Waiting lock " << static_cast<void*>(this) << " " << (type == Read ? "Read" : "Write") << " for query " << query_id);
     it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
 
     finalize_metrics();
@@ -150,8 +151,9 @@ RWLockImpl::LockHolderImpl::~LockHolderImpl()
 {
     std::unique_lock lock(parent->mutex);
 
+    LOG_TRACE(&Logger::get("RWLock"), "Releasing lock " << static_cast<void*>(parent.get()) << " for query " << query_id);
+
     /// Remove weak_ptrs to the holder, since there are no owners of the current lock
-    parent->thread_to_holder.erase(thread_id);
     parent->query_id_to_holder.erase(query_id);
 
     /// Removes myself from client list of our group

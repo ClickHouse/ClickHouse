@@ -17,7 +17,7 @@ function thread1()
 
 function thread2()
 {
-    while true; do $CLICKHOUSE_CLIENT -n --query "ALTER TABLE alter_table ADD COLUMN h String; ALTER TABLE alter_table MODIFY COLUMN h UInt64; ALTER TABLE alter_table DROP COLUMN h;"; done
+    while true; do $CLICKHOUSE_CLIENT -n --query "ALTER TABLE alter_table MODIFY COLUMN b String; ALTER TABLE alter_table MODIFY COLUMN b UInt8;"; done
 }
 
 # https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
@@ -25,20 +25,6 @@ export -f thread1;
 export -f thread2;
 
 timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread1 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
-timeout 15 bash -c thread2 2> /dev/null &
 timeout 15 bash -c thread2 2> /dev/null &
 
 wait
