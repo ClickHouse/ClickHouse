@@ -842,9 +842,9 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         /// Creating block for update
         Block indices_update_block(skip_indexes_columns);
         /// Filling and writing skip indices like in IMergedBlockOutputStream::writeColumn
-        for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+        for (size_t i = 0; i < skip_indices.size(); ++i)
         {
-            const auto index = storage.skip_indices[i];
+            const auto index = skip_indices[i];
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
 
@@ -930,7 +930,7 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
     }
 
     /// Finish skip index serialization
-    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
+    for (size_t i = 0; i < skip_indices.size(); ++i)
     {
         auto & stream = *skip_indices_streams[i];
         if (!skip_indices_aggregators[i]->empty())
