@@ -356,11 +356,6 @@ struct NgramDistanceImpl
         /// And we can reuse these storages in one thread because we care only about what was written to first places.
         std::unique_ptr<UInt16[]> ngram_storage(new UInt16[max_string_size]);
 
-
-
-
-
-
         /// We use unsafe versions of getting ngrams, so I decided to use padded_data even in needle case.
         const size_t needle_size = needle.size();
         needle.resize(needle_size + default_padding);
