@@ -836,7 +836,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             "This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
-
     const auto & source_part = future_part.parts[0];
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
@@ -844,7 +843,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_for_reading.getSettingsRef().max_threads = 1;
 
-    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands, context_for_reading);
+    std::vector<MutationCommand> commands_for_part;
+    std::copy_if(
+            std::cbegin(commands), std::cend(commands),
+            std::back_inserter(commands_for_part),
+            [&] (const MutationCommand & command) {
+                return command.partition == nullptr ||
+                    future_part.parts[0]->info.partition_id != data.getPartitionIDFromQuery(
+                            command.partition, context_for_reading);
+            });
+
+
+    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands_for_part, context_for_reading);
 
     if (!mutations_interpreter.isStorageTouchedByMutations())
     {
