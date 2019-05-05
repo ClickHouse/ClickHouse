@@ -36,7 +36,7 @@ void ReplicatedMergeTreeAlterThread::run()
     try
     {
         /** We have a description of columns in ZooKeeper, common for all replicas (Example: /clickhouse/tables/02-06/visits/columns),
-          *  as well as a description of columns in local file with metadata (storage.data.getColumnsList()).
+          *  as well as a description of columns in local file with metadata (storage.getColumnsList()).
           *
           * If these descriptions are different - you need to do ALTER.
           *
@@ -83,7 +83,7 @@ void ReplicatedMergeTreeAlterThread::run()
 
         const String & metadata_str = metadata_znode.contents;
         auto metadata_in_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-        auto metadata_diff = ReplicatedMergeTreeTableMetadata(storage.data).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(storage).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
 
         /// If you need to lock table structure, then suspend merges.
         ActionLock merge_blocker = storage.merger_mutator.actions_blocker.cancel();
@@ -123,7 +123,7 @@ void ReplicatedMergeTreeAlterThread::run()
             }
 
             /// You need to get a list of parts under table lock to avoid race condition with merge.
-            parts = storage.data.getDataParts();
+            parts = storage.getDataParts();
 
             storage.columns_version = columns_version;
             storage.metadata_version = metadata_version;
@@ -140,17 +140,17 @@ void ReplicatedMergeTreeAlterThread::run()
             int changed_parts = 0;
 
             if (!changed_columns_version)
-                parts = storage.data.getDataParts();
+                parts = storage.getDataParts();
 
             const auto columns_for_parts = storage.getColumns().getAllPhysical();
-            const auto indices_for_parts = storage.getIndicesDescription();
+            const auto indices_for_parts = storage.getIndices();
 
             for (const MergeTreeData::DataPartPtr & part : parts)
             {
                 /// Update the part and write result to temporary files.
                 /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                 /// node /flags/force_alter.
-                auto transaction = storage.data.alterDataPart(part, columns_for_parts, indices_for_parts.indices, false);
+                auto transaction = storage.alterDataPart(part, columns_for_parts, indices_for_parts.indices, false);
                 if (!transaction)
                     continue;
 
@@ -160,7 +160,7 @@ void ReplicatedMergeTreeAlterThread::run()
             }
 
             /// Columns sizes could be quietly changed in case of MODIFY/ADD COLUMN
-            storage.data.recalculateColumnSizes();
+            storage.recalculateColumnSizes();
 
             if (changed_columns_version)
             {

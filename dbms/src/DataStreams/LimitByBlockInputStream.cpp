@@ -5,9 +5,11 @@
 namespace DB
 {
 
-LimitByBlockInputStream::LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_size_, const Names & columns)
+LimitByBlockInputStream::LimitByBlockInputStream(const BlockInputStreamPtr & input,
+    size_t group_length_, size_t group_offset_, const Names & columns)
     : columns_names(columns)
-    , group_size(group_size_)
+    , group_length(group_length_)
+    , group_offset(group_offset_)
 {
     children.push_back(input);
 }
@@ -37,7 +39,8 @@ Block LimitByBlockInputStream::readImpl()
 
             hash.get128(key.low, key.high);
 
-            if (keys_counts[key]++ < group_size)
+            auto count = keys_counts[key]++;
+            if (count >= group_offset && count < group_length + group_offset)
             {
                 inserted_count++;
                 filter[i] = 1;

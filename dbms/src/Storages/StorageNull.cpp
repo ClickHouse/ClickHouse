@@ -37,7 +37,7 @@ void StorageNull::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     ColumnsDescription new_columns = getColumns();
-    IndicesDescription new_indices = getIndicesDescription();
+    IndicesDescription new_indices = getIndices();
     params.apply(new_columns);
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));

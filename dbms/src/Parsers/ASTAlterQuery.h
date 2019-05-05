@@ -27,6 +27,7 @@ public:
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
+        MODIFY_TTL,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -84,6 +85,9 @@ public:
 
     /// A column comment
     ASTPtr comment;
+
+    /// For MODIFY TTL query
+    ASTPtr ttl;
 
     bool detach = false;        /// true for DETACH PARTITION
 

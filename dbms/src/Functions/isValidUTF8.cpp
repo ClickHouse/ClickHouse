@@ -12,10 +12,34 @@
 
 namespace DB
 {
+/// inspired by https://github.com/cyb70289/utf8/
 struct ValidUTF8Impl
 {
     /*
- * inspired by https://github.com/cyb70289/utf8/
+MIT License
+
+Copyright (c) 2019 Yibo Cai
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+    /*
  * http://www.unicode.org/versions/Unicode6.0.0/ch03.pdf - page 94
  *
  * Table 3-7. Well-Formed UTF-8 Byte Sequences
@@ -259,8 +283,7 @@ struct ValidUTF8Impl
         memset(buf + len + 1, 0, 16);
         check_packed(_mm_loadu_si128(reinterpret_cast<__m128i *>(buf + 1)));
 
-        /* Reduce error vector, error_reduced = 0xFFFF if error == 0 */
-        return _mm_movemask_epi8(_mm_cmpeq_epi8(error, _mm_set1_epi8(0))) == 0xFFFF;
+        return _mm_testz_si128(error, error);
     }
 #endif
 

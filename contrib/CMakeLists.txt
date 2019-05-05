@@ -120,6 +120,9 @@ if (USE_INTERNAL_SSL_LIBRARY)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     set (POCO_SKIP_OPENSSL_FIND 1)
+
+    add_library(OpenSSL::Crypto ALIAS ${OPENSSL_CRYPTO_LIBRARY})
+    add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
@@ -144,6 +147,7 @@ endif()
 
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_subdirectory (unixodbc-cmake)
+    add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
@@ -284,6 +288,7 @@ endif ()
 
 if (USE_INTERNAL_BROTLI_LIBRARY)
     add_subdirectory(brotli-cmake)
+    target_compile_definitions(brotli PRIVATE BROTLI_BUILD_PORTABLE=1)
 endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
