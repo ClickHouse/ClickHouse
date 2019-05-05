@@ -1,4 +1,3 @@
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS or_expr_bug;
 CREATE TABLE or_expr_bug (a UInt64, b UInt64) ENGINE = Memory;
 

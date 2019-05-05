@@ -156,7 +156,7 @@ Here, a sample of 10% is taken from the second half of the data.
 
 ### ARRAY JOIN Clause {#select-array-join-clause}
 
-Allows executing `JOIN` with an array or nested data structure. Allows you to perform `JOIN` both with the external array and with the inner array in the table. The intent is similar to the [arrayJoin](functions/array_functions.md#array_functions-join) function, but its functionality is broader.
+Allows executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](functions/array_join.md#functions_arrayjoin) function, but its functionality is broader.
 
 ``` sql
 SELECT <expr_list>
@@ -168,14 +168,14 @@ FROM <left_subquery>
 
 You can specify only a single `ARRAY JOIN` clause in a query.
 
-When running the `ARRAY JOIN`, there is an optimization of the query execution order. Although the `ARRAY JOIN` must be always specified before the `WHERE/PREWHERE` clause, it can be performed as before the `WHERE/PREWHERE` (if its result is needed in this clause), as after completing it (to reduce the volume of calculations). The processing order is controlled by the query optimizer.
+The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the `WHERE/PREWHERE` clause, it can be performed either before `WHERE/PREWHERE` (if the result is needed in this clause), or after completing it (to reduce the volume of calculations). The processing order is controlled by the query optimizer.
 
 Supported types of `ARRAY JOIN` are listed below:
 
-- `ARRAY JOIN` - Executing `JOIN` with an array or nested data structure. Empty arrays are not included in the result.
-- `LEFT ARRAY JOIN` - Unlike `ARRAY JOIN`, when using the `LEFT ARRAY JOIN` the result contains the rows with empty arrays. The value for an empty array is set to default value for an array element type (usually 0, empty string or NULL).
+- `ARRAY JOIN` - In this case, empty arrays are not included in the result of `JOIN`.
+- `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
-Examples below demonstrate the usage of the `ARRAY JOIN` clause. Let's create a table with an [Array](../data_types/array.md) type column and insert values into it:
+The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let's create a table with an [Array](../data_types/array.md) type column and insert values into it:
 
 ``` sql
 CREATE TABLE arrays_test
@@ -195,7 +195,7 @@ VALUES ('Hello', [1,2]), ('World', [3,4,5]), ('Goodbye', []);
 └─────────────┴─────────┘
 ```
 
-The first example shows using the `ARRAY JOIN` clause:
+The example below uses the `ARRAY JOIN` clause:
 
 ``` sql
 SELECT s, arr
@@ -212,7 +212,7 @@ ARRAY JOIN arr;
 └───────┴─────┘
 ```
 
-The second example shows using the `LEFT ARRAY JOIN` clause:
+The next example uses the `LEFT ARRAY JOIN` clause:
 
 ``` sql
 SELECT s, arr
@@ -230,7 +230,27 @@ LEFT ARRAY JOIN arr;
 └─────────────┴─────┘
 ``` 
 
-The next example demonstrates using the `ARRAY JOIN` with the external array:
+#### Using Aliases
+
+An alias can be specified for an array in the `ARRAY JOIN` clause. In this case, an array item can be accessed by this alias, but the array itself is accessed by the original name. Example:
+
+``` sql
+SELECT s, arr, a
+FROM arrays_test
+ARRAY JOIN arr AS a;
+```
+
+``` 
+┌─s─────┬─arr─────┬─a─┐
+│ Hello │ [1,2]   │ 1 │
+│ Hello │ [1,2]   │ 2 │
+│ World │ [3,4,5] │ 3 │
+│ World │ [3,4,5] │ 4 │
+│ World │ [3,4,5] │ 5 │
+└───────┴─────────┴───┘
+```
+
+Using aliases, you can perform `ARRAY JOIN` with an external array. For example:
 
 ``` sql
 SELECT s, arr_external
@@ -252,27 +272,7 @@ ARRAY JOIN [1, 2, 3] AS arr_external;
 └─────────────┴──────────────┘
 ```
 
-#### Using Aliases
-
-An alias can be specified for an array in the `ARRAY JOIN` clause. In this case, an array item can be accessed by this alias, but the array itself by the original name. Example:
-
-``` sql
-SELECT s, arr, a
-FROM arrays_test
-ARRAY JOIN arr AS a;
-```
-
-``` 
-┌─s─────┬─arr─────┬─a─┐
-│ Hello │ [1,2]   │ 1 │
-│ Hello │ [1,2]   │ 2 │
-│ World │ [3,4,5] │ 3 │
-│ World │ [3,4,5] │ 4 │
-│ World │ [3,4,5] │ 5 │
-└───────┴─────────┴───┘
-```
-
-Multiple arrays of the same size can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the cartesian product). Example:
+Multiple arrays can be comma-separated in the `ARRAY JOIN` clause. In this case, `JOIN` is performed with them simultaneously (the direct sum, not the cartesian product). Note that all the arrays must have the same size. Example:
 
 ``` sql
 SELECT s, arr, a, num, mapped
@@ -289,6 +289,8 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 │ World │ [3,4,5] │ 5 │   3 │      6 │
 └───────┴─────────┴───┴─────┴────────┘
 ```
+
+The example below uses the [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -308,7 +310,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num;
 
 #### ARRAY JOIN With Nested Data Structure
 
-`ARRAY JOIN` also works with [nested data structure](../data_types/nested_data_structures/nested.md). Example:
+`ARRAY `JOIN`` also works with [nested data structures](../data_types/nested_data_structures/nested.md). Example:
 
 ``` sql
 CREATE TABLE nested_test
@@ -401,7 +403,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-The example of using the [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate) function:
+Example of using the [arrayEnumerate](functions/array_functions.md#array_functions-arrayenumerate) function:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -444,7 +446,7 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 - `FULL JOIN` (or `FULL OUTER JOIN`)
 - `CROSS JOIN` (or `,` )
 
-See standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
+See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
 
 **ANY or ALL strictness**
 

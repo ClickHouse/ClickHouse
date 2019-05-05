@@ -1,4 +1,3 @@
-CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS unicode;
 
 CREATE TABLE unicode(c1 String, c2 String) ENGINE = Memory;
