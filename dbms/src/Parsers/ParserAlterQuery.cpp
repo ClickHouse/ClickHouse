@@ -27,6 +27,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_modify_column("MODIFY COLUMN");
     ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
+    ParserKeyword s_modify_ttl("MODIFY TTL");
 
     ParserKeyword s_add_index("ADD INDEX");
     ParserKeyword s_drop_index("DROP INDEX");
@@ -300,6 +301,12 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
         command->type = ASTAlterCommand::COMMENT_COLUMN;
     }
+    else if (s_modify_ttl.ignore(pos, expected))
+    {
+        if (!parser_exp_elem.parse(pos, command->ttl, expected))
+            return false;
+        command->type = ASTAlterCommand::MODIFY_TTL;
+    }
     else
         return false;
 
@@ -317,6 +324,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->update_assignments);
     if (command->comment)
         command->children.push_back(command->comment);
+    if (command->ttl)
+        command->children.push_back(command->ttl);
 
     return true;
 }

@@ -139,10 +139,10 @@ ASTPtr MergeTreeWhereOptimizer::reconstruct(const Conditions & conditions) const
 
 void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 {
-    if (!select.where_expression || select.prewhere_expression)
+    if (!select.where() || select.prewhere())
         return;
 
-    Conditions where_conditions = analyze(select.where_expression);
+    Conditions where_conditions = analyze(select.where());
     Conditions prewhere_conditions;
 
     UInt64 total_size_of_moved_conditions = 0;
@@ -186,21 +186,10 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
 
     /// Rewrite the SELECT query.
 
-    auto old_where = std::find(std::begin(select.children), std::end(select.children), select.where_expression);
-    if (old_where == select.children.end())
-        throw Exception("Logical error: cannot find WHERE expression in the list of children of SELECT query", ErrorCodes::LOGICAL_ERROR);
+    select.setExpression(ASTSelectQuery::Expression::WHERE, reconstruct(where_conditions));
+    select.setExpression(ASTSelectQuery::Expression::PREWHERE, reconstruct(prewhere_conditions));
 
-    select.where_expression = reconstruct(where_conditions);
-    select.prewhere_expression = reconstruct(prewhere_conditions);
-
-    if (select.where_expression)
-        *old_where = select.where_expression;
-    else
-        select.children.erase(old_where);
-
-    select.children.push_back(select.prewhere_expression);
-
-    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"" << select.prewhere_expression << "\" moved to PREWHERE");
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"" << select.prewhere() << "\" moved to PREWHERE");
 }
 
 

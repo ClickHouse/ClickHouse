@@ -32,16 +32,14 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & /* query_context */) const override
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
     {
-        return part->storage.mayBenefitFromIndexForIn(left_in_operand);
+        return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
-
-    const IndicesDescription & getIndicesDescription() const override { return part->storage.getIndicesDescription(); }
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(part_->storage.getColumns()), part(part_)
+        : IStorage(part_->storage.getColumns(), part_->storage.getIndices()), part(part_)
     {}
 
 private:

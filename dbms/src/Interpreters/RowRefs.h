@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/RadixSort.h>
 #include <Columns/IColumn.h>
 
 #include <optional>
@@ -39,11 +40,11 @@ struct RowRefList : RowRef
  * references that can be returned by the lookup methods
  */
 
-template <typename T>
+template <typename TEntry, typename TKey>
 class SortedLookupVector
 {
 public:
-    using Base = std::vector<T>;
+    using Base = std::vector<TEntry>;
 
     // First stage, insertions into the vector
     template <typename U, typename ... TAllocatorParams>
@@ -54,7 +55,7 @@ public:
     }
 
     // Transition into second stage, ensures that the vector is sorted
-    typename Base::const_iterator upper_bound(const T & k)
+    typename Base::const_iterator upper_bound(const TEntry & k)
     {
         sort();
         return std::upper_bound(array.cbegin(), array.cend(), k);
@@ -69,6 +70,12 @@ private:
     Base array;
     mutable std::mutex lock;
 
+    struct RadixSortTraits : RadixSortNumTraits<TKey>
+    {
+        using Element = TEntry;
+        static TKey & extractKey(Element & elem) { return elem.asof_value; }
+    };
+
     // Double checked locking with SC atomics works in C++
     // https://preshing.com/20130930/double-checked-locking-is-fixed-in-cpp11/
     // The first thread that calls one of the lookup methods sorts the data
@@ -81,7 +88,15 @@ private:
             std::lock_guard<std::mutex> l(lock);
             if (!sorted.load(std::memory_order_relaxed))
             {
-                std::sort(array.begin(), array.end());
+                if (!array.empty())
+                {
+                    /// TODO: It has been tested only for UInt32 yet. It needs to check UInt64, Float32/64.
+                    if constexpr (std::is_same_v<TKey, UInt32>)
+                        RadixSort<RadixSortTraits>::executeLSD(&array[0], array.size());
+                    else
+                        std::sort(array.begin(), array.end());
+                }
+
                 sorted.store(true, std::memory_order_release);
             }
         }
@@ -94,7 +109,7 @@ public:
     template <typename T>
     struct Entry
     {
-        using LookupType = SortedLookupVector<Entry<T>>;
+        using LookupType = SortedLookupVector<Entry<T>, T>;
         using LookupPtr = std::unique_ptr<LookupType>;
         T asof_value;
         RowRef row_ref;

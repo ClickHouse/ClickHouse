@@ -1,7 +1,7 @@
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
 
-add_library (apple_rt
+add_library(apple_rt
     src/apple_rt.cpp
     include/port/clock.h
 )
@@ -10,7 +10,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library (common ${LINK_MODE}
+add_library(common
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
@@ -20,6 +20,7 @@ add_library (common ${LINK_MODE}
     src/getMemoryAmount.cpp
     src/demangle.cpp
     src/setTerminalEcho.cpp
+    src/getThreadNumber.cpp
 
     include/common/Types.h
     include/common/DayNum.h
@@ -40,6 +41,7 @@ add_library (common ${LINK_MODE}
     include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
+    include/common/getThreadNumber.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -61,7 +63,6 @@ add_library (common ${LINK_MODE}
 if (USE_JEMALLOC)
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-
 elseif (USE_TCMALLOC)
     if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
         message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
@@ -90,12 +91,14 @@ target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
 target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
-    target_include_directories (common BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+    target_include_directories (common SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
+if(NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories (common SYSTEM BEFORE PUBLIC ${Poco_Foundation_INCLUDE_DIR})
+endif()
+
 target_link_libraries (common
-        PRIVATE
-    pocoext
         PUBLIC
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}

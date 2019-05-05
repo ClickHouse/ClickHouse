@@ -23,6 +23,16 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
+const ColumnsDescription & ITableDeclaration::getColumns() const
+{
+    return columns;
+}
+
+const IndicesDescription & ITableDeclaration::getIndices() const
+{
+    return indices;
+}
+
 
 void ITableDeclaration::setColumns(ColumnsDescription columns_)
 {
@@ -31,7 +41,7 @@ void ITableDeclaration::setColumns(ColumnsDescription columns_)
     columns = std::move(columns_);
 }
 
-void ITableDeclaration::setIndicesDescription(IndicesDescription indices_)
+void ITableDeclaration::setIndices(IndicesDescription indices_)
 {
     indices = std::move(indices_);
 }
@@ -270,6 +280,12 @@ void ITableDeclaration::check(const Block & block, bool need_all) const
 ITableDeclaration::ITableDeclaration(ColumnsDescription columns_)
 {
     setColumns(std::move(columns_));
+}
+
+ITableDeclaration::ITableDeclaration(ColumnsDescription columns_, IndicesDescription indices_)
+{
+    setColumns(std::move(columns_));
+    setIndices(std::move(indices_));
 }
 
 }

@@ -439,7 +439,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("help",                                                            "produce help message")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
@@ -451,14 +451,14 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
-
-        #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
-            APPLY_FOR_SETTINGS(DECLARE_SETTING)
-        #undef DECLARE_SETTING
         ;
+
+        Settings settings;
+        settings.addProgramOptions(desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
+        boost::program_options::notify(options);
 
         if (options.count("help"))
         {
@@ -468,15 +468,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         }
 
         print_stacktrace = options.count("stacktrace");
-
-        /// Extract `settings` and `limits` from received `options`
-        Settings settings;
-
-        #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (options.count(#NAME)) \
-            settings.set(#NAME, options[#NAME].as<std::string>());
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-        #undef EXTRACT_SETTING
 
         UseSSL use_ssl;
 
