@@ -42,7 +42,8 @@ ASTPtr ASTSelectQuery::clone() const
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::HAVING);
     CLONE(Expression::ORDER_BY);
-    CLONE(Expression::LIMIT_BY_VALUE);
+    CLONE(Expression::LIMIT_BY_OFFSET);
+    CLONE(Expression::LIMIT_BY_LENGTH);
     CLONE(Expression::LIMIT_BY);
     CLONE(Expression::LIMIT_OFFSET);
     CLONE(Expression::LIMIT_LENGTH);
@@ -124,10 +125,15 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
             : orderBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
     }
 
-    if (limitByValue())
+    if (limitByLength())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
-        limitByValue()->formatImpl(s, state, frame);
+        if (limitByOffset())
+        {
+            limitByOffset()->formatImpl(s, state, frame);
+            s.ostr << ", ";
+        }
+        limitByLength()->formatImpl(s, state, frame);
         s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
         s.one_line
             ? limitBy()->formatImpl(s, state, frame)
@@ -216,11 +222,11 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
 static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQuery & select)
 {
     if (!select.tables())
-        return {};
+        return nullptr;
 
     const auto & tables_in_select_query = select.tables()->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.empty())
-        return {};
+        return nullptr;
 
     const ASTTablesInSelectQueryElement * joined_table = nullptr;
     for (const auto & child : tables_in_select_query.children)

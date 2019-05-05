@@ -3,7 +3,7 @@
 Creating db_name databases
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ```
 
 `A database` is just a directory for tables.

@@ -383,7 +383,7 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
     else if (!create.as_table.empty())
     {
         columns = as_storage->getColumns();
-        indices = as_storage->getIndicesDescription();
+        indices = as_storage->getIndices();
     }
     else if (create.select)
     {

@@ -3,16 +3,16 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS mergetree;"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS mergetree_00754;"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS distributed;"
 
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE mergetree (a Int64, b Int64, c Int64) ENGINE = MergeTree ORDER BY (a, b);"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE distributed AS mergetree ENGINE = Distributed(test_unavailable_shard, ${CLICKHOUSE_DATABASE}, mergetree, jumpConsistentHash(a+b, 2));"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE mergetree_00754 (a Int64, b Int64, c Int64) ENGINE = MergeTree ORDER BY (a, b);"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE distributed AS mergetree_00754 ENGINE = Distributed(test_unavailable_shard, ${CLICKHOUSE_DATABASE}, mergetree_00754, jumpConsistentHash(a+b, 2));"
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree VALUES (0, 0, 0);"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree VALUES (1, 0, 0);"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree VALUES (0, 1, 1);"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree VALUES (1, 1, 1);"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree_00754 VALUES (0, 0, 0);"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree_00754 VALUES (1, 0, 0);"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree_00754 VALUES (0, 1, 1);"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree_00754 VALUES (1, 1, 1);"
 
 # Should fail because second shard is unavailable
 ${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM distributed;" 2>&1 \
