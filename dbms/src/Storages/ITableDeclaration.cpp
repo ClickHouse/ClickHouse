@@ -23,6 +23,16 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
+const ColumnsDescription & ITableDeclaration::getColumns() const
+{
+    return columns;
+}
+
+const IndicesDescription & ITableDeclaration::getIndices() const
+{
+    return indices;
+}
+
 
 void ITableDeclaration::setColumns(ColumnsDescription columns_)
 {
