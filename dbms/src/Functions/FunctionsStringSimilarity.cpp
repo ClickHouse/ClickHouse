@@ -164,43 +164,46 @@ struct NgramDistanceImpl
         return num;
     }
 
+    template <bool SaveNgrams>
     static ALWAYS_INLINE inline size_t calculateNeedleStats(
         const char * data,
         const size_t size,
         NgramStats & ngram_stats,
+        [[maybe_unused]] UInt16 * ngram_storage,
         size_t (*read_code_points)(CodePoint *, const char *&, const char *),
         UInt16 (*hash_functor)(const CodePoint *))
     {
-        // To prevent size_t overflow below.
-        if (size < N)
-            return 0;
-
         const char * start = data;
         const char * end = data + size;
         CodePoint cp[simultaneously_codepoints_num] = {};
-
         /// read_code_points returns the position of cp where it stopped reading codepoints.
         size_t found = read_code_points(cp, start, end);
         /// We need to start for the first time here, because first N - 1 codepoints mean nothing.
         size_t i = N - 1;
-        /// Initialize with this value because for the first time `found` does not initialize first N - 1 codepoints.
-        size_t len = -N + 1;
+        size_t len = 0;
         do
         {
-            len += found - N + 1;
             for (; i + N <= found; ++i)
-                ++ngram_stats[hash_functor(cp + i)];
+            {
+                ++len;
+                UInt16 hash = hash_functor(cp + i);
+                if constexpr (SaveNgrams)
+                    *ngram_storage++ = hash;
+                ++ngram_stats[hash];
+            }
             i = 0;
         } while (start < end && (found = read_code_points(cp, start, end)));
 
         return len;
     }
 
+    template <bool ReuseStats>
     static ALWAYS_INLINE inline UInt64 calculateHaystackStatsAndMetric(
         const char * data,
         const size_t size,
         NgramStats & ngram_stats,
         size_t & distance,
+        [[maybe_unused]] UInt16 * ngram_storage,
         size_t (*read_code_points)(CodePoint *, const char *&, const char *),
         UInt16 (*hash_functor)(const CodePoint *))
     {
@@ -208,18 +211,6 @@ struct NgramDistanceImpl
         const char * start = data;
         const char * end = data + size;
         CodePoint cp[simultaneously_codepoints_num] = {};
-
-        /// allocation tricks, most strings are relatively small
-        static constexpr size_t small_buffer_size = 256;
-        std::unique_ptr<UInt16[]> big_buffer;
-        UInt16 small_buffer[small_buffer_size];
-        UInt16 * ngram_storage = small_buffer;
-
-        if (size > small_buffer_size)
-        {
-            ngram_storage = new UInt16[size];
-            big_buffer.reset(ngram_storage);
-        }
 
         /// read_code_points returns the position of cp where it stopped reading codepoints.
         size_t found = read_code_points(cp, start, end);
@@ -235,21 +226,25 @@ struct NgramDistanceImpl
                     --distance;
                 else
                     ++distance;
-
-                ngram_storage[ngram_cnt++] = hash;
+                if constexpr (ReuseStats)
+                    ngram_storage[ngram_cnt] = hash;
+                ++ngram_cnt;
                 --ngram_stats[hash];
             }
             iter = 0;
         } while (start < end && (found = read_code_points(cp, start, end)));
 
         /// Return the state of hash map to its initial.
-        for (size_t i = 0; i < ngram_cnt; ++i)
-            ++ngram_stats[ngram_storage[i]];
+        if constexpr (ReuseStats)
+        {
+            for (size_t i = 0; i < ngram_cnt; ++i)
+                ++ngram_stats[ngram_storage[i]];
+        }
         return ngram_cnt;
     }
 
     template <class Callback, class... Args>
-    static inline size_t dispatchSearcher(Callback callback, Args &&... args)
+    static inline auto dispatchSearcher(Callback callback, Args &&... args)
     {
         if constexpr (!UTF8)
             return callback(std::forward<Args>(args)..., readASCIICodePoints, ASCIIHash);
@@ -268,11 +263,11 @@ struct NgramDistanceImpl
         needle.resize(needle_size + default_padding);
         data.resize(data_size + default_padding);
 
-        size_t second_size = dispatchSearcher(calculateNeedleStats, needle.data(), needle_size, common_stats);
+        size_t second_size = dispatchSearcher(calculateNeedleStats<false>, needle.data(), needle_size, common_stats, nullptr);
         size_t distance = second_size;
         if (data_size <= max_string_size)
         {
-            size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric, data.data(), data_size, common_stats, distance);
+            size_t first_size = dispatchSearcher(calculateHaystackStatsAndMetric<false>, data.data(), data_size, common_stats, distance, nullptr);
             res = distance * 1.f / std::max(first_size + second_size, size_t(1));
         }
         else
@@ -281,18 +276,94 @@ struct NgramDistanceImpl
         }
     }
 
+    static void vector_vector(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const ColumnString::Chars & needle_data,
+        const ColumnString::Offsets & needle_offsets,
+        PaddedPODArray<Float32> & res)
+    {
+        const size_t haystack_offsets_size = haystack_offsets.size();
+        size_t prev_haystack_offset = 0;
+        size_t prev_needle_offset = 0;
+
+        NgramStats common_stats;
+        memset(common_stats, 0, sizeof(common_stats));
+
+        /// The main motivation is to not allocate more on stack because we have already allocated a lot (128Kb).
+        /// And we can reuse these storages in one thread because we care only about what was written to first places.
+        std::unique_ptr<UInt16[]> needle_ngram_storage;
+        std::unique_ptr<UInt16[]> haystack_ngram_storage;
+        needle_ngram_storage.reset(new UInt16[max_string_size]);
+        haystack_ngram_storage.reset(new UInt16[max_string_size]);
+
+        for (size_t i = 0; i < haystack_offsets_size; ++i)
+        {
+            const char * haystack = reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]);
+            const size_t haystack_size = haystack_offsets[i] - prev_haystack_offset - 1;
+            const char * needle = reinterpret_cast<const char *>(&needle_data[prev_needle_offset]);
+            const size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
+
+            if (needle_size <= max_string_size && haystack_size <= max_string_size)
+            {
+                /// Get needle stats.
+                const size_t needle_stats_size = dispatchSearcher(
+                    calculateNeedleStats<true>,
+                    needle,
+                    needle_size,
+                    common_stats,
+                    needle_ngram_storage.get());
+
+                size_t distance = needle_stats_size;
+
+                /// Combine with haystack stats, return to initial needle stats.
+                const size_t haystack_stats_size = dispatchSearcher(
+                    calculateHaystackStatsAndMetric<true>,
+                    haystack,
+                    haystack_size,
+                    common_stats,
+                    distance,
+                    haystack_ngram_storage.get());
+
+                /// Return to zero array stats.
+                for (size_t j = 0; j < needle_stats_size; ++j)
+                    --common_stats[needle_ngram_storage[j]];
+
+                /// For now, common stats is a zero array.
+                res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
+            }
+            else
+            {
+                /// String are too big, we are assuming they are not the same. This is done because of limiting number
+                /// of bigrams added and not allocating too much memory.
+                res[i] = 1.f;
+            }
+
+            prev_needle_offset = needle_offsets[i];
+            prev_haystack_offset = haystack_offsets[i];
+        }
+    }
+
     static void vector_constant(
-        const ColumnString::Chars & data, const ColumnString::Offsets & offsets, std::string needle, PaddedPODArray<Float32> & res)
+        const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        std::string needle,
+        PaddedPODArray<Float32> & res)
     {
         /// zeroing our map
         NgramStats common_stats;
         memset(common_stats, 0, sizeof(common_stats));
 
+        /// The main motivation is to not allocate more on stack because we have already allocated a lot (128Kb).
+        /// And we can reuse these storages in one thread because we care only about what was written to first places.
+        std::unique_ptr<UInt16[]> ngram_storage;
+        ngram_storage.reset(new UInt16[max_string_size]);
+
         /// We use unsafe versions of getting ngrams, so I decided to use padded_data even in needle case.
         const size_t needle_size = needle.size();
         needle.resize(needle_size + default_padding);
 
-        const size_t needle_stats_size = dispatchSearcher(calculateNeedleStats, needle.data(), needle_size, common_stats);
+        const size_t needle_stats_size = dispatchSearcher(calculateNeedleStats<false>, needle.data(), needle_size, common_stats, nullptr);
 
         size_t distance = needle_stats_size;
         size_t prev_offset = 0;
@@ -303,7 +374,11 @@ struct NgramDistanceImpl
             if (haystack_size <= max_string_size)
             {
                 size_t haystack_stats_size = dispatchSearcher(
-                    calculateHaystackStatsAndMetric, reinterpret_cast<const char *>(haystack), haystack_size, common_stats, distance);
+                    calculateHaystackStatsAndMetric<true>,
+                    reinterpret_cast<const char *>(haystack),
+                    haystack_size, common_stats,
+                    distance,
+                    ngram_storage.get());
                 res[i] = distance * 1.f / std::max(haystack_stats_size + needle_stats_size, size_t(1));
             }
             else
