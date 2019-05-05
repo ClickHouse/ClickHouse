@@ -332,7 +332,7 @@ struct NgramDistanceImpl
             }
             else
             {
-                /// String are too big, we are assuming they are not the same. This is done because of limiting number
+                /// Strings are too big, we are assuming they are not the same. This is done because of limiting number
                 /// of bigrams added and not allocating too much memory.
                 res[i] = 1.f;
             }
