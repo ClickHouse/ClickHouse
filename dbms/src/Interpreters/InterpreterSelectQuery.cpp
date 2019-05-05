@@ -893,7 +893,7 @@ static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & c
 void InterpreterSelectQuery::executeFetchColumns(
         QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
         const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere,
-        SelectQueryInfo& query_info)
+        SelectQueryInfo & query_info)
 {
     auto & query = getSelectQuery();
     const Settings & settings = context.getSettingsRef();
