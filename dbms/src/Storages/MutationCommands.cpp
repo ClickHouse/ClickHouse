@@ -5,6 +5,7 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
 
@@ -50,6 +51,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
         res.type = MATERIALIZE_INDEX;
         res.partition = command->partition;
         res.predicate = nullptr;
+        res.index_name = command->index->as<ASTIdentifier &>().name;
         return res;
     }
     else

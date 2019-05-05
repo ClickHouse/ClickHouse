@@ -69,8 +69,9 @@ public:
 
     /** The ADD INDEX query stores the name of the index following AFTER.
      *  The DROP INDEX query stores the name for deletion.
+     *  The MATERIALIZE INDEX query stores the name of the index to materialize.
      */
-     ASTPtr index;
+    ASTPtr index;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
