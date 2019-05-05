@@ -123,6 +123,9 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
 
     LockHolder res(new LockHolderImpl(shared_from_this(), it_group, it_client));
 
+    /// Wait a notification until we will be the only in the group.
+    it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
+
     /// Insert myself (weak_ptr to the holder) to threads set to implement recursive lock
     it_thread = thread_to_holder.emplace(this_thread_id, res).first;
     res->it_thread = it_thread;
@@ -130,17 +133,6 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
     if (query_id != RWLockImpl::NO_QUERY)
         it_query = query_id_to_holder.emplace(query_id, res).first;
     res->it_query = it_query;
-
-    /// We are first, we should not wait anything
-    /// If we are not the first client in the group, a notification could be already sent
-    if (it_group == queue.begin())
-    {
-        finalize_metrics();
-        return res;
-    }
-
-    /// Wait a notification
-    it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
 
     finalize_metrics();
     return res;
