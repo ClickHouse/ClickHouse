@@ -292,10 +292,8 @@ struct NgramDistanceImpl
 
         /// The main motivation is to not allocate more on stack because we have already allocated a lot (128Kb).
         /// And we can reuse these storages in one thread because we care only about what was written to first places.
-        std::unique_ptr<UInt16[]> needle_ngram_storage;
-        std::unique_ptr<UInt16[]> haystack_ngram_storage;
-        needle_ngram_storage.reset(new UInt16[max_string_size]);
-        haystack_ngram_storage.reset(new UInt16[max_string_size]);
+        std::unique_ptr<UInt16[]> needle_ngram_storage(new UInt16[max_string_size]);
+        std::unique_ptr<UInt16[]> haystack_ngram_storage(new UInt16[max_string_size]);
 
         for (size_t i = 0; i < haystack_offsets_size; ++i)
         {
@@ -356,8 +354,12 @@ struct NgramDistanceImpl
 
         /// The main motivation is to not allocate more on stack because we have already allocated a lot (128Kb).
         /// And we can reuse these storages in one thread because we care only about what was written to first places.
-        std::unique_ptr<UInt16[]> ngram_storage;
-        ngram_storage.reset(new UInt16[max_string_size]);
+        std::unique_ptr<UInt16[]> ngram_storage(new UInt16[max_string_size]);
+
+
+
+
+
 
         /// We use unsafe versions of getting ngrams, so I decided to use padded_data even in needle case.
         const size_t needle_size = needle.size();
