@@ -13,8 +13,8 @@ struct IndicesDescription
     IndicesASTs indices;
 
     IndicesDescription() = default;
-    IndicesDescription(const IndicesDescription & indices_);
-    IndicesDescription & operator=(const IndicesDescription & indices_);
+    /*IndicesDescription(const IndicesDescription & indices_);
+    IndicesDescription & operator=(const IndicesDescription & indices_);*/
 
     bool empty() const { return indices.empty(); }
     String toString() const;

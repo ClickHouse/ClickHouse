@@ -8,7 +8,7 @@
 namespace DB
 {
 
-IndicesDescription::IndicesDescription(const IndicesDescription & indices_)
+/*IndicesDescription::IndicesDescription(const IndicesDescription & indices_)
 {
     for (const auto & index : indices_.indices)
         indices.push_back(
@@ -21,7 +21,7 @@ IndicesDescription & IndicesDescription::operator=(const IndicesDescription & in
         indices.push_back(
                 std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
     return *this;
-}
+}*/
 
 String IndicesDescription::toString() const
 {

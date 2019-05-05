@@ -32,6 +32,7 @@ struct MutationCommand
     std::unordered_map<String, ASTPtr> column_to_update_expression;
 
     /// For MATERIALIZE INDEX
+    String index_name;
     ASTPtr partition;
 
     static std::optional<MutationCommand> parse(ASTAlterCommand * command);

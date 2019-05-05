@@ -270,6 +270,31 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
+        else if (command.type == MutationCommand::MATERIALIZE_INDEX)
+        {
+            auto it = std::find_if(
+                    std::cbegin(indices_desc.indices), std::end(indices_desc.indices),
+                    [&](const std::shared_ptr<ASTIndexDeclaration> & index)
+                    {
+                        return index->name == command.index_name;
+                    });
+            if (it == std::cend(indices_desc.indices))
+                throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
+
+            auto query = (*it)->expr->clone();
+            auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
+            ExpressionAnalyzer analyzer(query, syntax_result, context);
+            const auto required_columns = analyzer.getRequiredSourceColumns();
+
+            for (const String & dependency : required_columns)
+            {
+                if (updated_columns.count(dependency))
+                {
+                    affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
+                    break;
+                }
+            }
+        }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
     }
