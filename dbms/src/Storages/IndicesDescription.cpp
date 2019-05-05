@@ -15,6 +15,13 @@ IndicesDescription::IndicesDescription(const IndicesDescription & indices_)
                 std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
 }
 
+IndicesDescription & IndicesDescription::operator=(const IndicesDescription & indices_)
+{
+    for (const auto & index : indices_.indices)
+        indices.push_back(
+                std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+}
+
 String IndicesDescription::toString() const
 {
     if (indices.empty())
