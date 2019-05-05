@@ -74,7 +74,6 @@ private:
     /// Time zone name.
     std::string time_zone;
 
-
     /// We can correctly process only timestamps that less DATE_LUT_MAX (i.e. up to 2105 year inclusively)
     /// We don't care about overflow.
     inline DayNum findIndex(time_t t) const
@@ -377,6 +376,53 @@ public:
     inline unsigned toISOWeek(time_t t) const
     {
         return toISOWeek(toDayNum(t));
+    }
+
+    /// Get year that contains the custom week.
+    inline unsigned toCustomYear(DayNum d) const
+    {
+        // Checking the week across the year
+        auto year = toYear(DayNum(d + 7 - toDayOfWeek(d)));
+        auto day_of_year = makeDayNum(year, 1, 1);
+        // Checking greater than or equal to Monday, If true take current year, else take last year.
+        return toFirstDayNumOfWeek(day_of_year) <= d ?  year : year - 1;
+    }
+
+    inline unsigned toCustomYear(time_t t) const
+    {
+        return toCustomYear(toDayNum(t));
+    }
+
+    /// Custom year begins with a monday of the week that is contained January 1,
+    /// which day can be modified through config of first_week_of_day.
+    /// Example: Custom year 2019 begins at 2018-12-31. And Custom year 2017 begins at 2016-12-26.
+    inline DayNum toFirstDayNumOfCustomYear(DayNum d) const
+    {
+        auto custom_year = toCustomYear(d);
+        return toFirstDayNumOfWeek(makeDayNum(custom_year, 1, 1));
+    }
+
+    inline DayNum toFirstDayNumOfCustomYear(time_t t) const
+    {
+        return toFirstDayNumOfCustomYear(toDayNum(t));
+    }
+
+    inline time_t toFirstDayOfCustomYear(time_t t) const
+    {
+        return fromDayNum(toFirstDayNumOfCustomYear(t));
+    }
+
+    /// Custom week number. Week begins at monday.
+    /// The week number 1 is the first week in year that contains January 1,
+    /// which day can be modified through config of first_week_of_day.
+    inline unsigned toCustomWeek(DayNum d) const
+    {
+        return 1 + (toFirstDayNumOfWeek(d) - toFirstDayNumOfCustomYear(d)) / 7;
+    }
+
+    inline unsigned toCustomWeek(time_t t) const
+    {
+        return toCustomWeek(toDayNum(t));
     }
 
     /// Number of month from some fixed moment in the past (year * 12 + month)
