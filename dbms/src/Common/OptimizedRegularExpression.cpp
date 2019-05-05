@@ -233,7 +233,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
             }
 
             /// If prefix is small, it won't be chosen
-            if (max_length == 0)
+            if (max_length < MIN_LENGTH_FOR_STRSTR)
             {
                 for (Substrings::const_iterator it = trivial_substrings.begin(); it != trivial_substrings.end(); ++it)
                 {
