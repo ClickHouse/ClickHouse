@@ -895,7 +895,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     std::copy_if(
             std::cbegin(commands), std::cend(commands),
             std::back_inserter(commands_for_part),
-            [&] (const MutationCommand & command) {
+            [&] (const MutationCommand & command)
+            {
                 return command.partition == nullptr ||
                     future_part.parts[0]->info.partition_id != data.getPartitionIDFromQuery(
                             command.partition, context_for_reading);
