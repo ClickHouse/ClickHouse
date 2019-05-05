@@ -1432,7 +1432,7 @@ static SortDescription getSortDescription(const ASTSelectQuery & query)
 }
 
 
-void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& query_info)
+void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo & query_info)
 {
     auto & query = getSelectQuery();
     SortDescription order_descr = getSortDescription(query);
@@ -1440,7 +1440,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
     UInt64 limit = getLimitForSorting(query, context);
     const Settings & settings = context.getSettingsRef();
 
-    const auto& order_direction = order_descr.at(0).direction;
+    const auto & order_direction = order_descr.at(0).direction;
 
     auto optimize_pk_order = [&](auto & merge_tree)
     {
@@ -1456,7 +1456,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
             {
                 need_sorting = true;
                 break;
-            } else
+            }
+            else
             {
                 prefix_order_descr.push_back(order_descr[i]);
             }
@@ -1490,20 +1491,15 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo& 
         }
         executeUnion(pipeline);
         pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
-        pipeline.firstStream(), order_descr, settings.max_block_size, limit,
-        settings.max_bytes_before_remerge_sort,
-        settings.max_bytes_before_external_sort, context.getTemporaryPath());
+            pipeline.firstStream(), order_descr, settings.max_block_size, limit,
+            settings.max_bytes_before_remerge_sort,
+            settings.max_bytes_before_external_sort, context.getTemporaryPath());
     };
 
     if (settings.optimize_pk_order)
     {
-        if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(storage.get()))
-        {
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
             optimize_pk_order(*merge_tree);
-        } else if (const StorageReplicatedMergeTree * replicated_merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
-        {
-            optimize_pk_order(*replicated_merge_tree);
-        }
         return;
     }
 
