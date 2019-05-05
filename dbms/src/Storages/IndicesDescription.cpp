@@ -20,6 +20,7 @@ IndicesDescription & IndicesDescription::operator=(const IndicesDescription & in
     for (const auto & index : indices_.indices)
         indices.push_back(
                 std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
+    return *this;
 }
 
 String IndicesDescription::toString() const
