@@ -513,13 +513,14 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
                                                             columns_added_by_join_list));
 }
 
-static void appendRequiredColumns(NameSet & required_columns, const Block & sample, const AnalyzedJoin & analyzed_join)
+static void appendRequiredColumns(
+    NameSet & required_columns, const Block & sample, const Names & key_names_right, const JoinedColumnsList & columns_added_by_join)
 {
-    for (auto & column : analyzed_join.key_names_right)
+    for (auto & column : key_names_right)
         if (!sample.has(column))
             required_columns.insert(column);
 
-    for (auto & column : analyzed_join.columns_from_joined_table)
+    for (auto & column : columns_added_by_join)
         if (!sample.has(column.name_and_type.name))
             required_columns.insert(column.name_and_type.name);
 }
@@ -606,7 +607,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             Names action_columns = joined_block_actions->getRequiredColumns();
             NameSet required_columns(action_columns.begin(), action_columns.end());
 
-            appendRequiredColumns(required_columns, joined_block_actions->getSampleBlock(), analyzed_join);
+            appendRequiredColumns(
+                required_columns, joined_block_actions->getSampleBlock(), analyzed_join.key_names_right, columns_added_by_join);
 
             Names original_columns = analyzed_join.getOriginalColumnNames(required_columns);
 
