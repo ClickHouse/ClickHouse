@@ -285,15 +285,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
             ExpressionAnalyzer analyzer(query, syntax_result, context);
             const auto required_columns = analyzer.getRequiredSourceColumns();
-
-            for (const String & dependency : required_columns)
-            {
-                if (updated_columns.count(dependency))
-                {
-                    affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
-                    break;
-                }
-            }
+            affected_indices_columns.insert(std::cbegin(required_columns), std::cend(required_columns));
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);

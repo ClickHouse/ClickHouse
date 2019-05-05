@@ -976,11 +976,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
 
-        /// Checks if columns used in skipping indexes modified
+        /// Checks if columns used in skipping indexes modified.
         std::set<MergeTreeIndexPtr> indices_to_recalc;
         ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
+        auto * log = &Poco::Logger::get("kek>>");
+        LOG_DEBUG(log, "columns: " << in_header.columns());
         for (const auto & col : in_header.getNames())
         {
+            LOG_DEBUG(log, col);
             for (size_t i = 0; i < data.skip_indices.size(); ++i)
             {
                 const auto & index = data.skip_indices[i];
@@ -988,6 +991,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 auto it = find(cbegin(index_cols), cend(index_cols), col);
                 if (it != cend(index_cols) && indices_to_recalc.insert(index).second)
                 {
+                    LOG_DEBUG(log, ": " << index->name);
                     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(
                             storage_from_source_part->getIndices().indices[i]->expr->clone());
                     for (const auto & expr : expr_list->children)
@@ -995,6 +999,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 }
             }
         }
+        /// TODO: add indices from materialize
+
         if (!indices_to_recalc.empty())
         {
             auto indices_recalc_syntax = SyntaxAnalyzer(context, {}).analyze(
