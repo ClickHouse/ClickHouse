@@ -1,19 +1,15 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <Common/PODArray.h>
 
 namespace DB
 {
 
-/** Allows to read data in reverse order
- *  Currently used in group by optimization
- */
+/// Reverses an order of rows in every block in a data stream.
 class ReverseBlockInputStream : public IBlockInputStream
 {
 public:
-    ReverseBlockInputStream(
-        const BlockInputStreamPtr& input);
+    ReverseBlockInputStream(const BlockInputStreamPtr & input);
 
     String getName() const override;
     Block getHeader() const override;
