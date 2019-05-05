@@ -1,18 +1,18 @@
-# Functions for working with IP addresses
+# IP函数
 
 ## IPv4NumToString(num)
 
-Takes a UInt32 number. Interprets it as an IPv4 address in big endian. Returns a string containing the corresponding IPv4 address in the format A.B.C.d (dot-separated numbers in decimal form).
+接受big endian表示的IPV4的UInt32，返回相应IPV4地址的字符串，格式为A.B.C.D（以点分割的十进制数字）。
 
 ## IPv4StringToNum(s)
 
-The reverse function of IPv4NumToString. If the IPv4 address has an invalid format, it returns 0.
+与IPv4NumToString函数相反。如果IPv4地址格式无效，则返回0。
 
 ## IPv4NumToStringClassC(num)
 
-Similar to IPv4NumToString, but using xxx instead of the last octet.
+与IPv4NumToString类似，但使用xxx替换最后一个字节。
 
-Example:
+示例:
 
 ``` sql
 SELECT
@@ -39,12 +39,12 @@ LIMIT 10
 └────────────────┴───────┘
 ```
 
-Since using 'xxx' is highly unusual, this may be changed in the future. We recommend that you don't rely on the exact format of this fragment.
+由于使用'xxx'是不规范的，因此将来可能会更改。我们建议您不要依赖此片段的确切格式。
 
 ### IPv6NumToString(x)
 
-Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
-IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. Examples:
+接受FixedString（16）类型的二进制格式的IPv6地址。以文本格式返回此地址的字符串。
+IPv6映射的IPv4地址以::ffff:111.222.33。例如：
 
 ``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
@@ -110,8 +110,8 @@ LIMIT 10
 
 ## IPv6StringToNum(s)
 
-The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes.
-HEX can be uppercase or lowercase.
+与IPv6NumToString的相反。如果IPv6地址格式无效，则返回空字节字符串。
+十六进制可以是大写或小写。
 
 ## IPv4ToIPv6(x)
 

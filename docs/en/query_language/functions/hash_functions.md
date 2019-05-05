@@ -26,7 +26,7 @@ For more information, see the link: <https://131002.net/siphash/>
 
 Calculates SipHash from a string.
 Accepts a String-type argument. Returns FixedString(16).
-Differs from sipHash64 in that the final xor-folding state is only done up to 128 bytes.
+Differs from sipHash64 in that the final xor-folding state is only done up to 128 bits.
 
 ## cityHash64
 
@@ -109,7 +109,7 @@ For more information, see the link: [MurmurHash3](https://github.com/aappleby/sm
 ## xxHash32, xxHash64
 
 Calculates xxHash from a string.
-ccepts a String-type argument. Returns UInt64 Or UInt32.
+Accepts a String-type argument. Returns UInt64 Or UInt32.
 For more information, see the link: [xxHash](http://cyan4973.github.io/xxHash/)
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/hash_functions/) <!--hide-->
