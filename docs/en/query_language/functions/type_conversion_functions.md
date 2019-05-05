@@ -13,10 +13,6 @@
 
 ## toUInt8OrNull, toUInt16OrNull, toUInt32OrNull, toUInt64OrNull, toInt8OrNull, toInt16OrNull, toInt32OrNull, toInt64OrNull, toFloat32OrNull, toFloat64OrNull, toDateOrNull, toDateTimeOrNull
 
-## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
-
-Converts `value` to [Decimal](../../data_types/decimal.md) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
-
 ## toString
 
 Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times.
@@ -55,6 +51,10 @@ SELECT
 ```
 
 Also see the `toUnixTimestamp` function.
+
+## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
+
+Converts `value` to [Decimal](../../data_types/decimal.md) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
 ## toFixedString(s, N)
 
