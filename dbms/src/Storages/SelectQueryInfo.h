@@ -51,6 +51,8 @@ struct SelectQueryInfo
 
     PrewhereInfoPtr prewhere_info;
 
+    /// If set to true, the query from MergeTree will return a set of streams,
+    /// each of them will read data in sorted by sorting key order.
     bool do_not_steal_task = false;
 
     /// Prepared sets are used for indices by storage engine.
