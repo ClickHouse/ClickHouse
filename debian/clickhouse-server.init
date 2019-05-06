@@ -235,11 +235,20 @@ forcestop()
 }
 
 
+service_or_func()
+{
+    if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
+        service $PROGRAM $1
+    else
+        $1
+    fi
+}
+
 forcerestart()
 {
     forcestop
     # Should not use 'start' function if systemd active
-    service $PROGRAM start
+    service_or_func start
 }
 
 use_cron()
@@ -302,16 +311,16 @@ main()
         restart
         ;;
     condstart)
-        is_running || service $PROGRAM start
+        is_running || service_or_func start
         ;;
     condstop)
-        is_running && service $PROGRAM stop
+        is_running && service_or_func stop
         ;;
     condrestart)
-        is_running && service $PROGRAM restart
+        is_running && service_or_func restart
         ;;
     condreload)
-        is_running && service $PROGRAM restart
+        is_running && service_or_func restart
         ;;
     initdb)
         initdb
