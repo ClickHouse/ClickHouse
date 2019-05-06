@@ -45,7 +45,8 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
     accumulated_progress.writeJSON(progress_string_writer);
 
 #if defined(POCO_CLICKHOUSE_PATCH)
-    *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
+    if (response_header_ostr)
+        *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
 #endif
 }
 
