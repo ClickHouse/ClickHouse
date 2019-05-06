@@ -139,7 +139,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         if (args.storage_def && args.storage_def->settings)
         {
-            for (const ASTSetQuery::Change & setting : args.storage_def->settings->changes)
+            for (const auto & setting : args.storage_def->settings->changes)
             {
                 if (setting.name == "join_use_nulls")
                     join_use_nulls.set(setting.value);

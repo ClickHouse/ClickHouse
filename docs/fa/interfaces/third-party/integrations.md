@@ -11,6 +11,7 @@
     - [MySQL](https://www.mysql.com)
         - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         - [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
+        - [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
     - [PostgreSQL](https://www.postgresql.org)
         - [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (استفاده می کند [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
@@ -52,6 +53,9 @@
         - [loghouse](https://github.com/flant/loghouse) (برای [Kubernetes](https://kubernetes.io))
     - [logagent](https://www.sematext.com/logagent)
         - [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
+- جغرافیایی
+    - [MaxMind](https://dev.maxmind.com/geoip/)
+        - [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
 ## اکوسیستم زبان برنامه نویسی
 
