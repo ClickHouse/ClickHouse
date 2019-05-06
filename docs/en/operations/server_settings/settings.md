@@ -668,7 +668,7 @@ Path to the file that contains:
 
 Contains settings that allow ClickHouse to interact with [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing replicas' metadata when using replicated tables. If replicated tables are not used, this parameter section can be omitted.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this parameter section can be omitted.
 
 This parameter section contains the following parameters:
 
@@ -683,7 +683,7 @@ This parameter section contains the following parameters:
     </node>
     ```
 
-    The `index` attribute specify an order of node, when trying to connect to ZooKeeper cluster.
+    The `index` attribute specifies an order of node, when trying to connect to ZooKeeper cluster.
 
 - `session_timeout` — Maximum timeout for client session in milliseconds.
 - `root` — ZNode, that is used as root for znodes used by ClickHouse server. Optional.
@@ -712,7 +712,7 @@ This parameter section contains the following parameters:
 **See Also**
 
 - [Replication](../../operations/table_engines/replication.md)
-- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/r3.3.4/zookeeperProgrammers.html)
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
