@@ -21,7 +21,7 @@ struct ProgressValues
     size_t bytes;
     size_t total_rows;
     size_t write_rows;
-    size_t write_bytes;   
+    size_t write_bytes;
 
 
     template <typename ReadImpl = AllProgressValueImpl>
@@ -152,7 +152,7 @@ struct Progress
         res.total_rows = total_rows.fetch_and(0);
         res.write_rows = write_rows.fetch_and(0);
         res.write_bytes = write_bytes.fetch_and(0);
- 
+
         return res;
     }
 
@@ -163,7 +163,7 @@ struct Progress
         total_rows = other.total_rows.load(std::memory_order_relaxed);
         write_rows = other.write_rows.load(std::memory_order_relaxed);
         write_bytes = other.write_bytes.load(std::memory_order_relaxed);
- 
+
         return *this;
     }
 

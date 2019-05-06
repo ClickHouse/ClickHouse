@@ -317,7 +317,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.written_bytes = info.written_bytes;
 
                 auto progress_callback = context.getProgressCallback();
-                
+
                 if (progress_callback)
                     progress_callback(Progress(WriteProgress(info.written_rows, info.written_bytes)));
 
