@@ -18,7 +18,9 @@ RUN apt-get update -y \
             openssl \
             netcat-openbsd \
             telnet \
-            llvm-8
+            llvm-8 \
+            brotli
+
 
 COPY ./stress /stress
 COPY log_queries.xml /etc/clickhouse-server/users.d/log_queries.xml

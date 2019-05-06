@@ -6,8 +6,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemParts.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 
@@ -68,7 +66,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         }
         columns[i++]->insert(part->name);
         columns[i++]->insert(part_state == State::Committed);
-        columns[i++]->insert(part->marks_count);
+        columns[i++]->insert(part->getMarksCount());
         columns[i++]->insert(part->rows_count);
         columns[i++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
         columns[i++]->insert(columns_size.data_compressed);

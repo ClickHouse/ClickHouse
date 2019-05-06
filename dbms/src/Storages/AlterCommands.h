@@ -24,6 +24,7 @@ struct AlterCommand
         MODIFY_ORDER_BY,
         ADD_INDEX,
         DROP_INDEX,
+        MODIFY_TTL,
         UKNOWN_TYPE,
     };
 
@@ -60,6 +61,9 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
+    /// For MODIFY TTL
+    ASTPtr ttl;
+
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
 
@@ -69,8 +73,8 @@ struct AlterCommand
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
                  const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
-                 const String & after_column = String{}, const String & comment = "",
-                 const bool if_exists = false, const bool if_not_exists = false) // TODO: разобраться здесь с параметром по умолчанию
+                 const String & after_column, const String & comment,
+                 const bool if_exists, const bool if_not_exists)
         : type{type}, column_name{column_name}, data_type{data_type}, default_kind{default_kind},
         default_expression{default_expression}, comment(comment), after_column{after_column},
         if_exists(if_exists), if_not_exists(if_not_exists)
@@ -79,9 +83,10 @@ struct AlterCommand
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
-            ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
+            ASTPtr & order_by_ast, ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
+
     /// Checks that not only metadata touched by that command
-    bool is_mutable() const;
+    bool isMutable() const;
 };
 
 class IStorage;
@@ -91,13 +96,13 @@ class AlterCommands : public std::vector<AlterCommand>
 {
 public:
     void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
-            ASTPtr & primary_key_ast) const;
+            ASTPtr & primary_key_ast, ASTPtr & ttl_table_ast) const;
 
     /// For storages that don't support MODIFY_ORDER_BY.
     void apply(ColumnsDescription & columns_description) const;
 
     void validate(const IStorage & table, const Context & context);
-    bool is_mutable() const;
+    bool isMutable() const;
 };
 
 }

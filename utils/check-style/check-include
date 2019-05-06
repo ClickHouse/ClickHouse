@@ -48,7 +48,6 @@ inc="-I. \
 -I./libs/libmysqlxx/include \
 -I./libs/libcommon/include \
 -I${BUILD_DIR}/libs/libcommon/include \
--I./libs/libpocoext/include \
 -I./libs/libzkutil/include \
 -I./libs/libdaemon/include \
 -I./libs/consistent-hashing \

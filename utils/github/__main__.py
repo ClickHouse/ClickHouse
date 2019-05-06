@@ -3,7 +3,7 @@
 '''
     Rules for commit messages, branch names and everything:
 
-    - All(!) commits to master branch must originate from pull-requests.
+    - All important(!) commits to master branch must originate from pull-requests.
     - All pull-requests must be squash-merged or explicitly merged without rebase.
     - All pull-requests to master must have at least one label prefixed with `pr-`.
     - Labels that require pull-request to be backported must be red colored (#ff0000).
@@ -15,19 +15,22 @@
 
     - Commits without references from pull-requests.
     - Pull-requests to master without proper labels.
-    - Pull-requests that need to be backported.
+    - Pull-requests that need to be backported, with statuses per stable branch.
 
 '''
 
 from . import local, query
 
+from termcolor import colored  # `pip install termcolor`
+
 import argparse
 import re
 import sys
 
-CHECK_MARK = '🗸'
-CROSS_MARK = '🗙'
-LABEL_MARK = '🏷'
+CHECK_MARK = colored('🗸', 'green')
+CROSS_MARK = colored('🗙', 'red')
+LABEL_MARK = colored('🏷', 'yellow')
+CLOCK_MARK = colored('↻', 'cyan')
 
 
 parser = argparse.ArgumentParser(description='Helper for the ClickHouse Release machinery')
@@ -39,15 +42,15 @@ parser.add_argument('-n', type=int, default=3, dest='number',
     help='number of last stable branches to consider')
 parser.add_argument('--token', type=str, required=True,
     help='token for Github access')
-parser.add_argument('--login', type = str,
+parser.add_argument('--login', type=str,
     help='filter authorship by login')
 
 args = parser.parse_args()
 
-github = query.Query(args.token)
+github = query.Query(args.token, 50)
 repo = local.Local(args.repo, args.remote, github.get_default_branch())
 
-stables = repo.get_stables()[-args.number:] # [(branch, base)]
+stables = repo.get_stables()[-args.number:] # [(branch name, base)]
 if not stables:
     sys.exit('No stable branches found!')
 else:
@@ -68,6 +71,15 @@ for i in reversed(range(len(stables))):
 
     from_commit = stables[i][1]
 
+members = set(github.get_members("yandex", "clickhouse"))
+def print_responsible(pull_request):
+    if pull_request["author"]["login"] in members:
+        return colored(pull_request["author"]["login"], 'green')
+    elif pull_request["mergedBy"]["login"] in members:
+        return f'{pull_request["author"]["login"]} → {colored(pull_request["mergedBy"]["login"], "green")}'
+    else:
+        return f'{pull_request["author"]["login"]} → {pull_request["mergedBy"]["login"]}'
+
 bad_pull_requests = []  # collect and print if not empty
 need_backporting = []
 for pull_request in pull_requests:
@@ -86,10 +98,10 @@ for pull_request in pull_requests:
 if bad_pull_requests:
     print('\nPull-requests without description label:')
     for bad in reversed(sorted(bad_pull_requests, key = lambda x : x['number'])):
-        print(f'{CROSS_MARK} {bad["number"]}: {bad["url"]}')
+        print(f'{CROSS_MARK} {bad["number"]}: {bad["url"]} ({print_responsible(bad)})')
 
 # FIXME: compatibility logic, until the direct modification of master is not prohibited.
-if bad_commits:
+if bad_commits and not args.login:
     print('\nCommits not referenced by any pull-request:')
 
     for bad in bad_commits:
@@ -98,40 +110,64 @@ if bad_commits:
 # TODO: check backports.
 if need_backporting:
     re_vlabel = re.compile(r'^v\d+\.\d+$')
-    re_stable_num = re.compile(r'\d+\.\d+$')
 
     print('\nPull-requests need to be backported:')
     for pull_request in reversed(sorted(need_backporting, key=lambda x: x['number'])):
         targets = []  # use common list for consistent order in output
         good = set()
+        labeled = set()
+        wait = set()
 
         for stable in stables:
             if repo.comparator(stable[1]) < repo.comparator(pull_request['mergeCommit']['oid']):
-                targets.append(stable)
+                targets.append(stable[0])
 
                 # FIXME: compatibility logic - check for a manually set label, that indicates status 'backported'.
                 # FIXME: O(n²) - no need to iterate all labels for every `stable`
                 for label in github.get_labels(pull_request):
                     if re_vlabel.match(label['name']):
-                        stable_num = re_stable_num.search(stable[0].name)
-                        if f'v{stable_num[0]}' == label['name']:
-                            good.add(stable)
+                        if f'v{stable[0]}' == label['name']:
+                            labeled.add(stable[0])
+
+        for event in github.get_timeline(pull_request):
+            if(event['isCrossRepository'] or
+               event['target']['number'] != pull_request['number'] or
+               event['source']['baseRefName'] not in targets):
+                continue
+
+            found_label = False
+            for label in github.get_labels(event['source']):
+                if label['name'] == 'pr-backport':
+                    found_label = True
+                    break
+            if not found_label:
+                continue
+
+            if event['source']['merged']:
+                good.add(event['source']['baseRefName'])
+            else:
+                wait.add(event['source']['baseRefName'])
 
         # print pull-request's status
-        if len(good) == len(targets):
+        if len(good) + len(labeled) == len(targets):
             print(f'{CHECK_MARK}', end=' ')
         else:
             print(f'{CROSS_MARK}', end=' ')
         print(f'{pull_request["number"]}', end=':')
         for target in targets:
             if target in good:
-                print(f'\t{LABEL_MARK} {target[0]}', end='')
+                print(f'\t{CHECK_MARK} {target}', end='')
+            elif target in labeled:
+                print(f'\t{LABEL_MARK} {target}', end='')
+            elif target in wait:
+                print(f'\t{CLOCK_MARK} {target}', end='')
             else:
-                print(f'\t{CROSS_MARK} {target[0]}', end='')
-        print(f'\t({pull_request["mergeCommit"]["author"]["name"]}) {pull_request["url"]}')
+                print(f'\t{CROSS_MARK} {target}', end='')
+        print(f'\t{pull_request["url"]} ({print_responsible(pull_request)})')
 
 # print legend
 print('\nLegend:')
 print(f'{CHECK_MARK} - good')
 print(f'{CROSS_MARK} - bad')
 print(f'{LABEL_MARK} - backport is detected via label')
+print(f'{CLOCK_MARK} - backport is waiting to merge')

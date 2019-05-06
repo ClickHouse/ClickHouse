@@ -24,7 +24,7 @@ endif ()
 
 configure_file(config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
-add_library(base64 ${LINK_MODE}
+add_library(base64
         ${LIBRARY_DIR}/lib/lib.c
         ${LIBRARY_DIR}/lib/codec_choose.c
         ${LIBRARY_DIR}/lib/arch/avx/codec.c

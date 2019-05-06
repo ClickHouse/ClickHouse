@@ -12,15 +12,24 @@ namespace Poco
     }
 }
 
+namespace boost
+{
+    namespace program_options
+    {
+        class options_description;
+    }
+}
+
+
 namespace DB
 {
 
 class IColumn;
-class Field;
+
 
 /** Settings of query execution.
   */
-struct Settings
+struct Settings : public SettingsCollection<Settings>
 {
     /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
     /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
@@ -33,7 +42,7 @@ struct Settings
       *  but we are not going to do it, because settings is used everywhere as static struct fields.
       */
 
-#define APPLY_FOR_SETTINGS(M) \
+#define LIST_OF_SETTINGS(M) \
     M(SettingUInt64, min_compress_block_size, 65536, "The actual size of the block to compress, if the uncompressed data less than max_compress_block_size is no less than this value and no less than the volume of data for one mark.") \
     M(SettingUInt64, max_compress_block_size, 1048576, "The maximum size of blocks of uncompressed data before compressing for writing to a table.") \
     M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size for reading") \
@@ -93,9 +102,12 @@ struct Settings
     M(SettingBool, optimize_skip_unused_shards, false, "Assumes that data is distributed by sharding_key. Optimization to skip unused shards if SELECT query filters by sharding_key.") \
     \
     M(SettingUInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), "If at least as many lines are read from one file, the reading can be parallelized.") \
+    M(SettingUInt64, merge_tree_min_bytes_for_concurrent_read, (100 * 1024 * 1024), "If at least as many bytes are read from one file, the reading can be parallelized.") \
     M(SettingUInt64, merge_tree_min_rows_for_seek, 0, "You can skip reading more than that number of rows at the price of one seek per file.") \
+    M(SettingUInt64, merge_tree_min_bytes_for_seek, 0, "You can skip reading more than that number of bytes at the price of one seek per file.") \
     M(SettingUInt64, merge_tree_coarse_index_granularity, 8, "If the index segment can contain the required keys, divide it into as many parts and recursively check them.") \
     M(SettingUInt64, merge_tree_max_rows_to_use_cache, (1024 * 1024), "The maximum number of rows per request, to use the cache of uncompressed data. If the request is large, the cache is not used. (For large queries not to flush out the cache.)") \
+    M(SettingUInt64, merge_tree_max_bytes_to_use_cache, (600 * 1024 * 1024), "The maximum number of rows per request, to use the cache of uncompressed data. If the request is large, the cache is not used. (For large queries not to flush out the cache.)") \
     \
     M(SettingBool, merge_tree_uniform_read_distribution, true, "Distribute read from MergeTree over threads evenly, ensuring stable average execution time of each thread within one read operation.") \
     \
@@ -150,7 +162,8 @@ struct Settings
     \
     M(SettingBool, add_http_cors_header, false, "Write add http CORS header.") \
     \
-    M(SettingBool, input_format_skip_unknown_fields, false, "Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats).") \
+    M(SettingBool, input_format_skip_unknown_fields, false, "Skip columns with unknown names from input data (it works for JSONEachRow, CSVWithNames, TSVWithNames and TSKV formats).") \
+    M(SettingBool, input_format_with_names_use_header, false, "For TSVWithNames and CSVWithNames input formats this controls whether format parser is to assume that column data appear in the input exactly as they are specified in the header.") \
     M(SettingBool, input_format_import_nested_json, false, "Map nested JSON data to nested tables (it works for JSONEachRow format).") \
     M(SettingBool, input_format_defaults_for_omitted_fields, false, "For input data calculate default expressions for omitted fields (it works for JSONEachRow format).") \
     \
@@ -213,25 +226,25 @@ struct Settings
     \
     M(SettingUInt64, max_rows_to_read, 0, "Limit on read rows from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.") \
     M(SettingUInt64, max_bytes_to_read, 0, "Limit on read bytes (after decompression) from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.") \
-    M(SettingOverflowMode<false>, read_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, read_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_rows_to_group_by, 0, "") \
-    M(SettingOverflowMode<true>, group_by_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingUInt64, max_bytes_before_external_group_by, 0, "") \
     \
     M(SettingUInt64, max_rows_to_sort, 0, "") \
     M(SettingUInt64, max_bytes_to_sort, 0, "") \
-    M(SettingOverflowMode<false>, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingUInt64, max_bytes_before_external_sort, 0, "") \
     M(SettingUInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.") \
     \
     M(SettingUInt64, max_result_rows, 0, "Limit on result size in rows. Also checked for intermediate data sent from remote servers.") \
     M(SettingUInt64, max_result_bytes, 0, "Limit on result size in bytes (uncompressed). Also checked for intermediate data sent from remote servers.") \
-    M(SettingOverflowMode<false>, result_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, result_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     /* TODO: Check also when merging and finalizing aggregate functions. */ \
     M(SettingSeconds, max_execution_time, 0, "") \
-    M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, timeout_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, min_execution_speed, 0, "Minimum number of execution rows per second.") \
     M(SettingUInt64, max_execution_speed, 0, "Maximum number of execution rows per second.") \
@@ -253,20 +266,20 @@ struct Settings
     \
     M(SettingUInt64, max_rows_in_set, 0, "Maximum size of the set (in number of elements) resulting from the execution of the IN section.") \
     M(SettingUInt64, max_bytes_in_set, 0, "Maximum size of the set (in bytes in memory) resulting from the execution of the IN section.") \
-    M(SettingOverflowMode<false>, set_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, set_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).") \
     M(SettingUInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).") \
-    M(SettingOverflowMode<false>, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingBool, join_any_take_last_row, false, "When disabled (default) ANY JOIN will take the first found row for a key. When enabled, it will take the last row seen if there are multiple rows for the same key.") \
     \
     M(SettingUInt64, max_rows_to_transfer, 0, "Maximum size (in rows) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.") \
     M(SettingUInt64, max_bytes_to_transfer, 0, "Maximum size (in uncompressed bytes) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.") \
-    M(SettingOverflowMode<false>, transfer_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, transfer_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_rows_in_distinct, 0, "Maximum number of elements during execution of DISTINCT.") \
     M(SettingUInt64, max_bytes_in_distinct, 0, "Maximum total size of state (in uncompressed bytes) in memory for the execution of DISTINCT.") \
-    M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_memory_usage, 0, "Maximum memory usage for processing of single query. Zero means unlimited.") \
     M(SettingUInt64, max_memory_usage_for_user, 0, "Maximum memory usage for processing all concurrently running queries for the user. Zero means unlimited.") \
@@ -285,7 +298,7 @@ struct Settings
     M(SettingBool, log_query_settings, true, "Log query settings into the query_log.") \
     M(SettingBool, log_query_threads, true, "Log query threads into system.query_thread_log table. This setting have effect only when 'log_queries' is true.") \
     M(SettingLogsLevel, send_logs_level, LogsLevel::none, "Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'none'") \
-    M(SettingBool, enable_optimize_predicate_expression, 0, "If it is set to true, optimize predicates to subqueries.") \
+    M(SettingBool, enable_optimize_predicate_expression, 1, "If it is set to true, optimize predicates to subqueries.") \
     \
     M(SettingUInt64, low_cardinality_max_dictionary_size, 8192, "Maximum size (in rows) of shared global dictionary for LowCardinality type.") \
     M(SettingBool, low_cardinality_use_single_dictionary_for_part, false, "LowCardinality type serialization setting. If is true, than will use additional keys when global dictionary overflows. Otherwise, will create several shared dictionaries.") \
@@ -309,50 +322,24 @@ struct Settings
     \
     M(SettingBool, allow_hyperscan, true, "Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.") \
     \
-    M(SettingBool, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.") \
+    M(SettingUInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.") \
 
-#define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    TYPE NAME {DEFAULT};
-
-    APPLY_FOR_SETTINGS(DECLARE)
-
-#undef DECLARE
-
-    /// Set setting by name.
-    void set(const String & name, const Field & value);
-
-    /// Set setting by name. Read value, serialized in binary form from buffer (for inter-server communication).
-    void set(const String & name, ReadBuffer & buf);
-
-    /// Skip value, serialized in binary form in buffer.
-    void ignore(const String & name, ReadBuffer & buf);
-
-    /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
-    void set(const String & name, const String & value);
-
-    /// Get setting by name. Converts value to String.
-    String get(const String & name) const;
-
-    bool tryGet(const String & name, String & value) const;
+    DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
-      * The profile can also be set using the `set` functions, like the profile setting.
-      */
+     * The profile can also be set using the `set` functions, like the profile setting.
+     */
     void setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config);
 
     /// Load settings from configuration file, at "path" prefix in configuration.
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
-    /// Read settings from buffer. They are serialized as list of contiguous name-value pairs, finished with empty name.
-    /// If readonly=1 is set, ignore read settings.
-    void deserialize(ReadBuffer & buf);
-
-    /// Write changed settings to buffer. (For example, to be sent to remote server.)
-    void serialize(WriteBuffer & buf) const;
-
     /// Dumps profile events to two columns of type Array(String)
     void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
-};
 
+    /// Adds program options to set the settings from a command line.
+    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
+    void addProgramOptions(boost::program_options::options_description & options);
+};
 
 }

@@ -16,8 +16,8 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -79,6 +79,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 Если добавить в таблицу новый столбец, а через некоторое время изменить его выражение по умолчанию, то используемые значения для старых данных (для данных, где значения не хранились на диске) поменяются. Также заметим, что при выполнении фоновых слияний, данные для столбцов, отсутствующих в одном из сливаемых кусков, записываются в объединённый кусок.
 
 Отсутствует возможность задать значения по умолчанию для элементов вложенных структур данных.
+
+### Выражение для TTL
+
+Может быть указано только для таблиц семейства MergeTree. Выражение для указания времени хранения значений. Оно должно зависеть от стобца типа `Date` или `DateTime` и в качестве результата вычислять столбец типа `Date` или `DateTime`. Пример:
+    `TTL date + INTERVAL 1 DAY`
+
+Нельзя указывать TTL для ключевых столбцов. Подробнее смотрите в [TTL для стоблцов и таблиц](../operations/table_engines/mergetree.md)
+
 
 ## Форматы сжатия для колонок
 

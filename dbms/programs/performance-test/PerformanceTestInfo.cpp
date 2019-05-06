@@ -21,7 +21,7 @@ void extractSettings(
     const XMLConfigurationPtr & config,
     const std::string & key,
     const Strings & settings_list,
-    std::map<std::string, std::string> & settings_to_apply)
+    SettingsChanges & settings_to_apply)
 {
     for (const std::string & setup : settings_list)
     {
@@ -32,7 +32,7 @@ void extractSettings(
         if (value.empty())
             value = "true";
 
-        settings_to_apply[setup] = value;
+        settings_to_apply.emplace_back(SettingChange{setup, value});
     }
 }
 
@@ -70,7 +70,7 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
 {
     if (config->has("settings"))
     {
-        std::map<std::string, std::string> settings_to_apply;
+        SettingsChanges settings_to_apply;
         Strings config_settings;
         config->keys("settings", config_settings);
 
@@ -96,19 +96,7 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         }
 
         extractSettings(config, "settings", config_settings, settings_to_apply);
-
-        /// This macro goes through all settings in the Settings.h
-        /// and, if found any settings in test's xml configuration
-        /// with the same name, sets its value to settings
-        std::map<std::string, std::string>::iterator it;
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)   \
-        it = settings_to_apply.find(#NAME);                 \
-        if (it != settings_to_apply.end())                  \
-            settings.set(#NAME, settings_to_apply[#NAME]);
-
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-
-#undef EXTRACT_SETTING
+        settings.applyChanges(settings_to_apply);
 
         if (settings_contain("average_rows_speed_precision"))
             TestStats::avg_rows_speed_precision =

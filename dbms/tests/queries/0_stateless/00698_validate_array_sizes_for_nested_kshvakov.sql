@@ -1,7 +1,7 @@
 SET send_logs_level = 'none';
 
-DROP TABLE IF EXISTS test.Issue_2231_Invalid_Nested_Columns_Size;
-CREATE TABLE test.Issue_2231_Invalid_Nested_Columns_Size (
+DROP TABLE IF EXISTS Issue_2231_Invalid_Nested_Columns_Size;
+CREATE TABLE Issue_2231_Invalid_Nested_Columns_Size (
     Date Date,
     NestedColumn Nested(
         ID    Int32,
@@ -11,7 +11,7 @@ CREATE TABLE test.Issue_2231_Invalid_Nested_Columns_Size (
     PARTITION BY tuple()
     ORDER BY Date;
 
-INSERT INTO test.Issue_2231_Invalid_Nested_Columns_Size VALUES (today(), [2,2], [1]), (today(), [2,2], [1, 1]); -- { serverError 190 }
+INSERT INTO Issue_2231_Invalid_Nested_Columns_Size VALUES (today(), [2,2], [1]), (today(), [2,2], [1, 1]); -- { serverError 190 }
 
-SELECT * FROM test.Issue_2231_Invalid_Nested_Columns_Size;
-DROP TABLE test.Issue_2231_Invalid_Nested_Columns_Size;
+SELECT * FROM Issue_2231_Invalid_Nested_Columns_Size;
+DROP TABLE Issue_2231_Invalid_Nested_Columns_Size;
