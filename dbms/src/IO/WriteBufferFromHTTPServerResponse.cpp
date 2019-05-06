@@ -40,7 +40,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
     if (headers_finished_sending)
         return;
-    
+
     WriteBufferFromOwnString progress_string_writer;
     accumulated_progress.writeJSON(progress_string_writer);
 
@@ -53,7 +53,7 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
     if (headers_finished_sending)
         return;
-    
+
     WriteBufferFromOwnString progress_string_writer;
     accumulated_progress.writeJSON<ReadProgressValueImpl>(progress_string_writer);
 

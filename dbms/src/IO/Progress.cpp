@@ -15,19 +15,19 @@ void AllProgressValueImpl::read(ProgressValues & value, ReadBuffer & in, UInt64 
     size_t new_total_rows = 0;
     size_t new_write_rows = 0;
     size_t new_write_bytes = 0;
- 
+
     readVarUInt(new_rows, in);
     readVarUInt(new_bytes, in);
     readVarUInt(new_total_rows, in);
     readVarUInt(new_write_rows, in);
     readVarUInt(new_write_bytes, in);
- 
+
     value.rows = new_rows;
     value.bytes = new_bytes;
     value.total_rows = new_total_rows;
     value.write_rows = new_write_rows;
     value.write_bytes = new_write_bytes;
-} 
+}
 
 
 void AllProgressValueImpl::write(const ProgressValues & value, WriteBuffer & out, UInt64 /*client_revision*/)
@@ -62,15 +62,15 @@ void ReadProgressValueImpl::read(ProgressValues & value, ReadBuffer & in, UInt64
     size_t new_rows = 0;
     size_t new_bytes = 0;
     size_t new_total_rows = 0;
- 
+
     readVarUInt(new_rows, in);
     readVarUInt(new_bytes, in);
     readVarUInt(new_total_rows, in);
- 
+
     value.rows = new_rows;
     value.bytes = new_bytes;
     value.total_rows = new_total_rows;
-} 
+}
 
 
 void ReadProgressValueImpl::write(const ProgressValues & value, WriteBuffer & out, UInt64 /*client_revision*/)
