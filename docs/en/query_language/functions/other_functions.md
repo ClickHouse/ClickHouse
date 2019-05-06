@@ -4,6 +4,44 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## basename
+
+Extracts trailing part of a string after the last slash or backslash.
+
+```
+basename( expr )
+```
+
+**Parameters**
+
+`expr` — Expression, resulting in the [String](../../data_types/string.md)-type value.
+
+**Returned value**
+
+A string-type value that contains:
+
+- Trailing part of a string after the last slash or backslash in it.
+- Original string if there is no slashes or backslashes in it.
+
+**Example**
+
+```sql
+SELECT basename(a), 'some/long/path/to/file' AS a
+```
+```text
+┌─basename('some/long/path/to/file')─┬─a──────────────────────┐
+│ file                               │ some/long/path/to/file │
+└────────────────────────────────────┴────────────────────────┘
+```
+```sql
+SELECT basename(a), 'some-file-name' AS a
+```
+```text
+┌─basename('some-file-name')─┬─a──────────────┐
+│ some-file-name             │ some-file-name │
+└────────────────────────────┴────────────────┘
+```
+
 ## visibleWidth(x)
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
