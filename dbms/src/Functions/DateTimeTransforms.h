@@ -432,22 +432,6 @@ struct ToStartOfISOYearImpl
     using FactorTransform = ZeroTransform;
 };
 
-struct ToStartOfCustomYearImpl
-{
-    static constexpr auto name = "toStartOfCustomYear";
-
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfCustomYear(time_zone.toDayNum(t));
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toFirstDayNumOfCustomYear(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
 struct ToISOWeekImpl
 {
     static constexpr auto name = "toISOWeek";
@@ -462,38 +446,6 @@ struct ToISOWeekImpl
     }
 
     using FactorTransform = ToISOYearImpl;
-};
-
-struct ToCustomYearImpl
-{
-    static constexpr auto name = "toCustomYear";
-
-    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toCustomYear(time_zone.toDayNum(t));
-    }
-    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toCustomYear(DayNum(d));
-    }
-
-    using FactorTransform = ZeroTransform;
-};
-
-struct ToCustomWeekImpl
-{
-    static constexpr auto name = "toCustomWeek";
-
-    static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toCustomWeek(time_zone.toDayNum(t));
-    }
-    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
-    {
-        return time_zone.toCustomWeek(DayNum(d));
-    }
-
-    using FactorTransform = ToCustomYearImpl;
 };
 
 struct ToRelativeYearNumImpl
