@@ -189,6 +189,9 @@ struct HighOrderMoments
 
     T NO_SANITIZE_UNDEFINED getMoment3() const
     {
+        // to avoid accuracy problem
+        if (m0 == 1)
+            return 0;
         return (m3
             - (3 * m2
                 - 2 * m1 * m1 / m0
@@ -198,6 +201,9 @@ struct HighOrderMoments
 
     T NO_SANITIZE_UNDEFINED getMoment4() const
     {
+        // to avoid accuracy problem
+        if (m0 == 1)
+            return 0;
         return (m4
             - (4 * m3
                 - (6 * m2
