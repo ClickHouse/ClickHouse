@@ -254,8 +254,7 @@ struct NgramDistanceImpl
 
     static void constant_constant(std::string data, std::string needle, Float32 & res)
     {
-        NgramStats common_stats;
-        memset(common_stats, 0, sizeof(common_stats));
+        NgramStats common_stats = {};
 
         /// We use unsafe versions of getting ngrams, so I decided to use padded strings.
         const size_t needle_size = needle.size();
@@ -287,8 +286,7 @@ struct NgramDistanceImpl
         size_t prev_haystack_offset = 0;
         size_t prev_needle_offset = 0;
 
-        NgramStats common_stats;
-        memset(common_stats, 0, sizeof(common_stats));
+        NgramStats common_stats = {};
 
         /// The main motivation is to not allocate more on stack because we have already allocated a lot (128Kb).
         /// And we can reuse these storages in one thread because we care only about what was written to first places.
@@ -349,8 +347,7 @@ struct NgramDistanceImpl
         PaddedPODArray<Float32> & res)
     {
         /// zeroing our map
-        NgramStats common_stats;
-        memset(common_stats, 0, sizeof(common_stats));
+        NgramStats common_stats = {};
 
         /// The main motivation is to not allocate more on stack because we have already allocated a lot (128Kb).
         /// And we can reuse these storages in one thread because we care only about what was written to first places.
