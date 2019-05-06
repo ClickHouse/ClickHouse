@@ -25,55 +25,97 @@ namespace ErrorCodes
     extern const int UNKNOWN_LOG_LEVEL;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_SETTING;
 }
 
-template <typename IntType>
-String SettingInt<IntType>::toString() const
+
+template <typename Type>
+String SettingNumber<Type>::toString() const
 {
     return DB::toString(value);
 }
 
-template <typename IntType>
-void SettingInt<IntType>::set(IntType x)
+template <typename Type>
+Field SettingNumber<Type>::toField() const
+{
+    return value;
+}
+
+template <typename Type>
+void SettingNumber<Type>::set(Type x)
 {
     value = x;
     changed = true;
 }
 
-template <typename IntType>
-void SettingInt<IntType>::set(const Field & x)
+template <typename Type>
+void SettingNumber<Type>::set(const Field & x)
 {
-    set(applyVisitor(FieldVisitorConvertToNumber<IntType>(), x));
+    if (x.getType() == Field::Types::String)
+        set(get<const String &>(x));
+    else
+        set(applyVisitor(FieldVisitorConvertToNumber<Type>(), x));
 }
 
-template <typename IntType>
-void SettingInt<IntType>::set(const String & x)
+template <typename Type>
+void SettingNumber<Type>::set(const String & x)
 {
-    set(parse<IntType>(x));
+    set(parse<Type>(x));
 }
 
-template <typename IntType>
-void SettingInt<IntType>::set(ReadBuffer & buf)
+template <typename Type>
+void SettingNumber<Type>::serialize(WriteBuffer & buf) const
 {
-    IntType x = 0;
-    readVarT(x, buf);
-    set(x);
+    if constexpr (std::is_integral_v<Type> && std::is_unsigned_v<Type>)
+        writeVarUInt(static_cast<UInt64>(value), buf);
+    else if constexpr (std::is_integral_v<Type> && std::is_signed_v<Type>)
+        writeVarInt(static_cast<Int64>(value), buf);
+    else
+    {
+        static_assert(std::is_floating_point_v<Type>);
+        writeBinary(toString(), buf);
+    }
 }
 
-template <typename IntType>
-void SettingInt<IntType>::write(WriteBuffer & buf) const
+template <typename Type>
+void SettingNumber<Type>::deserialize(ReadBuffer & buf)
 {
-    writeVarT(value, buf);
+    if constexpr (std::is_integral_v<Type> && std::is_unsigned_v<Type>)
+    {
+        UInt64 x;
+        readVarUInt(x, buf);
+        set(static_cast<Type>(x));
+    }
+    else if constexpr (std::is_integral_v<Type> && std::is_signed_v<Type>)
+    {
+        Int64 x;
+        readVarInt(x, buf);
+        set(static_cast<Type>(x));
+    }
+    else
+    {
+        static_assert(std::is_floating_point_v<Type>);
+        String x;
+        readBinary(x, buf);
+        set(x);
+    }
 }
 
-template struct SettingInt<UInt64>;
-template struct SettingInt<Int64>;
+template struct SettingNumber<UInt64>;
+template struct SettingNumber<Int64>;
+template struct SettingNumber<float>;
+template struct SettingNumber<bool>;
 
 
 String SettingMaxThreads::toString() const
 {
     /// Instead of the `auto` value, we output the actual value to make it easier to see.
-    return DB::toString(value);
+    return is_auto ? ("auto(" + DB::toString(value) + ")") : DB::toString(value);
+}
+
+Field SettingMaxThreads::toField() const
+{
+    return is_auto ? 0 : value;
 }
 
 void SettingMaxThreads::set(UInt64 x)
@@ -86,29 +128,29 @@ void SettingMaxThreads::set(UInt64 x)
 void SettingMaxThreads::set(const Field & x)
 {
     if (x.getType() == Field::Types::String)
-        set(safeGet<const String &>(x));
+        set(get<const String &>(x));
     else
         set(safeGet<UInt64>(x));
 }
 
 void SettingMaxThreads::set(const String & x)
 {
-    if (x == "auto")
+    if (startsWith(x, "auto"))
         setAuto();
     else
         set(parse<UInt64>(x));
 }
 
-void SettingMaxThreads::set(ReadBuffer & buf)
+void SettingMaxThreads::serialize(WriteBuffer & buf) const
+{
+    writeVarUInt(is_auto ? 0 : value, buf);
+}
+
+void SettingMaxThreads::deserialize(ReadBuffer & buf)
 {
     UInt64 x = 0;
     readVarUInt(x, buf);
     set(x);
-}
-
-void SettingMaxThreads::write(WriteBuffer & buf) const
-{
-    writeVarUInt(is_auto ? 0 : value, buf);
 }
 
 void SettingMaxThreads::setAuto()
@@ -119,392 +161,75 @@ void SettingMaxThreads::setAuto()
 
 UInt64 SettingMaxThreads::getAutoValue() const
 {
-    static auto res = getAutoValueImpl();
+    static auto res = getNumberOfPhysicalCPUCores();
     return res;
 }
 
-/// Executed once for all time. Executed from one thread.
-UInt64 SettingMaxThreads::getAutoValueImpl() const
+
+template <SettingTimespanIO io_unit>
+String SettingTimespan<io_unit>::toString() const
 {
-    return getNumberOfPhysicalCPUCores();
+    return DB::toString(value.totalMicroseconds() / microseconds_per_io_unit);
 }
 
-
-String SettingSeconds::toString() const
+template <SettingTimespanIO io_unit>
+Field SettingTimespan<io_unit>::toField() const
 {
-    return DB::toString(totalSeconds());
+    return value.totalMicroseconds() / microseconds_per_io_unit;
 }
 
-void SettingSeconds::set(const Poco::Timespan & x)
+template <SettingTimespanIO io_unit>
+void SettingTimespan<io_unit>::set(const Poco::Timespan & x)
 {
     value = x;
     changed = true;
 }
 
-void SettingSeconds::set(UInt64 x)
+template <SettingTimespanIO io_unit>
+void SettingTimespan<io_unit>::set(UInt64 x)
 {
-    set(Poco::Timespan(x, 0));
+    set(Poco::Timespan(x * microseconds_per_io_unit));
 }
 
-void SettingSeconds::set(const Field & x)
+template <SettingTimespanIO io_unit>
+void SettingTimespan<io_unit>::set(const Field & x)
 {
-    set(safeGet<UInt64>(x));
+    if (x.getType() == Field::Types::String)
+        set(get<const String &>(x));
+    else
+        set(safeGet<UInt64>(x));
 }
 
-void SettingSeconds::set(const String & x)
+template <SettingTimespanIO io_unit>
+void SettingTimespan<io_unit>::set(const String & x)
 {
     set(parse<UInt64>(x));
 }
 
-void SettingSeconds::set(ReadBuffer & buf)
+template <SettingTimespanIO io_unit>
+void SettingTimespan<io_unit>::serialize(WriteBuffer & buf) const
+{
+    writeVarUInt(value.totalMicroseconds() / microseconds_per_io_unit, buf);
+}
+
+template <SettingTimespanIO io_unit>
+void SettingTimespan<io_unit>::deserialize(ReadBuffer & buf)
 {
     UInt64 x = 0;
     readVarUInt(x, buf);
     set(x);
 }
 
-void SettingSeconds::write(WriteBuffer & buf) const
-{
-    writeVarUInt(value.totalSeconds(), buf);
-}
-
-
-String SettingMilliseconds::toString() const
-{
-    return DB::toString(totalMilliseconds());
-}
-
-void SettingMilliseconds::set(const Poco::Timespan & x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingMilliseconds::set(UInt64 x)
-{
-    set(Poco::Timespan(x * 1000));
-}
-
-void SettingMilliseconds::set(const Field & x)
-{
-    set(safeGet<UInt64>(x));
-}
-
-void SettingMilliseconds::set(const String & x)
-{
-    set(parse<UInt64>(x));
-}
-
-void SettingMilliseconds::set(ReadBuffer & buf)
-{
-    UInt64 x = 0;
-    readVarUInt(x, buf);
-    set(x);
-}
-
-void SettingMilliseconds::write(WriteBuffer & buf) const
-{
-    writeVarUInt(value.totalMilliseconds(), buf);
-}
-
-
-String SettingFloat::toString() const
-{
-    return DB::toString(value);
-}
-
-void SettingFloat::set(float x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingFloat::set(const Field & x)
-{
-    set(applyVisitor(FieldVisitorConvertToNumber<float>(), x));
-}
-
-void SettingFloat::set(const String & x)
-{
-    set(parse<float>(x));
-}
-
-void SettingFloat::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingFloat::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
-}
-
-
-LoadBalancing SettingLoadBalancing::getLoadBalancing(const String & s)
-{
-    if (s == "random")           return LoadBalancing::RANDOM;
-    if (s == "nearest_hostname") return LoadBalancing::NEAREST_HOSTNAME;
-    if (s == "in_order")         return LoadBalancing::IN_ORDER;
-
-    throw Exception("Unknown load balancing mode: '" + s + "', must be one of 'random', 'nearest_hostname', 'in_order'",
-        ErrorCodes::UNKNOWN_LOAD_BALANCING);
-}
-
-String SettingLoadBalancing::toString() const
-{
-    const char * strings[] = {"random", "nearest_hostname", "in_order"};
-    if (value < LoadBalancing::RANDOM || value > LoadBalancing::IN_ORDER)
-        throw Exception("Unknown load balancing mode", ErrorCodes::UNKNOWN_LOAD_BALANCING);
-    return strings[static_cast<size_t>(value)];
-}
-
-void SettingLoadBalancing::set(LoadBalancing x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingLoadBalancing::set(const Field & x)
-{
-    set(safeGet<const String &>(x));
-}
-
-void SettingLoadBalancing::set(const String & x)
-{
-    set(getLoadBalancing(x));
-}
-
-void SettingLoadBalancing::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingLoadBalancing::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
-}
-
-
-JoinStrictness SettingJoinStrictness::getJoinStrictness(const String & s)
-{
-    if (s == "")       return JoinStrictness::Unspecified;
-    if (s == "ALL")    return JoinStrictness::ALL;
-    if (s == "ANY")    return JoinStrictness::ANY;
-
-    throw Exception("Unknown join strictness mode: '" + s + "', must be one of '', 'ALL', 'ANY'",
-        ErrorCodes::UNKNOWN_JOIN_STRICTNESS);
-}
-
-String SettingJoinStrictness::toString() const
-{
-    const char * strings[] = {"", "ALL", "ANY"};
-    if (value < JoinStrictness::Unspecified || value > JoinStrictness::ANY)
-        throw Exception("Unknown join strictness mode", ErrorCodes::UNKNOWN_JOIN_STRICTNESS);
-    return strings[static_cast<size_t>(value)];
-}
-
-void SettingJoinStrictness::set(JoinStrictness x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingJoinStrictness::set(const Field & x)
-{
-    set(safeGet<const String &>(x));
-}
-
-void SettingJoinStrictness::set(const String & x)
-{
-    set(getJoinStrictness(x));
-}
-
-void SettingJoinStrictness::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingJoinStrictness::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
-}
-
-
-TotalsMode SettingTotalsMode::getTotalsMode(const String & s)
-{
-    if (s == "before_having")          return TotalsMode::BEFORE_HAVING;
-    if (s == "after_having_exclusive") return TotalsMode::AFTER_HAVING_EXCLUSIVE;
-    if (s == "after_having_inclusive") return TotalsMode::AFTER_HAVING_INCLUSIVE;
-    if (s == "after_having_auto")      return TotalsMode::AFTER_HAVING_AUTO;
-
-    throw Exception("Unknown totals mode: '" + s + "', must be one of 'before_having', 'after_having_exclusive', 'after_having_inclusive', 'after_having_auto'", ErrorCodes::UNKNOWN_TOTALS_MODE);
-}
-
-String SettingTotalsMode::toString() const
-{
-    switch (value)
-    {
-        case TotalsMode::BEFORE_HAVING:          return "before_having";
-        case TotalsMode::AFTER_HAVING_EXCLUSIVE: return "after_having_exclusive";
-        case TotalsMode::AFTER_HAVING_INCLUSIVE: return "after_having_inclusive";
-        case TotalsMode::AFTER_HAVING_AUTO:      return "after_having_auto";
-    }
-
-    __builtin_unreachable();
-}
-
-void SettingTotalsMode::set(TotalsMode x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingTotalsMode::set(const Field & x)
-{
-    set(safeGet<const String &>(x));
-}
-
-void SettingTotalsMode::set(const String & x)
-{
-    set(getTotalsMode(x));
-}
-
-void SettingTotalsMode::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingTotalsMode::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
-}
-
-
-template <bool enable_mode_any>
-OverflowMode SettingOverflowMode<enable_mode_any>::getOverflowModeForGroupBy(const String & s)
-{
-    if (s == "throw") return OverflowMode::THROW;
-    if (s == "break") return OverflowMode::BREAK;
-    if (s == "any")   return OverflowMode::ANY;
-
-    throw Exception("Unknown overflow mode: '" + s + "', must be one of 'throw', 'break', 'any'", ErrorCodes::UNKNOWN_OVERFLOW_MODE);
-}
-
-template <bool enable_mode_any>
-OverflowMode SettingOverflowMode<enable_mode_any>::getOverflowMode(const String & s)
-{
-    OverflowMode mode = getOverflowModeForGroupBy(s);
-
-    if (mode == OverflowMode::ANY && !enable_mode_any)
-        throw Exception("Illegal overflow mode: 'any' is only for 'group_by_overflow_mode'", ErrorCodes::ILLEGAL_OVERFLOW_MODE);
-
-    return mode;
-}
-
-template <bool enable_mode_any>
-String SettingOverflowMode<enable_mode_any>::toString() const
-{
-    const char * strings[] = { "throw", "break", "any" };
-
-    if (value < OverflowMode::THROW || value > OverflowMode::ANY)
-        throw Exception("Unknown overflow mode", ErrorCodes::UNKNOWN_OVERFLOW_MODE);
-
-    return strings[static_cast<size_t>(value)];
-}
-
-template <bool enable_mode_any>
-void SettingOverflowMode<enable_mode_any>::set(OverflowMode x)
-{
-    value = x;
-    changed = true;
-}
-
-template <bool enable_mode_any>
-void SettingOverflowMode<enable_mode_any>::set(const Field & x)
-{
-    set(safeGet<const String &>(x));
-}
-
-template <bool enable_mode_any>
-void SettingOverflowMode<enable_mode_any>::set(const String & x)
-{
-    set(getOverflowMode(x));
-}
-
-template <bool enable_mode_any>
-void SettingOverflowMode<enable_mode_any>::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-template <bool enable_mode_any>
-void SettingOverflowMode<enable_mode_any>::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
-}
-
-template struct SettingOverflowMode<false>;
-template struct SettingOverflowMode<true>;
-
-DistributedProductMode SettingDistributedProductMode::getDistributedProductMode(const String & s)
-{
-    if (s == "deny") return DistributedProductMode::DENY;
-    if (s == "local") return DistributedProductMode::LOCAL;
-    if (s == "global") return DistributedProductMode::GLOBAL;
-    if (s == "allow") return DistributedProductMode::ALLOW;
-
-    throw Exception("Unknown distributed product mode: '" + s + "', must be one of 'deny', 'local', 'global', 'allow'",
-        ErrorCodes::UNKNOWN_DISTRIBUTED_PRODUCT_MODE);
-}
-
-String SettingDistributedProductMode::toString() const
-{
-    const char * strings[] = {"deny", "local", "global", "allow"};
-    if (value < DistributedProductMode::DENY || value > DistributedProductMode::ALLOW)
-        throw Exception("Unknown distributed product mode", ErrorCodes::UNKNOWN_DISTRIBUTED_PRODUCT_MODE);
-    return strings[static_cast<size_t>(value)];
-}
-
-void SettingDistributedProductMode::set(DistributedProductMode x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingDistributedProductMode::set(const Field & x)
-{
-    set(safeGet<const String &>(x));
-}
-
-void SettingDistributedProductMode::set(const String & x)
-{
-    set(getDistributedProductMode(x));
-}
-
-void SettingDistributedProductMode::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingDistributedProductMode::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
-}
+template struct SettingTimespan<SettingTimespanIO::SECOND>;
+template struct SettingTimespan<SettingTimespanIO::MILLISECOND>;
 
 
 String SettingString::toString() const
+{
+    return value;
+}
+
+Field SettingString::toField() const
 {
     return value;
 }
@@ -520,22 +245,27 @@ void SettingString::set(const Field & x)
     set(safeGet<const String &>(x));
 }
 
-void SettingString::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingString::write(WriteBuffer & buf) const
+void SettingString::serialize(WriteBuffer & buf) const
 {
     writeBinary(value, buf);
+}
+
+void SettingString::deserialize(ReadBuffer & buf)
+{
+    String s;
+    readBinary(s, buf);
+    set(s);
 }
 
 
 String SettingChar::toString() const
 {
     return String(1, value);
+}
+
+Field SettingChar::toField() const
+{
+    return toString();
 }
 
 void SettingChar::set(char x)
@@ -558,108 +288,154 @@ void SettingChar::set(const Field & x)
     set(s);
 }
 
-void SettingChar::set(ReadBuffer & buf)
+void SettingChar::serialize(WriteBuffer & buf) const
+{
+    writeBinary(toString(), buf);
+}
+
+void SettingChar::deserialize(ReadBuffer & buf)
 {
     String s;
     readBinary(s, buf);
     set(s);
 }
 
-void SettingChar::write(WriteBuffer & buf) const
+
+template <typename EnumType, typename Tag>
+void SettingEnum<EnumType, Tag>::serialize(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
 }
 
-
-SettingDateTimeInputFormat::Value SettingDateTimeInputFormat::getValue(const String & s)
+template <typename EnumType, typename Tag>
+void SettingEnum<EnumType, Tag>::deserialize(ReadBuffer & buf)
 {
-    if (s == "basic") return Value::Basic;
-    if (s == "best_effort") return Value::BestEffort;
-
-    throw Exception("Unknown DateTime input format: '" + s + "', must be one of 'basic', 'best_effort'", ErrorCodes::BAD_ARGUMENTS);
-}
-
-String SettingDateTimeInputFormat::toString() const
-{
-    const char * strings[] = {"basic", "best_effort"};
-    if (value < Value::Basic || value > Value::BestEffort)
-        throw Exception("Unknown DateTime input format", ErrorCodes::BAD_ARGUMENTS);
-    return strings[static_cast<size_t>(value)];
-}
-
-void SettingDateTimeInputFormat::set(Value x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingDateTimeInputFormat::set(const Field & x)
-{
-    set(safeGet<const String &>(x));
-}
-
-void SettingDateTimeInputFormat::set(const String & x)
-{
-    set(getValue(x));
-}
-
-void SettingDateTimeInputFormat::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingDateTimeInputFormat::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
+    String s;
+    readBinary(s, buf);
+    set(s);
 }
 
 
-SettingLogsLevel::Value SettingLogsLevel::getValue(const String & s)
+#define IMPLEMENT_SETTING_ENUM(ENUM_NAME, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME) \
+    IMPLEMENT_SETTING_ENUM_WITH_TAG(ENUM_NAME, void, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME)
+
+#define IMPLEMENT_SETTING_ENUM_WITH_TAG(ENUM_NAME, TAG, LIST_OF_NAMES_MACRO, ERROR_CODE_FOR_UNEXPECTED_NAME) \
+    template <> \
+    String SettingEnum<ENUM_NAME, TAG>::toString() const \
+    { \
+        using EnumType = ENUM_NAME; \
+        using UnderlyingType = std::underlying_type<EnumType>::type; \
+        switch (static_cast<UnderlyingType>(value)) \
+        { \
+            LIST_OF_NAMES_MACRO(IMPLEMENT_SETTING_ENUM_TO_STRING_HELPER_) \
+        } \
+        throw Exception("Unknown " #ENUM_NAME, ERROR_CODE_FOR_UNEXPECTED_NAME); \
+    } \
+    \
+    template <> \
+    void SettingEnum<ENUM_NAME, TAG>::set(const String & s) \
+    { \
+        using EnumType = ENUM_NAME; \
+        LIST_OF_NAMES_MACRO(IMPLEMENT_SETTING_ENUM_FROM_STRING_HELPER_) \
+        \
+        String all_io_names; \
+        LIST_OF_NAMES_MACRO(IMPLEMENT_SETTING_ENUM_CONCAT_NAMES_HELPER_) \
+        throw Exception("Unknown " #ENUM_NAME " : '" + s + "', must be one of " + all_io_names, \
+            ERROR_CODE_FOR_UNEXPECTED_NAME); \
+    } \
+    \
+    template struct SettingEnum<ENUM_NAME, TAG>;
+
+#define IMPLEMENT_SETTING_ENUM_TO_STRING_HELPER_(NAME, IO_NAME) \
+    case static_cast<UnderlyingType>(EnumType::NAME): return IO_NAME;
+
+#define IMPLEMENT_SETTING_ENUM_FROM_STRING_HELPER_(NAME, IO_NAME) \
+    if (s == IO_NAME) \
+    { \
+        set(EnumType::NAME); \
+        return; \
+    }
+
+#define IMPLEMENT_SETTING_ENUM_CONCAT_NAMES_HELPER_(NAME, IO_NAME) \
+    if (!all_io_names.empty()) \
+        all_io_names += ", "; \
+    all_io_names += String("'") + IO_NAME + "'";
+
+
+#define LOAD_BALANCING_LIST_OF_NAMES(M) \
+    M(RANDOM, "random") \
+    M(NEAREST_HOSTNAME, "nearest_hostname") \
+    M(IN_ORDER, "in_order") \
+    M(FIRST_OR_RANDOM, "first_or_random")
+IMPLEMENT_SETTING_ENUM(LoadBalancing, LOAD_BALANCING_LIST_OF_NAMES, ErrorCodes::UNKNOWN_LOAD_BALANCING)
+
+
+#define JOIN_STRICTNESS_LIST_OF_NAMES(M) \
+    M(Unspecified, "") \
+    M(ALL, "ALL") \
+    M(ANY, "ANY")
+IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes::UNKNOWN_JOIN_STRICTNESS)
+
+
+#define TOTALS_MODE_LIST_OF_NAMES(M) \
+    M(BEFORE_HAVING, "before_having") \
+    M(AFTER_HAVING_EXCLUSIVE, "after_having_exclusive") \
+    M(AFTER_HAVING_INCLUSIVE, "after_having_inclusive") \
+    M(AFTER_HAVING_AUTO, "after_having_auto")
+IMPLEMENT_SETTING_ENUM(TotalsMode, TOTALS_MODE_LIST_OF_NAMES, ErrorCodes::UNKNOWN_TOTALS_MODE)
+
+
+#define OVERFLOW_MODE_LIST_OF_NAMES(M) \
+    M(THROW, "throw") \
+    M(BREAK, "break")
+IMPLEMENT_SETTING_ENUM(OverflowMode, OVERFLOW_MODE_LIST_OF_NAMES, ErrorCodes::UNKNOWN_OVERFLOW_MODE)
+
+
+#define OVERFLOW_MODE_LIST_OF_NAMES_WITH_ANY(M) \
+    M(THROW, "throw") \
+    M(BREAK, "break") \
+    M(ANY, "any")
+IMPLEMENT_SETTING_ENUM_WITH_TAG(OverflowMode, SettingOverflowModeGroupByTag, OVERFLOW_MODE_LIST_OF_NAMES_WITH_ANY, ErrorCodes::UNKNOWN_OVERFLOW_MODE)
+
+
+#define DISTRIBUTED_PRODUCT_MODE_LIST_OF_NAMES(M) \
+    M(DENY, "deny") \
+    M(LOCAL, "local") \
+    M(GLOBAL, "global") \
+    M(ALLOW, "allow")
+IMPLEMENT_SETTING_ENUM(DistributedProductMode, DISTRIBUTED_PRODUCT_MODE_LIST_OF_NAMES, ErrorCodes::UNKNOWN_DISTRIBUTED_PRODUCT_MODE)
+
+
+#define DATE_TIME_INPUT_FORMAT_LIST_OF_NAMES(M) \
+    M(Basic, "basic") \
+    M(BestEffort, "best_effort")
+IMPLEMENT_SETTING_ENUM(FormatSettings::DateTimeInputFormat, DATE_TIME_INPUT_FORMAT_LIST_OF_NAMES, ErrorCodes::BAD_ARGUMENTS)
+
+
+#define LOGS_LEVEL_LIST_OF_NAMES(M) \
+    M(none, "none") \
+    M(error, "error") \
+    M(warning, "warning") \
+    M(information, "information") \
+    M(debug, "debug") \
+    M(trace, "trace")
+IMPLEMENT_SETTING_ENUM(LogsLevel, LOGS_LEVEL_LIST_OF_NAMES, ErrorCodes::BAD_ARGUMENTS)
+
+
+namespace details
 {
-    if (s == "none") return Value::none;
-    if (s == "error") return Value::error;
-    if (s == "warning") return Value::warning;
-    if (s == "information") return Value::information;
-    if (s == "debug") return Value::debug;
-    if (s == "trace") return Value::trace;
+    String SettingsCollectionUtils::deserializeName(ReadBuffer & buf)
+    {
+        String name;
+        readBinary(name, buf);
+        return name;
+    }
 
-    throw Exception("Unknown logs level: '" + s + "', must be one of: none, error, warning, information, debug, trace", ErrorCodes::BAD_ARGUMENTS);
+    void SettingsCollectionUtils::serializeName(const StringRef & name, WriteBuffer & buf) { writeBinary(name, buf); }
+
+    void SettingsCollectionUtils::throwNameNotFound(const StringRef & name)
+    {
+        throw Exception("Unknown setting " + name.toString(), ErrorCodes::UNKNOWN_SETTING);
+    }
 }
-
-String SettingLogsLevel::toString() const
-{
-    const char * strings[] = {"none", "error", "warning", "information", "debug", "trace"};
-    return strings[static_cast<size_t>(value)];
-}
-
-void SettingLogsLevel::set(Value x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingLogsLevel::set(const Field & x)
-{
-    set(safeGet<const String &>(x));
-}
-
-void SettingLogsLevel::set(const String & x)
-{
-    set(getValue(x));
-}
-
-void SettingLogsLevel::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingLogsLevel::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
-}
-
 }

@@ -16,6 +16,7 @@
                   with minimum number of different symbols between replica's hostname and local hostname
                   (Hamming distance).
                  in_order - first live replica is chosen in specified order.
+                 first_or_random - if first replica one has higher number of errors, pick a random one from replicas with minimum number of errors.
             -->
             <load_balancing>random</load_balancing>
         </default>

@@ -8,6 +8,7 @@
     - [MySQL](https://www.mysql.com)
         - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
         - [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
+        - [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
     - [PostgreSQL](https://www.postgresql.org)
         - [clickhousedb_fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (使用 [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
@@ -49,6 +50,9 @@
         - [loghouse](https://github.com/flant/loghouse) (对于 [Kubernetes](https://kubernetes.io))
     - [logagent](https://www.sematext.com/logagent)
         - [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
+- 地理
+    - [MaxMind](https://dev.maxmind.com/geoip/)
+        - [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
 
 ## 编程语言生态系统
 
@@ -74,6 +78,5 @@
 - Elixir
     - [Ecto](https://github.com/elixir-ecto/ecto)
         - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
-
 
 [来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/integrations/) <!--hide-->

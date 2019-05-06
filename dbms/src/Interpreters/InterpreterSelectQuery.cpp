@@ -30,6 +30,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -43,8 +45,7 @@
 
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -281,7 +282,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (query_analyzer->isRewriteSubqueriesPredicate())
         {
-            /// remake interpreter_subquery when PredicateOptimizer is rewrite subqueries and main table is subquery
+            /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
             if (is_subquery)
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                     table_expression,
@@ -590,13 +591,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
             /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
             if (settings.optimize_move_to_prewhere && query.where() && !query.prewhere() && !query.final())
-                MergeTreeWhereOptimizer{query_info, context, merge_tree.getData(), query_analyzer->getRequiredSourceColumns(), log};
+                MergeTreeWhereOptimizer{query_info, context, merge_tree, query_analyzer->getRequiredSourceColumns(), log};
         };
 
-        if (const StorageMergeTree * merge_tree = dynamic_cast<const StorageMergeTree *>(storage.get()))
-            optimize_prewhere(*merge_tree);
-        else if (const StorageReplicatedMergeTree * replicated_merge_tree = dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
-            optimize_prewhere(*replicated_merge_tree);
+        if (const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get()))
+            optimize_prewhere(*merge_tree_data);
     }
 
     AnalysisResult expressions;
@@ -760,11 +759,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
 
-                need_second_distinct_pass = query.distinct && pipeline.hasMoreThanOneStream();
+                need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
             }
             else
             {
-                need_second_distinct_pass = query.distinct && pipeline.hasMoreThanOneStream();
+                need_second_distinct_pass = query.distinct && pipeline.hasMixedStreams();
 
                 if (query.group_by_with_totals && !aggregate_final)
                 {
@@ -1533,6 +1532,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
         pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
+        pipeline.union_stream = true;
     }
     else if (pipeline.stream_with_non_joined_data)
     {
@@ -1561,18 +1561,18 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    if (!query.limitByValue() || !query.limitBy())
+    if (!query.limitByLength() || !query.limitBy())
         return;
 
     Names columns;
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
-
-    UInt64 value = getLimitUIntValue(query.limitByValue(), context);
+    UInt64 length = getLimitUIntValue(query.limitByLength(), context);
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context) : 0);
 
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<LimitByBlockInputStream>(stream, value, columns);
+        stream = std::make_shared<LimitByBlockInputStream>(stream, length, offset, columns);
     });
 }
 
