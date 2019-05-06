@@ -379,50 +379,50 @@ public:
     }
 
     /// Get year that contains the custom week.
-    inline unsigned toCustomYear(DayNum d) const
+    inline unsigned toCustomYear(DayNum d, UInt8 custom_month, UInt8 custom_day) const
     {
         // Checking the week across the year
         auto year = toYear(DayNum(d + 7 - toDayOfWeek(d)));
-        auto day_of_year = makeDayNum(year, 1, 1);
+        auto day_of_year = makeDayNum(year, custom_month, custom_day);
         // Checking greater than or equal to Monday, If true take current year, else take last year.
         return toFirstDayNumOfWeek(day_of_year) <= d ?  year : year - 1;
     }
 
-    inline unsigned toCustomYear(time_t t) const
+    inline unsigned toCustomYear(time_t t, UInt8 custom_month, UInt8 custom_day) const
     {
-        return toCustomYear(toDayNum(t));
+        return toCustomYear(toDayNum(t),custom_month,custom_day);
     }
 
     /// Custom year begins with a monday of the week that is contained January 1,
     /// which day can be modified through config of first_week_of_day.
     /// Example: Custom year 2019 begins at 2018-12-31. And Custom year 2017 begins at 2016-12-26.
-    inline DayNum toFirstDayNumOfCustomYear(DayNum d) const
+    inline DayNum toFirstDayNumOfCustomYear(DayNum d, UInt8 custom_month, UInt8 custom_day) const
     {
-        auto custom_year = toCustomYear(d);
-        return toFirstDayNumOfWeek(makeDayNum(custom_year, 1, 1));
+        auto custom_year = toCustomYear(d, custom_month, custom_day);
+        return toFirstDayNumOfWeek(makeDayNum(custom_year, custom_month, custom_day));
     }
 
-    inline DayNum toFirstDayNumOfCustomYear(time_t t) const
+    inline DayNum toFirstDayNumOfCustomYear(time_t t, UInt8 custom_month, UInt8 custom_day) const
     {
-        return toFirstDayNumOfCustomYear(toDayNum(t));
+        return toFirstDayNumOfCustomYear(toDayNum(t), custom_month, custom_day);
     }
 
-    inline time_t toFirstDayOfCustomYear(time_t t) const
+    inline time_t toFirstDayOfCustomYear(time_t t, UInt8 custom_month, UInt8 custom_day) const
     {
-        return fromDayNum(toFirstDayNumOfCustomYear(t));
+        return fromDayNum(toFirstDayNumOfCustomYear(t, custom_month, custom_day));
     }
 
     /// Custom week number. Week begins at monday.
     /// The week number 1 is the first week in year that contains January 1,
     /// which day can be modified through config of first_week_of_day.
-    inline unsigned toCustomWeek(DayNum d) const
+    inline unsigned toCustomWeek(DayNum d, UInt8 custom_month, UInt8 custom_day) const
     {
-        return 1 + (toFirstDayNumOfWeek(d) - toFirstDayNumOfCustomYear(d)) / 7;
+        return 1 + (toFirstDayNumOfWeek(d) - toFirstDayNumOfCustomYear(d, custom_month, custom_day)) / 7;
     }
 
-    inline unsigned toCustomWeek(time_t t) const
+    inline unsigned toCustomWeek(time_t t, UInt8 custom_month, UInt8 custom_day) const
     {
-        return toCustomWeek(toDayNum(t));
+        return toCustomWeek(toDayNum(t), custom_month, custom_day);
     }
 
     /// Number of month from some fixed moment in the past (year * 12 + month)

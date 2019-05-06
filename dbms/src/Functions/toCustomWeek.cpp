@@ -1,14 +1,14 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/DateTimeTransforms.h>
-#include <Functions/FunctionDateOrDateTimeToSomething.h>
+#include <Functions/CustomDateTransforms.h>
+#include <Functions/FunctionCustomDateToSomething.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
 {
 
-using FunctionToCustomWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToCustomWeekImpl>;
+using FunctionToCustomWeek = FunctionCustomDateToSomething<DataTypeUInt8, ToCustomWeekImpl>;
 
 void registerFunctionToCustomWeek(FunctionFactory & factory)
 {
