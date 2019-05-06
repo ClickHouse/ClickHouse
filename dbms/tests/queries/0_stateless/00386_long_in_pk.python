@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 def gen_queries():
-    create_template = 'create table test.tab (a Int8, b String, c Tuple(Int8), d Tuple(Tuple(Int8)), e Tuple(Int8, String), f Tuple(Tuple(Int8, String))) engine = MergeTree order by ({}) partition by {}'
-    drop_query = 'drop table if exists test.tab'
+    create_template = 'create table tab_00386 (a Int8, b String, c Tuple(Int8), d Tuple(Tuple(Int8)), e Tuple(Int8, String), f Tuple(Tuple(Int8, String))) engine = MergeTree order by ({}) partition by {}'
+    drop_query = 'drop table if exists tab_00386'
     values = ('1', "'a'", 'tuple(1)', 'tuple(tuple(1))', "(1, 'a')", "tuple((1, 'a'))")
-    insert_query = "insert into test.tab values (1, 'a', tuple(1), tuple(tuple(1)), (1, 'a'), tuple((1, 'a')))"
+    insert_query = "insert into tab_00386 values (1, 'a', tuple(1), tuple(tuple(1)), (1, 'a'), tuple((1, 'a')))"
     columns = tuple('a b c d'.split())
     order_by_columns = tuple('a b c'.split())
     partition_by_columns = tuple(' tuple() a'.split())
@@ -17,30 +17,30 @@ def gen_queries():
                 yield q
 	    
             for column, value in zip(columns, values):
-		yield 'select {} in {} from test.tab'.format(column, value)
-                yield 'select {} in tuple({}) from test.tab'.format(column, value)
-                yield 'select {} in (select {} from test.tab) from test.tab'.format(column, column)
+		yield 'select {} in {} from tab_00386'.format(column, value)
+                yield 'select {} in tuple({}) from tab_00386'.format(column, value)
+                yield 'select {} in (select {} from tab_00386) from tab_00386'.format(column, column)
 
             for i in range(len(columns)):
                 for j in range(i, len(columns)):
-                    yield 'select ({}, {}) in tuple({}, {}) from test.tab'.format(columns[i], columns[j], values[i], values[j])
-                    yield 'select ({}, {}) in (select {}, {} from test.tab) from test.tab'.format(columns[i], columns[j], columns[i], columns[j])
-                    yield 'select ({}, {}) in (select ({}, {}) from test.tab) from test.tab'.format(columns[i], columns[j], columns[i], columns[j])
+                    yield 'select ({}, {}) in tuple({}, {}) from tab_00386'.format(columns[i], columns[j], values[i], values[j])
+                    yield 'select ({}, {}) in (select {}, {} from tab_00386) from tab_00386'.format(columns[i], columns[j], columns[i], columns[j])
+                    yield 'select ({}, {}) in (select ({}, {}) from tab_00386) from tab_00386'.format(columns[i], columns[j], columns[i], columns[j])
             
-            yield "select e in (1, 'a') from test.tab"
-            yield "select f in tuple((1, 'a')) from test.tab"
-            yield "select f in tuple(tuple((1, 'a'))) from test.tab"
+            yield "select e in (1, 'a') from tab_00386"
+            yield "select f in tuple((1, 'a')) from tab_00386"
+            yield "select f in tuple(tuple((1, 'a'))) from tab_00386"
 
-            yield 'select e in (select a, b from test.tab) from test.tab'
-            yield 'select e in (select (a, b) from test.tab) from test.tab'
-            yield 'select f in (select tuple((a, b)) from test.tab) from test.tab'
-            yield 'select tuple(f) in (select tuple(tuple((a, b))) from test.tab) from test.tab'
+            yield 'select e in (select a, b from tab_00386) from tab_00386'
+            yield 'select e in (select (a, b) from tab_00386) from tab_00386'
+            yield 'select f in (select tuple((a, b)) from tab_00386) from tab_00386'
+            yield 'select tuple(f) in (select tuple(tuple((a, b))) from tab_00386) from tab_00386'
 
 import requests
 import os
 
 def main():
-    url = os.environ['CLICKHOUSE_URL']
+    url = os.environ['CLICKHOUSE_URL_PARAMS']
     
     for q in gen_queries():
         resp = requests.post(url, data=q)

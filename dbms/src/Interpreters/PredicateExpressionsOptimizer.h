@@ -39,13 +39,15 @@ class PredicateExpressionsOptimizer
 
         /// for PredicateExpressionsOptimizer
         const bool enable_optimize_predicate_expression;
+        const bool join_use_nulls;
 
         template<typename T>
         ExtractedSettings(const T & settings)
         :   max_ast_depth(settings.max_ast_depth),
             max_expanded_ast_elements(settings.max_expanded_ast_elements),
             count_distinct_implementation(settings.count_distinct_implementation),
-            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
+            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
+            join_use_nulls(settings.join_use_nulls)
         {}
     };
 
@@ -78,11 +80,17 @@ private:
 
     bool optimizeImpl(const ASTPtr & outer_expression, const SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
 
-    bool allowPushDown(const ASTSelectQuery * subquery);
+    bool allowPushDown(
+        const ASTSelectQuery * subquery,
+        const ASTPtr & outer_predicate,
+        const std::vector<ProjectionWithAlias> & subquery_projection_columns,
+        const std::vector<IdentifierWithQualifier> & outer_predicate_dependencies,
+        OptimizeKind & optimize_kind);
 
-    bool canPushDownOuterPredicate(const std::vector<ProjectionWithAlias> & subquery_projection_columns,
-                                   const std::vector<IdentifierWithQualifier> & outer_predicate_dependencies,
-                                   OptimizeKind & optimize_kind);
+    bool checkDependencies(
+        const std::vector<ProjectionWithAlias> & projection_columns,
+        const std::vector<IdentifierWithQualifier> & dependencies,
+        OptimizeKind & optimize_kind);
 
     void setNewAliasesForInnerPredicate(const std::vector<ProjectionWithAlias> & projection_columns,
                                         const std::vector<IdentifierWithQualifier> & inner_predicate_dependencies);
