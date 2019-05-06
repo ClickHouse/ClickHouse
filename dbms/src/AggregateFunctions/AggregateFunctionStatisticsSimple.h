@@ -32,7 +32,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
 }
 
@@ -79,8 +78,6 @@ struct VarMoments
             return std::numeric_limits<T>::quiet_NaN();
         return (m2 - m1 * m1 / m0) / (m0 - 1);
     }
-
-    T get() const { throw Exception("Unexpected call", ErrorCodes::LOGICAL_ERROR); }
 };
 
 template <typename T>
@@ -139,8 +136,174 @@ struct VarMomentsDecimal
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / (m0 - 1), scale);
     }
+};
 
-    Float64 get() const { throw Exception("Unexpected call", ErrorCodes::LOGICAL_ERROR); }
+template <typename T, size_t _level>
+struct HighOrderMoments
+{
+    T m0{};
+    T m1{};
+    T m2{};
+    T m3{};
+    T m4{};
+
+    void add(T x)
+    {
+        ++m0;
+        m1 += x;
+        m2 += x * x;
+        if constexpr (_level >= 3) m3 += x * x * x;
+        if constexpr (_level >= 4) m4 += x * x * x * x;
+    }
+
+    void merge(const HighOrderMoments & rhs)
+    {
+        m0 += rhs.m0;
+        m1 += rhs.m1;
+        m2 += rhs.m2;
+        if constexpr (_level >= 3) m3 += rhs.m3;
+        if constexpr (_level >= 4) m4 += rhs.m4;
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writePODBinary(*this, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readPODBinary(*this, buf);
+    }
+
+    T NO_SANITIZE_UNDEFINED getPopulation() const
+    {
+        return (m2 - m1 * m1 / m0) / m0;
+    }
+
+    T NO_SANITIZE_UNDEFINED getSample() const
+    {
+        if (m0 == 0)
+            return std::numeric_limits<T>::quiet_NaN();
+        return (m2 - m1 * m1 / m0) / (m0 - 1);
+    }
+
+    T NO_SANITIZE_UNDEFINED getMoment3() const
+    {
+        return (m3
+            - (3 * m2
+                - 2 * m1 * m1 / m0
+            ) * m1 / m0
+        ) / m0;
+    }
+
+    T NO_SANITIZE_UNDEFINED getMoment4() const
+    {
+        return (m4
+            - (4 * m3
+                - (6 * m2
+                    - 3 * m1 * m1 / m0
+                ) * m1 / m0
+            ) * m1 / m0
+        ) / m0;
+    }
+};
+
+template <typename T, size_t _level>
+struct HighOrderMomentsDecimal
+{
+    using NativeType = typename T::NativeType;
+
+    UInt64 m0{};
+    NativeType m1{};
+    NativeType m2{};
+    NativeType m3{};
+    NativeType m4{};
+
+    void add(NativeType x)
+    {
+        ++m0;
+        m1 += x;
+
+        NativeType tmp;
+        if (common::mulOverflow(x, x, tmp) || common::addOverflow(m2, tmp, m2))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 3) if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(m3, tmp, m3))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 4) if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(m4, tmp, m4))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+    }
+
+    void merge(const HighOrderMomentsDecimal & rhs)
+    {
+        m0 += rhs.m0;
+        m1 += rhs.m1;
+
+        if (common::addOverflow(m2, rhs.m2, m2))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 3) if (common::addOverflow(m3, rhs.m3, m3))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        if constexpr (_level >= 4) if (common::addOverflow(m4, rhs.m4, m4))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+    }
+
+    void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
+    void read(ReadBuffer & buf) { readPODBinary(*this, buf); }
+
+    Float64 getPopulation(UInt32 scale) const
+    {
+        if (m0 == 0)
+            return std::numeric_limits<Float64>::infinity();
+
+        NativeType tmp;
+        if (common::mulOverflow(m1, m1, tmp) ||
+            common::subOverflow(m2, NativeType(tmp / m0), tmp))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
+    }
+
+    Float64 getSample(UInt32 scale) const
+    {
+        if (m0 == 0)
+            return std::numeric_limits<Float64>::quiet_NaN();
+        if (m0 == 1)
+            return std::numeric_limits<Float64>::infinity();
+
+        NativeType tmp;
+        if (common::mulOverflow(m1, m1, tmp) ||
+            common::subOverflow(m2, NativeType(tmp / m0), tmp))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / (m0 - 1), scale);
+    }
+
+    Float64 getMoment3(UInt32 scale) const
+    {
+        if (m0 == 0)
+            return std::numeric_limits<Float64>::infinity();
+
+        NativeType tmp;
+        if (common::mulOverflow(2 * m1, m1, tmp) ||
+            common::subOverflow(3 * m2, NativeType(tmp / m0), tmp) ||
+            common::mulOverflow(tmp, m1, tmp) ||
+            common::subOverflow(m3, NativeType(tmp / m0), tmp))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
+    }
+
+    Float64 getMoment4(UInt32 scale) const
+    {
+        if (m0 == 0)
+            return std::numeric_limits<Float64>::infinity();
+
+        NativeType tmp;
+        if (common::mulOverflow(3 * m1, m1, tmp) ||
+            common::subOverflow(6 * m2, NativeType(tmp / m0), tmp) ||
+            common::mulOverflow(tmp, m1, tmp) ||
+            common::subOverflow(4 * m3, NativeType(tmp / m0), tmp) ||
+            common::mulOverflow(tmp, m1, tmp) ||
+            common::subOverflow(m4, NativeType(tmp / m0), tmp))
+            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
+    }
 };
 
 template <typename T>
@@ -188,8 +351,6 @@ struct CovarMoments
             return std::numeric_limits<T>::quiet_NaN();
         return (xy - x1 * y1 / m0) / (m0 - 1);
     }
-
-    T get() const { throw Exception("Unexpected call", ErrorCodes::LOGICAL_ERROR); }
 };
 
 template <typename T>
@@ -236,9 +397,6 @@ struct CorrMoments
     {
         return (m0 * xy - x1 * y1) / sqrt((m0 * x2 - x1 * x1) * (m0 * y2 - y1 * y1));
     }
-
-    T getPopulation() const { throw Exception("Unexpected call", ErrorCodes::LOGICAL_ERROR); }
-    T getSample() const { throw Exception("Unexpected call", ErrorCodes::LOGICAL_ERROR); }
 };
 
 
@@ -246,18 +404,24 @@ enum class StatisticsFunctionKind
 {
     varPop, varSamp,
     stddevPop, stddevSamp,
+    skewPop, skewSamp,
+    kurtPop, kurtSamp,
     covarPop, covarSamp,
     corr
 };
 
 
-template <typename T, StatisticsFunctionKind _kind>
+template <typename T, StatisticsFunctionKind _kind, size_t _level>
 struct StatFuncOneArg
 {
     using Type1 = T;
     using Type2 = T;
     using ResultType = std::conditional_t<std::is_same_v<T, Float32>, Float32, Float64>;
-    using Data = std::conditional_t<IsDecimalNumber<T>, VarMomentsDecimal<Decimal128>, VarMoments<ResultType>>;
+    using Data = std::conditional_t<
+        _level <= 2,
+        std::conditional_t<IsDecimalNumber<T>, VarMomentsDecimal<Decimal128>, VarMoments<ResultType>>,
+        std::conditional_t<IsDecimalNumber<T>, HighOrderMomentsDecimal<Decimal128, _level>, HighOrderMoments<ResultType, _level>>
+    >;
 
     static constexpr StatisticsFunctionKind kind = _kind;
     static constexpr UInt32 num_args = 1;
@@ -300,17 +464,28 @@ public:
 
     String getName() const override
     {
-        switch (StatFunc::kind)
-        {
-            case StatisticsFunctionKind::varPop: return "varPop";
-            case StatisticsFunctionKind::varSamp: return "varSamp";
-            case StatisticsFunctionKind::stddevPop: return "stddevPop";
-            case StatisticsFunctionKind::stddevSamp: return "stddevSamp";
-            case StatisticsFunctionKind::covarPop: return "covarPop";
-            case StatisticsFunctionKind::covarSamp: return "covarSamp";
-            case StatisticsFunctionKind::corr: return "corr";
-        }
-        __builtin_unreachable();
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::varPop)
+            return "varPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::varSamp)
+            return "varSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevPop)
+            return "stddevPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevSamp)
+            return "stddevSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::skewPop)
+            return "skewPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::skewSamp)
+            return "skewSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtPop)
+            return "kurtPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtSamp)
+            return "kurtSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::covarPop)
+            return "covarPop";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::covarSamp)
+            return "covarSamp";
+        if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
+            return "corr";
     }
 
     DataTypePtr getReturnType() const override
@@ -351,28 +526,47 @@ public:
 
         if constexpr (IsDecimalNumber<T1>)
         {
-            switch (StatFunc::kind)
-            {
-                case StatisticsFunctionKind::varPop: dst.push_back(data.getPopulation(src_scale * 2)); break;
-                case StatisticsFunctionKind::varSamp: dst.push_back(data.getSample(src_scale * 2)); break;
-                case StatisticsFunctionKind::stddevPop: dst.push_back(sqrt(data.getPopulation(src_scale * 2))); break;
-                case StatisticsFunctionKind::stddevSamp: dst.push_back(sqrt(data.getSample(src_scale * 2))); break;
-                default:
-                    __builtin_unreachable();
-            }
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::varPop)
+                dst.push_back(data.getPopulation(src_scale * 2));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::varSamp)
+                dst.push_back(data.getSample(src_scale * 2));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevPop)
+                dst.push_back(sqrt(data.getPopulation(src_scale * 2)));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevSamp)
+                dst.push_back(sqrt(data.getSample(src_scale * 2)));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::skewPop)
+                dst.push_back(data.getMoment3(src_scale * 3) / pow(data.getPopulation(src_scale * 2), 1.5));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::skewSamp)
+                dst.push_back(data.getMoment3(src_scale * 3) / pow(data.getSample(src_scale * 2), 1.5));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtPop)
+                dst.push_back(data.getMoment4(src_scale * 4) / pow(data.getPopulation(src_scale * 2), 2));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtSamp)
+                dst.push_back(data.getMoment4(src_scale * 4) / pow(data.getSample(src_scale * 2), 2));
         }
         else
         {
-            switch (StatFunc::kind)
-            {
-                case StatisticsFunctionKind::varPop: dst.push_back(data.getPopulation()); break;
-                case StatisticsFunctionKind::varSamp: dst.push_back(data.getSample()); break;
-                case StatisticsFunctionKind::stddevPop: dst.push_back(sqrt(data.getPopulation())); break;
-                case StatisticsFunctionKind::stddevSamp: dst.push_back(sqrt(data.getSample())); break;
-                case StatisticsFunctionKind::covarPop: dst.push_back(data.getPopulation()); break;
-                case StatisticsFunctionKind::covarSamp: dst.push_back(data.getSample()); break;
-                case StatisticsFunctionKind::corr: dst.push_back(data.get()); break;
-            }
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::varPop)
+                dst.push_back(data.getPopulation());
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::varSamp)
+                dst.push_back(data.getSample());
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevPop)
+                dst.push_back(sqrt(data.getPopulation()));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevSamp)
+                dst.push_back(sqrt(data.getSample()));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::skewPop)
+                dst.push_back(data.getMoment3() / pow(data.getPopulation(), 1.5));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::skewSamp)
+                dst.push_back(data.getMoment3() / pow(data.getSample(), 1.5));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtPop)
+                dst.push_back(data.getMoment4() / pow(data.getPopulation(), 2));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtSamp)
+                dst.push_back(data.getMoment4() / pow(data.getSample(), 2));
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::covarPop)
+                dst.push_back(data.getPopulation());
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::covarSamp)
+                dst.push_back(data.getSample());
+            if constexpr (StatFunc::kind == StatisticsFunctionKind::corr)
+                dst.push_back(data.get());
         }
     }
 
@@ -383,10 +577,14 @@ private:
 };
 
 
-template <typename T> using AggregateFunctionVarPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::varPop>>;
-template <typename T> using AggregateFunctionVarSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::varSamp>>;
-template <typename T> using AggregateFunctionStddevPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::stddevPop>>;
-template <typename T> using AggregateFunctionStddevSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::stddevSamp>>;
+template <typename T> using AggregateFunctionVarPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::varPop, 2>>;
+template <typename T> using AggregateFunctionVarSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::varSamp, 2>>;
+template <typename T> using AggregateFunctionStddevPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::stddevPop, 2>>;
+template <typename T> using AggregateFunctionStddevSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::stddevSamp, 2>>;
+template <typename T> using AggregateFunctionSkewPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::skewPop, 3>>;
+template <typename T> using AggregateFunctionSkewSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::skewSamp, 3>>;
+template <typename T> using AggregateFunctionKurtPopSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::kurtPop, 4>>;
+template <typename T> using AggregateFunctionKurtSampSimple = AggregateFunctionVarianceSimple<StatFuncOneArg<T, StatisticsFunctionKind::kurtSamp, 4>>;
 template <typename T1, typename T2> using AggregateFunctionCovarPopSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::covarPop>>;
 template <typename T1, typename T2> using AggregateFunctionCovarSampSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::covarSamp>>;
 template <typename T1, typename T2> using AggregateFunctionCorrSimple = AggregateFunctionVarianceSimple<StatFuncTwoArg<T1, T2, StatisticsFunctionKind::corr>>;
