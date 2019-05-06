@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **子句**
 
-创建 `CollapsingMergeTree` 表时，需要与创建 `MergeTree` 表时相同的[子句](mergetree.md)。
+创建 `CollapsingMergeTree` 表时，需要与创建 `MergeTree` 表时相同的[子句](mergetree.md#table_engine-mergetree-creating-a-table)。
 
 <details markdown="1"><summary>已弃用的建表方法</summary>
 
