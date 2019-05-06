@@ -16,7 +16,7 @@ If you use Oracle through ODBC driver as a source of external dictionaries, you 
 **Example**
 
 ```
-NLS_LANG=RUSSIAN_RUSSIA.UTF8
+NLS_LANG=CHINESE_CHINA.ZHS16GBK
 ```
 
 [来源文章](https://clickhouse.yandex/docs/zh/faq/general/) <!--hide-->
