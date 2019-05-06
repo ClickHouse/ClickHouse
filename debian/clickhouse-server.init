@@ -238,7 +238,8 @@ forcestop()
 forcerestart()
 {
     forcestop
-    start
+    # Should not use 'start' function if systemd active
+    service $PROGRAM start
 }
 
 use_cron()
@@ -291,7 +292,8 @@ main()
         restart && enable_cron
         ;;
     forcestop)
-        disable_cron && forcestop
+        disable_cron
+        forcestop
         ;;
     forcerestart)
         forcerestart && enable_cron
@@ -300,16 +302,16 @@ main()
         restart
         ;;
     condstart)
-        is_running || start
+        is_running || service $PROGRAM start
         ;;
     condstop)
-        is_running && stop
+        is_running && service $PROGRAM stop
         ;;
     condrestart)
-        is_running && restart
+        is_running && service $PROGRAM restart
         ;;
     condreload)
-        is_running && restart
+        is_running && service $PROGRAM restart
         ;;
     initdb)
         initdb
