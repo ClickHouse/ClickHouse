@@ -217,7 +217,7 @@ void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const Sto
 {
     std::lock_guard lock(tables_mutex);
     if (!tables.emplace(table_name, table).second)
-        throw Exception("Database " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
