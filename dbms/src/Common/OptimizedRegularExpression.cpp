@@ -1,7 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 
-
 #define MIN_LENGTH_FOR_STRSTR 3
 #define MAX_SUBPATTERNS 5
 
@@ -211,20 +210,18 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
     {
         if (!has_alternative_on_depth_0)
         {
-            /** We choose the non-alternative substring of the maximum length, among the prefixes,
-              *  or a non-alternative substring of maximum length.
-              */
+            /// We choose the non-alternative substring of the maximum length for first search.
+
+            /// Tuning for typical usage domain
+            auto tuning_strings_condition = [](const std::string & str)
+            {
+                return str != "://" && str != "http://" && str != "www" && str != "Windows ";
+            };
             size_t max_length = 0;
             Substrings::const_iterator candidate_it = trivial_substrings.begin();
             for (Substrings::const_iterator it = trivial_substrings.begin(); it != trivial_substrings.end(); ++it)
             {
-                if (((it->second == 0 && candidate_it->second != 0)
-                        || ((it->second == 0) == (candidate_it->second == 0) && it->first.size() > max_length))
-                    /// Tuning for typical usage domain
-                    && (it->first.size() > strlen("://") || strncmp(it->first.data(), "://", strlen("://")))
-                    && (it->first.size() > strlen("http://") || strncmp(it->first.data(), "http", strlen("http")))
-                    && (it->first.size() > strlen("www.") || strncmp(it->first.data(), "www", strlen("www")))
-                    && (it->first.size() > strlen("Windows ") || strncmp(it->first.data(), "Windows ", strlen("Windows "))))
+                if (it->first.size() > max_length && tuning_strings_condition(it->first))
                 {
                     max_length = it->first.size();
                     candidate_it = it;

@@ -30,6 +30,8 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✗ |
 
+You can control some format processing parameters by the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
+
 ## TabSeparated {#tabseparated}
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
@@ -346,8 +348,8 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
-- If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
-- If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
+- If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
+- If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 !!! note "Warning"
     When inserting data with `insert_sample_with_metadata = 1`, ClickHouse consumes more computational resources, compared to insertion with `insert_sample_with_metadata = 0`.

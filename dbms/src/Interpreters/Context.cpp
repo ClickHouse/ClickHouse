@@ -36,6 +36,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Compiler.h>
+#include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -297,6 +298,8 @@ private:
 
 
 Context::Context() = default;
+Context::Context(const Context &) = default;
+Context & Context::operator=(const Context &) = default;
 
 
 Context Context::createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory)
@@ -619,14 +622,26 @@ void Context::calculateUserSettings()
     /// NOTE: we ignore global_context settings (from which it is usually copied)
     /// NOTE: global_context settings are immutable and not auto updated
     settings = Settings();
+    settings_constraints = nullptr;
 
     /// 2) Apply settings from default profile
     auto default_profile_name = getDefaultProfileName();
     if (profile != default_profile_name)
-        settings.setProfile(default_profile_name, *shared->users_config);
+        setProfile(default_profile_name);
 
     /// 3) Apply settings from current user
+    setProfile(profile);
+}
+
+
+void Context::setProfile(const String & profile)
+{
     settings.setProfile(profile, *shared->users_config);
+
+    auto new_constraints
+        = settings_constraints ? std::make_shared<SettingsConstraints>(*settings_constraints) : std::make_shared<SettingsConstraints>();
+    new_constraints->setProfile(profile, *shared->users_config);
+    settings_constraints = std::move(new_constraints);
 }
 
 
@@ -1027,27 +1042,55 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
-void Context::setSetting(const String & name, const Field & value)
+void Context::setSetting(const String & name, const String & value)
 {
+    auto lock = getLock();
     if (name == "profile")
     {
-        auto lock = getLock();
-        settings.setProfile(value.safeGet<String>(), *shared->users_config);
+        setProfile(value);
+        return;
     }
-    else
-        settings.set(name, value);
+    settings.set(name, value);
 }
 
 
-void Context::setSetting(const String & name, const std::string & value)
+void Context::setSetting(const String & name, const Field & value)
 {
+    auto lock = getLock();
     if (name == "profile")
     {
-        auto lock = getLock();
-        settings.setProfile(value, *shared->users_config);
+        setProfile(value.safeGet<String>());
+        return;
     }
-    else
-        settings.set(name, value);
+    settings.set(name, value);
+}
+
+
+void Context::applySettingChange(const SettingChange & change)
+{
+    setSetting(change.name, change.value);
+}
+
+
+void Context::applySettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+        applySettingChange(change);
+}
+
+
+void Context::checkSettingsConstraints(const SettingChange & change)
+{
+    if (settings_constraints)
+        settings_constraints->check(settings, change);
+}
+
+
+void Context::checkSettingsConstraints(const SettingsChanges & changes)
+{
+    if (settings_constraints)
+        settings_constraints->check(settings, changes);
 }
 
 
