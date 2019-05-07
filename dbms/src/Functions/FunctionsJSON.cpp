@@ -1,11 +1,13 @@
 #include <Functions/FunctionsJSON.h>
+#include <Functions/FunctionFactory.h>
+#include <Common/config.h>
 
+#if USE_SIMDJSON
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -320,20 +322,57 @@ public:
     }
 };
 
+}
+#else
+namespace DB
+{
+struct JSONHasImpl { static constexpr auto name{"jsonHas"}; };
+struct JSONLengthImpl { static constexpr auto name{"jsonLength"}; };
+struct JSONTypeImpl { static constexpr auto name{"jsonType"}; };
+struct JSONExtractImpl { static constexpr auto name{"jsonExtract"}; };
+struct JSONExtractUIntImpl { static constexpr auto name{"jsonExtractUInt"}; };
+struct JSONExtractIntImpl { static constexpr auto name{"jsonExtractInt"}; };
+struct JSONExtractFloatImpl { static constexpr auto name{"jsonExtractFloat"}; };
+struct JSONExtractBoolImpl { static constexpr auto name{"jsonExtractBool"}; };
+//struct JSONExtractRawImpl { static constexpr auto name {"jsonExtractRaw"}; };
+struct JSONExtractStringImpl { static constexpr auto name{"jsonExtractString"}; };
+}
+#endif
+
+namespace DB
+{
+
 void registerFunctionsJSON(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionJSONBase<JSONHasImpl, false>>();
-    factory.registerFunction<FunctionJSONBase<JSONLengthImpl, false>>();
-    factory.registerFunction<FunctionJSONBase<JSONTypeImpl, false>>();
-    factory.registerFunction<FunctionJSONBase<JSONExtractImpl, true>>();
-    factory.registerFunction<FunctionJSONBase<JSONExtractUIntImpl, false>>();
-    factory.registerFunction<FunctionJSONBase<JSONExtractIntImpl, false>>();
-    factory.registerFunction<FunctionJSONBase<JSONExtractFloatImpl, false>>();
-    factory.registerFunction<FunctionJSONBase<JSONExtractBoolImpl, false>>();
-    // factory.registerFunction<FunctionJSONBase<
-    //     JSONExtractRawImpl,
-    //     false
-    // >>();
-    factory.registerFunction<FunctionJSONBase<JSONExtractStringImpl, false>>();
+#if USE_SIMDJSON
+    if (__builtin_cpu_supports("avx2"))
+    {
+        factory.registerFunction<FunctionJSONBase<JSONHasImpl, false>>();
+        factory.registerFunction<FunctionJSONBase<JSONLengthImpl, false>>();
+        factory.registerFunction<FunctionJSONBase<JSONTypeImpl, false>>();
+        factory.registerFunction<FunctionJSONBase<JSONExtractImpl, true>>();
+        factory.registerFunction<FunctionJSONBase<JSONExtractUIntImpl, false>>();
+        factory.registerFunction<FunctionJSONBase<JSONExtractIntImpl, false>>();
+        factory.registerFunction<FunctionJSONBase<JSONExtractFloatImpl, false>>();
+        factory.registerFunction<FunctionJSONBase<JSONExtractBoolImpl, false>>();
+        // factory.registerFunction<FunctionJSONBase<
+        //     JSONExtractRawImpl,
+        //     false
+        // >>();
+        factory.registerFunction<FunctionJSONBase<JSONExtractStringImpl, false>>();
+        return;
+    }
+#endif
+    factory.registerFunction<FunctionJSONDummy<JSONHasImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONLengthImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONTypeImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONExtractImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONExtractUIntImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONExtractIntImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONExtractFloatImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONExtractBoolImpl>>();
+    //factory.registerFunction<FunctionJSONDummy<JSONExtractRawImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONExtractStringImpl>>();
 }
+
 }
