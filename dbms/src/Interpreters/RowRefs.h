@@ -92,7 +92,7 @@ private:
                 {
                     /// TODO: It has been tested only for UInt32 yet. It needs to check UInt64, Float32/64.
                     if constexpr (std::is_same_v<TKey, UInt32>)
-                        RadixSort<RadixSortTraits>::execute(&array[0], array.size());
+                        RadixSort<RadixSortTraits>::executeLSD(&array[0], array.size());
                     else
                         std::sort(array.begin(), array.end());
                 }
