@@ -6,11 +6,13 @@ Returns a string with the name of the host that this function was performed on. 
 
 ## basename
 
-Extracts trailing part of a string after the last slash or backslash.
+Extracts trailing part of a string after the last slash or backslash. This function if often used to extract the filename from the path.
 
 ```
 basename( expr )
 ```
+
+Backslashes should be escaped in `expr`.
 
 **Parameters**
 
@@ -21,7 +23,7 @@ basename( expr )
 A string-type value that contains:
 
 - Trailing part of a string after the last slash or backslash in it.
-- Original string if there is no slashes or backslashes in it.
+- Original string if there are no slashes or backslashes in it.
 
 **Example**
 
@@ -32,6 +34,14 @@ SELECT basename(a), 'some/long/path/to/file' AS a
 ┌─basename('some/long/path/to/file')─┬─a──────────────────────┐
 │ file                               │ some/long/path/to/file │
 └────────────────────────────────────┴────────────────────────┘
+```
+```sql
+SELECT basename(a), 'some\\long\\path\\to\\file' AS a
+```
+```text
+┌─basename('some\\long\\path\\to\\file')─┬─a──────────────────────┐
+│ file                                   │ some\long\path\to\file │
+└────────────────────────────────────────┴────────────────────────┘
 ```
 ```sql
 SELECT basename(a), 'some-file-name' AS a
