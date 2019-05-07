@@ -23,33 +23,36 @@ Backslashes should be escaped in `expr`.
 A string-type value that contains:
 
 - Trailing part of a string after the last slash or backslash in it.
+
+    If the input string contains a path, ending with slash or backslash, for example, `\` or `\home\`, the function returns an empty string.
+
 - Original string if there are no slashes or backslashes in it.
 
 **Example**
 
 ```sql
-SELECT basename(a), 'some/long/path/to/file' AS a
+SELECT 'some/long/path/to/file' AS a, basename(a)
 ```
 ```text
-┌─basename('some/long/path/to/file')─┬─a──────────────────────┐
-│ file                               │ some/long/path/to/file │
-└────────────────────────────────────┴────────────────────────┘
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
 ```
 ```sql
-SELECT basename(a), 'some\\long\\path\\to\\file' AS a
+SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 ```
 ```text
-┌─basename('some\\long\\path\\to\\file')─┬─a──────────────────────┐
-│ file                                   │ some\long\path\to\file │
-└────────────────────────────────────────┴────────────────────────┘
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
 ```
 ```sql
-SELECT basename(a), 'some-file-name' AS a
+SELECT 'some-file-name' AS a, basename(a)
 ```
 ```text
-┌─basename('some-file-name')─┬─a──────────────┐
-│ some-file-name             │ some-file-name │
-└────────────────────────────┴────────────────┘
+┌─a──────────────┬─basename('some-file-name')─┐
+│ some-file-name │ some-file-name             │
+└────────────────┴────────────────────────────┘
 ```
 
 ## visibleWidth(x)
