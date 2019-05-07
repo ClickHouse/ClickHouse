@@ -89,13 +89,13 @@ namespace
 
         for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
         {
-            if (columns.size() != columns_received->data[col_n].size)
+            if (columns.size() > columns_received->data[col_n].size)
                 throw Exception(
                     "LibraryDictionarySource: Returned unexpected number of columns: " + std::to_string(columns_received->data[col_n].size)
                         + ", must be " + std::to_string(columns.size()),
                     ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-            for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
+            for (size_t columns_size = columns.size(), row_n = 0; row_n < columns_size; ++row_n)
             {
                 const auto & field = columns_received->data[col_n].data[row_n];
                 if (!field.data)
