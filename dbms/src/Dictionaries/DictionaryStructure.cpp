@@ -485,15 +485,18 @@ void addLayoutFieldsFromAST(
 void addLifetimeFieldsFromAST(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
-    const ASTCreateQuery & create)
+    const ASTDictionaryLifetime * lifetime)
 {
-    auto lifetime = ExternalLoadableLifetime(create.dictionary_source->lifetime);
+    if (lifetime == nullptr)
+        throw Exception(std::string(__PRETTY_FUNCTION__) + ": lifetime is nullptr",
+                        ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
     AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
     AutoPtr<Element> min_element(doc->createElement("min"));
     AutoPtr<Element> max_element(doc->createElement("max"));
-    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime.min_sec)));
+    AutoPtr<Text> min_sec(doc->createTextNode(toString(lifetime->min_sec)));
     min_element->appendChild(min_sec);
-    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime.max_sec)));
+    AutoPtr<Text> max_sec(doc->createTextNode(toString(lifetime->max_sec)));
     max_element->appendChild(max_sec);
     lifetime_element->appendChild(min_element);
     lifetime_element->appendChild(max_element);
@@ -674,6 +677,10 @@ Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(cons
      *  element->appendChild(text_node);
      */
 
+    if (create.dictionary_source == nullptr)
+        throw Exception(std::string(__PRETTY_FUNCTION__) + ": dictionary source is nullptr",
+                        ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
     AutoPtr<Poco::XML::Document> xml_document(new Poco::XML::Document());
     AutoPtr<Poco::XML::Element> document_root(xml_document->createElement("dictionaries"));
     xml_document->appendChild(document_root);
@@ -691,7 +698,7 @@ Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(cons
     addSourceFieldsFromAST(xml_document, current_dictionary, create);
     addLayoutFieldsFromAST(xml_document, current_dictionary, create);
     addStructureFieldsFromAST(xml_document, current_dictionary, create);
-    addLifetimeFieldsFromAST(xml_document, current_dictionary, create);
+    addLifetimeFieldsFromAST(xml_document, current_dictionary, create.dictionary_source->lifetime);
 
     conf->load(xml_document);
     return conf;

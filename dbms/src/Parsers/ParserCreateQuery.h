@@ -333,6 +333,17 @@ protected:
 };
 
 
+/*
+ * LIFETIME(MIN 10, MAX 100)
+ */
+class ParserDictionaryLifetime : public IParserBase
+{
+protected:
+    const char * getName() const override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /**
   * SOURCE(SOURCE_TYPE(SOURCE PARAMS))
   *

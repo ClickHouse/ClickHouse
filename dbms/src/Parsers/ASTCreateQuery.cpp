@@ -8,10 +8,47 @@
 namespace DB
 {
 
+
+String ASTDictionaryLifetime::getID(char) const
+{
+    return "Dictionary lifetime";
+}
+
+
+ASTPtr ASTDictionaryLifetime::clone() const
+{
+    auto res = std::make_shared<ASTDictionaryLifetime>(*this);
+    res->children.clear();
+    res->min_sec = min_sec;
+    res->max_sec = max_sec;
+    return res;
+}
+
+
+void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
+                                       FormatState &,
+                                       FormatStateStacked) const
+{
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
+                  << "LIFETIME"
+                  << (settings.hilite ? hilite_none : "")
+                  << "("
+                  << (settings.hilite ? hilite_keyword : "")
+                  << "MIN "
+                  << (settings.hilite ? hilite_none : "")
+                  << min_sec << ", "
+                  << (settings.hilite ? hilite_keyword : "")
+                  << "MAX "
+                  << (settings.hilite ? hilite_none : "")
+                  << max_sec << ")";
+}
+
+
 String ASTDictionarySource::getID(char) const
 {
     return "Source definition";
 }
+
 
 ASTPtr ASTDictionarySource::clone() const
 {

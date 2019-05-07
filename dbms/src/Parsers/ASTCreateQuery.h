@@ -33,13 +33,29 @@ public:
 };
 
 
+class ASTDictionaryLifetime : public IAST
+{
+public:
+    uint64_t min_sec;
+    uint64_t max_sec;
+
+    String getID(char delimiter) const override;
+
+    ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & settings,
+                    FormatState & state,
+                    FormatStateStacked frame) const override;
+};
+
+
 class ASTDictionarySource : public IAST
 {
 public:
     ASTKeyValueFunction * source = nullptr;
     IAST * primary_key = nullptr;
     IAST * composite_key = nullptr;
-    ASTKeyValueFunction * lifetime;
+    ASTDictionaryLifetime * lifetime;
     ASTKeyValueFunction * layout;
     ASTKeyValueFunction * range;
 

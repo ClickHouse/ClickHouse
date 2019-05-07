@@ -544,6 +544,38 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+const char * ParserDictionaryLifetime::getName() const
+{
+    return "lifetime definition";
+}
+
+bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyValueFunction key_value_pairs_p;
+    ASTPtr ast_lifetime;
+    if (!key_value_pairs_p.parse(pos, node, expected))
+        return false;
+
+    auto res = std::make_shared<ASTDictionaryLifetime>();
+    for (auto elem : ast_lifetime->children)
+    {
+        const ASTPair & pair = elem->as<const ASTPair &>();
+        const ASTLiteral & literal = elem->as<ASTLiteral &>();
+        if (literal.value.getType() != Field::Types::UInt64)
+            return false;
+
+        if (pair.first == "min")
+            res->min_sec = literal.value.get<UInt64>();
+        else if (pair.first == "max")
+            res->max_sec = literal.value.get<UInt64>();
+        else
+            return false;
+    }
+
+    return true;
+}
+
+
 const char * ParserDictionarySource::getName() const
 {
     return "source definition";
@@ -562,6 +594,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyValuePairsList key_value_pairs_list_p;
     ParserExpressionList expression_list_p(false);
     ParserKeyValuePairsList expression_parser;
+    ParserDictionaryLifetime lifetime_p;
 
     ASTPtr primary_key;
     ASTPtr composite_key;
@@ -598,7 +631,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!ast_lifetime && lifetime_keyword.checkWithoutMoving(pos, expected))
         {
-            if (!key_value_pairs_p.parse(pos, ast_lifetime, expected))
+            if (!lifetime_p.parse(pos, ast_lifetime, expected))
                 return false;
             continue;
         }
