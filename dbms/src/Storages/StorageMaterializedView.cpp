@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
 }
 
-static String generateInnerTableName(const String & table_name)
+static inline String generateInnerTableName(const String & table_name)
 {
     return ".inner." + table_name;
 }
