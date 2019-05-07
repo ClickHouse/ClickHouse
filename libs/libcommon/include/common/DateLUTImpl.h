@@ -394,7 +394,7 @@ public:
     }
 
     /// Custom year begins with a monday of the week that is contained January 1,
-    /// which day can be modified through config of first_week_of_day.
+    /// which day can be modified through custom_month and custom_day of parameters.
     /// Example: Custom year 2019 begins at 2018-12-31. And Custom year 2017 begins at 2016-12-26.
     inline DayNum toFirstDayNumOfCustomYear(DayNum d, UInt8 custom_month, UInt8 custom_day) const
     {
@@ -414,7 +414,7 @@ public:
 
     /// Custom week number. Week begins at monday.
     /// The week number 1 is the first week in year that contains January 1,
-    /// which day can be modified through config of first_week_of_day.
+    /// which day can be modified through custom_month and custom_day of parameters.
     inline unsigned toCustomWeek(DayNum d, UInt8 custom_month, UInt8 custom_day) const
     {
         return 1 + (toFirstDayNumOfWeek(d) - toFirstDayNumOfCustomYear(d, custom_month, custom_day)) / 7;

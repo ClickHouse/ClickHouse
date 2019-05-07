@@ -1,13 +1,12 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/CustomDateTransforms.h>
 #include <Functions/FunctionCustomDateToSomething.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 
 
 namespace DB
 {
-
 using FunctionToCustomWeek = FunctionCustomDateToSomething<DataTypeUInt8, ToCustomWeekImpl>;
 
 void registerFunctionToCustomWeek(FunctionFactory & factory)
@@ -16,5 +15,3 @@ void registerFunctionToCustomWeek(FunctionFactory & factory)
 }
 
 }
-
-

@@ -76,6 +76,14 @@ Returns the date.
 Rounds down a date or date with time to the first day of ISO year.
 Returns the date.
 
+## toStartOfCustomYear
+
+Rounds down a date or date with time to the first day of Custom year.
+Returns the date.
+```
+toStartOfCustomYear(DateTime1, [, CustomDate][, Timezone])
+```
+
 ## toStartOfQuarter
 
 Rounds down a date or date with time to the first day of the quarter.
@@ -168,6 +176,53 @@ Converts a date or date with time to a UInt16 number containing the ISO Year num
 ## toISOWeek
 
 Converts a date or date with time to a UInt8 number containing the ISO Week number.
+
+## toCustomYear
+
+Converts a date or date with time to a UInt16 number containing the Custom Year number.
+```
+toCustomYear(DateTime, [, CustomDate][, Timezone])
+```
+
+## toCustomWeek
+
+Converts a date or date with time to a UInt8 number containing the Custom Week number.
+The week number 1 is the first week in year that contains some day, which default to January 1, it can be modify by parameter of function.
+Week begins at monday.
+```
+toCustomWeek(DateTime1, [, CustomDate][, Timezone])
+```
+**Parameters**
+
+- `DateTime1` – Date or DateTime.
+- `CustomDate` – Optional parameter, default is January 1, format: MM-DD.
+- `Timezone` –  Optional parameter, it behaves like any other conversion function.
+
+**Example**
+By default, the week contains January 1 is the first week:
+
+``` sql
+SELECT toDate('2016-12-27') AS date, toCustomYear(date) AS year, toCustomWeek(date) AS week, toStartOfCustomYear(date) AS startday;
+```
+
+```
+┌───────date─┬─year─┬─week─┬───startday─┐
+│ 2016-12-27       │ 2017   │          1  │ 2016-12-26   │
+└───────────┴─────┴──────┴─────────┘
+```
+
+The week contains January 28 is the first week:
+
+``` sql
+SELECT toDate('2016-12-27') AS date, toCustomYear(date, '01-28') AS year, toCustomWeek(date,'01-28') AS week, toStartOfCustomYear(date,'01-28') AS startday;
+```
+
+```
+┌───────date─┬─year─┬─week─┬───startday─┐
+│ 2016-12-27       │ 2016   │        49  │ 2016-01-25  │
+└───────────┴─────┴──────┴─────────┘
+```
+
 
 ## now
 

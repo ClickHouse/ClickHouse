@@ -1,14 +1,13 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <Functions/CustomDateTransforms.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <Functions/CustomDateTransforms.h>
 #include <IO/WriteHelpers.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -24,10 +23,7 @@ public:
     static constexpr auto name = Transform::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionCustomDateToSomething>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -51,7 +47,8 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!isString(arguments[1].type))
                 throw Exception(
-                    "Function " + getName() + " supports 1 or 2 or 3 arguments. The 1st argument "
+                    "Function " + getName()
+                        + " supports 1 or 2 or 3 arguments. The 1st argument "
                           "must be of type Date or DateTime. The 2nd argument (optional) must be "
                           "a constant string with custom date(MM-DD). The 3nd argument (optional) must be "
                           "a constant string with timezone name",
@@ -61,27 +58,29 @@ public:
         {
             if (!isDateOrDateTime(arguments[0].type))
                 throw Exception(
-                        "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
+                    "Illegal type " + arguments[0].type->getName() + " of argument of function " + getName()
                         + ". Should be a date or a date with time",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!isString(arguments[1].type))
                 throw Exception(
-                        "Function " + getName() + " supports 1 or 2 or 3 arguments. The 1st argument "
-                              "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                              "a constant string with custom date(MM-DD). The 3nd argument (optional) must be "
-                              "a constant string with timezone name",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    "Function " + getName()
+                        + " supports 1 or 2 or 3 arguments. The 1st argument "
+                          "must be of type Date or DateTime. The 2nd argument (optional) must be "
+                          "a constant string with custom date(MM-DD). The 3nd argument (optional) must be "
+                          "a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (!isString(arguments[2].type))
                 throw Exception(
-                        "Function " + getName() + " supports 1 or 2 or 3 arguments. The 1st argument "
-                              "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                              "a constant string with custom date(MM-DD). The 3nd argument (optional) must be "
-                              "a constant string with timezone name",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    "Function " + getName()
+                        + " supports 1 or 2 or 3 arguments. The 1st argument "
+                          "must be of type Date or DateTime. The 2nd argument (optional) must be "
+                          "a constant string with custom date(MM-DD). The 3nd argument (optional) must be "
+                          "a constant string with timezone name",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (isDate(arguments[0].type) && std::is_same_v<ToDataType, DataTypeDate>)
                 throw Exception(
-                        "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    "The timezone argument of function " + getName() + " is allowed only when the 1st argument has the type DateTime",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else
             throw Exception(
@@ -105,23 +104,23 @@ public:
         WhichDataType which(from_type);
 
         if (which.isDate())
-            CustomDateTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
+            CustomDateTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform>::execute(
+                block, arguments, result, input_rows_count);
         else if (which.isDateTime())
-            CustomDateTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
+            CustomDateTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform>::execute(
+                block, arguments, result, input_rows_count);
         else
-            throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
+            throw Exception(
+                "Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
 
-    bool hasInformationAboutMonotonicity() const override
-    {
-        return true;
-    }
+    bool hasInformationAboutMonotonicity() const override { return true; }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        IFunction::Monotonicity is_monotonic { true };
+        IFunction::Monotonicity is_monotonic{true};
         IFunction::Monotonicity is_not_monotonic;
 
         if (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
@@ -141,17 +140,18 @@ public:
         if (checkAndGetDataType<DataTypeDate>(&type))
         {
             return Transform::FactorTransform::execute(UInt16(left.get<UInt64>()), DEFAULT_CUSTOM_MONTH, DEFAULT_CUSTOM_DAY, date_lut)
-                == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), DEFAULT_CUSTOM_MONTH, DEFAULT_CUSTOM_DAY, date_lut)
-                ? is_monotonic : is_not_monotonic;
+                    == Transform::FactorTransform::execute(UInt16(right.get<UInt64>()), DEFAULT_CUSTOM_MONTH, DEFAULT_CUSTOM_DAY, date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
         }
         else
         {
             return Transform::FactorTransform::execute(UInt32(left.get<UInt64>()), DEFAULT_CUSTOM_MONTH, DEFAULT_CUSTOM_DAY, date_lut)
-                == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), DEFAULT_CUSTOM_MONTH, DEFAULT_CUSTOM_DAY, date_lut)
-                ? is_monotonic : is_not_monotonic;
+                    == Transform::FactorTransform::execute(UInt32(right.get<UInt64>()), DEFAULT_CUSTOM_MONTH, DEFAULT_CUSTOM_DAY, date_lut)
+                ? is_monotonic
+                : is_not_monotonic;
         }
     }
 };
 
 }
-
