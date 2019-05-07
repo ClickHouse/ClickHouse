@@ -17,7 +17,7 @@ SELECT [DISTINCT] expr_list
     [UNION ALL ...]
     [INTO OUTFILE filename]
     [FORMAT format]
-    [LIMIT n BY columns]
+    [LIMIT [offset_value, ]n BY columns]
 ```
 
 All the clauses are optional, except for the required list of expressions immediately after SELECT.
@@ -46,7 +46,7 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 ### SAMPLE Clause {#select-sample-clause}
 
-The `SAMPLE` clause allows for approximated query processing. 
+The `SAMPLE` clause allows for approximated query processing.
 
 When data sampling is enabled, the query is not performed on all the data, but only on a certain fraction of data (sample). For example, if you need to calculate statistics for all the visits, it is enough to execute the query on the 1/10 fraction of all the visits and then multiply the result by 10.
 
@@ -67,11 +67,11 @@ The features of data sampling are listed below:
 
 For the `SAMPLE` clause the following syntax is supported:
 
-| SAMPLE&#160;Clause&#160;Syntax | Description | 
-| ---------------- | --------- | 
+| SAMPLE&#160;Clause&#160;Syntax | Description |
+| ---------------- | --------- |
 | `SAMPLE k` | Here `k` is the number from 0 to 1.</br>The query is executed on `k` fraction of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#select-sample-k)|
 | `SAMPLE n` | Here `n` is a sufficiently large integer.</br>The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#select-sample-n) |
-| `SAMPLE k OFFSET m` | Here `k` and `m` are the numbers from 0 to 1.</br>The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#select-sample-offset) | 
+| `SAMPLE k OFFSET m` | Here `k` and `m` are the numbers from 0 to 1.</br>The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#select-sample-offset) |
 
 
 #### SAMPLE k {#select-sample-k}
@@ -129,7 +129,7 @@ SELECT avg(Duration)
 FROM visits
 SAMPLE 10000000
 ```  
- 
+
 #### SAMPLE k OFFSET m {#select-sample-offset}
 
 Here `k` and `m` are numbers from 0 to 1. Examples are shown below.
@@ -216,10 +216,10 @@ The next example uses the `LEFT ARRAY JOIN` clause:
 
 ``` sql
 SELECT s, arr
-FROM arrays_test 
+FROM arrays_test
 LEFT ARRAY JOIN arr;
 ```
-``` 
+```
 ┌─s───────────┬─arr─┐
 │ Hello       │   1 │
 │ Hello       │   2 │
@@ -228,7 +228,7 @@ LEFT ARRAY JOIN arr;
 │ World       │   5 │
 │ Goodbye     │   0 │
 └─────────────┴─────┘
-``` 
+```
 
 #### Using Aliases
 
@@ -240,7 +240,7 @@ FROM arrays_test
 ARRAY JOIN arr AS a;
 ```
 
-``` 
+```
 ┌─s─────┬─arr─────┬─a─┐
 │ Hello │ [1,2]   │ 1 │
 │ Hello │ [1,2]   │ 2 │
@@ -254,7 +254,7 @@ Using aliases, you can perform `ARRAY JOIN` with an external array. For example:
 
 ``` sql
 SELECT s, arr_external
-FROM arrays_test 
+FROM arrays_test
 ARRAY JOIN [1, 2, 3] AS arr_external;
 ```
 
@@ -325,7 +325,7 @@ INSERT INTO nested_test
 VALUES ('Hello', [1,2], [10,20]), ('World', [3,4,5], [30,40,50]), ('Goodbye', [], []);
 ```
 
-``` 
+```
 ┌─s───────┬─nest.x──┬─nest.y─────┐
 │ Hello   │ [1,2]   │ [10,20]    │
 │ World   │ [3,4,5] │ [30,40,50] │
@@ -339,7 +339,7 @@ FROM nested_test
 ARRAY JOIN nest;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -357,7 +357,7 @@ FROM nested_test
 ARRAY JOIN `nest.x`, `nest.y`;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─┐
 │ Hello │      1 │     10 │
 │ Hello │      2 │     20 │
@@ -375,7 +375,7 @@ FROM nested_test
 ARRAY JOIN `nest.x`;
 ```
 
-``` 
+```
 ┌─s─────┬─nest.x─┬─nest.y─────┐
 │ Hello │      1 │ [10,20]    │
 │ Hello │      2 │ [10,20]    │
@@ -393,7 +393,7 @@ FROM nested_test
 ARRAY JOIN nest AS n;
 ```
 
-``` 
+```
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │
@@ -411,7 +411,7 @@ FROM nested_test
 ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 ```
 
-``` 
+```
 ┌─s─────┬─n.x─┬─n.y─┬─nest.x──┬─nest.y─────┬─num─┐
 │ Hello │   1 │  10 │ [1,2]   │ [10,20]    │   1 │
 │ Hello │   2 │  20 │ [1,2]   │ [10,20]    │   2 │
@@ -669,11 +669,53 @@ When external aggregation is enabled, if there was less than ` max_bytes_before_
 If you have an ORDER BY with a small LIMIT after GROUP BY, then the ORDER BY CLAUSE will not use significant amounts of RAM.
 But if the ORDER BY doesn't have LIMIT, don't forget to enable external sorting (`max_bytes_before_external_sort`).
 
-### LIMIT N BY Clause
+### LIMIT BY Clause
 
-LIMIT N BY COLUMNS selects the top N rows for each group of COLUMNS. LIMIT N BY is not related to LIMIT; they can both be used in the same query. The key for LIMIT N BY can contain any number of columns or expressions.
+The query with the `LIMIT n BY columns` clause selects the top `n` rows for each group of `columns`. `LIMIT BY` is not related to `LIMIT`, they can both be used in the same query. The key for `LIMIT BY` can contain any number of columns or expressions.
 
-Example:
+ClickHouse supports the following syntax:
+
+- `LIMIT [offset_value, ]n BY columns`
+- `LIMIT n OFFSET offset_value BY columns`
+
+The `OFFSET` value sets the number of rows which ClickHouse skips from the beginning of the output.
+
+**Examples**
+
+Sample table:
+
+```sql
+CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
+INSERT INTO limit_by values(1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
+```
+
+Queries:
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id
+```
+```text
+┌─id─┬─val─┐
+│  1 │  10 │
+│  1 │  11 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
+```
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+The `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query returns the same result.
+
+The following query returns the top 5 referrers for each `domain, device_type` pair, but not more than 100 rows (`LIMIT n BY + LIMIT`).
 
 ``` sql
 SELECT
@@ -687,8 +729,6 @@ ORDER BY cnt DESC
 LIMIT 5 BY domain, device_type
 LIMIT 100
 ```
-
-The query will select the top 5 referrers for each `domain, device_type` pair, but not more than 100 rows (`LIMIT n BY + LIMIT`).
 
 ### HAVING Clause
 
