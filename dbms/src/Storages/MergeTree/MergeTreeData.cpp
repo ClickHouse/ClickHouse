@@ -116,7 +116,7 @@ MergeTreeData::MergeTreeData(
     database_name(database_), table_name(table_),
     full_path(full_path_),
     broken_part_callback(broken_part_callback_),
-    log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
+    log_name(database_name + "." + table_name), log(&Logger::get(log_name)),
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
@@ -406,7 +406,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
     if (!only_check)
     {
-        setColumns(new_columns);
+        setColumns(std::move(new_columns));
 
         order_by_ast = new_order_by_ast;
         sorting_key_columns = std::move(new_sorting_key_columns);
@@ -420,7 +420,7 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
         primary_key_sample = std::move(new_primary_key_sample);
         primary_key_data_types = std::move(new_primary_key_data_types);
 
-        setIndicesDescription(indices_description);
+        setIndices(indices_description);
         skip_indices = std::move(new_indices);
 
         primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
@@ -730,7 +730,7 @@ String MergeTreeData::MergingParams::getModeName() const
 }
 
 
-Int64 MergeTreeData::getMaxBlockNumber()
+Int64 MergeTreeData::getMaxBlockNumber() const
 {
     auto lock = lockParts();
 
@@ -1177,13 +1177,13 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
     ASTPtr new_ttl_table_ast = ttl_table_ast;
     commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
 
-    if (getIndicesDescription().empty() && !new_indices.empty() &&
+    if (getIndices().empty() && !new_indices.empty() &&
             !context.getSettingsRef().allow_experimental_data_skipping_indices)
         throw Exception("You must set the setting `allow_experimental_data_skipping_indices` to 1 " \
                         "before using data skipping indices.", ErrorCodes::BAD_ARGUMENTS);
@@ -1233,7 +1233,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
 
     for (const AlterCommand & command : commands)
     {
-        if (!command.is_mutable())
+        if (!command.isMutable())
         {
             continue;
         }
@@ -1274,7 +1274,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands, const Context & c
     NameToNameMap unused_map;
     bool unused_bool;
     createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
-            getIndicesDescription().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
+            getIndices().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -1445,7 +1445,7 @@ void MergeTreeData::alterDataPart(
     const auto& part = transaction->getDataPart();
     bool force_update_metadata;
     createConvertExpression(part, part->columns, new_columns,
-            getIndicesDescription().indices, new_indices,
+            getIndices().indices, new_indices,
             expression, transaction->rename_map, force_update_metadata);
 
     size_t num_files_to_modify = transaction->rename_map.size();
@@ -1597,7 +1597,7 @@ void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr
 
     LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(data_part));
-    alterDataPart(new_columns, getIndicesDescription().indices, false, transaction);
+    alterDataPart(new_columns, getIndices().indices, false, transaction);
     if (transaction->isValid())
         transaction->commit();
 
@@ -2684,7 +2684,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
     return false;
 }
 
-bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
+bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context &) const
 {
     /// Make sure that the left side of the IN operator contain part of the key.
     /// If there is a tuple on the left side of the IN operator, at least one item of the tuple
@@ -2713,18 +2713,12 @@ bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     }
 }
 
-MergeTreeData * MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
+MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const
 {
-    MergeTreeData * src_data;
-    if (auto storage_merge_tree = dynamic_cast<StorageMergeTree *>(source_table.get()))
-        src_data = &storage_merge_tree->data;
-    else if (auto storage_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(source_table.get()))
-        src_data = &storage_replicated_merge_tree->data;
-    else
-    {
-        throw Exception("Table " + table_name + " supports attachPartitionFrom only for MergeTree or ReplicatedMergeTree engines."
+    MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(source_table.get());
+    if (!src_data)
+        throw Exception("Table " + table_name + " supports attachPartitionFrom only for MergeTree family of table engines."
                         " Got " + source_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
 
     if (getColumns().getAllPhysical().sizeOfDifference(src_data->getColumns().getAllPhysical()))
         throw Exception("Tables have different structure", ErrorCodes::INCOMPATIBLE_COLUMNS);
@@ -2743,7 +2737,7 @@ MergeTreeData * MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
     if (format_version != src_data->format_version)
         throw Exception("Tables have different format_version", ErrorCodes::BAD_ARGUMENTS);
 
-    return src_data;
+    return *src_data;
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part,
