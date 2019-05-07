@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-static bool isParseError(int code)
+bool isParseError(int code)
 {
     return code == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED
         || code == ErrorCodes::CANNOT_PARSE_QUOTED_STRING
