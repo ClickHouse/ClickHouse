@@ -377,11 +377,11 @@ namespace
     template <typename Map, typename KeyGetter>
     struct Inserter<ASTTableJoin::Strictness::Any, Map, KeyGetter>
     {
-        static ALWAYS_INLINE void insert(const Join &, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
+        static ALWAYS_INLINE void insert(const Join & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
-            if (emplace_result.isInserted() || emplace_result.getMapped().overwrite)
+            if (emplace_result.isInserted() || join.anyTakeLastRow())
                 new (&emplace_result.getMapped()) typename Map::mapped_type(stored_block, i);
         }
     };
@@ -1078,10 +1078,7 @@ void Join::joinGet(Block & block, const String & column_name) const
 
     if (kind == ASTTableJoin::Kind::Left && strictness == ASTTableJoin::Strictness::Any)
     {
-        if (any_take_last_row)
-            joinGetImpl(block, column_name, std::get<MapsAnyOverwrite>(maps));
-        else
-            joinGetImpl(block, column_name, std::get<MapsAny>(maps));
+        joinGetImpl(block, column_name, std::get<MapsAny>(maps));
     }
     else
         throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
