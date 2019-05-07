@@ -671,14 +671,16 @@ But if the ORDER BY doesn't have LIMIT, don't forget to enable external sorting 
 
 ### LIMIT BY Clause
 
-The query with the `LIMIT n BY columns` clause selects the top `n` rows for each group of `columns`. `LIMIT BY` is not related to `LIMIT`, they can both be used in the same query. The key for `LIMIT BY` can contain any number of columns or expressions.
+The query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](syntax.md#syntax-expressions).
 
 ClickHouse supports the following syntax:
 
-- `LIMIT [offset_value, ]n BY columns`
-- `LIMIT n OFFSET offset_value BY columns`
+- `LIMIT [offset_value, ]n BY expressions`
+- `LIMIT n OFFSET offset_value BY expressions`
 
-The `OFFSET` value sets the number of rows which ClickHouse skips from the beginning of the output.
+During the query processing, ClickHouse selects data ordered by sorting key. Sorting key is set explicitly by [ORDER BY](#select-order-by) clause or implicitly as a property of table engine. Then ClickHouse applies `LIMIT n BY expressions` and returns the first `n` rows for each distinct combination of `expressions`. If `OFFSET` is specified, then for each data block, belonging to a distinct combination of `expressions`, ClickHouse skips `offset_value` rows from the beginning of the block, and returns not more than `n` rows as a result. If `offset_value` is bigger than the number of rows in the data block, then ClickHouse returns no rows from the block.
+
+`LIMIT BY` is not related to `LIMIT`, they can both be used in the same query.
 
 **Examples**
 
@@ -737,7 +739,7 @@ WHERE and HAVING differ in that WHERE is performed before aggregation (GROUP BY)
 If aggregation is not performed, HAVING can't be used.
 
 
-### ORDER BY Clause
+### ORDER BY Clause {#select-order-by}
 
 The ORDER BY clause contains a list of expressions, which can each be assigned DESC or ASC (the sorting direction). If the direction is not specified, ASC is assumed. ASC is sorted in ascending order, and DESC in descending order. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`
 
