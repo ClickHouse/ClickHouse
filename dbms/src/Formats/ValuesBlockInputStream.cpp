@@ -4,7 +4,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Formats/ValuesRowInputStream.h>
+#include <Formats/ValuesBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 #include <Common/FieldVisitors.h>
@@ -29,15 +29,17 @@ namespace ErrorCodes
 }
 
 
-ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, const FormatSettings & format_settings)
-    : istr(istr_), header(header_), context(std::make_unique<Context>(context_)), format_settings(format_settings)
+ValuesBlockInputStream::ValuesBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_,
+                                               const FormatSettings & format_settings, UInt64 max_block_size_)
+        : istr(istr_), header(header_), context(std::make_unique<Context>(context_)),
+          format_settings(format_settings), max_block_size(max_block_size_)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(istr);
 }
 
 
-bool ValuesRowInputStream::read(MutableColumns & columns, RowReadExtension &)
+bool ValuesBlockInputStream::read(MutableColumns & columns)
 {
     size_t num_columns = columns.size();
 
@@ -147,6 +149,32 @@ bool ValuesRowInputStream::read(MutableColumns & columns, RowReadExtension &)
     return true;
 }
 
+Block ValuesBlockInputStream::readImpl()
+{
+    MutableColumns columns = header.cloneEmptyColumns();
+
+    for (size_t rows = 0; rows < max_block_size; ++rows)
+    {
+        try
+        {
+            ++total_rows;
+            if (!read(columns))
+                break;
+        }
+        catch (Exception & e)
+        {
+            if (isParseError(e.code()))
+                e.addMessage(" at row " + std::to_string(total_rows));
+            throw;
+        }
+    }
+
+    if (columns.empty() || columns[0]->empty())
+        return {};
+
+    return header.cloneWithColumns(std::move(columns));
+}
+
 
 void registerInputFormatValues(FormatFactory & factory)
 {
@@ -157,9 +185,7 @@ void registerInputFormatValues(FormatFactory & factory)
         UInt64 max_block_size,
         const FormatSettings & settings)
     {
-        return std::make_shared<BlockInputStreamFromRowInputStream>(
-            std::make_shared<ValuesRowInputStream>(buf, sample, context, settings),
-            sample, max_block_size, settings);
+        return std::make_shared<ValuesBlockInputStream>(buf, sample, context, settings, max_block_size);
     });
 }
 

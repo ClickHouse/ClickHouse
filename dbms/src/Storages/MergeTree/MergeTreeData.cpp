@@ -16,7 +16,7 @@
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MarkInCompressedFile.h>
-#include <Formats/ValuesRowInputStream.h>
+#include <Formats/ValuesBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -2471,17 +2471,17 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
-        MutableColumns columns = partition_key_sample.cloneEmptyColumns();
+        ValuesBlockInputStream input_stream(buf, partition_key_sample.cloneWithColumns(partition_key_sample.cloneEmptyColumns()),
+                                            context, format_settings, 1);
+        Block partition_columns = input_stream.IBlockInputStream::read();
 
-        RowReadExtension unused;
-        if (!input_stream.read(columns, unused))
+        if (!partition_columns || partition_columns.rows() != 1)
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
 
         for (size_t i = 0; i < fields_count; ++i)
-            columns[i]->get(0, partition_row[i]);
+            partition_columns.getByPosition(i).column->get(0, partition_row[i]);
     }
 
     MergeTreePartition partition(std::move(partition_row));
