@@ -139,7 +139,7 @@ It is also possible to use other compression methods for HTTP data. To send a `P
 - [Brotli](https://en.wikipedia.org/wiki/Brotli) compression (`compression_method = br`).
 - [Deflate](https://en.wikipedia.org/wiki/DEFLATE) compression (`compression_method = deflate`).
 
-You should use the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the compression level of the data with the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting.
+To enable HTTP compression, you must use the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the compression level of the data with the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting for all the compression methods.
 
 You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
 
