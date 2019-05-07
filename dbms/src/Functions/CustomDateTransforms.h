@@ -1,12 +1,12 @@
 #pragma once
-#include <Core/Types.h>
-#include <Common/Exception.h>
-#include <common/DateLUTImpl.h>
-#include <Columns/ColumnVector.h>
+#include <regex>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
+#include <Core/Types.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <regex>
+#include <Common/Exception.h>
+#include <common/DateLUTImpl.h>
 
 /// Custom date defaults to January 1 ( 01-01 )
 #define DEFAULT_CUSTOM_MONTH 1
@@ -14,7 +14,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -88,8 +87,12 @@ struct ToCustomWeekImpl
 template <typename FromType, typename ToType, typename Transform>
 struct Transformer
 {
-    static void vector(const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to,
-                       UInt8 custom_month, UInt8 custom_day, const DateLUTImpl & time_zone)
+    static void vector(
+        const PaddedPODArray<FromType> & vec_from,
+        PaddedPODArray<ToType> & vec_to,
+        UInt8 custom_month,
+        UInt8 custom_day,
+        const DateLUTImpl & time_zone)
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -123,9 +126,10 @@ struct CustomDateTransformImpl
                     custom_day = std::stoi(custom_date.substr(3, 2));
                 }
                 else
-                    throw Exception(String("The second argument for function ") + Transform::name +
-                                    " must be a constant string with custom date(MM-DD)",
-                                    ErrorCodes::ILLEGAL_COLUMN);
+                    throw Exception(
+                        String("The second argument for function ") + Transform::name
+                            + " must be a constant string with custom date(MM-DD)",
+                        ErrorCodes::ILLEGAL_COLUMN);
             }
         }
 
@@ -139,8 +143,9 @@ struct CustomDateTransformImpl
         }
         else
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                + " of first argument of function " + Transform::name,
+            throw Exception(
+                "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function "
+                    + Transform::name,
                 ErrorCodes::ILLEGAL_COLUMN);
         }
     }
