@@ -1,15 +1,20 @@
 #pragma once
 
+#include <Functions/IFunction.h>
+#include <Common/config.h>
+
+#if USE_SIMDJSON
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
 #ifdef __clang__
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wold-style-cast"
+    #pragma clang diagnostic ignored "-Wnewline-eof"
 #endif
 
 #include <simdjson/jsonparser.h>
@@ -17,7 +22,6 @@
 #ifdef __clang__
     #pragma clang diagnostic pop
 #endif
-
 
 namespace DB
 {
@@ -204,4 +208,36 @@ public:
         block.getByPosition(result_pos).column = std::move(to);
     }
 };
+}
+#endif
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+template <typename Impl>
+class FunctionJSONDummy : public IFunction
+{
+public:
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionJSONDummy>(); }
+
+    String getName() const override { return Impl::name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
+    {
+        throw Exception{"Function " + getName() + " is not supported without AVX2", ErrorCodes::NOT_IMPLEMENTED};
+    }
+
+    void executeImpl(Block &, const ColumnNumbers &, size_t, size_t) override
+    {
+        throw Exception{"Function " + getName() + " is not supported without AVX2", ErrorCodes::NOT_IMPLEMENTED};
+    }
+};
+
 }
