@@ -84,11 +84,11 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
         MergeTreeReadTask & current_task, MergeTreeRangeReader & current_reader)
     {
         if (!current_task.size_predictor)
-            return current_max_block_size_rows;
+            return static_cast<size_t>(current_max_block_size_rows);
 
         /// Calculates number of rows will be read using preferred_block_size_bytes.
         /// Can't be less than avg_index_granularity.
-        auto rows_to_read = current_task.size_predictor->estimateNumRows(current_preferred_block_size_bytes);
+        size_t rows_to_read = current_task.size_predictor->estimateNumRows(current_preferred_block_size_bytes);
         if (!rows_to_read)
             return rows_to_read;
         auto total_row_in_current_granule = current_reader.numRowsInCurrentGranule();
