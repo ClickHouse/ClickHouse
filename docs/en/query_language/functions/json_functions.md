@@ -57,3 +57,101 @@ There is currently no support for code points in the format `\uXXXX\uYYYY` that 
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/json_functions/) <!--hide-->
+
+The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
+
+## jsonHas(params[, accessors]...)
+
+If the value exists in the JSON document, `1` will be returned.
+
+If the value does not exist, `null` will be returned.
+
+Examples:
+
+```
+select jsonHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
+select jsonHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = null
+```
+
+An accessor can be either a string, a positive integer or a negative integer.
+
+* String = access object member by key.
+* Positive integer = access the n-th member/key from the beginning.
+* Negative integer = access the n-th member/key from the end.
+
+You may use integers to access both JSON arrays and JSON objects. JSON objects are accessed as an array with the `[key, value, key, value, ...]` layout.
+
+So, for example:
+
+```
+select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
+select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'hello'
+select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'b'
+```
+
+## jsonLength(params[, accessors]...)
+
+Return the length of a JSON array or a JSON object. For JSON objects, both keys and values are included.
+
+If the value does not exist or has a wrong type, `null` will be returned.
+
+Examples:
+
+```
+select jsonLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
+select jsonLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 4
+```
+
+The usage of accessors is the same as above.
+
+## jsonType(params[, accessors]...)
+
+Return the type of a JSON value.
+
+If the value does not exist, `null` will be returned.
+
+Examples:
+
+```
+select jsonType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
+select jsonType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
+select jsonType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
+```
+
+The usage of accessors is the same as above.
+
+## jsonExtractUInt(params[, accessors]...)
+## jsonExtractInt(params[, accessors]...)
+## jsonExtractFloat(params[, accessors]...)
+## jsonExtractBool(params[, accessors]...)
+## jsonExtractString(params[, accessors]...)
+
+Parse data from JSON values which is similar to `visitParam` functions.
+
+If the value does not exist or has a wrong type, `null` will be returned.
+
+Examples:
+
+```
+select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
+select jsonExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
+select jsonExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
+select jsonExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
+```
+
+The usage of accessors is the same as above.
+
+## jsonExtract(params, type[, accessors]...)
+
+Parse data from JSON values with a given ClickHouse data type.
+
+If the value does not exist or has a wrong type, `null` will be returned.
+
+Examples:
+
+```
+select jsonExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Int8', 'b', 1) = -100
+select jsonExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, String, String, Array(Float64))') = ('a', 'hello', 'b', [-100.0, 200.0, 300.0])
+```
+
+The usage of accessors is the same as above.
