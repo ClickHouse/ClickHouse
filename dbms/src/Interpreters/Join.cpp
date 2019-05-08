@@ -659,7 +659,7 @@ void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added,
 
     if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
     {
-        for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(mapped); current != nullptr; current = current->next)
+        for (auto current = &static_cast<const typename Map::mapped_type::Base &>(mapped); current != nullptr; current = current->next)
         {
             added.appendFromBlock(*current->block, current->row_num);
             ++current_offset;
@@ -1153,7 +1153,7 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 {
     static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
     {
-        for (auto current = &static_cast<const typename Mapped::Base_t &>(mapped); current != nullptr; current = current->next)
+        for (auto current = &static_cast<const typename Mapped::Base &>(mapped); current != nullptr; current = current->next)
         {
             for (size_t j = 0; j < columns_right.size(); ++j)
                 columns_right[j]->insertFrom(*current->block->getByPosition(j).column.get(), current->row_num);
