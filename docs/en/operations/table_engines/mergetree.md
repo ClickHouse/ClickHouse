@@ -49,7 +49,7 @@ For a description of request parameters, see [request description](../../query_l
 
 **Query clauses**
 
-- `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
+- `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
 
 - `PARTITION BY` — The [partitioning key](custom_partitioning_key.md).
 
@@ -59,7 +59,7 @@ For a description of request parameters, see [request description](../../query_l
 
     A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 
-- `PRIMARY KEY` - The primary key if it [differs from the sorting key](mergetree.md).
+- `PRIMARY KEY` — The primary key if it [differs from the sorting key](mergetree.md).
 
     By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
@@ -67,7 +67,7 @@ For a description of request parameters, see [request description](../../query_l
 
     If a sampling expression is used, the primary key must contain it. Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-- `TTL` - An expression for setting storage time for rows. 
+- `TTL` — An expression for setting storage time for rows.
 
     It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
     `TTL date + INTERVAL 1 DAY`
@@ -78,7 +78,7 @@ For a description of request parameters, see [request description](../../query_l
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. The list of all available parameters you can see in [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
     - `use_minimalistic_part_header_in_zookeeper` — Storage method of the data parts headers in ZooKeeper. If  `use_minimalistic_part_header_in_zookeeper=1`, then ZooKeeper stores less data. For more information refer the [setting description](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) in the "Server configuration parameters" chapter.
     - `min_merge_bytes_to_use_direct_io` — The minimum data volume for merge operation required for using of the direct I/O access to the storage disk. During the merging of the data parts, ClickHouse calculates summary storage volume of all the data to be merged. If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, then ClickHouse reads and writes the data using direct I/O interface (`O_DIRECT` option) to the storage disk. If `min_merge_bytes_to_use_direct_io = 0`, then the direct I/O is disabled. Default value: `10 * 1024 * 1024 * 1024` bytes.
-    - `merge_with_ttl_timeout` - Minimal time in seconds, when merge with TTL can be repeated. Default value: 86400 (1 day).
+    - `merge_with_ttl_timeout` — Minimal time in seconds, when merge with TTL can be repeated. Default value: 86400 (1 day).
 
 **Example of sections setting**
 
@@ -310,7 +310,7 @@ Reading from a table is automatically parallelized.
 
 ## TTL for columns and tables
 
-Data with expired TTL is removed while executing merges. 
+Data with expired TTL is removed while executing merges.
 
 If TTL is set for column, when it expires, value will be replaced by default. If all values in columns were zeroed in part, data for this column will be deleted from disk for part. You are not allowed to set TTL for all key columns. If TTL is set for table, when it expires, row will be deleted.
 
