@@ -59,9 +59,7 @@ public:
 
     void clear();
 
-    void setMinValue(const String & name, const String & min_value);
     void setMinValue(const String & name, const Field & min_value);
-    void setMaxValue(const String & name, const String & max_value);
     void setMaxValue(const String & name, const Field & max_value);
     void setReadOnly(const String & name, bool read_only);
 
