@@ -28,39 +28,37 @@ namespace DB
 
 namespace JoinStuff
 {
-/** Depending on template parameter, adds or doesn't add a flag, that element was used (row was joined).
-    * Depending on template parameter, decide whether to overwrite existing values when encountering the same key again
-    * with_used is for implementation of RIGHT and FULL JOINs.
-    * NOTE: It is possible to store the flag in one bit of pointer to block or row_num. It seems not reasonable, because memory saving is minimal.
-    */
-template <bool with_used, typename Base>
+
+/// Base class with optional flag attached that's needed to implement RIGHT and FULL JOINs.
+template <typename T, bool with_used>
 struct WithFlags;
 
-template <typename Base>
-struct WithFlags<true, Base> : Base
+template <typename T>
+struct WithFlags<T, true> : T
 {
+    using Base = T;
+    using T::T;
+
     mutable std::atomic<bool> used {};
-    using Base::Base;
-    using Base_t = Base;
     void setUsed() const { used.store(true, std::memory_order_relaxed); }    /// Could be set simultaneously from different threads.
     bool getUsed() const { return used; }
 };
 
-template <typename Base>
-struct WithFlags<false, Base> : Base
+template <typename T>
+struct WithFlags<T, false> : T
 {
-    using Base::Base;
-    using Base_t = Base;
+    using Base = T;
+    using T::T;
+
     void setUsed() const {}
     bool getUsed() const { return true; }
 };
 
-
-using MappedAny =           WithFlags<false, RowRef>;
-using MappedAll =           WithFlags<false, RowRefList>;
-using MappedAnyFull =       WithFlags<true, RowRef>;
-using MappedAllFull =       WithFlags<true, RowRefList>;
-using MappedAsof =          WithFlags<false, AsofRowRefs>;
+using MappedAny =       WithFlags<RowRef, false>;
+using MappedAll =       WithFlags<RowRefList, false>;
+using MappedAnyFull =   WithFlags<RowRef, true>;
+using MappedAllFull =   WithFlags<RowRefList, true>;
+using MappedAsof =      WithFlags<AsofRowRefs, false>;
 
 }
 
