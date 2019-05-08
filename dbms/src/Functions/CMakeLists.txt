@@ -69,3 +69,8 @@ if (USE_HYPERSCAN)
     target_link_libraries (clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
     target_include_directories (clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
 endif ()
+
+if (USE_SIMDJSON)
+    target_link_libraries(clickhouse_functions PRIVATE ${SIMDJSON_LIBRARY})
+    target_include_directories(clickhouse_functions PRIVATE ${SIMDJSON_INCLUDE_DIR})
+endif ()
