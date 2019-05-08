@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ConstantExpressionTemplate.h>
 
 
 namespace DB
@@ -33,7 +34,11 @@ public:
     bool read(MutableColumns & columns);
 
 private:
+    typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
+
     Block readImpl() override;
+
+    Field parseExpression(char * prev_istr_position, MutableColumns & columns, size_t column_idx, bool generate_template);
 
 private:
     ReadBuffer & istr;
@@ -41,7 +46,10 @@ private:
     std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
     UInt64 max_block_size;
+    UInt64 rows_in_block = 0;
     size_t total_rows = 0;
+    ParserExpression parser;
+    ConstantExpressionTemplates templates;
 };
 
 }
