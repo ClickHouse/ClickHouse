@@ -1,6 +1,7 @@
 project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
 cmake_policy(SET CMP0023 NEW)
+cmake_policy(SET CMP0074 NEW)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
