@@ -24,6 +24,7 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
 | [PrettySpace](#prettyspace) | ✗ | ✔ |
 | [Protobuf](#protobuf) | ✔ | ✔ |
+| [Parquet](#data-format-parquet) | ✔ | ✔ |
 | [RowBinary](#rowbinary) | ✔ | ✔ |
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
@@ -710,6 +711,11 @@ are not applied; the [table defaults](../query_language/create.md#create-default
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
 See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
+
+## Parquet {#data-format-parquet}
+
+[Apache Parquet](http://parquet.apache.org/) format.
+
 
 ## Format Schema {#formatschema}
 
