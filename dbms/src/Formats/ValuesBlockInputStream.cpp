@@ -26,6 +26,9 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_DATE;
     extern const int SYNTAX_ERROR;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int CANNOT_CREATE_EXPRESSION_TEMPLATE;
+    extern const int CANNOT_PARSE_EXPRESSION_USING_TEMPLATE;
+    extern const int CANNOT_EVALUATE_EXPRESSION_TEMPLATE;
 }
 
 
@@ -34,6 +37,7 @@ ValuesBlockInputStream::ValuesBlockInputStream(ReadBuffer & istr_, const Block &
         : istr(istr_), header(header_), context(std::make_unique<Context>(context_)),
           format_settings(format_settings), max_block_size(max_block_size_)
 {
+    templates.resize(header.columns());
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(istr);
 }
@@ -52,7 +56,6 @@ bool ValuesBlockInputStream::read(MutableColumns & columns)
       * But as an exception, it also supports processing arbitrary expressions instead of values.
       * This is very inefficient. But if there are no expressions, then there is no overhead.
       */
-    ParserExpression parser;
 
     assertChar('(', istr);
 
@@ -66,8 +69,16 @@ bool ValuesBlockInputStream::read(MutableColumns & columns)
         bool rollback_on_exception = false;
         try
         {
-            header.getByPosition(i).type->deserializeAsTextQuoted(*columns[i], istr, format_settings);
-            rollback_on_exception = true;
+            if (templates[i])
+            {
+                templates[i].value().parseExpression(istr, format_settings);
+            }
+            else
+            {
+                header.getByPosition(i).type->deserializeAsTextQuoted(*columns[i], istr, format_settings);
+                rollback_on_exception = true;
+            }
+
             skipWhitespaceIfAny(istr);
 
             if (i != num_columns - 1)
@@ -89,7 +100,8 @@ bool ValuesBlockInputStream::read(MutableColumns & columns)
                 || e.code() == ErrorCodes::CANNOT_PARSE_NUMBER
                 || e.code() == ErrorCodes::CANNOT_PARSE_DATE
                 || e.code() == ErrorCodes::CANNOT_PARSE_DATETIME
-                || e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT)
+                || e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
+                || e.code() == ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
             {
                 /// TODO Case when the expression does not fit entirely in the buffer.
 
@@ -100,35 +112,19 @@ bool ValuesBlockInputStream::read(MutableColumns & columns)
                 if (rollback_on_exception)
                     columns[i]->popBack(1);
 
-                const IDataType & type = *header.getByPosition(i).type;
-
-                Expected expected;
-
-                Tokens tokens(prev_istr_position, istr.buffer().end());
-                TokenIterator token_iterator(tokens);
-
-                ASTPtr ast;
-                if (!parser.parse(token_iterator, ast, expected))
-                    throw Exception("Cannot parse expression of type " + type.getName() + " here: "
-                        + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
-                        ErrorCodes::SYNTAX_ERROR);
-
-                istr.position() = const_cast<char *>(token_iterator->begin);
-
-                std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
-                Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
-
-                /// Check that we are indeed allowed to insert a NULL.
-                if (value.isNull())
+                // TODO read(MutableColumns & columns) should not know number of rows in block an should not assign to columns
+                if (likely(rows_in_block))
                 {
-                    if (!type.isNullable())
-                        throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
-                            + ", that is out of range of type " + type.getName()
-                            + ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
-                            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+                    if (e.code() == ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
+                    {
+                        /// Expression in the current row is not match generated on the first row template.
+                        /// Evaluate expressions, which were parsed using this template.
+                        columns[i] = std::move(*templates[i].value().evaluateAll()).mutate();
+                        /// And do not use the template anymore.
+                        templates[i].reset();
+                    }
                 }
-
-                columns[i]->insert(value);
+                parseExpression(prev_istr_position, columns, i, rows_in_block == 0);
 
                 skipWhitespaceIfAny(istr);
 
@@ -153,13 +149,13 @@ Block ValuesBlockInputStream::readImpl()
 {
     MutableColumns columns = header.cloneEmptyColumns();
 
-    for (size_t rows = 0; rows < max_block_size; ++rows)
+    for (rows_in_block = 0; rows_in_block < max_block_size; ++rows_in_block)
     {
         try
         {
-            ++total_rows;
             if (!read(columns))
                 break;
+            ++total_rows;
         }
         catch (Exception & e)
         {
@@ -169,10 +165,75 @@ Block ValuesBlockInputStream::readImpl()
         }
     }
 
+    /// Evaluate expressions, which were parsed using this template, if any
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (templates[i])
+        {
+            columns[i] = std::move(*templates[i].value().evaluateAll()).mutate();
+            templates[i].reset();
+        }
+    }
+
     if (columns.empty() || columns[0]->empty())
         return {};
 
     return header.cloneWithColumns(std::move(columns));
+}
+
+Field
+ValuesBlockInputStream::parseExpression(char * prev_istr_position, MutableColumns & columns, size_t column_idx, bool generate_template)
+{
+    const IDataType & type = *header.getByPosition(column_idx).type;
+
+    Expected expected;
+
+    Tokens tokens(prev_istr_position, istr.buffer().end());
+    TokenIterator token_iterator(tokens);
+
+    ASTPtr ast;
+    if (!parser.parse(token_iterator, ast, expected))
+        throw Exception("Cannot parse expression of type " + type.getName() + " here: "
+                        + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
+                        ErrorCodes::SYNTAX_ERROR);
+
+    istr.position() = const_cast<char *>(token_iterator->begin);
+
+    std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
+    Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
+
+    /// Check that we are indeed allowed to insert a NULL.
+    if (value.isNull())
+    {
+        if (!type.isNullable())
+            throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
+                            + ", that is out of range of type " + type.getName()
+                            + ", at: " +
+                            String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
+                            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+    }
+
+    if (generate_template)
+    {
+        try
+        {
+            templates[column_idx] = ConstantExpressionTemplate(type, TokenIterator(tokens), token_iterator, *context);
+            istr.position() = prev_istr_position;
+            templates[column_idx].value().parseExpression(istr, format_settings);
+        }
+        catch (DB::Exception &)
+        {
+            /// Continue parsing without template
+            templates[column_idx].reset();
+            columns[column_idx]->insert(value);
+            istr.position() = const_cast<char *>(token_iterator->begin);
+        }
+    }
+    else
+    {
+        columns[column_idx]->insert(value);
+    }
+    return value;
 }
 
 
