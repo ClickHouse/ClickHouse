@@ -303,14 +303,16 @@ void StorageMaterializedView::rename(const String & /*new_path_to_db*/, const St
         executeRenameQuery(global_context, target_database_name, target_table_name, new_target_table_name);
         target_table_name = new_target_table_name;
     }
-    
-    global_context.removeDependency(
+
+    auto lock = global_context.getLock();
+
+    global_context.removeDependencyUnsafe(
             DatabaseAndTableName(select_database_name, select_table_name),
             DatabaseAndTableName(database_name, table_name));
 
     table_name = new_table_name;
-    
-    global_context.addDependency(
+
+    global_context.addDependencyUnsafe(
             DatabaseAndTableName(select_database_name, select_table_name),
             DatabaseAndTableName(database_name, table_name));
 }
