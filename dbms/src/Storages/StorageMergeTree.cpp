@@ -910,8 +910,8 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
             case PartitionCommand::CLEAR_INDEX:
             {
                 AlterCommand alter_command;
-                alter_command.type = AlterCommand::DROP_COLUMN;
-                alter_command.column_name = get<String>(command.index_name);
+                alter_command.type = AlterCommand::DROP_INDEX;
+                alter_command.index_name = get<String>(command.index_name);
                 clearColumnOrIndexInPartition(command.partition, alter_command, context);
             }
             break;
