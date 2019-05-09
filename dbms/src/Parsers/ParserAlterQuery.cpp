@@ -157,11 +157,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->clear_index = true;
         command->detach = false;
 
-        if (s_in_partition.ignore(pos, expected))
-        {
-            if (!parser_partition.parse(pos, command->partition, expected))
-                return false;
-        }
+        if (!s_in_partition.ignore(pos, expected))
+            return false;
+        if (!parser_partition.parse(pos, command->partition, expected))
+            return false;
     }
     else if (s_materialize_index.ignore(pos, expected))
     {

@@ -25,10 +25,10 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test.minmax_idx VALUES
 (1, 1, 1),
 (2, 1, 1),
 (3, 1, 1),
-(4, 2, 3),
-(5, 2, 3),
-(6, 2, 2),
-(7, 2, 2),
+(4, 1, 1),
+(5, 2, 1),
+(6, 1, 2),
+(7, 1, 2),
 (8, 1, 2),
 (9, 1, 2)"
 
@@ -40,4 +40,10 @@ $CLICKHOUSE_CLIENT --query="ALTER TABLE test.minmax_idx CLEAR INDEX idx IN PARTI
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
 
-$CLICKHOUSE_CLIENT --query="DROP TABLE test.minmax_idx"
+$CLICKHOUSE_CLIENT --query="ALTER TABLE test.minmax_idx MATERIALIZE INDEX idx IN PARTITION 1;"
+
+$CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2;"
+$CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
+
+
+#$CLICKHOUSE_CLIENT --query="DROP TABLE test.minmax_idx"
