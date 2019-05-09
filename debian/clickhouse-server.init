@@ -301,6 +301,7 @@ main()
         restart && enable_cron
         ;;
     forcestop)
+        # disable_cron returns false if cron disabled (with systemd) - not checking return status
         disable_cron
         forcestop
         ;;
