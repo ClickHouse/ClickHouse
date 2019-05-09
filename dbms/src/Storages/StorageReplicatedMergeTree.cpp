@@ -866,7 +866,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
     if (entry.type == LogEntry::CLEAR_COLUMN)
     {
-        executeClearColumnInPartition(entry);
+        executeClearColumnOrIndexInPartition(entry);
         return true;
     }
 
@@ -1487,7 +1487,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 }
 
 
-void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & entry)
+void StorageReplicatedMergeTree::executeClearColumnOrIndexInPartition(const LogEntry & entry)
 {
     LOG_INFO(log, "Clear column " << entry.column_name << " in parts inside " << entry.new_part_name << " range");
 
@@ -1501,8 +1501,16 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     auto zookeeper = getZooKeeper();
 
     AlterCommand alter_command;
-    alter_command.type = AlterCommand::DROP_COLUMN;
-    alter_command.column_name = entry.column_name;
+    if (entry.type == LogEntry::CLEAR_COLUMN)
+    {
+        alter_command.type = AlterCommand::DROP_COLUMN;
+        alter_command.column_name = entry.column_name;
+    }
+    else if (entry.type == LogEntry::CLEAR_INDEX)
+    {
+        alter_command.type = AlterCommand::DROP_INDEX;
+        alter_command.index_name = entry.index_name;
+    }
 
     auto new_columns = getColumns();
     auto new_indices = getIndices();
@@ -1527,7 +1535,10 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
         if (!entry_part_info.contains(part->info))
             continue;
 
-        LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
+        if (entry.type == LogEntry::CLEAR_COLUMN)
+            LOG_DEBUG(log, "Clearing column " << alter_command.column_name << " in part " << part->name);
+        else if (entry.type == LogEntry::CLEAR_INDEX)
+            LOG_DEBUG(log, "Clearing index " << alter_command.index_name << " in part " << part->name);
 
         auto transaction = alterDataPart(part, columns_for_parts, new_indices.indices, false);
         if (!transaction)
@@ -1538,7 +1549,10 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
         ++modified_parts;
     }
 
-    LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
+    if (entry.type == LogEntry::CLEAR_COLUMN)
+        LOG_DEBUG(log, "Cleared column " << entry.column_name << " in " << modified_parts << " parts");
+    else if (entry.type == LogEntry::CLEAR_INDEX)
+        LOG_DEBUG(log, "Cleared index " << entry.index_name << " in " << modified_parts << " parts");
 
     /// Recalculate columns size (not only for the modified column)
     recalculateColumnSizes();
@@ -3373,8 +3387,22 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
             break;
 
             case PartitionCommand::CLEAR_COLUMN:
-                clearColumnInPartition(command.partition, command.column_name, query_context);
-                break;
+            {
+                LogEntry entry;
+                entry.type = LogEntry::CLEAR_COLUMN;
+                entry.column_name = command.column_name.safeGet<String>();
+                clearColumnOrIndexInPartition(command.partition, std::move(entry), query_context);
+            }
+            break;
+
+            case PartitionCommand::CLEAR_INDEX:
+            {
+                LogEntry entry;
+                entry.type = LogEntry::CLEAR_INDEX;
+                entry.index_name = command.index_name.safeGet<String>();
+                clearColumnOrIndexInPartition(command.partition, std::move(entry), query_context);
+            }
+            break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
@@ -3438,8 +3466,8 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 }
 
 
-void StorageReplicatedMergeTree::clearColumnInPartition(
-    const ASTPtr & partition, const Field & column_name, const Context & query_context)
+void StorageReplicatedMergeTree::clearColumnOrIndexInPartition(
+    const ASTPtr & partition, LogEntry && entry, const Context & query_context)
 {
     assertNotReadonly();
 
@@ -3455,11 +3483,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
     }
 
     /// We allocated new block number for this part, so new merges can't merge clearing parts with new ones
-
-    LogEntry entry;
-    entry.type = LogEntry::CLEAR_COLUMN;
     entry.new_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
-    entry.column_name = column_name.safeGet<String>();
     entry.create_time = time(nullptr);
 
     String log_znode_path = getZooKeeper()->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);

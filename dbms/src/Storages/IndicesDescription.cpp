@@ -8,6 +8,16 @@
 namespace DB
 {
 
+bool IndicesDescription::has(const String & name) const
+{
+    return std::cend(indices) != std::find_if(
+            std::cbegin(indices), std::cend(indices),
+            [&name](const auto & index)
+            {
+                return index->name == name;
+            });
+}
+
 String IndicesDescription::toString() const
 {
     if (indices.empty())
