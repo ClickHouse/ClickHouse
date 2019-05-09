@@ -1,3 +1,4 @@
+USE test;
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5]));
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
 SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
@@ -53,7 +54,7 @@ ALL LEFT JOIN
 )
 USING city_id;
 
-
+-- bitmap state test
 DROP TABLE IF EXISTS bitmap_state_test;
 CREATE TABLE bitmap_state_test
 (
@@ -72,6 +73,26 @@ GROUP BY pickup_date, city_id;
 	
 SELECT pickup_date, groupBitmapMerge(uv) AS users from bitmap_state_test group by pickup_date;
 
+-- between column and expression test
+DROP TABLE IF EXISTS bitmap_column_expr_test;
+CREATE TABLE bitmap_column_expr_test
+(
+    t DateTime,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(t)
+ORDER BY t;
+
+INSERT INTO bitmap_column_expr_test VALUES (now(), bitmapBuild(cast([3,19,47] as Array(UInt32))));
+
+SELECT bitmapAndCardinality( bitmapBuild(cast([19,7] as Array(UInt32))), z) from bitmap_column_expr_test;
+SELECT bitmapAndCardinality( z, bitmapBuild(cast([19,7] as Array(UInt32))) ) from bitmap_column_expr_test;
+
+select bitmapCardinality(bitmapAnd(bitmapBuild(cast([19,7] as Array(UInt32))), z )) from bitmap_column_expr_test;
+select bitmapCardinality(bitmapAnd(z, bitmapBuild(cast([19,7] as Array(UInt32))))) from bitmap_column_expr_test;
+
 DROP TABLE IF EXISTS bitmap_test;
 DROP TABLE IF EXISTS bitmap_state_test;
+DROP TABLE IF EXISTS bitmap_column_expr_test;
 
