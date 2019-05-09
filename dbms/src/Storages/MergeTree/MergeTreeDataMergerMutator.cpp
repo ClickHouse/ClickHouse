@@ -898,7 +898,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             [&] (const MutationCommand & command)
             {
                 return command.partition == nullptr ||
-                    future_part.parts[0]->info.partition_id != data.getPartitionIDFromQuery(
+                    future_part.parts[0]->info.partition_id == data.getPartitionIDFromQuery(
                             command.partition, context_for_reading);
             });
 
