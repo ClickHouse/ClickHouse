@@ -210,8 +210,11 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     auto paths = table->getDataPaths();
-                    for (const String &path : paths)
-                        res_columns[res_index++]->insert(path);
+                    String all_paths;
+                    for (const String & path : paths)
+                        all_paths += path + ';';
+                    ///@TODO IGR choose separator
+                    res_columns[res_index++]->insert(all_paths);
                 }
 
                 if (columns_mask[src_index++])
