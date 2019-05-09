@@ -32,7 +32,7 @@ public:
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
-
+// LIFETIME(MIN 10, MAX 100)
 class ASTDictionaryLifetime : public IAST
 {
 public:

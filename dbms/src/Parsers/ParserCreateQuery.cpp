@@ -553,25 +553,44 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 {
     ParserKeyValueFunction key_value_pairs_p;
     ASTPtr ast_lifetime;
-    if (!key_value_pairs_p.parse(pos, node, expected))
+    if (!key_value_pairs_p.parse(pos, ast_lifetime, expected))
         return false;
 
+    const ASTKeyValueFunction & lifetime_func = ast_lifetime->as<ASTKeyValueFunction &>();
+    if (Poco::toLower(lifetime_func.name) != "lifetime")
+        return false;
+
+    const ASTExpressionList & expr_list = lifetime_func.elements->as<const ASTExpressionList &>();
+    if (expr_list.children.size() != 2)
+        return false;
+
+    uint8_t mask = 0; // We want to check that arguments min and max occured once each.
     auto res = std::make_shared<ASTDictionaryLifetime>();
-    for (auto elem : ast_lifetime->children)
+    for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
-        const ASTLiteral & literal = elem->as<ASTLiteral &>();
+        const ASTLiteral & literal = pair.second->as<const ASTLiteral &>();
         if (literal.value.getType() != Field::Types::UInt64)
             return false;
 
         if (pair.first == "min")
+        {
             res->min_sec = literal.value.get<UInt64>();
+            mask ^= 1;
+        }
         else if (pair.first == "max")
+        {
             res->max_sec = literal.value.get<UInt64>();
+            mask ^= 2;
+        }
         else
             return false;
     }
 
+    if (mask != 3)  // 1 ^ 2
+        return false;
+
+    node = res;
     return true;
 }
 
