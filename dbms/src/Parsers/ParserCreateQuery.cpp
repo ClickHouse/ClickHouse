@@ -544,6 +544,58 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+const char * ParserDictionaryRange::getName() const
+{
+    return "range definition";
+}
+
+
+bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyValueFunction key_value_pairs_p;
+    ASTPtr ast_range;
+    if (!key_value_pairs_p.parse(pos, ast_range, expected))
+        return false;
+
+    const ASTKeyValueFunction & range_func = ast_range->as<ASTKeyValueFunction &>();
+    if (Poco::toLower(range_func.name) != "range")
+        return false;
+
+    const ASTExpressionList & expr_list = range_func.elements->as<const ASTExpressionList &>();
+    if (expr_list.children.size() != 2)
+        return false;
+
+    uint8_t mask = 0; // We want to check that arguments min and max occured once each.
+    auto res = std::make_shared<ASTDictionaryRange>();
+    for (const auto & elem : expr_list.children)
+    {
+        const ASTPair & pair = elem->as<const ASTPair &>();
+        const ASTLiteral & literal = pair.second->as<const ASTLiteral &>();
+        if (literal.value.getType() != Field::Types::String)
+            return false;
+
+        if (pair.first == "min")
+        {
+            res->min_column_name = literal.value.get<String>();
+            mask ^= 1;
+        }
+        else if (pair.first == "max")
+        {
+            res->max_column_name = literal.value.get<String>();
+            mask &= 2;
+        }
+        else
+            return false;
+    }
+
+    if (mask != 3)  // 1 ^ 2
+        return false;
+
+    node = res;
+    return true;
+}
+
+
 const char * ParserDictionaryLifetime::getName() const
 {
     return "lifetime definition";
@@ -614,6 +666,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserExpressionList expression_list_p(false);
     ParserKeyValuePairsList expression_parser;
     ParserDictionaryLifetime lifetime_p;
+    ParserDictionaryRange range_p;
 
     ASTPtr primary_key;
     ASTPtr composite_key;
@@ -664,7 +717,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!ast_range && range_keyword.checkWithoutMoving(pos, expected))
         {
-            if (!key_value_pairs_p.parse(pos, ast_range, expected))
+            if (!range_p.parse(pos, ast_range, expected))
                 return false;
             continue;
         }

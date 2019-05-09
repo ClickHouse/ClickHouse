@@ -9,6 +9,41 @@ namespace DB
 {
 
 
+String ASTDictionaryRange::getID(char) const
+{
+    return "Dictionary range";
+}
+
+
+ASTPtr ASTDictionaryRange::clone() const
+{
+    auto res = std::make_shared<ASTDictionaryRange>(*this);
+    res->children.clear();
+    res->min_column_name = min_column_name;
+    res->max_column_name = max_column_name;
+    return res;
+}
+
+
+void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
+                                    FormatState &,
+                                    FormatStateStacked) const
+{
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
+                  << "RANGE"
+                  << (settings.hilite ? hilite_none : "")
+                  << "("
+                  << (settings.hilite ? hilite_keyword : "")
+                  << "MIN "
+                  << (settings.hilite ? hilite_none : "")
+                  << min_column_name << ", "
+                  << (settings.hilite ? hilite_keyword : "")
+                  << "MAX "
+                  << (settings.hilite ? hilite_none : "")
+                  << max_column_name << ")";
+}
+
+
 String ASTDictionaryLifetime::getID(char) const
 {
     return "Dictionary lifetime";

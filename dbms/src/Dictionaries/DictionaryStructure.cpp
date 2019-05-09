@@ -482,6 +482,9 @@ void addLayoutFieldsFromAST(
 }
 
 
+/*
+ *
+ */
 void addLifetimeFieldsFromAST(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
@@ -522,38 +525,34 @@ void addAdditionalColumnFields(
 }
 
 
+/*
+ * Transforms next definition
+ *  RANGE(MIN startDate, MAX endDate)
+ * to the next configuration
+ *  <range_min><name>startDate</name></range_min>
+ *  <range_max><name>endDate</name></range_max>
+ */
 void addRangeFieldsFromAST(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
-    const ASTKeyValueFunction * range)
+    const ASTDictionaryRange * range)
 {
-    const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(range->children.at(0).get());
-    if (expr_list->children.size() != 2)
-        throw Exception("Number of arguments of RANGE() other than 2", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+    if (range == nullptr)
+        throw Exception("range ptr is nullptr", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
-    for (size_t index = 0; index != expr_list->children.size(); ++index)
+    // appends <key><name>value</name></key> to root
+    auto appendElem = [&doc, &root](const std::string & key, const std::string & value)
     {
-        const auto * child = expr_list->children.at(index).get();
-        const ASTPair * pair = typeid_cast<const ASTPair *>(child);
+        AutoPtr<Element> element(doc->createElement(key));
         AutoPtr<Element> name(doc->createElement("name"));
-        AutoPtr<Text> value(doc->createTextNode(queryToString(pair->second)));
-        name->appendChild(value);
+        AutoPtr<Text> text(doc->createTextNode(value));
+        name->appendChild(text);
+        element->appendChild(name);
+        root->appendChild(element);
+    };
 
-        if (pair->first == "min")
-        {
-            AutoPtr<Element> range_min_element(doc->createElement("range_min"));
-            range_min_element->appendChild(name);
-            root->appendChild(range_min_element);
-        }
-        else if (pair->first == "max")
-        {
-            AutoPtr<Element> range_max_element(doc->createElement("range_max"));
-            range_max_element->appendChild(name);
-            root->appendChild(range_max_element);
-        }
-        else
-            throw Exception("Key of argument should be either MIN or MAX", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
-    }
+    appendElem("range_min", range->min_column_name);
+    appendElem("range_max", range->max_column_name);
 }
 
 

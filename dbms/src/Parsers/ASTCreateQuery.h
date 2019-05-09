@@ -49,15 +49,32 @@ public:
 };
 
 
+// RANGE(MIN startDate, MAX endDate)
+class ASTDictionaryRange : public IAST
+{
+public:
+    String min_column_name;
+    String max_column_name;
+
+    String getID(char delimiter) const override;
+
+    ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & settings,
+                    FormatState & state,
+                    FormatStateStacked frame) const override;
+};
+
+
 class ASTDictionarySource : public IAST
 {
 public:
     ASTKeyValueFunction * source = nullptr;
     IAST * primary_key = nullptr;
     IAST * composite_key = nullptr;
-    ASTDictionaryLifetime * lifetime;
+    ASTDictionaryLifetime * lifetime = nullptr;
     ASTKeyValueFunction * layout;
-    ASTKeyValueFunction * range;
+    ASTDictionaryRange * range = nullptr;
 
     String getID(char delimiter) const override;
 
