@@ -43,10 +43,11 @@ public:
 
         if (pjh.down())
         {
-            size += 1;
-
+            ++size;
             while (pjh.next())
-                size += 1;
+                ++size;
+            if (pjh.get_scope_type() == '{')
+                size /= 2;
         }
 
         return {size};
@@ -322,6 +323,20 @@ public:
     }
 };
 
+class JSONExtractKeyImpl : public JSONNullableImplBase<DataTypeString>
+{
+public:
+    static constexpr auto name{"jsonExtractKey"};
+
+    static Field getValue(ParsedJson::iterator & pjh)
+    {
+        if (pjh.get_scope_type() == '{' && pjh.prev() && pjh.is_string())
+            return {String{pjh.get_string()}};
+        else
+            return getDefault();
+    }
+};
+
 }
 #else
 namespace DB
@@ -336,6 +351,7 @@ struct JSONExtractFloatImpl { static constexpr auto name{"jsonExtractFloat"}; };
 struct JSONExtractBoolImpl { static constexpr auto name{"jsonExtractBool"}; };
 //struct JSONExtractRawImpl { static constexpr auto name {"jsonExtractRaw"}; };
 struct JSONExtractStringImpl { static constexpr auto name{"jsonExtractString"}; };
+struct JSONExtractKeyImpl { static constexpr auto name{"jsonExtractKey"}; };
 }
 #endif
 
@@ -360,6 +376,7 @@ void registerFunctionsJSON(FunctionFactory & factory)
         //     false
         // >>();
         factory.registerFunction<FunctionJSONBase<JSONExtractStringImpl, false>>();
+        factory.registerFunction<FunctionJSONBase<JSONExtractKeyImpl, false>>();
         return;
     }
 #endif
@@ -373,6 +390,7 @@ void registerFunctionsJSON(FunctionFactory & factory)
     factory.registerFunction<FunctionJSONDummy<JSONExtractBoolImpl>>();
     //factory.registerFunction<FunctionJSONDummy<JSONExtractRawImpl>>();
     factory.registerFunction<FunctionJSONDummy<JSONExtractStringImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONExtractKeyImpl>>();
 }
 
 }

@@ -79,19 +79,21 @@ An accessor can be either a string, a positive integer or a negative integer.
 * Positive integer = access the n-th member/key from the beginning.
 * Negative integer = access the n-th member/key from the end.
 
-You may use integers to access both JSON arrays and JSON objects. JSON objects are accessed as an array with the `[key, value, key, value, ...]` layout.
+You may use integers to access both JSON arrays and JSON objects.
 
 So, for example:
 
 ```
-select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
-select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'hello'
-select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'b'
+select jsonExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
+select jsonExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
+select jsonExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
+select jsonExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
+select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
 ## jsonLength(params[, accessors]...)
 
-Return the length of a JSON array or a JSON object. For JSON objects, both keys and values are included.
+Return the length of a JSON array or a JSON object.
 
 If the value does not exist or has a wrong type, `null` will be returned.
 
@@ -99,7 +101,7 @@ Examples:
 
 ```
 select jsonLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
-select jsonLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 4
+select jsonLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
 The usage of accessors is the same as above.
