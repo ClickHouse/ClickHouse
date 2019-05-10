@@ -627,14 +627,18 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
-    ParserExpression expression_parser;
+    // ParserExpression expression_parser;
 
     ASTPtr identifier;
     ASTPtr value;
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    if (!expression_parser.parse(pos, value, expected))
+    //if (!expression_parser.parse(pos, value, expected))
+    //    return false;
+
+    if (!literal_parser.parse(pos, value, expected) &&
+        !id_parser.parse(pos, value, expected))
         return false;
 
     auto pair = std::make_shared<ASTPair>();

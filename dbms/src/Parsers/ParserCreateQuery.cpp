@@ -570,19 +570,19 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
-        const ASTLiteral & literal = pair.second->as<const ASTLiteral &>();
-        if (literal.value.getType() != Field::Types::String)
+        const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(pair.second.get());
+        if (identifier == nullptr)
             return false;
 
         if (pair.first == "min")
         {
-            res->min_column_name = literal.value.get<String>();
+            res->min_column_name = identifier->name;
             mask ^= 1;
         }
         else if (pair.first == "max")
         {
-            res->max_column_name = literal.value.get<String>();
-            mask &= 2;
+            res->max_column_name = identifier->name;
+            mask ^= 2;
         }
         else
             return false;
@@ -621,18 +621,20 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
-        const ASTLiteral & literal = pair.second->as<const ASTLiteral &>();
-        if (literal.value.getType() != Field::Types::UInt64)
+        const ASTLiteral * literal = dynamic_cast<const ASTLiteral *>(pair.second.get());
+        if (literal == nullptr)
+            return false;
+        if (literal->value.getType() != Field::Types::UInt64)
             return false;
 
         if (pair.first == "min")
         {
-            res->min_sec = literal.value.get<UInt64>();
+            res->min_sec = literal->value.get<UInt64>();
             mask ^= 1;
         }
         else if (pair.first == "max")
         {
-            res->max_sec = literal.value.get<UInt64>();
+            res->max_sec = literal->value.get<UInt64>();
             mask ^= 2;
         }
         else

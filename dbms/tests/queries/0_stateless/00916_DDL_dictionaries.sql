@@ -100,15 +100,16 @@ SELECT dictGetUInt8('test.dict_with_ranges', 'second_column', toUInt64(2), 220);
 
 DROP DICTIONARY test.dict_with_ranges;
 
-CREATE DICTIONARY test.dict_with_ranges -- { serverError 448 }
- (
-    second_column UInt8 DEFAULT 1
- )
-PRIMARY KEY first_column
-SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
-LAYOUT(RANGE_HASHED())
-RANGE(MIN second)
-LIFETIME(MIN 10, MAX 100);
+-- TODO(s-mx): вынести тестирование syntaxError в sh тест
+--CREATE DICTIONARY test.dict_with_ranges -- serverError 62
+-- (
+--    second_column UInt8 DEFAULT 1
+-- )
+--PRIMARY KEY first_column
+--SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
+--LAYOUT(RANGE_HASHED())
+--RANGE(MIN second)
+--LIFETIME(MIN 10, MAX 100);
 
 CREATE DICTIONARY test.dict_with_ranges -- { serverError 36 }
  (
