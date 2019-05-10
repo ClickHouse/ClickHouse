@@ -141,28 +141,24 @@ struct VarMomentsDecimal
 template <typename T, size_t _level>
 struct HighOrderMoments
 {
-    T m0{};
-    T m1{};
-    T m2{};
-    T m3{};
-    T m4{};
+    T m[_level + 1]{};
 
     void add(T x)
     {
-        ++m0;
-        m1 += x;
-        m2 += x * x;
-        if constexpr (_level >= 3) m3 += x * x * x;
-        if constexpr (_level >= 4) m4 += x * x * x * x;
+        ++m[0];
+        m[1] += x;
+        m[2] += x * x;
+        if constexpr (_level >= 3) m[3] += x * x * x;
+        if constexpr (_level >= 4) m[4] += x * x * x * x;
     }
 
     void merge(const HighOrderMoments & rhs)
     {
-        m0 += rhs.m0;
-        m1 += rhs.m1;
-        m2 += rhs.m2;
-        if constexpr (_level >= 3) m3 += rhs.m3;
-        if constexpr (_level >= 4) m4 += rhs.m4;
+        m[0] += rhs.m[0];
+        m[1] += rhs.m[1];
+        m[2] += rhs.m[2];
+        if constexpr (_level >= 3) m[3] += rhs.m[3];
+        if constexpr (_level >= 4) m[4] += rhs.m[4];
     }
 
     void write(WriteBuffer & buf) const
@@ -177,78 +173,92 @@ struct HighOrderMoments
 
     T NO_SANITIZE_UNDEFINED getPopulation() const
     {
-        return (m2 - m1 * m1 / m0) / m0;
+        return (m[2] - m[1] * m[1] / m[0]) / m[0];
     }
 
     T NO_SANITIZE_UNDEFINED getSample() const
     {
-        if (m0 == 0)
+        if (m[0] == 0)
             return std::numeric_limits<T>::quiet_NaN();
-        return (m2 - m1 * m1 / m0) / (m0 - 1);
+        return (m[2] - m[1] * m[1] / m[0]) / (m[0] - 1);
     }
 
     T NO_SANITIZE_UNDEFINED getMoment3() const
     {
         // to avoid accuracy problem
-        if (m0 == 1)
+        if (m[0] == 1)
             return 0;
-        return (m3
-            - (3 * m2
-                - 2 * m1 * m1 / m0
-            ) * m1 / m0
-        ) / m0;
+        return (m[3]
+            - (3 * m[2]
+                - 2 * m[1] * m[1] / m[0]
+            ) * m[1] / m[0]
+        ) / m[0];
     }
 
     T NO_SANITIZE_UNDEFINED getMoment4() const
     {
         // to avoid accuracy problem
-        if (m0 == 1)
+        if (m[0] == 1)
             return 0;
-        return (m4
-            - (4 * m3
-                - (6 * m2
-                    - 3 * m1 * m1 / m0
-                ) * m1 / m0
-            ) * m1 / m0
-        ) / m0;
+        return (m[4]
+            - (4 * m[3]
+                - (6 * m[2]
+                    - 3 * m[1] * m[1] / m[0]
+                ) * m[1] / m[0]
+            ) * m[1] / m[0]
+        ) / m[0];
     }
 };
 
+/**
+    Calculating high-order central moments
+    References:
+    https://en.wikipedia.org/wiki/Moment_(mathematics)
+    https://en.wikipedia.org/wiki/Skewness
+    https://en.wikipedia.org/wiki/Kurtosis
+*/
 template <typename T, size_t _level>
 struct HighOrderMomentsDecimal
 {
     using NativeType = typename T::NativeType;
 
     UInt64 m0{};
-    NativeType m1{};
-    NativeType m2{};
-    NativeType m3{};
-    NativeType m4{};
+    NativeType m[_level]{};
+
+    NativeType & getM(size_t i)
+    {
+        return m[i - 1];
+    }
+
+    const NativeType & getM(size_t i) const
+    {
+        return m[i - 1];
+    }
 
     void add(NativeType x)
     {
         ++m0;
-        m1 += x;
+        getM(1) += x;
 
         NativeType tmp;
-        if (common::mulOverflow(x, x, tmp) || common::addOverflow(m2, tmp, m2))
+        if (common::mulOverflow(x, x, tmp) || common::addOverflow(getM(2), tmp, getM(2)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        if constexpr (_level >= 3) if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(m3, tmp, m3))
+        if constexpr (_level >= 3) if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(3), tmp, getM(3)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        if constexpr (_level >= 4) if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(m4, tmp, m4))
+        if constexpr (_level >= 4) if (common::mulOverflow(tmp, x, tmp) || common::addOverflow(getM(4), tmp, getM(4)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
     void merge(const HighOrderMomentsDecimal & rhs)
     {
         m0 += rhs.m0;
-        m1 += rhs.m1;
+        getM(1) += rhs.getM(1);
 
-        if (common::addOverflow(m2, rhs.m2, m2))
+        if (common::addOverflow(getM(2), rhs.getM(2), getM(2)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        if constexpr (_level >= 3) if (common::addOverflow(m3, rhs.m3, m3))
+        if constexpr (_level >= 3) if (common::addOverflow(getM(3), rhs.getM(3), getM(3)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        if constexpr (_level >= 4) if (common::addOverflow(m4, rhs.m4, m4))
+        if constexpr (_level >= 4) if (common::addOverflow(getM(4), rhs.getM(4), getM(4)))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
@@ -261,8 +271,8 @@ struct HighOrderMomentsDecimal
             return std::numeric_limits<Float64>::infinity();
 
         NativeType tmp;
-        if (common::mulOverflow(m1, m1, tmp) ||
-            common::subOverflow(m2, NativeType(tmp / m0), tmp))
+        if (common::mulOverflow(getM(1), getM(1), tmp) ||
+            common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
     }
@@ -275,8 +285,8 @@ struct HighOrderMomentsDecimal
             return std::numeric_limits<Float64>::infinity();
 
         NativeType tmp;
-        if (common::mulOverflow(m1, m1, tmp) ||
-            common::subOverflow(m2, NativeType(tmp / m0), tmp))
+        if (common::mulOverflow(getM(1), getM(1), tmp) ||
+            common::subOverflow(getM(2), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / (m0 - 1), scale);
     }
@@ -287,10 +297,10 @@ struct HighOrderMomentsDecimal
             return std::numeric_limits<Float64>::infinity();
 
         NativeType tmp;
-        if (common::mulOverflow(2 * m1, m1, tmp) ||
-            common::subOverflow(3 * m2, NativeType(tmp / m0), tmp) ||
-            common::mulOverflow(tmp, m1, tmp) ||
-            common::subOverflow(m3, NativeType(tmp / m0), tmp))
+        if (common::mulOverflow(2 * getM(1), getM(1), tmp) ||
+            common::subOverflow(3 * getM(2), NativeType(tmp / m0), tmp) ||
+            common::mulOverflow(tmp, getM(1), tmp) ||
+            common::subOverflow(getM(3), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
     }
@@ -301,12 +311,12 @@ struct HighOrderMomentsDecimal
             return std::numeric_limits<Float64>::infinity();
 
         NativeType tmp;
-        if (common::mulOverflow(3 * m1, m1, tmp) ||
-            common::subOverflow(6 * m2, NativeType(tmp / m0), tmp) ||
-            common::mulOverflow(tmp, m1, tmp) ||
-            common::subOverflow(4 * m3, NativeType(tmp / m0), tmp) ||
-            common::mulOverflow(tmp, m1, tmp) ||
-            common::subOverflow(m4, NativeType(tmp / m0), tmp))
+        if (common::mulOverflow(3 * getM(1), getM(1), tmp) ||
+            common::subOverflow(6 * getM(2), NativeType(tmp / m0), tmp) ||
+            common::mulOverflow(tmp, getM(1), tmp) ||
+            common::subOverflow(4 * getM(3), NativeType(tmp / m0), tmp) ||
+            common::mulOverflow(tmp, getM(1), tmp) ||
+            common::subOverflow(getM(4), NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
     }
