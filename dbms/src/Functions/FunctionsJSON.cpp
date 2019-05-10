@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 
 
 namespace DB
@@ -54,33 +55,43 @@ public:
     }
 };
 
-class JSONTypeImpl : public JSONNullableImplBase<DataTypeString>
+class JSONTypeImpl
 {
 public:
     static constexpr auto name{"JSONType"};
+
+    static DataTypePtr getType()
+    {
+        static const std::vector<std::pair<String, Int8>> values = {
+            {"Array", '['},
+            {"Object", '{'},
+            {"String", '"'},
+            {"Int", 'l'},
+            {"Float",'d'},
+            {"Bool", 'b'},
+            {"Null",'n'},
+        };
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum<Int8>>(values));
+    }
+
+    static Field getDefault() { return {}; }
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
         switch (pjh.get_type())
         {
             case '[':
-                return "Array";
             case '{':
-                return "Object";
             case '"':
-                return "String";
             case 'l':
-                return "Int64";
             case 'd':
-                return "Float64";
-            case 't':
-                return "Bool";
-            case 'f':
-                return "Bool";
             case 'n':
-                return "Null";
+                return {pjh.get_type()};
+            case 't':
+            case 'f':
+                return {'b'};
             default:
-                return "Unknown";
+                return {};
         }
     }
 };
