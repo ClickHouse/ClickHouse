@@ -189,7 +189,7 @@ private:
     void executeOrder(Pipeline & pipeline, SelectQueryInfo & query_info);
     void executeMergeSorted(Pipeline & pipeline);
     void executePreLimit(Pipeline & pipeline);
-    void executeUnion(Pipeline & pipeline);
+    void executeUnion(Pipeline & pipeline, bool read_pk_order = false);
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
     void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
