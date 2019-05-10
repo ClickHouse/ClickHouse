@@ -10,54 +10,54 @@
 namespace DB
 {
 
-class MergeTreeBloomFilterIndex;
+class MergeTreeIndexFullText;
 
 
-struct MergeTreeBloomFilterIndexGranule : public IMergeTreeIndexGranule
+struct MergeTreeIndexGranuleFullText : public IMergeTreeIndexGranule
 {
-    explicit MergeTreeBloomFilterIndexGranule(
-            const MergeTreeBloomFilterIndex & index);
+    explicit MergeTreeIndexGranuleFullText(
+            const MergeTreeIndexFullText & index);
 
-    ~MergeTreeBloomFilterIndexGranule() override = default;
+    ~MergeTreeIndexGranuleFullText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
     bool empty() const override { return !has_elems; }
 
-    const MergeTreeBloomFilterIndex & index;
-    std::vector<StringBloomFilter> bloom_filters;
+    const MergeTreeIndexFullText & index;
+    std::vector<BloomFilter> bloom_filters;
     bool has_elems;
 };
 
-using MergeTreeBloomFilterIndexGranulePtr = std::shared_ptr<MergeTreeBloomFilterIndexGranule>;
+using MergeTreeIndexGranuleFullTextPtr = std::shared_ptr<MergeTreeIndexGranuleFullText>;
 
 
-struct MergeTreeBloomFilterIndexAggregator : IMergeTreeIndexAggregator
+struct MergeTreeIndexAggregatorFullText : IMergeTreeIndexAggregator
 {
-    explicit MergeTreeBloomFilterIndexAggregator(const MergeTreeBloomFilterIndex & index);
+    explicit MergeTreeIndexAggregatorFullText(const MergeTreeIndexFullText & index);
 
-    ~MergeTreeBloomFilterIndexAggregator() override = default;
+    ~MergeTreeIndexAggregatorFullText() override = default;
 
     bool empty() const override { return !granule || granule->empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
-    const MergeTreeBloomFilterIndex & index;
-    MergeTreeBloomFilterIndexGranulePtr granule;
+    const MergeTreeIndexFullText & index;
+    MergeTreeIndexGranuleFullTextPtr granule;
 };
 
 
-class BloomFilterCondition : public IIndexCondition
+class MergeTreeConditionFullText : public IIndexCondition
 {
 public:
-    BloomFilterCondition(
+    MergeTreeConditionFullText(
             const SelectQueryInfo & query_info,
             const Context & context,
-            const MergeTreeBloomFilterIndex & index_);
+            const MergeTreeIndexFullText & index_);
 
-    ~BloomFilterCondition() override = default;
+    ~MergeTreeConditionFullText() override = default;
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -93,19 +93,19 @@ private:
         };
 
         RPNElement(
-            Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<StringBloomFilter> && const_bloom_filter_ = nullptr)
+            Function function_ = FUNCTION_UNKNOWN, size_t key_column_ = 0, std::unique_ptr<BloomFilter> && const_bloom_filter_ = nullptr)
             : function(function_), key_column(key_column_), bloom_filter(std::move(const_bloom_filter_)) {}
 
         Function function = FUNCTION_UNKNOWN;
         /// For FUNCTION_EQUALS, FUNCTION_NOT_EQUALS, FUNCTION_LIKE, FUNCTION_NOT_LIKE.
         size_t key_column;
-        std::unique_ptr<StringBloomFilter> bloom_filter;
+        std::unique_ptr<BloomFilter> bloom_filter;
         /// For FUNCTION_IN and FUNCTION_NOT_IN
-        std::vector<std::vector<StringBloomFilter>> set_bloom_filters;
+        std::vector<std::vector<BloomFilter>> set_bloom_filters;
         std::vector<size_t> set_key_position;
     };
 
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)>;
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)>;
     using RPN = std::vector<RPNElement>;
 
     bool atomFromAST(const ASTPtr & node, Block & block_with_constants, RPNElement & out);
@@ -115,7 +115,7 @@ private:
 
     static const AtomMap atom_map;
 
-    const MergeTreeBloomFilterIndex & index;
+    const MergeTreeIndexFullText & index;
     RPN rpn;
     /// Sets from syntax analyzer.
     PreparedSets prepared_sets;
@@ -164,10 +164,10 @@ struct SplitTokenExtractor : public ITokenExtractor
 };
 
 
-class MergeTreeBloomFilterIndex : public IMergeTreeIndex
+class MergeTreeIndexFullText : public IMergeTreeIndex
 {
 public:
-    MergeTreeBloomFilterIndex(
+    MergeTreeIndexFullText(
             String name_,
             ExpressionActionsPtr expr_,
             const Names & columns_,
@@ -184,7 +184,7 @@ public:
             , seed(seed_)
             , token_extractor_func(std::move(token_extractor_func_)) {}
 
-    ~MergeTreeBloomFilterIndex() override = default;
+    ~MergeTreeIndexFullText() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
