@@ -1491,6 +1491,11 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
 
                     stream = sorting_stream;
                 });
+
+                pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
+                    pipeline.firstStream(), order_descr, settings.max_block_size, limit,
+                    settings.max_bytes_before_remerge_sort,
+                    settings.max_bytes_before_external_sort, context.getTemporaryPath());
             }
         }
 
@@ -1503,14 +1508,10 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
                 stream = std::make_shared<ReverseBlockInputStream>(stream);
             });
         }
-        executeUnion(pipeline);
-        pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
-            pipeline.firstStream(), order_descr, settings.max_block_size, limit,
-            settings.max_bytes_before_remerge_sort,
-            settings.max_bytes_before_external_sort, context.getTemporaryPath());
+        executeUnion(pipeline, true);
     };
 
-    if (settings.optimize_pk_order)
+    if (settings.optimize_pk_order && !query.groupBy())
     {
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
         {
@@ -1602,14 +1603,15 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
 }
 
 
-void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
+void InterpreterSelectQuery::executeUnion(Pipeline & pipeline, bool read_pk_order)
 {
     /// If there are still several streams, then we combine them into one
     if (pipeline.hasMoreThanOneStream())
     {
         unifyStreams(pipeline);
 
-        pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
+        pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(
+            pipeline.streams, pipeline.stream_with_non_joined_data, max_streams, std::function<void()>(), read_pk_order);
         pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
         pipeline.union_stream = true;
