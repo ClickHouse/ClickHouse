@@ -71,8 +71,8 @@ public:
       * - where you must first make JOIN in parallel, while noting which keys are not found,
       *   and only after the completion of this work, create blocks of keys that are not found.
       */
-    ParallelInputsProcessor(const BlockInputStreams & inputs_, const BlockInputStreamPtr & additional_input_at_end_, size_t max_threads_, Handler & handler_, bool read_pk_order_ = false)
-        : inputs(inputs_), additional_input_at_end(additional_input_at_end_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_), read_pk_order(read_pk_order_)
+    ParallelInputsProcessor(const BlockInputStreams & inputs_, const BlockInputStreamPtr & additional_input_at_end_, size_t max_threads_, Handler & handler_)
+        : inputs(inputs_), additional_input_at_end(additional_input_at_end_), max_threads(std::min(inputs_.size(), max_threads_)), handler(handler_)
     {
         for (size_t i = 0; i < inputs_.size(); ++i)
             unprepared_inputs.emplace(inputs_[i], i);
@@ -169,12 +169,9 @@ private:
         InputData(const BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
     };
 
-    void publishPayload(Block & block, size_t thread_num, size_t block_number = std::numeric_limits<size_t>::max())
+    void publishPayload(Block & block, size_t thread_num)
     {
-        if (!read_pk_order)
-            handler.onBlock(block, thread_num);
-        else
-            handler.onBlock(block, block_number);
+        handler.onBlock(block, thread_num);
     }
 
     void thread(ThreadGroupStatusPtr thread_group, size_t thread_num)
@@ -226,8 +223,6 @@ private:
         /// The last thread on the output indicates that there is no more data.
         if (0 == --active_threads)
         {
-            
-            
             /// And then it processes an additional source, if there is one.
             if (additional_input_at_end)
             {
@@ -298,12 +293,7 @@ private:
                     break;
 
                 if (block)
-                {
-                    if (!read_pk_order)
-                        publishPayload(block, thread_num);
-                    else
-                        publishPayload(block, thread_num, input.i);
-                }
+                    publishPayload(block, thread_num);
             }
         }
     }
@@ -357,9 +347,6 @@ private:
     std::atomic<bool> finish { false };
     /// Wait for the completion of all threads.
     std::atomic<bool> joined_threads { false };
-
-    /// Gives data in primary key order
-    bool read_pk_order = false;
 
     Logger * log = &Logger::get("ParallelInputsProcessor");
 };

@@ -35,12 +35,8 @@ private:
         Block block;
         std::exception_ptr exception;
 
-        /// Used in reading in pk_order
-        size_t block_number;
-
         OutputData() {}
         OutputData(Block & block_) : block(block_) {}
-        OutputData(Block & block_, size_t block_number_) : block(block_), block_number(block_number_) {}
         OutputData(std::exception_ptr & exception_) : exception(exception_) {}
     };
 
@@ -48,10 +44,10 @@ public:
     using ExceptionCallback = std::function<void()>;
 
     UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads,
-        ExceptionCallback exception_callback_ = ExceptionCallback(), bool read_pk_order = false) :
+        ExceptionCallback exception_callback_ = ExceptionCallback()) :
         output_queue(std::min(inputs.size(), max_threads)),
-        handler(*this, read_pk_order),
-        processor(inputs, additional_input_at_end, max_threads, handler, read_pk_order),
+        handler(*this),
+        processor(inputs, additional_input_at_end, max_threads, handler),
         exception_callback(exception_callback_)
     {
         children = inputs;
@@ -213,43 +209,16 @@ private:
 
     struct Handler
     {
-        Handler(UnionBlockInputStream & parent_, bool read_pk_order_ = false) : parent(parent_), read_pk_order(read_pk_order_), buffer_queue(parent_.output_queue.capacity()) {}
+        Handler(UnionBlockInputStream & parent_) : parent(parent_) {}
 
-        void onBlock(Block & block, size_t  block_number = std::numeric_limits<size_t>::max())
+        void onBlock(Block & block, size_t /*thread_num*/)
         {
-            if (!read_pk_order)
-            {
-                parent.output_queue.push(Payload(block));
-            }
-            else
-            {
-                buffer_queue.push(Payload(block, block_number));
-            }
+            parent.output_queue.push(Payload(block));
         }
 
         void onFinish()
         {
-            if (!read_pk_order)
-            {
-                parent.output_queue.push(Payload());
-            }
-            else
-            {
-                size_t buffer_size = buffer_queue.size();
-                std::vector<Payload> sort_vector(buffer_size);
-                for (size_t i = 0; i < buffer_size; ++i) {
-                    buffer_queue.pop(sort_vector[i]);
-                }
-                std::sort(sort_vector.begin(), sort_vector.end(), [] (const Payload& a, const Payload& b)
-                {
-                    return a.block_number < b.block_number;
-                });
-                for (const auto& data : sort_vector)
-                {
-                    parent.output_queue.push(data);
-                }
-                parent.output_queue.push(Payload());
-            }
+            parent.output_queue.push(Payload());
         }
 
         void onFinishThread(size_t /*thread_num*/)
@@ -269,10 +238,6 @@ private:
         }
 
         UnionBlockInputStream & parent;
-        
-        bool read_pk_order = false;
-        OutputQueue buffer_queue;
-        
     };
 
     Handler handler;
