@@ -41,8 +41,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "RESTART REPLICA";
         case Type::SYNC_REPLICA:
             return "SYNC REPLICA";
-        case Type::SYNC_DISTRIBUTED:
-            return "SYNC DISTRIBUTED";
+        case Type::FLUSH_DISTRIBUTED:
+            return "FLUSH DISTRIBUTED";
         case Type::RELOAD_DICTIONARY:
             return "RELOAD DICTIONARY";
         case Type::RELOAD_DICTIONARIES:
@@ -112,7 +112,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         if (!target_table.empty())
             print_database_table();
     }
-    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::SYNC_DISTRIBUTED)
+    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
     {
         print_database_table();
     }

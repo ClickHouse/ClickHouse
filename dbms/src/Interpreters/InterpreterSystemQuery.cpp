@@ -206,8 +206,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::SYNC_REPLICA:
             syncReplica(query);
             break;
-        case Type::SYNC_DISTRIBUTED:
-            syncDistributed(query);
+        case Type::FLUSH_DISTRIBUTED:
+            flushDistributed(query);
             break;
         case Type::RESTART_REPLICAS:
             restartReplicas(system_context);
@@ -321,13 +321,13 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
         throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
 }
 
-void InterpreterSystemQuery::syncDistributed(ASTSystemQuery & query)
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 {
     String database_name = !query.target_database.empty() ? query.target_database : context.getCurrentDatabase();
     String & table_name = query.target_table;
 
     if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
-        storage_distributed->syncReplicaSends();
+        storage_distributed->flushClusterNodesAllData();
     else
         throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }

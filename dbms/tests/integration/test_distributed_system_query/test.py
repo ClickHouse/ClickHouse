@@ -36,6 +36,6 @@ def test_start_and_stop_replica_send(started_cluster):
     assert node1.query("SELECT COUNT() FROM distributed_table").rstrip() == '1'
 
     node1.query("SYSTEM START DISTRIBUTED SENDS distributed_table;")
-    node1.query("SYSTEM SYNC DISTRIBUTED distributed_table;")
+    node1.query("SYSTEM FLUSH DISTRIBUTED distributed_table;")
     assert node1.query("SELECT COUNT() FROM distributed_table").rstrip() == '2'
 

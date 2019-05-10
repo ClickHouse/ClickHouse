@@ -87,15 +87,12 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     }
 }
 
-void StorageDistributedDirectoryMonitor::syncReplicaSends()
+void StorageDistributedDirectoryMonitor::flushAllData()
 {
     if (!quit)
     {
-        if (monitor_blocker.isCancelled())
-            throw Exception("Cancelled sync distributed sends.", ErrorCodes::ABORTED);
-
         std::unique_lock lock{mutex};
-        findFiles();
+        processFiles();
     }
 }
 
@@ -131,7 +128,7 @@ void StorageDistributedDirectoryMonitor::run()
         {
             try
             {
-                do_sleep = !findFiles();
+                do_sleep = !processFiles();
             }
             catch (...)
             {
@@ -195,7 +192,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
 }
 
 
-bool StorageDistributedDirectoryMonitor::findFiles()
+bool StorageDistributedDirectoryMonitor::processFiles()
 {
     std::map<UInt64, std::string> files;
 
