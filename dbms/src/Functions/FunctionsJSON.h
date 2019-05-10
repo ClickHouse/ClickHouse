@@ -59,18 +59,26 @@ private:
                 if (!pjh.is_object_or_array() || !pjh.down())
                     return false;
 
-                int steps = accessor.get<Int64>();
-
-                if (steps > 0)
-                    steps -= 1;
-                else if (steps < 0)
+                int index = accessor.get<Int64>();
+                size_t steps;
+                if (index > 0)
                 {
-                    steps += 1;
-
+                    if (pjh.get_scope_type() == '{')
+                        steps = index * 2 - 1;
+                    else
+                        steps = index - 1;
+                }
+                else if (index < 0)
+                {
+                    size_t steps_to_end = 0;
                     ParsedJson::iterator pjh1{pjh};
-
                     while (pjh1.next())
-                        steps += 1;
+                        ++steps_to_end;
+
+                    if (pjh.get_scope_type() == '{')
+                        steps = index * 2 + steps_to_end + 2;
+                    else
+                        steps = index + steps_to_end + 1;
                 }
                 else
                     return false;
