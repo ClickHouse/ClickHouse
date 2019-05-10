@@ -60,7 +60,7 @@ There is currently no support for code points in the format `\uXXXX\uYYYY` that 
 
 The following functions are based on [simdjson](https://github.com/lemire/simdjson) designed for more complex JSON parsing requirements. The assumption 2 mentioned above still applies.
 
-## jsonHas(params[, accessors]...)
+## JSONHas(params[, accessors]...)
 
 If the value exists in the JSON document, `1` will be returned.
 
@@ -69,8 +69,8 @@ If the value does not exist, `null` will be returned.
 Examples:
 
 ```
-select jsonHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
-select jsonHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = null
+select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 1
+select JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = null
 ```
 
 An accessor can be either a string, a positive integer or a negative integer.
@@ -84,14 +84,14 @@ You may use integers to access both JSON arrays and JSON objects.
 So, for example:
 
 ```
-select jsonExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
-select jsonExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
-select jsonExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
-select jsonExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
-select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'a'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', 2) = 'b'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -1) = 'b'
+select JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
+select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## jsonLength(params[, accessors]...)
+## JSONLength(params[, accessors]...)
 
 Return the length of a JSON array or a JSON object.
 
@@ -100,13 +100,13 @@ If the value does not exist or has a wrong type, `null` will be returned.
 Examples:
 
 ```
-select jsonLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
-select jsonLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
+select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
+select JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
 The usage of accessors is the same as above.
 
-## jsonType(params[, accessors]...)
+## JSONType(params[, accessors]...)
 
 Return the type of a JSON value.
 
@@ -115,18 +115,18 @@ If the value does not exist, `null` will be returned.
 Examples:
 
 ```
-select jsonType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
-select jsonType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
-select jsonType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}') = 'Object'
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
+select JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
 The usage of accessors is the same as above.
 
-## jsonExtractUInt(params[, accessors]...)
-## jsonExtractInt(params[, accessors]...)
-## jsonExtractFloat(params[, accessors]...)
-## jsonExtractBool(params[, accessors]...)
-## jsonExtractString(params[, accessors]...)
+## JSONExtractUInt(params[, accessors]...)
+## JSONExtractInt(params[, accessors]...)
+## JSONExtractFloat(params[, accessors]...)
+## JSONExtractBool(params[, accessors]...)
+## JSONExtractString(params[, accessors]...)
 
 Parse data from JSON values which is similar to `visitParam` functions.
 
@@ -135,15 +135,15 @@ If the value does not exist or has a wrong type, `null` will be returned.
 Examples:
 
 ```
-select jsonExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
-select jsonExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
-select jsonExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
-select jsonExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
+select JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'hello'
+select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
+select JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200.0
+select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
 The usage of accessors is the same as above.
 
-## jsonExtract(params, type[, accessors]...)
+## JSONExtract(params, type[, accessors]...)
 
 Parse data from JSON values with a given ClickHouse data type.
 
@@ -152,8 +152,8 @@ If the value does not exist or has a wrong type, `null` will be returned.
 Examples:
 
 ```
-select jsonExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Int8', 'b', 1) = -100
-select jsonExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, String, String, Array(Float64))') = ('a', 'hello', 'b', [-100.0, 200.0, 300.0])
+select JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Int8', 'b', 1) = -100
+select JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, String, String, Array(Float64))') = ('a', 'hello', 'b', [-100.0, 200.0, 300.0])
 ```
 
 The usage of accessors is the same as above.

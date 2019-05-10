@@ -24,7 +24,7 @@ public:
 class JSONHasImpl : public JSONNullableImplBase<DataTypeUInt8>
 {
 public:
-    static constexpr auto name{"jsonHas"};
+    static constexpr auto name{"JSONHas"};
 
     static Field getValue(ParsedJson::iterator &) { return {1}; }
 };
@@ -32,7 +32,7 @@ public:
 class JSONLengthImpl : public JSONNullableImplBase<DataTypeUInt64>
 {
 public:
-    static constexpr auto name{"jsonLength"};
+    static constexpr auto name{"JSONLength"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -57,7 +57,7 @@ public:
 class JSONTypeImpl : public JSONNullableImplBase<DataTypeString>
 {
 public:
-    static constexpr auto name{"jsonType"};
+    static constexpr auto name{"JSONType"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -88,7 +88,7 @@ public:
 class JSONExtractImpl
 {
 public:
-    static constexpr auto name{"jsonExtract"};
+    static constexpr auto name{"JSONExtract"};
 
     static DataTypePtr getType(const DataTypePtr & type)
     {
@@ -243,7 +243,7 @@ public:
 class JSONExtractUIntImpl : public JSONNullableImplBase<DataTypeUInt64>
 {
 public:
-    static constexpr auto name{"jsonExtractUInt"};
+    static constexpr auto name{"JSONExtractUInt"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -257,7 +257,7 @@ public:
 class JSONExtractIntImpl : public JSONNullableImplBase<DataTypeInt64>
 {
 public:
-    static constexpr auto name{"jsonExtractInt"};
+    static constexpr auto name{"JSONExtractInt"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -271,7 +271,7 @@ public:
 class JSONExtractFloatImpl : public JSONNullableImplBase<DataTypeFloat64>
 {
 public:
-    static constexpr auto name{"jsonExtractFloat"};
+    static constexpr auto name{"JSONExtractFloat"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -285,7 +285,7 @@ public:
 class JSONExtractBoolImpl : public JSONNullableImplBase<DataTypeUInt8>
 {
 public:
-    static constexpr auto name{"jsonExtractBool"};
+    static constexpr auto name{"JSONExtractBool"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -301,7 +301,7 @@ public:
 // class JSONExtractRawImpl: public JSONNullableImplBase<DataTypeString>
 // {
 // public:
-//     static constexpr auto name {"jsonExtractRaw"};
+//     static constexpr auto name {"JSONExtractRaw"};
 
 //     static Field getValue(ParsedJson::iterator & pjh)
 //     {
@@ -312,7 +312,7 @@ public:
 class JSONExtractStringImpl : public JSONNullableImplBase<DataTypeString>
 {
 public:
-    static constexpr auto name{"jsonExtractString"};
+    static constexpr auto name{"JSONExtractString"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -326,7 +326,7 @@ public:
 class JSONExtractKeyImpl : public JSONNullableImplBase<DataTypeString>
 {
 public:
-    static constexpr auto name{"jsonExtractKey"};
+    static constexpr auto name{"JSONExtractKey"};
 
     static Field getValue(ParsedJson::iterator & pjh)
     {
@@ -341,17 +341,17 @@ public:
 #else
 namespace DB
 {
-struct JSONHasImpl { static constexpr auto name{"jsonHas"}; };
-struct JSONLengthImpl { static constexpr auto name{"jsonLength"}; };
-struct JSONTypeImpl { static constexpr auto name{"jsonType"}; };
-struct JSONExtractImpl { static constexpr auto name{"jsonExtract"}; };
-struct JSONExtractUIntImpl { static constexpr auto name{"jsonExtractUInt"}; };
-struct JSONExtractIntImpl { static constexpr auto name{"jsonExtractInt"}; };
-struct JSONExtractFloatImpl { static constexpr auto name{"jsonExtractFloat"}; };
-struct JSONExtractBoolImpl { static constexpr auto name{"jsonExtractBool"}; };
-//struct JSONExtractRawImpl { static constexpr auto name {"jsonExtractRaw"}; };
-struct JSONExtractStringImpl { static constexpr auto name{"jsonExtractString"}; };
-struct JSONExtractKeyImpl { static constexpr auto name{"jsonExtractKey"}; };
+struct JSONHasImpl { static constexpr auto name{"JSONHas"}; };
+struct JSONLengthImpl { static constexpr auto name{"JSONLength"}; };
+struct JSONTypeImpl { static constexpr auto name{"JSONType"}; };
+struct JSONExtractImpl { static constexpr auto name{"JSONExtract"}; };
+struct JSONExtractUIntImpl { static constexpr auto name{"JSONExtractUInt"}; };
+struct JSONExtractIntImpl { static constexpr auto name{"JSONExtractInt"}; };
+struct JSONExtractFloatImpl { static constexpr auto name{"JSONExtractFloat"}; };
+struct JSONExtractBoolImpl { static constexpr auto name{"JSONExtractBool"}; };
+//struct JSONExtractRawImpl { static constexpr auto name {"JSONExtractRaw"}; };
+struct JSONExtractStringImpl { static constexpr auto name{"JSONExtractString"}; };
+struct JSONExtractKeyImpl { static constexpr auto name{"JSONExtractKey"}; };
 }
 #endif
 
