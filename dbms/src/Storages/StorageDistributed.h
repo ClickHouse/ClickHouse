@@ -106,7 +106,7 @@ public:
     /// ensure connection pool creation and return it
     ConnectionPoolPtr requireConnectionPool(const std::string & name);
 
-    void syncReplicaSends();
+    void flushClusterNodesAllData();
 
     ClusterPtr getCluster() const;
 
@@ -141,7 +141,7 @@ public:
         /// Creates directory_monitor if not exists.
         void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage, ActionBlocker & monitor_blocker);
 
-        void syncReplicaSends();
+        void flushAllData();
 
         void shutdownAndDropAllData();
     };

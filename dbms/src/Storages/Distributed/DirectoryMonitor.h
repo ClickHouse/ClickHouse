@@ -26,12 +26,12 @@ public:
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
-    void  syncReplicaSends();
+    void flushAllData();
 
     void shutdownAndDropAllData();
 private:
     void run();
-    bool findFiles();
+    bool processFiles();
     void processFile(const std::string & file_path);
     void processFilesWithBatching(const std::map<UInt64, std::string> & files);
 

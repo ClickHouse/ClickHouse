@@ -466,9 +466,9 @@ void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(
         directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool, monitor_blocker);
 }
 
-void StorageDistributed::ClusterNodeData::syncReplicaSends()
+void StorageDistributed::ClusterNodeData::flushAllData()
 {
-    directory_monitor->syncReplicaSends();
+    directory_monitor->flushAllData();
 }
 
 void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
@@ -516,13 +516,13 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
     return {};
 }
 
-void StorageDistributed::syncReplicaSends()
+void StorageDistributed::flushClusterNodesAllData()
 {
     std::lock_guard lock(cluster_nodes_mutex);
 
     /// TODO: Maybe it should be executed in parallel
     for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
-        it->second.syncReplicaSends();
+        it->second.flushAllData();
 }
 
 
