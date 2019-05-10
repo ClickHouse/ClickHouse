@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeBloomFilterIndex.h>
+#include <Storages/MergeTree/MergeTreeIndexFullText.h>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 /// Adds all tokens from string to bloom filter.
 static void stringToBloomFilter(
-    const char * data, size_t size, const std::unique_ptr<ITokenExtractor> & token_extractor, StringBloomFilter & bloom_filter)
+    const char * data, size_t size, const std::unique_ptr<ITokenExtractor> & token_extractor, BloomFilter & bloom_filter)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -42,7 +42,7 @@ static void stringToBloomFilter(
 
 /// Adds all tokens from like pattern string to bloom filter. (Because like pattern can contain `\%` and `\_`.)
 static void likeStringToBloomFilter(
-    const String & data, const std::unique_ptr<ITokenExtractor> & token_extractor, StringBloomFilter & bloom_filter)
+    const String & data, const std::unique_ptr<ITokenExtractor> & token_extractor, BloomFilter & bloom_filter)
 {
     size_t cur = 0;
     String token;
@@ -51,24 +51,23 @@ static void likeStringToBloomFilter(
 }
 
 
-MergeTreeBloomFilterIndexGranule::MergeTreeBloomFilterIndexGranule(const MergeTreeBloomFilterIndex & index)
+MergeTreeIndexGranuleFullText::MergeTreeIndexGranuleFullText(const MergeTreeIndexFullText & index)
     : IMergeTreeIndexGranule()
     , index(index)
     , bloom_filters(
-            index.columns.size(), StringBloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
+            index.columns.size(), BloomFilter(index.bloom_filter_size, index.bloom_filter_hashes, index.seed))
     , has_elems(false) {}
 
-void MergeTreeBloomFilterIndexGranule::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleFullText::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(
-                "Attempt to write empty minmax index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Attempt to write empty minmax index " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
 
     for (const auto & bloom_filter : bloom_filters)
         ostr.write(reinterpret_cast<const char *>(bloom_filter.getFilter().data()), index.bloom_filter_size);
 }
 
-void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
+void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr)
 {
     for (auto & bloom_filter : bloom_filters)
     {
@@ -78,17 +77,17 @@ void MergeTreeBloomFilterIndexGranule::deserializeBinary(ReadBuffer & istr)
 }
 
 
-MergeTreeBloomFilterIndexAggregator::MergeTreeBloomFilterIndexAggregator(const MergeTreeBloomFilterIndex & index)
-    : index(index), granule(std::make_shared<MergeTreeBloomFilterIndexGranule>(index)) {}
+MergeTreeIndexAggregatorFullText::MergeTreeIndexAggregatorFullText(const MergeTreeIndexFullText & index)
+    : index(index), granule(std::make_shared<MergeTreeIndexGranuleFullText>(index)) {}
 
-MergeTreeIndexGranulePtr MergeTreeBloomFilterIndexAggregator::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorFullText::getGranuleAndReset()
 {
-    auto new_granule = std::make_shared<MergeTreeBloomFilterIndexGranule>(index);
+    auto new_granule = std::make_shared<MergeTreeIndexGranuleFullText>(index);
     new_granule.swap(granule);
     return new_granule;
 }
 
-void MergeTreeBloomFilterIndexAggregator::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(
@@ -111,14 +110,14 @@ void MergeTreeBloomFilterIndexAggregator::update(const Block & block, size_t * p
 }
 
 
-const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
+const MergeTreeConditionFullText::AtomMap MergeTreeConditionFullText::atom_map
 {
         {
                 "notEquals",
-                [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
+                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
                 {
                     out.function = RPNElement::FUNCTION_NOT_EQUALS;
-                    out.bloom_filter = std::make_unique<StringBloomFilter>(
+                    out.bloom_filter = std::make_unique<BloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
                     const auto & str = value.get<String>();
@@ -128,10 +127,10 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
         },
         {
                 "equals",
-                [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
+                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
                 {
                     out.function = RPNElement::FUNCTION_EQUALS;
-                    out.bloom_filter = std::make_unique<StringBloomFilter>(
+                    out.bloom_filter = std::make_unique<BloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
                     const auto & str = value.get<String>();
@@ -141,10 +140,10 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
         },
         {
                 "like",
-                [] (RPNElement & out, const Field & value, const MergeTreeBloomFilterIndex & idx)
+                [] (RPNElement & out, const Field & value, const MergeTreeIndexFullText & idx)
                 {
                     out.function = RPNElement::FUNCTION_LIKE;
-                    out.bloom_filter = std::make_unique<StringBloomFilter>(
+                    out.bloom_filter = std::make_unique<BloomFilter>(
                             idx.bloom_filter_size, idx.bloom_filter_hashes, idx.seed);
 
                     const auto & str = value.get<String>();
@@ -154,7 +153,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
         },
         {
                 "notIn",
-                [] (RPNElement & out, const Field &, const MergeTreeBloomFilterIndex &)
+                [] (RPNElement & out, const Field &, const MergeTreeIndexFullText &)
                 {
                     out.function = RPNElement::FUNCTION_NOT_IN;
                     return true;
@@ -162,7 +161,7 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
         },
         {
                 "in",
-                [] (RPNElement & out, const Field &, const MergeTreeBloomFilterIndex &)
+                [] (RPNElement & out, const Field &, const MergeTreeIndexFullText &)
                 {
                     out.function = RPNElement::FUNCTION_IN;
                     return true;
@@ -170,24 +169,21 @@ const BloomFilterCondition::AtomMap BloomFilterCondition::atom_map
         },
 };
 
-BloomFilterCondition::BloomFilterCondition(
+MergeTreeConditionFullText::MergeTreeConditionFullText(
     const SelectQueryInfo & query_info,
     const Context & context,
-    const MergeTreeBloomFilterIndex & index_) : index(index_), prepared_sets(query_info.sets)
+    const MergeTreeIndexFullText & index_) : index(index_), prepared_sets(query_info.sets)
 {
     rpn = std::move(
             RPNBuilder<RPNElement>(
                     query_info, context,
-                    [this] (const ASTPtr & node,
-                            const Context & /* context */,
-                            Block & block_with_constants,
-                            RPNElement & out) -> bool
+                    [this] (const ASTPtr & node, const Context & /* context */, Block & block_with_constants, RPNElement & out) -> bool
                     {
                         return this->atomFromAST(node, block_with_constants, out);
                     }).extractRPN());
 }
 
-bool BloomFilterCondition::alwaysUnknownOrTrue() const
+bool MergeTreeConditionFullText::alwaysUnknownOrTrue() const
 {
     /// Check like in KeyCondition.
     std::vector<bool> rpn_stack;
@@ -234,10 +230,10 @@ bool BloomFilterCondition::alwaysUnknownOrTrue() const
     return rpn_stack[0];
 }
 
-bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
-    std::shared_ptr<MergeTreeBloomFilterIndexGranule> granule
-            = std::dynamic_pointer_cast<MergeTreeBloomFilterIndexGranule>(idx_granule);
+    std::shared_ptr<MergeTreeIndexGranuleFullText> granule
+            = std::dynamic_pointer_cast<MergeTreeIndexGranuleFullText>(idx_granule);
     if (!granule)
         throw Exception(
                 "BloomFilter index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
@@ -323,7 +319,7 @@ bool BloomFilterCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granu
     return rpn_stack[0].can_be_true;
 }
 
-bool BloomFilterCondition::getKey(const ASTPtr & node, size_t & key_column_num)
+bool MergeTreeConditionFullText::getKey(const ASTPtr & node, size_t & key_column_num)
 {
     auto it = std::find(index.columns.begin(), index.columns.end(), node->getColumnName());
     if (it == index.columns.end())
@@ -333,7 +329,7 @@ bool BloomFilterCondition::getKey(const ASTPtr & node, size_t & key_column_num)
     return true;
 }
 
-bool BloomFilterCondition::atomFromAST(
+bool MergeTreeConditionFullText::atomFromAST(
     const ASTPtr & node, Block & block_with_constants, RPNElement & out)
 {
     Field const_value;
@@ -399,7 +395,7 @@ bool BloomFilterCondition::atomFromAST(
     return false;
 }
 
-bool BloomFilterCondition::tryPrepareSetBloomFilter(
+bool MergeTreeConditionFullText::tryPrepareSetBloomFilter(
     const ASTs & args,
     RPNElement & out)
 {
@@ -454,7 +450,7 @@ bool BloomFilterCondition::tryPrepareSetBloomFilter(
         if (data_type->getTypeId() != TypeIndex::String && data_type->getTypeId() != TypeIndex::FixedString)
             return false;
 
-    std::vector<std::vector<StringBloomFilter>> bloom_filters;
+    std::vector<std::vector<BloomFilter>> bloom_filters;
     std::vector<size_t> key_position;
 
     Columns columns = prepared_set->getSetElements();
@@ -480,23 +476,23 @@ bool BloomFilterCondition::tryPrepareSetBloomFilter(
 }
 
 
-MergeTreeIndexGranulePtr MergeTreeBloomFilterIndex::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexFullText::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeBloomFilterIndexGranule>(*this);
+    return std::make_shared<MergeTreeIndexGranuleFullText>(*this);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeBloomFilterIndex::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexFullText::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeBloomFilterIndexAggregator>(*this);
+    return std::make_shared<MergeTreeIndexAggregatorFullText>(*this);
 }
 
-IndexConditionPtr MergeTreeBloomFilterIndex::createIndexCondition(
+IndexConditionPtr MergeTreeIndexFullText::createIndexCondition(
         const SelectQueryInfo & query, const Context & context) const
 {
-    return std::make_shared<BloomFilterCondition>(query, context, *this);
+    return std::make_shared<MergeTreeConditionFullText>(query, context, *this);
 };
 
-bool MergeTreeBloomFilterIndex::mayBenefitFromIndexForIn(const ASTPtr & node) const
+bool MergeTreeIndexFullText::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
     return std::find(std::cbegin(columns), std::cend(columns), node->getColumnName()) != std::cend(columns);
 }
@@ -679,7 +675,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
 
         auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
 
-        return std::make_unique<MergeTreeBloomFilterIndex>(
+        return std::make_unique<MergeTreeIndexFullText>(
                 node->name, std::move(index_expr), columns, data_types, sample, node->granularity,
                 bloom_filter_size, bloom_filter_hashes, seed, std::move(tokenizer));
     }
@@ -697,7 +693,7 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
 
         auto tokenizer = std::make_unique<SplitTokenExtractor>();
 
-        return std::make_unique<MergeTreeBloomFilterIndex>(
+        return std::make_unique<MergeTreeIndexFullText>(
                 node->name, std::move(index_expr), columns, data_types, sample, node->granularity,
                 bloom_filter_size, bloom_filter_hashes, seed, std::move(tokenizer));
     }
