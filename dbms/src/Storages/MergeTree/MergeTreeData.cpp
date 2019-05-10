@@ -1439,10 +1439,10 @@ void MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     const IndicesASTs & new_indices,
     bool skip_sanity_checks,
-    AlterDataPartTransactionPtr& transaction)
+    AlterDataPartTransactionPtr & transaction)
 {
     ExpressionActionsPtr expression;
-    const auto& part = transaction->getDataPart();
+    const auto & part = transaction->getDataPart();
     bool force_update_metadata;
     createConvertExpression(part, part->columns, new_columns,
             getIndices().indices, new_indices,

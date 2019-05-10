@@ -228,7 +228,7 @@ public:
         const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
 
         AlterDataPartTransaction(DataPartPtr data_part_) : data_part(data_part_), alter_lock(data_part->alter_mutex) {}
-        const DataPartPtr& getDataPart() const { return data_part; }
+        const DataPartPtr & getDataPart() const { return data_part; }
         bool isValid() const;
 
     private:
