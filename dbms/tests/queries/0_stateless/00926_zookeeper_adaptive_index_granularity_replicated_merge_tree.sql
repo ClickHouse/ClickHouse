@@ -102,13 +102,13 @@ ATTACH TABLE test.four_rows_per_granule2;
 
 SELECT COUNT(*) FROM test.four_rows_per_granule2;
 
-SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule2' and database='test' and active=1;
+--SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule2' and database='test' and active=1;
 
 SYSTEM SYNC REPLICA test.four_rows_per_granule1;
 
 SELECT COUNT(*) FROM test.four_rows_per_granule1;
 
-SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule1' and database='test' and active=1;
+--SELECT distinct(marks) from system.parts WHERE table = 'four_rows_per_granule1' and database='test' and active=1;
 
 DROP TABLE IF EXISTS test.four_rows_per_granule1;
 DROP TABLE IF EXISTS test.four_rows_per_granule2;

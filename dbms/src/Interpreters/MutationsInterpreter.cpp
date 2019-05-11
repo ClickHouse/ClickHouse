@@ -1,8 +1,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
@@ -86,12 +85,8 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
 
 static NameSet getKeyColumns(const StoragePtr & storage)
 {
-    const MergeTreeData * merge_tree_data = nullptr;
-    if (auto merge_tree = dynamic_cast<StorageMergeTree *>(storage.get()))
-        merge_tree_data = &merge_tree->getData();
-    else if (auto replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
-        merge_tree_data = &replicated_merge_tree->getData();
-    else
+    const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
+    if (!merge_tree_data)
         return {};
 
     NameSet key_columns;
