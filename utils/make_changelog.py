@@ -29,9 +29,9 @@ def http_get_json(url, token, max_retries, retry_timeout):
         if resp.status_code != 200:
             msg = "Request {} failed with code {}.\n{}\n".format(url, resp.status_code, resp.text)
 
-            if resp.status_code == 403:
+            if resp.status_code == 403 or resp.status_code >= 500:
                 try:
-                    if resp.json()['message'].startswith('API rate limit exceeded') and t + 1 < max_retries:
+                    if (resp.json()['message'].startswith('API rate limit exceeded') or resp.status_code >= 500) and t + 1 < max_retries:
                         logging.warning(msg)
                         time.sleep(retry_timeout)
                         continue

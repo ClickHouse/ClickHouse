@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_MANY_BYTES;
     extern const int NOT_IMPLEMENTED;
+    extern const int HYPERSCAN_CANNOT_SCAN_TEXT;
 }
 
 /// Is the LIKE expression reduced to finding a substring in a string?
@@ -289,10 +290,10 @@ struct MultiMatchAnyImpl
 #if USE_HYPERSCAN
         const auto & hyperscan_regex = MultiRegexps::get<FindAnyIndex, MultiSearchDistance>(needles, edit_distance);
         hs_scratch_t * scratch = nullptr;
-        hs_error_t err = hs_alloc_scratch(hyperscan_regex->get(), &scratch);
+        hs_error_t err = hs_clone_scratch(hyperscan_regex->getScratch(), &scratch);
 
         if (err != HS_SUCCESS)
-            throw Exception("Could not allocate scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+            throw Exception("Could not clone scratch space for hyperscan", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
@@ -316,14 +317,16 @@ struct MultiMatchAnyImpl
             if (length > std::numeric_limits<UInt32>::max())
                 throw Exception("Too long string to search", ErrorCodes::TOO_MANY_BYTES);
             res[i] = 0;
-            hs_scan(
-                hyperscan_regex->get(),
+            err = hs_scan(
+                hyperscan_regex->getDB(),
                 reinterpret_cast<const char *>(haystack_data.data()) + offset,
                 length,
                 0,
                 smart_scratch.get(),
                 on_match,
                 &res[i]);
+            if (err != HS_SUCCESS)
+                throw Exception("Failed to scan with hyperscan", ErrorCodes::HYPERSCAN_CANNOT_SCAN_TEXT);
             offset = haystack_offsets[i];
         }
 #else

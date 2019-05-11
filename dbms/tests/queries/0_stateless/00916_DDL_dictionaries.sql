@@ -38,7 +38,7 @@ LAYOUT(FLAT())
 LIFETIME(MIN 1, MAX 10);
 
 -- Can't create dictionary if other dictionary with the same name already exists.
-CREATE DICTIONARY test.dict1 -- { serverError 447 }
+CREATE DICTIONARY test.dict1 -- { serverError 453 }
  (
     second UInt8 DEFAULT 1
  )

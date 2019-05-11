@@ -90,7 +90,7 @@ private:
 public:
     using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
 
-    /// Objects will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
+    /// Call init() after constructing the instance of any derived class.
     ExternalLoader(const Configuration & config_main,
                    const ExternalLoaderUpdateSettings & update_settings,
                    const ExternalLoaderConfigSettings & config_settings,
@@ -106,6 +106,11 @@ public:
 
     void removeObject(const std::string & database_name, const std::string & name);
 
+    /// Should be called after creating an instance of a derived class.
+    /// Loads the objects immediately and starts a separate thread to update them once in each 'reload_period' seconds.
+    /// This function does nothing if called again.
+    void init(bool throw_on_error);
+
     /// Forcibly reloads all loadable objects.
     void reload();
 
@@ -119,7 +124,7 @@ public:
 
 protected:
     virtual std::shared_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
-                                                      const std::string & config_prefix) = 0;
+                                                      const std::string & config_prefix) const = 0;
 
     class LockedObjectsMap
     {
@@ -134,15 +139,8 @@ protected:
     /// Direct access to objects.
     LockedObjectsMap getObjectsMap() const;
 
-    /// Should be called in derived constructor (to avoid pure virtual call).
-    void init(bool throw_on_error);
-
 private:
-
-    bool is_initialized = false;
-
-    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
-    mutable std::mutex all_mutex;
+    std::once_flag is_initialized_flag;
 
     // TODO: fix this later
     /// Protects only objects map.
@@ -151,27 +149,45 @@ private:
       */
     mutable std::mutex map_mutex;
 
+
     /// name -> loadable.
-    ObjectsMap loadable_objects_from_filesystem;
+    mutable ObjectsMap loadable_objects_from_filesystem;
+
+    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries.
+    /// The mutex is recursive because creating of objects might be recursive, i.e.
+    /// creating objects might cause creating other objects.
+    mutable std::recursive_mutex all_mutex;
+
+    struct LoadableCreationInfo
+    {
+        std::string name;
+        Poco::AutoPtr<Poco::Util::AbstractConfiguration> config;
+        std::string config_path;
+        std::string config_prefix;
+    };
+
+    /// Objects which should be reloaded soon.
+    mutable std::unordered_map<std::string, LoadableCreationInfo> objects_to_reload;
 
     // TODO: describe this later
     mutable std::mutex database_objects_map_mutex;
 
     // TODO: написать, что эти объекты гарантированно не пересекаются с объектами из файловой системы
-    ObjectsMap loadable_objects_from_databases; // This objects created by ddl queries like `CREATE DICTIONARY`
+    // This objects created by ddl queries like `CREATE DICTIONARY`
+    mutable ObjectsMap loadable_objects_from_databases;
 
     // TODO: fix this description
     /// Here are loadable objects, that has been never loaded successfully.
     /// They are also in 'loadable_objects', but with nullptr as 'loadable'.
-    std::unordered_map<std::string, FailedLoadableInfo> failed_loadable_objects;
+    mutable std::unordered_map<std::string, FailedLoadableInfo> failed_loadable_objects;
 
     /// Both for loadable_objects and failed_loadable_objects.
     using TimePoint = std::chrono::system_clock::time_point;
-    std::unordered_map<std::string, TimePoint> update_times;
+    mutable std::unordered_map<std::string, TimePoint> update_times;
 
-    std::unordered_map<std::string, std::unordered_set<std::string>> loadable_objects_defined_in_config;
+    mutable std::unordered_map<std::string, std::unordered_set<std::string>> loadable_objects_defined_in_config;
 
-    pcg64 rnd_engine{randomSeed()};
+    mutable pcg64 rnd_engine{randomSeed()};
 
     const Configuration & config_main;
     const ExternalLoaderUpdateSettings update_settings;
@@ -188,13 +204,12 @@ private:
 
     std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
 
-private:
+    void initImpl(bool throw_on_error);
+
     /// Check objects definitions in config files and reload or/and add new ones if the definition is changed
     /// If loadable_name is not empty, load only loadable object with name loadable_name
     void reloadFromConfigFiles(bool throw_on_error, bool force_reload = false, const std::string & loadable_name = "");
-
-    void reloadFromConfigFile(const std::string & config_path, const bool throw_on_error,
-                                const bool force_reload, const std::string & loadable_name);
+    void reloadFromConfigFile(const std::string & config_path, const bool force_reload, const std::string & loadable_name);
 
     /// Check config files and update expired loadable objects
     void reloadAndUpdate(bool throw_on_error = false);
@@ -208,9 +223,14 @@ private:
 
     void reloadPeriodically();
 
-    bool checkLoadableObjectToUpdate(LoadableInfo & object, const std::string & name, bool throw_on_error = false);
+    bool checkLoadableObjectToUpdate(LoadableInfo & object,
+                                     const std::string & name,
+                                     bool throw_on_error = false) const;
 
     TimePoint getNextUpdateTime(const LoadablePtr & loadable);
+    void finishReload(const std::string & loadable_name, bool throw_on_error) const;
+    void finishAllReloads(bool throw_on_error) const;
+    void finishReloadImpl(const LoadableCreationInfo & creation_info, bool throw_on_error) const;
 
     LoadablePtr getLoadableImpl(const std::string & name, bool throw_on_error) const;
     LoadablePtr getLoadableFromDatabasesImpl(const std::string & name, bool throw_on_error) const;

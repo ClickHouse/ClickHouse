@@ -127,9 +127,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
     ParserKeyword s_codec{"CODEC"};
+    ParserKeyword s_ttl{"TTL"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserCodec codec_parser;
+    ParserExpression expression_parser;
 
     ParserKeyValuePairsList pairs_list_parser(TokenType::Whitespace);
 
@@ -146,6 +148,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
+    ASTPtr ttl_expression;
     ASTPtr pairs_list;
 
     if (!s_default.checkWithoutMoving(pos, expected) &&
@@ -184,6 +187,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    if (s_ttl.ignore(pos, expected))
+    {
+        if (!expression_parser.parse(pos, ttl_expression, expected))
+            return false;
+    }
+
     if (parse_key_value_pairs && !pairs_list_parser.parse(pos, pairs_list, expected))
     {
         return false;
@@ -216,6 +225,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         column_declaration->codec = codec_expression;
         column_declaration->children.push_back(std::move(codec_expression));
+    }
+
+    if (ttl_expression)
+    {
+        column_declaration->ttl = ttl_expression;
+        column_declaration->children.push_back(std::move(ttl_expression));
     }
 
     if (pairs_list)

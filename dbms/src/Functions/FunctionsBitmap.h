@@ -5,7 +5,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFunction.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -13,6 +12,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -406,7 +406,12 @@ private:
     {
         const ColumnAggregateFunction * columns[2];
         for (size_t i = 0; i < 2; ++i)
-            columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        {
+            if (auto argument_column_const = typeid_cast<const ColumnConst *>(block.getByPosition(arguments[i]).column.get()))
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
+            else
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        }
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -511,7 +516,12 @@ private:
     {
         const ColumnAggregateFunction * columns[2];
         for (size_t i = 0; i < 2; ++i)
-            columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        {
+            if (auto argument_column_const = typeid_cast<const ColumnConst *>(block.getByPosition(arguments[i]).column.get()))
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(argument_column_const->getDataColumnPtr().get());
+            else
+                columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
+        }
 
         auto col_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
 

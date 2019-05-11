@@ -7,7 +7,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/XDBCBridgeHelper.h>

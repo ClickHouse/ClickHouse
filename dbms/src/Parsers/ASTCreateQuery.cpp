@@ -169,6 +169,8 @@ ASTPtr ASTStorage::clone() const
         res->set(res->order_by, order_by->clone());
     if (sample_by)
         res->set(res->sample_by, sample_by->clone());
+    if (ttl_table)
+        res->set(res->ttl_table, ttl_table->clone());
 
     if (settings)
         res->set(res->settings, settings->clone());
@@ -202,6 +204,11 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SAMPLE BY " << (s.hilite ? hilite_none : "");
         sample_by->formatImpl(s, state, frame);
+    }
+    if (ttl_table)
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "TTL " << (s.hilite ? hilite_none : "");
+        ttl_table->formatImpl(s, state, frame);
     }
     if (settings)
     {

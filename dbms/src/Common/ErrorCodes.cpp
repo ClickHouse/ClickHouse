@@ -421,12 +421,18 @@ namespace ErrorCodes
     extern const int UNKNOWN_PROTOBUF_FORMAT = 444;
     extern const int CANNOT_MPROTECT = 445;
     extern const int FUNCTION_NOT_ALLOWED = 446;
-    extern const int DICTIONARY_ALREADY_EXISTS = 447;
-    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 448;
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 449;
-    extern const int UNKNOWN_DICTIONARY = 450;
-    extern const int STORAGE_IS_NOT_READY = 451;
-    extern const int EXTERNAL_LOADABLE_IS_MISSING = 452;
+    extern const int HYPERSCAN_CANNOT_SCAN_TEXT = 447;
+    extern const int BROTLI_READ_FAILED = 448;
+    extern const int BROTLI_WRITE_FAILED = 449;
+    extern const int BAD_TTL_EXPRESSION = 450;
+    extern const int BAD_TTL_FILE = 451;
+    extern const int SETTING_CONSTRAINT_VIOLATION = 452;
+    extern const int DICTIONARY_ALREADY_EXISTS = 453;
+    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 454;
+    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 455;
+    extern const int UNKNOWN_DICTIONARY = 456;
+    extern const int STORAGE_IS_NOT_READY = 457;
+    extern const int EXTERNAL_LOADABLE_IS_MISSING = 458;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

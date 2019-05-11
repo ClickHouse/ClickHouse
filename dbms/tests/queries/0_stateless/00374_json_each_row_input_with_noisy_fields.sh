@@ -5,8 +5,8 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.json_noisy"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test.json_noisy (d1 UInt8, d2 String) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS json_noisy"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE json_noisy (d1 UInt8, d2 String) ENGINE = Memory"
 
 echo '{"d1" : 1, "d2" : "ok"}
 { }
@@ -15,20 +15,20 @@ echo '{"d1" : 1, "d2" : "ok"}
 {"d2":"ok","t1":[[[]],true, null, false, "1","2", 0.03, 1], "d1":"1", "t2":["1","2"]}
 {"d2":"ok","t1":{"a":{"b": {} ,"c":false},"b":[true,null, false]}, "t2":  { "a": [  ] } , "d1":1}
 {"t0" : -0.1, "t1" : +1, "t2" : 0, "t3" : [0.0, -0.1], "d2" : "ok", "d1" : 1}' \
-| $CLICKHOUSE_CLIENT --input_format_skip_unknown_fields=1 -q "INSERT INTO test.json_noisy FORMAT JSONEachRow"
+| $CLICKHOUSE_CLIENT --input_format_skip_unknown_fields=1 -q "INSERT INTO json_noisy FORMAT JSONEachRow"
 
-$CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT * FROM test.json_noisy"
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.json_noisy"
+$CLICKHOUSE_CLIENT --max_threads=1 -q "SELECT * FROM json_noisy"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS json_noisy"
 
 # Regular test for DateTime
 
 echo
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.json_each_row"
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test.json_each_row (d DateTime('Europe/Moscow')) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS json_each_row"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE json_each_row (d DateTime('Europe/Moscow')) ENGINE = Memory"
 echo '{"d" : "2017-08-31 18:36:48", "t" : ""}
 {"d" : "1504193808", "t" : -1}
 {"d" : 1504193808, "t" : []}
 {"d" : 01504193808, "t" : []}' \
-| $CLICKHOUSE_CLIENT --input_format_skip_unknown_fields=1 -q "INSERT INTO test.json_each_row FORMAT JSONEachRow"
-$CLICKHOUSE_CLIENT -q "SELECT DISTINCT * FROM test.json_each_row"
-$CLICKHOUSE_CLIENT -q "DROP TABLE test.json_each_row"
+| $CLICKHOUSE_CLIENT --input_format_skip_unknown_fields=1 -q "INSERT INTO json_each_row FORMAT JSONEachRow"
+$CLICKHOUSE_CLIENT -q "SELECT DISTINCT * FROM json_each_row"
+$CLICKHOUSE_CLIENT -q "DROP TABLE json_each_row"

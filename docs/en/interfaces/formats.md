@@ -30,6 +30,8 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✗ |
 
+You can control some format processing parameters by the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
+
 ## TabSeparated {#tabseparated}
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
@@ -307,7 +309,7 @@ See also the `JSONEachRow` format.
 
 ## JSONEachRow {#jsoneachrow}
 
-When using this format, ClickHouse outputs rows as separated, newline delimited JSON objects, but the whole data is not a valid JSON.
+When using this format, ClickHouse outputs rows as separated, newline-delimited JSON objects, but the data as a whole is not valid JSON.
 
 ```json
 {"SearchPhrase":"curtain designs","count()":"1064"}
@@ -317,7 +319,7 @@ When using this format, ClickHouse outputs rows as separated, newline delimited 
 
 When inserting the data, you should provide a separate JSON object for each row.
 
-### Inserting the Data
+### Inserting Data
 
 ```
 INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021466249494", "Duration":146,"Sign":-1} {"UserID":"4324182021466249494","PageViews":6,"Duration":185,"Sign":1}
@@ -326,17 +328,17 @@ INSERT INTO UserActivity FORMAT JSONEachRow {"PageViews":5, "UserID":"4324182021
 ClickHouse allows:
 
 - Any order of key-value pairs in the object.
-- The omission of some values.
+- Omitting some values.
 
-ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects to a line. You do not have to separate them with line breaks.
+ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You don't have to separate them with line breaks.
 
-**Processing of omitted values**
+**Omitted values processing**
 
-ClickHouse substitutes the omitted values with the default values of corresponding [data types](../data_types/index.md).
+ClickHouse substitutes omitted values with the default values for the corresponding [data types](../data_types/index.md).
 
-In case of the `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [insert_sample_with_metadata](../operations/settings/settings.md#session_settings-insert_sample_with_metadata) setting.
+If `DEFAULT expr` is specified, ClickHouse uses different substitution rules depending on the [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) setting.
 
-Let's consider the following table:
+Consider the following table:
 
 ```
 CREATE TABLE IF NOT EXISTS example_table
@@ -346,15 +348,15 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
-- If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as a default value for `UInt32` data type).
-- If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
+- If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
+- If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 !!! note "Warning"
-    Use this option carefully, enabling it negatively affects the performance of the ClickHouse server.
+    When inserting data with `insert_sample_with_metadata = 1`, ClickHouse consumes more computational resources, compared to insertion with `insert_sample_with_metadata = 0`.
 
-### Selecting the Data
+### Selecting Data
 
-Let's consider the `UserActivity` table as an example:
+Consider the `UserActivity` table as an example:
 
 ```
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
@@ -373,7 +375,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 Unlike the [JSON](#json) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
 !!! note "Note"
-    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted into JSON without losing any information.
+    Any set of bytes can be output in the strings. Use the `JSONEachRow` format if you are sure that the data in the table can be formatted as JSON without losing any information.
 
 ## Native {#native}
 
@@ -646,9 +648,9 @@ See also [Format Schema](#formatschema).
 
 Protobuf - is a [Protocol Buffers](https://developers.google.com/protocol-buffers/) format.
 
-ClickHouse supports both `proto2` and `proto3`. Repeated/optional/required fields are supported.
-
 This format requires an external format schema. The schema is cached between queries.
+ClickHouse supports both `proto2` and `proto3` syntaxes. Repeated/optional/required fields are supported.
+
 Usage examples:
 
 ```sql
@@ -659,7 +661,7 @@ SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:Me
 cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
 ```
 
-Where the file `schemafile.proto` looks like this:
+where the file `schemafile.proto` looks like this:
 
 ```
 syntax = "proto3";
@@ -691,17 +693,23 @@ message MessageType {
 ```
 
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
-Nested messages are suitable to input or output a [nested data structures](../data_types/nested_data_structures/nested/).
+Nested messages are suitable to input or output a [nested data structures](../data_types/nested_data_structures/nested.md).
 
-Default values defined in a `proto2` protobuf schema like this
+Default values defined in a protobuf schema like this
 
 ```
+syntax = "proto2";
+
 message MessageType {
   optional int32 result_per_page = 3 [default = 10];
 }
 ```
 
 are not applied; the [table defaults](../query_language/create.md#create-default-values) are used instead of them.
+
+ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
+It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
+See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
 ## Format Schema {#formatschema}
 
@@ -712,10 +720,12 @@ e.g. `schemafile.proto:MessageType`.
 If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
 it can be omitted and in this case the format schema looks like `schemafile:MessageType`.
 
-If you input or output data via the [client](../interfaces/cli/) the file name specified in the format schema
+If you input or output data via the [client](../interfaces/cli.md) in the [interactive mode](../interfaces/cli.md#cli_usage), the file name specified in the format schema
 can contain an absolute path or a path relative to the current directory on the client.
-If you input or output data via the [HTTP interface](../interfaces/http/) the file name specified in the format schema
-should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md)
+If you use the client in the [batch mode](../interfaces/cli.md#cli_usage), the path to the schema must be relative due to security reasons.
+
+If you input or output data via the [HTTP interface](../interfaces/http.md) the file name specified in the format schema
+should be located in the directory specified in [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path)
 in the server configuration.
 
 [Original article](https://clickhouse.yandex/docs/en/interfaces/formats/) <!--hide-->

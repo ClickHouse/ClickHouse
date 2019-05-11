@@ -30,8 +30,7 @@ namespace
 ExternalDictionaries::ExternalDictionaries(
     std::unique_ptr<IConfigRepository> config_repository,
     const Poco::Util::AbstractConfiguration & config,
-    Context & context,
-    bool throw_on_error)
+    Context & context)
         : ExternalLoader(config,
                          externalDictionariesUpdateSettings,
                          getExternalDictionariesConfigSettings(),
@@ -40,11 +39,10 @@ ExternalDictionaries::ExternalDictionaries(
                          "external dictionary"),
         context(context)
 {
-    init(throw_on_error);
 }
 
 std::shared_ptr<IExternalLoadable> ExternalDictionaries::create(
-        const std::string & name, const Configuration & config, const std::string & config_prefix)
+        const std::string & name, const Configuration & config, const std::string & config_prefix) const
 {
     return DictionaryFactory::instance().create(name, config, config_prefix, context);
 }

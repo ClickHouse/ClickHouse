@@ -15,10 +15,10 @@ namespace DB
 /** A column containing a lambda expression.
   * Behaves like a constant-column. Contains an expression, but not input or output data.
   */
-class ColumnFunction final : public COWPtrHelper<IColumn, ColumnFunction>
+class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
 {
 private:
-    friend class COWPtrHelper<IColumn, ColumnFunction>;
+    friend class COWHelper<IColumn, ColumnFunction>;
 
     ColumnFunction(size_t size, FunctionBasePtr function, const ColumnsWithTypeAndName & columns_to_capture);
 

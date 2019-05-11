@@ -6,6 +6,11 @@
 #include <Common/ProfileEvents.h>
 #include <IO/BufferWithOwnMemory.h>
 
+#include <Common/config.h>
+#if USE_LFALLOC
+#include <Common/LFAllocator.h>
+#endif
+
 
 namespace ProfileEvents
 {
@@ -20,8 +25,13 @@ namespace DB
 
 struct UncompressedCacheCell
 {
-    Memory data;
+#if USE_LFALLOC
+    Memory<LFAllocator> data;
+#else
+    Memory<> data;
+#endif
     size_t compressed_size;
+    UInt32 additional_bytes;
 };
 
 struct UncompressedSizeWeightFunction

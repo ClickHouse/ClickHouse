@@ -690,10 +690,9 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     };
 
     if (!settings.continuous_reading)
+    {
         low_cardinality_state->num_pending_rows = 0;
 
-    if (!settings.continuous_reading)
-    {
         /// Remember in state that some granules were skipped and we need to update dictionary.
         low_cardinality_state->need_update_dictionary = true;
     }

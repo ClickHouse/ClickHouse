@@ -55,7 +55,7 @@ public:
     char * alloc(const size_t size)
     {
         if (size > max_fixed_block_size)
-            return static_cast<char *>(Allocator::alloc(size));
+            return static_cast<char *>(Allocator<false>::alloc(size));
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);
@@ -76,7 +76,7 @@ public:
     void free(char * ptr, const size_t size)
     {
         if (size > max_fixed_block_size)
-            return Allocator::free(ptr, size);
+            return Allocator<false>::free(ptr, size);
 
         /// find list of required size
         const auto list_idx = findFreeListIndex(size);

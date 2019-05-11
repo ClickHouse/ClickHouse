@@ -17,6 +17,7 @@ public:
     ASTPtr default_expression;
     ASTPtr codec;
     ASTPtr comment;
+    ASTPtr ttl;
 
     ASTPtr expr_list; /// some key-value pairs for dictionary keys attributes like injective, expression and etc.
 
