@@ -4,7 +4,7 @@
 #include <Functions/GatherUtils/ArraySourceVisitor.h>
 #include <Functions/GatherUtils/ArraySinkVisitor.h>
 #include <Functions/GatherUtils/ValueSourceVisitor.h>
-#include <Core/TypeListNumber.h>
+
 
 namespace DB::GatherUtils
 {
