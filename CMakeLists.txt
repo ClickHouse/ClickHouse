@@ -1,6 +1,15 @@
 project(ClickHouse)
 cmake_minimum_required(VERSION 3.3)
-cmake_policy(SET CMP0023 NEW)
+
+foreach(policy
+    CMP0023
+    CMP0074 # CMake 3.12
+    )
+  if(POLICY ${policy})
+    cmake_policy(SET ${policy} NEW)
+  endif()
+endforeach()
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
@@ -318,6 +327,7 @@ include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
 include (cmake/find_hyperscan.cmake)
 include (cmake/find_lfalloc.cmake)
+include (cmake/find_simdjson.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
