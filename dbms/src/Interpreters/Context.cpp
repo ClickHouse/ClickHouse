@@ -1044,7 +1044,7 @@ ASTPtr Context::getCreateDatabaseQuery(const String & database_name) const
 ASTPtr Context::getCreateDictionaryQuery(const String & database_name, const String & dictionary_name) const
 {
     auto lock = getLock();
-    String db = resolveDatabase(database_name, dictionary_name);
+    String db = resolveDatabase(database_name, current_database);
     assertDatabaseExists(db);
     return shared->databases[db]->getCreateDictionaryQuery(*this, dictionary_name);
 }

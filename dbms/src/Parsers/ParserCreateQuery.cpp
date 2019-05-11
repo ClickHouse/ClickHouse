@@ -804,14 +804,15 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Exp
     if (!s_dictionary.ignore(pos, expected))
         return false;
 
-    if (!name_p.parse(pos, database, expected))
-        return false;
-
-    if (!s_dot.ignore(pos))
-        return false;
-
     if (!name_p.parse(pos, dictionary, expected))
         return false;
+
+    if (s_dot.ignore(pos))
+    {
+        database = dictionary;
+        if (!name_p.parse(pos, dictionary, expected))
+            return false;
+    }
 
     if (!s_left_paren.ignore(pos, expected))
         return false;

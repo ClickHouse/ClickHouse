@@ -207,11 +207,12 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
 
 
 BlockIO InterpreterDropQuery::executeToDictionary(
-    String & database_name, String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists)
+    String & database_name_, String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists)
 {
     if (kind != ASTDropQuery::Kind::Drop)
         throw Exception("Dictionary could be only dropped", ErrorCodes::BAD_ARGUMENTS);
 
+    String database_name = !database_name_.empty() ? database_name_ : context.getCurrentDatabase();
     if (database_name.empty())
         throw Exception("Can't execute drop query: database_name is empty", ErrorCodes::BAD_ARGUMENTS);
 
