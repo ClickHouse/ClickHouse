@@ -201,7 +201,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     size_t expected_size = block.bytes();
     auto reservation = data.reserveSpaceForPart(expected_size); ///@TODO_IGR ASK expected size
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk2(), part_name, new_part_info);
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data,
+                                                                                                reservation->getDisk(), part_name, new_part_info);
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->relative_path = TMP_PREFIX + part_name;
