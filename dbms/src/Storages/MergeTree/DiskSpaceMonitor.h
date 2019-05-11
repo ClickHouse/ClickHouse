@@ -336,7 +336,7 @@ public:
     const Schema & operator[](const String & name) const;
 
 private:
-    std::map<String, Schema> schemes;
+    std::map<String, Schema> schemas;
 };
 
 }

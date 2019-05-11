@@ -1678,7 +1678,7 @@ const Schema & Context::getSchema(const String & name) const
 
     if (!shared->merge_tree_schema_selector)
     {
-        constexpr auto config_name = "storage_configuration.schemes";
+        constexpr auto config_name = "storage_configuration.schemas";
         auto & config = getConfigRef();
 
         shared->merge_tree_schema_selector = std::make_unique<SchemaSelector>(config, config_name, getDiskSelector());
