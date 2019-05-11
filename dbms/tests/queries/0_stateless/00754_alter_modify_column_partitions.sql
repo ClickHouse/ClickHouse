@@ -5,7 +5,7 @@ SET send_logs_level = 'none';
 DROP TABLE IF EXISTS test.alter_column;
 
 CREATE TABLE test.alter_column(x UInt32, y Int32) ENGINE MergeTree PARTITION BY x ORDER BY x;
-INSERT INTO test.alter_column (x, y) SELECT number AS x, -number AS y FROM system.numbers LIMIT 100;
+INSERT INTO test.alter_column (x, y) SELECT number AS x, -number AS y FROM system.numbers LIMIT 50;
 
 SELECT '*** Check SHOW CREATE TABLE ***';
 SHOW CREATE TABLE test.alter_column;
