@@ -335,7 +335,7 @@ public:
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     auto reservation = reserveSpaceForPart(0);  ///@TODO_IGR ASK What expected size of mutated part? what size should we reserve?
-    MergeTreeMutationEntry entry(commands, getFullPathOnDisk(reservation->getDisk2()), insert_increment.get());
+    MergeTreeMutationEntry entry(commands, getFullPathOnDisk(reservation->getDisk()), insert_increment.get());
     String file_name;
     {
         std::lock_guard lock(currently_merging_mutex);

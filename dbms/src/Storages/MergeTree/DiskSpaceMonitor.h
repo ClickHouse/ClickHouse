@@ -157,7 +157,7 @@ public:
             return size;
         }
 
-        const DiskPtr & getDisk2() const ///@TODO_IGR rename
+        const DiskPtr & getDisk() const ///@TODO_IGR rename
         {
             return disk_ptr;
         }

@@ -34,7 +34,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"is_temporary", std::make_shared<DataTypeUInt8>()},
-        {"data_path", std::make_shared<DataTypeString>()},
+        {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"metadata_path", std::make_shared<DataTypeString>()},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},

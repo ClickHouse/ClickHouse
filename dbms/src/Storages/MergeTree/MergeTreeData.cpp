@@ -766,8 +766,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 {
     LOG_DEBUG(log, "Loading data parts");
 
-    const auto full_paths = getDataPaths();
-
     std::vector<std::pair<String, DiskPtr>> part_names_with_disks;
     Poco::DirectoryIterator end;
 
@@ -2804,7 +2802,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     auto reservation = reserveSpaceForPart(src_part->bytes_on_disk);
-    String dst_part_path = getFullPathOnDisk(reservation->getDisk2());
+    String dst_part_path = getFullPathOnDisk(reservation->getDisk());
     Poco::Path dst_part_absolute_path = Poco::Path(dst_part_path + tmp_dst_part_name).absolute();
     Poco::Path src_part_absolute_path = Poco::Path(src_part->getFullPath()).absolute();
 
@@ -2814,7 +2812,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     LOG_DEBUG(log, "Cloning part " << src_part_absolute_path.toString() << " to " << dst_part_absolute_path.toString());
     localBackup(src_part_absolute_path, dst_part_absolute_path);
 
-    MergeTreeData::MutableDataPartPtr dst_data_part = std::make_shared<MergeTreeData::DataPart>(*this, reservation->getDisk2(), dst_part_name, dst_part_info);
+    MergeTreeData::MutableDataPartPtr dst_data_part = std::make_shared<MergeTreeData::DataPart>(*this,
+                                                                                                reservation->getDisk(), dst_part_name, dst_part_info);
     dst_data_part->relative_path = tmp_dst_part_name;
     dst_data_part->is_temp = true;
 

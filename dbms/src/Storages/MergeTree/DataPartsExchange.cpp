@@ -201,7 +201,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
     auto reservation = data.reserveSpaceForPart(0); ///@TODO_IGR ASK What size should be there?
-    String part_path = data.getFullPathOnDisk(reservation->getDisk2());
+    String part_path = data.getFullPathOnDisk(reservation->getDisk());
     String absolute_part_path = part_path + relative_part_path + "/";
     Poco::File part_file(absolute_part_path);
 
@@ -212,7 +212,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk2(), part_name);
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data,
+                                                                                                reservation->getDisk(), part_name);
     new_data_part->relative_path = relative_part_path;
     new_data_part->is_temp = true;
 
