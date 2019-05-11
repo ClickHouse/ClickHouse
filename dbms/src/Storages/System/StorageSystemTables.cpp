@@ -209,12 +209,12 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    Array table_paths_array;
                     auto paths = table->getDataPaths();
-                    String all_paths;
+                    table_paths_array.reserve(paths.size());
                     for (const String & path : paths)
-                        all_paths += path + ';';
-                    ///@TODO IGR choose separator
-                    res_columns[res_index++]->insert(all_paths);
+                        table_paths_array.push_back(path);
+                    res_columns[res_index++]->insert(table_paths_array);
                 }
 
                 if (columns_mask[src_index++])

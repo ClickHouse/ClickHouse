@@ -1807,7 +1807,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             String interserver_scheme = global_context.getInterserverScheme();
 
             if (interserver_scheme != address.scheme)
-                throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Interserver schemas are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(part_desc->found_new_part_name, source_replica_path,
                 address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
@@ -2768,7 +2768,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
         get_part = [&, address, timeouts, user_password, interserver_scheme]()
         {
             if (interserver_scheme != address.scheme)
-                throw Exception("Interserver schemes are different: '" + interserver_scheme
+                throw Exception("Interserver schemas are different: '" + interserver_scheme
                     + "' != '" + address.scheme + "', can't fetch part from " + address.host,
                     ErrorCodes::LOGICAL_ERROR);
 
