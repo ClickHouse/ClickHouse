@@ -369,9 +369,18 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+
+// LAYOUT(TYPE()) or LAYOUT(TYPE(PARAM value))
+class ParserDictionaryLayout : public IParserBase
+{
+protected:
+    const char * getName() const override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /**
   * SOURCE(SOURCE_TYPE(SOURCE PARAMS))
-  *
   */
 class ParserDictionarySource : public IParserBase
 {
@@ -379,6 +388,7 @@ protected:
     const char * getName() const override;
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
+
 
 /**
   * CREATE DICTIONARY db.name

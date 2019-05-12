@@ -447,35 +447,42 @@ void addSourceFieldsFromAST(
 }
 
 
+/*
+ * Transforms next definition
+ *  LAYOUT(FLAT())
+ * to the next configuration
+ *  <layout>
+ *    <flat/>
+ *  </layout>
+ *
+ * And next definition
+ *  LAYOUT(CACHE(SIZE_IN_CELLS 1000))
+ * to the next one
+ *  <layout>
+ *    <cache>
+ *      <size_in_cells>1000</size_in_cells>
+ *    </cache>
+ *  </layout>
+ */
 void addLayoutFieldsFromAST(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
-    const ASTCreateQuery & create)
+    const ASTDictionaryLayout * layout)
 {
-    const auto * layout = create.dictionary_source->layout;
     if (layout == nullptr)
-        throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout is empty", ErrorCodes::BAD_ARGUMENTS);
-
-    const auto * ast_expr_list = create.dictionary_source->layout->children[0].get();
-    if (ast_expr_list->children.size() != 1)
-        throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout may contain only one parameter", ErrorCodes::BAD_ARGUMENTS);
-
-    const auto & layout_type = typeid_cast<const ASTKeyValueFunction &>(*ast_expr_list->children[0].get());
-    if (layout_type.children.size() > 1)
-        throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout type may contain only one parameter", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout is empty",
+                        ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
     AutoPtr<Element> layout_element(doc->createElement("layout"));
     root->appendChild(layout_element);
-    AutoPtr<Element> layout_type_element(doc->createElement(layout_type.name));
+    AutoPtr<Element> layout_type_element(doc->createElement(layout->layout_type));
     layout_element->appendChild(layout_type_element);
-
-    const auto * layout_parameter_expr_list = layout_type.children.at(0).get();
-    if (layout_parameter_expr_list->children.size() == 1)
+    if (layout->param.has_value())
     {
-        const ASTPair & pair = typeid_cast<const ASTPair &>(*layout_parameter_expr_list->children[0].get());
-        AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair.first));
-        const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(pair.second.get());
-        AutoPtr<Text> value(doc->createTextNode(toString(literal->value.get<UInt64>())));
+        const auto & param = layout->param;
+        AutoPtr<Element> layout_type_parameter_element(doc->createElement(param->first));
+        const ASTLiteral & literal = param->second->as<const ASTLiteral &>();
+        AutoPtr<Text> value(doc->createTextNode(toString(literal.value.get<UInt64>())));
         layout_type_parameter_element->appendChild(value);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
@@ -703,7 +710,7 @@ Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(cons
     current_dictionary->appendChild(name_element);
 
     addSourceFieldsFromAST(xml_document, current_dictionary, create);
-    addLayoutFieldsFromAST(xml_document, current_dictionary, create);
+    addLayoutFieldsFromAST(xml_document, current_dictionary, create.dictionary_source->layout);
     addStructureFieldsFromAST(xml_document, current_dictionary, create);
     addLifetimeFieldsFromAST(xml_document, current_dictionary, create.dictionary_source->lifetime);
 

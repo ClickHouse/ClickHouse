@@ -660,6 +660,55 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 }
 
 
+const char * ParserDictionaryLayout::getName() const
+{
+    return "layout definition";
+}
+
+
+bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyValueFunction key_value_func_p;
+    ASTPtr ast_func;
+    if (!key_value_func_p.parse(pos, ast_func, expected))
+        return false;
+
+    const ASTKeyValueFunction & func = ast_func->as<const ASTKeyValueFunction &>();
+    if (func.name != "layout")
+        return false;
+
+    const ASTExpressionList & func_expr_list = func.elements->as<const ASTExpressionList &>();
+    // here must be exactly one argument - layout_type
+    if (func_expr_list.children.size() != 1)
+        return false;
+
+    auto res = std::make_shared<ASTDictionaryLayout>();
+    const ASTKeyValueFunction & type_func = func_expr_list.children.at(0)->as<const ASTKeyValueFunction &>();
+    res->layout_type = type_func.name;
+    const ASTExpressionList & type_expr_list = type_func.elements->as<const ASTExpressionList &>();
+    // there doesn't exist a layout with more than 1 parameter
+    if (type_expr_list.children.size() > 1)
+        return false;
+
+    if (type_expr_list.children.size() == 1)
+    {
+        const ASTPair * pair = dynamic_cast<const ASTPair *>(type_expr_list.children.at(0).get());
+        // here only a pair is allowed
+        if (pair == nullptr)
+            return false;
+
+        const ASTLiteral * literal = dynamic_cast<const ASTLiteral *>(pair->second.get());
+        if (literal == nullptr || literal->value.getType() != Field::Types::UInt64)
+            return false;
+        res->param.emplace(pair->first, nullptr);
+        res->set(res->param->second, literal->clone());
+    }
+
+    node = res;
+    return true;
+}
+
+
 const char * ParserDictionarySource::getName() const
 {
     return "source definition";
@@ -680,6 +729,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyValuePairsList expression_parser;
     ParserDictionaryLifetime lifetime_p;
     ParserDictionaryRange range_p;
+    ParserDictionaryLayout layout_p;
 
     ASTPtr primary_key;
     ASTPtr composite_key;
@@ -723,7 +773,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!ast_layout && layout_keyword.checkWithoutMoving(pos, expected))
         {
-            if (!key_value_pairs_p.parse(pos, ast_layout, expected))
+            if (!layout_p.parse(pos, ast_layout, expected))
                 return false;
             continue;
         }

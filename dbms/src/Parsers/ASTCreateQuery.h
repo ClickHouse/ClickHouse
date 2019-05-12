@@ -67,6 +67,25 @@ public:
 };
 
 
+// LAYOUT(TYPE()) or LAYOUT(TYPE(PARAM value))
+class ASTDictionaryLayout : public IAST
+{
+public:
+    String layout_type;
+
+    using KeyValue = std::pair<std::string, ASTLiteral *>;
+    std::optional<KeyValue> param;
+
+    String getID(char) const override;
+
+    ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & settings,
+                    FormatState & state,
+                    FormatStateStacked frame) const override;
+};
+
+
 class ASTDictionarySource : public IAST
 {
 public:
@@ -74,7 +93,7 @@ public:
     IAST * primary_key = nullptr;
     IAST * composite_key = nullptr;
     ASTDictionaryLifetime * lifetime = nullptr;
-    ASTKeyValueFunction * layout;
+    ASTDictionaryLayout * layout = nullptr;
     ASTDictionaryRange * range = nullptr;
 
     String getID(char delimiter) const override;

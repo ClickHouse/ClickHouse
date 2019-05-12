@@ -4,6 +4,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
+#include <Poco/String.h>
+
 
 namespace DB
 {
@@ -76,6 +78,53 @@ void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
                   << "MAX "
                   << (settings.hilite ? hilite_none : "")
                   << max_sec << ")";
+}
+
+
+String ASTDictionaryLayout::getID(char) const
+{
+    return "Dictionary layout";
+}
+
+
+ASTPtr ASTDictionaryLayout::clone() const
+{
+    auto res = std::make_shared<ASTDictionaryLayout>(*this);
+    res->children.clear();
+    res->layout_type = layout_type;
+    if (param.has_value())
+    {
+        res->param.emplace(param->first, nullptr);
+        res->set(res->param->second, param->second->clone());
+    }
+    return res;
+}
+
+
+void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
+                                     FormatState & state,
+                                     FormatStateStacked expected) const
+{
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
+                  << "LAYOUT"
+                  << (settings.hilite ? hilite_none : "")
+                  << "("
+                  << (settings.hilite ? hilite_keyword : "")
+                  << Poco::toUpper(layout_type)
+                  << (settings.hilite ? hilite_none : "");
+
+    settings.ostr << "(";
+    if (param)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "")
+                      << Poco::toUpper(param->first)
+                      << (settings.hilite ? hilite_none : "")
+                      << " ";
+
+        param->second->formatImpl(settings, state, expected);
+    }
+    settings.ostr << ")";
+    settings.ostr << ")";
 }
 
 
