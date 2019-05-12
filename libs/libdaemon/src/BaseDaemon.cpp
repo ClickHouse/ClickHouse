@@ -16,12 +16,6 @@
 #include <execinfo.h>
 #include <unistd.h>
 
-#ifdef __APPLE__
-// ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE
-#endif
-#include <ucontext.h>
-
 #include <typeinfo>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -62,6 +56,67 @@
 #include <Common/CurrentThread.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 
+#if USE_UNWIND
+    #define UNW_LOCAL_ONLY
+    #include <libunwind.h>
+#else
+    using unw_context_t = int;
+#endif
+
+#ifdef __APPLE__
+// ucontext is not available without _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
+#include <ucontext.h>
+
+
+/** For transferring information from signal handler to a separate thread.
+  * If you need to do something serious in case of a signal (example: write a message to the log),
+  *  then sending information to a separate thread through pipe and doing all the stuff asynchronously
+  *  - is probably the only safe method for doing it.
+  * (Because it's only safe to use reentrant functions in signal handlers.)
+  */
+struct Pipe
+{
+    union
+    {
+        int fds[2];
+        struct
+        {
+            int read_fd;
+            int write_fd;
+        };
+    };
+
+    Pipe()
+    {
+        read_fd = -1;
+        write_fd = -1;
+
+        if (0 != pipe(fds))
+            DB::throwFromErrno("Cannot create pipe", 0);
+    }
+
+    void close()
+    {
+        if (-1 != read_fd)
+        {
+            ::close(read_fd);
+            read_fd = -1;
+        }
+
+        if (-1 != write_fd)
+        {
+            ::close(write_fd);
+            write_fd = -1;
+        }
+    }
+
+    ~Pipe()
+    {
+        close();
+    }
+};
 
 Pipe signal_pipe;
 
@@ -114,9 +169,18 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
     char buf[buf_size];
     DB::WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], buf_size, buf);
 
+    unw_context_t unw_context;
+
+#if USE_UNWIND
+    unw_getcontext(&unw_context);
+#else
+    unw_context = 0;
+#endif
+
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
     DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
+    DB::writePODBinary(unw_context, out);
     DB::writeBinary(getThreadNumber(), out);
 
     out.next();
@@ -126,6 +190,31 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     call_default_signal_handler(sig);
 }
+
+
+#if USE_UNWIND
+size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, unw_context_t & context)
+{
+    unw_cursor_t cursor;
+
+    if (unw_init_local(&cursor, &context) < 0)
+        return 0;
+
+    size_t i = 0;
+    for (; i < max_frames; ++i)
+    {
+        unw_word_t ip;
+        unw_get_reg(&cursor, UNW_REG_IP, &ip);
+        out_frames[i] = reinterpret_cast<void*>(ip);
+
+        if (!unw_step(&cursor))
+            break;
+    }
+
+    return i;
+}
+#endif
+
 
 /** The thread that read info about signal or std::terminate from pipe.
   * On HUP / USR1, close log files (for new files to be opened later).
@@ -188,13 +277,15 @@ public:
             {
                 siginfo_t info;
                 ucontext_t context;
+                unw_context_t unw_context;
                 ThreadNumber thread_num;
 
                 DB::readPODBinary(info, in);
                 DB::readPODBinary(context, in);
+                DB::readPODBinary(unw_context, in);
                 DB::readBinary(thread_num, in);
 
-                onFault(sig, info, context, thread_num);
+                onFault(sig, info, context, unw_context, thread_num);
             }
         }
     }
@@ -209,7 +300,7 @@ private:
         LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
     }
 
-    void onFault(int sig, siginfo_t & info, ucontext_t & context, ThreadNumber thread_num) const
+    void onFault(int sig, siginfo_t & info, ucontext_t & context, unw_context_t & unw_context, ThreadNumber thread_num) const
     {
         LOG_ERROR(log, "########################################");
         LOG_ERROR(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") "

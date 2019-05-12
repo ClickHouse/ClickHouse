@@ -37,12 +37,12 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         message (FATAL_ERROR "GCC version must be at least 7. For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    # Require at least clang 5
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
-        message (FATAL_ERROR "Clang version must be at least 5.")
+    # Require at least clang 6
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
+        message (FATAL_ERROR "Clang version must be at least 6.")
     endif ()
 else ()
-    message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 5+ and GCC 7+.")
+    message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 6+ and GCC 7+.")
 endif ()
 
 # Check that submodules are present only if source was downloaded with git
@@ -108,10 +108,16 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
     endif ()
+
+    if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
+        message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
+    endif ()
 endif ()
 
 if (GLIBC_COMPATIBILITY)
     set (USE_INTERNAL_MEMCPY ON)
+else ()
+    message (WARNING "Option GLIBC_COMPATIBILITY must be turned on for production builds.")
 endif ()
 
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
@@ -181,13 +187,17 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 
 
 include (cmake/use_libcxx.cmake)
+include (cmake/find_unwind.cmake)
 
+if (USE_INTERNAL_UNWIND_LIBRARY)
+    option (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING "Use internal unwind library for exception handling" ${USE_STATIC_LIBRARIES})
+endif ()
 
 # Set standard, system and compiler libraries explicitly.
 # This is intended for more control of what we are linking.
 
 set (DEFAULT_LIBS "")
-if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
+if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING OR USE_LIBCXX))
     # Note: this probably has no effect, but I'm not an expert in CMake.
     set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
     set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
@@ -201,6 +211,9 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
         execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
     endif ()
 
+    string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
+    set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
+
     # Add C++ libraries.
     #
     # This consist of:
@@ -210,10 +223,20 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
     # - compiler builtins (example: functions for implementation of __int128 operations);
     #
     # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
-    if (USE_LIBCXX)
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+
+    if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+        # TODO: Allow to use non-static library as well.
+        set (EXCEPTION_HANDLING_LIBRARY "lib/libunwind${${CMAKE_POSTFIX_VARIABLE}}.a")
     else ()
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+        set (EXCEPTION_HANDLING_LIBRARY "-lgcc_eh")
+    endif ()
+
+    message (STATUS "Using exception handling library: ${EXCEPTION_HANDLING_LIBRARY}")
+
+    if (USE_LIBCXX)
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi ${EXCEPTION_HANDLING_LIBRARY} ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+    else ()
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ ${EXCEPTION_HANDLING_LIBRARY} -lgcc ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
     endif ()
 
     # Linking with GLIBC prevents portability of binaries to older systems.
@@ -222,10 +245,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
     if (GLIBC_COMPATIBILITY)
         message (STATUS "Some symbols from glibc will be replaced for compatibility")
 
-        string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
-        set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
-        # FIXME: glibc-compatibility may be non-static in some builds!
+        # TODO: Allow to use non-static library as well.
         set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
     endif ()
 
@@ -343,7 +363,6 @@ include (libs/libcommon/cmake/find_gperftools.cmake)
 include (libs/libcommon/cmake/find_jemalloc.cmake)
 include (libs/libcommon/cmake/find_cctz.cmake)
 include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
-include (libs/libcommon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
 
@@ -354,29 +373,33 @@ add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
 
-if (GLIBC_COMPATIBILITY)
+if (GLIBC_COMPATIBILITY OR USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
     # FIXME: actually glibc-compatibility should always be built first,
     #        because it's unconditionally linked via $DEFAULT_LIBS,
     #        and these looks like the first places that get linked.
-    function (add_glibc_compat target_name)
+    function (add_default_dependencies target_name)
         if (TARGET ${target_name})
-            add_dependencies(${target_name} glibc-compatibility)
+            if (GLIBC_COMPATIBILITY)
+                add_dependencies(${target_name} glibc-compatibility)
+            endif ()
+            if (USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+                add_dependencies(${target_name} ${UNWIND_LIBRARY})
+            endif ()
         endif ()
     endfunction ()
 
-    add_glibc_compat(ltdl)
-    add_glibc_compat(zlibstatic)
-    add_glibc_compat(jemalloc)
-    add_glibc_compat(unwind)
-    add_glibc_compat(memcpy)
-    add_glibc_compat(Foundation)
-    add_glibc_compat(common)
-    add_glibc_compat(gtest)
-    add_glibc_compat(lz4)
-    add_glibc_compat(zstd)
-    add_glibc_compat(snappy)
-    add_glibc_compat(arrow)
-    add_glibc_compat(protoc)
-    add_glibc_compat(thrift_static)
-    add_glibc_compat(boost_regex_internal)
+    add_default_dependencies(ltdl)
+    add_default_dependencies(zlibstatic)
+    add_default_dependencies(jemalloc)
+    add_default_dependencies(memcpy)
+    add_default_dependencies(Foundation)
+    add_default_dependencies(common)
+    add_default_dependencies(gtest)
+    add_default_dependencies(lz4)
+    add_default_dependencies(zstd)
+    add_default_dependencies(snappy)
+    add_default_dependencies(arrow)
+    add_default_dependencies(protoc)
+    add_default_dependencies(thrift_static)
+    add_default_dependencies(boost_regex_internal)
 endif ()
