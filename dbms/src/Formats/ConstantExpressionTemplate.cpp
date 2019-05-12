@@ -73,15 +73,17 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
             skipWhitespaceIfAny(istr);
             assertString(tokens[cur_token++], istr);
         }
-    } catch (DB::Exception & e)
+    }
+    catch (DB::Exception & e)
     {
         for (size_t i = 0; i < cur_column; ++i)
             columns[i]->popBack(1);
 
         if (!isParseError(e.code()))
             throw;
+
+        throw DB::Exception("Cannot parse expression using template", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
     }
-    throw DB::Exception("Cannot parse expression using template", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
 }
 
 ColumnPtr ConstantExpressionTemplate::evaluateAll()

@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/ConstantExpressionTemplate.h>
 
+#include <IO/PeekableReadBuffer.h>
 
 namespace DB
 {
@@ -38,10 +39,10 @@ private:
 
     Block readImpl() override;
 
-    Field parseExpression(char * prev_istr_position, MutableColumns & columns, size_t column_idx, bool generate_template);
+    Field parseExpression(MutableColumns & columns, size_t column_idx, bool generate_template);
 
 private:
-    ReadBuffer & istr;
+    PeekableReadBuffer istr;
     Block header;
     std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
