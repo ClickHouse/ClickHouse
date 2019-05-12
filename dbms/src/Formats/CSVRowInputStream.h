@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <unordered_map>
+
 #include <Core/Block.h>
 #include <Formats/IRowInputStream.h>
 #include <Formats/FormatSettings.h>
@@ -21,7 +24,7 @@ public:
       */
     CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings);
 
-    bool read(MutableColumns & columns, RowReadExtension &) override;
+    bool read(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
@@ -35,6 +38,19 @@ private:
     DataTypes data_types;
 
     const FormatSettings format_settings;
+
+    using IndexesMap = std::unordered_map<String, size_t>;
+    IndexesMap column_indexes_by_names;
+
+    using OptionalIndexes = std::vector<std::optional<size_t>>;
+    OptionalIndexes column_indexes_for_input_fields;
+
+    std::vector<UInt8> read_columns;
+    std::vector<size_t> columns_to_fill_with_default_values;
+
+    void addInputColumn(const String & column_name);
+    void setupAllColumnsByTableSchema();
+    void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension& ext);
 
     /// For convenient diagnostics in case of an error.
 

@@ -377,11 +377,11 @@ namespace
     template <typename Map, typename KeyGetter>
     struct Inserter<ASTTableJoin::Strictness::Any, Map, KeyGetter>
     {
-        static ALWAYS_INLINE void insert(const Join &, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
+        static ALWAYS_INLINE void insert(const Join & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
-            if (emplace_result.isInserted() || emplace_result.getMapped().overwrite)
+            if (emplace_result.isInserted() || join.anyTakeLastRow())
                 new (&emplace_result.getMapped()) typename Map::mapped_type(stored_block, i);
         }
     };
@@ -659,7 +659,7 @@ void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added,
 
     if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
     {
-        for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(mapped); current != nullptr; current = current->next)
+        for (auto current = &static_cast<const typename Map::mapped_type::Base &>(mapped); current != nullptr; current = current->next)
         {
             added.appendFromBlock(*current->block, current->row_num);
             ++current_offset;
@@ -1078,10 +1078,7 @@ void Join::joinGet(Block & block, const String & column_name) const
 
     if (kind == ASTTableJoin::Kind::Left && strictness == ASTTableJoin::Strictness::Any)
     {
-        if (any_take_last_row)
-            joinGetImpl(block, column_name, std::get<MapsAnyOverwrite>(maps));
-        else
-            joinGetImpl(block, column_name, std::get<MapsAny>(maps));
+        joinGetImpl(block, column_name, std::get<MapsAny>(maps));
     }
     else
         throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
@@ -1156,7 +1153,7 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 {
     static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
     {
-        for (auto current = &static_cast<const typename Mapped::Base_t &>(mapped); current != nullptr; current = current->next)
+        for (auto current = &static_cast<const typename Mapped::Base &>(mapped); current != nullptr; current = current->next)
         {
             for (size_t j = 0; j < columns_right.size(); ++j)
                 columns_right[j]->insertFrom(*current->block->getByPosition(j).column.get(), current->row_num);

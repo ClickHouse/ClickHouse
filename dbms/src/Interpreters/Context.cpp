@@ -36,6 +36,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Compiler.h>
+#include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -297,6 +298,8 @@ private:
 
 
 Context::Context() = default;
+Context::Context(const Context &) = default;
+Context & Context::operator=(const Context &) = default;
 
 
 Context Context::createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory)
@@ -619,14 +622,26 @@ void Context::calculateUserSettings()
     /// NOTE: we ignore global_context settings (from which it is usually copied)
     /// NOTE: global_context settings are immutable and not auto updated
     settings = Settings();
+    settings_constraints = nullptr;
 
     /// 2) Apply settings from default profile
     auto default_profile_name = getDefaultProfileName();
     if (profile != default_profile_name)
-        settings.setProfile(default_profile_name, *shared->users_config);
+        setProfile(default_profile_name);
 
     /// 3) Apply settings from current user
+    setProfile(profile);
+}
+
+
+void Context::setProfile(const String & profile)
+{
     settings.setProfile(profile, *shared->users_config);
+
+    auto new_constraints
+        = settings_constraints ? std::make_shared<SettingsConstraints>(*settings_constraints) : std::make_shared<SettingsConstraints>();
+    new_constraints->setProfile(profile, *shared->users_config);
+    settings_constraints = std::move(new_constraints);
 }
 
 
@@ -687,9 +702,8 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
-void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
-    auto lock = getLock();
     checkDatabaseAccessRightsImpl(from.first);
     checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].insert(where);
@@ -700,9 +714,14 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
         table->updateDependencies();
 }
 
-void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
     auto lock = getLock();
+    addDependencyUnsafe(from, where);
+}
+
+void Context::removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+{
     checkDatabaseAccessRightsImpl(from.first);
     checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].erase(where);
@@ -711,6 +730,12 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
     auto table = tryGetTable(from.first, from.second);
     if (table != nullptr)
         table->updateDependencies();
+}
+
+void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+{
+    auto lock = getLock();
+    removeDependencyUnsafe(from, where);
 }
 
 Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
@@ -1027,27 +1052,55 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
-void Context::setSetting(const String & name, const Field & value)
+void Context::setSetting(const String & name, const String & value)
 {
+    auto lock = getLock();
     if (name == "profile")
     {
-        auto lock = getLock();
-        settings.setProfile(value.safeGet<String>(), *shared->users_config);
+        setProfile(value);
+        return;
     }
-    else
-        settings.set(name, value);
+    settings.set(name, value);
 }
 
 
-void Context::setSetting(const String & name, const std::string & value)
+void Context::setSetting(const String & name, const Field & value)
 {
+    auto lock = getLock();
     if (name == "profile")
     {
-        auto lock = getLock();
-        settings.setProfile(value, *shared->users_config);
+        setProfile(value.safeGet<String>());
+        return;
     }
-    else
-        settings.set(name, value);
+    settings.set(name, value);
+}
+
+
+void Context::applySettingChange(const SettingChange & change)
+{
+    setSetting(change.name, change.value);
+}
+
+
+void Context::applySettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+        applySettingChange(change);
+}
+
+
+void Context::checkSettingsConstraints(const SettingChange & change)
+{
+    if (settings_constraints)
+        settings_constraints->check(settings, change);
+}
+
+
+void Context::checkSettingsConstraints(const SettingsChanges & changes)
+{
+    if (settings_constraints)
+        settings_constraints->check(settings, changes);
 }
 
 

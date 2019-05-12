@@ -203,30 +203,31 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     }
     else if (type == MODIFY_COLUMN)
     {
-        ColumnDescription & column = columns_description.get(column_name);
-
-        if (codec)
+        columns_description.modify(column_name, [&](ColumnDescription & column)
         {
-            /// User doesn't specify data type, it means that datatype doesn't change
-            /// let's use info about old type
-            if (data_type == nullptr)
-                codec->useInfoAboutType(column.type);
-            column.codec = codec;
-        }
+            if (codec)
+            {
+                /// User doesn't specify data type, it means that datatype doesn't change
+                /// let's use info about old type
+                if (data_type == nullptr)
+                    codec->useInfoAboutType(column.type);
+                column.codec = codec;
+            }
 
-        if (!is_mutable())
-        {
-            column.comment = comment;
-            return;
-        }
+            if (!isMutable())
+            {
+                column.comment = comment;
+                return;
+            }
 
-        if (ttl)
-            column.ttl = ttl;
+            if (ttl)
+                column.ttl = ttl;
 
-        column.type = data_type;
+            column.type = data_type;
 
-        column.default_desc.kind = default_kind;
-        column.default_desc.expression = default_expression;
+            column.default_desc.kind = default_kind;
+            column.default_desc.expression = default_expression;
+        });
     }
     else if (type == MODIFY_ORDER_BY)
     {
@@ -241,7 +242,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
     }
     else if (type == COMMENT_COLUMN)
     {
-        columns_description.get(column_name).comment = comment;
+        columns_description.modify(column_name, [&](ColumnDescription & column) { column.comment = comment; });
     }
     else if (type == ADD_INDEX)
     {
@@ -305,7 +306,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool AlterCommand::is_mutable() const
+bool AlterCommand::isMutable() const
 {
     if (type == COMMENT_COLUMN)
         return false;
@@ -327,6 +328,7 @@ void AlterCommands::apply(ColumnsDescription & columns_description, IndicesDescr
     for (const AlterCommand & command : *this)
         if (!command.ignore)
             command.apply(new_columns_description, new_indices_description, new_order_by_ast, new_primary_key_ast, new_ttl_table_ast);
+
     columns_description = std::move(new_columns_description);
     indices_description = std::move(new_indices_description);
     order_by_ast = std::move(new_order_by_ast);
@@ -494,7 +496,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
                     /// column has no associated alter command, let's create it
                     /// add a new alter command to modify existing column
                     this->emplace_back(AlterCommand{AlterCommand::MODIFY_COLUMN,
-                        column.name, explicit_type, column.default_desc.kind, column.default_desc.expression});
+                        column.name, explicit_type, column.default_desc.kind, column.default_desc.expression, {}, {}, {}, {}});
 
                     command = &back();
                 }
@@ -533,11 +535,11 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
     columns_description = std::move(out_columns_description);
 }
 
-bool AlterCommands::is_mutable() const
+bool AlterCommands::isMutable() const
 {
     for (const auto & param : *this)
     {
-        if (param.is_mutable())
+        if (param.isMutable())
             return true;
     }
 

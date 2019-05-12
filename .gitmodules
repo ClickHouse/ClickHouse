@@ -82,3 +82,6 @@
 [submodule "contrib/libunwind"]
 	path = contrib/libunwind
 	url = https://github.com/ClickHouse-Extras/libunwind.git
+[submodule "contrib/simdjson"]
+	path = contrib/simdjson
+	url = https://github.com/lemire/simdjson.git
