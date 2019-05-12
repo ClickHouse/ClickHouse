@@ -1,5 +1,4 @@
 SET enable_debug_queries = 1;
-USE test;
 
 set allow_experimental_cross_to_join_conversion = 0;
 select * from system.one cross join system.one;

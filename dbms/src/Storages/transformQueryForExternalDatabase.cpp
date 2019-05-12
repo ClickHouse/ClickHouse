@@ -104,7 +104,7 @@ String transformQueryForExternalDatabase(
     for (const auto & name : used_columns)
         select_expr_list->children.push_back(std::make_shared<ASTIdentifier>(name));
 
-    select->select_expression_list = std::move(select_expr_list);
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expr_list));
 
     /** If there was WHERE,
       * copy it to transformed query if it is compatible,
@@ -112,13 +112,13 @@ String transformQueryForExternalDatabase(
       * copy only compatible parts of it.
       */
 
-    auto & original_where = clone_query->as<ASTSelectQuery &>().where_expression;
+    ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
     if (original_where)
     {
         replaceConstFunction(*original_where, context, available_columns);
         if (isCompatible(*original_where))
         {
-            select->where_expression = original_where;
+            select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(original_where));
         }
         else if (const auto * function = original_where->as<ASTFunction>())
         {
@@ -140,7 +140,7 @@ String transformQueryForExternalDatabase(
                 }
 
                 if (compatible_found)
-                     select->where_expression = std::move(new_function_and);
+                    select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(new_function_and));
             }
         }
     }

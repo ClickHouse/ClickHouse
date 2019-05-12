@@ -16,7 +16,7 @@ std::vector<XMLConfigurationPtr> ConfigPreprocessor::processConfig(
     std::vector<XMLConfigurationPtr> result;
     for (const auto & path : paths)
     {
-        result.emplace_back(new XMLConfiguration(path));
+        result.emplace_back(XMLConfigurationPtr(new XMLConfiguration(path)));
         result.back()->setString("path", Poco::Path(path).absolute().toString());
     }
 
