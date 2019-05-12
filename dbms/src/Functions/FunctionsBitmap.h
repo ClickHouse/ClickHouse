@@ -348,7 +348,27 @@ struct BitmapAndnotCardinalityImpl
     }
 };
 
-template <template <typename> class Impl, typename Name>
+template <typename T>
+struct BitmapHasAllImpl
+{
+    using ReturnType = UInt8;
+    static UInt8 apply(const AggregateFunctionGroupBitmapData<T> & bd1, const AggregateFunctionGroupBitmapData<T> & bd2)
+    {
+        return bd1.rbs.rb_is_subset(bd2.rbs);
+    }
+};
+
+template <typename T>
+struct BitmapHasAnyImpl
+{
+    using ReturnType = UInt8;
+    static UInt8 apply(const AggregateFunctionGroupBitmapData<T> & bd1, const AggregateFunctionGroupBitmapData<T> & bd2)
+    {
+        return bd1.rbs.rb_intersect(bd2.rbs);
+    }
+};
+
+template <template <typename> class Impl, typename Name, typename ToType>
 class FunctionBitmapCardinality : public IFunction
 {
 public:
@@ -411,8 +431,6 @@ public:
     }
 
 private:
-    using ToType = UInt64;
-
     template <typename T>
     void executeIntType(
         Block & block, const ColumnNumbers & arguments, size_t input_rows_count, typename ColumnVector<ToType>::Container & vec_to)
@@ -603,12 +621,22 @@ struct NameBitmapAndnotCardinality
 {
     static constexpr auto name = "bitmapAndnotCardinality";
 };
+struct NameBitmapHasAll
+{
+    static constexpr auto name = "bitmapHasAll";
+};
+struct NameBitmapHasAny
+{
+    static constexpr auto name = "bitmapHasAny";
+};
 
 using FunctionBitmapSelfCardinality = FunctionBitmapSelfCardinalityImpl<NameBitmapCardinality>;
-using FunctionBitmapAndCardinality = FunctionBitmapCardinality<BitmapAndCardinalityImpl, NameBitmapAndCardinality>;
-using FunctionBitmapOrCardinality = FunctionBitmapCardinality<BitmapOrCardinalityImpl, NameBitmapOrCardinality>;
-using FunctionBitmapXorCardinality = FunctionBitmapCardinality<BitmapXorCardinalityImpl, NameBitmapXorCardinality>;
-using FunctionBitmapAndnotCardinality = FunctionBitmapCardinality<BitmapAndnotCardinalityImpl, NameBitmapAndnotCardinality>;
+using FunctionBitmapAndCardinality = FunctionBitmapCardinality<BitmapAndCardinalityImpl, NameBitmapAndCardinality, UInt64>;
+using FunctionBitmapOrCardinality = FunctionBitmapCardinality<BitmapOrCardinalityImpl, NameBitmapOrCardinality, UInt64>;
+using FunctionBitmapXorCardinality = FunctionBitmapCardinality<BitmapXorCardinalityImpl, NameBitmapXorCardinality, UInt64>;
+using FunctionBitmapAndnotCardinality = FunctionBitmapCardinality<BitmapAndnotCardinalityImpl, NameBitmapAndnotCardinality, UInt64>;
+using FunctionBitmapHasAll = FunctionBitmapCardinality<BitmapHasAllImpl, NameBitmapHasAll, UInt8>;
+using FunctionBitmapHasAny = FunctionBitmapCardinality<BitmapHasAnyImpl, NameBitmapHasAny, UInt8>;
 
 struct NameBitmapAnd
 {
