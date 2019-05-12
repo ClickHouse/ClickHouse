@@ -140,6 +140,9 @@ bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     if (!granule)
         throw Exception(
             "Minmax index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
+    for (const auto & range : granule->parallelogram)
+        if (range.left.isNull() || range.right.isNull())
+            return true;
     return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
 }
 
