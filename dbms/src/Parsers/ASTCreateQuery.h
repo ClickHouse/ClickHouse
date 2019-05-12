@@ -36,6 +36,7 @@ class ASTColumns : public IAST
 public:
     ASTExpressionList * columns = nullptr;
     ASTExpressionList * indices = nullptr;
+    ASTExpressionList * constraints = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
 
