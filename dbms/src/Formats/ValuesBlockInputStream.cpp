@@ -62,9 +62,7 @@ bool ValuesBlockInputStream::read(MutableColumns & columns)
     for (size_t i = 0; i < num_columns; ++i)
     {
         skipWhitespaceIfAny(istr);
-
-        char * prev_istr_position = istr.position();
-        size_t prev_istr_bytes = istr.count() - istr.offset();
+        istr.setCheckpoint();
 
         bool rollback_on_exception = false;
         try
@@ -103,12 +101,6 @@ bool ValuesBlockInputStream::read(MutableColumns & columns)
                 || e.code() == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
                 || e.code() == ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
             {
-                /// TODO Case when the expression does not fit entirely in the buffer.
-
-                /// If the beginning of the value is no longer in the buffer.
-                if (istr.count() - istr.offset() != prev_istr_bytes)
-                    throw;
-
                 if (rollback_on_exception)
                     columns[i]->popBack(1);
 
@@ -123,8 +115,12 @@ bool ValuesBlockInputStream::read(MutableColumns & columns)
                         /// And do not use the template anymore.
                         templates[i].reset();
                     }
+                    else if (templates[i])
+                        throw;
                 }
-                parseExpression(prev_istr_position, columns, i, rows_in_block == 0);
+
+                istr.rollbackToCheckpoint();
+                parseExpression(columns, i, rows_in_block == 0);
 
                 skipWhitespaceIfAny(istr);
 
@@ -136,6 +132,8 @@ bool ValuesBlockInputStream::read(MutableColumns & columns)
             else
                 throw;
         }
+
+        istr.dropCheckpoint();
     }
 
     skipWhitespaceIfAny(istr);
@@ -182,43 +180,47 @@ Block ValuesBlockInputStream::readImpl()
 }
 
 Field
-ValuesBlockInputStream::parseExpression(char * prev_istr_position, MutableColumns & columns, size_t column_idx, bool generate_template)
+ValuesBlockInputStream::parseExpression(MutableColumns & columns, size_t column_idx, bool generate_template)
 {
     const IDataType & type = *header.getByPosition(column_idx).type;
 
     Expected expected;
 
-    Tokens tokens(prev_istr_position, istr.buffer().end());
+    // TODO make tokenizer to work with buffers, not only with continuous memory
+    Tokens tokens(istr.position(), istr.buffer().end());
     TokenIterator token_iterator(tokens);
 
     ASTPtr ast;
     if (!parser.parse(token_iterator, ast, expected))
+    {
+        istr.rollbackToCheckpoint();
         throw Exception("Cannot parse expression of type " + type.getName() + " here: "
-                        + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
+                        + String(istr.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - istr.position())),
                         ErrorCodes::SYNTAX_ERROR);
-
-    istr.position() = const_cast<char *>(token_iterator->begin);
+    }
 
     std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
     Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull())
+    if (value.isNull() && !type.isNullable())
     {
-        if (!type.isNullable())
-            throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
-                            + ", that is out of range of type " + type.getName()
-                            + ", at: " +
-                            String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
-                            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+        istr.rollbackToCheckpoint();
+        throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
+                        + ", that is out of range of type " + type.getName()
+                        + ", at: " +
+                        String(istr.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - istr.position())),
+                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
     }
+
+    istr.position() = const_cast<char *>(token_iterator->begin);
 
     if (generate_template)
     {
         try
         {
             templates[column_idx] = ConstantExpressionTemplate(type, TokenIterator(tokens), token_iterator, *context);
-            istr.position() = prev_istr_position;
+            istr.rollbackToCheckpoint();
             templates[column_idx].value().parseExpression(istr, format_settings);
         }
         catch (DB::Exception &)
