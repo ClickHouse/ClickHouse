@@ -6,7 +6,7 @@ namespace DB
 
 ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
         WriteBuffer & out_,
-        ZlibCompressionMethod compression_method,
+        CompressionMethod compression_method,
         int compression_level,
         size_t buf_size,
         char * existing_memory,
@@ -23,7 +23,7 @@ ZlibDeflatingWriteBuffer::ZlibDeflatingWriteBuffer(
     zstr.avail_out = 0;
 
     int window_bits = 15;
-    if (compression_method == ZlibCompressionMethod::Gzip)
+    if (compression_method == CompressionMethod::Gzip)
     {
         window_bits += 16;
     }

@@ -12,7 +12,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage.h>
-#include <Common/COWPtr.h>
+#include <Common/COW.h>
 #include <Common/FieldVisitors.h>
 
 namespace DB
