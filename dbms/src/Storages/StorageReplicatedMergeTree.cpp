@@ -4172,12 +4172,16 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
       * Unreliable (there is a race condition) - such a partition may appear a little later.
       */
     Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it{getDataPaths()[0] + "detached/"}; dir_it != dir_end; ++dir_it) ///@TODO IGR
+    for (const std::string & path : getDataPaths())
     {
-        MergeTreePartInfo part_info;
-        if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version)
-              && part_info.partition_id == partition_id)
-            throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
+        for (Poco::DirectoryIterator dir_it{path + "detached/"}; dir_it != dir_end; ++dir_it)
+        {
+            MergeTreePartInfo part_info;
+            if (MergeTreePartInfo::tryParsePartName(dir_it.name(), &part_info, format_version)
+                && part_info.partition_id == partition_id)
+                throw Exception("Detached partition " + partition_id + " already exists.", ErrorCodes::PARTITION_ALREADY_EXISTS);
+        }
+
     }
 
     zkutil::Strings replicas;

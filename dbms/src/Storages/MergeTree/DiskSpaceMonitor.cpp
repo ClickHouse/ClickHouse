@@ -183,6 +183,25 @@ DiskSpaceMonitor::ReservationPtr Schema::reserve(UInt64 expected_size) const
     return {};
 }
 
+DiskSpaceMonitor::ReservationPtr Schema::reserveOnMaxDiskWithoutReservation() const
+{
+    UInt64 max_space = 0;
+    DiskPtr max_disk;
+    for (const auto & volume : volumes)
+    {
+        for (const auto &disk : volume.disks)
+        {
+            auto avail_space = disk->getAvailableSpace();
+            if (avail_space > max_space)
+            {
+                max_space = avail_space;
+                max_disk = disk;
+            }
+        }
+    }
+    return DiskSpaceMonitor::tryToReserve(max_disk, 0);
+}
+
 SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks)
 {
     Poco::Util::AbstractConfiguration::Keys keys;

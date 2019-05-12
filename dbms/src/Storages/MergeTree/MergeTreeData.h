@@ -605,6 +605,10 @@ public:
 
     DiskSpaceMonitor::ReservationPtr reserveSpaceForPart(UInt64 expected_size);
 
+    /// Choose disk with max available free space
+    /// Reserves 0 bytes
+    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() { return schema.reserveOnMaxDiskWithoutReservation(); }
+
     MergeTreeDataFormatVersion format_version;
 
     Context global_context;
