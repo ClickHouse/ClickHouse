@@ -483,7 +483,13 @@ void addLayoutFieldsFromAST(
 
 
 /*
- *
+ * Transforms next definition
+ *  LIFETIME(MIN 10, MAX 100)
+ * to the next configuration
+ *  <lifetime>
+ *    <min>10</min>
+ *    <max>100</max>
+ *  </lifetime>
  */
 void addLifetimeFieldsFromAST(
     AutoPtr<Document> doc,
@@ -605,6 +611,7 @@ void addCompositeKeyFieldsFromAST(
     }
 }
 
+
 void addStructureFieldsFromAST(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
@@ -660,6 +667,7 @@ void addStructureFieldsFromAST(
         addAdditionalColumnFields(doc, attribute_element, column_declaration);
     }
 }
+
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(const ASTCreateQuery & create)
 {
