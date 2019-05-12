@@ -47,22 +47,3 @@ create table ttl_00933_1 (d DateTime, a Int ttl toDateTime(1)) engine = MergeTre
 create table ttl_00933_1 (d DateTime, a Int ttl d - d) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 450 }
 
 drop table if exists ttl_00933_1;
-
-/*
-
-Alexey Milovidov, [17.04.19 20:09]
-sleep(0.7)
-sleep(1.1)
-- почему? @Alesapin
-
-Alexander Sapin, [17.04.19 23:16]
-[In reply to Alexey Milovidov]
-1.1 по логике теста, я попробовал с 0.5 и у меня флапнуло. С 1 не флапало, но работало долго. Попробовал 0.7 и тоже не флапает.
-
-Alexey Milovidov, [17.04.19 23:18]
-Слабо такой комментарий добавить прямо в тест? :)
-
-Alexander Sapin, [17.04.19 23:20]
-как-то неловко :)
-
-*/

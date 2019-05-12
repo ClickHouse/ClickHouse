@@ -81,7 +81,7 @@ protected:
     struct RowRef
     {
         ColumnRawPtrs * columns = nullptr;
-        size_t row_num;
+        size_t row_num = 0;
         SharedBlockPtr shared_block;
 
         void swap(RowRef & other)

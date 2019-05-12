@@ -1,6 +1,6 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 add_headers_and_sources(clickhouse_compression .)
-add_library(clickhouse_compression ${LINK_MODE} ${clickhouse_compression_headers} ${clickhouse_compression_sources})
+add_library(clickhouse_compression ${clickhouse_compression_headers} ${clickhouse_compression_sources})
 target_link_libraries(clickhouse_compression PRIVATE clickhouse_parsers clickhouse_common_io ${ZSTD_LIBRARY} ${LZ4_LIBRARY} ${CITYHASH_LIBRARIES})
 target_include_directories(clickhouse_compression PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories(clickhouse_compression SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
