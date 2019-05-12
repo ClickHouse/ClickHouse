@@ -32,9 +32,21 @@ void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const DataTypePtr & type = index.data_types[i];
-
-        type->serializeBinary(parallelogram[i].left, ostr);
-        type->serializeBinary(parallelogram[i].right, ostr);
+        if (!type->isNullable())
+        {
+            type->serializeBinary(parallelogram[i].left, ostr);
+            type->serializeBinary(parallelogram[i].right, ostr);
+        }
+        else
+        {
+            bool is_null = parallelogram[i].left.isNull() || parallelogram[i].right.isNull(); // one is enough
+            writeBinary(is_null, ostr);
+            if (!is_null)
+            {
+                type->serializeBinary(parallelogram[i].left, ostr);
+                type->serializeBinary(parallelogram[i].right, ostr);
+            }
+        }
     }
 }
 
@@ -46,9 +58,26 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const DataTypePtr & type = index.data_types[i];
-        type->deserializeBinary(min_val, istr);
-        type->deserializeBinary(max_val, istr);
-
+        if (!type->isNullable())
+        {
+            type->deserializeBinary(min_val, istr);
+            type->deserializeBinary(max_val, istr);
+        }
+        else
+        {
+            bool is_null;
+            readBinary(is_null, istr);
+            if (!is_null)
+            {
+                type->deserializeBinary(min_val, istr);
+                type->deserializeBinary(max_val, istr);
+            }
+            else
+            {
+                min_val = Null();
+                max_val = Null();
+            }
+        }
         parallelogram.emplace_back(min_val, true, max_val, true);
     }
 }
