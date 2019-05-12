@@ -324,6 +324,10 @@ public:
 
     DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
 
+    /// Reserves 0 bytes on disk with max available space
+    /// Do not use this function when it is possible to predict size!!!
+    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() const;
+
 private:
     Volumes volumes;
 };
