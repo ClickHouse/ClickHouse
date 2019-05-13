@@ -595,6 +595,9 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
     {
         if (!escaped && (str[*pos] == '%' || str[*pos] == '_'))
         {
+            if (!bad_token && !token.empty())
+                return true;
+
             token.clear();
             bad_token = true;
             ++*pos;
