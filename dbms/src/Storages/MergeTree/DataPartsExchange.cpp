@@ -253,13 +253,13 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     });
 
     PooledReadWriteBufferFromHTTP in{
-            uri_v0,
-            Poco::Net::HTTPRequest::HTTP_POST,
-            {},
-            timeouts,
-            creds,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            data.settings.replicated_max_parallel_fetches_for_host
+        uri_v0,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        {},
+        timeouts,
+        creds,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        data.settings.replicated_max_parallel_fetches_for_host
     };
 
     /// We don't know real size of part

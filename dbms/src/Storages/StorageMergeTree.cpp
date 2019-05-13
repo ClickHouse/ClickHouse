@@ -272,9 +272,10 @@ public:
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
+        /// @TODO_IGR BUG Fix here. When mutation use old path!!!
         reserved_space = storage.reserveSpaceForPart(total_size);
         if (!reserved_space)
-            throw Exception("Not enought space", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR Edit exception msg
+            throw Exception("Not enough space for merging parts", ErrorCodes::NOT_ENOUGH_SPACE);
 
         for (const auto & part : future_part.parts)
         {
@@ -334,9 +335,8 @@ public:
 
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
-    ///@TODO_IGR ASK What should i do here?
     /// Choose any disk.
-    auto disk = schema.getDisks()[0];
+    auto disk = schema.getAnyDisk();
     MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
     String file_name;
     {
