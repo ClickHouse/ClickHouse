@@ -38,13 +38,13 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
+#if defined(POCO_CLICKHOUSE_PATCH)
     if (headers_finished_sending)
         return;
 
     WriteBufferFromOwnString progress_string_writer;
     accumulated_progress.writeJSON(progress_string_writer);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
     if (response_header_ostr)
         *response_header_ostr << "X-ClickHouse-Summary: " << progress_string_writer.str() << "\r\n" << std::flush;
 #endif
@@ -52,13 +52,13 @@ void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
+#if defined(POCO_CLICKHOUSE_PATCH)
     if (headers_finished_sending)
         return;
 
     WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON<ReadProgressValueImpl>(progress_string_writer);
+    accumulated_progress.writeJSON(progress_string_writer);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
     *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
 #endif
 }
