@@ -88,11 +88,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionsIn(factory);
     registerFunctionJoinGet(factory);
     registerFunctionFilesystem(factory);
-<<<<<<< HEAD
     registerFunctionEvalMLMethod(factory);
-=======
     registerFunctionBasename(factory);
->>>>>>> 9498ba96793679c51a118807a992c722686a2af2
 }
 
 }
