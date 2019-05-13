@@ -267,4 +267,48 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     });
 }
 
+void registerChunkGetterJSONEachRow(FormatFactory & factory)
+{
+    factory.registerChunkGetter("JSONEachRow", [](
+        const FormatSettings &,
+        ReadBuffer & in,
+        DB::Memory<> & memory,
+        size_t min_size)
+    {
+        char * begin_pos = in.position();
+        size_t balance = 0;
+        bool quotes = false;
+        // если размер in.working_buffer  слишком мал, то, наверное,  надо сохранить промежуточный результат
+        while (balance != 0 || in.position() < begin_pos + min_size) {
+            char * next_token = find_first_symbols<'{', '}', '\\', '"'>(in.position(), in.buffer().end());
+            if (next_token == in.buffer().end())
+                return false;
+            else if (*next_token == '{') {
+                if (!quotes)
+                    ++balance;
+                in.position() = next_token + 1;
+            }
+            else if (*next_token == '}') {
+                if (!quotes)
+                    --balance;
+                in.position() = next_token + 1;
+            } else if (*next_token == '\\') {
+                // check buffer end here?
+                in.position() = next_token + 2;
+            } else if (*next_token == '"') {
+                quotes ^= 1;
+                in.position() = next_token + 1;
+            } else {
+                // throw exception ?
+                return false;
+            }
+        }
+        memory.resize(in.position() - begin_pos);
+        memcpy(memory.data(), begin_pos, in.position() - begin_pos);
+        StringRef view(begin_pos, in.position() - begin_pos);
+        // std::cerr << "Parsed " << view << " | " << std::this_thread::get_id() << '\n';
+        return true;
+    });
+}
+
 }

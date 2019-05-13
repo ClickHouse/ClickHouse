@@ -379,4 +379,48 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
     }
 }
 
+void registerChunkGetterTabSeparated(FormatFactory & factory)
+{
+    for (auto name : {"TabSeparated", "TSV"})
+    {
+        factory.registerChunkGetter(name, [](
+            const FormatSettings &,
+            ReadBuffer & in,
+            DB::Memory<> & memory,
+            size_t min_size)
+        {
+            char * begin_pos = in.position();
+            bool row_found = false;
+            // если размер in.working_buffer  слишком мал, то, наверное,  надо сохранить промежуточный результат
+            std::cerr << "Tab got parsed\n";
+            StringRef buffer(in.buffer().begin(), in.buffer().end() - in.buffer().begin());
+            std::cerr << buffer << "kek\n";
+            memory.resize(0);
+            while (!in.eof() && (!row_found || in.position() + memory.size() < begin_pos + min_size)) {
+                char * next_token = find_first_symbols<'\\', '\r', '\n'>(in.position(), in.buffer().end());
+                in.position() = next_token;
+                if (in.position() >= in.buffer().end()) {
+                    auto old_size = memory.size();
+                    memory.resize(memory.size() + in.position() - begin_pos);
+                    memcpy(memory.data() + old_size, begin_pos, in.position() - begin_pos);
+                } else if (*next_token == '\\') {
+                    in.position() = next_token + 2;
+                } else if (*next_token == '\n') {
+                    row_found = true;
+                    in.position() = next_token + 1;
+                } else if (*next_token == '\r') {
+                    row_found = true;
+                    in.position() = next_token + 1;
+                }
+            }
+            if (!memory.size()) return false;
+            memory.resize(memory.size() + in.position() - begin_pos);
+            memcpy(memory.data(), begin_pos, in.position() - begin_pos);
+            StringRef view(memory.data(), memory.size());
+            std::cerr << "Tab parsed " << view << " | " << std::this_thread::get_id() << '\n';
+            return true;
+        });
+    }
+}
+
 }

@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <ext/singleton.h>
 #include <Core/Types.h>
-
+#include <IO/BufferWithOwnMemory.h>
 
 namespace DB
 {
@@ -43,8 +43,22 @@ private:
         const Context & context,
         const FormatSettings & settings)>;
 
-    using Creators = std::pair<InputCreator, OutputCreator>;
+    // TODO rename me please
+    using ChunkCreator = std::function<bool(
+            const FormatSettings & format_settings,
+            ReadBuffer & in,
+            DB::Memory<> & memory,
+            size_t min_size)>;
 
+
+    // TODO rename fields now it works like backward compatibility hack
+    struct Creators {
+        InputCreator first;
+        OutputCreator second;
+        ChunkCreator getChunk;
+    };
+
+    // using Creators = std::pair<InputCreator, OutputCreator>;
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
@@ -57,6 +71,7 @@ public:
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
+    void registerChunkGetter(const String & name, ChunkCreator chunk_creator);
 
     const FormatsDictionary & getAllFormats() const
     {

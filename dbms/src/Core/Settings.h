@@ -92,6 +92,10 @@ struct Settings
     M(SettingBool, distributed_group_by_no_merge, false, "Do not merge aggregation states from different servers for distributed query processing - in case it is for certain that there are different keys on different shards.") \
     M(SettingBool, optimize_skip_unused_shards, false, "Assumes that data is distributed by sharding_key. Optimization to skip unused shards if SELECT query filters by sharding_key.") \
     \
+    M(SettingBool, enable_parallel_reading, false, "Enable parallel_reading.") \
+    M(SettingUInt64, max_threads_for_parallel_reading, 4, "Max enabled threads fro parallel reading") \
+    M(SettingUInt64, min_bytes_in_chunk, 4, "Min size of single chunk") \
+    \
     M(SettingUInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), "If at least as many lines are read from one file, the reading can be parallelized.") \
     M(SettingUInt64, merge_tree_min_rows_for_seek, 0, "You can skip reading more than that number of rows at the price of one seek per file.") \
     M(SettingUInt64, merge_tree_coarse_index_granularity, 8, "If the index segment can contain the required keys, divide it into as many parts and recursively check them.") \

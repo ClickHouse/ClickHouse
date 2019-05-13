@@ -24,6 +24,7 @@
 #include <Formats/FormatSettings.h>
 
 #include <IO/ReadBuffer.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 
@@ -907,4 +908,7 @@ void skipToNextLineOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
+bool safeInBuffer(ReadBuffer & in, DB::Memory<> & memory, char * & begin_pos, bool force = false);
+
 }
+

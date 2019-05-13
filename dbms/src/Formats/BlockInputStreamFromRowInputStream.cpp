@@ -73,6 +73,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
                             throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+                        std::cerr << column_idx << "\n";
                         block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }

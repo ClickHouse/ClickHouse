@@ -371,4 +371,67 @@ void registerInputFormatCSV(FormatFactory & factory)
     }
 }
 
+void registerChunkGetterCSV(FormatFactory & factory)
+{
+    for (auto name : {"CSV"})
+    {
+        factory.registerChunkGetter(name, [](
+            const FormatSettings &,
+            ReadBuffer & in,
+            DB::Memory<> & memory,
+            size_t min_size)
+        {
+            skipWhitespacesAndTabs(in);
+            char * begin_pos = in.position();
+            bool quotes = false;
+            bool end_of_line = false;
+            memory.resize(0);
+            // StringRef view_buffer(in.buffer().begin(), in.buffer().size());
+            // std::cerr << "Buffer : " << view_buffer << " | " << std::this_thread::get_id() << '\n';
+            while (!safeInBuffer(in, memory, begin_pos) && (!end_of_line || memory.size() + in.position() - begin_pos < static_cast<Int64>(min_size))) {
+                in.position() = find_first_symbols<'"','\r', '\n'>(in.position(), in.buffer().end());
+                if (*in.position() == '"') {
+                    if (quotes) {
+                        ++in.position();
+                        if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '"')
+                            ++in.position();
+                        else
+                            quotes = false;
+                    } else {
+                        quotes = true;
+                        ++in.position();
+                    }
+                } else if (!quotes) {
+                    end_of_line = true;
+                    if (*in.position() == '\n')
+                    {
+                        ++in.position();
+                        if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '\r')
+                            ++in.position();
+                    }
+                    else if (*in.position() == '\r')
+                    {
+                        ++in.position();
+                        if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '\n')
+                            ++in.position();
+                        else
+                            throw Exception("Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
+                                " Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.", ErrorCodes::INCORRECT_DATA);
+                    }
+                    else if (!safeInBuffer(in, memory, begin_pos))
+                        throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
+
+                } else {
+                    ++in.position();
+                }
+            }
+            safeInBuffer(in, memory, begin_pos, true);
+            // std::cerr << "Memory size " << memory.size() << "\n";
+            StringRef view(memory.data(), memory.size());
+            // std::cerr << "Values parsed " << view << " | " << std::this_thread::get_id() << '\n';
+            return true;
+        });
+    }
+
+}
 }

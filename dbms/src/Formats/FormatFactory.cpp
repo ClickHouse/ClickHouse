@@ -4,6 +4,10 @@
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
+#include <IO/SharedReadBuffer.h>
+#include <iostream>
+#include <shared_mutex>
+#include <DataStreams/UnionBlockInputStream.h>
 
 
 namespace DB
@@ -35,6 +39,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 
     const Settings & settings = context.getSettingsRef();
 
+    // TODO add settings for parallel reading
     FormatSettings format_settings;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
@@ -45,6 +50,27 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
+    // std::cerr << "error on kek " << name << "\n";
+    const auto & chunk_getter = getCreators(name).getChunk;
+    bool enable_parallel = settings.enable_parallel_reading;
+    enable_parallel = true;
+    if (false || (enable_parallel && chunk_getter)) {
+        size_t max_threads_to_use = settings.max_threads_for_parallel_reading; // get it from normal place
+        BlockInputStreams streams;
+        streams.reserve(max_threads_to_use);
+        std::vector<std::unique_ptr<ReadBuffer>> buffers;
+        buffers.reserve(max_threads_to_use);
+        auto buf_mutex = std::make_shared<std::mutex>();
+        for (size_t i = 0; i < max_threads_to_use; ++i) {
+            buffers.emplace_back(std::make_unique<SharedReadBuffer>(buf,format_settings, buf_mutex, chunk_getter, settings.min_bytes_in_chunk));
+            streams.emplace_back(input_getter(*buffers.back(), sample, context, max_block_size, format_settings));
+        }
+        auto union_stream = std::make_shared<UnionBlockInputStream>(std::move(streams), nullptr, max_threads_to_use);
+        // TODO wrap it with setter
+        union_stream->buffers = std::move(buffers);
+        return union_stream;
+    }
+    // std::cerr << "not kek\n";
 
     return input_getter(buf, sample, context, max_block_size, format_settings);
 }
@@ -95,6 +121,13 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     target = output_creator;
 }
 
+void FormatFactory::registerChunkGetter(const String & name, ChunkCreator chunk_creator)
+{
+    auto & target = dict[name].getChunk;
+    if (target)
+        throw Exception("FormatFactory: Chunk getter " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = chunk_creator;
+}
 
 /// Formats for both input/output.
 
@@ -116,6 +149,14 @@ void registerInputFormatParquet(FormatFactory & factory);
 void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
+
+/// Chunk Getter  bad name
+
+void registerChunkGetterJSONEachRow(FormatFactory & factory);
+void registerChunkGetterTabSeparated(FormatFactory & factory);
+void registerChunkGetterValues(FormatFactory & factory);
+void registerChunkGetterCSV(FormatFactory & factory);
+void registerChunkGetterTSKV(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -156,6 +197,12 @@ FormatFactory::FormatFactory()
     registerInputFormatCapnProto(*this);
     registerInputFormatParquet(*this);
     registerOutputFormatParquet(*this);
+
+    registerChunkGetterJSONEachRow(*this);
+    registerChunkGetterTabSeparated(*this);
+    registerChunkGetterValues(*this);
+    registerChunkGetterCSV(*this);
+    registerChunkGetterTSKV(*this);
 
     registerOutputFormatPretty(*this);
     registerOutputFormatPrettyCompact(*this);
