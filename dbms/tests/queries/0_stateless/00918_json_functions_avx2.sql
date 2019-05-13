@@ -14,7 +14,7 @@ SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1);
 SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2);
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1);
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, String, String, Array(Float64))');
-SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Int32)', 'b');
+SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 'Array(Int32)');
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(String)');
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Tuple(Int16, Float32, UInt8))');
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}');

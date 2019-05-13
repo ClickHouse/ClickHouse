@@ -143,7 +143,7 @@ select JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 
 The usage of accessors is the same as above.
 
-## JSONExtract(params, type[, accessors]...)
+## JSONExtract(params[, accessors...], type)
 
 Parse data from JSON values with a given ClickHouse data type.
 
@@ -152,7 +152,7 @@ If the value does not exist or has a wrong type, `null` will be returned.
 Examples:
 
 ```
-select JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Int8', 'b', 1) = -100
+select JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1, 'Int8') = -100
 select JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, String, String, Array(Float64))') = ('a', 'hello', 'b', [-100.0, 200.0, 300.0])
 ```
 
