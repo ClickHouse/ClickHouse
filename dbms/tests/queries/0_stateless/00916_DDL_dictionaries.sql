@@ -33,7 +33,7 @@ CREATE DICTIONARY test.dict1
     third_column UInt8 DEFAULT 1
  )
 PRIMARY KEY first_column
-SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', PASSWORD '', DB 'test', TABLE 'table_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost', PORT 9000, USER 'default', PASSWORD '', DB 'test', TABLE 'table_for_dict'))
 LAYOUT(FLAT())
 LIFETIME(MIN 1, MAX 10);
 
@@ -43,7 +43,7 @@ CREATE DICTIONARY test.dict1 -- { serverError 453 }
     second UInt8 DEFAULT 1
  )
 PRIMARY KEY first_column
-SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', PASSWORD '', DB 'test', TABLE 'table_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost', PORT 9000, USER 'default', PASSWORD '', DB 'test', TABLE 'table_for_dict'))
 LAYOUT(FLAT())
 LIFETIME(MIN 1, MAX 10);
 
@@ -81,7 +81,7 @@ CREATE DICTIONARY test.dict_with_ranges
     fourth_column UInt8 DEFAULT 1
  )
 PRIMARY KEY first_column
-SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost', PORT 9000, USER 'default', DB 'test', TABLE 'table_for_dict'))
 LAYOUT(RANGE_HASHED())
 RANGE(MIN third_column, MAX fourth_column)
 LIFETIME(MIN 10, MAX 100);
@@ -106,7 +106,7 @@ DROP DICTIONARY test.dict_with_ranges;
 --    second_column UInt8 DEFAULT 1
 -- )
 --PRIMARY KEY first_column
---SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
+--SOURCE(CLICKHOUSE(HOST 'localhost', PORT 9000, USER 'default', DB 'test', TABLE 'table_for_dict'))
 --LAYOUT(RANGE_HASHED())
 --RANGE(MIN second)
 --LIFETIME(MIN 10, MAX 100);
@@ -116,7 +116,7 @@ CREATE DICTIONARY test.dict_with_ranges -- { serverError 36 }
     second_column UInt8 DEFAULT 1
  )
 PRIMARY KEY first_column
-SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost', PORT 9000, USER 'default', DB 'test', TABLE 'table_for_dict'))
 LAYOUT(RANGE_HASHED())
 LIFETIME(MIN 10, MAX 100);
 
@@ -130,7 +130,7 @@ CREATE DICTIONARY test.dict_with_complex_key
     third_column UInt8 DEFAULT 1
  )
 COMPOSITE KEY first_column UInt8, second_column UInt8
-SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost', PORT 9000, USER 'default', DB 'test', TABLE 'table_for_dict'))
 LAYOUT(COMPLEX_KEY_HASHED())
 LIFETIME(MIN 10, MAX 100);
 
@@ -144,7 +144,7 @@ CREATE DICTIONARY test.dict_with_complex_key
     third_column UInt8 DEFAULT 1
  )
 COMPOSITE KEY first_column UInt8, second_column UInt8
-SOURCE(CLICKHOUSE(HOST 'localhost', PORT '9000', USER 'default', DB 'test', TABLE 'table_for_dict'))
+SOURCE(CLICKHOUSE(HOST 'localhost', PORT 9000, USER 'default', DB 'test', TABLE 'table_for_dict'))
 LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
 LIFETIME(MIN 10, MAX 100);
 
