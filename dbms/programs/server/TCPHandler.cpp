@@ -510,6 +510,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
         }
     });
 
+    /// Wait in case of exception.
+    SCOPE_EXIT(pool.wait());
+
     while (true)
     {
         Block block;
