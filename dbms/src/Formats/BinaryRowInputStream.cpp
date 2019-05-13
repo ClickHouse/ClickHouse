@@ -64,12 +64,12 @@ void registerInputFormatRowBinary(FormatFactory & factory)
         const Block & sample,
         const Context &,
         UInt64 max_block_size,
-        UInt64 min_block_size,
+        UInt64 max_read_rows,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
             std::make_shared<BinaryRowInputStream>(buf, sample, false, false),
-            sample, max_block_size, min_block_size, settings);
+            sample, max_block_size, max_read_rows, settings);
     });
 
     factory.registerInputFormat("RowBinaryWithNamesAndTypes", [](
@@ -77,12 +77,12 @@ void registerInputFormatRowBinary(FormatFactory & factory)
         const Block & sample,
         const Context &,
         UInt64 max_block_size,
-        UInt64 min_block_size,
+        UInt64 max_read_rows,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
             std::make_shared<BinaryRowInputStream>(buf, sample, true, true),
-            sample, max_block_size, min_block_size, settings);
+            sample, max_block_size, max_read_rows, settings);
     });
 }
 

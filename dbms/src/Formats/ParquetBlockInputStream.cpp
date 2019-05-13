@@ -476,7 +476,7 @@ void registerInputFormatParquet(FormatFactory & factory)
            const Block & sample,
            const Context & context,
            UInt64 /* max_block_size */,
-           UInt64 /* min_block_size */,
+           UInt64 /* max_read_rows */,
            const FormatSettings & /* settings */) { return std::make_shared<ParquetBlockInputStream>(buf, sample, context); });
 }
 

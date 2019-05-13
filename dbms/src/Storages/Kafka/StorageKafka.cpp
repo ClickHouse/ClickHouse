@@ -212,7 +212,7 @@ BufferPtr StorageKafka::createBuffer()
         batch_size = settings.max_block_size.value;
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
-    return std::make_shared<DelimitedReadBuffer>(new ReadBufferFromKafkaConsumer(consumer, log, batch_size, poll_timeout), row_delimiter);
+    return std::make_shared<DelimitedReadBuffer>(std::make_unique<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout), row_delimiter);
 }
 
 BufferPtr StorageKafka::claimBuffer()
