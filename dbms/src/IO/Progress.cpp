@@ -19,7 +19,7 @@ void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
     readVarUInt(new_rows, in);
     readVarUInt(new_bytes, in);
     readVarUInt(new_total_rows, in);
-    if (DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO >= server_revision)
+    if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
         readVarUInt(new_write_rows, in);
         readVarUInt(new_write_bytes, in);
