@@ -82,7 +82,7 @@ void IAccumulatingTransform::setReadyChunk(Chunk chunk)
 {
     if (current_output_chunk)
         throw Exception("IAccumulatingTransform already has input. Cannot set another chunk. "
-                        "Probably, setReadyChunk method was called twose per consume().", ErrorCodes::LOGICAL_ERROR);
+                        "Probably, setReadyChunk method was called twice per consume().", ErrorCodes::LOGICAL_ERROR);
 
     current_output_chunk = std::move(chunk);
 }
