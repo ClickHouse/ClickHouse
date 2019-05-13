@@ -711,8 +711,47 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](http://parquet.apache.org/) format.
+[Apache Parquet](http://parquet.apache.org/) format. ClickHouse supports read and write operations for this format.
 
+### Data Types Matching
+
+Some of the Parquet data types are not supported. The table below shows the supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
+
+| Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`)
+| -------------------- | ------------------ | ---- |
+| `UINT8`, `BOOL` | [UInt8](../data_types/int_uint.md) | `UINT8` |
+| `INT8` | [Int8](../data_types/int_uint.md) | `INT8` |
+| `UINT16` | [UInt16](../data_types/int_uint.md) | `UINT16` |
+| `INT16` | [Int16](../data_types/int_uint.md) | `INT16` |
+| `UINT32` | [UInt32](../data_types/int_uint.md) | `UINT32` |
+| `INT32` | [Int32](../data_types/int_uint.md) | `INT32` |
+| `UINT64` | [UInt64](../data_types/int_uint.md) | `UINT64` |
+| `INT64` | [Int64](../data_types/int_uint.md) | `INT64` |
+| `FLOAT`, `HALF_FLOAT` | [Float32](../data_types/float.md) | `FLOAT` |
+| `DOUBLE` | [Float64](../data_types/float.md) | `DOUBLE` |
+| `DATE32` | [Date](../data_types/date.md) | `UINT16` |
+| `DATE64`, `TIMESTAMP` | [DateTime](../data_types/datetime.md) | `UINT32` |
+| `STRING`, `BINARY` | [String](../data_types/string.md) | `STRING` |
+| — | [FixedString](../data_types/fixedstring.md) | `STRING` |
+| `DECIMAL` | [Decimal](../data_types/decimal.md) | `DECIMAL` |
+
+ClickHouse supports some kinds of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
+
+Data types of a ClickHouse table columns can be different then the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+
+### Inserting and Selecting Data
+
+ClickHouse doesn't connect to [HDFS](https://en.wikipedia.org/wiki/Apache_Hadoop) to get data from it. You should take the Parquet data file and then you can insert Parquet data into some ClickHouse table by the following command:
+
+```
+cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
+```
+
+You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
+
+```
+clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
+```
 
 ## Format Schema {#formatschema}
 
