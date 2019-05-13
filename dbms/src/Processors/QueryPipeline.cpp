@@ -596,6 +596,16 @@ void QueryPipeline::calcRowsBeforeLimit()
             continue;
         }
 
+        /// Skip totals and extremes port for output format.
+        if (auto * format = typeid_cast<IOutputFormat *>(processor))
+        {
+            auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
+            if (visited.emplace(child_processor).second)
+                queue.push({ child_processor, visited_limit });
+
+            continue;
+        }
+
         for (auto & child_port : processor->getInputs())
         {
             auto * child_processor = &child_port.getOutputPort().getProcessor();
