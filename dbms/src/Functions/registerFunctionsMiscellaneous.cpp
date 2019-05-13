@@ -19,6 +19,7 @@ void registerFunctionSleep(FunctionFactory &);
 void registerFunctionSleepEachRow(FunctionFactory &);
 void registerFunctionMaterialize(FunctionFactory &);
 void registerFunctionIgnore(FunctionFactory &);
+void registerFunctionIgnoreExceptNull(FunctionFactory &);
 void registerFunctionIndexHint(FunctionFactory &);
 void registerFunctionIdentity(FunctionFactory &);
 void registerFunctionArrayJoin(FunctionFactory &);
@@ -43,6 +44,7 @@ void registerFunctionsIn(FunctionFactory &);
 void registerFunctionJoinGet(FunctionFactory &);
 void registerFunctionFilesystem(FunctionFactory &);
 void registerFunctionEvalMLMethod(FunctionFactory &);
+void registerFunctionBasename(FunctionFactory &);
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
@@ -62,6 +64,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionSleepEachRow(factory);
     registerFunctionMaterialize(factory);
     registerFunctionIgnore(factory);
+    registerFunctionIgnoreExceptNull(factory);
     registerFunctionIndexHint(factory);
     registerFunctionIdentity(factory);
     registerFunctionArrayJoin(factory);
@@ -85,7 +88,11 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionsIn(factory);
     registerFunctionJoinGet(factory);
     registerFunctionFilesystem(factory);
+<<<<<<< HEAD
     registerFunctionEvalMLMethod(factory);
+=======
+    registerFunctionBasename(factory);
+>>>>>>> 9498ba96793679c51a118807a992c722686a2af2
 }
 
 }

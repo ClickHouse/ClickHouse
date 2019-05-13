@@ -1,0 +1,16 @@
+4
+Object
+1
+1
+a
+hello
+hello
+3
+Array
+-100
+200
+300
+('a','hello','b',[-100,200,300])
+[-100,NULL,300]
+['a','hello','b',NULL]
+[(NULL,NULL,NULL),(NULL,NULL,NULL),(NULL,NULL,NULL),(-100,200,44)]
