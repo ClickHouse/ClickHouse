@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
@@ -400,6 +401,13 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 }
 
 
+String unescapeString(const String & string)
+{
+    if (!string.empty() && string.front() == '\'' && string.back() == '\'')
+        return string.substr(1, string.size() - 2);
+    return string;
+}
+
 void buildXMLRecursive(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
@@ -420,7 +428,8 @@ void buildXMLRecursive(
             AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
             xml_element->appendChild(current_xml_element);
             const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(pair->second.get());
-            AutoPtr<Text> value(doc->createTextNode(literal->value.get<String>()));
+            auto str_literal = applyVisitor(FieldVisitorToString(), literal->value);
+            AutoPtr<Text> value(doc->createTextNode(unescapeString(str_literal)));
             current_xml_element->appendChild(value);
         }
         else if (startsWith(ast_element->getID(), "KeyValueFunction"))

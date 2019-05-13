@@ -1,10 +1,10 @@
-CREATE DICTIONARY test.dict1 (`second_column` UInt8 DEFAULT 1 , `third_column` UInt8 DEFAULT 1 ) PRIMARY KEY first_column SOURCE(CLICKHOUSE(HOST \'localhost\', PORT \'9000\', USER \'default\', PASSWORD \'\', DB \'test\', TABLE \'table_for_dict\')) LIFETIME(MIN 1, MAX 10) LAYOUT(FLAT())
+CREATE DICTIONARY test.dict1 (`second_column` UInt8 DEFAULT 1 , `third_column` UInt8 DEFAULT 1 ) PRIMARY KEY first_column SOURCE(CLICKHOUSE(HOST \'localhost\', PORT 9000, USER \'default\', PASSWORD \'\', DB \'test\', TABLE \'table_for_dict\')) LIFETIME(MIN 1, MAX 10) LAYOUT(FLAT())
 dict1	test	DDL		Flat	UInt64	[]	[]	0	1	3	0.001487357461576599	ClickHouse: test.table_for_dict	
 CREATE TABLE test.table (`first_column` UInt64, `second_column` UInt8, `third_column` UInt8) ENGINE = Dictionary(test.dict1)
 1	11	111
 2	22	222
 3	33	77
-CREATE DICTIONARY test.dict_with_ranges (`second_column` UInt8 DEFAULT 1 , `third_column` UInt8 DEFAULT 1 , `fourth_column` UInt8 DEFAULT 1 ) PRIMARY KEY first_column SOURCE(CLICKHOUSE(HOST \'localhost\', PORT \'9000\', USER \'default\', DB \'test\', TABLE \'table_for_dict\')) LIFETIME(MIN 10, MAX 100) LAYOUT(RANGE_HASHED()) RANGE(MIN third_column, MAX fourth_column)
+CREATE DICTIONARY test.dict_with_ranges (`second_column` UInt8 DEFAULT 1 , `third_column` UInt8 DEFAULT 1 , `fourth_column` UInt8 DEFAULT 1 ) PRIMARY KEY first_column SOURCE(CLICKHOUSE(HOST \'localhost\', PORT 9000, USER \'default\', DB \'test\', TABLE \'table_for_dict\')) LIFETIME(MIN 10, MAX 100) LAYOUT(RANGE_HASHED()) RANGE(MIN third_column, MAX fourth_column)
 1
 1
 2
