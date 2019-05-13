@@ -157,7 +157,7 @@ public:
             return size;
         }
 
-        const DiskPtr & getDisk2() const ///@TODO_IGR rename
+        const DiskPtr & getDisk() const ///@TODO_IGR rename
         {
             return disk_ptr;
         }
@@ -324,6 +324,10 @@ public:
 
     DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
 
+    /// Reserves 0 bytes on disk with max available space
+    /// Do not use this function when it is possible to predict size!!!
+    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() const;
+
 private:
     Volumes volumes;
 };
@@ -336,7 +340,7 @@ public:
     const Schema & operator[](const String & name) const;
 
 private:
-    std::map<String, Schema> schemes;
+    std::map<String, Schema> schemas;
 };
 
 }

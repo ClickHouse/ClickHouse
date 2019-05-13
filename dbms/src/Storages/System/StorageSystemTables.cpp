@@ -34,7 +34,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"is_temporary", std::make_shared<DataTypeUInt8>()},
-        {"data_path", std::make_shared<DataTypeString>()},
+        {"data_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"metadata_path", std::make_shared<DataTypeString>()},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
@@ -209,9 +209,12 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
+                    Array table_paths_array;
                     auto paths = table->getDataPaths();
-                    for (const String &path : paths)
-                        res_columns[res_index++]->insert(path);
+                    table_paths_array.reserve(paths.size());
+                    for (const String & path : paths)
+                        table_paths_array.push_back(path);
+                    res_columns[res_index++]->insert(table_paths_array);
                 }
 
                 if (columns_mask[src_index++])

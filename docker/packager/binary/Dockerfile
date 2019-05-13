@@ -8,6 +8,7 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             bash \
             cmake \
+            ccache \
             curl \
             gcc-7 \
             g++-7 \
@@ -31,7 +32,9 @@ RUN apt-get update -y \
             libicu-dev \
             libreadline-dev \
             ninja-build \
+            gperf \
             git \
             tzdata
 
-CMD mkdir -p build/build_result && cd build/build_result && cmake .. -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS && ninja && mv ./dbms/programs/clickhouse* /output && mv ./dbms/unit_tests_dbms /output
+COPY build.sh /
+CMD ["/bin/bash", "/build.sh"]

@@ -3,15 +3,6 @@
 #include <Common/escapeForFileName.h>
 #include <Poco/File.h>
 
-/// @TODO_IGR ASK Does such function already exists?
-bool isAlphaNumeric(const std::string & s)
-{
-    for (auto c : s)
-        if (!isalnum(c) && c != '_')
-            return false;
-    return true;
-}
-
 namespace DB
 {
 
@@ -27,7 +18,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
     bool has_default_disk = false;
     for (const auto & disk_name : keys)
     {
-        if (!isAlphaNumeric(disk_name))
+        if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
@@ -40,7 +31,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         {
             has_default_disk = true;
             if (!path.empty())
-                throw Exception("It is not possible to specify default disk path", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+                throw Exception("\"default\" disk path should be provided in <path> not it <storage_configuration>", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
             disks.emplace(disk_name, std::make_shared<const Disk>(disk_name, default_path, keep_free_space_bytes));
         }
         else
@@ -192,6 +183,25 @@ DiskSpaceMonitor::ReservationPtr Schema::reserve(UInt64 expected_size) const
     return {};
 }
 
+DiskSpaceMonitor::ReservationPtr Schema::reserveOnMaxDiskWithoutReservation() const
+{
+    UInt64 max_space = 0;
+    DiskPtr max_disk;
+    for (const auto & volume : volumes)
+    {
+        for (const auto &disk : volume.disks)
+        {
+            auto avail_space = disk->getAvailableSpace();
+            if (avail_space > max_space)
+            {
+                max_space = avail_space;
+                max_disk = disk;
+            }
+        }
+    }
+    return DiskSpaceMonitor::tryToReserve(max_disk, 0);
+}
+
 SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -199,23 +209,23 @@ SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config,
 
     for (const auto & name : keys)
     {
-        if (!isAlphaNumeric(name))
+        if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
             throw Exception("Schema name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        schemes.emplace(name, Schema{config, config_prefix + "." + name, disks});
+        schemas.emplace(name, Schema{config, config_prefix + "." + name, disks});
         LOG_INFO(&Logger::get("StatusFile"), "Storage schema " << name << "loaded");  ///@TODO_IGR ASK Logger?
     }
 
     constexpr auto default_schema_name = "default";
     constexpr auto default_disk_name = "default";
-    if (schemes.find(default_schema_name) == schemes.end())
-        schemes.emplace(default_schema_name, Schema(Schema::Volumes{{std::vector<DiskPtr>{disks[default_disk_name]},
+    if (schemas.find(default_schema_name) == schemas.end())
+        schemas.emplace(default_schema_name, Schema(Schema::Volumes{{std::vector<DiskPtr>{disks[default_disk_name]},
                                                                      std::numeric_limits<UInt64>::max()}}));
 }
 
 const Schema & SchemaSelector::operator[](const String & name) const
 {
-    auto it = schemes.find(name);
-    if (it == schemes.end())
+    auto it = schemas.find(name);
+    if (it == schemas.end())
         throw Exception("Unknown schema " + name, ErrorCodes::UNKNOWN_SCHEMA);
     return it->second;
 }
