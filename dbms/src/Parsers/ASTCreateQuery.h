@@ -8,6 +8,8 @@
 #include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
+#include <optional>
+
 
 namespace DB
 {
