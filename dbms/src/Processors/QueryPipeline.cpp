@@ -597,7 +597,7 @@ void QueryPipeline::calcRowsBeforeLimit()
         }
 
         /// Skip totals and extremes port for output format.
-        if (auto * format = typeid_cast<IOutputFormat *>(processor))
+        if (auto * format = dynamic_cast<IOutputFormat *>(processor))
         {
             auto * child_processor = &format->getPort(IOutputFormat::PortKind::Main).getOutputPort().getProcessor();
             if (visited.emplace(child_processor).second)
