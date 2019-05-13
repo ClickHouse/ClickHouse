@@ -80,7 +80,8 @@ public:
                  const ColumnNumbers &arguments,
                  const std::vector<Float64> &weights, Float64 bias, const Context & context) const override
     {
-        if (weights.size() + 1 != arguments.size()) {
+        if (weights.size() + 1 != arguments.size())
+        {
             throw Exception("In predict function number of arguments differs from the size of weights vector", ErrorCodes::LOGICAL_ERROR);
         }
 
