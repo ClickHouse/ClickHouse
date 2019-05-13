@@ -37,7 +37,7 @@ void ColumnAggregateFunction::addArena(ArenaPtr arena_)
 
 /// This function is used in convertToValues() and predictValues()
 /// and is written here to avoid repetitions
-bool ColumnAggregateFunction::convertion(MutableColumnPtr *res_) const
+bool ColumnAggregateFunction::tryFinalizeAggregateFunction(MutableColumnPtr *res_) const
 {
     if (const AggregateFunctionState *function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
     {
@@ -92,7 +92,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         */
 
     MutableColumnPtr res;
-    if (convertion(&res))
+    if (tryFinalizeAggregateFunction(&res))
     {
         return res;
     }
@@ -106,7 +106,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
 MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const
 {
     MutableColumnPtr res;
-    convertion(&res);
+    tryFinalizeAggregateFunction(&res);
 
     auto ML_function = func.get();
     if (ML_function)
