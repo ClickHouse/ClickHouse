@@ -58,7 +58,7 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(this->write_rows, out);
     writeCString("\",\"written_bytes\":\"", out);
     writeText(this->write_bytes, out);
-    writeCString("\",\"total_rows\":\"", out);
+    writeCString("\",\"rows_in_set\":\"", out);
     writeText(this->total_rows, out);
     writeCString("\"}", out);
 }
