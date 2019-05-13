@@ -259,11 +259,12 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
         const Block & sample,
         const Context &,
         UInt64 max_block_size,
+        UInt64 min_block_size,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
             std::make_shared<JSONEachRowRowInputStream>(buf, sample, settings),
-            sample, max_block_size, settings);
+            sample, max_block_size, min_block_size, settings);
     });
 }
 

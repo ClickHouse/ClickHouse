@@ -12,8 +12,6 @@ namespace DB
 using BufferPtr = std::shared_ptr<DelimitedReadBuffer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
-class KafkaBlockInputStream;
-
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
 public:
@@ -31,9 +29,9 @@ public:
     void subscribe(const Names & topics); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
 
-private:
-    friend class KafkaBlockInputStream;
+    auto pollTimeout() { return poll_timeout; }
 
+private:
     using Messages = std::vector<cppkafka::Message>;
 
     ConsumerPtr consumer;

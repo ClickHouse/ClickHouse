@@ -22,6 +22,7 @@ public:
         const RowInputStreamPtr & row_input_,
         const Block & sample_,
         UInt64 max_block_size_,
+        UInt64 min_block_size_,
         const FormatSettings & settings);
 
     void readPrefix() override { row_input->readPrefix(); }
@@ -41,7 +42,7 @@ protected:
 private:
     RowInputStreamPtr row_input;
     Block sample;
-    UInt64 max_block_size;
+    UInt64 max_block_size, min_block_size;
     BlockMissingValues block_missing_values;
 
     UInt64 allow_errors_num;

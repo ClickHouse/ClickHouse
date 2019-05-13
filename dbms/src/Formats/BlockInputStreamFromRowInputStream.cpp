@@ -27,8 +27,9 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
     const RowInputStreamPtr & row_input_,
     const Block & sample_,
     UInt64 max_block_size_,
+    UInt64 min_block_size_,
     const FormatSettings & settings)
-    : row_input(row_input_), sample(sample_), max_block_size(max_block_size_),
+    : row_input(row_input_), sample(sample_), max_block_size(max_block_size_), min_block_size(min_block_size_),
     allow_errors_num(settings.input_allow_errors_num), allow_errors_ratio(settings.input_allow_errors_ratio)
 {
 }
@@ -57,8 +58,15 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 
     try
     {
-        for (size_t rows = 0; rows < max_block_size; ++rows)
+        for (size_t rows = 0, batch = 0; rows < max_block_size; ++rows, ++batch)
         {
+            if (min_block_size && batch == min_block_size)
+            {
+                batch = 0;
+                if (!checkTimeLimit())
+                    break;
+            }
+
             try
             {
                 ++total_rows;

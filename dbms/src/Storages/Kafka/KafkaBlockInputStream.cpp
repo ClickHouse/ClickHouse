@@ -39,14 +39,14 @@ void KafkaBlockInputStream::readPrefixImpl()
 
     buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->subscribe(storage.topics);
 
-    // Set the internal block size to a such value that allows to break the read approximately every `stream_flush_interval_ms`
-    // and call `checkTimeLimit()` for the top-level stream.
-    // FIXME: looks like the better solution would be to propagate limits from top-level streams to inferior ones.
-    const size_t poll_timeout = buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->poll_timeout;
-    size_t block_size = std::min(max_block_size, context.getSettingsRef().stream_flush_interval_ms.totalMilliseconds() / poll_timeout);
-    block_size = std::max(block_size, 1ul);
+    const auto & limits = getLimits();
+    const size_t poll_timeout = buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->pollTimeout();
+    size_t min_block_size = std::min(max_block_size, limits.max_execution_time.totalMilliseconds() / poll_timeout);
+    min_block_size = std::max(min_block_size, 1ul);
 
-    addChild(FormatFactory::instance().getInput(storage.format_name, *buffer, storage.getSampleBlock(), context, block_size));
+    auto child = FormatFactory::instance().getInput(storage.format_name, *buffer, storage.getSampleBlock(), context, max_block_size, min_block_size);
+    child->setLimits(limits);
+    addChild(child);
 
     broken = true;
 }
