@@ -188,7 +188,7 @@ void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
 {
     if (pool)
     {
-        auto job = [this, pid]()
+        auto job = [this, pid, processor = graph[pid].processor]()
         {
             SCOPE_EXIT(
                 {
@@ -198,7 +198,7 @@ void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
                 event_counter.notify()
             );
 
-            executeJob(graph[pid].processor);
+            executeJob(processor);
         };
 
         pool->schedule(createExceptionHandledJob(std::move(job), exception_handler));
