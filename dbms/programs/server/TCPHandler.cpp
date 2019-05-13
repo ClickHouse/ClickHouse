@@ -510,8 +510,11 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
         }
     });
 
-    /// Wait in case of exception.
-    SCOPE_EXIT(pool.wait());
+    /// Wait in case of exception. Delete pipeline to release memory.
+    SCOPE_EXIT(
+            pool.wait();
+            pipeline = QueryPipeline()
+    );
 
     while (true)
     {
