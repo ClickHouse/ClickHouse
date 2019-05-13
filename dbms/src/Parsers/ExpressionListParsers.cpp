@@ -681,7 +681,7 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (!parser_list.parse(pos, node, expected))
             return false;
 
-        ASTExpressionList * expr_list = dynamic_cast<ASTExpressionList *>(node->get());
+        ASTExpressionList * expr_list = dynamic_cast<ASTExpressionList *>(node.get());
         if (expr_list == nullptr)
             return false;
         expr_list->empty_separator = true;
