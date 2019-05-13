@@ -59,7 +59,8 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
     WriteBufferFromOwnString progress_string_writer;
     accumulated_progress.writeJSON(progress_string_writer);
 
-    *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
+    if (response_header_ostr)
+        *response_header_ostr << "X-ClickHouse-Progress: " << progress_string_writer.str() << "\r\n" << std::flush;
 #endif
 }
 
