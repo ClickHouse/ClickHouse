@@ -702,9 +702,8 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
-void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
-    auto lock = getLock();
     checkDatabaseAccessRightsImpl(from.first);
     checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].insert(where);
@@ -715,9 +714,14 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
         table->updateDependencies();
 }
 
-void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
     auto lock = getLock();
+    addDependencyUnsafe(from, where);
+}
+
+void Context::removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+{
     checkDatabaseAccessRightsImpl(from.first);
     checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].erase(where);
@@ -726,6 +730,12 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
     auto table = tryGetTable(from.first, from.second);
     if (table != nullptr)
         table->updateDependencies();
+}
+
+void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+{
+    auto lock = getLock();
+    removeDependencyUnsafe(from, where);
 }
 
 Dependencies Context::getDependencies(const String & database_name, const String & table_name) const

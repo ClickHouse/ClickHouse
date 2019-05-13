@@ -125,3 +125,7 @@
 #else
     #define OPTIMIZE(x)
 #endif
+
+/// This number is only used for distributed version compatible.
+/// It could be any magic number.
+#define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE
