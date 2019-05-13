@@ -275,13 +275,13 @@ ${ODBC_SOURCE_DIR}/lst/_lstVisible.c
 
 add_library(unixodbc ${SRCS})
 
-target_link_libraries(unixodbc ltdl)
+target_link_libraries(unixodbc PRIVATE ltdl)
 
 # SYSTEM_FILE_PATH was changed to /etc
 
-target_include_directories(unixodbc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/private)
-target_include_directories(unixodbc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64)
-target_include_directories(unixodbc PUBLIC ${ODBC_SOURCE_DIR}/include)
+target_include_directories(unixodbc SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/private)
+target_include_directories(unixodbc SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64)
+target_include_directories(unixodbc SYSTEM PUBLIC ${ODBC_SOURCE_DIR}/include)
 
 target_compile_definitions(unixodbc PRIVATE -DHAVE_CONFIG_H)
 
