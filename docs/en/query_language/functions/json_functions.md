@@ -157,3 +157,16 @@ select JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Str
 ```
 
 The usage of accessors is the same as above.
+
+## JSONExtractRaw(params[, accessors]...)
+
+Returns a part of JSON.
+If the part does not exist or has a wrong type, `null` will be returned.
+
+Examples:
+
+```
+select JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
+```
+
+The usage of accessors is the same as above.

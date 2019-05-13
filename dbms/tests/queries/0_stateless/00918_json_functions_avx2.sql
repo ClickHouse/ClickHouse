@@ -17,3 +17,10 @@ SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Str
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Int32)', 'b');
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(String)');
 SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Tuple(Int16, Float32, UInt8))');
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}');
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'a');
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'b');
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'b', 1);
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c');
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c', 'd');
+SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c', 'd', 2);
