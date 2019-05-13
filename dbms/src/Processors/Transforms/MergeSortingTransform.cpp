@@ -222,6 +222,8 @@ Chunk MergeSorter::mergeImpl(std::priority_queue<TSortCursor> & queue)
             return Chunk(std::move(merged_columns), merged_rows);
     }
 
+    chunks.clear();
+
     if (merged_rows == 0)
         return {};
 
