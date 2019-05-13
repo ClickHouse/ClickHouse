@@ -117,10 +117,10 @@ public:
             if (arguments.size() < 2)
                 throw Exception{"Function " + getName() + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-            auto col_type_const = typeid_cast<const ColumnConst *>(arguments[1].column.get());
+            auto col_type_const = typeid_cast<const ColumnConst *>(arguments[arguments.size() - 1].column.get());
 
             if (!col_type_const)
-                throw Exception{"Illegal non-const column " + arguments[1].column->getName() + " of argument of function " + getName(),
+                throw Exception{"Illegal non-const column " + arguments[arguments.size() - 1].column->getName() + " of argument of function " + getName(),
                                 ErrorCodes::ILLEGAL_COLUMN};
 
             virtual_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
@@ -137,7 +137,7 @@ public:
 
         actions.reserve(arguments.size() - 1 - ExtraArg);
 
-        for (const auto i : ext::range(1 + ExtraArg, arguments.size()))
+        for (const auto i : ext::range(1, arguments.size() - ExtraArg))
         {
             if (isString(arguments[i].type))
                 actions.push_back(Action::key);
@@ -194,7 +194,7 @@ public:
                 if (!ok)
                     break;
 
-                ok = tryMove(pjh, actions[j], (*block.getByPosition(arguments[j + 1 + ExtraArg]).column)[i]);
+                ok = tryMove(pjh, actions[j], (*block.getByPosition(arguments[j + 1]).column)[i]);
             }
 
             if (ok)
