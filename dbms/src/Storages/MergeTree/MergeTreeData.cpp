@@ -187,7 +187,7 @@ MergeTreeData::MergeTreeData(
 
     /// If not choose any
     if (version_file_path.empty())
-        version_file_path = schema.getDisks()[0]->getPath() + "format_version.txt";
+        version_file_path = getFullPathOnDisk(schema.getAnyDisk()) + "format_version.txt";
 
     ///@TODO_IGR ASK LOGIC
     auto version_file_exists = Poco::File(version_file_path).exists();

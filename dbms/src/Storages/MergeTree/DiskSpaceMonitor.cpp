@@ -89,22 +89,32 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
     }
 
+    Logger * logger = &Logger::get("StorageConfiguration");
+
     if (has_max_bytes)
     {
         max_data_part_size = config.getUInt64(config_prefix + ".max_data_part_size_bytes");
     }
     else if (has_max_ratio)
     {
-        auto ratio = config.getDouble(config_prefix + ".max_data_part_size_bytes");
-        if (ratio < 0 and ratio > 1)
-        {
-            throw Exception("'max_data_part_size_bytes' have to be between 0 and 1",
+        auto ratio = config.getDouble(config_prefix + ".max_data_part_size_ratio");
+        if (ratio < 0)
+            throw Exception("'max_data_part_size_ratio' have to be not less then 0",
                             ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        }
         UInt64 sum_size = 0;
+        std::vector<UInt64> sizes;
         for (const auto & disk : disks)
-            sum_size += disk->getTotalSpace();
-        max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio);
+        {
+            sizes.push_back(disk->getTotalSpace());
+            sum_size += sizes.back();
+        }
+        max_data_part_size = static_cast<decltype(max_data_part_size)>(sum_size * ratio / disks.size());
+        for (size_t i = 0; i != disks.size(); ++i)
+            if (sizes[i] < max_data_part_size)
+                LOG_WARNING(logger, "Disk " << disks[i]->getName() << " on volume " << config_prefix <<
+                                    " have not enough space (" << sizes[i] <<
+                                    ") for containing part the size of max_data_part_size (" <<
+                                    max_data_part_size << ")");
     }
     else
     {
@@ -164,6 +174,13 @@ Schema::Disks Schema::getDisks() const
     return res;
 }
 
+DiskPtr Schema::getAnyDisk() const
+{
+    /// Schema must contain at least one Volume
+    /// Volume must contain at least one Disk
+    return volumes[0].disks[0];
+}
+
 UInt64 Schema::getMaxUnreservedFreeSpace() const
 {
     UInt64 res = 0;
@@ -207,12 +224,14 @@ SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config,
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
+    Logger * logger = &Logger::get("SchemaSelector");
+
     for (const auto & name : keys)
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
             throw Exception("Schema name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         schemas.emplace(name, Schema{config, config_prefix + "." + name, disks});
-        LOG_INFO(&Logger::get("StatusFile"), "Storage schema " << name << "loaded");  ///@TODO_IGR ASK Logger?
+        LOG_INFO(logger, "Storage schema " << name << " Sloaded");
     }
 
     constexpr auto default_schema_name = "default";

@@ -67,6 +67,9 @@ public:
             throwFromErrno("Could not calculate available disk space (statvfs)", ErrorCodes::CANNOT_STATVFS);
 
         UInt64 size = fs.f_blocks * fs.f_bsize;
+
+        size -= std::min(size, keep_free_space_bytes);
+
         return size;
     }
 
@@ -157,7 +160,7 @@ public:
             return size;
         }
 
-        const DiskPtr & getDisk() const ///@TODO_IGR rename
+        const DiskPtr & getDisk() const
         {
             return disk_ptr;
         }
@@ -165,9 +168,15 @@ public:
         Reservation(UInt64 size_, DiskPtr disk_ptr_)
             : size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size), disk_ptr(std::move(disk_ptr_)) ///@TODO_IGR ASK DiskSpaceReservedForMerge?
         {
+            /// Just make reservation if size is 0
+            if (size == 0) {
+                ++reserves->reservation_count;
+                valid = true;
+                return;
+            }
             auto unreserved = disk_ptr->getAvailableSpace();
 
-            LOG_INFO(&Logger::get("StatusFile"), "Reservation try: Unreserved " << unreserved << " ,size " << size);
+            LOG_DEBUG(&Logger::get("DiskSpaceMonitor"), "Unreserved " << unreserved << " , to reserve " << size);
 
             std::lock_guard lock(DiskSpaceMonitor::mutex);
 
@@ -182,11 +191,11 @@ public:
             reserves = &DiskSpaceMonitor::reserved[disk_ptr->getName()];
             reserves->reserved_bytes += size;
             ++reserves->reservation_count;
+            valid = true;
         }
 
-        /// Reservation valid when reserves not less then 1 byte
         explicit operator bool() const noexcept {
-            return size != 0;
+            return valid;
         }
 
     private:
@@ -194,6 +203,7 @@ public:
         CurrentMetrics::Increment metric_increment;
         DiskReserve * reserves;
         DiskPtr disk_ptr;
+        bool valid = false;
     };
 
     using ReservationPtr = std::unique_ptr<Reservation>;
@@ -319,6 +329,8 @@ public:
     Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disks);
 
     Disks getDisks() const;
+
+    DiskPtr getAnyDisk() const;
 
     UInt64 getMaxUnreservedFreeSpace() const;
 
