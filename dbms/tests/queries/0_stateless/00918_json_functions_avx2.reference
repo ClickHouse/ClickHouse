@@ -17,3 +17,10 @@ Array
 [-100,NULL,300]
 ['a','hello','b',NULL]
 [(NULL,NULL,NULL),(NULL,NULL,NULL),(NULL,NULL,NULL),(-100,200,44)]
+{"a":"hello","b":[-100,200,300],"c":{"d":[121,144]}}
+"hello"
+[-100,200,300]
+-100
+{"d":[121,144]}
+[121,144]
+144

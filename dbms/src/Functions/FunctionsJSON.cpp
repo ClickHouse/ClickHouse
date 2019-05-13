@@ -309,16 +309,105 @@ public:
     }
 };
 
-// class JSONExtractRawImpl: public JSONNullableImplBase<DataTypeString>
-// {
-// public:
-//     static constexpr auto name {"JSONExtractRaw"};
+class JSONExtractRawImpl: public JSONNullableImplBase<DataTypeString>
+{
+public:
+    static constexpr auto name {"JSONExtractRaw"};
 
-//     static Field getValue(ParsedJson::iterator & pjh)
-//     {
-//         //
-//     }
-// };
+    static Field getValue(ParsedJson::iterator & pjh)
+    {
+        WriteBufferFromOwnString buf;
+        traverse(pjh, buf);
+        return {std::move(buf.str())};
+    }
+
+private:
+    static void traverse(ParsedJson::iterator & pjh, WriteBuffer & buf)
+    {
+        switch (pjh.get_type())
+        {
+            case '{':
+            {
+                writeChar('{', buf);
+                if (pjh.down())
+                {
+                    writeJSONString(pjh.get_string(), pjh.get_string() + pjh.get_string_length(), buf, format_settings());
+                    writeChar(':', buf);
+                    pjh.next();
+                    traverse(pjh, buf);
+                    while (pjh.next())
+                    {
+                        writeChar(',', buf);
+                        writeJSONString(pjh.get_string(), pjh.get_string() + pjh.get_string_length(), buf, format_settings());
+                        writeChar(':', buf);
+                        pjh.next();
+                        traverse(pjh, buf);
+                    }
+                    pjh.up();
+                }
+                writeChar('}', buf);
+                break;
+            }
+            case '[':
+            {
+                writeChar('[', buf);
+                if (pjh.down())
+                {
+                    traverse(pjh, buf);
+                    while (pjh.next())
+                    {
+                        writeChar(',', buf);
+                        traverse(pjh, buf);
+                    }
+                    pjh.up();
+                }
+                writeChar(']', buf);
+                break;
+            }
+            case '"':
+            {
+                writeJSONString(pjh.get_string(), pjh.get_string() + pjh.get_string_length(), buf, format_settings());
+                break;
+            }
+            case 'l':
+            {
+                writeIntText(pjh.get_integer(), buf);
+                break;
+            }
+            case 'd':
+            {
+                writeFloatText(pjh.get_double(), buf);
+                break;
+            }
+            case 't':
+            {
+                writeCString("true", buf);
+                break;
+            }
+            case 'f':
+            {
+                writeCString("false", buf);
+                break;
+            }
+            case 'n':
+            {
+                writeCString("null", buf);
+                break;
+            }
+        }
+    }
+
+    static const FormatSettings & format_settings()
+    {
+        static const FormatSettings the_instance = []
+        {
+            FormatSettings settings;
+            settings.json.escape_forward_slashes = false;
+            return settings;
+        }();
+        return the_instance;
+    }
+};
 
 class JSONExtractStringImpl : public JSONNullableImplBase<DataTypeString>
 {
@@ -360,7 +449,7 @@ struct JSONExtractUIntImpl { static constexpr auto name{"JSONExtractUInt"}; };
 struct JSONExtractIntImpl { static constexpr auto name{"JSONExtractInt"}; };
 struct JSONExtractFloatImpl { static constexpr auto name{"JSONExtractFloat"}; };
 struct JSONExtractBoolImpl { static constexpr auto name{"JSONExtractBool"}; };
-//struct JSONExtractRawImpl { static constexpr auto name {"JSONExtractRaw"}; };
+struct JSONExtractRawImpl { static constexpr auto name {"JSONExtractRaw"}; };
 struct JSONExtractStringImpl { static constexpr auto name{"JSONExtractString"}; };
 struct JSONExtractKeyImpl { static constexpr auto name{"JSONExtractKey"}; };
 }
@@ -382,10 +471,7 @@ void registerFunctionsJSON(FunctionFactory & factory)
         factory.registerFunction<FunctionJSONBase<JSONExtractIntImpl, false>>();
         factory.registerFunction<FunctionJSONBase<JSONExtractFloatImpl, false>>();
         factory.registerFunction<FunctionJSONBase<JSONExtractBoolImpl, false>>();
-        // factory.registerFunction<FunctionJSONBase<
-        //     JSONExtractRawImpl,
-        //     false
-        // >>();
+        factory.registerFunction<FunctionJSONBase<JSONExtractRawImpl, false>>();
         factory.registerFunction<FunctionJSONBase<JSONExtractStringImpl, false>>();
         factory.registerFunction<FunctionJSONBase<JSONExtractKeyImpl, false>>();
         return;
@@ -399,7 +485,7 @@ void registerFunctionsJSON(FunctionFactory & factory)
     factory.registerFunction<FunctionJSONDummy<JSONExtractIntImpl>>();
     factory.registerFunction<FunctionJSONDummy<JSONExtractFloatImpl>>();
     factory.registerFunction<FunctionJSONDummy<JSONExtractBoolImpl>>();
-    //factory.registerFunction<FunctionJSONDummy<JSONExtractRawImpl>>();
+    factory.registerFunction<FunctionJSONDummy<JSONExtractRawImpl>>();
     factory.registerFunction<FunctionJSONDummy<JSONExtractStringImpl>>();
     factory.registerFunction<FunctionJSONDummy<JSONExtractKeyImpl>>();
 }
