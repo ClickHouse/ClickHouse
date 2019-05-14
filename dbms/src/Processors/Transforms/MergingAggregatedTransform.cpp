@@ -45,6 +45,9 @@ Chunk MergingAggregatedTransform::generate()
         LOG_TRACE(log, "Read " << total_input_blocks << " blocks of partially aggregated data, total " << total_input_rows
                                << " rows.");
 
+        /// Exception safety. Make iterator valid in case any method below throws.
+        next_block = blocks.begin();
+
         /// TODO: this operation can be made async. Add async for IAccumulatingTransform.
         params->aggregator.mergeBlocks(std::move(bucket_to_blocks), data_variants, max_threads);
         blocks = params->aggregator.convertToBlocks(data_variants, params->final, max_threads);
