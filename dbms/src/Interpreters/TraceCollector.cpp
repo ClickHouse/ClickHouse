@@ -26,16 +26,16 @@ namespace DB
 
         while (stop_future.wait_for(std::chrono::milliseconds(1)) == std::future_status::timeout)
         {
-            ucontext_t context;
+            Backtrace backtrace;
             std::string query_id;
             TimerType timer_type;
 
             try {
-                DB::readPODBinary(context, in);
+                DB::readPODBinary(backtrace, in);
                 DB::readStringBinary(query_id, in);
                 DB::readIntBinary(timer_type, in);
             }
-            catch (Exception&)
+            catch (...)
             {
                 /// Pipe was closed - looks like server is about to shutdown
                 /// Let us wait for stop_future
@@ -44,11 +44,13 @@ namespace DB
 
             if (trace_log != nullptr)
             {
-                std::vector<void *> frames = getBacktraceFrames(context);
+                const auto size = backtrace.getSize();
+                const auto& frames = backtrace.getFrames();
+
                 std::vector<UInt64> trace;
-                trace.reserve(frames.size());
-                for (void * frame : frames)
-                    trace.push_back(reinterpret_cast<uintptr_t>(frame));
+                trace.reserve(size);
+                for (size_t i = 0; i < size; i++)
+                    trace.push_back(reinterpret_cast<uintptr_t>(frames[i]));
 
                 TraceLogElement element{std::time(nullptr), timer_type, query_id, trace};
 

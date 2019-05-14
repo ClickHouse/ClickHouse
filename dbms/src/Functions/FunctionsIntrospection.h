@@ -92,7 +92,7 @@ public:
             {
                 frames.push_back(reinterpret_cast<void *>(data[pos]));
             }
-            std::string backtrace = backtraceFramesToString(frames, "\n");
+            std::string backtrace = Backtrace(frames).toString("\n");
 
             result_column->insertDataWithTerminatingZero(backtrace.c_str(), backtrace.length() + 1);
         }

@@ -64,7 +64,9 @@ add_library (common
 if (USE_UNWIND)
     target_compile_definitions (common PRIVATE USE_UNWIND=1)
     target_include_directories (common BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
-    target_link_libraries (common PRIVATE ${UNWIND_LIBRARY})
+    if (NOT USE_INTERNAL_UNWIND_LIBRARY_FOR_EXCEPTION_HANDLING)
+        target_link_libraries (common PRIVATE ${UNWIND_LIBRARY})
+    endif ()
 endif ()
 
 # When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
