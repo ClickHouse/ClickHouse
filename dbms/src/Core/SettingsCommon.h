@@ -597,7 +597,7 @@ public:
         const const_reference & operator *() const { return ref; }
         const const_reference * operator ->() const { return &ref; }
         const_iterator & operator ++() { ++ref.member; return *this; }
-        const_iterator & operator ++(int) { const_iterator tmp = *this; ++*this; return tmp; }
+        const_iterator operator ++(int) { const_iterator tmp = *this; ++*this; return tmp; }
         bool operator ==(const const_iterator & rhs) const { return ref.member == rhs.ref.member && ref.collection == rhs.ref.collection; }
         bool operator !=(const const_iterator & rhs) const { return !(*this == rhs); }
     protected:
@@ -614,7 +614,7 @@ public:
         reference & operator *() const { return this->ref; }
         reference * operator ->() const { return &this->ref; }
         iterator & operator ++() { const_iterator::operator ++(); return *this; }
-        iterator & operator ++(int) { iterator tmp = *this; ++*this; return tmp; }
+        iterator operator ++(int) { iterator tmp = *this; ++*this; return tmp; }
     };
 
     /// Returns the number of settings.
