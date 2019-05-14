@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Arena.h>
 #include <Common/RadixSort.h>
 #include <Columns/IColumn.h>
 
@@ -27,10 +28,39 @@ struct RowRef
 /// Single linked list of references to rows. Used for ALL JOINs (non-unique JOINs)
 struct RowRefList : RowRef
 {
-    RowRefList * next = nullptr;
+    class ForwardIterator
+    {
+    public:
+        ForwardIterator(const RowRefList * begin)
+            : current(begin)
+        {}
+
+        const RowRef * operator -> () const { return current; }
+        void operator ++ () { current = current->next; }
+        bool ok() const { return current; }
+
+    private:
+        const RowRefList * current;
+    };
 
     RowRefList() {}
     RowRefList(const Block * block_, size_t row_num_) : RowRef(block_, row_num_) {}
+
+    ForwardIterator begin() const { return ForwardIterator(this); }
+
+    /// insert element after current one
+    void insert(RowRef && row_ref, Arena & pool)
+    {
+        auto elem = pool.alloc<RowRefList>();
+        elem->block = row_ref.block;
+        elem->row_num = row_ref.row_num;
+
+        elem->next = next;
+        next = elem;
+    }
+
+private:
+    RowRefList * next = nullptr;
 };
 
 /**
