@@ -1373,7 +1373,7 @@ void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const Expres
 {
     pipeline.addSimpleTransform([&](const Block & block)
     {
-        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where_expression->getColumnName(), remove_fiter);
+        return std::make_shared<FilterTransform>(block, expression, getSelectQuery().where()->getColumnName(), remove_fiter);
     });
 }
 
@@ -1643,7 +1643,7 @@ void InterpreterSelectQuery::executeHaving(QueryPipeline & pipeline, const Expre
             return nullptr;
 
         /// TODO: do we need to save filter there?
-        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having_expression->getColumnName(), false);
+        return std::make_shared<FilterTransform>(header, expression, getSelectQuery().having()->getColumnName(), false);
     });
 }
 
@@ -1670,7 +1670,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(QueryPipeline & pipeline, bo
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
             pipeline.getHeader(), overflow_row, expression,
-            has_having ? getSelectQuery().having_expression->getColumnName() : "",
+            has_having ? getSelectQuery().having()->getColumnName() : "",
             settings.totals_mode, settings.totals_auto_threshold, final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
@@ -1949,7 +1949,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPipeline & pipeline, bool befo
         UInt64 limit_for_distinct = 0;
 
         /// If after this stage of DISTINCT ORDER BY is not executed, then you can get no more than limit_length + limit_offset of different rows.
-        if (!query.order_expression_list || !before_order)
+        if (!query.orderBy() || !before_order)
             limit_for_distinct = limit_length + limit_offset;
 
         SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
@@ -2005,7 +2005,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
-    if (query.limit_length)
+    if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         pipeline.addSimpleTransform([&, limit = limit_length + limit_offset](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
@@ -2040,14 +2040,14 @@ void InterpreterSelectQuery::executeLimitBy(Pipeline & pipeline)
 void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
 {
     auto & query = getSelectQuery();
-    if (!query.limit_by_value || !query.limit_by_expression_list)
+    if (!query.limitByLength() || !query.limitBy())
         return;
 
     Names columns;
-    for (const auto & elem : query.limit_by_expression_list->children)
+    for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    UInt64 value = getLimitUIntValue(query.limit_by_value, context);
+    UInt64 value = getLimitUIntValue(query.limitByLength(), context);
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
@@ -2121,7 +2121,7 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
-    if (query.limit_length)
+    if (query.limitLength())
     {
         /** Rare case:
           *  if there is no WITH TOTALS and there is a subquery in FROM, and there is WITH TOTALS on one of the levels,
@@ -2134,7 +2134,7 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
           */
         bool always_read_till_end = false;
 
-        if (query.group_by_with_totals && !query.order_expression_list)
+        if (query.group_by_with_totals && !query.orderBy())
             always_read_till_end = true;
 
         if (!query.group_by_with_totals && hasWithTotalsInAnySubqueryInFromClause(query))
