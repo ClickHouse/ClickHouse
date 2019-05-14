@@ -255,7 +255,7 @@ void QueryPipeline::resize(size_t num_streams)
     if (num_streams == getNumStreams())
         return;
 
-    has_mixed_streams = true;
+    has_resize = true;
 
     auto resize = std::make_shared<ResizeProcessor>(current_header, getNumStreams(), num_streams);
     auto stream = streams.begin();
