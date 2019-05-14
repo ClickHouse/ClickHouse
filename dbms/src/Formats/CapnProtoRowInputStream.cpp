@@ -306,14 +306,14 @@ void registerInputFormatCapnProto(FormatFactory & factory)
            const Block & sample,
            const Context & context,
            UInt64 max_block_size,
-           UInt64 max_read_rows,
+           UInt64 rows_portion_size,
            const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<CapnProtoRowInputStream>(buf, sample, FormatSchemaInfo(context, "CapnProto")),
                 sample,
                 max_block_size,
-                max_read_rows,
+                rows_portion_size,
                 settings);
         });
 }
