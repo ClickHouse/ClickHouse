@@ -77,6 +77,8 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
 {
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
     context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
+    /// Processors are not supported here yet.
+    context.getSettingsRef().experimental_use_processors = false;
 }
 
 
