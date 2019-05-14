@@ -14,13 +14,15 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int QUOTA_EXPIRED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception)
 {
-    /// Don't add additional info to limits and quota exceptions (to pass tests).
+    /// Don't add additional info to limits and quota exceptions, and in case of kill query (to pass tests).
     return exception.code() != ErrorCodes::TOO_MANY_ROWS_OR_BYTES
-           && exception.code() != ErrorCodes::QUOTA_EXPIRED;
+           && exception.code() != ErrorCodes::QUOTA_EXPIRED
+           && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED;
 }
 
 PipelineExecutor::PipelineExecutor(Processors processors)
@@ -359,6 +361,9 @@ void PipelineExecutor::execute(ThreadPool * pool)
 
         throw;
     }
+
+    if (cancelled)
+        return;
 
     bool all_processors_finished = true;
     for (auto & node : graph)
