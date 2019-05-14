@@ -1,8 +1,6 @@
 #include <optional>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -38,10 +36,10 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
         { "comment",                    std::make_shared<DataTypeString>() },
         { "is_in_partition_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_sorting_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
-        { "is_in_sampling_key", std::make_shared<DataTypeUInt8>() },
-        { "compression_codec", std::make_shared<DataTypeString>() },
+        { "is_in_sorting_key",   std::make_shared<DataTypeUInt8>() },
+        { "is_in_primary_key",   std::make_shared<DataTypeUInt8>() },
+        { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
+        { "compression_codec",   std::make_shared<DataTypeString>() },
     }));
 }
 
@@ -124,16 +122,10 @@ protected:
                 cols_required_for_sampling = storage->getColumnsRequiredForSampling();
 
                 /** Info about sizes of columns for tables of MergeTree family.
-                * NOTE: It is possible to add getter for this info to IStorage interface.
-                */
-                if (auto storage_concrete_plain = dynamic_cast<StorageMergeTree *>(storage.get()))
-                {
-                    column_sizes = storage_concrete_plain->getData().getColumnSizes();
-                }
-                else if (auto storage_concrete_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
-                {
-                    column_sizes = storage_concrete_replicated->getData().getColumnSizes();
-                }
+                  * NOTE: It is possible to add getter for this info to IStorage interface.
+                  */
+                if (auto storage_concrete = dynamic_cast<const MergeTreeData *>(storage.get()))
+                    column_sizes = storage_concrete->getColumnSizes();
             }
 
             for (const auto & column : columns)

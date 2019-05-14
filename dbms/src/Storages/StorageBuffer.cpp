@@ -22,8 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <common/logger_useful.h>
-#include <Poco/Ext/ThreadNumber.h>
-
+#include <common/getThreadNumber.h>
 #include <ext/range.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -341,7 +340,7 @@ public:
         }
 
         /// We distribute the load on the shards by the stream number.
-        const auto start_shard_num = Poco::ThreadNumber::get() % storage.num_shards;
+        const auto start_shard_num = getThreadNumber() % storage.num_shards;
 
         /// We loop through the buffers, trying to lock mutex. No more than one lap.
         auto shard_num = start_shard_num;
@@ -701,7 +700,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     params.apply(new_columns);
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));

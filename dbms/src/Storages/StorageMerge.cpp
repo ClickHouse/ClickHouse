@@ -369,7 +369,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
         {
             StoragePtr storage = iterator->table();
 
-            if (query && query->as<ASTSelectQuery>()->prewhere_expression && !storage->supportsPrewhere())
+            if (query && query->as<ASTSelectQuery>()->prewhere() && !storage->supportsPrewhere())
                 throw Exception("Storage " + storage->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
 
             if (storage.get() != this)
@@ -402,7 +402,7 @@ void StorageMerge::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     params.apply(new_columns);
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(new_columns);
@@ -440,7 +440,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
     Block before_block_header = source_stream->getHeader();
     source_stream = std::make_shared<ConvertingBlockInputStream>(context, source_stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
 
-    auto where_expression = query->as<ASTSelectQuery>()->where_expression;
+    auto where_expression = query->as<ASTSelectQuery>()->where();
 
     if (!where_expression)
         return;

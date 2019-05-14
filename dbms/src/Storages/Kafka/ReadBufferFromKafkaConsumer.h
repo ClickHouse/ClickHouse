@@ -1,13 +1,17 @@
 #pragma once
 
-#include <IO/ReadBuffer.h>
+#include <Core/Names.h>
+#include <IO/DelimitedReadBuffer.h>
 #include <common/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
 
 namespace DB
 {
+
+using BufferPtr = std::shared_ptr<DelimitedReadBuffer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
+
 
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
@@ -17,8 +21,9 @@ public:
     {
     }
 
-    // Commit all processed messages.
-    void commit();
+    void commit(); // Commit all processed messages.
+    void subscribe(const Names & topics); // Subscribe internal consumer to topics.
+    void unsubscribe(); // Unsubscribe internal consumer in case of failure.
 
 private:
     using Messages = std::vector<cppkafka::Message>;
@@ -33,4 +38,4 @@ private:
     bool nextImpl() override;
 };
 
-} // namespace DB
+}

@@ -139,7 +139,7 @@ void registerStorageJoin(StorageFactory & factory)
 
         if (args.storage_def && args.storage_def->settings)
         {
-            for (const ASTSetQuery::Change & setting : args.storage_def->settings->changes)
+            for (const auto & setting : args.storage_def->settings->changes)
             {
                 if (setting.name == "join_use_nulls")
                     join_use_nulls.set(setting.value);
@@ -338,7 +338,7 @@ private:
                 throw Exception("ASOF join storage is not implemented yet", ErrorCodes::NOT_IMPLEMENTED);
             }
             else
-                for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->getSecond()); current != nullptr;
+                for (auto current = &static_cast<const typename Map::mapped_type::Base &>(it->getSecond()); current != nullptr;
                      current = current->next)
                 {
                     for (size_t j = 0; j < columns.size(); ++j)

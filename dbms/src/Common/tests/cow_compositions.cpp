@@ -1,11 +1,11 @@
-#include <Common/COWPtr.h>
+#include <Common/COW.h>
 #include <iostream>
 
 
-class IColumn : public COWPtr<IColumn>
+class IColumn : public COW<IColumn>
 {
 private:
-    friend class COWPtr<IColumn>;
+    friend class COW<IColumn>;
 
     virtual MutablePtr clone() const = 0;
     virtual MutablePtr deepMutate() const { return shallowMutate(); }
@@ -24,10 +24,10 @@ public:
 using ColumnPtr = IColumn::Ptr;
 using MutableColumnPtr = IColumn::MutablePtr;
 
-class ConcreteColumn : public COWPtrHelper<IColumn, ConcreteColumn>
+class ConcreteColumn : public COWHelper<IColumn, ConcreteColumn>
 {
 private:
-    friend class COWPtrHelper<IColumn, ConcreteColumn>;
+    friend class COWHelper<IColumn, ConcreteColumn>;
 
     int data;
     ConcreteColumn(int data) : data(data) {}
@@ -38,10 +38,10 @@ public:
     void set(int value) override { data = value; }
 };
 
-class ColumnComposition : public COWPtrHelper<IColumn, ColumnComposition>
+class ColumnComposition : public COWHelper<IColumn, ColumnComposition>
 {
 private:
-    friend class COWPtrHelper<IColumn, ColumnComposition>;
+    friend class COWHelper<IColumn, ColumnComposition>;
 
     ConcreteColumn::WrappedPtr wrapped;
 

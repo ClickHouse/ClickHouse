@@ -407,12 +407,12 @@ struct AggregatedDataVariants : private boost::noncopyable
       */
     Aggregator * aggregator = nullptr;
 
-    size_t keys_size;    /// Number of keys. NOTE do we need this field?
+    size_t keys_size{};  /// Number of keys. NOTE do we need this field?
     Sizes key_sizes;     /// Dimensions of keys, if keys of fixed length
 
     /// Pools for states of aggregate functions. Ownership will be later transferred to ColumnAggregateFunction.
     Arenas aggregates_pools;
-    Arena * aggregates_pool;    /// The pool that is currently used for allocation.
+    Arena * aggregates_pool{};    /// The pool that is currently used for allocation.
 
     /** Specialization for the case when there are no keys, and for keys not fitted into max_rows_to_group_by.
       */

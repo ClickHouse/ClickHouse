@@ -333,7 +333,8 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Context & c
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlock()), cluster, settings, insert_sync, timeout);
+        context, *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlock()), cluster,
+        insert_sync, timeout);
 }
 
 
@@ -344,7 +345,7 @@ void StorageDistributed::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     params.apply(new_columns);
     context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
@@ -471,12 +472,10 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    if (!select.where_expression)
-    {
+    if (!select.where())
         return nullptr;
-    }
 
-    const auto & blocks = evaluateExpressionOverConstantCondition(select.where_expression, sharding_key_expr);
+    const auto & blocks = evaluateExpressionOverConstantCondition(select.where(), sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
     if (!blocks)
