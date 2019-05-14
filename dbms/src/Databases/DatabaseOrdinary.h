@@ -113,6 +113,8 @@ public:
 
     void drop() override;
 
+    void shutdown() override;
+
 private:
     Poco::Path metadata_path;
     Poco::Path dictionaries_metadata_path;

@@ -600,6 +600,26 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
     return ast;
 }
 
+void DatabaseOrdinary::shutdown()
+{
+    /// You can not hold a lock during shutdown.
+    /// Because inside `shutdown` function the tables can work with database, and mutex is not recursive.
+
+    Tables tables_snapshot;
+    {
+        std::lock_guard lock(tables_mutex);
+        tables_snapshot = tables;
+    }
+
+    for (const auto & kv: tables_snapshot)
+    {
+        kv.second->shutdown();
+    }
+
+    std::lock_guard lock(tables_mutex);
+    tables.clear();
+}
+
 
 void DatabaseOrdinary::alterTable(
     const Context & context,
