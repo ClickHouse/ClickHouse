@@ -360,6 +360,9 @@ void PipelineExecutor::execute(ThreadPool * pool)
         throw;
     }
 
+    if (cancelled)
+        return;
+
     bool all_processors_finished = true;
     for (auto & node : graph)
         if (node.status != ExecStatus::Finished)
