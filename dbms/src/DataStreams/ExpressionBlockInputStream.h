@@ -30,6 +30,7 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+    mutable Block cached_header;
 };
 
 }

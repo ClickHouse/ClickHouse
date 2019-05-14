@@ -23,9 +23,13 @@ Block ExpressionBlockInputStream::getTotals()
 
 Block ExpressionBlockInputStream::getHeader() const
 {
-    Block res = children.back()->getHeader();
-    expression->execute(res, true);
-    return res;
+    if (!cached_header.columns())
+    {
+        cached_header = children.back()->getHeader();
+        expression->execute(cached_header, true);
+    }
+
+    return cached_header.cloneEmpty();
 }
 
 Block ExpressionBlockInputStream::readImpl()
