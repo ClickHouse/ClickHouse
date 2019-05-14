@@ -55,6 +55,8 @@ public:
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
     bool hasDelayedStream() const { return delayed_stream_port; }
+    /// Check if resize transform was used. (In that case another distinct transform will be added).
+    bool hasMixedStreams() const { return has_mixed_streams; }
 
     void resize(size_t num_streams);
 
@@ -93,6 +95,9 @@ private:
 
     /// Special port for delayed stream.
     OutputPort * delayed_stream_port = nullptr;
+
+    /// If resize processor was added to pipeline.
+    bool has_mixed_streams = false;
 
     /// Common header for each stream.
     Block current_header;
