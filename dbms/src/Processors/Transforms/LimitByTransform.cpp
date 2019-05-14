@@ -4,8 +4,10 @@
 namespace DB
 {
 
-LimitByTransform::LimitByTransform(const Block & header, size_t group_size_, const Names & columns)
-    : ISimpleTransform(header, header, true), group_size(group_size_)
+LimitByTransform::LimitByTransform(const Block & header, size_t group_length_, size_t group_offset_, const Names & columns)
+    : ISimpleTransform(header, header, true)
+    , group_length(group_length_)
+    , group_offset(group_offset_)
 {
     key_positions.reserve(columns.size());
 
@@ -38,7 +40,8 @@ void LimitByTransform::transform(Chunk & chunk)
 
         hash.get128(key.low, key.high);
 
-        if (keys_counts[key]++ < group_size)
+        auto count = keys_counts[key]++;
+        if (count >= group_offset && count < group_length + group_offset)
         {
             inserted_count++;
             filter[row] = 1;

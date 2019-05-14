@@ -2047,14 +2047,15 @@ void InterpreterSelectQuery::executeLimitBy(QueryPipeline & pipeline)
     for (const auto & elem : query.limitBy()->children)
         columns.emplace_back(elem->getColumnName());
 
-    UInt64 value = getLimitUIntValue(query.limitByLength(), context);
+    UInt64 length = getLimitUIntValue(query.limitByLength(), context);
+    UInt64 offset = (query.limitByOffset() ? getLimitUIntValue(query.limitByOffset(), context) : 0);
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipeline::StreamType::Totals)
             return nullptr;
 
-        return std::make_shared<LimitByTransform>(header, value, columns);
+        return std::make_shared<LimitByTransform>(header, length, offset, columns);
     });
 }
 
