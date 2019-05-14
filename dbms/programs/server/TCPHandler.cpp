@@ -375,8 +375,8 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
         const auto & db_and_table = query_context->getInsertionTable();
-        if (auto * columns = ColumnsDescription::loadFromContext(*query_context, db_and_table.first, db_and_table.second))
-            sendTableColumns(*columns);
+        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+            sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
     }
 
     /// Send block to the client - table structure.

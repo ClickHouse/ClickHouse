@@ -46,15 +46,15 @@ MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
     for (const auto & range : all_mark_ranges)
         total_marks_count += range.end - range.begin;
 
-    size_t total_rows = total_marks_count * storage.index_granularity;
+    size_t total_rows = data_part->index_granularity.getTotalRows();
 
     if (!quiet)
         LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << data_part->name
         << ", approx. " << total_rows
         << (all_mark_ranges.size() > 1
-        ? ", up to " + toString((all_mark_ranges.back().end - all_mark_ranges.front().begin) * storage.index_granularity)
+        ? ", up to " + toString(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
         : "")
-        << " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
+        << " rows starting from " << data_part->index_granularity.getMarkStartingRow(all_mark_ranges.front().begin));
 
     addTotalRowsApprox(total_rows);
 

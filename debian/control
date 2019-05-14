@@ -10,12 +10,13 @@ Build-Depends: debhelper (>= 9),
                libc6-dev,
                libicu-dev,
                libreadline-dev,
+               gperf,
                tzdata
 Standards-Version: 3.9.8
 
 Package: clickhouse-client
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}) | clickhouse-server-base (= ${binary:Version})
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version})
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
 Description: Client binary for ClickHouse

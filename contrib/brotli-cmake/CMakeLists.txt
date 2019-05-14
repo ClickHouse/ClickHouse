@@ -28,6 +28,6 @@ set(SRCS
     ${BROTLI_SOURCE_DIR}/common/transform.c
 )
 
-add_library(brotli ${LINK_MODE} ${SRCS})
+add_library(brotli ${SRCS})
 
 target_include_directories(brotli PUBLIC ${BROTLI_SOURCE_DIR}/include)

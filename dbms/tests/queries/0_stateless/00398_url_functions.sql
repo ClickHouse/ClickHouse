@@ -59,6 +59,7 @@ SELECT decodeURLComponent(queryStringAndFragment('http://127.0.0.1/?query=hello%
 SELECT decodeURLComponent(queryStringAndFragment('http://127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
 SELECT decodeURLComponent(queryStringAndFragment('http://paul@127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
 SELECT decodeURLComponent(queryStringAndFragment('//paul@127.0.0.1/?query=hello%20world+foo%2Bbar#a=b'));
+SELECT decodeURLComponent(queryStringAndFragment('//paul@127.0.0.1/#a=b'));
 
 SELECT '====CUT TO FIRST SIGNIFICANT SUBDOMAIN====';
 SELECT cutToFirstSignificantSubdomain('http://www.example.com');
@@ -104,4 +105,5 @@ SELECT cutQueryStringAndFragment('http://www.example.com/a/b/c?a=b');
 SELECT cutQueryStringAndFragment('http://www.example.com/a/b/c?a=b#d=f');
 SELECT cutQueryStringAndFragment('http://paul@www.example.com/a/b/c?a=b#d=f');
 SELECT cutQueryStringAndFragment('//paul@www.example.com/a/b/c?a=b#d=f');
+SELECT cutQueryStringAndFragment('//paul@www.example.com/a/b/c#d=f');
 

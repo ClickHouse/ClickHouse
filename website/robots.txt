@@ -3,6 +3,9 @@ Disallow: /docs/en/single/
 Disallow: /docs/ru/single/
 Disallow: /docs/zh/single/
 Disallow: /docs/fa/single/
+Disallow: /docs/v1*
+Disallow: /docs/v2*
+Disallow: /docs/v3*
 Disallow: /docs/en/search.html
 Disallow: /docs/ru/search.html
 Disallow: /docs/fa/search.html
