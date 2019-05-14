@@ -194,4 +194,55 @@ Maximum number of bytes (uncompressed data) that can be passed to a remote serve
 
 What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
+## max_rows_in_join {#settings-max_rows_in_join}
+
+Limits number of rows in the hash table that is used when joining tables.
+
+This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and [Join engine](../table_engines/join.md) functioning.
+
+ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
+
+Possible values:
+
+- Positive integers.
+- 0. Memory control is disabled.
+
+Default value: 0.
+
+## max_bytes_in_join {#settings-max_bytes_in_join}
+
+Limits number of bytes in the hash table that is used when joining tables.
+
+This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md) functioning.
+
+ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
+
+Possible values:
+
+- Positive integers.
+- 0. Memory control is disabled.
+
+Default value: 0.
+
+## join_overflow_mode {#settings-join_overflow_mode}
+
+Defines an action that ClickHouse performs, when the corresponding limit is reached.
+
+Controlled limits:
+
+- [max_bytes_in_join](#settings-max_bytes_in_join)
+- [max_rows_in_join](#settings-max_rows_in_join)
+
+Possible values:
+
+- `THROW` — ClickHouse throws an exception and breaks operation.
+- `BREAK` — ClickHouse breaks operation and doesn't throw an exception.
+
+Default value: `THROW`.
+
+**See Also**
+
+- [SELECT ... JOIN](../../query_language/select.md#select-join)
+- [Join engine](../table_engines/join.md)
+
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->
