@@ -397,10 +397,7 @@ namespace
                 new (&emplace_result.getMapped()) typename Map::mapped_type(stored_block, i);
             else
             {
-                /** The first element of the list is stored in the value of the hash table, the rest in the pool.
-                 * We will insert each time the element into the second place.
-                 * That is, the former second element, if it was, will be the third, and so on.
-                 */
+                /// The first element of the list is stored in the value of the hash table, the rest in the pool.
                 emplace_result.getMapped().insert({stored_block, i}, pool);
             }
         }
