@@ -591,7 +591,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = 0)
         {
                auto address = make_socket_address(host, port);
-#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100 // TODO: fill correct version
+#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
                if (secure)
                    /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
                    /// https://github.com/pocoproject/poco/pull/2257
