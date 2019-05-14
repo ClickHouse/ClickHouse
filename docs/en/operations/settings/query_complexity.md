@@ -64,7 +64,7 @@ Maximum number of bytes (uncompressed data) that can be read from a table when r
 
 What to do when the volume of data read exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
-## max_rows_to_group_by
+## max_rows_to_group_by {#settings-max_rows_to_group_by}
 
 Maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.
 
@@ -72,6 +72,17 @@ Maximum number of unique keys received from aggregation. This setting lets you l
 
 What to do when the number of unique keys for aggregation exceeds the limit: 'throw', 'break', or 'any'. By default, throw.
 Using the 'any' value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
+
+## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
+
+Sets the maximum volume or RAM (in bytes) that can be used by [GROUP BY](../../query_language/select.md#select-group-by-clause) operation. If memory consumption is bigger than the value of this setting, ClickHouse dumps operation data to the storage disk and continues query processing.
+
+Possible values:
+
+- Positive integer.
+- 0 — Control of the RAM consumption is disabled.
+
+Default value: 0.
 
 ## max_rows_to_sort
 
@@ -204,8 +215,8 @@ ClickHouse can proceed with different actions when the limit is reached. Use the
 
 Possible values:
 
-- Positive integers.
-- 0. Memory control is disabled.
+- Positive integer.
+- 0 — Memory control is disabled.
 
 Default value: 0.
 
@@ -219,8 +230,8 @@ ClickHouse can proceed with different actions when the limit is reached. Use the
 
 Possible values:
 
-- Positive integers.
-- 0. Memory control is disabled.
+- Positive integer.
+- 0 — Memory control is disabled.
 
 Default value: 0.
 
