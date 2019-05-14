@@ -9,7 +9,7 @@ namespace DB
 class LimitByTransform : public ISimpleTransform
 {
 public:
-    LimitByTransform(const Block & header, size_t group_size_, const Names & columns);
+    LimitByTransform(const Block & header, size_t group_length_, size_t group_offset_, const Names & columns);
 
     String getName() const override { return "LimitByTransform"; }
 
@@ -21,7 +21,8 @@ private:
 
     MapHashed keys_counts;
     std::vector<size_t> key_positions;
-    const size_t group_size;
+    const size_t group_length;
+    const size_t group_offset;
 };
 
 }
