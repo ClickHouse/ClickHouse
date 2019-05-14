@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <array>
 #include <signal.h>
 
 #ifdef __APPLE__
@@ -11,10 +12,26 @@
 #include <ucontext.h>
 
 
-std::string signalToErrorMessage(int sig, siginfo_t & info, ucontext_t & context);
+class Backtrace
+{
+public:
+    static constexpr size_t capacity = 50;
+    using Frames = std::array<void *, capacity>;
 
-void * getCallerAddress(ucontext_t & context);
+    Backtrace() = default;
+    Backtrace(const std::vector<void *>& sourceFrames);
+    Backtrace(const ucontext_t & signal_context);
 
-std::vector<void *> getBacktraceFrames(ucontext_t & context);
+    size_t getSize() const;
+    const Frames& getFrames() const;
+    std::string toString(const std::string & delimiter = "") const;
 
-std::string backtraceFramesToString(const std::vector<void *> & frames, const std::string & delimiter = "");
+protected:
+    size_t size;
+    Frames frames;
+};
+
+std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
+
+void * getCallerAddress(const ucontext_t & context);
+

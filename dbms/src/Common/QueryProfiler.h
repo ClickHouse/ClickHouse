@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/Backtrace.h>
 #include <common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
@@ -8,6 +9,7 @@
 
 #include <signal.h>
 #include <time.h>
+
 
 namespace Poco
 {
@@ -36,7 +38,10 @@ namespace
 
         const std::string & query_id = CurrentThread::getQueryId();
 
-        DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
+        const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
+        const Backtrace backtrace(signal_context);
+
+        DB::writePODBinary(backtrace, out);
         DB::writeStringBinary(query_id, out);
         DB::writeIntBinary(timer_type, out);
         out.next();

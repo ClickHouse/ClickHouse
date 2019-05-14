@@ -16,47 +16,9 @@
 #if USE_UNWIND
 #define UNW_LOCAL_ONLY
 #include <libunwind.h>
-
-/** We suppress the following ASan report. Also shown by Valgrind.
-==124==ERROR: AddressSanitizer: stack-use-after-scope on address 0x7f054be57000 at pc 0x0000068b0649 bp 0x7f060eeac590 sp 0x7f060eeabd40
-READ of size 1 at 0x7f054be57000 thread T3
-    #0 0x68b0648 in write (/usr/bin/clickhouse+0x68b0648)
-    #1 0x717da02 in write_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:110:13
-    #2 0x717da02 in mincore_validate /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:146
-    #3 0x717dec1 in validate_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:206:7
-    #4 0x717dec1 in access_mem /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Ginit.c:240
-    #5 0x71881a9 in dwarf_get /build/obj-x86_64-linux-gnu/../contrib/libunwind/include/tdep-x86_64/libunwind_i.h:168:12
-    #6 0x71881a9 in apply_reg_state /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:872
-    #7 0x718705c in _ULx86_64_dwarf_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/dwarf/Gparser.c:953:10
-    #8 0x718f155 in _ULx86_64_step /build/obj-x86_64-linux-gnu/../contrib/libunwind/src/x86_64/Gstep.c:71:9
-    #9 0x7162671 in backtraceLibUnwind(void**, unsigned long, ucontext_t&) /build/obj-x86_64-linux-gnu/../libs/libdaemon/src/BaseDaemon.cpp:202:14
-  */
-std::vector<void *> NO_SANITIZE_ADDRESS backtraceLibUnwind(size_t max_frames, ucontext_t & context)
-{
-    std::vector<void *> out_frames;
-    out_frames.reserve(max_frames);
-    unw_cursor_t cursor;
-
-    if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) >= 0)
-    {
-        for (size_t i = 0; i < max_frames; ++i)
-        {
-            unw_word_t ip;
-            unw_get_reg(&cursor, UNW_REG_IP, &ip);
-            out_frames.push_back(reinterpret_cast<void*>(ip));
-
-            /// NOTE This triggers "AddressSanitizer: stack-buffer-overflow". Looks like false positive.
-            /// It's Ok, because we use this method if the program is crashed nevertheless.
-            if (!unw_step(&cursor))
-                break;
-        }
-    }
-
-    return out_frames;
-}
 #endif
 
-std::string signalToErrorMessage(int sig, siginfo_t & info, ucontext_t & context)
+std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
 {
     std::stringstream error;
     switch (sig)
@@ -199,7 +161,7 @@ std::string signalToErrorMessage(int sig, siginfo_t & info, ucontext_t & context
     return error.str();
 }
 
-void * getCallerAddress(ucontext_t & context)
+void * getCallerAddress(const ucontext_t & context)
 {
 #if defined(__x86_64__)
     /// Get the address at the time the signal was raised from the RIP (x86-64)
@@ -217,37 +179,49 @@ void * getCallerAddress(ucontext_t & context)
     return nullptr;
 }
 
-std::vector<void *> getBacktraceFrames(ucontext_t & context)
+
+Backtrace::Backtrace(const ucontext_t & signal_context)
 {
-    std::vector<void *> frames;
+    size = 0;
 
 #if USE_UNWIND
-    static size_t max_frames = 50;
-    frames = backtraceLibUnwind(max_frames, context);
+    size = unw_backtrace(frames.data(), capacity);
 #else
     /// No libunwind means no backtrace, because we are in a different thread from the one where the signal happened.
     /// So at least print the function where the signal happened.
-    void * caller_address = getCallerAddress(context);
+    void * caller_address = getCallerAddress(signal_context);
     if (caller_address)
-        frames.push_back(caller_address);
+        frames[size++] = reinterpret_cast<void *>(caller_address);
 #endif
+}
 
+Backtrace::Backtrace(const std::vector<void *>& sourceFrames) {
+    for (size = 0; size < std::min(sourceFrames.size(), capacity); size++)
+        frames[size] = sourceFrames[size];
+}
+
+size_t Backtrace::getSize() const {
+    return size;
+}
+
+const Backtrace::Frames& Backtrace::getFrames() const {
     return frames;
 }
 
-std::string backtraceFramesToString(const std::vector<void *> & frames, const std::string & delimiter)
-{
+std::string Backtrace::toString(const std::string & delimiter) const {
+    if (size == 0)
+        return "<Empty trace>";
+
     std::stringstream backtrace;
-    char ** symbols = backtrace_symbols(frames.data(), frames.size());
+    char ** symbols = backtrace_symbols(frames.data(), size);
 
     if (!symbols)
     {
-        if (frames.size() > 0)
-            backtrace << "No symbols could be found for backtrace starting at " << frames[0];
+        backtrace << "No symbols could be found for backtrace starting at " << frames[0];
     }
     else
     {
-        for (size_t i = 0; i < frames.size(); ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             /// Perform demangling of names. Name is in parentheses, before '+' character.
 
