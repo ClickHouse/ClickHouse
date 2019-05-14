@@ -1,9 +1,11 @@
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.table_for_dict;
 DROP TABLE IF EXISTS test.table;
+DROP TABLE IF EXISTS test.table_ip_trie;
 DROP DICTIONARY IF EXISTS test.dict1;
 DROP DICTIONARY IF EXISTS test.dict_with_ranges;
 DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
+DROP DICTIONARY IF EXISTS test.dict_ip_trie;
 
 -- It used for loading in dictionaries via ClickHouse source
 CREATE TABLE test.table_for_dict
@@ -148,16 +150,44 @@ SOURCE(CLICKHOUSE(HOST 'localhost', PORT 9000, USER 'default', DB 'test', TABLE 
 LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1000))
 LIFETIME(MIN 10, MAX 100);
 
+
+-- Check with ip-trie layout
+-- Example from dictionary documentation
+CREATE TABLE test.table_ip_trie
+(
+   prefix String,
+   asn UInt32,
+   cca2 String
+)
+engine = TinyLog;
+
+INSERT INTO test.table_ip_trie VALUES ('202.79.32.0/20', 17501, 'NP'), ('2620:0:870::/48', 3856, 'US'), ('2a02:6b8:1::/48', 13238, 'RU'), ('2001:db8::/32', 65536, 'ZZ');
+
+CREATE DICTIONARY test.dict_ip_trie
+ (
+    asn UInt32 DEFAULT 1,
+    cca2 String DEFAULT 1
+ )
+COMPOSITE KEY prefix String
+SOURCE(CLICKHOUSE(host 'localhost', port 9000, user 'default', db 'test', table 'table_ip_trie', password ''))
+LAYOUT(IP_TRIE())
+LIFETIME(MIN 10, MAX 100);
+
+SELECT dictGetUInt32('test.dict_ip_trie', 'asn', tuple(IPv4StringToNum('202.79.32.0')));
+SELECT dictGetString('test.dict_ip_trie', 'cca2', tuple(IPv4StringToNum('202.79.32.0')));
+
 -- TODO(s-mx): next query get queryCancelation error. bad
 -- SELECT dictGetUInt8('test.dict_with_complex_key', 'third_column', tuple(toUInt8(2), toUInt8(2)));
 
 -- TODO(s-mx): add here following checks:
--- 1) ip-trie
--- 2) dict functions
+-- 1) dict functions
+-- 2) more tests
 -- 3) ...
 
 DROP TABLE test.table_for_dict;
 DROP TABLE test.table;
+DROP TABLE test.table_ip_trie;
 DROP DICTIONARY test.dict1;
 DROP DICTIONARY IF EXISTS test.dict_with_ranges;
 DROP DICTIONARY IF EXISTS test.dict_with_complex_key;
+DROP DICTIONARY IF EXISTS test.dict_ip_trie;
