@@ -215,6 +215,10 @@ public:
     void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     Dependencies getDependencies(const String & database_name, const String & table_name) const;
 
+    /// Functions where we can lock the context manually
+    void addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;

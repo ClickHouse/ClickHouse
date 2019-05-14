@@ -313,3 +313,7 @@ endif()
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)
     add_subdirectory (hyperscan)
 endif()
+
+if (USE_SIMDJSON)
+    add_subdirectory (simdjson-cmake)
+endif()
