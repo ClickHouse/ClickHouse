@@ -3,11 +3,6 @@
 namespace DB
 {
 
-namespace
-{
-    const auto READ_POLL_MS = 500; /// How long to wait for a batch of messages.
-}
-
 void ReadBufferFromKafkaConsumer::commit()
 {
     if (messages.empty() || current == messages.begin())
@@ -46,7 +41,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     if (current == messages.end())
     {
         commit();
-        messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(READ_POLL_MS));
+        messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));
         current = messages.begin();
 
         LOG_TRACE(log, "Polled batch of " << messages.size() << " messages");
