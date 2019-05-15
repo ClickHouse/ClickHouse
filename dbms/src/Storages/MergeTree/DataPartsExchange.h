@@ -70,7 +70,7 @@ private:
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            const DiskSpaceMonitor::ReservationPtr & reservation,
+            const DiskSpaceMonitor::ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;

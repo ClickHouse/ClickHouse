@@ -230,7 +230,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         protocol_error = false;
 
         auto reservation = data.reserveSpaceForPart(sum_files_size);
-        return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, reservation, in);
+        return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
     }
     catch (...) ///@TODO_IGR catch exception
     {
@@ -264,7 +264,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
     /// We don't know real size of part
     auto reservation = data.reserveOnMaxDiskWithoutReservation();
-    return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, reservation, in);
+    return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
 }
 
 MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
@@ -272,7 +272,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     const String & replica_path,
     bool to_detached,
     const String & tmp_prefix_,
-    const DiskSpaceMonitor::ReservationPtr & reservation,
+    const DiskSpaceMonitor::ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
 
@@ -296,8 +296,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
 
     part_file.createDirectory();
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data,
-                                                                                                reservation->getDisk(), part_name);
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk(), part_name);
     new_data_part->relative_path = relative_part_path;
     new_data_part->is_temp = true;
 
