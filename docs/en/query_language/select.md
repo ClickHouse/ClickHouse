@@ -1084,11 +1084,11 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 
 In addition to results, you can also get minimum and maximum values for the results columns. To do this, set the **extremes** setting to 1. Minimums and maximums are calculated for numeric types, dates, and dates with times. For other columns, the default values are output.
 
-An extra two rows are calculated – the minimums and maximums, respectively. These extra two rows are output in JSON\*, TabSeparated\*, and Pretty\* formats, separate from the other rows. They are not output for other formats.
+An extra two rows are calculated – the minimums and maximums, respectively. These extra two rows are output in `JSON*`, `TabSeparated*`, and `Pretty*` formats, separate from the other rows. They are not output for other formats.
 
-In JSON\* formats, the extreme values are output in a separate 'extremes' field. In TabSeparated\* formats, the row comes after the main result, and after 'totals' if present. It is preceded by an empty row (after the other data). In Pretty\* formats, the row is output as a separate table after the main result, and after 'totals' if present.
+In `JSON*` formats, the extreme values are output in a separate 'extremes' field. In `TabSeparated*` formats, the row comes after the main result, and after 'totals' if present. It is preceded by an empty row (after the other data). In `Pretty*` formats, the row is output as a separate table after the main result, and after 'totals' if present.
 
-Extreme values are calculated for rows that have passed through LIMIT. However, when using 'LIMIT offset, size', the rows before 'offset' are included in 'extremes'. In stream requests, the result may also include a small number of rows that passed through LIMIT.
+Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. However, when using `LIMIT offset, size`, the rows before `offset` are included in `extremes`. In stream requests, the result may also include a small number of rows that passed through `LIMIT`.
 
 ### Notes
 
