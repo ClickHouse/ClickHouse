@@ -25,24 +25,25 @@ Set the parameters `join_strictness` and `join_type` without quotes. They must m
 
 ## Table Usage
 
-The table can't be used in `GLOBAL` `JOIN` operations.
+The table can't be used in `GLOBAL JOIN` operations.
 
 When creating a table, the following settings are applied:
 
 - [join_use_nulls](../settings/settings.md#settings-join_use_nulls)
-- [max_rows_in_join](../settings/settings.md)
-- [max_bytes_in_join](../settings/settings.md)
-- [join_overflow_mode](../settings/settings.md)
+- [max_rows_in_join](../settings/query_complexity.md#settings-max_rows_in_join)
+- [max_bytes_in_join](../settings/query_complexity.md#settings-max_bytes_in_join)
+- [join_overflow_mode](../settings/query_complexity.md#settings-join_overflow_mode)
+- [join_any_take_last_row](../settings/settings.md#settings-join_any_take_last_row)
 
 ## Selecting and Inserting data
 
 You can use `INSERT` to add data to the table. For the `ANY` strictness, data for duplicated keys are ignored. For the `ALL` strictness, data are counted.
 
-You cannot perform the `SELECT` query directly from the table. Use the table from the right side in `JOIN` clause.
+You cannot perform the `SELECT` query directly from the table. Use the table at the right side in a `JOIN` clause.
 
 ## Data Storage
 
-Data for the `Join`-type tables is always located in RAM. When inserting rows into the table, ClickHouse writes the data blocks to the directory of tables on the disk. When starting the server, this data is loaded to RAM.
+Data for the `Join` tables is always located in RAM. When inserting rows into the table, ClickHouse writes the data blocks to the directory of tables on the disk. When starting the server, this data is loaded to RAM.
 
 At the abnormal server restart, the block of data on the disk might be lost or damaged. In this case, you may need to manually delete the file with damaged data.
 
