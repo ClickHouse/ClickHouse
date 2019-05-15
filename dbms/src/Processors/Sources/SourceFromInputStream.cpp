@@ -63,7 +63,20 @@ IProcessor::Status SourceFromInputStream::prepare()
 void SourceFromInputStream::work()
 {
     if (!is_generating_finished)
-        return ISource::work();
+    {
+        try
+        {
+            ISource::work();
+        }
+        catch (...)
+        {
+            /// Won't read suffix in case of exception.
+            is_stream_finished = true;
+            throw;
+        }
+
+        return;
+    }
 
     if (is_stream_finished)
         return;
