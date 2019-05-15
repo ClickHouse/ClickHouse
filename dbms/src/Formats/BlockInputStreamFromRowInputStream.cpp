@@ -63,7 +63,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
             if (rows_portion_size && batch == rows_portion_size)
             {
                 batch = 0;
-                if (!checkTimeLimit())
+                if (!checkTimeLimit() || isCancelled())
                     break;
             }
 
