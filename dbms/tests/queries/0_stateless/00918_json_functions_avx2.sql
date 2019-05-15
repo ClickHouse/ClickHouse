@@ -56,3 +56,9 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c', 'd', 3);
 SELECT JSONExtractRaw('{"passed": true}');
 SELECT JSONExtractRaw('{}');
+
+SELECT '--JSONExtractKeysAndValues--';
+SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'String');
+SELECT JSONExtractKeysAndValues('{"a": "hello", "b": [-100, 200.0, 300]}', 'Array(Float64)');
+SELECT JSONExtractKeysAndValues('{"a": "hello", "b": "world"}', 'String');
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8');
