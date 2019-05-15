@@ -50,3 +50,8 @@ Friday
 
 {"passed":true}
 {}
+--JSONExtractKeysAndValues--
+[('a','hello')]
+[('b',[-100,200,300])]
+[('a','hello'),('b','world')]
+[('a',5),('b',7),('c',11)]

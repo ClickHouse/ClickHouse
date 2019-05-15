@@ -275,8 +275,9 @@ struct NameJSONExtractUInt { static constexpr auto name{"JSONExtractUInt"}; };
 struct NameJSONExtractFloat { static constexpr auto name{"JSONExtractFloat"}; };
 struct NameJSONExtractBool { static constexpr auto name{"JSONExtractBool"}; };
 struct NameJSONExtractString { static constexpr auto name{"JSONExtractString"}; };
-struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 struct NameJSONExtract { static constexpr auto name{"JSONExtract"}; };
+struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKeysAndValues"}; };
+struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
 
 
 template <typename JSONParser>
@@ -531,148 +532,12 @@ public:
 };
 
 
+/// Nodes of the extract tree. We need the extract tree to extract from JSON complex values containing array, tuples or nullables.
 template <typename JSONParser>
-class JSONExtractRawImpl
+struct JSONExtractTree
 {
-public:
-    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     using Iterator = typename JSONParser::Iterator;
-    static bool addValueToColumn(IColumn & dest, const Iterator & it)
-    {
-        ColumnString & col_str = static_cast<ColumnString &>(dest);
-        auto & chars = col_str.getChars();
-        WriteBufferFromVector<ColumnString::Chars> buf(chars, WriteBufferFromVector<ColumnString::Chars>::AppendModeTag());
-        traverse(it, buf);
-        buf.finish();
-        chars.push_back(0);
-        col_str.getOffsets().push_back(chars.size());
-        return true;
-    }
 
-    static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
-
-private:
-    static void traverse(const Iterator & it, WriteBuffer & buf)
-    {
-        if (JSONParser::isInteger(it))
-        {
-            writeIntText(JSONParser::getInteger(it), buf);
-            return;
-        }
-        if (JSONParser::isFloat(it))
-        {
-            writeFloatText(JSONParser::getFloat(it), buf);
-            return;
-        }
-        if (JSONParser::isBool(it))
-        {
-            if (JSONParser::getBool(it))
-                writeCString("true", buf);
-            else
-                writeCString("false", buf);
-            return;
-        }
-        if (JSONParser::isString(it))
-        {
-            writeJSONString(JSONParser::getString(it), buf, format_settings());
-            return;
-        }
-        if (JSONParser::isArray(it))
-        {
-            writeChar('[', buf);
-            Iterator it2 = it;
-            if (JSONParser::downToArray(it2))
-            {
-                traverse(it2, buf);
-                while (JSONParser::next(it2))
-                {
-                    writeChar(',', buf);
-                    traverse(it2, buf);
-                }
-            }
-            writeChar(']', buf);
-            return;
-        }
-        if (JSONParser::isObject(it))
-        {
-            writeChar('{', buf);
-            Iterator it2 = it;
-            StringRef key;
-            if (JSONParser::downToObject(it2, key))
-            {
-                writeJSONString(key, buf, format_settings());
-                writeChar(':', buf);
-                traverse(it2, buf);
-                while (JSONParser::nextKeyValue(it2, key))
-                {
-                    writeChar(',', buf);
-                    writeJSONString(key, buf, format_settings());
-                    writeChar(':', buf);
-                    traverse(it2, buf);
-                }
-            }
-            writeChar('}', buf);
-            return;
-        }
-        if (JSONParser::isNull(it))
-        {
-            writeCString("null", buf);
-            return;
-        }
-    }
-
-    static const FormatSettings & format_settings()
-    {
-        static const FormatSettings the_instance = []
-        {
-            FormatSettings settings;
-            settings.json.escape_forward_slashes = false;
-            return settings;
-        }();
-        return the_instance;
-    }
-};
-
-
-template <typename JSONParser>
-class JSONExtractImpl
-{
-public:
-    static constexpr size_t num_extra_arguments = 1;
-
-    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
-    {
-        if (arguments.size() < 2)
-            throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        const auto & col = arguments.back();
-        auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
-        if (!col_type_const || !isString(col.type))
-            throw Exception{"The last argument of function " + String(function_name)
-                                + " should be a constant string specifying the data type, illegal value: " + col.column->getName(),
-                            ErrorCodes::ILLEGAL_COLUMN};
-
-        return DataTypeFactory::instance().get(col_type_const->getValue<String>());
-    }
-
-    void prepare(const char * function_name, const Block & block, const ColumnNumbers &, size_t result_pos)
-    {
-        extract_tree = buildExtractTree(function_name, block.getByPosition(result_pos).type);
-    }
-
-    using Iterator = typename JSONParser::Iterator;
-    bool addValueToColumn(IColumn & dest, const Iterator & it)
-    {
-        return extract_tree->addValueToColumn(dest, it);
-    }
-
-private:
-    /// Node of the extract tree. We need a tree to extract complex values containing array, tuples or nullables.
     class Node
     {
     public:
@@ -923,7 +788,7 @@ private:
         std::unordered_map<StringRef, size_t> name_to_index_map;
     };
 
-    std::unique_ptr<Node> buildExtractTree(const char * function_name, const DataTypePtr & type)
+    static std::unique_ptr<Node> build(const char * function_name, const DataTypePtr & type)
     {
         switch (type->getTypeId())
         {
@@ -945,13 +810,11 @@ private:
                 return std::make_unique<EnumNode<Int16>>(static_cast<const DataTypeEnum16 &>(*type).getValues());
             case TypeIndex::Nullable:
             {
-                return std::make_unique<NullableNode>(
-                    buildExtractTree(function_name, static_cast<const DataTypeNullable &>(*type).getNestedType()));
+                return std::make_unique<NullableNode>(build(function_name, static_cast<const DataTypeNullable &>(*type).getNestedType()));
             }
             case TypeIndex::Array:
             {
-                return std::make_unique<ArrayNode>(
-                    buildExtractTree(function_name, static_cast<const DataTypeArray &>(*type).getNestedType()));
+                return std::make_unique<ArrayNode>(build(function_name, static_cast<const DataTypeArray &>(*type).getNestedType()));
             }
             case TypeIndex::Tuple:
             {
@@ -959,15 +822,225 @@ private:
                 const auto & tuple_elements = tuple.getElements();
                 std::vector<std::unique_ptr<Node>> elements;
                 for (const auto & tuple_element : tuple_elements)
-                    elements.emplace_back(buildExtractTree(function_name, tuple_element));
+                    elements.emplace_back(build(function_name, tuple_element));
                 return std::make_unique<TupleNode>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
             }
             default:
                 throw Exception{"Function " + String(function_name) + " doesn't support the return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
     }
+};
 
-    std::unique_ptr<Node> extract_tree;
+template <typename JSONParser>
+class JSONExtractImpl
+{
+public:
+    static constexpr size_t num_extra_arguments = 1;
+
+    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.size() < 2)
+            throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+        const auto & col = arguments.back();
+        auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
+        if (!col_type_const || !isString(col.type))
+            throw Exception{"The last argument of function " + String(function_name)
+                                + " should be a constant string specifying the return data type, illegal value: " + col.column->getName(),
+                            ErrorCodes::ILLEGAL_COLUMN};
+
+        return DataTypeFactory::instance().get(col_type_const->getValue<String>());
+    }
+
+    void prepare(const char * function_name, const Block & block, const ColumnNumbers &, size_t result_pos)
+    {
+        extract_tree = JSONExtractTree<JSONParser>::build(function_name, block.getByPosition(result_pos).type);
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    bool addValueToColumn(IColumn & dest, const Iterator & it)
+    {
+        return extract_tree->addValueToColumn(dest, it);
+    }
+
+protected:
+    std::unique_ptr<typename JSONExtractTree<JSONParser>::Node> extract_tree;
+};
+
+
+template <typename JSONParser>
+class JSONExtractKeysAndValuesImpl
+{
+public:
+    static constexpr size_t num_extra_arguments = 1;
+
+    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
+    {
+        if (arguments.size() < 2)
+            throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+        const auto & col = arguments.back();
+        auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
+        if (!col_type_const || !isString(col.type))
+            throw Exception{"The last argument of function " + String(function_name)
+                                + " should be a constant string specifying the values' data type, illegal value: " + col.column->getName(),
+                            ErrorCodes::ILLEGAL_COLUMN};
+
+        DataTypePtr value_type = DataTypeFactory::instance().get(col_type_const->getValue<String>());
+        DataTypePtr key_type = std::make_unique<DataTypeString>();
+        DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{key_type, value_type});
+        return std::make_unique<DataTypeArray>(tuple_type);
+    }
+
+    void prepare(const char * function_name, const Block & block, const ColumnNumbers &, size_t result_pos)
+    {
+        const auto & result_type = block.getByPosition(result_pos).type;
+        const auto tuple_type = typeid_cast<const DataTypeArray *>(result_type.get())->getNestedType();
+        const auto value_type = typeid_cast<const DataTypeTuple *>(tuple_type.get())->getElements()[1];
+        extract_tree = JSONExtractTree<JSONParser>::build(function_name, value_type);
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    bool addValueToColumn(IColumn & dest, const Iterator & it)
+    {
+        if (!JSONParser::isObject(it))
+            return false;
+
+        auto & col_arr = static_cast<ColumnArray &>(dest);
+        auto & col_tuple = static_cast<ColumnTuple &>(col_arr.getData());
+        size_t old_size = col_tuple.size();
+        auto & col_key = static_cast<ColumnString &>(col_tuple.getColumn(0));
+        auto & col_value = col_tuple.getColumn(1);
+
+        StringRef key;
+        Iterator it2 = it;
+        if (!JSONParser::downToObject(it2, key))
+            return false;
+
+        do
+        {
+            if (extract_tree->addValueToColumn(col_value, it2))
+                col_key.insertData(key.data, key.size);
+        }
+        while (JSONParser::nextKeyValue(it2, key));
+
+        if (col_tuple.size() == old_size)
+            return false;
+
+        col_arr.getOffsets().push_back(col_tuple.size());
+        return true;
+    }
+
+private:
+    std::unique_ptr<typename JSONExtractTree<JSONParser>::Node> extract_tree;
+};
+
+
+template <typename JSONParser>
+class JSONExtractRawImpl
+{
+public:
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
+    using Iterator = typename JSONParser::Iterator;
+    static bool addValueToColumn(IColumn & dest, const Iterator & it)
+    {
+        ColumnString & col_str = static_cast<ColumnString &>(dest);
+        auto & chars = col_str.getChars();
+        WriteBufferFromVector<ColumnString::Chars> buf(chars, WriteBufferFromVector<ColumnString::Chars>::AppendModeTag());
+        traverse(it, buf);
+        buf.finish();
+        chars.push_back(0);
+        col_str.getOffsets().push_back(chars.size());
+        return true;
+    }
+
+    static constexpr size_t num_extra_arguments = 0;
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
+
+private:
+    static void traverse(const Iterator & it, WriteBuffer & buf)
+    {
+        if (JSONParser::isInteger(it))
+        {
+            writeIntText(JSONParser::getInteger(it), buf);
+            return;
+        }
+        if (JSONParser::isFloat(it))
+        {
+            writeFloatText(JSONParser::getFloat(it), buf);
+            return;
+        }
+        if (JSONParser::isBool(it))
+        {
+            if (JSONParser::getBool(it))
+                writeCString("true", buf);
+            else
+                writeCString("false", buf);
+            return;
+        }
+        if (JSONParser::isString(it))
+        {
+            writeJSONString(JSONParser::getString(it), buf, format_settings());
+            return;
+        }
+        if (JSONParser::isArray(it))
+        {
+            writeChar('[', buf);
+            Iterator it2 = it;
+            if (JSONParser::downToArray(it2))
+            {
+                traverse(it2, buf);
+                while (JSONParser::next(it2))
+                {
+                    writeChar(',', buf);
+                    traverse(it2, buf);
+                }
+            }
+            writeChar(']', buf);
+            return;
+        }
+        if (JSONParser::isObject(it))
+        {
+            writeChar('{', buf);
+            Iterator it2 = it;
+            StringRef key;
+            if (JSONParser::downToObject(it2, key))
+            {
+                writeJSONString(key, buf, format_settings());
+                writeChar(':', buf);
+                traverse(it2, buf);
+                while (JSONParser::nextKeyValue(it2, key))
+                {
+                    writeChar(',', buf);
+                    writeJSONString(key, buf, format_settings());
+                    writeChar(':', buf);
+                    traverse(it2, buf);
+                }
+            }
+            writeChar('}', buf);
+            return;
+        }
+        if (JSONParser::isNull(it))
+        {
+            writeCString("null", buf);
+            return;
+        }
+    }
+
+    static const FormatSettings & format_settings()
+    {
+        static const FormatSettings the_instance = []
+        {
+            FormatSettings settings;
+            settings.json.escape_forward_slashes = false;
+            return settings;
+        }();
+        return the_instance;
+    }
 };
 
 
@@ -983,8 +1056,9 @@ void registerFunctionsJSONTemplate(FunctionFactory & factory)
     factory.registerFunction<FunctionJSON<NameJSONExtractFloat, JSONExtractFloat64Impl, JSONParser>>();
     factory.registerFunction<FunctionJSON<NameJSONExtractBool, JSONExtractBoolImpl, JSONParser>>();
     factory.registerFunction<FunctionJSON<NameJSONExtractString, JSONExtractStringImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtractRaw, JSONExtractRawImpl, JSONParser>>();
     factory.registerFunction<FunctionJSON<NameJSONExtract, JSONExtractImpl, JSONParser>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl, JSONParser>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractRaw, JSONExtractRawImpl, JSONParser>>();
 }
 
 }
