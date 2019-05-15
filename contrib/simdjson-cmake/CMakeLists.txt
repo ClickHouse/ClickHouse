@@ -14,5 +14,5 @@ set(SIMDJSON_SRC
 )
 
 add_library(${SIMDJSON_LIBRARY} ${SIMDJSON_SRC})
-target_include_directories(${SIMDJSON_LIBRARY} PRIVATE "${SIMDJSON_INCLUDE_DIR}")
+target_include_directories(${SIMDJSON_LIBRARY} PUBLIC "${SIMDJSON_INCLUDE_DIR}")
 target_compile_options(${SIMDJSON_LIBRARY} PRIVATE -mavx2 -mbmi -mbmi2 -mpclmul)
