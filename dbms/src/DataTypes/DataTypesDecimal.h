@@ -177,6 +177,7 @@ public:
 
     void readText(T & x, ReadBuffer & istr) const { readText(x, istr, precision, scale); }
     static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
+    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
     static T getScaleMultiplier(UInt32 scale);
 
 private:
