@@ -1,6 +1,7 @@
 #include <Functions/FunctionsJSON.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
+#include <Core/CpuId.h>
 
 
 namespace DB
@@ -9,7 +10,7 @@ namespace DB
 void registerFunctionsJSON(FunctionFactory & factory)
 {
 #if USE_SIMDJSON
-    if (__builtin_cpu_supports("avx2"))
+    if (Cpu::CpuFlagsCache::have_AVX2)
     {
         registerFunctionsJSONTemplate<SimdJSONParser>(factory);
         return;
