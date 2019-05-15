@@ -38,6 +38,8 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         {
             if (path.empty())
                 throw Exception("Disk path can not be empty. Disk " + disk_name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            if (path.back() != '/')
+                throw Exception("Disk path must end with /. Disk " + disk_name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
             disks.emplace(disk_name, std::make_shared<const Disk>(disk_name, path, keep_free_space_bytes));
         }
     }
@@ -119,6 +121,10 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
     else
     {
         max_data_part_size = std::numeric_limits<UInt64>::max();
+    }
+    constexpr UInt64 SIZE_8MB = 1ull << 23;
+    if (max_data_part_size < SIZE_8MB) {
+        LOG_WARNING(logger, "Volume max_data_part_size is too low (" << max_data_part_size << " < " << SIZE_8MB << ")");
     }
 }
 
