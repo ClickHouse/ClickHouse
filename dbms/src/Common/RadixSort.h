@@ -42,7 +42,6 @@ struct RadixSortMallocAllocator
     }
 };
 
-
 /** A transformation that transforms the bit representation of a key into an unsigned integer number,
   *  that the order relation over the keys will match the order relation over the obtained unsigned numbers.
   * For floats this conversion does the following:
@@ -89,13 +88,6 @@ struct RadixSortFloatTraits
 
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
-
-    /// Used when fallback to comparison based sorting is needed.
-    /// TODO: Correct handling of NaNs, NULLs, etc
-    static bool less(Key x, Key y)
-    {
-        return x < y;
-    }
 };
 
 
@@ -124,11 +116,6 @@ struct RadixSortUIntTraits
     using Allocator = RadixSortMallocAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
-
-    static bool less(Key x, Key y)
-    {
-        return x < y;
-    }
 };
 
 
@@ -156,11 +143,6 @@ struct RadixSortIntTraits
     using Allocator = RadixSortMallocAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
-
-    static bool less(Key x, Key y)
-    {
-        return x < y;
-    }
 };
 
 
@@ -172,8 +154,13 @@ using RadixSortNumTraits =
             RadixSortIntTraits<T>>,
         RadixSortFloatTraits<T>>;
 
+template <typename T>
+struct DefaultLess
+{
+    bool less(const T &a, const T &b) { return a < b; }
+};
 
-template <typename Traits>
+template <typename Traits, typename Less=DefaultLess<typename Traits::Key>>
 struct RadixSort
 {
 private:
@@ -201,17 +188,17 @@ private:
     static KeyBits keyToBits(Key x) { return ext::bit_cast<KeyBits>(x); }
     static Key bitsToKey(KeyBits x) { return ext::bit_cast<Key>(x); }
 
-    static void insertionSortInternal(Element *arr, size_t size)
+    static void insertionSortInternal(Element *arr, size_t size, Less less)
     {
         Element * end = arr + size;
         for (Element * i = arr + 1; i < end; ++i)
         {
-            if (Traits::less(Traits::extractKey(*i), Traits::extractKey(*(i - 1))))
+            if (less(Traits::extractKey(*i), Traits::extractKey(*(i - 1))))
             {
                 Element * j;
                 Element tmp = *i;
                 *i = *(i - 1);
-                for (j = i - 1; j > arr && Traits::less(Traits::extractKey(tmp), Traits::extractKey(*(j - 1))); --j)
+                for (j = i - 1; j > arr && less(Traits::extractKey(tmp), Traits::extractKey(*(j - 1))); --j)
                     *j = *(j - 1);
                 *j = tmp;
             }
@@ -222,7 +209,7 @@ private:
      * Puts elements to buckets based on PASS-th digit, then recursively calls insertion sort or itself on the buckets
      */
     template <size_t PASS>
-    static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit)
+    static inline void radixSortMSDInternal(Element * arr, size_t size, size_t limit, Less less __attribute__((unused)))
     {
         Element * last_list[HISTOGRAM_SIZE + 1];
         Element ** last = last_list + 1;
@@ -284,25 +271,25 @@ private:
             {
                 Element * start = last[i - 1];
                 size_t subsize = last[i] - last[i - 1];
-                radixSortMSDInternalHelper<PASS - 1>(start, subsize, subsize);
+                radixSortMSDInternalHelper<PASS - 1>(start, subsize, subsize, less);
             }
 
             // Sort last necessary bucket with limit
             Element * start = last[buckets_for_recursion - 2];
             size_t subsize = last[buckets_for_recursion - 1] - last[buckets_for_recursion - 2];
             size_t sublimit = limit - (last[buckets_for_recursion - 1] - arr);
-            radixSortMSDInternalHelper<PASS - 1>(start, subsize, sublimit);
+            radixSortMSDInternalHelper<PASS - 1>(start, subsize, sublimit, less);
         }
     }
 
     // A helper to choose sorting algorithm based on array length
     template <size_t PASS>
-    static inline void radixSortMSDInternalHelper(Element * arr, size_t size, size_t limit)
+    static inline void radixSortMSDInternalHelper(Element * arr, size_t size, size_t limit, Less less)
     {
         if (size <= INSERTION_SORT_THRESHOLD)
-            insertionSortInternal(arr, size);
+            insertionSortInternal(arr, size, less);
         else
-            radixSortMSDInternal<PASS>(arr, size, limit);
+            radixSortMSDInternal<PASS>(arr, size, limit, less);
     }
 
 public:
@@ -402,10 +389,10 @@ public:
      * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
      * SOFTWARE.
      */
-    static void executeMSD(Element * arr, size_t size, size_t limit)
+    static void executeMSD(Element * arr, size_t size, size_t limit, Less less=Less())
     {
         limit = std::min(limit, size);
-        radixSortMSDInternalHelper<NUM_PASSES - 1>(arr, size, limit);
+        radixSortMSDInternalHelper<NUM_PASSES - 1>(arr, size, limit, less);
     }
 };
 

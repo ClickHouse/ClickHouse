@@ -104,9 +104,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             res[i] = i;
 
         if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), greater(*this, nan_direction_hint));
+            RadixSort<RadixSortNumTraits<size_t>, greater>::executeMSD(res.data(), res.size(), limit, greater(*this, nan_direction_hint));
         else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), less(*this, nan_direction_hint));
+            RadixSort<RadixSortNumTraits<size_t>, less>::executeMSD(res.data(), res.size(), limit, less(*this, nan_direction_hint));
     }
     else
     {

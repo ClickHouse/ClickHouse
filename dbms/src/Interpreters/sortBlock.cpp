@@ -1,6 +1,7 @@
 #include <Interpreters/sortBlock.h>
 
 #include <Columns/ColumnString.h>
+#include <Common/RadixSort.h>
 #include <Common/typeid_cast.h>
 
 #include <pdqsort.h>
@@ -149,7 +150,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             PartialSortingLessWithCollation less_with_collation(columns_with_sort_desc);
 
             if (limit)
-                std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less_with_collation);
+                RadixSort<RadixSortNumTraits<size_t>, PartialSortingLessWithCollation>::executeMSD(perm.data(), perm.size(), limit, less_with_collation);
             else
                 pdqsort(perm.begin(), perm.end(), less_with_collation);
         }
@@ -158,7 +159,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             PartialSortingLess less(columns_with_sort_desc);
 
             if (limit)
-                std::partial_sort(perm.begin(), perm.begin() + limit, perm.end(), less);
+                RadixSort<RadixSortNumTraits<size_t>, PartialSortingLess>::executeMSD(perm.data(), perm.size(), limit, less);
             else
                 pdqsort(perm.begin(), perm.end(), less);
         }
