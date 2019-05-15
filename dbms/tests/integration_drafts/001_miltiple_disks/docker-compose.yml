@@ -4,7 +4,7 @@ services:
   zookeeper:
     image: zookeeper
     networks:
-      - 001_miltiple_disks      
+      - 001_miltiple_disks
 
   ch1:
     image: yandex/clickhouse-server
@@ -12,16 +12,16 @@ services:
     depends_on:
       - "zookeeper"
     networks:
-      - 001_miltiple_disks 
+      - 001_miltiple_disks
     tmpfs:
       - /jbod1:size=40M
       - /jbod2:size=40M
       - /external:size=200M
     volumes:
-      - ./config/conf.d:/etc/clickhouse-server/conf.d    
-      - ./config/ch1.metrika.xml:/etc/metrika.xml    
+      - ./config/conf.d:/etc/clickhouse-server/conf.d
+      - ./config/ch1.metrika.xml:/etc/metrika.xml
       # TODO: hacky, but "cheap" - don't need to rebuild docker image.
-      # for CI & tests automation should be done another way, not relying on build path 
+      # for CI & tests automation should be done another way, not relying on build path
       - ../../../../build/dbms/programs/clickhouse:/usr/bin/clickhouse
       - ./test_setup:/test_setup
     entrypoint: ['/test_setup/entrypoint.sh']
@@ -33,20 +33,20 @@ services:
     depends_on:
       - "zookeeper"
     networks:
-      - 001_miltiple_disks 
+      - 001_miltiple_disks
     tmpfs:
       - /jbod1:size=40M
       - /jbod2:size=40M
       - /external:size=200M
     volumes:
-      - ./config/conf.d:/etc/clickhouse-server/conf.d    
-      - ./config/ch2.metrika.xml:/etc/metrika.xml    
+      - ./config/conf.d:/etc/clickhouse-server/conf.d
+      - ./config/ch2.metrika.xml:/etc/metrika.xml
       # TODO: hacky, but "cheap" - don't need to rebuild docker image.
-      # for CI & tests automation should be done another way, not relying on build path 
+      # for CI & tests automation should be done another way, not relying on build path
       - ../../../../build/dbms/programs/clickhouse:/usr/bin/clickhouse
       - ./test_setup:/test_setup
     entrypoint: ['/test_setup/entrypoint.sh']
-    
+
 
 networks:
-  001_miltiple_disks:      
+  001_miltiple_disks:
