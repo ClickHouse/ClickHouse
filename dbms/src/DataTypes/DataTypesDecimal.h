@@ -321,8 +321,8 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
     {
-        if (std::isinf(value) || std::isnan(value))
-            throw Exception("Decimal convert overflow. Cannot convert infinity or NaN into decimal", ErrorCodes::DECIMAL_OVERFLOW);
+        if (!std::isfinite(value))
+            throw Exception("Decimal convert overflow. Cannot convert infinity or NaN to decimal", ErrorCodes::DECIMAL_OVERFLOW);
         return value * ToDataType::getScaleMultiplier(scale);
     }
     else
