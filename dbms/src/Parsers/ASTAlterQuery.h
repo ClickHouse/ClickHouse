@@ -27,6 +27,7 @@ public:
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
+        MODIFY_TTL,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -84,6 +85,9 @@ public:
     /// A column comment
     ASTPtr comment;
 
+    /// For MODIFY TTL query
+    ASTPtr ttl;
+
     bool detach = false;        /// true for DETACH PARTITION
 
     bool part = false;          /// true for ATTACH PART
@@ -123,7 +127,7 @@ public:
 
     void add(const ASTPtr & command)
     {
-        commands.push_back(static_cast<ASTAlterCommand *>(command.get()));
+        commands.push_back(command->as<ASTAlterCommand>());
         children.push_back(command);
     }
 

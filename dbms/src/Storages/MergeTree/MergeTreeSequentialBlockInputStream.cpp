@@ -23,9 +23,16 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     , mark_cache(storage.global_context.getMarkCache())
 {
     if (!quiet)
-        LOG_TRACE(log, "Reading " << data_part->marks_count << " marks from part " << data_part->name
-            << ", totaly " << data_part->rows_count
-            << " rows starting from the beginning of the part");
+    {
+        std::stringstream message;
+        message << "Reading " << data_part->getMarksCount() << " marks from part " << data_part->name
+            << ", total " << data_part->rows_count
+            << " rows starting from the beginning of the part, columns: ";
+        for (size_t i = 0, size = columns_to_read.size(); i < size; ++i)
+            message << (i == 0 ? "" : ", ") << columns_to_read[i];
+
+        LOG_TRACE(log, message.rdbuf());
+    }
 
     addTotalRowsApprox(data_part->rows_count);
 
@@ -49,7 +56,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     reader = std::make_unique<MergeTreeReader>(
         data_part->getFullPath(), data_part, columns_for_reader, /* uncompressed_cache = */ nullptr,
         mark_cache.get(), /* save_marks_in_cache = */ false, storage,
-        MarkRanges{MarkRange(0, data_part->marks_count)},
+        MarkRanges{MarkRange(0, data_part->getMarksCount())},
         /* bytes to use AIO (this is hack) */
         read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
         DBMS_DEFAULT_BUFFER_SIZE);
@@ -84,15 +91,16 @@ try
     Block res;
     if (!isCancelled() && current_row < data_part->rows_count)
     {
+        size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
         bool continue_reading = (current_mark != 0);
-        size_t rows_readed = reader->readRows(current_mark, continue_reading, storage.index_granularity, res);
+        size_t rows_readed = reader->readRows(current_mark, continue_reading, rows_to_read, res);
 
         if (res)
         {
             res.checkNumberOfRows();
 
             current_row += rows_readed;
-            current_mark += (rows_readed / storage.index_granularity);
+            current_mark += (rows_to_read == rows_readed);
 
             bool should_reorder = false, should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(res, should_reorder, should_evaluate_missing_defaults, res.rows());

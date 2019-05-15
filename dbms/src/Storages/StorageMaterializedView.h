@@ -2,15 +2,12 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
 
 namespace DB
 {
-
-class IAST; // XXX: should include full class - for proper use inside inline methods
-using ASTPtr = std::shared_ptr<IAST>;
-
 
 class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
@@ -26,9 +23,12 @@ public:
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
-    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand); }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
+    {
+        return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand, query_context);
+    }
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
     void drop() override;
 
     void truncate(const ASTPtr &, const Context &) override;
@@ -38,6 +38,8 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
+
+    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     void shutdown() override;
 

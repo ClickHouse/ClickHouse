@@ -311,11 +311,11 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
         nested_data_type->serializeAsTextXML(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void DataTypeNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
     if (!col.isNullAt(row_num))
-        nested_data_type->serializeProtobuf(col.getNestedColumn(), row_num, protobuf);
+        nested_data_type->serializeProtobuf(col.getNestedColumn(), row_num, protobuf, value_index);
 }
 
 void DataTypeNullable::deserializeProtobuf(IColumn & column, ProtobufReader & protobuf, bool allow_add_row, bool & row_added) const

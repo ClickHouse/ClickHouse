@@ -43,12 +43,13 @@ namespace
 
     void unknownFormat()
     {
-        throw Exception("Protobuf messages are corrupted or doesn't match the provided schema", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
+        throw Exception("Protobuf messages are corrupted or don't match the provided schema. Please note that Protobuf stream is length-delimited: every message is prefixed by its length in varint.", ErrorCodes::UNKNOWN_PROTOBUF_FORMAT);
     }
 }
 
 
-
+// SimpleReader is an utility class to deserialize protobufs.
+// Knows nothing about protobuf schemas, just provides useful functions to deserialize data.
 ProtobufReader::SimpleReader::SimpleReader(ReadBuffer & in_)
     : in(in_)
     , cursor(1 /* We starts at cursor == 1 to keep any cursor value > REACHED_END, this allows to simplify conditions */)
@@ -374,6 +375,7 @@ void ProtobufReader::SimpleReader::ignoreGroup()
 }
 
 
+// Implementation for a converter from any protobuf field type to any DB data type.
 class ProtobufReader::ConverterBaseImpl : public ProtobufReader::IConverter
 {
 public:
@@ -383,73 +385,61 @@ public:
     bool readStringInto(PaddedPODArray<UInt8> &) override
     {
         cannotConvertType("String");
-        return false;
     }
 
     bool readInt8(Int8 &) override
     {
         cannotConvertType("Int8");
-        return false;
     }
 
     bool readUInt8(UInt8 &) override
     {
         cannotConvertType("UInt8");
-        return false;
     }
 
     bool readInt16(Int16 &) override
     {
         cannotConvertType("Int16");
-        return false;
     }
 
     bool readUInt16(UInt16 &) override
     {
         cannotConvertType("UInt16");
-        return false;
     }
 
     bool readInt32(Int32 &) override
     {
         cannotConvertType("Int32");
-        return false;
     }
 
     bool readUInt32(UInt32 &) override
     {
         cannotConvertType("UInt32");
-        return false;
     }
 
     bool readInt64(Int64 &) override
     {
         cannotConvertType("Int64");
-        return false;
     }
 
     bool readUInt64(UInt64 &) override
     {
         cannotConvertType("UInt64");
-        return false;
     }
 
     bool readUInt128(UInt128 &) override
     {
         cannotConvertType("UInt128");
-        return false;
     }
 
     bool readFloat32(Float32 &) override
     {
         cannotConvertType("Float32");
-        return false;
     }
 
     bool readFloat64(Float64 &) override
     {
         cannotConvertType("Float64");
-        return false;
     }
 
     void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) override {}
@@ -458,59 +448,50 @@ public:
     bool readEnum8(Int8 &) override
     {
         cannotConvertType("Enum");
-        return false;
     }
 
     bool readEnum16(Int16 &) override
     {
         cannotConvertType("Enum");
-        return false;
     }
 
     bool readUUID(UUID &) override
     {
         cannotConvertType("UUID");
-        return false;
     }
 
     bool readDate(DayNum &) override
     {
         cannotConvertType("Date");
-        return false;
     }
 
     bool readDateTime(time_t &) override
     {
         cannotConvertType("DateTime");
-        return false;
     }
 
     bool readDecimal32(Decimal32 &, UInt32, UInt32) override
     {
         cannotConvertType("Decimal32");
-        return false;
     }
 
     bool readDecimal64(Decimal64 &, UInt32, UInt32) override
     {
         cannotConvertType("Decimal64");
-        return false;
     }
 
     bool readDecimal128(Decimal128 &, UInt32, UInt32) override
     {
         cannotConvertType("Decimal128");
-        return false;
     }
 
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) override
     {
         cannotConvertType("AggregateFunction");
-        return false;
     }
 
 protected:
-    void cannotConvertType(const String & type_name)
+    [[noreturn]] void cannotConvertType(const String & type_name)
     {
         throw Exception(
             String("Could not convert type '") + field->type_name() + "' from protobuf field '" + field->name() + "' to data type '"
@@ -518,7 +499,7 @@ protected:
             ErrorCodes::PROTOBUF_BAD_CAST);
     }
 
-    void cannotConvertValue(const String & value, const String & type_name)
+    [[noreturn]] void cannotConvertValue(const String & value, const String & type_name)
     {
         throw Exception(
             "Could not convert value '" + value + "' from protobuf field '" + field->name() + "' to data type '" + type_name + "'",
@@ -555,7 +536,6 @@ protected:
         catch (...)
         {
             cannotConvertValue(StringRef(str.data(), str.size()).toString(), TypeName<To>::get());
-            __builtin_unreachable();
         }
     }
 
@@ -688,19 +668,19 @@ private:
     std::optional<std::unordered_map<StringRef, Int16>> enum_name_to_value_map;
 };
 
-#define PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(field_type_id) \
-    template<> \
-    class ProtobufReader::ConverterImpl<field_type_id> : public ConverterFromString \
+#define PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(field_type_id) \
+    template <> \
+    std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<field_type_id>( \
+        const google::protobuf::FieldDescriptor * field) \
     { \
-        using ConverterFromString::ConverterFromString; \
+        return std::make_unique<ConverterFromString>(simple_reader, field); \
     }
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_STRING);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_BYTES);
-#undef PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_STRINGS
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_STRING)
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_BYTES)
+#undef PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS
 
 
-
-template <int field_type_id, typename T>
+template <int field_type_id, typename FromType>
 class ProtobufReader::ConverterFromNumber : public ConverterBaseImpl
 {
 public:
@@ -708,7 +688,7 @@ public:
 
     bool readStringInto(PaddedPODArray<UInt8> & str) override
     {
-        T number;
+        FromType number;
         if (!readField(number))
             return false;
         WriteBufferFromVector<PaddedPODArray<UInt8>> buf(str);
@@ -765,7 +745,7 @@ private:
     template <typename To>
     bool readNumeric(To & value)
     {
-        T number;
+        FromType number;
         if (!readField(number))
             return false;
         value = numericCast<To>(number);
@@ -775,9 +755,9 @@ private:
     template<typename EnumType>
     bool readEnum(EnumType & value)
     {
-        if constexpr (!std::is_integral_v<T>)
+        if constexpr (!std::is_integral_v<FromType>)
             cannotConvertType("Enum"); // It's not correct to convert floating point to enum.
-        T number;
+        FromType number;
         if (!readField(number))
             return false;
         value = numericCast<EnumType>(number);
@@ -799,40 +779,39 @@ private:
     template <typename S>
     bool readDecimal(Decimal<S> & decimal, UInt32 scale)
     {
-        T number;
+        FromType number;
         if (!readField(number))
             return false;
-        decimal.value = convertToDecimal<DataTypeNumber<T>, DataTypeDecimal<Decimal<S>>>(number, scale);
+        decimal.value = convertToDecimal<DataTypeNumber<FromType>, DataTypeDecimal<Decimal<S>>>(number, scale);
         return true;
     }
 
-    bool readField(T & value)
+    bool readField(FromType & value)
     {
-        if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_INT32) && std::is_same_v<T, Int64>)
+        if constexpr (((field_type_id == google::protobuf::FieldDescriptor::TYPE_INT32) && std::is_same_v<FromType, Int64>)
+                   || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_INT64) && std::is_same_v<FromType, Int64>))
+        {
             return simple_reader.readInt(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SINT32) && std::is_same_v<T, Int64>)
-            return simple_reader.readSInt(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_UINT32) && std::is_same_v<T, UInt64>)
+        }
+        else if constexpr (((field_type_id == google::protobuf::FieldDescriptor::TYPE_UINT32) && std::is_same_v<FromType, UInt64>)
+                        || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_UINT64) && std::is_same_v<FromType, UInt64>))
+        {
             return simple_reader.readUInt(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_INT64) && std::is_same_v<T, Int64>)
-            return simple_reader.readInt(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SINT64) && std::is_same_v<T, Int64>)
+        }
+
+        else if constexpr (((field_type_id == google::protobuf::FieldDescriptor::TYPE_SINT32) && std::is_same_v<FromType, Int64>)
+                        || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SINT64) && std::is_same_v<FromType, Int64>))
+        {
             return simple_reader.readSInt(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_UINT64) && std::is_same_v<T, UInt64>)
-            return simple_reader.readUInt(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_FIXED32) && std::is_same_v<T, UInt32>)
-            return simple_reader.readFixed(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SFIXED32) && std::is_same_v<T, Int32>)
-            return simple_reader.readFixed(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_FIXED64) && std::is_same_v<T, UInt64>)
-            return simple_reader.readFixed(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SFIXED64) && std::is_same_v<T, Int64>)
-            return simple_reader.readFixed(value);
-        else if constexpr ((field_type_id == google::protobuf::FieldDescriptor::TYPE_FLOAT) && std::is_same_v<T, float>)
-            return simple_reader.readFixed(value);
+        }
         else
         {
-            static_assert((field_type_id == google::protobuf::FieldDescriptor::TYPE_DOUBLE) && std::is_same_v<T, double>);
+            static_assert(((field_type_id == google::protobuf::FieldDescriptor::TYPE_FIXED32) && std::is_same_v<FromType, UInt32>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SFIXED32) && std::is_same_v<FromType, Int32>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_FIXED64) && std::is_same_v<FromType, UInt64>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_SFIXED64) && std::is_same_v<FromType, Int64>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_FLOAT) && std::is_same_v<FromType, float>)
+                       || ((field_type_id == google::protobuf::FieldDescriptor::TYPE_DOUBLE) && std::is_same_v<FromType, double>));
             return simple_reader.readFixed(value);
         }
     }
@@ -840,30 +819,30 @@ private:
     std::optional<std::unordered_set<Int16>> set_of_enum_values;
 };
 
-#define PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
-    template<> \
-    class ProtobufReader::ConverterImpl<field_type_id> : public ConverterFromNumber<field_type_id, field_type> \
+#define PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
+    template <> \
+    std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<field_type_id>( \
+        const google::protobuf::FieldDescriptor * field) \
     { \
-        using ConverterFromNumber::ConverterFromNumber; \
+        return std::make_unique<ConverterFromNumber<field_type_id, field_type>>(simple_reader, field); \
     }
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT32, Int64);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT32, Int64);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT32, UInt64);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT64, Int64);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT64, Int64);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT64, UInt64);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED32, UInt32);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED32, Int32);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED64, UInt64);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED64, Int64);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
-PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
-#undef PROTOBUF_READER_CONVERTER_IMPL_SPECIALIZATION_FOR_NUMBERS
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT32, Int64);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT32, Int64);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT32, UInt64);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT64, Int64);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT64, Int64);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT64, UInt64);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED32, UInt32);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED32, Int32);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FIXED64, UInt64);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED64, Int64);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
+PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
+#undef PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS
 
 
 
-template<>
-class ProtobufReader::ConverterImpl<google::protobuf::FieldDescriptor::TYPE_BOOL> : public ConverterBaseImpl
+class ProtobufReader::ConverterFromBool : public ConverterBaseImpl
 {
 public:
     using ConverterBaseImpl::ConverterBaseImpl;
@@ -913,10 +892,15 @@ private:
     }
 };
 
+template <>
+std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<google::protobuf::FieldDescriptor::TYPE_BOOL>(
+    const google::protobuf::FieldDescriptor * field)
+{
+    return std::make_unique<ConverterFromBool>(simple_reader, field);
+}
 
 
-template<>
-class ProtobufReader::ConverterImpl<google::protobuf::FieldDescriptor::TYPE_ENUM> : public ConverterBaseImpl
+class ProtobufReader::ConverterFromEnum : public ConverterBaseImpl
 {
 public:
     using ConverterBaseImpl::ConverterBaseImpl;
@@ -973,10 +957,15 @@ private:
         Int64 pbnumber;
         if (!readField(pbnumber))
             return false;
-        auto it = enum_pbnumber_to_value_map->find(pbnumber);
-        if (it == enum_pbnumber_to_value_map->end())
-            cannotConvertValue(toString(pbnumber), "Enum");
-        value = static_cast<T>(it->second);
+        if (enum_pbnumber_always_equals_value)
+            value = static_cast<T>(pbnumber);
+        else
+        {
+            auto it = enum_pbnumber_to_value_map->find(pbnumber);
+            if (it == enum_pbnumber_to_value_map->end())
+                cannotConvertValue(toString(pbnumber), "Enum");
+            value = static_cast<T>(it->second);
+        }
         return true;
     }
 
@@ -999,12 +988,19 @@ private:
         if (likely(enum_pbnumber_to_value_map.has_value()))
             return;
         enum_pbnumber_to_value_map.emplace();
+        enum_pbnumber_always_equals_value = true;
         for (const auto & name_value_pair : name_value_pairs)
         {
             Int16 value = name_value_pair.second;
             const auto * enum_descriptor = field->enum_type()->FindValueByName(name_value_pair.first);
             if (enum_descriptor)
+            {
                 enum_pbnumber_to_value_map->emplace(enum_descriptor->number(), value);
+                if (enum_descriptor->number() != value)
+                    enum_pbnumber_always_equals_value = false;
+            }
+            else
+                enum_pbnumber_always_equals_value = false;
         }
     }
 
@@ -1015,7 +1011,15 @@ private:
 
     std::optional<std::unordered_map<Int64, StringRef>> enum_pbnumber_to_name_map;
     std::optional<std::unordered_map<Int64, Int16>> enum_pbnumber_to_value_map;
+    bool enum_pbnumber_always_equals_value;
 };
+
+template <>
+std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<google::protobuf::FieldDescriptor::TYPE_ENUM>(
+    const google::protobuf::FieldDescriptor * field)
+{
+    return std::make_unique<ConverterFromEnum>(simple_reader, field);
+}
 
 
 ProtobufReader::ProtobufReader(
@@ -1041,7 +1045,7 @@ void ProtobufReader::setTraitsDataAfterMatchingColumns(Message * message)
         {
 #define PROTOBUF_READER_CONVERTER_CREATING_CASE(field_type_id) \
             case field_type_id: \
-                field.data.converter = std::make_unique<ConverterImpl<field_type_id>>(simple_reader, field.field_descriptor); \
+                field.data.converter = createConverter<field_type_id>(field.field_descriptor); \
                 break
             PROTOBUF_READER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_STRING);
             PROTOBUF_READER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_BYTES);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <Poco/Logger.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Interpreters/Context.h>
 #include "DictionaryStructure.h"
@@ -70,6 +71,7 @@ private:
     const bool is_local;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;
+    Poco::Logger * log = &Poco::Logger::get("ClickHouseDictionarySource");
 };
 
 }

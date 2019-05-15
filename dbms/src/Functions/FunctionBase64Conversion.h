@@ -7,7 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
-#include <libbase64.h>
+#include <libbase64.h> // Y_IGNORE
 
 
 namespace DB

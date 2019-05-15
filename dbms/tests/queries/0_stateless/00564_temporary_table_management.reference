@@ -1,4 +1,4 @@
 1
-CREATE TEMPORARY TABLE temp_tab ( number UInt64) ENGINE = Memory
+CREATE TEMPORARY TABLE temp_tab (`number` UInt64) ENGINE = Memory
 temp_tab
 0

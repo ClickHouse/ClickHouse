@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -67,19 +66,14 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
         String default_expression;
     };
 
-    NamesAndTypesList columns_list = info.storage->getColumns().getAll();
-    const auto & column_defaults = info.storage->getColumns().defaults;
     std::unordered_map<String, ColumnInfo> columns_info;
-
-    for (const auto & column : columns_list)
+    for (const auto & column : info.storage->getColumns())
     {
         ColumnInfo column_info;
-
-        const auto it = column_defaults.find(column.name);
-        if (it != std::end(column_defaults))
+        if (column.default_desc.expression)
         {
-            column_info.default_kind = toString(it->second.kind);
-            column_info.default_expression = queryToString(it->second.expression);
+            column_info.default_kind = toString(column.default_desc.kind);
+            column_info.default_expression = queryToString(column.default_desc.expression);
         }
 
         columns_info[column.name] = column_info;
@@ -111,7 +105,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             }
             columns[j++]->insert(part->name);
             columns[j++]->insert(part_state == State::Committed);
-            columns[j++]->insert(part->marks_count);
+            columns[j++]->insert(part->getMarksCount());
 
             columns[j++]->insert(part->rows_count);
             columns[j++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));

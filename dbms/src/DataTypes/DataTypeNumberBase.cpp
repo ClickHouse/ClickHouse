@@ -205,9 +205,11 @@ void DataTypeNumberBase<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer &
 
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+void DataTypeNumberBase<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf, size_t & value_index) const
 {
-    protobuf.writeNumber(static_cast<const ColumnVector<T> &>(column).getData()[row_num]);
+    if (value_index)
+        return;
+    value_index = static_cast<bool>(protobuf.writeNumber(static_cast<const ColumnVector<T> &>(column).getData()[row_num]));
 }
 
 

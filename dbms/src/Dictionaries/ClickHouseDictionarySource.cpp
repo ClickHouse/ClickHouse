@@ -6,6 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
 #include <ext/range.h>
+#include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
@@ -155,6 +156,7 @@ bool ClickHouseDictionarySource::isModified() const
     if (!invalidate_query.empty())
     {
         auto response = doInvalidateQuery(invalidate_query);
+        LOG_TRACE(log, "Invalidate query has returned: " << response << ", previous value: " << invalidate_query_response);
         if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
@@ -182,6 +184,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
 
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
 {
+    LOG_TRACE(log, "Performing invalidate query");
     if (is_local)
     {
         Context query_context = context;

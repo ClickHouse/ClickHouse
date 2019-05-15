@@ -1,8 +1,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
@@ -45,15 +44,14 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
 
     auto select = std::make_shared<ASTSelectQuery>();
 
-    select->select_expression_list = std::make_shared<ASTExpressionList>();
-    select->children.push_back(select->select_expression_list);
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
     auto count_func = std::make_shared<ASTFunction>();
     count_func->name = "count";
     count_func->arguments = std::make_shared<ASTExpressionList>();
-    select->select_expression_list->children.push_back(count_func);
+    select->select()->children.push_back(count_func);
 
     if (commands.size() == 1)
-        select->where_expression = commands[0].predicate->clone();
+        select->setExpression(ASTSelectQuery::Expression::WHERE, commands[0].predicate->clone());
     else
     {
         auto coalesced_predicates = std::make_shared<ASTFunction>();
@@ -64,15 +62,14 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
         for (const MutationCommand & command : commands)
             coalesced_predicates->arguments->children.push_back(command.predicate->clone());
 
-        select->where_expression = std::move(coalesced_predicates);
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
     }
-    select->children.push_back(select->where_expression);
 
     auto context_copy = context;
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage, QueryProcessingStage::Complete).execute().in;
+    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage).execute().in;
 
     Block block = in->read();
     if (!block.rows())
@@ -88,12 +85,8 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
 
 static NameSet getKeyColumns(const StoragePtr & storage)
 {
-    const MergeTreeData * merge_tree_data = nullptr;
-    if (auto merge_tree = dynamic_cast<StorageMergeTree *>(storage.get()))
-        merge_tree_data = &merge_tree->getData();
-    else if (auto replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
-        merge_tree_data = &replicated_merge_tree->getData();
-    else
+    const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
+    if (!merge_tree_data)
         return {};
 
     NameSet key_columns;
@@ -126,7 +119,7 @@ static void validateUpdateColumns(
     for (const String & column_name : updated_columns)
     {
         auto found = false;
-        for (const auto & col : storage->getColumns().ordinary)
+        for (const auto & col : storage->getColumns().getOrdinary())
         {
             if (col.name == column_name)
             {
@@ -137,7 +130,7 @@ static void validateUpdateColumns(
 
         if (!found)
         {
-            for (const auto & col : storage->getColumns().materialized)
+            for (const auto & col : storage->getColumns().getMaterialized())
             {
                 if (col.name == column_name)
                     throw Exception("Cannot UPDATE materialized column `" + column_name + "`", ErrorCodes::CANNOT_UPDATE_COLUMN);
@@ -187,19 +180,17 @@ void MutationsInterpreter::prepare(bool dry_run)
     std::unordered_map<String, Names> column_to_affected_materialized;
     if (!updated_columns.empty())
     {
-        for (const auto & kv : columns_desc.defaults)
+        for (const auto & column : columns_desc)
         {
-            const String & column = kv.first;
-            const ColumnDefault & col_default = kv.second;
-            if (col_default.kind == ColumnDefaultKind::Materialized)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized)
             {
-                auto query = col_default.expression->clone();
+                auto query = column.default_desc.expression->clone();
                 auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
                 ExpressionAnalyzer analyzer(query, syntax_result, context);
                 for (const String & dependency : analyzer.getRequiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
-                        column_to_affected_materialized[dependency].push_back(column);
+                        column_to_affected_materialized[dependency].push_back(column.name);
                 }
             }
         }
@@ -250,11 +241,14 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (!affected_materialized.empty())
             {
                 stages.emplace_back(context);
-                for (const auto & column : columns_desc.materialized)
+                for (const auto & column : columns_desc)
                 {
-                    stages.back().column_to_updated.emplace(
-                        column.name,
-                        columns_desc.defaults.at(column.name).expression->clone());
+                    if (column.default_desc.kind == ColumnDefaultKind::Materialized)
+                    {
+                        stages.back().column_to_updated.emplace(
+                            column.name,
+                            column.default_desc.expression->clone());
+                    }
                 }
             }
         }
@@ -343,10 +337,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     auto select = std::make_shared<ASTSelectQuery>();
 
-    select->select_expression_list = std::make_shared<ASTExpressionList>();
-    select->children.push_back(select->select_expression_list);
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
     for (const auto & column_name : stages[0].output_columns)
-        select->select_expression_list->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
     if (!stages[0].filters.empty())
     {
@@ -362,11 +355,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             coalesced_predicates->arguments->children = stages[0].filters;
             where_expression = std::move(coalesced_predicates);
         }
-        select->where_expression = where_expression;
-        select->children.push_back(where_expression);
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
-    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, QueryProcessingStage::Complete, dry_run);
+    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run));
 
     is_prepared = true;
 }
@@ -394,11 +386,7 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(BlockInputStr
 
         const SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
         if (!subqueries_for_sets.empty())
-        {
-            const auto & settings = context.getSettingsRef();
-            in = std::make_shared<CreatingSetsBlockInputStream>(in, subqueries_for_sets,
-                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
-        }
+            in = std::make_shared<CreatingSetsBlockInputStream>(in, subqueries_for_sets, context);
     }
 
     in = std::make_shared<MaterializingBlockInputStream>(in);

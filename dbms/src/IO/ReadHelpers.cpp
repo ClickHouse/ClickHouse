@@ -210,10 +210,39 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
     }
 }
 
+
 void readStringUntilEOF(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilEOFInto(s, buf);
+}
+
+template <typename Vector>
+void readEscapedStringUntilEOLInto(Vector & s, ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
+
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        if (*buf.position() == '\n')
+            return;
+
+        if (*buf.position() == '\\')
+            parseComplexEscapeSequence(s, buf);
+    }
+}
+
+
+void readEscapedStringUntilEOL(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readEscapedStringUntilEOLInto(s, buf);
 }
 
 template void readStringUntilEOFInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);

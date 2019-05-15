@@ -14,13 +14,15 @@ public:
     enum ExplainKind
     {
         ParsedAST,
+        AnalyzedSyntax,
     };
 
-    ASTExplainQuery(ExplainKind kind_ = ParsedAST)
+    ASTExplainQuery(ExplainKind kind_)
         : kind(kind_)
     {}
 
     String getID(char delim) const override { return "Explain" + (delim + toString(kind)); }
+    ExplainKind getKind() const { return kind; }
     ASTPtr clone() const override { return std::make_shared<ASTExplainQuery>(*this); }
 
 protected:
@@ -37,7 +39,9 @@ private:
         switch (kind)
         {
             case ParsedAST: return "ParsedAST";
+            case AnalyzedSyntax: return "AnalyzedSyntax";
         }
+
         __builtin_unreachable();
     }
 };

@@ -23,10 +23,10 @@
 #include <Storages/CompressionCodecSelector.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
-#include <Interpreters/Settings.h>
+#include <Core/Settings.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
-#include <Interpreters/ISecurityManager.h>
+#include <Interpreters/IUsersManager.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
@@ -36,6 +36,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Compiler.h>
+#include <Interpreters/SettingsConstraints.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -104,7 +105,7 @@ struct ContextShared
     mutable std::recursive_mutex mutex;
     /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
     mutable std::mutex embedded_dictionaries_mutex;
-    mutable std::mutex external_dictionaries_mutex;
+    mutable std::recursive_mutex external_dictionaries_mutex;
     mutable std::mutex external_models_mutex;
     /// Separate mutex for re-initialization of zookeer session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
@@ -129,7 +130,7 @@ struct ContextShared
     mutable std::optional<ExternalModels> external_models;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
-    std::unique_ptr<ISecurityManager> security_manager;     /// Known users.
+    std::unique_ptr<IUsersManager> users_manager;           /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -244,10 +245,18 @@ struct ContextShared
             return;
         shutdown_called = true;
 
-        system_logs.reset();
+        {
+            std::lock_guard lock(mutex);
+
+            /** After this point, system logs will shutdown their threads and no longer write any data.
+            * It will prevent recreation of system tables at shutdown.
+            * Note that part changes at shutdown won't be logged to part log.
+            */
+            system_logs.reset();
+        }
 
         /** At this point, some tables may have threads that block our mutex.
-          * To complete them correctly, we will copy the current list of tables,
+          * To shutdown them correctly, we will copy the current list of tables,
           *  and ask them all to finish their work.
           * Then delete all objects with tables.
           */
@@ -258,6 +267,8 @@ struct ContextShared
             std::lock_guard lock(mutex);
             current_databases = databases;
         }
+
+        /// We still hold "databases" in Context (instead of std::move) for Buffer tables to flush data correctly.
 
         for (auto & database : current_databases)
             database.second->shutdown();
@@ -281,12 +292,14 @@ struct ContextShared
 private:
     void initialize()
     {
-       security_manager = runtime_components_factory->createSecurityManager();
+       users_manager = runtime_components_factory->createUsersManager();
     }
 };
 
 
 Context::Context() = default;
+Context::Context(const Context &) = default;
+Context & Context::operator=(const Context &) = default;
 
 
 Context Context::createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory)
@@ -561,7 +574,7 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->security_manager->loadFromConfig(*shared->users_config);
+    shared->users_manager->loadFromConfig(*shared->users_config);
     shared->quotas.loadFromConfig(*shared->users_config);
 }
 
@@ -571,24 +584,64 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+bool Context::hasUserProperty(const String & database, const String & table, const String & name) const
+{
+    auto lock = getLock();
+
+    // No user - no properties.
+    if (client_info.current_user.empty())
+        return false;
+
+    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+
+    auto db = props.find(database);
+    if (db == props.end())
+        return false;
+
+    auto table_props = db->second.find(table);
+    if (table_props == db->second.end())
+        return false;
+
+    return !!table_props->second.count(name);
+}
+
+const String & Context::getUserProperty(const String & database, const String & table, const String & name) const
+{
+    auto lock = getLock();
+    const auto & props = shared->users_manager->getUser(client_info.current_user)->table_props;
+    return props.at(database).at(table).at(name);
+}
+
 void Context::calculateUserSettings()
 {
     auto lock = getLock();
 
-    String profile = shared->security_manager->getUser(client_info.current_user)->profile;
+    String profile = shared->users_manager->getUser(client_info.current_user)->profile;
 
     /// 1) Set default settings (hardcoded values)
     /// NOTE: we ignore global_context settings (from which it is usually copied)
     /// NOTE: global_context settings are immutable and not auto updated
     settings = Settings();
+    settings_constraints = nullptr;
 
     /// 2) Apply settings from default profile
     auto default_profile_name = getDefaultProfileName();
     if (profile != default_profile_name)
-        settings.setProfile(default_profile_name, *shared->users_config);
+        setProfile(default_profile_name);
 
     /// 3) Apply settings from current user
+    setProfile(profile);
+}
+
+
+void Context::setProfile(const String & profile)
+{
     settings.setProfile(profile, *shared->users_config);
+
+    auto new_constraints
+        = settings_constraints ? std::make_shared<SettingsConstraints>(*settings_constraints) : std::make_shared<SettingsConstraints>();
+    new_constraints->setProfile(profile, *shared->users_config);
+    settings_constraints = std::move(new_constraints);
 }
 
 
@@ -596,7 +649,7 @@ void Context::setUser(const String & name, const String & password, const Poco::
 {
     auto lock = getLock();
 
-    auto user_props = shared->security_manager->authorizeAndGetUser(name, password, address.host());
+    auto user_props = shared->users_manager->authorizeAndGetUser(name, password, address.host());
 
     client_info.current_user = name;
     client_info.current_address = address;
@@ -634,7 +687,7 @@ bool Context::hasDatabaseAccessRights(const String & database_name) const
 {
     auto lock = getLock();
     return client_info.current_user.empty() || (database_name == "system") ||
-        shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name);
+        shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name);
 }
 
 void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
@@ -645,13 +698,12 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
          /// All users have access to the database system.
         return;
     }
-    if (!shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name))
+    if (!shared->users_manager->hasAccessToDatabase(client_info.current_user, database_name))
         throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
-void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
-    auto lock = getLock();
     checkDatabaseAccessRightsImpl(from.first);
     checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].insert(where);
@@ -662,9 +714,14 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
         table->updateDependencies();
 }
 
-void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
     auto lock = getLock();
+    addDependencyUnsafe(from, where);
+}
+
+void Context::removeDependencyUnsafe(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+{
     checkDatabaseAccessRightsImpl(from.first);
     checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].erase(where);
@@ -673,6 +730,12 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
     auto table = tryGetTable(from.first, from.second);
     if (table != nullptr)
         table->updateDependencies();
+}
+
+void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
+{
+    auto lock = getLock();
+    removeDependencyUnsafe(from, where);
 }
 
 Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
@@ -892,8 +955,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 
     if (!res)
     {
-        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(
-            typeid_cast<const ASTFunction *>(table_expression.get())->name, *this);
+        TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression->as<ASTFunction>()->name, *this);
 
         /// Run it and remember the result
         res = table_function_ptr->execute(table_expression, *this);
@@ -990,27 +1052,55 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
-void Context::setSetting(const String & name, const Field & value)
+void Context::setSetting(const String & name, const String & value)
 {
+    auto lock = getLock();
     if (name == "profile")
     {
-        auto lock = getLock();
-        settings.setProfile(value.safeGet<String>(), *shared->users_config);
+        setProfile(value);
+        return;
     }
-    else
-        settings.set(name, value);
+    settings.set(name, value);
 }
 
 
-void Context::setSetting(const String & name, const std::string & value)
+void Context::setSetting(const String & name, const Field & value)
 {
+    auto lock = getLock();
     if (name == "profile")
     {
-        auto lock = getLock();
-        settings.setProfile(value, *shared->users_config);
+        setProfile(value.safeGet<String>());
+        return;
     }
-    else
-        settings.set(name, value);
+    settings.set(name, value);
+}
+
+
+void Context::applySettingChange(const SettingChange & change)
+{
+    setSetting(change.name, change.value);
+}
+
+
+void Context::applySettingsChanges(const SettingsChanges & changes)
+{
+    auto lock = getLock();
+    for (const SettingChange & change : changes)
+        applySettingChange(change);
+}
+
+
+void Context::checkSettingsConstraints(const SettingChange & change)
+{
+    if (settings_constraints)
+        settings_constraints->check(settings, change);
+}
+
+
+void Context::checkSettingsConstraints(const SettingsChanges & changes)
+{
+    if (settings_constraints)
+        settings_constraints->check(settings, changes);
 }
 
 
@@ -1203,41 +1293,38 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
 ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
-    std::lock_guard lock(shared->external_dictionaries_mutex);
+    {
+        std::lock_guard lock(shared->external_dictionaries_mutex);
+        if (shared->external_dictionaries)
+            return *shared->external_dictionaries;
+    }
 
+    const auto & config = getConfigRef();
+    std::lock_guard lock(shared->external_dictionaries_mutex);
     if (!shared->external_dictionaries)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
         auto config_repository = shared->runtime_components_factory->createExternalDictionariesConfigRepository();
-
-        shared->external_dictionaries.emplace(
-            std::move(config_repository),
-            *this->global_context,
-            throw_on_error);
+        shared->external_dictionaries.emplace(std::move(config_repository), config, *this->global_context);
+        shared->external_dictionaries->init(throw_on_error);
     }
-
     return *shared->external_dictionaries;
 }
 
 ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
 {
     std::lock_guard lock(shared->external_models_mutex);
-
     if (!shared->external_models)
     {
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
         auto config_repository = shared->runtime_components_factory->createExternalModelsConfigRepository();
-
-        shared->external_models.emplace(
-            std::move(config_repository),
-            *this->global_context,
-            throw_on_error);
+        shared->external_models.emplace(std::move(config_repository), *this->global_context);
+        shared->external_models->init(throw_on_error);
     }
-
     return *shared->external_models;
 }
 
@@ -1546,51 +1633,47 @@ Compiler & Context::getCompiler()
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-
-    if (!global_context)
-        throw Exception("Logical error: no global context for system logs", ErrorCodes::LOGICAL_ERROR);
-
     shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
 
-QueryLog * Context::getQueryLog()
+std::shared_ptr<QueryLog> Context::getQueryLog()
 {
     auto lock = getLock();
 
     if (!shared->system_logs || !shared->system_logs->query_log)
-        return nullptr;
+        return {};
 
-    return shared->system_logs->query_log.get();
+    return shared->system_logs->query_log;
 }
 
 
-QueryThreadLog * Context::getQueryThreadLog()
+std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
     if (!shared->system_logs || !shared->system_logs->query_thread_log)
-        return nullptr;
+        return {};
 
-    return shared->system_logs->query_thread_log.get();
+    return shared->system_logs->query_thread_log;
 }
 
 
-PartLog * Context::getPartLog(const String & part_database)
+std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
     /// No part log or system logs are shutting down.
     if (!shared->system_logs || !shared->system_logs->part_log)
-        return nullptr;
+        return {};
 
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
     if (part_database == shared->system_logs->part_log_database)
-        return nullptr;
+        return {};
 
-    return shared->system_logs->part_log.get();
+    return shared->system_logs->part_log;
 }
 
 
@@ -1817,6 +1900,19 @@ void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd)
     auto lock = getLock();
     shared->bridge_commands.emplace_back(std::move(cmd));
 }
+
+
+IHostContextPtr & Context::getHostContext()
+{
+    return host_context;
+}
+
+
+const IHostContextPtr & Context::getHostContext() const
+{
+    return host_context;
+}
+
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 {

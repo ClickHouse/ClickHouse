@@ -1,12 +1,14 @@
 #pragma once
 
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include "DatabaseAndTableWithAlias.h"
+#include "ExpressionAnalyzer.h"
+#include <Parsers/ASTSelectQuery.h>
+#include <map>
 
 namespace DB
 {
 
 class ASTIdentifier;
-class ASTSelectQuery;
 class ASTSubquery;
 class Context;
 
@@ -37,13 +39,15 @@ class PredicateExpressionsOptimizer
 
         /// for PredicateExpressionsOptimizer
         const bool enable_optimize_predicate_expression;
+        const bool join_use_nulls;
 
         template<typename T>
         ExtractedSettings(const T & settings)
         :   max_ast_depth(settings.max_ast_depth),
             max_expanded_ast_elements(settings.max_expanded_ast_elements),
             count_distinct_implementation(settings.count_distinct_implementation),
-            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
+            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
+            join_use_nulls(settings.join_use_nulls)
         {}
     };
 
@@ -67,20 +71,26 @@ private:
 
     bool isArrayJoinFunction(const ASTPtr & node);
 
-    std::vector<ASTPtr> splitConjunctionPredicate(ASTPtr & predicate_expression);
+    std::vector<ASTPtr> splitConjunctionPredicate(const ASTPtr & predicate_expression);
 
     std::vector<IdentifierWithQualifier> getDependenciesAndQualifiers(ASTPtr & expression,
-                                                                      std::vector<DatabaseAndTableWithAlias> & tables_with_aliases);
+                                                                      std::vector<TableWithColumnNames> & tables_with_aliases);
 
-    bool optimizeExpression(const ASTPtr & outer_expression, ASTPtr & subquery_expression, ASTSelectQuery * subquery);
+    bool optimizeExpression(const ASTPtr & outer_expression, ASTSelectQuery * subquery, ASTSelectQuery::Expression expr);
 
-    bool optimizeImpl(ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
+    bool optimizeImpl(const ASTPtr & outer_expression, const SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
 
-    bool allowPushDown(const ASTSelectQuery * subquery);
+    bool allowPushDown(
+        const ASTSelectQuery * subquery,
+        const ASTPtr & outer_predicate,
+        const std::vector<ProjectionWithAlias> & subquery_projection_columns,
+        const std::vector<IdentifierWithQualifier> & outer_predicate_dependencies,
+        OptimizeKind & optimize_kind);
 
-    bool canPushDownOuterPredicate(const std::vector<ProjectionWithAlias> & subquery_projection_columns,
-                                   const std::vector<IdentifierWithQualifier> & outer_predicate_dependencies,
-                                   OptimizeKind & optimize_kind);
+    bool checkDependencies(
+        const std::vector<ProjectionWithAlias> & projection_columns,
+        const std::vector<IdentifierWithQualifier> & dependencies,
+        OptimizeKind & optimize_kind);
 
     void setNewAliasesForInnerPredicate(const std::vector<ProjectionWithAlias> & projection_columns,
                                         const std::vector<IdentifierWithQualifier> & inner_predicate_dependencies);

@@ -88,7 +88,7 @@ Example of settings:
 </source>
 ```
 
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md) in the server configuration.
+In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md#server_settings-openssl) in the server configuration.
 
 Setting fields:
 
@@ -119,6 +119,8 @@ Setting fields:
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
+
+If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../faq/general.md#oracle-odbc-encodings) article.
 
 ### Known vulnerability of the ODBC dictionary functionality
 

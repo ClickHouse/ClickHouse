@@ -128,15 +128,28 @@ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 For successful requests that don't return a data table, an empty response body is returned.
 
-You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you will need to use the special clickhouse-compressor program to work with it (it is installed with the clickhouse-client package).
+You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you will need to use the special `clickhouse-compressor` program to work with it (it is installed with the `clickhouse-client` package). To increase the efficiency of data insertion, you can disable server-side checksum verification by using the [http_native_compression_disable_checksumming_on_decompress](../operations/settings/settings.md#settings-http_native_compression_disable_checksumming_on_decompress) setting.
 
-If you specified 'compress=1' in the URL, the server will compress the data it sends you.
-If you specified 'decompress=1' in the URL, the server will decompress the same data that you pass in the POST method.
+If you specified `compress=1` in the URL, the server compresses the data it sends you.
+If you specified `decompress=1` in the URL, the server decompresses the same data that you pass in the `POST` method.
 
-It is also possible to use the standard gzip-based HTTP compression. To send a POST request compressed using gzip, append the request header `Content-Encoding: gzip`.
-In order for ClickHouse to compress the response using gzip, you must append `Accept-Encoding: gzip` to the request headers, and enable the ClickHouse setting `enable_http_compression`.
+It is also possible to use standard `gzip`-based [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). To send a `POST` request compressed using `gzip`, append the request header `Content-Encoding: gzip`.
+In order for ClickHouse to compress the response using `gzip`, you must append `Accept-Encoding: gzip` to the request headers, and enable the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the compression level of the data with the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting.
 
 You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
+
+Examples of sending the data with compression:
+
+```bash
+#Sending the data to the server:
+curl -vsS "http://localhost:8123/?enable_http_compression=1" -d 'SELECT number FROM system.numbers LIMIT 10' -H 'Accept-Encoding: gzip'
+
+#Sending the data to the client:
+echo "SELECT 1" | gzip -c | curl -sS --data-binary @- -H 'Content-Encoding: gzip' 'http://localhost:8123/'
+```
+
+!!! note "Note"
+    Some HTTP clients might decompress data from the server by default (with `gzip` and `deflate`) and you might get decompressed data even if you use the compression settings correctly.
 
 You can use the 'database' URL parameter to specify the default database.
 
@@ -170,10 +183,10 @@ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-If the user name is not indicated, the username 'default' is used. If the password is not indicated, an empty password is used.
+If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
 You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-For more information, see the section "Settings".
+For more information, see the [Settings][../operations/settings/index.md] section.
 
 ```bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-

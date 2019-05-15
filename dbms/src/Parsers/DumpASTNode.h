@@ -68,9 +68,9 @@ private:
     {
         (*ostr) << nodeId();
 
-        String aslias = ast.tryGetAlias();
-        if (!aslias.empty())
-            print("alias", aslias, " ");
+        String alias = ast.tryGetAlias();
+        if (!alias.empty())
+            print("alias", alias, " ");
 
         if (!ast.children.empty())
             print("children", ast.children.size(), " ");

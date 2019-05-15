@@ -224,7 +224,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
     {
         task_max_lifetime = config->getUInt64(prefix + ".task_max_lifetime", static_cast<UInt64>(task_max_lifetime));
         cleanup_delay_period = config->getUInt64(prefix + ".cleanup_delay_period", static_cast<UInt64>(cleanup_delay_period));
-        max_tasks_in_queue = std::max(static_cast<UInt64>(1), config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
+        max_tasks_in_queue = std::max<UInt64>(1, config->getUInt64(prefix + ".max_tasks_in_queue", max_tasks_in_queue));
 
         if (config->has(prefix + ".profile"))
             context.setSetting("profile", config->getString(prefix + ".profile"));
@@ -295,7 +295,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason,
     {
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
         /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
-        /// Otherwise, that node will be ignored by DDLQueryStatusInputSream.
+        /// Otherwise, that node will be ignored by DDLQueryStatusInputStream.
 
         tryLogCurrentException(log, "Cannot parse DDL task " + entry_name + ", will try to send error status");
 
@@ -449,6 +449,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         task.query = parseQuery(parser_query, begin, end, description, 0);
     }
 
+    // XXX: serious design flaw since `ASTQueryWithOnCluster` is not inherited from `IAST`!
     if (!task.query || !(task.query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(task.query.get())))
         throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
@@ -546,6 +547,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     try
     {
         current_context = std::make_unique<Context>(context);
+        current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         current_context->setCurrentQueryId(""); // generate random query_id
         executeQuery(istr, ostr, false, *current_context, {}, {});
     }
@@ -612,7 +614,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
             String rewritten_query = queryToString(rewritten_ast);
             LOG_DEBUG(log, "Executing query: " << rewritten_query);
 
-            if (auto ast_alter = dynamic_cast<const ASTAlterQuery *>(rewritten_ast.get()))
+            if (const auto * ast_alter = rewritten_ast->as<ASTAlterQuery>())
             {
                 processTaskAlter(task, ast_alter, rewritten_query, task.entry_path, zookeeper);
             }
@@ -1020,12 +1022,12 @@ void DDLWorker::runCleanupThread()
 }
 
 
-class DDLQueryStatusInputSream : public IBlockInputStream
+class DDLQueryStatusInputStream : public IBlockInputStream
 {
 public:
 
-    DDLQueryStatusInputSream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
-        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputSream"))
+    DDLQueryStatusInputStream(const String & zk_node_path, const DDLLogEntry & entry, const Context & context)
+        : node_path(zk_node_path), context(context), watch(CLOCK_MONOTONIC_COARSE), log(&Logger::get("DDLQueryStatusInputStream"))
     {
         sample = Block{
             {std::make_shared<DataTypeString>(),    "host"},
@@ -1046,7 +1048,7 @@ public:
 
     String getName() const override
     {
-        return "DDLQueryStatusInputSream";
+        return "DDLQueryStatusInputStream";
     }
 
     Block getHeader() const override { return sample; }
@@ -1146,7 +1148,7 @@ public:
         return sample.cloneEmpty();
     }
 
-    ~DDLQueryStatusInputSream() override = default;
+    ~DDLQueryStatusInputStream() override = default;
 
 private:
 
@@ -1211,7 +1213,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     ASTPtr query_ptr = query_ptr_->clone();
     ASTQueryWithOutput::resetOutputASTIfExist(*query_ptr);
 
-    auto query = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
+    // XXX: serious design flaw since `ASTQueryWithOnCluster` is not inherited from `IAST`!
+    auto * query = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
     if (!query)
     {
         throw Exception("Distributed execution is not supported for such DDL queries", ErrorCodes::NOT_IMPLEMENTED);
@@ -1220,7 +1223,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     if (!context.getSettingsRef().allow_distributed_ddl)
         throw Exception("Distributed DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
-    if (auto query_alter = dynamic_cast<const ASTAlterQuery *>(query_ptr.get()))
+    if (const auto * query_alter = query_ptr->as<ASTAlterQuery>())
     {
         for (const auto & command : query_alter->command_list->commands)
         {
@@ -1289,7 +1292,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     if (context.getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    auto stream = std::make_shared<DDLQueryStatusInputSream>(node_path, entry, context);
+    auto stream = std::make_shared<DDLQueryStatusInputStream>(node_path, entry, context);
     io.in = std::move(stream);
     return io;
 }

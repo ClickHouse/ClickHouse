@@ -1,7 +1,5 @@
 #pragma once
 
-#include <openssl/md5.h>
-#include <openssl/sha.h>
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
@@ -14,7 +12,12 @@
 
 #include <Common/config.h>
 #if USE_XXHASH
-    #include <xxhash.h>
+#   include <xxhash.h> // Y_IGNORE
+#endif
+
+#if USE_SSL
+#   include <openssl/md5.h>
+#   include <openssl/sha.h>
 #endif
 
 #include <Poco/ByteOrder.h>
@@ -48,6 +51,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -93,7 +97,7 @@ struct IntHash64Impl
     }
 };
 
-
+#if USE_SSL
 struct HalfMD5Impl
 {
     static constexpr auto name = "halfMD5";
@@ -182,6 +186,7 @@ struct SHA256Impl
         SHA256_Final(out_char_data, &ctx);
     }
 };
+#endif
 
 struct SipHash64Impl
 {
@@ -813,7 +818,7 @@ private:
         /// Flattening of tuples.
         if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
         {
-            const Columns & tuple_columns = tuple->getColumns();
+            const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
@@ -821,7 +826,7 @@ private:
         }
         else if (const ColumnTuple * tuple_const = checkAndGetColumnConstData<ColumnTuple>(column))
         {
-            const Columns & tuple_columns = tuple_const->getColumns();
+            const auto & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
@@ -1075,15 +1080,18 @@ private:
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
-
+#if USE_SSL
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
+#endif
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
+#if USE_SSL
 using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
 using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
 using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
+#endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;

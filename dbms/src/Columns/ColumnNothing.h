@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class ColumnNothing final : public COWPtrHelper<IColumnDummy, ColumnNothing>
+class ColumnNothing final : public COWHelper<IColumnDummy, ColumnNothing>
 {
 private:
-    friend class COWPtrHelper<IColumnDummy, ColumnNothing>;
+    friend class COWHelper<IColumnDummy, ColumnNothing>;
 
     ColumnNothing(size_t s_)
     {
@@ -23,6 +23,11 @@ public:
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnNothing::create(s_); }
 
     bool canBeInsideNullable() const override { return true; }
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnNothing);
+    }
 };
 
 }

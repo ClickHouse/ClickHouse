@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int POCO_EXCEPTION;
+    extern const int METRIKA_OTHER_ERROR;
 }
 
 class Exception : public Poco::Exception

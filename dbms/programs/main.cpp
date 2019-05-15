@@ -1,3 +1,4 @@
+#include <new>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -17,12 +18,6 @@
 #include <gperftools/malloc_extension.h> // Y_IGNORE
 #endif
 
-#if ENABLE_CLICKHOUSE_SERVER
-#include "server/Server.h"
-#endif
-#if ENABLE_CLICKHOUSE_LOCAL
-#include "local/LocalServer.h"
-#endif
 #include <Common/StringUtils/StringUtils.h>
 
 /// Universal executable for various clickhouse applications
@@ -38,7 +33,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_BENCHMARK || !defined(ENABLE_CLICKHOUSE_BENCHMARK)
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE || !defined(ENABLE_CLICKHOUSE_PERFORMANCE)
+#if ENABLE_CLICKHOUSE_PERFORMANCE_TEST || !defined(ENABLE_CLICKHOUSE_PERFORMANCE_TEST)
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
@@ -84,7 +79,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
     {"server", mainEntryClickHouseServer},
 #endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE || !defined(ENABLE_CLICKHOUSE_PERFORMANCE)
+#if ENABLE_CLICKHOUSE_PERFORMANCE_TEST || !defined(ENABLE_CLICKHOUSE_PERFORMANCE_TEST)
     {"performance-test", mainEntryClickHousePerformanceTest},
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
@@ -145,6 +140,10 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 
 int main(int argc_, char ** argv_)
 {
+    /// Reset new handler to default (that throws std::bad_alloc)
+    /// It is needed because LLVM library clobbers it.
+    std::set_new_handler(nullptr);
+
 #if USE_EMBEDDED_COMPILER
     if (argc_ >= 2 && 0 == strcmp(argv_[1], "-cc1"))
         return mainEntryClickHouseClang(argc_, argv_);

@@ -116,6 +116,14 @@ INSERT INTO test.compression_codec_multiple_with_key SELECT toDate('2018-10-12')
 
 SELECT COUNT(DISTINCT data) FROM test.compression_codec_multiple_with_key WHERE id < 222;
 
+-- method in lowercase
+SET network_compression_method = 'ZSTD';
+SET network_zstd_compression_level = 7;
+
+INSERT INTO test.compression_codec_multiple_with_key VALUES(toDate('2018-10-13'), 100001, 'hello1'), (toDate('2018-10-14'), 100003, 'world1'), (toDate('2018-10-15'), 2222, '!ZSTD');
+
+SELECT data FROM test.compression_codec_multiple_with_key WHERE id = 2222;
+
 DROP TABLE IF EXISTS test.compression_codec_multiple_with_key;
 
 DROP TABLE IF EXISTS test.test_default_delta;

@@ -6,11 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e -o pipefail
 
 # Run the client.
-$CLICKHOUSE_CLIENT --multiquery <<EOF
-CREATE DATABASE IF NOT EXISTS test;
-DROP TABLE IF EXISTS test.table;
+$CLICKHOUSE_CLIENT --multiquery <<'EOF'
+DROP TABLE IF EXISTS table_00825;
 
-CREATE TABLE test.table (uuid UUID,
+CREATE TABLE table_00825 (uuid UUID,
                          name String,
                          surname String,
                          gender Enum8('male'=1, 'female'=0),
@@ -32,7 +31,9 @@ CREATE TABLE test.table (uuid UUID,
                          someRatio Float32,
                          temperature Decimal32(1),
                          randomBigNumber Int64,
-                         measureUnits Nested (unit String, coef Float32)
+                         measureUnits Nested (unit String, coef Float32),
+                         nestiness_a_b_c_d Nullable(UInt32),
+                         `nestiness_a_B.c_E` Array(UInt32)
                          ) ENGINE = MergeTree ORDER BY tuple();
 EOF
 
@@ -41,4 +42,6 @@ EOF
 # build/utils/test-data-generator/ProtobufDelimitedMessagesSerializer
 source $CURDIR/00825_protobuf_format_input.insh
 
-$CLICKHOUSE_CLIENT --query "SELECT * FROM test.table ORDER BY uuid;"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM table_00825 ORDER BY uuid;"
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_00825;"

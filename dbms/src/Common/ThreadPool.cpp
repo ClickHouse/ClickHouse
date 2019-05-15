@@ -157,6 +157,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             }
             else
             {
+                /// shutdown is true, simply finish the thread.
                 return;
             }
         }

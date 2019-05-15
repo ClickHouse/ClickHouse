@@ -9,8 +9,6 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 `База данных` - это просто директория для таблиц.
 Если написано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если база данных уже существует.
 
-
-
 ## CREATE TABLE {#create-table-query}
 
 Запрос `CREATE TABLE` может иметь несколько форм.
@@ -18,8 +16,8 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -46,7 +44,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков](../operations/table_engines/index.md#table_engines).
 
-### Значения по умолчанию
+### Значения по умолчанию {#create-default-values}
 
 В описании столбца, может быть указано выражение для значения по умолчанию, одного из следующих видов:
 `DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
@@ -82,7 +80,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 Отсутствует возможность задать значения по умолчанию для элементов вложенных структур данных.
 
-# Форматы сжатия для колонок
+### Выражение для TTL
+
+Может быть указано только для таблиц семейства MergeTree. Выражение для указания времени хранения значений. Оно должно зависеть от стобца типа `Date` или `DateTime` и в качестве результата вычислять столбец типа `Date` или `DateTime`. Пример:
+    `TTL date + INTERVAL 1 DAY`
+
+Нельзя указывать TTL для ключевых столбцов. Подробнее смотрите в [TTL для стоблцов и таблиц](../operations/table_engines/mergetree.md)
+
+
+## Форматы сжатия для колонок
 
 Помимо сжатия для колонок по умолчанию, определяемого в [настройках сервера](../operations/server_settings/settings.md#compression),
 существует возможность указать формат сжатия индивидуально для каждой колонки.
@@ -120,7 +126,7 @@ CREATE TABLE timeseries_example
     dt Date,
     ts DateTime,
     path String,
-    value Float32 CODEC(Delta(2), ZSTD)
+    value Float32 CODEC(Delta, ZSTD)
 )
 ENGINE = MergeTree
 PARTITION BY dt
@@ -128,7 +134,7 @@ ORDER BY (path, ts)
 ```
 
 
-### Временные таблицы
+## Временные таблицы
 
 ClickHouse поддерживает временные таблицы со следующими характеристиками:
 

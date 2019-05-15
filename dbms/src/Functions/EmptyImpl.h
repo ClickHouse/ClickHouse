@@ -1,5 +1,6 @@
 #pragma once
-#include <cstring>
+
+#include <Common/memcmpSmall.h>
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 
@@ -38,11 +39,9 @@ struct EmptyImpl
 
     static void vector_fixed_to_vector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
     {
-        std::vector<char> empty_chars(n);
         size_t size = data.size() / n;
-
         for (size_t i = 0; i < size; ++i)
-            res[i] = negative ^ (0 == memcmp(&data[i * n], empty_chars.data(), n));
+            res[i] = negative ^ memoryIsZeroSmallAllowOverflow15(data.data() + i * n, n);
     }
 
     static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)

@@ -129,19 +129,6 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
     return columns;
 }
 
-void ColumnFunction::insertDefault()
-{
-    for (auto & column : captured_columns)
-        column.column->assumeMutableRef().insertDefault();
-    ++size_;
-}
-void ColumnFunction::popBack(size_t n)
-{
-    for (auto & column : captured_columns)
-        column.column->assumeMutableRef().popBack(n);
-    size_ -= n;
-}
-
 size_t ColumnFunction::byteSize() const
 {
     size_t total_size = 0;

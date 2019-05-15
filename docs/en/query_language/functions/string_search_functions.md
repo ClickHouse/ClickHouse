@@ -15,23 +15,31 @@ The same as `position`, but the position is returned in Unicode code points. Wor
 
 For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
-## multiPosition(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchAllPositions(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
-The same as `position`, but returns `Array` of the `position`s for all `needle_i`.
+The same as `position`, but returns `Array` of the `position`s for all needle<sub>i</sub>.
 
-For a case-insensitive search or/and in UTF-8 format use functions `multiPositionCaseInsensitive, multiPositionUTF8, multiPositionCaseInsensitiveUTF8`.
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAllPositionsCaseInsensitive, multiSearchAllPositionsUTF8, multiSearchAllPositionsCaseInsensitiveUTF8`.
 
-## firstMatch(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchFirstPosition(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
-Returns the index `i` (starting from 1) of the first found `needle_i` in the string `haystack` and 0 otherwise.
+The same as `position` but returns the leftmost offset of the string `haystack` that is matched to some of the needles.
 
-For a case-insensitive search or/and in UTF-8 format use functions `firstMatchCaseInsensitive, firstMatchUTF8, firstMatchCaseInsensitiveUTF8`.
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchFirstPositionCaseInsensitive, multiSearchFirstPositionUTF8, multiSearchFirstPositionCaseInsensitiveUTF8`.
 
-## multiSearch(haystack, [needle_1, needle_2, ..., needle_n])
+## multiSearchFirstIndex(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
 
-Returns 1, if at least one string `needle_i` matches the string `haystack` and 0 otherwise.
+Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise.
 
-For a case-insensitive search or/and in UTF-8 format use functions `multiSearchCaseInsensitive, multiSearchUTF8, multiSearchCaseInsensitiveUTF8`.
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchFirstIndexCaseInsensitive, multiSearchFirstIndexUTF8, multiSearchFirstIndexCaseInsensitiveUTF8`.
+
+## multiSearchAny(haystack, [needle<sub>1</sub>, needle<sub>2</sub>, ..., needle<sub>n</sub>])
+
+Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchAnyCaseInsensitive, multiSearchAnyUTF8, multiSearchAnyCaseInsensitiveUTF8`.
+
+**Note: in all `multiSearch*` functions the number of needles should be less than 2<sup>8</sup> because of implementation specification.**
 
 ## match(haystack, pattern)
 
@@ -43,6 +51,28 @@ Note that the backslash symbol (`\`) is used for escaping in the regular express
 
 The regular expression works with the string as if it is a set of bytes. The regular expression can't contain null bytes.
 For patterns to search for substrings in a string, it is better to use LIKE or 'position', since they work much faster.
+
+## multiMatchAny(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
+
+The same as `match`, but returns 0 if none of the regular expressions are matched and 1 if any of the patterns matches. It uses [hyperscan](https://github.com/intel/hyperscan) library. For patterns to search substrings in a string, it is better to use `multiSearchAny` since it works much faster.
+
+**Note: the length of any of the `haystack` string must be less than 2<sup>32</sup> bytes otherwise the exception is thrown. This restriction takes place because of hyperscan API.**
+
+## multiMatchAnyIndex(haystack, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
+
+The same as `multiMatchAny`, but returns any index that matches the haystack.
+
+## multiFuzzyMatchAny(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
+
+The same as `multiMatchAny`, but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function is also in an experimental mode and can be extremely slow. For more information see [hyperscan documentation](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
+
+## multiFuzzyMatchAnyIndex(haystack, distance, [pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>])
+
+The same as `multiFuzzyMatchAny`, but returns any index that matches the haystack within a constant edit distance.
+
+**Note: `multiFuzzyMatch*` functions do not support UTF-8 regular expressions, and such expressions are treated as bytes because of hyperscan restriction.**
+
+**Note: to turn off all functions that use hyperscan, use setting `SET allow_hyperscan = 0;`.**
 
 ## extract(haystack, pattern)
 
@@ -69,6 +99,14 @@ For other regular expressions, the code is the same as for the 'match' function.
 ## notLike(haystack, pattern), haystack NOT LIKE pattern operator
 
 The same thing as 'like', but negative.
+
+## ngramDistance(haystack, needle)
+
+Calculates the 4-gram distance between `haystack` and `needle`: counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns float number from 0 to 1 -- the closer to zero, the more strings are similar to each other. If the constant `needle` or `haystack` is more than 32Kb, throws an exception. If some of the non-constant `haystack` or `needle` strings are more than 32Kb, the distance is always one.
+
+For case-insensitive search or/and in UTF-8 format use functions `ngramDistanceCaseInsensitive, ngramDistanceUTF8, ngramDistanceCaseInsensitiveUTF8`.
+
+**Note: For UTF-8 case we use 3-gram distance. All these are not perfectly fair n-gram distances. We use 2-byte hashes to hash n-grams and then calculate the symmetric difference between these hash tables -- collisions may occur. With UTF-8 case-insensitive format we do not use fair `tolower` function -- we zero the 5-th bit (starting from zero) of each codepoint byte -- this works for Latin and mostly for all Cyrillic letters.**
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->

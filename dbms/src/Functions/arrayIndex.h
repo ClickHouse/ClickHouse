@@ -6,9 +6,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldVisitors.h>
+#include <Common/memcmpSmall.h>
 
 
 namespace DB
@@ -272,8 +274,7 @@ struct ArrayIndexNumNullImpl
     }
 };
 
-/// Implementation for arrays of strings when the 2nd function argument
-/// is a NULL value.
+/// Implementation for arrays of strings when the 2nd function argument is a NULL value.
 template <typename IndexConv>
 struct ArrayIndexStringNullImpl
 {
@@ -311,12 +312,11 @@ struct ArrayIndexStringImpl
 {
     static void vector_const(
         const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
-        const String & value,
+        const ColumnString::Chars & value, ColumnString::Offset value_size,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
         const auto size = offsets.size();
-        const auto value_size = value.size();
         result.resize(size);
 
         ColumnArray::Offset current_offset = 0;
@@ -331,12 +331,12 @@ struct ArrayIndexStringImpl
                     ? 0
                     : string_offsets[current_offset + j - 1];
 
-                ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
+                ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos - 1;
 
                 if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                 }
-                else if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
+                else if (memequalSmallAllowOverflow15(value.data(), value_size, &data[string_pos], string_size))
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -381,7 +381,7 @@ struct ArrayIndexStringImpl
                     if (null_map_item && (*null_map_item)[i])
                         hit = true;
                 }
-                else if (string_size == value_size && 0 == memcmp(&item_values[value_pos], &data[string_pos], value_size))
+                else if (memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
                     hit = true;
 
                 if (hit)
@@ -708,16 +708,32 @@ private:
         const auto item_arg = block.getByPosition(arguments[1]).column.get();
 
         if (item_arg->onlyNull())
+        {
             ArrayIndexStringNullImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), col_res->getData(), null_map_data);
+        }
         else if (const auto item_arg_const = checkAndGetColumnConstStringOrFixedString(item_arg))
-            ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(),
-                col_nested->getOffsets(), item_arg_const->getValue<String>(), col_res->getData(),
-                null_map_data);
+        {
+            const ColumnString * item_const_string = checkAndGetColumn<ColumnString>(&item_arg_const->getDataColumn());
+            const ColumnFixedString * item_const_fixedstring = checkAndGetColumn<ColumnFixedString>(&item_arg_const->getDataColumn());
+
+            if (item_const_string)
+                ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(), col_nested->getOffsets(),
+                    item_const_string->getChars(), item_const_string->getDataAt(0).size,
+                    col_res->getData(), null_map_data);
+            else if (item_const_fixedstring)
+                ArrayIndexStringImpl<IndexConv>::vector_const(col_nested->getChars(), col_array->getOffsets(), col_nested->getOffsets(),
+                    item_const_fixedstring->getChars(), item_const_fixedstring->getN(),
+                    col_res->getData(), null_map_data);
+            else
+                throw Exception("Logical error: ColumnConst contains not String nor FixedString column", ErrorCodes::ILLEGAL_COLUMN);
+        }
         else if (const auto item_arg_vector = checkAndGetColumn<ColumnString>(item_arg))
+        {
             ArrayIndexStringImpl<IndexConv>::vector_vector(col_nested->getChars(), col_array->getOffsets(),
                 col_nested->getOffsets(), item_arg_vector->getChars(), item_arg_vector->getOffsets(),
                 col_res->getData(), null_map_data, null_map_item);
+        }
         else
             return false;
 

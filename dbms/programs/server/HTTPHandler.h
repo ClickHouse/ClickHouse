@@ -28,6 +28,9 @@ public:
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
+    /// This method is called right before the query execution.
+    virtual void customizeContext(DB::Context& /* context */) {}
+
 private:
     struct Output
     {

@@ -2,8 +2,8 @@
 #if USE_PROTOBUF
 
 #include <Formats/FormatSchemaInfo.h>
-#include <Formats/ProtobufSchemas.h>
-#include <google/protobuf/compiler/importer.h>
+#include <Formats/ProtobufSchemas.h> // Y_IGNORE
+#include <google/protobuf/compiler/importer.h> // Y_IGNORE
 #include <Common/Exception.h>
 
 
@@ -12,7 +12,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_PARSE_PROTOBUF_SCHEMA;
 }
 
@@ -72,11 +71,6 @@ const google::protobuf::Descriptor * ProtobufSchemas::getMessageTypeForFormatSch
         it = importers.emplace(info.schemaDirectory(), std::make_unique<ImporterWithSourceTree>(info.schemaDirectory())).first;
     auto * importer = it->second.get();
     return importer->import(info.schemaPath(), info.messageName());
-}
-
-const google::protobuf::Descriptor * ProtobufSchemas::getMessageTypeForColumns(const std::vector<ColumnWithTypeAndName> & /*columns*/)
-{
-    throw Exception("Using the 'Protobuf' format without schema is not implemented", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

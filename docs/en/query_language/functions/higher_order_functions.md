@@ -105,7 +105,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 
 Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
 
-The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to impove sorting efficiency.
+The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to improve sorting efficiency.
 
 Example:
 
@@ -119,11 +119,31 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 └────────────────────┘
 ```
 
+Note that NULLs and NaNs go last (NaNs go before NULLs). For example:
+ 
+``` sql
+SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
+```
+```
+┌─arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
+│ [1,2,3,4,nan,nan,NULL,NULL]                   │
+└───────────────────────────────────────────────┘
+```
+
 ### arrayReverseSort(\[func,\] arr1, ...)
 
 Returns an array as result of sorting the elements of `arr1` in descending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
 
-
+Note that NULLs and NaNs go last (NaNs go before NULLs). For example:
+ 
+``` sql
+SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
+```
+```
+┌─arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
+│ [4,3,2,1,nan,nan,NULL,NULL]                          │
+└──────────────────────────────────────────────────────┘
+```
 
 
 

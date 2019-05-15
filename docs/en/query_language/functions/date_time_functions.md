@@ -66,14 +66,20 @@ Leap seconds are not accounted for.
 
 Converts a date with time to a unix timestamp.
 
-## toMonday
+## toStartOfYear
 
-Rounds down a date or date with time to the nearest Monday.
+Rounds down a date or date with time to the first day of the year.
 Returns the date.
 
 ## toStartOfISOYear
 
 Rounds down a date or date with time to the first day of ISO year.
+Returns the date.
+
+## toStartOfQuarter
+
+Rounds down a date or date with time to the first day of the quarter.
+The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October.
 Returns the date.
 
 ## toStartOfMonth
@@ -84,16 +90,18 @@ Returns the date.
 !!! attention
     The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do "natural" overflow.
 
-## toStartOfQuarter
+## toMonday
 
-Rounds down a date or date with time to the first day of the quarter.
-The first day of the quarter is either 1 January, 1 April, 1 July, or 1 October.
+Rounds down a date or date with time to the nearest Monday.
 Returns the date.
 
-## toStartOfYear
+## toStartOfDay
 
-Rounds down a date or date with time to the first day of the year.
-Returns the date.
+Rounds down a date with time to the start of the day.
+
+## toStartOfHour
+
+Rounds down a date with time to the start of the hour.
 
 ## toStartOfMinute
 
@@ -103,19 +111,19 @@ Rounds down a date with time to the start of the minute.
 
 Rounds down a date with time to the start of the five-minute interval.
 
+## toStartOfTenMinutes
+Rounds down a date with time to the start of the ten-minute interval.
+
 ## toStartOfFifteenMinutes
 
 Rounds down the date with time to the start of the fifteen-minute interval.
 
-Note: If you need to round a date with time to any other number of seconds, minutes, or hours, you can convert it into a number by using the toUInt32 function, then round the number using intDiv and multiplication, and convert it back using the toDateTime function.
-
-## toStartOfHour
-
-Rounds down a date with time to the start of the hour.
-
-## toStartOfDay
-
-Rounds down a date with time to the start of the day.
+## toStartOfInterval(time_or_data, INTERVAL x unit [, time_zone])
+This is a generalization of other functions named `toStartOf*`. For example,  
+`toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,  
+`toStartOfInterval(t, INTERVAL 1 month)` returns the same as `toStartOfMonth(t)`,  
+`toStartOfInterval(t, INTERVAL 1 day)` returns the same as `toStartOfDay(t)`,  
+`toStartOfInterval(t, INTERVAL 15 minute)` returns the same as `toStartOfFifteenMinutes(t)` etc.
 
 ## toTime
 

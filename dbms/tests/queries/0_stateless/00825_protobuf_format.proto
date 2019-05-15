@@ -20,7 +20,27 @@ enum ZodiacSign {
   pisces = 11;
 };
 
+message Nestiness
+{
+  message SubA {
+    message SubB {
+      message SubC {
+        uint32 d = 1;
+        repeated uint32 e = 2;
+      };
+      SubC c = 1;
+    };
+    SubB b = 100;
+  };
+  SubA a = 1;
+};
+
 message Person {
+  message MeasureUnit
+  {
+    string unit = 1;
+    float coef = 2;
+  };
   string uuid = 1;
   string name = 2;
   string surname = 3;
@@ -41,6 +61,8 @@ message Person {
   float someRatio = 18;
   float temperature = 19;
   sint64 randomBigNumber = 20;
+  repeated MeasureUnit measureUnits = 21;
+  Nestiness nestiness = 22;
 };
 
 enum OnlineStatus {
@@ -52,6 +74,11 @@ message AltPerson {
   enum Gender {
     male = 0;
     female = 1;
+  };
+  message Dummy {
+    message Empty {};
+    repeated Empty empty = 1;
+    float z = 2;
   };
   repeated int32 location = 101 [packed=false];
   float pi = 103;
@@ -65,6 +92,7 @@ message AltPerson {
   OnlineStatus isOnline = 1;
   double someRatio = 100;
   fixed64 visitTime = 15;
+  Dummy newMessage = 1000;
   sfixed64 randomBigNumber = 140;
   repeated int32 newFieldInt = 104;
   repeated float color = 14;
@@ -73,9 +101,26 @@ message AltPerson {
   uint64 phoneNumber = 5;
   sint32 temperature = 41;
   string newFieldStr = 21;
+  repeated string measureUnits_unit = 99;
+  repeated float measureUnits_coef = 88;
+  uint32 nestiness_a_b_c_d = 900;
+  repeated uint32 nestiness_a_b_c_e = 901;
 };
 
 message StrPerson {
+  message MeasureUnits
+  {
+    repeated string unit = 1;
+    repeated string coef = 2;
+  };
+  message NestinessA
+  {
+    message SubBC {
+      string d = 1;
+      repeated string e = 2;
+    };
+    SubBC b_c = 1;
+  };
   string uuid = 1;
   string name = 2;
   string surname = 3;
@@ -95,4 +140,6 @@ message StrPerson {
   string someRatio = 18;
   string temperature = 19;
   string randomBigNumber = 20;
+  MeasureUnits measureUnits = 21;
+  NestinessA nestiness_a = 22;
 };

@@ -111,8 +111,8 @@ Check:
 
     Check:
 
-    - The `tcp_port_secure` setting.
-    - Settings for SSL sertificates.
+    - The [tcp_port_secure](server_settings/settings.md#server_settings-tcp_port_secure) setting.
+    - Settings for [SSL sertificates](server_settings/settings.md#server_settings-openssl).
 
      Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
 

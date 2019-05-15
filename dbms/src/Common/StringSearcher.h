@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/UTF8Helpers.h>
+#include <Core/Defines.h>
 #include <ext/range.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
@@ -156,7 +157,7 @@ public:
 #endif
     }
 
-    bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * pos) const
     {
         static const Poco::UTF8Encoding utf8;
 
@@ -374,7 +375,7 @@ public:
 #endif
     }
 
-    bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))
@@ -568,7 +569,7 @@ public:
 #endif
     }
 
-    bool compare(const UInt8 * pos) const
+    ALWAYS_INLINE bool compare(const UInt8 * pos) const
     {
 #ifdef __SSE4_1__
         if (pageSafe(pos))

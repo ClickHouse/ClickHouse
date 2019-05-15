@@ -414,7 +414,7 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(const StringRef & data)
             column->popBack(1);
     }
 
-    return *iterator;
+    return iterator->getValue();
 }
 
 template <typename IndexType, typename ColumnType>
@@ -429,7 +429,7 @@ UInt64 ReverseIndex<IndexType, ColumnType>::getInsertionPoint(const StringRef & 
     auto hash = getHash(data);
     iterator = index->find(data, hash);
 
-    return iterator == index->end() ? size() + base_index : *iterator;
+    return iterator == index->end() ? size() + base_index : iterator->getValue();
 }
 
 }

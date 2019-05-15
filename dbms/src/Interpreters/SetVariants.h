@@ -8,6 +8,8 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/ClearableHashSet.h>
+#include <Common/HashTable/FixedClearableHashSet.h>
+#include <Common/HashTable/FixedHashSet.h>
 #include <Common/UInt128.h>
 
 
@@ -182,9 +184,8 @@ struct SetMethodHashed
   */
 struct NonClearableSet
 {
-    /// TODO Use either bit- or byte-set for these two options.
-    std::unique_ptr<SetMethodOneNumber<UInt8, HashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>            key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, HashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>>         key16;
+    std::unique_ptr<SetMethodOneNumber<UInt8, FixedHashSet<UInt8>>>                                             key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, FixedHashSet<UInt16>>>                                           key16;
 
     /** Also for the experiment was tested the ability to use SmallSet,
       *  as long as the number of elements in the set is small (and, if necessary, converted to a full-fledged HashSet).
@@ -209,9 +210,8 @@ struct NonClearableSet
 
 struct ClearableSet
 {
-    /// TODO Use either bit- or byte-set for these two options.
-    std::unique_ptr<SetMethodOneNumber<UInt8, ClearableHashSet<UInt8, TrivialHash, HashTableFixedGrower<8>>>>       key8;
-    std::unique_ptr<SetMethodOneNumber<UInt16, ClearableHashSet<UInt16, TrivialHash, HashTableFixedGrower<16>>>>    key16;
+    std::unique_ptr<SetMethodOneNumber<UInt8, FixedClearableHashSet<UInt8>>>                                        key8;
+    std::unique_ptr<SetMethodOneNumber<UInt16, FixedClearableHashSet<UInt16>>>                                      key16;
 
     std::unique_ptr<SetMethodOneNumber<UInt32, ClearableHashSet<UInt32, HashCRC32<UInt32>>>>                        key32;
     std::unique_ptr<SetMethodOneNumber<UInt64, ClearableHashSet<UInt64, HashCRC32<UInt64>>>>                        key64;

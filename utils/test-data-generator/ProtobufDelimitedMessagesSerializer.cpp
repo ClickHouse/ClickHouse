@@ -5,8 +5,8 @@
 #include <fstream>
 #include <iostream>
 #include <google/protobuf/util/delimited_message_util.h>
-#include "00825_protobuf_format_with_nested.pb.h"
-#include "00825_protobuf_format_syntax2_with_nested.pb.h"
+#include "00825_protobuf_format.pb.h"
+#include "00825_protobuf_format_syntax2.pb.h"
 
 
 void writeInsertQueryCommand(std::ostream & out, const std::string & format_schema, std::stringstream & delimited_messages)
@@ -63,6 +63,9 @@ void writeInputInsertQueries(std::ostream & out)
         mu = person.add_measureunits();
         mu->set_unit("kilometer");
         mu->set_coef(1000);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(500);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->add_e(501);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->add_e(502);
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
@@ -118,10 +121,11 @@ void writeInputInsertQueries(std::ostream & out)
         auto* mu = person.add_measureunits();
         mu->set_unit("pound");
         mu->set_coef(16);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(503);
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
-    writeInsertQueryCommand(out, "00825_protobuf_format_with_nested:Person", ss);
+    writeInsertQueryCommand(out, "00825_protobuf_format:Person", ss);
 
     {
         AltPerson person;
@@ -149,6 +153,8 @@ void writeInputInsertQueries(std::ostream & out)
         person.add_measureunits_coef(1024);
         person.add_measureunits_unit("MB");
         person.add_measureunits_coef(1048576);
+        person.set_nestiness_a_b_c_d(700);
+        person.add_nestiness_a_b_c_e(701);
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
@@ -179,10 +185,11 @@ void writeInputInsertQueries(std::ostream & out)
         person.add_measureunits_unit("Bit");
         person.add_measureunits_coef(1);
         person.mutable_newmessage()->set_z(91);
+        person.set_nestiness_a_b_c_d(702);
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
-    writeInsertQueryCommand(out, "00825_protobuf_format_with_nested:AltPerson", ss);
+    writeInsertQueryCommand(out, "00825_protobuf_format:AltPerson", ss);
 
     {
         StrPerson person;
@@ -214,10 +221,11 @@ void writeInputInsertQueries(std::ostream & out)
         person.mutable_measureunits()->add_coef("60");
         person.mutable_measureunits()->add_unit("hour");
         person.mutable_measureunits()->add_coef("3600");
+        person.mutable_nestiness_a()->mutable_b_c()->add_e("1800");
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
-    writeInsertQueryCommand(out, "00825_protobuf_format_with_nested:StrPerson", ss);
+    writeInsertQueryCommand(out, "00825_protobuf_format:StrPerson", ss);
 
     {
         Syntax2Person person;
@@ -250,10 +258,11 @@ void writeInputInsertQueries(std::ostream & out)
         person.mutable_measureunits()->add_coef(0.2);
         person.mutable_measureunits()->add_unit("gram");
         person.mutable_measureunits()->add_coef(1);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(9494);
         google::protobuf::util::SerializeDelimitedToOstream(person, &ss);
     }
 
-    writeInsertQueryCommand(out, "00825_protobuf_format_syntax2_with_nested:Syntax2Person", ss);
+    writeInsertQueryCommand(out, "00825_protobuf_format_syntax2:Syntax2Person", ss);
 }
 
 
@@ -285,6 +294,18 @@ void writeOutputReference(std::ostream & out)
         person.set_someratio(0.1);
         person.set_temperature(5.8);
         person.set_randombignumber(17060000000);
+        auto* mu = person.add_measureunits();
+        mu->set_unit("meter");
+        mu->set_coef(1);
+        mu = person.add_measureunits();
+        mu->set_unit("centimeter");
+        mu->set_coef(0.01);
+        mu = person.add_measureunits();
+        mu->set_unit("kilometer");
+        mu->set_coef(1000);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(500);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->add_e(501);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->add_e(502);
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
 
@@ -337,6 +358,10 @@ void writeOutputReference(std::ostream & out)
         person.set_someratio(800);
         person.set_temperature(-3.2);
         person.set_randombignumber(154400000);
+        auto* mu = person.add_measureunits();
+        mu->set_unit("pound");
+        mu->set_coef(16);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(503);
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
 
@@ -364,6 +389,15 @@ void writeOutputReference(std::ostream & out)
         person.set_surname("Petrov");
         person.set_phonenumber(+74951234567);
         person.set_temperature(5);
+        person.add_measureunits_unit("meter");
+        person.add_measureunits_coef(1);
+        person.add_measureunits_unit("centimeter");
+        person.add_measureunits_coef(0.01);
+        person.add_measureunits_unit("kilometer");
+        person.add_measureunits_coef(1000);
+        person.set_nestiness_a_b_c_d(500);
+        person.add_nestiness_a_b_c_e(501);
+        person.add_nestiness_a_b_c_e(502);
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
 
@@ -411,6 +445,9 @@ void writeOutputReference(std::ostream & out)
         person.set_surname("Sidorov");
         person.set_phonenumber(+442012345678);
         person.set_temperature(-3);
+        person.add_measureunits_unit("pound");
+        person.add_measureunits_coef(16);
+        person.set_nestiness_a_b_c_d(503);
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
 
@@ -441,6 +478,15 @@ void writeOutputReference(std::ostream & out)
         person.set_someratio("0.1");
         person.set_temperature("5.8");
         person.set_randombignumber("17060000000");
+        person.mutable_measureunits()->add_unit("meter");
+        person.mutable_measureunits()->add_coef("1");
+        person.mutable_measureunits()->add_unit("centimeter");
+        person.mutable_measureunits()->add_coef("0.01");
+        person.mutable_measureunits()->add_unit("kilometer");
+        person.mutable_measureunits()->add_coef("1000");
+        person.mutable_nestiness_a()->mutable_b_c()->set_d("500");
+        person.mutable_nestiness_a()->mutable_b_c()->add_e("501");
+        person.mutable_nestiness_a()->mutable_b_c()->add_e("502");
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
 
@@ -491,6 +537,9 @@ void writeOutputReference(std::ostream & out)
         person.set_someratio("800");
         person.set_temperature("-3.2");
         person.set_randombignumber("154400000");
+        person.mutable_measureunits()->add_unit("pound");
+        person.mutable_measureunits()->add_coef("16");
+        person.mutable_nestiness_a()->mutable_b_c()->set_d("503");
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
 
@@ -522,6 +571,15 @@ void writeOutputReference(std::ostream & out)
         person.set_someratio(0.1);
         person.set_temperature(5.8);
         person.set_randombignumber(17060000000);
+        person.mutable_measureunits()->add_unit("meter");
+        person.mutable_measureunits()->add_coef(1);
+        person.mutable_measureunits()->add_unit("centimeter");
+        person.mutable_measureunits()->add_coef(0.01);
+        person.mutable_measureunits()->add_unit("kilometer");
+        person.mutable_measureunits()->add_coef(1000);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(500);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->add_e(501);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->add_e(502);
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
 
@@ -574,6 +632,9 @@ void writeOutputReference(std::ostream & out)
         person.set_someratio(800);
         person.set_temperature(-3.2);
         person.set_randombignumber(154400000);
+        person.mutable_measureunits()->add_unit("pound");
+        person.mutable_measureunits()->add_coef(16);
+        person.mutable_nestiness()->mutable_a()->mutable_b()->mutable_c()->set_d(503);
         google::protobuf::util::SerializeDelimitedToOstream(person, &out);
     }
 }

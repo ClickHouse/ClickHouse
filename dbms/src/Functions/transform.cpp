@@ -508,7 +508,7 @@ private:
         {
             auto it = table.find(src[i]);
             if (it != table.end())
-                memcpy(&dst[i], &it->second, sizeof(dst[i]));    /// little endian.
+                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));    /// little endian.
             else
                 dst[i] = dst_default;
         }
@@ -524,7 +524,7 @@ private:
         {
             auto it = table.find(src[i]);
             if (it != table.end())
-                memcpy(&dst[i], &it->second, sizeof(dst[i]));    /// little endian.
+                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));    /// little endian.
             else
                 dst[i] = dst_default[i];
         }
@@ -540,7 +540,7 @@ private:
         {
             auto it = table.find(src[i]);
             if (it != table.end())
-                memcpy(&dst[i], &it->second, sizeof(dst[i]));
+                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
             else
                 dst[i] = src[i];
         }
@@ -557,7 +557,7 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             auto it = table.find(src[i]);
-            StringRef ref = it != table.end() ? it->second : dst_default;
+            StringRef ref = it != table.end() ? it->getSecond() : dst_default;
             dst_data.resize(current_dst_offset + ref.size);
             memcpy(&dst_data[current_dst_offset], ref.data, ref.size);
             current_dst_offset += ref.size;
@@ -581,7 +581,7 @@ private:
             StringRef ref;
 
             if (it != table.end())
-                ref = it->second;
+                ref = it->getSecond();
             else
             {
                 ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);
@@ -611,7 +611,7 @@ private:
             current_src_offset = src_offsets[i];
             auto it = table.find(ref);
             if (it != table.end())
-                memcpy(&dst[i], &it->second, sizeof(dst[i]));
+                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
             else
                 dst[i] = dst_default;
         }
@@ -632,7 +632,7 @@ private:
             current_src_offset = src_offsets[i];
             auto it = table.find(ref);
             if (it != table.end())
-                memcpy(&dst[i], &it->second, sizeof(dst[i]));
+                memcpy(&dst[i], &it->getSecond(), sizeof(dst[i]));
             else
                 dst[i] = dst_default[i];
         }
@@ -655,7 +655,7 @@ private:
 
             auto it = table.find(src_ref);
 
-            StringRef dst_ref = it != table.end() ? it->second : (with_default ? dst_default : src_ref);
+            StringRef dst_ref = it != table.end() ? it->getSecond() : (with_default ? dst_default : src_ref);
             dst_data.resize(current_dst_offset + dst_ref.size);
             memcpy(&dst_data[current_dst_offset], dst_ref.data, dst_ref.size);
             current_dst_offset += dst_ref.size;
@@ -697,7 +697,7 @@ private:
             StringRef dst_ref;
 
             if (it != table.end())
-                dst_ref = it->second;
+                dst_ref = it->getSecond();
             else
             {
                 dst_ref.data = reinterpret_cast<const char *>(&dst_default_data[current_dst_default_offset]);

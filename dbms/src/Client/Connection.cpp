@@ -357,7 +357,7 @@ void Connection::sendQuery(
     if (settings)
     {
         std::optional<int> level;
-        std::string method = settings->network_compression_method;
+        std::string method = Poco::toUpper(settings->network_compression_method.toString());
 
         /// Bad custom logic
         if (method == "ZSTD")
@@ -401,7 +401,7 @@ void Connection::sendQuery(
     if (settings)
         settings->serialize(*out);
     else
-        writeStringBinary("", *out);
+        writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);

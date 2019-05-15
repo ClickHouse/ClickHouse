@@ -79,7 +79,6 @@ LAYOUTS = [
 ]
 
 SOURCES = [
-    # some troubles with that dictionary
     SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse"),
     SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse"),
     SourceClickHouse("RemoteClickHouse", "localhost", "9000", "clickhouse1", "9000", "default", ""),
@@ -238,7 +237,7 @@ def test_ranged_dictionaries(started_cluster):
             '1973-06-28', '1985-02-28 23:43:25', 'hello',
             22.543, 3332154213.4]),
         Row(fields,
-            [1, '2019-04-10', '2019-04-01', '2019-04-28',
+            [2, '2019-04-10', '2019-04-01', '2019-04-28',
             11, 3223, 41444, 52515, -65, -747, -8388, -9099,
             '550e8400-e29b-41d4-a716-446655440004',
             '1973-06-29', '2002-02-28 23:23:25', '!!!!',

@@ -3,7 +3,6 @@ import sys
 import os
 import os.path
 import re
-import lxml.etree as et
 
 from argparse import ArgumentParser
 from argparse import FileType
@@ -17,18 +16,17 @@ from subprocess import CalledProcessError
 from datetime import datetime
 from time import sleep
 from errno import ESRCH
-from termcolor import colored
+import termcolor
 from random import random
 import commands
+from multiprocessing import Pool
+from contextlib import closing
 
 
-OP_SQUARE_BRACKET = colored("[", attrs=['bold'])
-CL_SQUARE_BRACKET = colored("]", attrs=['bold'])
-
-MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", "red", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", "green", attrs=['bold']) + CL_SQUARE_BRACKET
-MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
+MESSAGES_TO_RETRY = [
+    "DB::Exception: ZooKeeper session has been expired",
+    "Coordination::Exception: Connection loss",
+]
 
 
 def remove_control_characters(s):
@@ -39,14 +37,212 @@ def remove_control_characters(s):
         if int(s, base) < 0x10000:
             return unichr(int(s, base))
         return default
-    s = re.sub(ur"&#(\d+);?", lambda c: str_to_int(c.group(1), c.group(0)), s)
-    s = re.sub(ur"&#[xX]([0-9a-fA-F]+);?", lambda c: str_to_int(c.group(1), c.group(0), base=16), s)
-    s = re.sub(ur"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
+    s = re.sub(r"&#(\d+);?", lambda c: str_to_int(c.group(1), c.group(0)), s)
+    s = re.sub(r"&#[xX]([0-9a-fA-F]+);?", lambda c: str_to_int(c.group(1), c.group(0), base=16), s)
+    s = re.sub(r"[\x00-\x08\x0b\x0e-\x1f\x7f]", "", s)
     return s
 
-def main(args):
+def run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file):
+    if ext == '.sql':
+        command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client_with_database, server_logs_level, case_file, stdout_file, stderr_file)
+    else:
+        command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
 
-    SERVER_DIED = False
+    proc = Popen(command, shell = True)
+    start_time = datetime.now()
+    while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
+        sleep(0.01)
+
+    stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
+    stdout = unicode(stdout, errors='replace', encoding='utf-8')
+    stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
+    stderr = unicode(stderr, errors='replace', encoding='utf-8')
+
+    return proc, stdout, stderr
+
+def need_retry(stderr):
+    return any(msg in stderr for msg in MESSAGES_TO_RETRY)
+
+def get_processlist(client_cmd):
+    try:
+        return subprocess.check_output("{} --query 'SHOW PROCESSLIST FORMAT Vertical'".format(client_cmd), shell=True)
+    except:
+        return "" #  server seems dead
+
+def get_stacktraces(server_pid):
+    cmd = "gdb -q -ex 'set pagination off' -ex 'backtrace' -ex 'thread apply all backtrace' -ex 'detach' -ex 'quit' --pid {} 2>/dev/null".format(server_pid)
+    try:
+        return subprocess.check_output(cmd, shell=True)
+    except Exception as ex:
+        return "Error occured while receiving stack traces {}".format(str(ex))
+
+def get_server_pid(server_tcp_port):
+    cmd = "lsof -i tcp:{port} | grep '*:{port}'".format(port=server_tcp_port)
+    try:
+        output = subprocess.check_output(cmd, shell=True)
+        if output:
+            columns = output.strip().split(' ')
+            return int(columns[1])
+        else:
+            return None # server dead
+    except Exception as ex:
+        return None
+
+def colored(text, args, color=None, on_color=None, attrs=None):
+       if sys.stdout.isatty() or args.force_color:
+           return termcolor.colored(text, color, on_color, attrs)
+       else:
+           return text
+
+
+SERVER_DIED = False
+exit_code = 0
+
+
+#def run_tests_array(all_tests, suite, suite_dir, suite_tmp_dir, run_total):
+def run_tests_array(all_tests_with_params):
+    all_tests, suite, suite_dir, suite_tmp_dir, run_total = all_tests_with_params
+    global exit_code
+    global SERVER_DIED
+
+    OP_SQUARE_BRACKET = colored("[", args, attrs=['bold'])
+    CL_SQUARE_BRACKET = colored("]", args, attrs=['bold'])
+
+    MSG_FAIL = OP_SQUARE_BRACKET + colored(" FAIL ", args, "red", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_UNKNOWN = OP_SQUARE_BRACKET + colored(" UNKNOWN ", args, "yellow", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_OK = OP_SQUARE_BRACKET + colored(" OK ", args, "green", attrs=['bold']) + CL_SQUARE_BRACKET
+    MSG_SKIPPED = OP_SQUARE_BRACKET + colored(" SKIPPED ", args, "cyan", attrs=['bold']) + CL_SQUARE_BRACKET
+
+    passed_total = 0
+    skipped_total = 0
+    failures_total = 0
+    failures = 0
+    failures_chain = 0
+
+    if len(all_tests):
+        print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
+
+    for case in all_tests:
+        if SERVER_DIED:
+            break
+
+        case_file = os.path.join(suite_dir, case)
+        (name, ext) = os.path.splitext(case)
+
+        try:
+            sys.stdout.write("{0:72}".format(name + ": "))
+            if run_total == 1:
+                sys.stdout.flush()
+
+            if args.skip and any(s in name for s in args.skip):
+                print(MSG_SKIPPED + " - skip")
+                skipped_total += 1
+            elif not args.zookeeper and 'zookeeper' in name:
+                print(MSG_SKIPPED + " - no zookeeper")
+                skipped_total += 1
+            elif not args.shard and 'shard' in name:
+                print(MSG_SKIPPED + " - no shard")
+                skipped_total += 1
+            elif not args.no_long and 'long' in name:
+                print(MSG_SKIPPED + " - no long")
+                skipped_total += 1
+            else:
+                disabled_file = os.path.join(suite_dir, name) + '.disabled'
+
+                if os.path.exists(disabled_file) and not args.disabled:
+                    message = open(disabled_file, 'r').read()
+                    print(MSG_SKIPPED + " - " + message)
+                else:
+
+                    if args.testname:
+                        clickhouse_proc = Popen(shlex.split(args.client_with_database), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+                        clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
+
+                    reference_file = os.path.join(suite_dir, name) + '.reference'
+                    stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
+                    stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
+
+                    proc, stdout, stderr = run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file)
+                    if proc.returncode is None:
+                        try:
+                            proc.kill()
+                        except OSError as e:
+                            if e.errno != ESRCH:
+                                raise
+
+                        failures += 1
+                        print("{0} - Timeout!".format(MSG_FAIL))
+                    else:
+                        counter = 1
+                        while proc.returncode != 0 and need_retry(stderr):
+                            proc, stdout, stderr = run_single_test(args, ext, server_logs_level, case_file, stdout_file, stderr_file)
+                            sleep(2**counter)
+                            counter += 1
+                            if counter > 6:
+                                break
+
+                        if proc.returncode != 0:
+                            failures += 1
+                            failures_chain += 1
+                            print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
+
+                            if stderr:
+                                print(stderr.encode('utf-8'))
+
+                            if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
+                                SERVER_DIED = True
+
+                        elif stderr:
+                            failures += 1
+                            failures_chain += 1
+                            print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
+                        elif 'Exception' in stdout:
+                            failures += 1
+                            failures_chain += 1
+                            print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
+                        elif not os.path.isfile(reference_file):
+                            print("{0} - no reference file".format(MSG_UNKNOWN))
+                        else:
+                            result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout = PIPE)
+
+                            if result_is_different:
+                                diff = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()[0]
+                                failures += 1
+                                print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
+                            else:
+                                passed_total += 1
+                                failures_chain = 0
+                                print(MSG_OK)
+                                if os.path.exists(stdout_file):
+                                    os.remove(stdout_file)
+                                if os.path.exists(stderr_file):
+                                    os.remove(stderr_file)
+        except KeyboardInterrupt as e:
+            print(colored("Break tests execution", args, "red"))
+            raise e
+        except:
+            import traceback
+            exc_type, exc_value, tb = sys.exc_info()
+            failures += 1
+            print("{0} - Test internal error: {1}\n{2}\n{3}".format(MSG_FAIL, exc_type.__name__, exc_value, "\n".join(traceback.format_tb(tb, 10))))
+
+        if failures_chain >= 20:
+            break
+
+    failures_total = failures_total + failures
+
+    if failures_total > 0:
+        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), args, "red", attrs=["bold"]))
+        exit_code = 1
+    else:
+        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), args, "green", attrs=["bold"]))
+
+server_logs_level = "warning"
+
+def main(args):
+    global SERVER_DIED
+    global exit_code
+    global server_logs_level
 
     def is_data_present():
         clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
@@ -56,34 +252,20 @@ def main(args):
 
         return stdout.startswith('1')
 
-
-    def dump_report(destination, suite, test_case, report):
-        if destination is not None:
-            destination_file = os.path.join(destination, suite, test_case + ".xml")
-            destination_dir = os.path.dirname(destination_file)
-            if not os.path.exists(destination_dir):
-                os.makedirs(destination_dir)
-            with open(destination_file, 'w') as report_file:
-                report_root = et.Element("testsuites", attrib = {'name': 'ClickHouse Tests'})
-                report_suite = et.Element("testsuite", attrib = {"name": suite})
-                report_suite.append(report)
-                report_root.append(report_suite)
-                report_file.write(et.tostring(report_root, encoding = "UTF-8", xml_declaration=True, pretty_print=True))
-
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
 
     # Keep same default values as in queries/shell_config.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
-    os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
+    #os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
     if args.configclient:
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
+    os.environ.setdefault("CLICKHOUSE_DATABASE", args.database)
 
     # Force to print server warnings in stderr
     # Shell scripts could change logging level
-    server_logs_level = "warning"
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
 
     if args.zookeeper is None:
@@ -103,14 +285,32 @@ def main(args):
         else:
             args.shard = False
 
-    passed_total = 0
-    skipped_total = 0
-    failures_total = 0
-
     clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS " + args.database)
+    if args.database != "test":
+        clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+        clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
-    for suite in sorted(os.listdir(base_dir)):
+    def is_test_from_dir(suite_dir, case):
+        case_file = os.path.join(suite_dir, case)
+        (name, ext) = os.path.splitext(case)
+        return os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py')
+
+    def sute_key_func(item):
+       if args.order == 'random':
+             return random()
+
+       if -1 == item.find('_'):
+           return 99998
+
+       prefix, suffix = item.split('_', 1)
+
+       try:
+           return int(prefix), suffix
+       except ValueError:
+           return 99997
+
+    for suite in sorted(os.listdir(base_dir), key=sute_key_func):
         if SERVER_DIED:
             break
 
@@ -125,15 +325,15 @@ def main(args):
 
         suite = suite_re_obj.group(1)
         if os.path.isdir(suite_dir):
-            print("\nRunning {} tests.\n".format(suite))
 
-            failures = 0
-            failures_chain = 0
-            if 'stateful' in suite and not is_data_present():
+            if 'stateful' in suite and not args.no_stateful and not is_data_present():
                 print("Won't run stateful tests because test data wasn't loaded.")
                 continue
             if 'stateless' in suite and args.no_stateless:
                 print("Won't run stateless tests because they were manually disabled.")
+                continue
+            if 'stateful' in suite and args.no_stateful:
+                print("Won't run stateful tests because they were manually disabled.")
                 continue
 
             # Reverse sort order: we want run newest test first.
@@ -154,181 +354,55 @@ def main(args):
                 except ValueError:
                     return 99997
 
-            for case in sorted(filter(lambda case: re.search(args.test, case) if args.test else True, os.listdir(suite_dir)), key=key_func):
-                if SERVER_DIED:
-                    break
+            all_tests = os.listdir(suite_dir)
+            all_tests = filter(lambda case: is_test_from_dir(suite_dir, case), all_tests)
+            all_tests = sorted(filter(lambda case: re.search(args.test, case) if args.test else True, all_tests), key=key_func)
 
-                case_file = os.path.join(suite_dir, case)
-                (name, ext) = os.path.splitext(case)
+            run_n, run_total = args.parallel.split('/')
+            run_n = float(run_n)
+            run_total = float(run_total)
+            tests_n = len(all_tests)
+            if run_total > tests_n:
+                run_total = tests_n
+            if run_n > run_total:
+                continue
 
-                if os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py'):
-                    report_testcase = et.Element("testcase", attrib = {"name": name})
+            jobs = args.jobs
+            if jobs > run_total:
+                run_total = jobs
 
-                    try:
-                        print "{0:72}".format(name + ": "),
-                        sys.stdout.flush()
+            all_tests_array = []
+            for n in range(1, 1 + int(run_total)):
+                start = int(tests_n / run_total * (n - 1))
+                end = int(tests_n / run_total * n)
+                all_tests_array.append([all_tests[start : end], suite, suite_dir, suite_tmp_dir, run_total])
 
-                        if args.skip and any(s in name for s in args.skip):
-                            report_testcase.append(et.Element("skipped", attrib = {"message": "skip"}))
-                            print(MSG_SKIPPED + " - skip")
-                            skipped_total += 1
-                        elif not args.zookeeper and 'zookeeper' in name:
-                            report_testcase.append(et.Element("skipped", attrib = {"message": "no zookeeper"}))
-                            print(MSG_SKIPPED + " - no zookeeper")
-                            skipped_total += 1
-                        elif not args.shard and 'shard' in name:
-                            report_testcase.append(et.Element("skipped", attrib = {"message": "no shard"}))
-                            print(MSG_SKIPPED + " - no shard")
-                            skipped_total += 1
-                        elif not args.no_long and 'long' in name:
-                            report_testcase.append(et.Element("skipped", attrib = {"message": "no long"}))
-                            print(MSG_SKIPPED + " - no long")
-                            skipped_total += 1
-                        else:
-                            disabled_file = os.path.join(suite_dir, name) + '.disabled'
+            if jobs > 1:
+                with closing(Pool(processes=jobs)) as pool:
+                    pool.map(run_tests_array, all_tests_array)
+                    pool.terminate()
+            else:
+                run_tests_array(all_tests_array[int(run_n)-1])
 
-                            if os.path.exists(disabled_file) and not args.disabled:
-                                message = open(disabled_file, 'r').read()
-                                report_testcase.append(et.Element("skipped", attrib = {"message": message}))
-                                print(MSG_SKIPPED + " - " + message)
-                            else:
+    if args.hung_check:
+        processlist = get_processlist(args.client_with_database)
+        if processlist:
+            server_pid = get_server_pid(os.getenv("CLICKHOUSE_PORT_TCP", '9000'))
+            print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
+            print(processlist)
+            if server_pid:
+                print("\nStacktraces of all threads:")
+                print(get_stacktraces(server_pid))
+            exit_code = 1
+        else:
+            print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
 
-                                if args.testname:
-                                    clickhouse_proc = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
-                                    clickhouse_proc.communicate("SELECT 'Running test {suite}/{case} from pid={pid}';".format(pid = os.getpid(), case = case, suite = suite))
+    sys.exit(exit_code)
 
-                                reference_file = os.path.join(suite_dir, name) + '.reference'
-                                stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
-                                stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
-
-                                if ext == '.sql':
-                                    command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
-                                else:
-                                    command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
-
-                                proc = Popen(command, shell = True)
-                                start_time = datetime.now()
-                                while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
-                                    sleep(0.01)
-
-                                if proc.returncode is None:
-                                    try:
-                                        proc.kill()
-                                    except OSError as e:
-                                        if e.errno != ESRCH:
-                                            raise
-
-                                    failure = et.Element("failure", attrib = {"message": "Timeout"})
-                                    report_testcase.append(failure)
-
-                                    failures += 1
-                                    print("{0} - Timeout!".format(MSG_FAIL))
-                                else:
-                                    stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
-                                    stdout = unicode(stdout, errors='replace', encoding='utf-8')
-                                    stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
-                                    stderr = unicode(stderr, errors='replace', encoding='utf-8')
-
-                                    if proc.returncode != 0:
-                                        failure = et.Element("failure", attrib = {"message": "return code {}".format(proc.returncode)})
-                                        report_testcase.append(failure)
-
-                                        stdout_element = et.Element("system-out")
-                                        stdout_element.text = et.CDATA(stdout)
-                                        report_testcase.append(stdout_element)
-
-                                        failures += 1
-                                        failures_chain += 1
-                                        print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
-
-                                        if stderr:
-                                            stderr_element = et.Element("system-err")
-                                            stderr_element.text = et.CDATA(stderr)
-                                            report_testcase.append(stderr_element)
-                                            print(stderr.encode('utf-8'))
-
-                                        if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
-                                            SERVER_DIED = True
-
-                                    elif stderr:
-                                        failure = et.Element("failure", attrib = {"message": "having stderror"})
-                                        report_testcase.append(failure)
-
-                                        stderr_element = et.Element("system-err")
-                                        stderr_element.text = et.CDATA(stderr)
-                                        report_testcase.append(stderr_element)
-
-                                        failures += 1
-                                        failures_chain += 1
-                                        print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
-                                    elif 'Exception' in stdout:
-                                        failure = et.Element("error", attrib = {"message": "having exception"})
-                                        report_testcase.append(failure)
-
-                                        stdout_element = et.Element("system-out")
-                                        stdout_element.text = et.CDATA(stdout)
-                                        report_testcase.append(stdout_element)
-
-                                        failures += 1
-                                        failures_chain += 1
-                                        print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
-                                    elif not os.path.isfile(reference_file):
-                                        skipped = et.Element("skipped", attrib = {"message": "no reference file"})
-                                        report_testcase.append(skipped)
-                                        print("{0} - no reference file".format(MSG_UNKNOWN))
-                                    else:
-                                        result_is_different = subprocess.call(['cmp', '-s', reference_file, stdout_file], stdout = PIPE)
-
-                                        if result_is_different:
-                                            (diff, _) = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()
-                                            diff = unicode(diff, errors='replace', encoding='utf-8')
-
-                                            failure = et.Element("failure", attrib = {"message": "result differs with reference"})
-                                            report_testcase.append(failure)
-
-                                            stdout_element = et.Element("system-out")
-                                            try:
-                                                stdout_element.text = et.CDATA(diff)
-                                            except:
-                                                stdout_element.text = et.CDATA(remove_control_characters(diff))
-
-                                            report_testcase.append(stdout_element)
-                                            failures += 1
-                                            print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff.encode('utf-8')))
-                                        else:
-                                            passed_total += 1
-                                            failures_chain = 0
-                                            print(MSG_OK)
-                                            if os.path.exists(stdout_file):
-                                                os.remove(stdout_file)
-                                            if os.path.exists(stderr_file):
-                                                os.remove(stderr_file)
-                    except KeyboardInterrupt as e:
-                        print(colored("Break tests execution", "red"))
-                        raise e
-                    except:
-                        (exc_type, exc_value) = sys.exc_info()[:2]
-                        error = et.Element("error", attrib = {"type": exc_type.__name__, "message": str(exc_value)})
-                        report_testcase.append(error)
-
-                        failures += 1
-                        print("{0} - Test internal error: {1}\n{2}".format(MSG_FAIL, exc_type.__name__, exc_value))
-                    finally:
-                        dump_report(args.output, suite, name, report_testcase)
-
-                    if failures_chain >= 20:
-                        break
-
-            failures_total = failures_total + failures
-
-    if failures_total > 0:
-        print(colored("\nHaving {failures_total} errors! {passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total, failures_total = failures_total), "red", attrs=["bold"]))
-        sys.exit(1)
-    else:
-        print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), "green", attrs=["bold"]))
-        sys.exit(0)
 
 def find_binary(name):
+    if os.path.exists(name) and os.access(name, os.X_OK):
+        return True
     paths = os.environ.get("PATH").split(':')
     for path in paths:
         if os.access(os.path.join(path, name), os.X_OK):
@@ -338,31 +412,37 @@ def find_binary(name):
     return os.access(os.path.join('/usr/bin', name), os.X_OK)
 
 if __name__ == '__main__':
-    parser = ArgumentParser(description = 'ClickHouse functional tests')
-    parser.add_argument('-q', '--queries', help = 'Path to queries dir')
-    parser.add_argument('--tmp', help = 'Path to tmp dir')
-    parser.add_argument('-b', '--binary', default = 'clickhouse', help = 'Main clickhouse binary')
-    parser.add_argument('-c', '--client', help = 'Client program')
-    parser.add_argument('--extract_from_config', help = 'extract-from-config program')
-    parser.add_argument('--configclient', help = 'Client config (if you use not default ports)')
-    parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help = 'Preprocessed server config')
-    parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
-    parser.add_argument('-t', '--timeout', type = int, default = 600, help = 'Timeout for each test case in seconds')
-    parser.add_argument('test', nargs = '?', help = 'Optional test case name regex')
-    parser.add_argument('-d', '--disabled', action = 'store_true', default = False, help = 'Also run disabled tests')
-    parser.add_argument('--stop', action = 'store_true', default = None, dest = 'stop', help = 'Stop on network errors')
-    parser.add_argument('--order', default = 'desc', help = 'Run order (asc, desc, random)')
-    parser.add_argument('--testname', action = 'store_true', default = None, dest = 'testname', help = 'Make query with test name before test run')
+    parser=ArgumentParser(description='ClickHouse functional tests')
+    parser.add_argument('-q', '--queries', help='Path to queries dir')
+    parser.add_argument('--tmp', help='Path to tmp dir')
+    parser.add_argument('-b', '--binary', default='clickhouse', help='Path to clickhouse binary or name of binary in PATH')
+    parser.add_argument('-c', '--client', help='Client program')
+    parser.add_argument('--extract_from_config', help='extract-from-config program')
+    parser.add_argument('--configclient', help='Client config (if you use not default ports)')
+    parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help='Preprocessed server config')
+    parser.add_argument('-o', '--output', help='Output xUnit compliant test report directory')
+    parser.add_argument('-t', '--timeout', type=int, default=600, help='Timeout for each test case in seconds')
+    parser.add_argument('test', nargs='?', help='Optional test case name regex')
+    parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
+    parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
+    parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
+    parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
+    parser.add_argument('--hung-check', action='store_true', default=False)
+    parser.add_argument('--force-color', action='store_true', default=False)
+    parser.add_argument('--database', default='test', help='Default database for tests')
+    parser.add_argument('--parallel', default='1/1', help='One parallel test run number/total')
+    parser.add_argument('-j', '--jobs', default=1, help='Run all tests in parallel', type=int)
 
-    parser.add_argument('--no-stateless', action = 'store_true', help = 'Disable all stateless tests')
-    parser.add_argument('--skip', nargs='+', help = "Skip these tests")
-    parser.add_argument('--no-long', action = 'store_false', dest = 'no_long', help = 'Do not run long tests')
-    group = parser.add_mutually_exclusive_group(required = False)
-    group.add_argument('--zookeeper', action = 'store_true', default = None, dest = 'zookeeper', help = 'Run zookeeper related tests')
-    group.add_argument('--no-zookeeper', action = 'store_false', default = None, dest = 'zookeeper', help = 'Do not run zookeeper related tests')
-    group = parser.add_mutually_exclusive_group(required = False)
-    group.add_argument('--shard', action = 'store_true', default = None, dest = 'shard', help = 'Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
-    group.add_argument('--no-shard', action = 'store_false', default = None, dest = 'shard', help = 'Do not run shard related tests')
+    parser.add_argument('--no-stateless', action='store_true', help='Disable all stateless tests')
+    parser.add_argument('--no-stateful', action='store_true', help='Disable all stateful tests')
+    parser.add_argument('--skip', nargs='+', help="Skip these tests")
+    parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
+    group=parser.add_mutually_exclusive_group(required=False)
+    group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
+    group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')
+    group=parser.add_mutually_exclusive_group(required=False)
+    group.add_argument('--shard', action='store_true', default=None, dest='shard', help='Run sharding related tests (required to clickhouse-server listen 127.0.0.2 127.0.0.3)')
+    group.add_argument('--no-shard', action='store_false', default=None, dest='shard', help='Do not run shard related tests')
 
     args = parser.parse_args()
 
@@ -393,6 +473,12 @@ if __name__ == '__main__':
             args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
         if os.getenv("CLICKHOUSE_PORT_TCP"):
             args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+        if os.getenv("CLICKHOUSE_DATABASE"):
+            args.client += ' --database=' + os.getenv("CLICKHOUSE_DATABASE")
+
+    args.client_with_database = args.client
+    if args.database:
+        args.client_with_database += ' --database=' + args.database
 
     if args.extract_from_config is None:
         if os.access(args.binary + '-extract-from-config', os.X_OK):

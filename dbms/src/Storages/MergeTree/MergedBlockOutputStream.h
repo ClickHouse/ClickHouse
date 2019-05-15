@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
@@ -21,7 +22,9 @@ public:
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
         CompressionCodecPtr default_codec_,
-        size_t aio_threshold_);
+        size_t aio_threshold_,
+        bool blocks_are_granules_size_,
+        const MergeTreeIndexGranularity & index_granularity_);
 
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -72,8 +75,33 @@ protected:
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 
     /// Write data of one column.
-    void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenOffsetColumns & offset_columns,
-                   bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state);
+    /// Return how many marks were written and
+    /// how many rows were written for last mark
+    std::pair<size_t, size_t> writeColumn(
+        const String & name,
+        const IDataType & type,
+        const IColumn & column,
+        WrittenOffsetColumns & offset_columns,
+        bool skip_offsets,
+        IDataType::SerializeBinaryBulkStatePtr & serialization_state,
+        size_t from_mark
+    );
+
+    /// Write single granule of one column (rows between 2 marks)
+    size_t writeSingleGranule(
+        const String & name,
+        const IDataType & type,
+        const IColumn & column,
+        WrittenOffsetColumns & offset_columns,
+        bool skip_offsets,
+        IDataType::SerializeBinaryBulkStatePtr & serialization_state,
+        IDataType::SerializeBinaryBulkSettings & serialize_settings,
+        size_t from_row,
+        size_t number_of_rows,
+        bool write_marks);
+
+    /// Count index_granularity for block and store in `index_granularity`
+    void fillIndexGranularity(const Block & block);
 
     MergeTreeData & storage;
 
@@ -87,6 +115,15 @@ protected:
 
     size_t aio_threshold;
 
+    size_t current_mark = 0;
+
+    const std::string marks_file_extension;
+    const size_t mark_size_in_bytes;
+    const bool blocks_are_granules_size;
+
+    MergeTreeIndexGranularity index_granularity;
+
+    const bool compute_granularity;
     CompressionCodecPtr codec;
 };
 
@@ -101,7 +138,8 @@ public:
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionCodecPtr default_codec_);
+        CompressionCodecPtr default_codec_,
+        bool blocks_are_granules_size_ = false);
 
     MergedBlockOutputStream(
         MergeTreeData & storage_,
@@ -109,7 +147,8 @@ public:
         const NamesAndTypesList & columns_list_,
         CompressionCodecPtr default_codec_,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
-        size_t aio_threshold_);
+        size_t aio_threshold_,
+        bool blocks_are_granules_size_ = false);
 
     std::string getPartPath() const;
 
@@ -125,10 +164,16 @@ public:
 
     void writeSuffix() override;
 
+    /// Finilize writing part and fill inner structures
     void writeSuffixAndFinalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+
+    const MergeTreeIndexGranularity & getIndexGranularity() const
+    {
+        return index_granularity;
+    }
 
 private:
     void init();
@@ -144,14 +189,13 @@ private:
     String part_path;
 
     size_t rows_count = 0;
-    size_t marks_count = 0;
 
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
     MutableColumns index_columns;
 
     std::vector<std::unique_ptr<ColumnStream>> skip_indices_streams;
-    MergeTreeIndexGranules skip_indices_granules;
+    MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_filling;
 };
 
@@ -166,7 +210,8 @@ public:
     MergedColumnOnlyOutputStream(
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
         CompressionCodecPtr default_codec_, bool skip_offsets_,
-        WrittenOffsetColumns & already_written_offset_columns);
+        WrittenOffsetColumns & already_written_offset_columns,
+        const MergeTreeIndexGranularity & index_granularity_);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

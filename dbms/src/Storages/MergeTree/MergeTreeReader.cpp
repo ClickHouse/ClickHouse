@@ -1,7 +1,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
-#include <Common/MemoryTracker.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
@@ -39,9 +38,9 @@ MergeTreeReader::MergeTreeReader(const String & path,
     size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback,
     clockid_t clock_type)
-    : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
+    : data_part(data_part), avg_value_size_hints(avg_value_size_hints), path(path), columns(columns)
     , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size), index_granularity(storage.index_granularity)
+    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {
     try
     {
@@ -173,9 +172,12 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type,
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
+            path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
             all_mark_ranges, mark_cache, save_marks_in_cache,
-            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+            uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+            aio_threshold, max_read_buffer_size,
+            &storage.index_granularity_info,
+            profile_callback, clock_type));
     };
 
     IDataType::SubstreamPath substream_path;
@@ -299,7 +301,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
             if (!has_column)
             {
                 should_reorder = true;
-                if (storage.getColumns().defaults.count(requested_column.name) != 0)
+                if (storage.getColumns().hasDefault(requested_column.name))
                 {
                     should_evaluate_missing_defaults = true;
                     continue;
@@ -366,7 +368,7 @@ void MergeTreeReader::evaluateMissingDefaults(Block & res)
 {
     try
     {
-        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.global_context);
+        DB::evaluateMissingDefaults(res, columns, storage.getColumns().getDefaults(), storage.global_context);
     }
     catch (Exception & e)
     {

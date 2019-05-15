@@ -41,7 +41,7 @@ public:
 
     BlockOutputStreamPtr write(
         const ASTPtr & query,
-        const Settings & settings) override;
+        const Context & context) override;
 
     void drop() override;
 

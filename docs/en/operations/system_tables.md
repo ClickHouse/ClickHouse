@@ -30,17 +30,26 @@ user String — The name of the user for connecting to the server.
 
 ## system.columns
 
-Contains information about the columns in all tables.
-You can use this table to get information similar to `DESCRIBE TABLE`, but for multiple tables at once.
+Contains information about the columns in all the tables.
 
-```
-database String — The name of the database the table is in.
-table String – Table name.
-name String — Column name.
-type String — Column type.
-default_type String — Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined.
-default_expression String — Expression for the default value, or an empty string if it is not defined.
-```
+You can use this table to get information similar to the [DESCRIBE TABLE](../query_language/misc.md#misc-describe-table) query, but for multiple tables at once.
+
+The `system.columns` table contains the following columns (the type of the corresponding column is shown in brackets):
+
+- `database` (String) — Database name.
+- `table` (String) — Table name.
+- `name` (String) — Column name.
+- `type` (String) — Column type.
+- `default_kind` (String) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or an empty string if it is not defined.
+- `default_expression` (String) — Expression for the default value, or an empty string if it is not defined.
+- `data_compressed_bytes` (UInt64) — The size of compressed data, in bytes.
+- `data_uncompressed_bytes` (UInt64) — The size of decompressed data, in bytes.
+- `marks_bytes` (UInt64) — The size of marks, in bytes.
+- `comment` (String) — The comment about column, or an empty string if it is not defined.
+- `is_in_partition_key` (UInt8) — Flag that indicates whether the column is in partition expression.
+- `is_in_sorting_key` (UInt8) — Flag that indicates whether the column is in sorting key expression.
+- `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in primary key expression.
+- `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in sampling key expression.
 
 ## system.databases
 
@@ -84,6 +93,23 @@ Columns:
 
 - `name`(`String`) – The name of the function.
 - `is_aggregate`(`UInt8`) — Whether the function is aggregate.
+
+## system.graphite_retentions
+
+Contains information about parameters [graphite_rollup](server_settings/settings.md#server_settings-graphite_rollup) which use in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
+
+Columns:
+
+- `config_name`     (String) - `graphite_rollup` parameter name.
+- `regexp`          (String) - A pattern for the metric name.
+- `function`        (String) - The name of the aggregating function.
+- `age`             (UInt64) - The minimum age of the data in seconds.
+- `precision`       (UInt64) - How precisely to define the age of the data in seconds.
+- `priority`        (UInt16) - Pattern priority.
+- `is_default`      (UInt8) - Is pattern default or not.
+- `Tables.database` (Array(String)) - Array of databases names of tables, which use `config_name` parameter.
+- `Tables.table`    (Array(String)) - Array of tables names, which use `config_name` parameter.
+
 
 ## system.merges
 
@@ -176,6 +202,33 @@ Formats:
 
 - engine (String) – Name of the table engine without parameters.
 
+## system.part_log {#system_tables-part-log}
+
+The `system.part_log` table is created only if the [part_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
+
+This table contains information about the events that occurred with the [data parts](table_engines/custom_partitioning_key.md) in the [MergeTree](table_engines/mergetree.md) family tables. For instance, adding or merging data.
+
+The `system.part_log` table contains the following columns:
+
+- `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values: `NEW_PART` — inserting, `MERGE_PARTS` — merging, `DOWNLOAD_PART` — downloading, `REMOVE_PART` — removing or detaching using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition), `MUTATE_PART` — updating.
+- `event_date` (Date) — Event date.
+- `event_time` (DateTime) — Event time.
+- `duration_ms` (UInt64) — Duration.
+- `database` (String) — Name of the database the data part is in.
+- `table` (String) — Name of the table the data part is in.
+- `part_name` (String) — Name of the data part.
+- `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the 'all' value if the partitioning is by `tuple()`.
+- `rows` (UInt64) — The number of rows in the data part.
+- `size_in_bytes` (UInt64) — Size of the data part in bytes.
+- `merged_from` (Array(String)) — An array of names of the parts which the current part was made up from (after the merge).
+- `bytes_uncompressed` (UInt64) — Size of uncompressed bytes.
+- `read_rows` (UInt64) — The number of rows was read during the merge.
+- `read_bytes` (UInt64) — The number of bytes was read during the merge.
+- `error` (UInt16) — The code number of the occurred error.
+- `exception` (String) — Text message of the occurred error.
+
+The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
+
 ## system.processes
 
 This system table is used for implementing the `SHOW PROCESSLIST` query.
@@ -200,6 +253,96 @@ query String             - The query text. For INSERT, it doesn't include the da
 
 query_id String          - Query ID, if defined.
 ```
+
+## system.query_log {#system_tables-query-log}
+
+Contains information about queries execution. For each query, you can see processing start time, duration of processing, error message and other information.
+
+!!! note
+    The table doesn't contain input data for `INSERT` queries.
+    
+ClickHouse creates this table only if the [query_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules. For example, a logging interval or name of a table the queries will be logged in.
+
+To enable query logging, set the parameter [log_queries](settings/settings.md#settings-log-queries) to 1. For details, see the [Settings](settings/settings.md) section.
+
+The `system.query_log` table registers two kinds of queries:
+ 
+1. Initial queries, that were run directly by the client.
+2. Child queries that were initiated by other queries (for distributed query execution). For such a kind of queries, information about the parent queries is shown in the `initial_*` columns. 
+
+Columns:
+
+- `type` (UInt8) — Type of event that occurred when executing the query. Possible values:
+    - 1 — Successful start of query execution.
+    - 2 — Successful end of query execution.
+    - 3 — Exception before the start of query execution.
+    - 4 — Exception during the query execution. 
+- `event_date` (Date) — Event date.
+- `event_time` (DateTime) — Event time.
+- `query_start_time` (DateTime) — Time of the query processing start.
+- `query_duration_ms` (UInt64) — Duration of the query processing. 
+- `read_rows` (UInt64) — Number of read rows.
+- `read_bytes` (UInt64) — Number of read bytes.
+- `written_rows` (UInt64) — For `INSERT` queries, number of written rows. For other queries, the column value is 0.
+- `written_bytes` (UInt64) — For `INSERT` queries, number of written bytes. For other queries, the column value is 0.
+- `result_rows` (UInt64) — Number of rows in a result. 
+- `result_bytes` (UInt64) — Number of bytes in a result.
+- `memory_usage` (UInt64) — Memory consumption by the query.
+- `query` (String) — Query string.
+- `exception` (String) — Exception message.
+- `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
+- `is_initial_query` (UInt8) — Kind of query. Possible values: 
+    - 1 — Query was initiated by the client.
+    - 0 — Query was initiated by another query for distributed query execution.
+- `user` (String) — Name of the user initiated the current query.
+- `query_id` (String) — ID of the query.
+- `address` (FixedString(16)) — IP address the query was initiated from.
+- `port` (UInt16) — A server port that was used to receive the query.
+- `initial_user` (String) —  Name of the user who run the parent query (for distributed query execution).
+- `initial_query_id` (String) — ID of the parent query.
+- `initial_address` (FixedString(16)) — IP address that the parent query was launched from.
+- `initial_port` (UInt16) — A server port that was used to receive the parent query from the client.
+- `interface` (UInt8) — Interface that the query was initiated from. Possible values:
+    - 1 — TCP.
+    - 2 — HTTP.
+- `os_user` (String) — User's OS.
+- `client_hostname` (String) — Server name that the [clickhouse-client](../interfaces/cli.md) is connected to.
+- `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) name.
+- `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md).
+- `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md).
+- `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md).
+- `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) version.
+- `http_method` (UInt8) — HTTP method initiated the query. Possible values:
+    - 0 — The query was launched from the TCP interface. 
+    - 1 — `GET` method is used.
+    - 2 — `POST` method is used.
+- `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
+- `quota_key` (String) — The quota key specified in [quotas](quotas.md) setting.
+- `revision` (UInt32) — ClickHouse revision.
+- `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
+- `ProfileEvents.Names` (Array(String)) — Counters that measure the following metrics:
+    - Time spent on reading and writing over the network.
+    - Time spent on reading and writing to a disk.
+    - Number of network errors.
+    - Time spent on waiting when the network bandwidth is limited.
+- `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the&#160;`ProfileEvents.Names` column.
+- `Settings.Names` (Array(String)) — Names of settings that were changed when the client run a query. To enable logging of settings changing, set the `log_query_settings` parameter to 1.
+- `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
+
+Each query creates one or two rows in the `query_log` table, depending on the status of the query:
+
+1. If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
+2. If the error occurred during the query processing, two events with types 1 and 4 are created.
+3. If the error occurred before the query launching, a single event with type 3 is created.
+
+By default, logs are added into the table at intervals of 7,5 seconds. You can set this interval in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+
+When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+
+!!! note
+    The storage period for logs is unlimited; the logs aren't automatically deleted from the table. You need to organize the removing of non-actual logs yourself.
+
+You can specify an arbitrary partitioning key for the `system.query_log` table in the [query_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
 
 ## system.replicas {#system_tables-replicas}
 
@@ -358,10 +501,27 @@ WHERE changed
 
 ## system.tables
 
-This table contains the String columns 'database', 'name', and 'engine'.
-The table also contains three virtual columns: metadata_modification_time (DateTime type), create_table_query, and engine_full (String type).
-Each table that the server knows about is entered in the 'system.tables' table.
-This system table is used for implementing SHOW TABLES queries.
+Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
+
+This table contains the following columns (the type of the corresponding column is shown in brackets):
+
+- `database` (String) — The name of database the table is in.
+- `name` (String) — Table name.
+- `engine` (String) — Table engine name (without parameters).
+- `is_temporary` (UInt8) - Flag that indicates whether the table is temporary.
+- `data_path` (String) - Path to the table data in the file system.
+- `metadata_path` (String) - Path to the table metadata in the file system. 
+- `metadata_modification_time` (DateTime) - Time of latest modification of the table metadata.
+- `dependencies_database` (Array(String)) - Database dependencies.
+- `dependencies_table` (Array(String)) - Table dependencies ([MaterializedView](table_engines/materializedview.md) tables based on the current table).
+- `create_table_query` (String) - The query that was used to create the table.
+- `engine_full` (String) - Parameters of the table engine.
+- `partition_key` (String) - The partition key expression specified in the table. 
+- `sorting_key` (String) - The sorting key expression specified in the table.
+- `primary_key` (String) - The primary key expression specified in the table.
+- `sampling_key` (String) - The sampling key expression specified in the table.
+
+The `system.tables` is used in `SHOW TABLES` query implementation.
 
 ## system.zookeeper
 

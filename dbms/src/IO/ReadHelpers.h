@@ -164,7 +164,7 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
 
-void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
+[[noreturn]] void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
 
 inline void assertChar(char symbol, ReadBuffer & buf)
 {
@@ -403,6 +403,7 @@ void readBackQuotedString(String & s, ReadBuffer & buf);
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
+void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.

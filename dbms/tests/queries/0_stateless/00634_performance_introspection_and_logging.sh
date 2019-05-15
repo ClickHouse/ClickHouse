@@ -7,8 +7,9 @@ export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-cur_name=${BASH_SOURCE[0]}
-server_logs_file=$cur_name"_server.logs"
+cur_name=$(basename "${BASH_SOURCE[0]}")
+server_logs_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
+
 server_logs="--server_logs_file=$server_logs_file"
 rm -f "$server_logs_file"
 
@@ -18,14 +19,14 @@ settings="$server_logs --log_queries=1 --log_query_threads=1 --log_profile_event
 # Test insert logging on each block and checkPacket() method
 
 $CLICKHOUSE_CLIENT $settings -n -q "
-DROP TABLE IF EXISTS test.null;
-CREATE TABLE test.null (i UInt8) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();"
+DROP TABLE IF EXISTS null;
+CREATE TABLE null (i UInt8) ENGINE = MergeTree PARTITION BY tuple() ORDER BY tuple();"
 
-head -c 1000 /dev/zero | $CLICKHOUSE_CLIENT $settings --max_insert_block_size=10 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=1 -q "INSERT INTO test.null FORMAT RowBinary"
+head -c 1000 /dev/zero | $CLICKHOUSE_CLIENT $settings --max_insert_block_size=10 --min_insert_block_size_rows=1 --min_insert_block_size_bytes=1 -q "INSERT INTO null FORMAT RowBinary"
 
 $CLICKHOUSE_CLIENT $settings -n -q "
-SELECT count() FROM test.null;
-DROP TABLE test.null;"
+SELECT count() FROM null;
+DROP TABLE null;"
 
 (( `cat "$server_logs_file" | wc -l` >= 110 )) || echo Fail
 

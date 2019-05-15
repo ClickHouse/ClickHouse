@@ -90,7 +90,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     }
 
     /// If the part is not in ZooKeeper, we'll check if it's at least somewhere.
-    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.data.format_version);
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, storage.format_version);
 
     /** The logic is as follows:
         * - if some live or inactive replica has such a part, or a part covering it
@@ -126,7 +126,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         Strings parts = zookeeper->getChildren(storage.zookeeper_path + "/replicas/" + replica + "/parts");
         for (const String & part_on_replica : parts)
         {
-            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.data.format_version);
+            auto part_on_replica_info = MergeTreePartInfo::fromPartName(part_on_replica, storage.format_version);
 
             if (part_on_replica_info.contains(part_info))
             {
@@ -189,9 +189,9 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     /// If the part is still in the PreCommitted -> Committed transition, it is not lost
     /// and there is no need to go searching for it on other replicas. To definitely find the needed part
     /// if it exists (or a part containing it) we first search among the PreCommitted parts.
-    auto part = storage.data.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
+    auto part = storage.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
     if (!part)
-        part = storage.data.getActiveContainingPart(part_name);
+        part = storage.getActiveContainingPart(part_name);
 
     /// We do not have this or a covering part.
     if (!part)
@@ -202,7 +202,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructure(false);
+        auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
             part->columns, part->checksums);
@@ -233,11 +233,10 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
 
                 checkDataPart(
-                    storage.data.getFullPath() + part_name,
-                    storage.data.index_granularity,
+                    part,
                     true,
-                    storage.data.primary_key_data_types,
-                    storage.data.skip_indices,
+                    storage.primary_key_data_types,
+                    storage.skip_indices,
                     [this] { return need_stop.load(); });
 
                 if (need_stop)
@@ -260,7 +259,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 storage.removePartAndEnqueueFetch(part_name);
 
                 /// Delete part locally.
-                storage.data.forgetPartAndMoveToDetached(part, "broken_");
+                storage.forgetPartAndMoveToDetached(part, "broken_");
             }
         }
         else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
@@ -271,7 +270,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
             LOG_ERROR(log, "Unexpected part " << part_name << " in filesystem. Removing.");
-            storage.data.forgetPartAndMoveToDetached(part, "unexpected_");
+            storage.forgetPartAndMoveToDetached(part, "unexpected_");
         }
         else
         {

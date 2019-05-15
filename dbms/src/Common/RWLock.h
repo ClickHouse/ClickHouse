@@ -1,5 +1,7 @@
 #pragma once
-#include <boost/core/noncopyable.hpp>
+
+#include <Core/Types.h>
+
 #include <list>
 #include <vector>
 #include <mutex>
@@ -17,7 +19,13 @@ using RWLock = std::shared_ptr<RWLockImpl>;
 
 
 /// Implements shared lock with FIFO service
-/// Can be acquired recursively (several calls from the same thread) in Read mode
+/// Can be acquired recursively (several calls for the same query or the same OS thread) in Read mode
+///
+/// NOTE: it is important to allow acquiring the same lock in Read mode without waiting if it is already
+/// acquired by another thread of the same query. Otherwise the following deadlock is possible:
+/// - SELECT thread 1 locks in the Read mode
+/// - ALTER tries to lock in the Write mode (waits for SELECT thread 1)
+/// - SELECT thread 2 tries to lock in the Read mode (waits for ALTER)
 class RWLockImpl : public std::enable_shared_from_this<RWLockImpl>
 {
 public:
@@ -29,14 +37,17 @@ public:
 
     static RWLock create() { return RWLock(new RWLockImpl); }
 
-    /// Just use LockHandler::reset() to release the lock
-    class LockHandlerImpl;
-    friend class LockHandlerImpl;
-    using LockHandler = std::shared_ptr<LockHandlerImpl>;
-
+    /// Just use LockHolder::reset() to release the lock
+    class LockHolderImpl;
+    friend class LockHolderImpl;
+    using LockHolder = std::shared_ptr<LockHolderImpl>;
 
     /// Waits in the queue and returns appropriate lock
-    LockHandler getLock(Type type);
+    /// Empty query_id means the lock is acquired out of the query context (e.g. in a background thread).
+    LockHolder getLock(Type type, const String & query_id);
+
+    /// Use as query_id to acquire a lock outside the query context.
+    inline static const String NO_QUERY = String();
 
 private:
     RWLockImpl() = default;
@@ -44,7 +55,8 @@ private:
     struct Group;
     using GroupsContainer = std::list<Group>;
     using ClientsContainer = std::list<Type>;
-    using ThreadToHandler = std::map<std::thread::id, std::weak_ptr<LockHandlerImpl>>;
+    using ThreadToHolder = std::map<std::thread::id, std::weak_ptr<LockHolderImpl>>;
+    using QueryIdToHolder = std::map<String, std::weak_ptr<LockHolderImpl>>;
 
     /// Group of clients that should be executed concurrently
     /// i.e. a group could contain several readers, but only one writer
@@ -61,7 +73,8 @@ private:
 
     mutable std::mutex mutex;
     GroupsContainer queue;
-    ThreadToHandler thread_to_handler;
+    ThreadToHolder thread_to_holder;
+    QueryIdToHolder query_id_to_holder;
 };
 
 

@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Common/CurrentMetrics.h>
-#include <Poco/Ext/ThreadNumber.h>
+#include <common/getThreadNumber.h>
 #include <Common/CurrentThread.h>
 
 
@@ -19,7 +19,7 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
     , result_part_name{future_part.name}
     , result_data_version{future_part.part_info.getDataVersion()}
     , num_parts{future_part.parts.size()}
-    , thread_number{Poco::ThreadNumber::get()}
+    , thread_number{getThreadNumber()}
 {
     for (const auto & source_part : future_part.parts)
     {
@@ -28,7 +28,8 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
         std::shared_lock<std::shared_mutex> part_lock(source_part->columns_lock);
 
         total_size_bytes_compressed += source_part->bytes_on_disk;
-        total_size_marks += source_part->marks_count;
+        total_size_marks += source_part->getMarksCount();
+        total_rows_count += source_part->index_granularity.getTotalRows();
     }
 
     if (!future_part.parts.empty())
@@ -38,7 +39,7 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
     }
 
     /// Each merge is executed into separate background processing pool thread
-    background_thread_memory_tracker = &CurrentThread::getMemoryTracker();
+    background_thread_memory_tracker = CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
     {
         memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
@@ -60,6 +61,7 @@ MergeInfo MergeListElement::getInfo() const
     res.num_parts = num_parts;
     res.total_size_bytes_compressed = total_size_bytes_compressed;
     res.total_size_marks = total_size_marks;
+    res.total_rows_count = total_rows_count;
     res.bytes_read_uncompressed = bytes_read_uncompressed.load(std::memory_order_relaxed);
     res.bytes_written_uncompressed = bytes_written_uncompressed.load(std::memory_order_relaxed);
     res.rows_read = rows_read.load(std::memory_order_relaxed);

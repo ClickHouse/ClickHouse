@@ -51,7 +51,20 @@ struct ColumnNamesContext
         }
     };
 
-    std::unordered_map<String, std::set<String>> required_names; /// names with aliases
+    struct NameInfo
+    {
+        std::set<String> aliases;
+        size_t appears = 0;
+
+        void addInclusion(const String & alias)
+        {
+            if (!alias.empty())
+                aliases.insert(alias);
+            ++appears;
+        }
+    };
+
+    std::unordered_map<String, NameInfo> required_names;
     NameSet table_aliases;
     NameSet private_aliases;
     NameSet complex_aliases;
@@ -68,6 +81,7 @@ struct ColumnNamesContext
     void addArrayJoinIdentifier(const ASTIdentifier & node);
 
     NameSet requiredColumns() const;
+    size_t nameInclusion(const String & name) const;
 };
 
 std::ostream & operator << (std::ostream & os, const ColumnNamesContext & cols);

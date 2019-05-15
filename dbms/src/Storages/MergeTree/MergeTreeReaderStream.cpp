@@ -1,4 +1,3 @@
-#include <Common/MemoryTracker.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Poco/File.h>
 
@@ -16,80 +15,71 @@ namespace ErrorCodes
 
 
 MergeTreeReaderStream::MergeTreeReaderStream(
-        const String & path_prefix_, const String & extension_, size_t marks_count_,
+        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         MarkCache * mark_cache_, bool save_marks_in_cache_,
         UncompressedCache * uncompressed_cache,
-        size_t aio_threshold, size_t max_read_buffer_size,
+        size_t file_size, size_t aio_threshold, size_t max_read_buffer_size,
+        const GranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-        : path_prefix(path_prefix_), extension(extension_), marks_count(marks_count_)
+        : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
         , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)
+        , index_granularity_info(index_granularity_info_)
 {
     /// Compute the size of the buffer.
-    size_t max_mark_range = 0;
+    size_t max_mark_range_bytes = 0;
+    size_t sum_mark_range_bytes = 0;
 
-    for (size_t i = 0; i < all_mark_ranges.size(); ++i)
+    /// Care should be taken to not load marks when the part is empty (marks_count == 0).
+
+    for (const auto & mark_range : all_mark_ranges)
     {
-        size_t right = all_mark_ranges[i].end;
-        /// NOTE: if we are reading the whole file, then right == marks_count
+        size_t left_mark = mark_range.begin;
+        size_t right_mark = mark_range.end;
+
+        /// NOTE: if we are reading the whole file, then right_mark == marks_count
         /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
 
         /// If the end of range is inside the block, we will need to read it too.
-        if (right < marks_count && getMark(right).offset_in_decompressed_block > 0)
+        if (right_mark < marks_count && getMark(right_mark).offset_in_decompressed_block > 0)
         {
-            while (right < marks_count
-                   && getMark(right).offset_in_compressed_file
-                      == getMark(all_mark_ranges[i].end).offset_in_compressed_file)
+            while (right_mark < marks_count
+                && getMark(right_mark).offset_in_compressed_file == getMark(mark_range.end).offset_in_compressed_file)
             {
-                ++right;
+                ++right_mark;
             }
         }
 
-        /// If there are no marks after the end of range, just use max_read_buffer_size
-        if (right >= marks_count
-            || (right + 1 == marks_count
-                && getMark(right).offset_in_compressed_file
-                   == getMark(all_mark_ranges[i].end).offset_in_compressed_file))
+        size_t mark_range_bytes;
+
+        /// If there are no marks after the end of range, just use file size
+        if (right_mark >= marks_count
+            || (right_mark + 1 == marks_count
+                && getMark(right_mark).offset_in_compressed_file == getMark(mark_range.end).offset_in_compressed_file))
         {
-            max_mark_range = max_read_buffer_size;
-            break;
+            mark_range_bytes = file_size - (left_mark < marks_count ? getMark(left_mark).offset_in_compressed_file : 0);
+        }
+        else
+        {
+            mark_range_bytes = getMark(right_mark).offset_in_compressed_file - getMark(left_mark).offset_in_compressed_file;
         }
 
-        max_mark_range = std::max(max_mark_range,
-                                  getMark(right).offset_in_compressed_file - getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
+        max_mark_range_bytes = std::max(max_mark_range_bytes, mark_range_bytes);
+        sum_mark_range_bytes += mark_range_bytes;
     }
 
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
-    if (max_mark_range == 0)
-        max_mark_range = max_read_buffer_size;
+    if (max_mark_range_bytes == 0)
+        max_mark_range_bytes = max_read_buffer_size;
 
-    size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
-
-    /// Estimate size of the data to be read.
-    size_t estimated_size = 0;
-    if (aio_threshold > 0)
-    {
-        for (const auto & mark_range : all_mark_ranges)
-        {
-            size_t offset_begin = (mark_range.begin > 0)
-                                  ? getMark(mark_range.begin).offset_in_compressed_file
-                                  : 0;
-
-            size_t offset_end = (mark_range.end < marks_count)
-                                ? getMark(mark_range.end).offset_in_compressed_file
-                                : Poco::File(path_prefix + extension).getSize();
-
-            if (offset_end > offset_begin)
-                estimated_size += offset_end - offset_begin;
-        }
-    }
+    size_t buffer_size = std::min(max_read_buffer_size, max_mark_range_bytes);
 
     /// Initialize the objects that shall be used to perform read operations.
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-                path_prefix + extension, uncompressed_cache, estimated_size, aio_threshold, buffer_size);
+            path_prefix + data_file_extension, uncompressed_cache, sum_mark_range_bytes, aio_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -100,7 +90,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-                path_prefix + extension, estimated_size, aio_threshold, buffer_size);
+            path_prefix + data_file_extension, sum_mark_range_bytes, aio_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -121,7 +111,7 @@ const MarkInCompressedFile & MergeTreeReaderStream::getMark(size_t index)
 
 void MergeTreeReaderStream::loadMarks()
 {
-    std::string mrk_path = path_prefix + ".mrk";
+    std::string mrk_path = index_granularity_info->getMarksFilePath(path_prefix);
 
     auto load = [&]() -> MarkCache::MappedPtr
     {
@@ -129,20 +119,37 @@ void MergeTreeReaderStream::loadMarks()
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(mrk_path).getSize();
-        size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
+        size_t expected_file_size = index_granularity_info->mark_size_in_bytes * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
-                    "bad size of marks file `" + mrk_path + "':" + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
-                    ErrorCodes::CORRUPTED_DATA);
+                "Bad size of marks file '" + mrk_path + "': " + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
+                ErrorCodes::CORRUPTED_DATA);
 
         auto res = std::make_shared<MarksInCompressedFile>(marks_count);
 
-        /// Read directly to marks.
-        ReadBufferFromFile buffer(mrk_path, file_size, -1, reinterpret_cast<char *>(res->data()));
+        if (!index_granularity_info->is_adaptive)
+        {
+            /// Read directly to marks.
+            ReadBufferFromFile buffer(mrk_path, file_size, -1, reinterpret_cast<char *>(res->data()));
 
-        if (buffer.eof() || buffer.buffer().size() != file_size)
-            throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
-
+            if (buffer.eof() || buffer.buffer().size() != file_size)
+                throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+        else
+        {
+            ReadBufferFromFile buffer(mrk_path, file_size, -1);
+            size_t i = 0;
+            while (!buffer.eof())
+            {
+                readIntBinary((*res)[i].offset_in_compressed_file, buffer);
+                readIntBinary((*res)[i].offset_in_decompressed_block, buffer);
+                buffer.seek(sizeof(size_t), SEEK_CUR);
+                ++i;
+            }
+            if (i * index_granularity_info->mark_size_in_bytes != file_size)
+                throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+        res->protect();
         return res;
     };
 

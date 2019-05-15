@@ -110,9 +110,9 @@ When ClickHouse merges data parts, each group of consecutive rows with the same 
 For each resulting data part ClickHouse saves:
 
   1. The first "cancel" and the last "state" rows, if the number of "state" and "cancel" rows matches.
-  1. The last "state" row, if there is one more "state" row than "cancel" rows.
-  1. The first "cancel" row, if there is one more "cancel" row than "state" rows.
-  1. None of the rows, in all other cases.
+  2. The last "state" row, if there is one more "state" row than "cancel" rows.
+  3. The first "cancel" row, if there is one more "cancel" row than "state" rows.
+  4. None of the rows, in all other cases.
 
       The merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
 
@@ -123,7 +123,7 @@ The `Sign` is required because the merging algorithm doesn't guarantee that all 
 
 To finalize collapsing write a query with `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(Sign) > 0`.
 
-The aggregates `count`, `sum` and `avg` could be calculated this way. The aggregate `uniq` could be calculated if an object has at list one state not collapsed. The aggregates `min` and `max` could not be calculated because `CollapsingMergeTree` does not save values history of the collapsed states.
+The aggregates `count`, `sum` and `avg` could be calculated this way. The aggregate `uniq` could be calculated if an object has at least one state not collapsed. The aggregates `min` and `max` could not be calculated because `CollapsingMergeTree` does not save values history of the collapsed states.
 
 If you need to extract data without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is significantly less efficient.
 

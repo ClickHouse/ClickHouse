@@ -28,6 +28,8 @@ try
     StoragePtr table = StorageLog::create("./", "test", ColumnsDescription{names_and_types}, 1048576);
     table->startup();
 
+    auto context = Context::createGlobal();
+
     /// write into it
     {
         Block block;
@@ -62,7 +64,7 @@ try
             block.insert(column);
         }
 
-        BlockOutputStreamPtr out = table->write({}, {});
+        BlockOutputStreamPtr out = table->write({}, context);
         out->write(block);
     }
 
@@ -72,9 +74,9 @@ try
         column_names.push_back("a");
         column_names.push_back("b");
 
-        QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
+        QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-        BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
+        BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
 
         Block sample;
         {
@@ -89,8 +91,6 @@ try
         }
 
         WriteBufferFromOStream out_buf(std::cout);
-
-        Context context = Context::createGlobal();
 
         LimitBlockInputStream in_limit(in, 10, 0);
         BlockOutputStreamPtr output = FormatFactory::instance().getOutput("TabSeparated", out_buf, sample, context);

@@ -1,21 +1,18 @@
-add_library (clickhouse-performance-test-lib ${LINK_MODE}
-  JSONString.cpp
-  StopConditionsSet.cpp
-  TestStopConditions.cpp
-  TestStats.cpp
-  ConfigPreprocessor.cpp
-  PerformanceTest.cpp
-  PerformanceTestInfo.cpp
-  executeQuery.cpp
-  applySubstitutions.cpp
-  ReportBuilder.cpp
-  PerformanceTestSuite.cpp
-)
-target_link_libraries (clickhouse-performance-test-lib PRIVATE dbms clickhouse_common_io clickhouse_common_config ${Boost_PROGRAM_OPTIONS_LIBRARY})
-target_include_directories (clickhouse-performance-test-lib SYSTEM PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
+set(CLICKHOUSE_PERFORMANCE_TEST_SOURCES 
+  ${CMAKE_CURRENT_SOURCE_DIR}/JSONString.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/StopConditionsSet.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/TestStopConditions.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/TestStats.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/ConfigPreprocessor.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceTest.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceTestInfo.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/executeQuery.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/applySubstitutions.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/ReportBuilder.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/PerformanceTestSuite.cpp
+ )
 
-if (CLICKHOUSE_SPLIT_BINARY)
-    add_executable (clickhouse-performance-test clickhouse-performance-test.cpp)
-    target_link_libraries (clickhouse-performance-test PRIVATE clickhouse-performance-test-lib)
-    install (TARGETS clickhouse-performance-test ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-endif ()
+set(CLICKHOUSE_PERFORMANCE_TEST_LINK PRIVATE dbms clickhouse_common_io clickhouse_common_config ${Boost_PROGRAM_OPTIONS_LIBRARY})
+set(CLICKHOUSE_PERFORMANCE_TEST_INCLUDE SYSTEM PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
+
+clickhouse_program_add(performance-test)

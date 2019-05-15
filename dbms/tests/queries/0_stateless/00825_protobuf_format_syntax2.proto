@@ -41,7 +41,23 @@ message Syntax2Person {
   optional float someRatio = 18;
   optional float temperature = 19;
   optional sint64 randomBigNumber = 20;
-  optional string newFieldStr = 21 [default='abc'];
-  optional int32 newFieldInt = 22 [default=-11];
-  optional bool newBool = 23 [default=true];
+  optional group MeasureUnits = 21 {
+    repeated float coef = 1;
+    repeated string unit = 2;
+  };
+  optional group Nestiness = 22
+  {
+    optional group A = 1 {
+      message SubB {
+        optional group C = 1 {
+          optional uint32 d = 1;
+          repeated uint32 e = 2;
+        };
+      };
+      optional SubB b = 100;
+    };
+  };
+  optional string newFieldStr = 23 [default='abc'];
+  optional int32 newFieldInt = 24 [default=-11];
+  optional bool newBool = 25 [default=true];
 };

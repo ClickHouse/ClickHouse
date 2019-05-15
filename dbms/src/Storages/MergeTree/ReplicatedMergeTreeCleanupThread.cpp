@@ -27,8 +27,8 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
-    const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000
-        + std::uniform_int_distribution<UInt64>(0, storage.data.settings.cleanup_delay_period_random_add * 1000)(rng);
+    const auto CLEANUP_SLEEP_MS = storage.settings.cleanup_delay_period * 1000
+        + std::uniform_int_distribution<UInt64>(0, storage.settings.cleanup_delay_period_random_add * 1000)(rng);
 
     try
     {
@@ -53,7 +53,12 @@ void ReplicatedMergeTreeCleanupThread::run()
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
     storage.clearOldPartsAndRemoveFromZK();
-    storage.data.clearOldTemporaryDirectories();
+
+    {
+        /// TODO: Implement tryLockStructureForShare.
+        auto lock = storage.lockStructureForShare(false, "");
+        storage.clearOldTemporaryDirectories();
+    }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
     ///  and two replicas will try to do cleanup simultaneously.
@@ -77,7 +82,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     int children_count = stat.numChildren;
 
     /// We will wait for 1.1 times more records to accumulate than necessary.
-    if (static_cast<double>(children_count) < storage.data.settings.min_replicated_logs_to_keep * 1.1)
+    if (static_cast<double>(children_count) < storage.settings.min_replicated_logs_to_keep * 1.1)
         return;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
@@ -95,8 +100,8 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     std::sort(entries.begin(), entries.end());
 
     String min_saved_record_log_str = entries[
-        entries.size() > storage.data.settings.max_replicated_logs_to_keep.value
-            ? entries.size() - storage.data.settings.max_replicated_logs_to_keep.value
+        entries.size() > storage.settings.max_replicated_logs_to_keep.value
+            ? entries.size() - storage.settings.max_replicated_logs_to_keep.value
             : 0];
 
     /// Replicas that were marked is_lost but are active.
@@ -198,7 +203,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         min_saved_log_pointer = std::min(min_saved_log_pointer, min_log_pointer_lost_candidate);
 
     /// We will not touch the last `min_replicated_logs_to_keep` records.
-    entries.erase(entries.end() - std::min<UInt64>(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
+    entries.erase(entries.end() - std::min<UInt64>(entries.size(), storage.settings.min_replicated_logs_to_keep.value), entries.end());
     /// We will not touch records that are no less than `min_saved_log_pointer`.
     entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_saved_log_pointer)), entries.end());
 
@@ -289,12 +294,12 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
 
     /// Use ZooKeeper's first node (last according to time) timestamp as "current" time.
     Int64 current_time = timed_blocks.front().ctime;
-    Int64 time_threshold = std::max(static_cast<Int64>(0), current_time - static_cast<Int64>(1000 * storage.data.settings.replicated_deduplication_window_seconds));
+    Int64 time_threshold = std::max(static_cast<Int64>(0), current_time - static_cast<Int64>(1000 * storage.settings.replicated_deduplication_window_seconds));
 
     /// Virtual node, all nodes that are "greater" than this one will be deleted
     NodeWithStat block_threshold{{}, time_threshold};
 
-    size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), storage.data.settings.replicated_deduplication_window.value);
+    size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), storage.settings.replicated_deduplication_window.value);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
@@ -387,10 +392,10 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
 
 void ReplicatedMergeTreeCleanupThread::clearOldMutations()
 {
-    if (!storage.data.settings.finished_mutations_to_keep)
+    if (!storage.settings.finished_mutations_to_keep)
         return;
 
-    if (storage.queue.countFinishedMutations() <= storage.data.settings.finished_mutations_to_keep)
+    if (storage.queue.countFinishedMutations() <= storage.settings.finished_mutations_to_keep)
     {
         /// Not strictly necessary, but helps to avoid unnecessary ZooKeeper requests.
         /// If even this replica hasn't finished enough mutations yet, then we don't need to clean anything.
@@ -417,10 +422,10 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
 
     /// Do not remove entries that are greater than `min_pointer` (they are not done yet).
     entries.erase(std::upper_bound(entries.begin(), entries.end(), padIndex(min_pointer)), entries.end());
-    /// Do not remove last `storage.data.settings.finished_mutations_to_keep` entries.
-    if (entries.size() <= storage.data.settings.finished_mutations_to_keep)
+    /// Do not remove last `storage.settings.finished_mutations_to_keep` entries.
+    if (entries.size() <= storage.settings.finished_mutations_to_keep)
         return;
-    entries.erase(entries.end() - storage.data.settings.finished_mutations_to_keep, entries.end());
+    entries.erase(entries.end() - storage.settings.finished_mutations_to_keep, entries.end());
 
     if (entries.empty())
         return;

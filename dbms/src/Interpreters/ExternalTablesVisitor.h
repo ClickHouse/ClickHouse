@@ -22,7 +22,7 @@ public:
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+        if (const auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
     }
 

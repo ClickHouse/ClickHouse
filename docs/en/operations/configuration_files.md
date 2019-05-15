@@ -2,7 +2,7 @@
 
 The main server config file is `config.xml`. It resides in the `/etc/clickhouse-server/` directory.
 
-Individual settings can be overridden in the `*.xml` and `*.conf` files in the `conf.d` and `config.d` directories next to the config file.
+Individual settings can be overridden in the `*.xml` and `*.conf` files in the `config.d` directory next to the config file.
 
 The `replace` or `remove` attributes can be specified for the elements of these config files.
 

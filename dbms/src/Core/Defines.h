@@ -117,3 +117,13 @@
     #define NO_SANITIZE_UNDEFINED
     #define NO_SANITIZE_ADDRESS
 #endif
+
+#if defined __GNUC__ && !defined __clang__
+    #define OPTIMIZE(x) __attribute__((__optimize__(x)))
+#else
+    #define OPTIMIZE(x)
+#endif
+
+/// This number is only used for distributed version compatible.
+/// It could be any magic number.
+#define DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER 0xCAFECABE

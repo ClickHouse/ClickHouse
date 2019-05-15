@@ -98,11 +98,10 @@ struct HashTableCell
 /// HashTableCell(const value_type & value_, const State & state) : key(value_) {}
 
     /// Get what the value_type of the container will be.
-    value_type & getValue()             { return key; }
+    value_type & getValueMutable() { return key; }
     const value_type & getValue() const { return key; }
 
     /// Get the key.
-    static Key & getKey(value_type & value)             { return value; }
     static const Key & getKey(const value_type & value) { return value; }
 
     /// Are the keys at the cells equal?
@@ -459,8 +458,8 @@ protected:
             return static_cast<Derived &>(*this);
         }
 
-        auto & operator* () const { return ptr->getValue(); }
-        auto * operator->() const { return &ptr->getValue(); }
+        auto & operator* () const { return *ptr; }
+        auto * operator->() const { return ptr; }
 
         auto getPtr() const { return ptr; }
         size_t getHash() const { return ptr->getHash(*container); }
@@ -527,7 +526,7 @@ public:
     {
     public:
         Reader(DB::ReadBuffer & in_)
-        : in(in_)
+            : in(in_)
         {
         }
 
@@ -567,7 +566,7 @@ public:
         DB::ReadBuffer & in;
         Cell cell;
         size_t read_count = 0;
-        size_t size;
+        size_t size = 0;
         bool is_eof = false;
         bool is_initialized = false;
     };

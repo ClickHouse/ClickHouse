@@ -38,6 +38,8 @@ public:
     bool read(MutableColumns & columns, RowReadExtension &) override;
 
 private:
+    kj::Array<capnp::word> readMessage();
+
     // Build a traversal plan from a sorted list of fields
     void createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader);
 

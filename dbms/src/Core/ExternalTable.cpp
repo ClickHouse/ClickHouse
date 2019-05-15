@@ -163,7 +163,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     StoragePtr storage = StorageMemory::create(data.second, ColumnsDescription{columns});
     storage->startup();
     context.addExternalTable(data.second, storage);
-    BlockOutputStreamPtr output = storage->write(ASTPtr(), settings);
+    BlockOutputStreamPtr output = storage->write(ASTPtr(), context);
 
     /// Write data
     data.first->readPrefix();

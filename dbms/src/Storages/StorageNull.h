@@ -31,7 +31,7 @@ public:
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
     }
 
-    BlockOutputStreamPtr write(const ASTPtr &, const Settings &) override
+    BlockOutputStreamPtr write(const ASTPtr &, const Context &) override
     {
         return std::make_shared<NullBlockOutputStream>(getSampleBlock());
     }
@@ -41,7 +41,9 @@ public:
         table_name = new_table_name;
     }
 
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    void alter(
+        const AlterCommands & params, const String & database_name, const String & table_name,
+        const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
 private:
     String table_name;

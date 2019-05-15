@@ -86,7 +86,8 @@ public:
 
     void serializeProtobuf(const IColumn & column,
                            size_t row_num,
-                           ProtobufWriter & protobuf) const override;
+                           ProtobufWriter & protobuf,
+                           size_t & value_index) const override;
     void deserializeProtobuf(IColumn & column,
                              ProtobufReader & protobuf,
                              bool allow_add_row,
@@ -111,6 +112,9 @@ public:
     }
 
     const DataTypePtr & getNestedType() const { return nested; }
+
+    /// 1 for plain array, 2 for array of arrays and so on.
+    size_t getNumberOfDimensions() const;
 };
 
 }

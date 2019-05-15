@@ -222,7 +222,7 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
 
     std::vector<size_t> required_rows(outdated_keys.size());
     std::transform(
-        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.second.front(); });
+        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.getSecond().front(); });
 
     /// request new values
     update(

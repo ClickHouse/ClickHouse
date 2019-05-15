@@ -98,7 +98,7 @@ public:
         /// It is assumed that the zero key (stored separately) is first in iteration order.
         if (it != src.end() && it.getPtr()->isZero(src))
         {
-            insert(*it);
+            insert(it->getValue());
             ++it;
         }
 
@@ -141,8 +141,8 @@ public:
             return *this;
         }
 
-        value_type & operator* () const { return *current_it; }
-        value_type * operator->() const { return &*current_it; }
+        Cell & operator* () const { return *current_it; }
+        Cell * operator->() const { return current_it.getPtr(); }
 
         Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
@@ -179,8 +179,8 @@ public:
             return *this;
         }
 
-        const value_type & operator* () const { return *current_it; }
-        const value_type * operator->() const { return &*current_it; }
+        const Cell & operator* () const { return *current_it; }
+        const Cell * operator->() const { return current_it->getPtr(); }
 
         const Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }

@@ -36,6 +36,11 @@ struct HashMethodOneNumber
         vec = key_columns[0]->getRawData().data;
     }
 
+    HashMethodOneNumber(const IColumn * column)
+    {
+        vec = column->getRawData().data;
+    }
+
     /// Creates context. Method is called once and result context is used in all threads.
     using Base::createContext; /// (const HashMethodContext::Settings &) -> HashMethodContextPtr
 
@@ -56,7 +61,7 @@ struct HashMethodOneNumber
     /// Get StringRef from value which can be inserted into column.
     static StringRef getValueRef(const Value & value)
     {
-        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
+        return StringRef(reinterpret_cast<const char *>(&value.getFirst()), sizeof(value.getFirst()));
     }
 };
 
@@ -85,7 +90,7 @@ struct HashMethodString
         return StringRef(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
     }
 
-    static StringRef getValueRef(const Value & value) { return StringRef(value.first.data, value.first.size); }
+    static StringRef getValueRef(const Value & value) { return StringRef(value.getFirst().data, value.getFirst().size); }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -122,7 +127,7 @@ struct HashMethodFixedString
 
     StringRef getKey(size_t row, Arena &) const { return StringRef(&(*chars)[row * n], n); }
 
-    static StringRef getValueRef(const Value & value) { return StringRef(value.first.data, value.first.size); }
+    static StringRef getValueRef(const Value & value) { return StringRef(value.getFirst().data, value.getFirst().size); }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
@@ -356,8 +361,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         {
             if constexpr (has_mapped)
             {
-                new(&it->second) Mapped();
-                Base::onNewKey(it->first, pool);
+                new(&it->getSecond()) Mapped();
+                Base::onNewKey(it->getFirstMutable(), pool);
             }
             else
                 Base::onNewKey(*it, pool);
@@ -365,8 +370,8 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         if constexpr (has_mapped)
         {
-            mapped_cache[row] = it->second;
-            return EmplaceResult(it->second, mapped_cache[row], inserted);
+            mapped_cache[row] = it->getSecond();
+            return EmplaceResult(it->getSecond(), mapped_cache[row], inserted);
         }
         else
             return EmplaceResult(inserted);

@@ -6,10 +6,51 @@ import argparse
 import logging
 import sys
 
+SCRIPT_PATH = os.path.realpath(__file__)
+
 IMAGE_MAP = {
     "deb": "yandex/clickhouse-deb-builder",
     "binary": "yandex/clickhouse-binary-builder",
+    "freebsd": os.path.join(os.path.dirname(SCRIPT_PATH), "freebsd"),
 }
+
+class Vagrant(object):
+    def __init__(self, path_to_vagrant_file):
+        self.prefix = "VAGRANT_CWD=" + path_to_vagrant_file
+
+    def __enter__(self):
+        subprocess.check_call("{} vagrant up".format(self.prefix), shell=True)
+        self.ssh_path = "/tmp/vagrant-ssh"
+        subprocess.check_call("{} vagrant ssh-config > {}".format(self.prefix, self.ssh_path), shell=True)
+        return self
+
+    def copy_to_image(self, local_path, remote_path):
+        cmd = "scp -F {ssh} -r {lpath} default:{rpath}".format(ssh=self.ssh_path, lpath=local_path, rpath=remote_path)
+        logging.info("Copying to image %s", cmd)
+        subprocess.check_call(
+            cmd,
+            shell=True
+        )
+
+    def copy_from_image(self, remote_path, local_path):
+        cmd = "scp -F {ssh} -r default:{rpath} {lpath}".format(ssh=self.ssh_path, rpath=remote_path, lpath=local_path)
+        logging.info("Copying from image %s", cmd)
+        subprocess.check_call(
+            cmd,
+            shell=True
+        )
+
+    def execute_cmd(self, cmd):
+        cmd = '{} vagrant ssh -c "{}"'.format(self.prefix, cmd)
+        logging.info("Executin cmd %s", cmd)
+        subprocess.check_call(
+            cmd,
+            shell=True
+        )
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        logging.info("Destroying image")
+        subprocess.check_call("{} vagrant destroy --force".format(self.prefix), shell=True)
 
 
 def check_image_exists_locally(image_name):
@@ -30,7 +71,7 @@ def pull_image(image_name):
 def build_image(image_name, filepath):
     subprocess.check_call("docker build --network=host -t {} -f {} .".format(image_name, filepath), shell=True)
 
-def run_image_with_env(image_name, output, env_variables, ch_root):
+def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache_dir):
     env_part = " -e ".join(env_variables)
     if env_part:
         env_part = " -e " + env_part
@@ -40,9 +81,10 @@ def run_image_with_env(image_name, output, env_variables, ch_root):
     else:
         interactive = ""
 
-    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build {env} {interactive} {img_name}".format(
+    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build --volume={ccache_dir}:/ccache {env} {interactive} {img_name}".format(
         output_path=output,
         ch_root=ch_root,
+        ccache_dir=ccache_dir,
         env=env_part,
         img_name=image_name,
         interactive=interactive
@@ -52,22 +94,44 @@ def run_image_with_env(image_name, output, env_variables, ch_root):
 
     subprocess.check_call(cmd, shell=True)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary):
+def run_vagrant_box_with_env(image_path, output_dir, ch_root):
+    with Vagrant(image_path) as vagrant:
+        logging.info("Copying folder to vagrant machine")
+        vagrant.copy_to_image(ch_root, "~/ClickHouse")
+        logging.info("Running build")
+        vagrant.execute_cmd("cd ~/ClickHouse && cmake . && ninja")
+        logging.info("Copying binary back")
+        vagrant.copy_from_image("~/ClickHouse/dbms/programs/clickhouse", output_dir)
+
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled, split_binary, version, author, official):
     result = []
+    cmake_flags = ['$CMAKE_FLAGS']
+
+    cc = compiler
+    cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
     if package_type == "deb":
-        result.append("DEB_CC={}".format(compiler))
-        result.append("DEB_CXX={}".format(compiler.replace('gcc', 'g++').replace('clang', 'clang++')))
+        result.append("DEB_CC={}".format(cc))
+        result.append("DEB_CXX={}".format(cxx))
     elif package_type == "binary":
-        result.append("CC={}".format(compiler))
-        result.append("CXX={}".format(compiler.replace('gcc', 'g++').replace('clang', 'clang++')))
+        result.append("CC={}".format(cc))
+        result.append("CXX={}".format(cxx))
+        cmake_flags.append('-DCMAKE_C_COMPILER=`which {}`'.format(cc))
+        cmake_flags.append('-DCMAKE_CXX_COMPILER=`which {}`'.format(cxx))
 
     if sanitizer:
         result.append("SANITIZER={}".format(sanitizer))
     if build_type:
         result.append("BUILD_TYPE={}".format(build_type))
 
-    if cache:
+    if cache == 'distcc':
         result.append("CCACHE_PREFIX={}".format(cache))
+
+    if cache:
+        result.append("CCACHE_DIR=/ccache")
+        result.append("CCACHE_BASEDIR=/build")
+        result.append("CCACHE_NOHASHDIR=true")
+        result.append("CCACHE_COMPILERCHECK=content")
+        # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
         hosts_with_params = ["{}/24,lzo".format(host) for host in distcc_hosts] + ["localhost/`nproc`"]
@@ -76,27 +140,42 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
 
     if unbundled:
-        result.append('CMAKE_FLAGS="-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0 $CMAKE_FLAGS"')
+        cmake_flags.append('-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0')
 
     if split_binary:
-        result.append('CMAKE_FLAGS="-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1 $CMAKE_FLAGS"')
+        cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
+
+    if version:
+        result.append("VERSION_STRING='{}'".format(version))
+
+    if author:
+        result.append("AUTHOR='{}'".format(author))
+
+    if official:
+        cmake_flags.append('-DYANDEX_OFFICIAL_BUILD=1')
+
+    result.append('CMAKE_FLAGS="' + ' '.join(cmake_flags) + '"')
 
     return result
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
-    parser = argparse.ArgumentParser(description="ClickHouse building script via docker")
+    parser = argparse.ArgumentParser(description="ClickHouse building script via virtualization mechanisms")
     parser.add_argument("--package-type", choices=IMAGE_MAP.keys(), required=True)
     parser.add_argument("--clickhouse-repo-path", default="../../")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
-    parser.add_argument("--compiler", choices=("clang-6.0", "clang-7", "gcc-7", "gcc-8"), default="gcc-7")
+    parser.add_argument("--compiler", choices=("clang-6.0", "clang-7", "gcc-7", "clang-8", "gcc-8"), default="gcc-7")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
     parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
+    parser.add_argument("--ccache_dir", default= os.getenv("HOME", "") + '/.ccache')
     parser.add_argument("--distcc-hosts", nargs="+")
     parser.add_argument("--force-build-image", action="store_true")
+    parser.add_argument("--version")
+    parser.add_argument("--author", default="clickhouse")
+    parser.add_argument("--official", action="store_true")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -110,9 +189,16 @@ if __name__ == "__main__":
         ch_root = args.clickhouse_repo_path
 
     dockerfile = os.path.join(ch_root, "docker/packager", args.package_type, "Dockerfile")
-    if not check_image_exists_locally(image_name) or args.force_build_image:
+    if args.package_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_name) or args.force_build_image:
             build_image(image_name, dockerfile)
-    env_prepared = parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type, args.cache, args.distcc_hosts, args.unbundled, args.split_binary)
-    run_image_with_env(image_name, args.output_dir, env_prepared, ch_root)
+    env_prepared = parse_env_variables(
+        args.build_type, args.compiler, args.sanitizer, args.package_type,
+        args.cache, args.distcc_hosts, args.unbundled, args.split_binary,
+        args.version, args.author, args.official)
+    if args.package_type != "freebsd":
+        run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir)
+    else:
+        logging.info("Running freebsd build, arguments will be ignored")
+        run_vagrant_box_with_env(image_name, args.output_dir, ch_root)
     logging.info("Output placed into {}".format(args.output_dir))

@@ -25,11 +25,25 @@ void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
 
 void AnalyzedJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
 {
+    with_using = false;
     key_names_left.push_back(left_table_ast->getColumnName());
     key_names_right.push_back(right_table_ast->getAliasOrColumnName());
 
     key_asts_left.push_back(left_table_ast);
     key_asts_right.push_back(right_table_ast);
+}
+
+/// @return how many times right key appears in ON section.
+size_t AnalyzedJoin::rightKeyInclusion(const String & name) const
+{
+    if (with_using)
+        return 0;
+
+    size_t count = 0;
+    for (const auto & key_name : key_names_right)
+        if (name == key_name)
+            ++count;
+    return count;
 }
 
 ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
@@ -45,7 +59,7 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     if (!join)
         return nullptr;
 
-    const auto & join_params = static_cast<const ASTTableJoin &>(*join->table_join);
+    const auto & join_params = join->table_join->as<ASTTableJoin &>();
 
     /// Create custom expression list with join keys from right table.
     auto expression_list = std::make_shared<ASTExpressionList>();

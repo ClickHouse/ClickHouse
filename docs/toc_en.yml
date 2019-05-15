@@ -56,6 +56,10 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
+  - 'Domains':
+    - 'Overview': 'data_types/domains/overview.md'
+    - 'IPv4': 'data_types/domains/ipv4.md'
+    - 'IPv6': 'data_types/domains/ipv6.md'
 
 - 'Table Engines':
   - 'Introduction': 'operations/table_engines/index.md'
@@ -91,6 +95,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
+    - 'JDBC': 'operations/table_engines/jdbc.md'
 
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
@@ -115,6 +120,7 @@ nav:
     - 'Working with Arrays': 'query_language/functions/array_functions.md'
     - 'Splitting and Merging Strings and Arrays': 'query_language/functions/splitting_merging_functions.md'
     - 'Bit': 'query_language/functions/bit_functions.md'
+    - 'Bitmap': 'query_language/functions/bitmap_functions.md'
     - 'Hash': 'query_language/functions/hash_functions.md'
     - 'Generating Pseudo-Random Numbers': 'query_language/functions/random_functions.md'
     - 'Encoding': 'query_language/functions/encoding_functions.md'

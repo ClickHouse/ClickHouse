@@ -37,7 +37,7 @@ public:
     virtual std::string getName() const = 0;
     /// True if object can be updated when lifetime exceeded.
     virtual bool supportUpdates() const = 0;
-    /// If lifetime exceeded and isModified() ExternalLoader replace current object with the result of clone().
+    /// If lifetime exceeded and isModified(), ExternalLoader replace current object with the result of clone().
     virtual bool isModified() const = 0;
     /// Returns new object with the same configuration. Is used to update modified object when lifetime exceeded.
     virtual std::unique_ptr<IExternalLoadable> clone() const = 0;

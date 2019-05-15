@@ -2,8 +2,15 @@
 
 # set some vars
 CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
-USER="$(id -u clickhouse)"
-GROUP="$(id -g clickhouse)"
+if [ x"$UID" == x0 ]; then
+    USER="$(id -u clickhouse)"
+    GROUP="$(id -g clickhouse)"
+    gosu="gosu $USER:$GROUP"
+else
+    USER="$(id -u)"
+    GROUP="$(id -g)"
+    gosu=""
+fi
 
 # port is needed to check if clickhouse-server is ready for connections
 HTTP_PORT="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=http_port)"
@@ -18,28 +25,34 @@ ERROR_LOG_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFI
 ERROR_LOG_DIR="$(dirname $ERROR_LOG_PATH || true)"
 FORMAT_SCHEMA_PATH="$(clickhouse extract-from-config --config-file $CLICKHOUSE_CONFIG --key=format_schema_path || true)"
 
-# ensure directories exist
-mkdir -p \
-    "$DATA_DIR" \
-    "$ERROR_LOG_DIR" \
-    "$LOG_DIR" \
-    "$TMP_DIR" \
-    "$USER_PATH" \
-    "$FORMAT_SCHEMA_PATH"
+for dir in "$DATA_DIR" \
+  "$ERROR_LOG_DIR" \
+  "$LOG_DIR" \
+  "$TMP_DIR" \
+  "$USER_PATH" \
+  "$FORMAT_SCHEMA_PATH"
+do
+    # check if variable not empty
+    [ -z "$dir" ] && continue
+    # ensure directories exist
+    if ! mkdir -p "$dir"; then
+        echo "Couldn't create necessary directory: $dir"
+        exit 1
+    fi
 
-if [ "$CLICKHOUSE_DO_NOT_CHOWN" != "1" ]; then
-    # ensure proper directories permissions
-    chown -R $USER:$GROUP \
-        "$DATA_DIR" \
-        "$ERROR_LOG_DIR" \
-        "$LOG_DIR" \
-        "$TMP_DIR" \
-        "$USER_PATH" \
-        "$FORMAT_SCHEMA_PATH"
-fi
+    if [ x"$UID" == x0 ] && [ "$CLICKHOUSE_DO_NOT_CHOWN" != "1" ]; then
+        # ensure proper directories permissions
+        chown -R "$USER:$GROUP" "$dir"
+    elif [ "$(stat -c %u "$dir")" != "$USER" ]; then
+        echo "Necessary directory '$dir' isn't owned by user with id '$USER'"
+        exit 1
+    fi
+done
+
+
 
 if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
-    gosu clickhouse /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &
+    $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &
     pid="$!"
 
     # check if clickhouse is ready to accept connections
@@ -77,7 +90,7 @@ fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
-    exec gosu clickhouse /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG "$@"
+    exec $gosu /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG "$@"
 fi
 
 # Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image

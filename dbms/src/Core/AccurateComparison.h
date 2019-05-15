@@ -2,9 +2,9 @@
 
 #include <cmath>
 #include <limits>
-
+#include "Defines.h"
+#include "Types.h"
 #include <Common/NaNUtils.h>
-#include <Core/Types.h>
 #include <Common/UInt128.h>
 
 /** Preceptually-correct number comparisons.
@@ -424,6 +424,21 @@ template <typename A, typename B>
 inline bool_if_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 {
     return a >= b;
+}
+
+/// Converts numeric to an equal numeric of other type.
+template <typename From, typename To>
+inline bool NO_SANITIZE_UNDEFINED convertNumeric(From value, To & result)
+{
+    /// Note that NaNs doesn't compare equal to anything, but they are still in range of any Float type.
+    if (isNaN(value) && std::is_floating_point_v<To>)
+    {
+        result = value;
+        return true;
+    }
+
+    result = static_cast<To>(value);
+    return equalsOp(value, result);
 }
 
 }

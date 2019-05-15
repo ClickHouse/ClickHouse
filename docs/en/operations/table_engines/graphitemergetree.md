@@ -78,6 +78,13 @@ required-columns
 pattern
     regexp
     function
+pattern
+    regexp
+    age + precision
+    ...
+pattern
+    regexp
+    function
     age + precision
     ...
 pattern
@@ -88,15 +95,20 @@ default
     ...
 ```
 
-When processing a row, ClickHouse checks the rules in the `pattern` section. If the metric name matches the `regexp`, the rules from the `pattern`section are applied; otherwise, the rules from the `default` section are used.
+**Important:** The order of patterns should be next:
 
-The rules are defined with fields `function` and `age + precision`.
+1. Patterns *without* `function` *or* `retention`.
+1. Patterns *with* both `function` *and* `retention`.
+1. Pattern `dafault`.
+
+
+When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections could contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
 Fields for `pattern` and `default` sections:
 
 - `regexp`– A pattern for the metric name.
 - `age` – The minimum age of the data in seconds.
-- `precision`– How precisely to define the age of the data in seconds.
+- `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
 - `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
 The `required-columns`:

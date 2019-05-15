@@ -1,36 +1,62 @@
--------Not need optimize predicate, but it works.-------
+-------No need for predicate optimization, but still works-------
 1
 1
 1
+2000-01-01	1	test string 1	1
+-------Forbid push down-------
+SELECT count()\nFROM \n(\n    SELECT \n        [number] AS a, \n        [number * 2] AS b\n    FROM system.numbers \n    LIMIT 1\n) AS t \nARRAY JOIN \n    a, \n    b\nWHERE NOT ignore(a + b)
+1
+SELECT \n    a, \n    b\nFROM \n(\n    SELECT 1 AS a\n) \nANY LEFT JOIN \n(\n    SELECT \n        1 AS a, \n        1 AS b\n) USING (a)\nWHERE b = 0
+SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        1 AS a, \n        1 AS b\n) \nANY RIGHT JOIN \n(\n    SELECT 1 AS a\n) USING (a)\nWHERE b = 0
+SELECT \n    a, \n    b\nFROM \n(\n    SELECT 1 AS a\n) \nANY FULL OUTER JOIN \n(\n    SELECT \n        1 AS a, \n        1 AS b\n) USING (a)\nWHERE b = 0
+SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        1 AS a, \n        1 AS b\n) \nANY FULL OUTER JOIN \n(\n    SELECT 1 AS a\n) USING (a)\nWHERE b = 0
 -------Need push down-------
-0
+SELECT toString(value) AS value\nFROM \n(\n    SELECT 1 AS value\n    WHERE toString(value) = \'1\'\n) \nWHERE value = \'1\'
 1
+SELECT id\nFROM \n(\n    SELECT 1 AS id\n    WHERE id = 1\n    UNION ALL\n    SELECT 2 AS `2`\n    WHERE `2` = 1\n) \nWHERE id = 1
 1
+SELECT id\nFROM \n(\n    SELECT arrayJoin([1, 2, 3]) AS id\n    WHERE id = 1\n) \nWHERE id = 1
 1
+SELECT id\nFROM \n(\n    SELECT arrayJoin([1, 2, 3]) AS id\n    WHERE id = 1\n) \nWHERE id = 1
 1
+SELECT \n    id, \n    subquery\nFROM \n(\n    SELECT \n        1 AS id, \n        CAST(1, \'UInt8\') AS subquery\n    WHERE subquery = 1\n) \nWHERE subquery = 1
 1	1
+SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        toUInt64(sum(id) AS b) AS a, \n        b\n    FROM test.test \n    HAVING a = 3\n) \nWHERE a = 3
 3	3
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        name, \n        value, \n        min(id) AS id\n    FROM test.test \n    GROUP BY \n        date, \n        name, \n        value\n    HAVING id = 1\n) \nWHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT \n    a, \n    b\nFROM \n(\n    SELECT \n        toUInt64(sum(id) AS b) AS a, \n        b\n    FROM test.test AS table_alias \n    HAVING b = 3\n) AS outer_table_alias \nWHERE b = 3
 3	3
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM test.test \n    WHERE id = 1\n) \nWHERE id = 1
 2000-01-01	1	test string 1	1
-3	3
--------Force push down-------
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM \n    (\n        SELECT \n            date, \n            id, \n            name, \n            value\n        FROM test.test \n        WHERE id = 1\n    ) \n    WHERE id = 1\n) \nWHERE id = 1
 2000-01-01	1	test string 1	1
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM \n    (\n        SELECT \n            date, \n            id, \n            name, \n            value\n        FROM test.test \n        WHERE id = 1\n    ) AS b \n    WHERE id = 1\n) \nWHERE id = 1
 2000-01-01	1	test string 1	1
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM test.test \n    WHERE id = 1\n) \nWHERE id = 1
 2000-01-01	1	test string 1	1
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM \n    (\n        SELECT \n            date, \n            id, \n            name, \n            value\n        FROM test.test \n        WHERE id = 1\n    ) \n    WHERE id = 1\n) \nWHERE id = 1
 2000-01-01	1	test string 1	1
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM test.test \n    WHERE id = 1\n) AS b \nWHERE id = 1
 2000-01-01	1	test string 1	1
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM \n    (\n        SELECT \n            date, \n            id, \n            name, \n            value\n        FROM test.test \n        WHERE id = 1\n    ) AS a \n    WHERE id = 1\n) AS b \nWHERE id = 1
 2000-01-01	1	test string 1	1
-2000-01-01	1	test string 1	1
+SELECT \n    id, \n    date, \n    value\nFROM \n(\n    SELECT \n        id, \n        date, \n        min(value) AS value\n    FROM test.test \n    WHERE id = 1\n    GROUP BY \n        id, \n        date\n) \nWHERE id = 1
 1	2000-01-01	1
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM test.test \n    WHERE id = 1\n    UNION ALL\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM test.test \n    WHERE id = 1\n) \nWHERE id = 1
 2000-01-01	1	test string 1	1
 2000-01-01	1	test string 1	1
+SELECT \n    date, \n    id, \n    name, \n    value, \n    date, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM test.test \n    WHERE id = 1\n) \nANY LEFT JOIN \n(\n    SELECT *\n    FROM test.test \n) USING (id)\nWHERE id = 1
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
-2000-01-01	1	test string 1	1
-1	2000-01-01	1	test string 1	1
-2000-01-01	1	test string 1	1
-2000-01-01	2	test string 2	2
-1
-1
--------Push to having expression, need check.-------
--------Compatibility test-------
+SELECT \n    id, \n    date, \n    name, \n    value\nFROM \n(\n    SELECT toInt8(1) AS id\n) \nANY LEFT JOIN test.test USING (id)\nWHERE value = 1
 1	2000-01-01	test string 1	1
+SELECT value\nFROM \n(\n    SELECT toInt8(1) AS id\n) \nANY LEFT JOIN test.test AS b USING (id)\nWHERE value = 1
+1
+SELECT \n    date, \n    id, \n    name, \n    value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value, \n        date, \n        name, \n        value\n    FROM \n    (\n        SELECT \n            date, \n            id, \n            name, \n            value\n        FROM test.test \n        WHERE id = 1\n    ) \n    ANY LEFT JOIN \n    (\n        SELECT *\n        FROM test.test \n    ) USING (id)\n    WHERE id = 1\n) \nWHERE id = 1
+2000-01-01	1	test string 1	1
+SELECT \n    date, \n    id, \n    name, \n    value, \n    b.date, \n    b.name, \n    b.value\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value\n    FROM test.test \n) \nANY LEFT JOIN \n(\n    SELECT *\n    FROM test.test \n) AS b USING (id)\nWHERE b.id = 1
+2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
+SELECT \n    id, \n    date, \n    name, \n    value\nFROM \n(\n    SELECT \n        toInt8(1) AS id, \n        toDate(\'2000-01-01\') AS date\n    FROM system.numbers \n    LIMIT 1\n) \nANY LEFT JOIN \n(\n    SELECT *\n    FROM test.test \n) AS b USING (date, id)\nWHERE b.date = toDate(\'2000-01-01\')
+1	2000-01-01	test string 1	1
+SELECT \n    date, \n    id, \n    name, \n    value, \n    `b.date`, \n    `b.id`, \n    `b.name`, \n    `b.value`\nFROM \n(\n    SELECT \n        date, \n        id, \n        name, \n        value, \n        b.date, \n        b.id, \n        b.name, \n        b.value\n    FROM \n    (\n        SELECT \n            date, \n            id, \n            name, \n            value\n        FROM test.test \n        WHERE id = 1\n    ) AS a \n    ANY LEFT JOIN \n    (\n        SELECT *\n        FROM test.test \n    ) AS b ON id = b.id\n    WHERE id = 1\n) \nWHERE id = 1
+2000-01-01	1	test string 1	1	2000-01-01	1	test string 1	1

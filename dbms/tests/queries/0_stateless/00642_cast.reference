@@ -7,7 +7,7 @@ hello
 hello
 hello
 1970-01-01 00:00:01
-CREATE TABLE test.cast ( x UInt8,  e Enum8('hello' = 1, 'world' = 2) DEFAULT CAST(x, 'Enum8(\'hello\' = 1, \'world\' = 2)')) ENGINE = MergeTree ORDER BY e SETTINGS index_granularity = 8192
-x	UInt8				
-e	Enum8(\'hello\' = 1, \'world\' = 2)	DEFAULT	CAST(x, \'Enum8(\\\'hello\\\' = 1, \\\'world\\\' = 2)\')		
+CREATE TABLE test.cast (`x` UInt8, `e` Enum8('hello' = 1, 'world' = 2) DEFAULT CAST(x, 'Enum8(\'hello\' = 1, \'world\' = 2)')) ENGINE = MergeTree ORDER BY e SETTINGS index_granularity = 8192
+x	UInt8					
+e	Enum8(\'hello\' = 1, \'world\' = 2)	DEFAULT	CAST(x, \'Enum8(\\\'hello\\\' = 1, \\\'world\\\' = 2)\')			
 1	hello

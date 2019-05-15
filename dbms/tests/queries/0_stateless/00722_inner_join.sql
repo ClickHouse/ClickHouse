@@ -1,6 +1,5 @@
-CREATE DATABASE IF NOT EXISTS test;
-DROP TABLE IF EXISTS test.one;
-CREATE TABLE test.one(dummy UInt8) ENGINE = Memory;
+DROP TABLE IF EXISTS one;
+CREATE TABLE one(dummy UInt8) ENGINE = Memory;
 
 SELECT database, t.name
     FROM system.tables AS t
@@ -48,25 +47,34 @@ SELECT database, t.name
     WHERE db.name = 'system' AND t.name = 'one'
     FORMAT PrettyCompactNoEscapes;
 
---SELECT db.name, t.name
---    FROM (SELECT name, database AS x FROM system.tables) AS t
---    JOIN (SELECT name AS x FROM system.databases) AS db USING x
---    WHERE x = 'system' AND t.name = 'one'
---    FORMAT PrettyCompactNoEscapes;
+SELECT db.x, t.name
+    FROM (SELECT name, database AS x FROM system.tables) AS t
+    JOIN (SELECT name AS x FROM system.databases) AS db USING x
+    WHERE x = 'system' AND t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
 
-SELECT t.name --, db.name
+SELECT db.name, t.name
     FROM (SELECT name, database FROM system.tables WHERE name = 'one') AS t
-    JOIN (SELECT name FROM system.databases WHERE name = 'system') AS db ON t.database = db.name;
+    JOIN (SELECT name FROM system.databases WHERE name = 'system') AS db ON t.database = db.name
+    FORMAT PrettyCompactNoEscapes;
 
 SELECT db.name, t.name
     FROM system.tables AS t
     JOIN (SELECT * FROM system.databases WHERE name = 'system') AS db ON t.database = db.name
-    WHERE t.name = 'one';
+    WHERE t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
 
-SELECT database, t.name
+SELECT t.database, t.name
     FROM system.tables AS t
     JOIN (SELECT name, name AS database FROM system.databases) AS db ON t.database = db.name
-    WHERE t.name = 'one';
+    WHERE t.database = 'system' AND t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
+
+SELECT t.database, t.name
+    FROM system.tables t
+    ANY LEFT JOIN (SELECT 'system' AS base, 'one' AS name) db USING name
+    WHERE t.database = db.base
+    FORMAT PrettyCompactNoEscapes;
 
 SELECT count(t.database)
     FROM (SELECT * FROM system.tables WHERE name = 'one') AS t
@@ -82,4 +90,4 @@ SELECT count()
     JOIN system.databases AS db ON db.name = t.database
     WHERE t.name = 'one';
 
-DROP TABLE test.one;
+DROP TABLE one;

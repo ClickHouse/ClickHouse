@@ -90,13 +90,13 @@ template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
-class ColumnVector final : public COWPtrHelper<ColumnVectorHelper, ColumnVector<T>>
+class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
     static_assert(!IsDecimalNumber<T>);
 
 private:
     using Self = ColumnVector;
-    friend class COWPtrHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<ColumnVectorHelper, Self>;
 
     struct less;
     struct greater;
@@ -161,6 +161,11 @@ public:
     size_t allocatedBytes() const override
     {
         return data.allocated_bytes();
+    }
+
+    void protect() override
+    {
+        data.protect();
     }
 
     void insertValue(const T value)
@@ -245,6 +250,12 @@ public:
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
     StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
+
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        return typeid(rhs) == typeid(ColumnVector<T>);
+    }
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

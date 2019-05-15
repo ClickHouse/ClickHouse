@@ -27,7 +27,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
 {
-    const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get());
+    const auto * identifier = node->as<ASTIdentifier>();
     if (!identifier)
         throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -62,26 +62,26 @@ bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_t
     return database == db_table.database && table == db_table.table;
 }
 
-String DatabaseAndTableWithAlias::getQualifiedNamePrefix() const
+String DatabaseAndTableWithAlias::getQualifiedNamePrefix(bool with_dot) const
 {
     if (alias.empty() && table.empty())
         return "";
-    return (!alias.empty() ? alias : table) + '.';
+    return (!alias.empty() ? alias : table) + (with_dot ? "." : "");
 }
 
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query)
 {
-    if (!select_query.tables)
+    if (!select_query.tables())
         return {};
 
     std::vector<const ASTTableExpression *> tables_expression;
 
-    for (const auto & child : select_query.tables->children)
+    for (const auto & child : select_query.tables()->children)
     {
-        ASTTablesInSelectQueryElement * tables_element = static_cast<ASTTablesInSelectQueryElement *>(child.get());
+        const auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
 
         if (tables_element->table_expression)
-            tables_expression.emplace_back(static_cast<const ASTTableExpression *>(tables_element->table_expression.get()));
+            tables_expression.emplace_back(tables_element->table_expression->as<ASTTableExpression>());
     }
 
     return tables_expression;
@@ -89,20 +89,19 @@ std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelec
 
 static const ASTTableExpression * getTableExpression(const ASTSelectQuery & select, size_t table_number)
 {
-    if (!select.tables)
+    if (!select.tables())
         return {};
 
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
+    const auto & tables_in_select_query = select.tables()->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.size() <= table_number)
         return {};
 
-    ASTTablesInSelectQueryElement & tables_element =
-        static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[table_number]);
+    const auto & tables_element = tables_in_select_query.children[table_number]->as<ASTTablesInSelectQueryElement &>();
 
     if (!tables_element.table_expression)
         return {};
 
-    return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
+    return tables_element.table_expression->as<ASTTableExpression>();
 }
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database)
@@ -125,7 +124,7 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
         return {};
 
     ASTPtr database_and_table_name = table_expression->database_and_table_name;
-    if (!database_and_table_name || !isIdentifier(database_and_table_name))
+    if (!database_and_table_name || !database_and_table_name->as<ASTIdentifier>())
         return {};
 
     return DatabaseAndTableWithAlias(database_and_table_name);
@@ -142,7 +141,7 @@ ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number
             return table_expression->table_function;
 
         if (table_expression->subquery)
-            return static_cast<const ASTSubquery *>(table_expression->subquery.get())->children[0];
+            return table_expression->subquery->children[0];
     }
 
     return nullptr;
@@ -152,7 +151,7 @@ std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const ASTS
 {
     std::vector<TableWithColumnNames> tables_with_columns;
 
-    if (select_query.tables && !select_query.tables->children.empty())
+    if (select_query.tables() && !select_query.tables()->children.empty())
     {
         String current_database = context.getCurrentDatabase();
 

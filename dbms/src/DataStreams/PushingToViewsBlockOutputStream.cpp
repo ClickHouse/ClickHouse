@@ -20,7 +20,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructure(true));
+    addTableLock(storage->lockStructureForShare(true, context.getCurrentQueryId()));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -45,7 +45,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
             if (StoragePtr inner_table = materialized_view.tryGetTargetTable())
-                addTableLock(inner_table->lockStructure(true));
+                addTableLock(inner_table->lockStructureForShare(true, context.getCurrentQueryId()));
 
             auto query = materialized_view.getInnerQuery();
             BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
@@ -57,7 +57,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     /* Do not push to destination table if the flag is set */
     if (!no_destination)
     {
-        output = storage->write(query_ptr, context.getSettingsRef());
+        output = storage->write(query_ptr, context);
         replicated_output = dynamic_cast<ReplicatedMergeTreeBlockOutputStream *>(output.get());
     }
 }

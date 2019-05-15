@@ -20,6 +20,8 @@ namespace DB
 {
 
 class TaskNotification;
+class BackgroundSchedulePoolTaskInfo;
+class BackgroundSchedulePoolTaskHolder;
 
 
 /** Executes functions scheduled at a specific point in time.
@@ -35,83 +37,13 @@ class TaskNotification;
 class BackgroundSchedulePool
 {
 public:
-    class TaskInfo;
+    friend class BackgroundSchedulePoolTaskInfo;
+
+    using TaskInfo = BackgroundSchedulePoolTaskInfo;
     using TaskInfoPtr = std::shared_ptr<TaskInfo>;
     using TaskFunc = std::function<void()>;
+    using TaskHolder = BackgroundSchedulePoolTaskHolder;
     using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>;
-
-    class TaskInfo : public std::enable_shared_from_this<TaskInfo>, private boost::noncopyable
-    {
-    public:
-        TaskInfo(BackgroundSchedulePool & pool_, const std::string & log_name_, const TaskFunc & function_);
-
-        /// Schedule for execution as soon as possible (if not already scheduled).
-        /// If the task was already scheduled with delay, the delay will be ignored.
-        bool schedule();
-
-        /// Schedule for execution after specified delay.
-        bool scheduleAfter(size_t ms);
-
-        /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
-        void deactivate();
-
-        void activate();
-
-        /// Atomically activate task and schedule it for execution.
-        bool activateAndSchedule();
-
-        /// get Coordination::WatchCallback needed for notifications from ZooKeeper watches.
-        Coordination::WatchCallback getWatchCallback();
-
-    private:
-        friend class TaskNotification;
-        friend class BackgroundSchedulePool;
-
-        void execute();
-
-        void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
-
-        BackgroundSchedulePool & pool;
-        std::string log_name;
-        TaskFunc function;
-
-        std::mutex exec_mutex;
-        std::mutex schedule_mutex;
-
-        /// Invariants:
-        /// * If deactivated is true then scheduled, delayed and executing are all false.
-        /// * scheduled and delayed cannot be true at the same time.
-        bool deactivated = false;
-        bool scheduled = false;
-        bool delayed = false;
-        bool executing = false;
-
-        /// If the task is scheduled with delay, points to element of delayed_tasks.
-        DelayedTasks::iterator iterator;
-    };
-
-    class TaskHolder
-    {
-    public:
-        TaskHolder() = default;
-        explicit TaskHolder(const TaskInfoPtr & task_info_) : task_info(task_info_) {}
-        TaskHolder(const TaskHolder & other) = delete;
-        TaskHolder(TaskHolder && other) noexcept = default;
-        TaskHolder & operator=(const TaskHolder & other) noexcept = delete;
-        TaskHolder & operator=(TaskHolder && other) noexcept = default;
-
-        ~TaskHolder()
-        {
-            if (task_info)
-                task_info->deactivate();
-        }
-
-        TaskInfo * operator->() { return task_info.get(); }
-        const TaskInfo * operator->() const { return task_info.get(); }
-
-    private:
-        TaskInfoPtr task_info;
-    };
 
     TaskHolder createTask(const std::string & log_name, const TaskFunc & function);
 
@@ -151,6 +83,83 @@ private:
     ThreadGroupStatusPtr thread_group;
 
     void attachToThreadGroup();
+};
+
+
+class BackgroundSchedulePoolTaskInfo : public std::enable_shared_from_this<BackgroundSchedulePoolTaskInfo>, private boost::noncopyable
+{
+public:
+    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePool & pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
+
+    /// Schedule for execution as soon as possible (if not already scheduled).
+    /// If the task was already scheduled with delay, the delay will be ignored.
+    bool schedule();
+
+    /// Schedule for execution after specified delay.
+    bool scheduleAfter(size_t ms);
+
+    /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
+    void deactivate();
+
+    void activate();
+
+    /// Atomically activate task and schedule it for execution.
+    bool activateAndSchedule();
+
+    /// get Coordination::WatchCallback needed for notifications from ZooKeeper watches.
+    Coordination::WatchCallback getWatchCallback();
+
+private:
+    friend class TaskNotification;
+    friend class BackgroundSchedulePool;
+
+    void execute();
+
+    void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
+
+    BackgroundSchedulePool & pool;
+    std::string log_name;
+    BackgroundSchedulePool::TaskFunc function;
+
+    std::mutex exec_mutex;
+    std::mutex schedule_mutex;
+
+    /// Invariants:
+    /// * If deactivated is true then scheduled, delayed and executing are all false.
+    /// * scheduled and delayed cannot be true at the same time.
+    bool deactivated = false;
+    bool scheduled = false;
+    bool delayed = false;
+    bool executing = false;
+
+    /// If the task is scheduled with delay, points to element of delayed_tasks.
+    BackgroundSchedulePool::DelayedTasks::iterator iterator;
+};
+
+using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePoolTaskInfo>;
+
+
+class BackgroundSchedulePoolTaskHolder
+{
+public:
+    BackgroundSchedulePoolTaskHolder() = default;
+    explicit BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskInfoPtr & task_info_) : task_info(task_info_) {}
+    BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskHolder & other) = delete;
+    BackgroundSchedulePoolTaskHolder(BackgroundSchedulePoolTaskHolder && other) noexcept = default;
+    BackgroundSchedulePoolTaskHolder & operator=(const BackgroundSchedulePoolTaskHolder & other) noexcept = delete;
+    BackgroundSchedulePoolTaskHolder & operator=(BackgroundSchedulePoolTaskHolder && other) noexcept = default;
+
+    ~BackgroundSchedulePoolTaskHolder()
+    {
+        if (task_info)
+            task_info->deactivate();
+    }
+
+    BackgroundSchedulePoolTaskInfo * operator->() { return task_info.get(); }
+    const BackgroundSchedulePoolTaskInfo * operator->() const { return task_info.get(); }
+
+private:
+    BackgroundSchedulePoolTaskInfoPtr task_info;
 };
 
 }

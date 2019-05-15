@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVectorHelper.h>
 
@@ -54,13 +55,13 @@ private:
 
 /// A ColumnVector for Decimals
 template <typename T>
-class ColumnDecimal final : public COWPtrHelper<ColumnVectorHelper, ColumnDecimal<T>>
+class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
     static_assert(IsDecimalNumber<T>);
 
 private:
     using Self = ColumnDecimal;
-    friend class COWPtrHelper<ColumnVectorHelper, Self>;
+    friend class COWHelper<ColumnVectorHelper, Self>;
 
 public:
     using Container = DecimalPaddedPODArray<T>;
@@ -87,6 +88,7 @@ public:
     size_t size() const override { return data.size(); }
     size_t byteSize() const override { return data.size() * sizeof(data[0]); }
     size_t allocatedBytes() const override { return data.allocated_bytes(); }
+    void protect() override { data.protect(); }
     void reserve(size_t n) override { data.reserve(n); }
 
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
@@ -131,6 +133,13 @@ public:
     }
 
     void gather(ColumnGathererStream & gatherer_stream) override;
+
+    bool structureEquals(const IColumn & rhs) const override
+    {
+        if (auto rhs_concrete = typeid_cast<const ColumnDecimal<T> *>(&rhs))
+            return scale == rhs_concrete->scale;
+        return false;
+    }
 
 
     void insert(const T value) { data.push_back(value); }

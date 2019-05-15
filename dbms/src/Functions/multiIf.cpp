@@ -23,12 +23,7 @@ namespace ErrorCodes
 /// where N >= 1.
 ///
 /// For all 1 <= i <= N, "cond_i" has type UInt8.
-/// Types of all the branches "then_i" and "else" are either of the following:
-///    - numeric types for which there exists a common type;
-///    - dates;
-///    - dates with time;
-///    - strings;
-///    - arrays of such types.
+/// Types of all the branches "then_i" and "else" have a common type.
 ///
 /// Additionally the arguments, conditions or branches, support nullable types
 /// and the NULL value, with a NULL condition treated as false.
@@ -68,16 +63,12 @@ public:
             throw Exception{"Invalid number of arguments for function " + getName(),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        /// Conditions must be UInt8, Nullable(UInt8) or Null. If one of conditions is Nullable, the result is also Nullable.
-        bool have_nullable_condition = false;
 
         for_conditions([&](const DataTypePtr & arg)
         {
             const IDataType * nested_type;
             if (arg->isNullable())
             {
-                have_nullable_condition = true;
-
                 if (arg->onlyNull())
                     return;
 
@@ -103,11 +94,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        DataTypePtr common_type_of_branches = getLeastSupertype(types_of_branches);
-
-        return have_nullable_condition
-            ? makeNullable(common_type_of_branches)
-            : common_type_of_branches;
+        return getLeastSupertype(types_of_branches);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override

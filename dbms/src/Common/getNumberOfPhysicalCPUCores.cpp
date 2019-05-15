@@ -7,7 +7,7 @@
 #   include <Common/Exception.h>
     namespace DB { namespace ErrorCodes { extern const int CPUID_ERROR; }}
 #elif USE_CPUINFO
-#   include <cpuinfo.h>
+#   include <cpuinfo.h> // Y_IGNORE
 #endif
 
 

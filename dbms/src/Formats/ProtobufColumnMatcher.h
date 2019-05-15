@@ -69,9 +69,15 @@ namespace ProtobufColumnMatcher
         const std::vector<String> & column_names,
         const google::protobuf::Descriptor * message_type);
 
+    template <typename Traits = DefaultTraits>
+    static std::unique_ptr<Message<Traits>> matchColumns(
+        const std::vector<String> & column_names,
+        const google::protobuf::Descriptor * message_type,
+        std::vector<const google::protobuf::FieldDescriptor *> & field_descriptors_without_match);
+
     namespace details
     {
-        void throwNoCommonColumns();
+        [[noreturn]] void throwNoCommonColumns();
 
         class ColumnNameMatcher
         {
@@ -88,7 +94,8 @@ namespace ProtobufColumnMatcher
         std::unique_ptr<Message<Traits>> matchColumnsRecursive(
             ColumnNameMatcher & name_matcher,
             const google::protobuf::Descriptor * message_type,
-            const String & field_name_prefix)
+            const String & field_name_prefix,
+            std::vector<const google::protobuf::FieldDescriptor *> * field_descriptors_without_match)
         {
             auto message = std::make_unique<Message<Traits>>();
             for (int i = 0; i != message_type->field_count(); ++i)
@@ -98,7 +105,10 @@ namespace ProtobufColumnMatcher
                     || (field_descriptor->type() == google::protobuf::FieldDescriptor::TYPE_GROUP))
                 {
                     auto nested_message = matchColumnsRecursive<Traits>(
-                        name_matcher, field_descriptor->message_type(), field_name_prefix + field_descriptor->name() + ".");
+                        name_matcher,
+                        field_descriptor->message_type(),
+                        field_name_prefix + field_descriptor->name() + ".",
+                        field_descriptors_without_match);
                     if (nested_message)
                     {
                         message->fields.emplace_back();
@@ -112,7 +122,12 @@ namespace ProtobufColumnMatcher
                 else
                 {
                     size_t column_index = name_matcher.findColumn(field_name_prefix + field_descriptor->name());
-                    if (column_index != static_cast<size_t>(-1))
+                    if (column_index == static_cast<size_t>(-1))
+                    {
+                        if (field_descriptors_without_match)
+                            field_descriptors_without_match->emplace_back(field_descriptor);
+                    }
+                    else
                     {
                         message->fields.emplace_back();
                         auto & current_field = message->fields.back();
@@ -144,15 +159,33 @@ namespace ProtobufColumnMatcher
     }
 
     template <typename Data>
+    static std::unique_ptr<Message<Data>> matchColumnsImpl(
+        const std::vector<String> & column_names,
+        const google::protobuf::Descriptor * message_type,
+        std::vector<const google::protobuf::FieldDescriptor *> * field_descriptors_without_match)
+    {
+        details::ColumnNameMatcher name_matcher(column_names);
+        auto message = details::matchColumnsRecursive<Data>(name_matcher, message_type, "", field_descriptors_without_match);
+        if (!message)
+            details::throwNoCommonColumns();
+        return message;
+    }
+
+    template <typename Data>
     static std::unique_ptr<Message<Data>> matchColumns(
         const std::vector<String> & column_names,
         const google::protobuf::Descriptor * message_type)
     {
-        details::ColumnNameMatcher name_matcher(column_names);
-        auto message = details::matchColumnsRecursive<Data>(name_matcher, message_type, "");
-        if (!message)
-            details::throwNoCommonColumns();
-        return message;
+        return matchColumnsImpl<Data>(column_names, message_type, nullptr);
+    }
+
+    template <typename Data>
+    static std::unique_ptr<Message<Data>> matchColumns(
+        const std::vector<String> & column_names,
+        const google::protobuf::Descriptor * message_type,
+        std::vector<const google::protobuf::FieldDescriptor *> & field_descriptors_without_match)
+    {
+        return matchColumnsImpl<Data>(column_names, message_type, &field_descriptors_without_match);
     }
 }
 

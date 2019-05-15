@@ -86,7 +86,7 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
                 throw Exception("LZ4HC codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
             const auto children = arguments->children;
-            const ASTLiteral * literal = static_cast<const ASTLiteral *>(children[0].get());
+            const auto * literal = children[0]->as<ASTLiteral>();
             level = literal->value.safeGet<UInt64>();
         }
 
@@ -100,4 +100,3 @@ CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
 }
 
 }
-

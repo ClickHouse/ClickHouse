@@ -2,12 +2,15 @@
 
 #include <future>
 #include <thread>
+#include <ext/scope_guard.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Common/ShellCommand.h>
 #include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
+#include <common/LocalDateTime.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
@@ -46,7 +49,6 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     Block & sample_block,
     const Context & context)
     : log(&Logger::get("ExecutableDictionarySource"))
-    , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , command{config.getString(config_prefix + ".command")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
@@ -68,31 +70,6 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
 {
 }
 
-std::string ExecutableDictionarySource::getUpdateFieldAndDate()
-{
-    if (update_time != std::chrono::system_clock::from_time_t(0))
-    {
-        auto tmp_time = update_time;
-        update_time = std::chrono::system_clock::now();
-        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
-        char buffer[80];
-        struct tm * timeinfo;
-        timeinfo = localtime(&hr_time);
-        strftime(buffer, 80, "\"%Y-%m-%d %H:%M:%S\"", timeinfo);
-        std::string str_time(buffer);
-        return command + " " + update_field + " " + str_time;
-        ///Example case: command -T "2018-02-12 12:44:04"
-        ///should return all entries after mentioned date
-        ///if executable is eligible to return entries according to date.
-        ///Where "-T" is passed as update_field.
-    }
-    else
-    {
-        std::string str_time("\"0000-00-00 00:00:00\""); ///for initial load
-        return command + " " + update_field + " " + str_time;
-    }
-}
-
 BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
@@ -103,9 +80,15 @@ BlockInputStreamPtr ExecutableDictionarySource::loadAll()
 
 BlockInputStreamPtr ExecutableDictionarySource::loadUpdatedAll()
 {
-    std::string command_update = getUpdateFieldAndDate();
-    LOG_TRACE(log, "loadUpdatedAll " + command_update);
-    auto process = ShellCommand::execute(command_update);
+    time_t new_update_time = time(nullptr);
+    SCOPE_EXIT(update_time = new_update_time);
+
+    std::string command_with_update_field = command;
+    if (update_time)
+        command_with_update_field += " " + update_field + " " + DB::toString(LocalDateTime(update_time - 1));
+
+    LOG_TRACE(log, "loadUpdatedAll " + command_with_update_field);
+    auto process = ShellCommand::execute(command_with_update_field);
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
     return std::make_shared<ShellCommandOwningBlockInputStream>(input_stream, std::move(process));
 }

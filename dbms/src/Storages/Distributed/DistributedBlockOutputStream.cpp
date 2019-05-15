@@ -22,7 +22,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
@@ -60,10 +59,10 @@ namespace ErrorCodes
 
 
 DistributedBlockOutputStream::DistributedBlockOutputStream(
-    StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
-    const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_)
-        : storage(storage), query_ast(query_ast), query_string(queryToString(query_ast)),
-        cluster(cluster_), settings(settings_), insert_sync(insert_sync_),
+        const Context & context_, StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
+        bool insert_sync_, UInt64 insert_timeout_)
+        : context(context_), storage(storage), query_ast(query_ast), query_string(queryToString(query_ast)),
+        cluster(cluster_), insert_sync(insert_sync_),
         insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
 {
 }
@@ -250,7 +249,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                         throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
-                    auto connections = shard_info.pool->getMany(&settings, PoolMode::GET_ONE);
+                    auto connections = shard_info.pool->getMany(&context.getSettingsRef(), PoolMode::GET_ONE);
                     if (connections.empty() || connections.front().isNull())
                         throw Exception("Expected exactly one connection for shard " + toString(job.shard_index), ErrorCodes::LOGICAL_ERROR);
 
@@ -264,7 +263,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                     if (!connection_pool)
                         throw Exception("Connection pool for replica " + replica.readableString() + " does not exist", ErrorCodes::LOGICAL_ERROR);
 
-                    job.connection_entry = connection_pool->get(&settings);
+                    job.connection_entry = connection_pool->get(&context.getSettingsRef());
                     if (job.connection_entry.isNull())
                         throw Exception("Got empty connection for replica" + replica.readableString(), ErrorCodes::LOGICAL_ERROR);
                 }
@@ -272,7 +271,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, query_string, &settings);
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, query_string, &context.getSettingsRef());
                 job.stream->writePrefix();
             }
 
@@ -284,8 +283,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
             if (!job.stream)
             {
                 /// Forward user settings
-                job.local_context = std::make_unique<Context>(storage.global_context);
-                job.local_context->setSettings(settings);
+                job.local_context = std::make_unique<Context>(context);
 
                 InterpreterInsertQuery interp(query_ast, *job.local_context);
                 job.stream = interp.execute().out;
@@ -305,6 +303,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
 void DistributedBlockOutputStream::writeSync(const Block & block)
 {
+    const Settings & settings = context.getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
     size_t num_shards = shards_info.size();
 
@@ -505,7 +504,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
 void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_t repeats)
 {
     /// Async insert does not support settings forwarding yet whereas sync one supports
-    InterpreterInsertQuery interp(query_ast, storage.global_context);
+    InterpreterInsertQuery interp(query_ast, context);
 
     auto block_io = interp.execute();
     block_io.out->writePrefix();
@@ -554,6 +553,8 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             CompressedWriteBuffer compress{out};
             NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
+            writeVarUInt(UInt64(DBMS_DISTRIBUTED_SENDS_MAGIC_NUMBER), out);
+            context.getSettingsRef().serialize(out);
             writeStringBinary(query_string, out);
 
             stream.writePrefix();

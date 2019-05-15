@@ -14,7 +14,7 @@ namespace DB
 class IDataTypeDummy : public DataTypeWithSimpleSerialization
 {
 private:
-    void throwNoSerialization() const
+    [[noreturn]] void throwNoSerialization() const
     {
         throw Exception("Serialization is not implemented for data type " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -28,7 +28,7 @@ public:
     void deserializeBinaryBulk(IColumn &, ReadBuffer &, size_t, double) const override      { throwNoSerialization(); }
     void serializeText(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwNoSerialization(); }
     void deserializeText(IColumn &, ReadBuffer &, const FormatSettings &) const override    { throwNoSerialization(); }
-    void serializeProtobuf(const IColumn &, size_t, ProtobufWriter &) const override        { throwNoSerialization(); }
+    void serializeProtobuf(const IColumn &, size_t, ProtobufWriter &, size_t &) const override { throwNoSerialization(); }
     void deserializeProtobuf(IColumn &, ProtobufReader &, bool, bool &) const override      { throwNoSerialization(); }
 
     MutableColumnPtr createColumn() const override

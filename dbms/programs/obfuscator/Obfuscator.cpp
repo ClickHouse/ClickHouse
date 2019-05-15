@@ -577,7 +577,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
 
                 if (histogram.buckets.size() < params.num_buckets_cutoff)
                 {
@@ -591,7 +591,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -623,7 +623,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -639,7 +639,7 @@ public:
         {
             for (auto & elem : table)
             {
-                Histogram & histogram = elem.second;
+                Histogram & histogram = elem.getSecond();
                 if (!histogram.total)
                     continue;
 
@@ -674,7 +674,7 @@ public:
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
-                if (table.end() != it && it->second.total + it->second.count_end != 0)
+                if (table.end() != it && it->getSecond().total + it->getSecond().count_end != 0)
                     break;
 
                 if (context_size == 0)
@@ -708,7 +708,7 @@ public:
             if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
-            CodePoint code = it->second.sample(determinator, end_probability_multiplier);
+            CodePoint code = it->getSecond().sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;
@@ -912,8 +912,8 @@ public:
         size_t columns = header.columns();
         models.reserve(columns);
 
-        for (size_t i = 0; i < columns; ++i)
-            models.emplace_back(factory.get(*header.getByPosition(i).type, hash(seed, i), markov_model_params));
+        for (const auto & elem : header)
+            models.emplace_back(factory.get(*elem.type, hash(seed, elem.name), markov_model_params));
     }
 
     void train(const Columns & columns)
@@ -954,7 +954,7 @@ try
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
-        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length")
+        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length; note that a seed for each column is derived from this seed and a column name: you can obfuscate data for different tables and as long as you use identical seed and identical column names, the data for corresponding non-text columns for different tables will be transformed in the same way, so the data for different tables can be JOINed after obfuscation")
         ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
         ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")

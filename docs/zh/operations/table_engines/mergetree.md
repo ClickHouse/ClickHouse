@@ -1,32 +1,32 @@
 # MergeTree {#table_engines-mergetree}
 
-The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
+Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及该系列（`*MergeTree`）中的其他引擎。
 
-The basic idea for `MergeTree` engines family is the following. When you have tremendous amount of a data that should be inserted into the table, you should write them quickly part by part and then merge parts by some rules in background. This method is much more efficient than constantly rewriting data in the storage at the insert.
+`MergeTree` 引擎系列的基本理念如下。当你有巨量数据要插入到表中，你要高效地一批批写入数据片段，并希望这些数据片段在后台按照一定规则合并。相比在插入时不断修改（重写）数据进存储，这种策略会高效很多。
 
-Main features:
+主要特点:
 
-- Stores data sorted by primary key.
+- 存储的数据按主键排序。
 
-    This allows you to create a small sparse index that helps find data faster.
+    这让你可以创建一个用于快速检索数据的小稀疏索引。
 
-- This allows you to use partitions if the [partitioning key](custom_partitioning_key.md) is specified.
+- 允许使用分区，如果指定了 [主键](custom_partitioning_key.md) 的话。
 
-    ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query. This also increases the query performance.
+    在相同数据集和相同结果集的情况下 ClickHouse 中某些带分区的操作会比普通操作更快。查询中指定了分区键时 ClickHouse 会自动截取分区数据。这也有效增加了查询性能。
 
-- Data replication support.
+- 支持数据副本。
 
-    The family of `ReplicatedMergeTree` tables is used for this. For more information, see the [Data replication](replication.md) section.
+    `ReplicatedMergeTree` 系列的表便是用于此。更多信息，请参阅 [数据副本](replication.md) 一节。
 
-- Data sampling support.
+- 支持数据采样。
 
-    If necessary, you can set the data sampling method in the table.
+    需要的话，你可以给表设置一个采样方法。
 
-!!! info
-    The [Merge](merge.md) engine does not belong to the `*MergeTree` family.
+!!! 注意
+    [Merge](merge.md) 引擎并不属于 `*MergeTree` 系列。
 
 
-## Creating a Table
+## 建表  {#table_engine-mergetree-creating-a-table}
 
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -34,6 +34,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
+    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
+    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
 ) ENGINE = MergeTree()
 [PARTITION BY expr]
 [ORDER BY expr]
@@ -42,49 +44,51 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md).
+请求参数的描述，参考 [请求描述](../../query_language/create.md) 。
 
-**Query clauses**
+**子句**
 
-- `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
+- `ENGINE` - 引擎名和参数。 `ENGINE = MergeTree()`. `MergeTree` 引擎没有参数。
 
-- `PARTITION BY` — The [partitioning key](custom_partitioning_key.md).
+- `PARTITION BY` — [分区键](custom_partitioning_key.md) 。
 
-    For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../data_types/date.md). The partition names here have the `"YYYYMM"` format.
+    要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../data_types/date.md) 类型的列。这里该分区名格式会是 `"YYYYMM"` 这样。
 
-- `ORDER BY` — The sorting key.
+- `ORDER BY` — 表的排序键。
 
-    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
+    可以是一组列的元组或任意的表达式。 例如: `ORDER BY (CounterID, EventDate)` 。
 
-- `PRIMARY KEY` - The primary key if it [differs from the sorting key](mergetree.md).
+- `PRIMARY KEY` - 主键，如果要设成 [跟排序键不相同](mergetree.md)。
 
-    By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause).
-    Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
+    默认情况下主键跟排序键（由 `ORDER BY` 子句指定）相同。
+    因此，大部分情况下不需要再专门指定一个 `PRIMARY KEY` 子句。
 
-- `SAMPLE BY` — An expression for sampling.
+- `SAMPLE BY` — 用于抽样的表达式。
 
-    If a sampling expression is used, the primary key must contain it. Example:  
-    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+    如果要用抽样表达式，主键中必须包含这个表达式。例如：
+    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))` 。
 
-- `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
-    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192.
+- `SETTINGS` — 影响 `MergeTree` 性能的额外参数：
+    - `index_granularity` — 索引粒度。即索引中相邻『标记』间的数据行数。默认值，8192 。该列表中所有可用的参数可以从这里查看 [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h) 。
+    - `use_minimalistic_part_header_in_zookeeper` — 数据片段头在 ZooKeeper 中的存储方式。如果设置了 `use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考『服务配置参数』这章中的 [设置描述](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
+    - `min_merge_bytes_to_use_direct_io` — 使用直接 I/O 来操作磁盘的合并操作时要求的最小数据量。合并数据片段时，ClickHouse 会计算要被合并的所有数据的总存储空间。如果大小超过了 `min_merge_bytes_to_use_direct_io` 设置的字节数，则 ClickHouse 将使用直接 I/O 接口（`O_DIRECT` 选项）对磁盘读写。如果设置 `min_merge_bytes_to_use_direct_io = 0` ，则会禁用直接 I/O。默认值：`10 * 1024 * 1024 * 1024` 字节。
 
-**Example of sections setting**
+**示例配置**
 
 ```
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
 ```
 
-In the example, we set partitioning by month.
+示例中，我们设为按月分区。
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If, when selecting the data, you define a [SAMPLE](../../query_language/select.md#select-sample-clause) clause, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+同时我们设置了一个按用户ID哈希的抽样表达式。这让你可以有该表中每个 `CounterID` 和 `EventDate` 下面的数据的伪随机分布。如果你在查询时指定了 [SAMPLE](../../query_language/select.md#select-sample-clause) 子句。 ClickHouse会返回对于用户子集的一个均匀的伪随机数据采样。
 
-`index_granularity` could be omitted because 8192 is the default value.
+`index_granularity` 可省略，默认值为 8192 。
 
-<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
+<details markdown="1"><summary>已弃用的建表方法</summary>
 
-!!! attention
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! attention "注意"
+    不要在新版项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -95,115 +99,114 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
-**MergeTree() parameters**
+**MergeTree() 参数**
 
-- `date-column` — The name of a column of the type [Date](../../data_types/date.md). ClickHouse automatically creates partitions by month on the basis of this column. The partition names are in the `"YYYYMM"` format.
-- `sampling_expression` — an expression for sampling.
-- `(primary, key)` — primary key. Type — [Tuple()](../../data_types/tuple.md- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
+- `date-column` — 类型为 [Date](../../data_types/date.md) 的列名。ClickHouse 会自动依据这个列按月创建分区。分区名格式为 `"YYYYMM"` 。
+- `sampling_expression` — 采样表达式。
+- `(primary, key)` — 主键。类型 — [Tuple()](../../data_types/tuple.md)
+- `index_granularity` — 索引粒度。即索引中相邻『标记』间的数据行数。设为 8192 可以适用大部分场景。
 
-**Example**
+**示例**
 
 ```
 MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 ```
 
-The `MergeTree` engine is configured in the same way as in the example above for the main engine configuration method.
+对于主要的配置方法，这里 `MergeTree` 引擎跟前面的例子一样，可以以同样的方式配置。
 </details>
 
-## Data Storage
+## 数据存储
 
-A table consists of data *parts* sorted by primary key.
+表由按主键排序的数据 *片段* 组成。
 
-When data is inserted in a table, separate data parts are created and each of them is lexicographically sorted by primary key. For example, if the primary key is `(CounterID, Date)`, the data in the part is sorted by `CounterID`, and within each `CounterID`, it is ordered by `Date`.
+当数据被插入到表中时，会分成数据片段并按主键的字典序排序。例如，主键是 `(CounterID, Date)` 时，片段中数据按 `CounterID` 排序，具有相同 `CounterID` 的部分按 `Date` 排序。
 
-Data belonging to different partitions are separated into different parts. In the background, ClickHouse merges data parts for more efficient storage. Parts belonging to different partitions are not merged. The merge mechanism does not guarantee that all rows with the same primary key will be in the same data part.
+不同分区的数据会被分成不同的片段，ClickHouse 在后台合并数据片段以便更高效存储。不会合并来自不同分区的数据片段。这个合并机制并不保证相同主键的所有行都会合并到同一个数据片段中。
 
-For each data part, ClickHouse creates an index file that contains the primary key value for each index row ("mark"). Index row numbers are defined as `n * index_granularity`. The maximum value `n` is equal to the integer part of dividing the total number of rows by the `index_granularity`. For each column, the "marks" are also written for the same index rows as the primary key. These "marks" allow you to find the data directly in the columns.
+ClickHouse 会为每个数据片段创建一个索引文件，索引文件包含每个索引行（『标记』）的主键值。索引行号定义为 `n * index_granularity` 。最大的 `n` 等于总行数除以 `index_granularity` 的值的整数部分。对于每列，跟主键相同的索引行处也会写入『标记』。这些『标记』让你可以直接找到数据所在的列。
 
-You can use a single large table and continually add data to it in small chunks – this is what the `MergeTree` engine is intended for.
+你可以只用一单一大表并不断地一块块往里面加入数据 – `MergeTree` 引擎的就是为了这样的场景。
 
-## Primary Keys and Indexes in Queries
+## 主键和索引在查询中的表现  {#primary-keys-and-indexes-in-queries}
 
-Let's take the `(CounterID, Date)` primary key. In this case, the sorting and index can be illustrated as follows:
+我们以 `(CounterID, Date)` 以主键。排序好的索引的图示会是下面这样：
 
 ```
-Whole data:     [-------------------------------------------------------------------------]
+全部数据  :     [-------------------------------------------------------------------------]
 CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
 Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
-Marks:           |      |      |      |      |      |      |      |      |      |      |
+标记:            |      |      |      |      |      |      |      |      |      |      |
                 a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
-Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
+标记号:          0      1      2      3      4      5      6      7      8      9      10
 ```
 
-If the data query specifies:
+如果指定查询如下：
 
-- `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
-- `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
-- `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
+- `CounterID in ('a', 'h')`，服务器会读取标记号在 `[0, 3)` 和 `[6, 8)` 区间中的数据。
+- `CounterID IN ('a', 'h') AND Date = 3`，服务器会读取标记号在 `[1, 3)` 和 `[7, 8)` 区间中的数据。
+- `Date = 3`，服务器会读取标记号在 `[1, 10]` 区间中的数据。
 
-The examples above show that it is always more effective to use an index than a full scan.
+上面例子可以看出使用索引通常会比全表描述要高效。
 
-A sparse index allows extra strings to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read. In most cases, ClickHouse performance does not degrade when `index_granularity = 8192`.
+稀疏索引会引起额外的数据读取。当读取主键单个区间范围的数据时，每个数据块中最多会多读 `index_granularity * 2` 行额外的数据。大部分情况下，当 `index_granularity = 8192` 时，ClickHouse的性能并不会降级。
 
-Sparse indexes allow you to work with a very large number of table rows, because such indexes are always stored in the computer's RAM.
+稀疏索引让你能操作有巨量行的表。因为这些索引是常驻内存（RAM）的。
 
-ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
+ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主键的行。
 
-### Selecting the Primary Key
+### 主键的选择
 
-The number of columns in the primary key is not explicitly limited. Depending on the data structure, you can include more or fewer columns in the primary key. This may:
+主键中列的数量并没有明确的限制。依据数据结构，你应该让主键包含多些或少些列。这样可以：
 
-- Improve the performance of an index.
+- 改善索引的性能。
 
-    If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
-    - There are queries with a condition on column `c`.
-    - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+    如果当前主键是 `(a, b)` ，然后加入另一个 `c` 列，满足下面条件时，则可以改善性能：
+    - 有带有 `c` 列条件的查询。
+    - 很长的数据范围（ `index_granularity` 的数倍）里 `(a, b)` 都是相同的值，并且这种的情况很普遍。换言之，就是加入另一列后，可以让你的查询略过很长的数据范围。
 
-- Improve data compression.
+- 改善数据压缩。
 
-    ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
+    ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
 
-- Provide additional logic when data parts merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md) engines.
+- [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里，数据合并时，会有额外的处理逻辑。
 
-    In this case it makes sense to specify the *sorting key* that is different from the primary key.
+    在这种情况下，指定一个跟主键不同的 *排序键* 也是有意义的。
 
-A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
+长的主键会对插入性能和内存消耗有负面影响，但主键中额外的列并不影响 `SELECT` 查询的性能。
 
 
-### Choosing the Primary Key that differs from the Sorting Key
+### 选择跟排序键不一样主键
 
-It is possible to specify the primary key (the expression, values of which are written into the index file
-for each mark) that is different from the sorting key (the expression for sorting the rows in data parts).
-In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
+指定一个跟排序键（用于排序数据片段中行的表达式）
+不一样的主键（用于计算写到索引文件的每个标记值的表达式）是可以的。
+这种情况下，主键表达式元组必须是排序键表达式元组的一个前缀。
 
-This feature is helpful when using the [SummingMergeTree](summingmergetree.md) and
-[AggregatingMergeTree](aggregatingmergetree.md) table engines. In a common case when using these engines the
-table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure
-columns with arbitrary `GROUP BY` and filtering by dimensions. As SummingMergeTree and AggregatingMergeTree
-aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result
-the key expression consists of a long list of columns and this list must be frequently updated with newly
-added dimensions.
+当使用 [SummingMergeTree](summingmergetree.md) 和
+[AggregatingMergeTree](aggregatingmergetree.md) 引擎时，这个特性非常有用。
+通常，使用这类引擎时，表里列分两种：*维度* 和 *度量* 。
+典型的查询是在 `GROUP BY` 并过虑维度的情况下统计度量列的值。
+像 SummingMergeTree 和 AggregatingMergeTree ，用相同的排序键值统计行时，
+通常会加上所有的维度。结果就是，这键的表达式会是一长串的列组成，
+并且这组列还会因为新加维度必须频繁更新。
 
-In this case it makes sense to leave only a few columns in the primary key that will provide efficient
-range scans and add the remaining dimension columns to the sorting key tuple.
+这种情况下，主键中仅预留少量列保证高效范围扫描，
+剩下的维度列放到排序键元组里。这样是合理的。
 
-[ALTER of the sorting key](../../query_language/alter.md) is a
-lightweight operation because when a new column is simultaneously added to the table and to the sorting key
-data parts need not be changed (they remain sorted by the new sorting key expression).
+[排序键的修改](../../query_language/alter.md) 是轻量级的操作，因为一个新列同时被加入到表里和排序键后时，已存在的数据片段并不需要修改。由于旧的排序键是新排序键的前缀，并且刚刚添加的列中没有数据，因此在表修改时的数据对于新旧的排序键来说都是有序的。
 
-### Use of Indexes and Partitions in Queries
+### 索引和分区在查询中的应用
 
-For`SELECT` queries, ClickHouse analyzes whether an index can be used. An index can be used if the `WHERE/PREWHERE` clause has an expression (as one of the conjunction elements, or entirely) that represents an equality or inequality comparison operation, or if it has `IN` or `LIKE` with a fixed prefix on columns or expressions that are in the primary key or partitioning key, or on certain partially repetitive functions of these columns, or logical relationships of these expressions.
+对于 `SELECT` 查询，ClickHouse 分析是否可以使用索引。如果 `WHERE/PREWHERE` 子句具有下面这些表达式（作为谓词链接一子项或整个）则可以使用索引：基于主键或分区键的列或表达式的部分的等式或比较运算表达式；基于主键或分区键的列或表达式的固定前缀的 `IN` 或 `LIKE` 表达式；基于主键或分区键的列的某些函数；基于主键或分区键的表达式的逻辑表达式。 <!-- It is too hard for me to translate this section as the original text completely. So I did it with my own understanding. If you have good idea, please help me. -->
 
-Thus, it is possible to quickly run queries on one or many ranges of the primary key. In this example, queries will be fast when run for a specific tracking tag; for a specific tag and date range; for a specific tag and date; for multiple tags with a date range, and so on.
+因此，在索引键的一个或多个区间上快速地跑查询都是可能的。下面例子中，指定标签；指定标签和日期范围；指定标签和日期；指定多个标签和日期范围等运行查询，都会非常快。
 
-Let's look at the engine configured as follows:
+当引擎配置如下时：
 
 ```
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity=8192
 ```
 
-In this case, in queries:
+这种情况下，这些查询：
 
 ``` sql
 SELECT count() FROM table WHERE EventDate = toDate(now()) AND CounterID = 34
@@ -211,25 +214,87 @@ SELECT count() FROM table WHERE EventDate = toDate(now()) AND (CounterID = 34 OR
 SELECT count() FROM table WHERE ((EventDate >= toDate('2014-01-01') AND EventDate <= toDate('2014-01-31')) OR EventDate = toDate('2014-05-01')) AND CounterID IN (101500, 731962, 160656) AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
 ```
 
-ClickHouse will use the primary key index to trim improper data and the monthly partitioning key to trim partitions that are in improper date ranges.
+ClickHouse 会依据主键索引剪掉不符合的数据，依据按月分区的分区键剪掉那些不包含符合数据的分区。
 
-The queries above show that the index is used even for complex expressions. Reading from the table is organized so that using the index can't be slower than a full scan.
+上文的查询显示，即使索引用于复杂表达式。因为读表操作是组织好的，所以，使用索引不会比完整扫描慢。
 
-In the example below, the index can't be used.
+下面这个例子中，不会使用索引。
 
 ``` sql
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](../settings/settings.md#settings-force_index_by_date) and [force_primary_key](../settings/settings.md).
+要检查 ClickHouse 执行一个查询时能否使用索引，可设置 [force_index_by_date](../settings/settings.md#settings-force_index_by_date) 和 [force_primary_key](../settings/settings.md) 。
 
-The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
-
-## Concurrent Data Access
-
-For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
-
-Reading from a table is automatically parallelized.
+按月分区的分区键是只能读取包含适当范围日期的数据块。这种情况下，数据块会包含很多天（最多整月）的数据。在块中，数据按主键排序，主键第一列可能不包含日期。因此，仅使用日期而没有带主键前缀条件的查询将会导致读取超过这个日期范围。
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
+### 跳数索引（分段汇总索引，实验性的）
+
+需要设置 `allow_experimental_data_skipping_indices` 为 1 才能使用此索引。（执行 `SET allow_experimental_data_skipping_indices = 1`）。
+
+此索引在 `CREATE` 语句的列部分里定义。
+```sql
+INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
+```
+
+`*MergeTree` 系列的表都能指定跳数索引。
+
+这些索引是由数据块按粒度分割后的每部分在指定表达式上汇总信息 `granularity_value` 组成（粒度大小用表引擎里 `index_granularity` 的指定）。
+这些汇总信息有助于用 `where` 语句跳过大片不满足的数据，从而减少 `SELECT` 查询从磁盘读取的数据量，
+
+
+示例
+```sql
+CREATE TABLE table_name
+(
+    u64 UInt64,
+    i32 Int32,
+    s String,
+    ...
+    INDEX a (u64 * i32, s) TYPE minmax GRANULARITY 3,
+    INDEX b (u64 * length(s)) TYPE set(1000) GRANULARITY 4
+) ENGINE = MergeTree()
+...
+```
+
+上例中的索引能让 ClickHouse 执行下面这些查询时减少读取数据量。
+```sql
+SELECT count() FROM table WHERE s < 'z'
+SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
+```
+
+#### 索引的可用类型
+
+* `minmax`
+存储指定表达式的极值（如果表达式是 `tuple` ，则存储 `tuple` 中每个元素的极值），这些信息用于跳过数据块，类似主键。
+
+* `set(max_rows)`
+存储指定表达式的惟一值（不超过 `max_rows` 个，`max_rows=0` 则表示『无限制』）。这些信息可用于检查 `WHERE` 表达式是否满足某个数据块。
+
+* `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
+存储包含数据块中所有 n 元短语的 [布隆过滤器](https://en.wikipedia.org/wiki/Bloom_filter) 。只可用在字符串上。
+可用于优化 `equals` ， `like` 和 `in` 表达式的性能。
+`n` -- 短语长度。
+`size_of_bloom_filter_in_bytes` -- 布隆过滤器大小，单位字节。（因为压缩得好，可以指定比较大的值，如256或512）。
+`number_of_hash_functions` -- 布隆过滤器中使用的 hash 函数的个数。
+`random_seed` -- hash 函数的随机种子。
+
+* `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)` 
+跟 `ngrambf_v1` 类似，不同于 ngrams 存储字符串指定长度的所有片段。它只存储被非字母数据字符分割的片段。
+
+```sql
+INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
+INDEX sample_index2 (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARITY 4
+INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 4
+```
+
+
+## 并发数据访问
+
+应对表的并发访问，我们使用多版本机制。换言之，当同时读和更新表时，数据从当前查询到的一组片段中读取。没有冗长的的锁。插入不会阻碍读取。
+
+对表的读操作是自动并行的。
+
+
+[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->
