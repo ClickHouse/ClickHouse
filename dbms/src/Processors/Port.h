@@ -73,9 +73,9 @@ protected:
             auto cur_data = pullData();
 
             if (std::holds_alternative<std::exception_ptr>(cur_data))
-                std::rethrow_exception(std::move(std::get<std::exception_ptr>(cur_data)));
+                std::rethrow_exception(std::get<std::exception_ptr>(std::move(cur_data)));
 
-            return std::move(std::get<Chunk>(cur_data));
+            return std::get<Chunk>(std::move(cur_data));
         }
 
         bool hasData() const
