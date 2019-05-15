@@ -130,7 +130,7 @@ void StorageKafka::startup()
             pushBuffer(createBuffer());
             ++num_created_consumers;
         }
-        catch (cppkafka::Exception &)
+        catch (const cppkafka::Exception &)
         {
             tryLogCurrentException(log);
         }
