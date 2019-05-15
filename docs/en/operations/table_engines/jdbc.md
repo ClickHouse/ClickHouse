@@ -78,3 +78,5 @@ FROM jdbc_table
 ## See Also
 
 - [JDBC table function](../../query_language/table_functions/jdbc.md).
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/jdbc/) <!--hide-->
