@@ -35,7 +35,7 @@ namespace ErrorCodes
 /// The first argument of all these functions gets a JSON,
 /// after that there are any number of arguments specifying path to a desired part from the JSON's root.
 /// For example,
-/// select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', b, 1) = -100
+/// select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
 template <typename Name, template<typename> typename Impl, typename JSONParser>
 class FunctionJSON : public IFunction
 {
@@ -46,7 +46,11 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return false; }
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return Impl<JSONParser>::getType(arguments); }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return Impl<JSONParser>::getType(Name::name, arguments);
+    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) override
     {
@@ -54,11 +58,11 @@ public:
         to->reserve(input_rows_count);
 
         if (arguments.size() < 1)
-            throw Exception{"Function " + getName() + " requires at least one arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception{"Function " + getName() + " requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto & first_column = block.getByPosition(arguments[0]);
         if (!isString(first_column.type))
-            throw Exception{"Illegal type " + first_column.type->getName() + " of argument of function " + getName(),
+            throw Exception{"The first argument of function " + getName() + " should be a string containing JSON, illegal type: " + first_column.type->getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         const ColumnPtr & arg_json = first_column.column;
@@ -67,55 +71,60 @@ public:
             = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
 
         if (!col_json_string)
-            throw Exception{"Illegal column " + arg_json->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + arg_json->getName(), ErrorCodes::ILLEGAL_COLUMN};
 
         const ColumnString::Chars & chars = col_json_string->getChars();
         const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
+        /// Prepare list of moves.
         std::vector<Move> moves;
         constexpr size_t num_extra_arguments = Impl<JSONParser>::num_extra_arguments;
         const size_t num_moves = arguments.size() - num_extra_arguments - 1;
         moves.reserve(num_moves);
         for (const auto i : ext::range(0, num_moves))
         {
-            const auto & column = block.getByPosition(arguments[1 + i]);
+            const auto & column = block.getByPosition(arguments[i + 1]);
+            if (!isString(column.type) && !isInteger(column.type))
+                throw Exception{"The argument " + std::to_string(i + 2) + " of function " + getName()
+                                    + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
             if (column.column->isColumnConst())
             {
                 const auto & column_const = static_cast<const ColumnConst &>(*column.column);
                 if (isString(column.type))
                     moves.emplace_back(MoveType::ConstKey, column_const.getField().get<String>());
-                else if (isInteger(column.type))
-                    moves.emplace_back(MoveType::ConstIndex, column_const.getField().get<Int64>());
                 else
-                    throw Exception{"Illegal type " + column.type->getName() + " of argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    moves.emplace_back(MoveType::ConstIndex, column_const.getField().get<Int64>());
             }
             else
             {
                 if (isString(column.type))
                     moves.emplace_back(MoveType::Key, "");
-                else if (isInteger(column.type))
-                    moves.emplace_back(MoveType::Index, 0);
                 else
-                    throw Exception{"Illegal type " + column.type->getName() + " of argument of function " + getName(),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    moves.emplace_back(MoveType::Index, 0);
             }
         }
 
+        /// Preallocate memory in parser if necessary.
         JSONParser parser;
         if (parser.need_preallocate)
         {
-            size_t max_size = 1;
-
+            size_t max_size = 0;
             for (const auto i : ext::range(0, input_rows_count))
-                if (max_size < offsets[i] - offsets[i - 1] - 1)
-                    max_size = offsets[i] - offsets[i - 1] - 1;
+                if (max_size < offsets[i] - offsets[i - 1])
+                    max_size = offsets[i] - offsets[i - 1];
+
+            if (max_size < 1)
+                max_size = 1;
 
             parser.preallocate(max_size);
         }
 
         Impl<JSONParser> impl;
-        impl.prepare(block, arguments, result_pos);
+
+        /// prepare() does Impl-specific preparation before handling each row.
+        impl.prepare(Name::name, block, arguments, result_pos);
 
         for (const auto i : ext::range(0, input_rows_count))
         {
@@ -127,6 +136,7 @@ public:
                 if (!ok)
                     break;
 
+                /// Perform moves.
                 switch (moves[j].type)
                 {
                     case MoveType::ConstIndex:
@@ -153,6 +163,7 @@ public:
             if (ok)
                 ok = impl.addValueToColumn(*to, it);
 
+            /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
             if (!ok)
                 to->insertDefault();
         }
@@ -160,6 +171,10 @@ public:
     }
 
 private:
+    /// Represents a move of a JSON iterator described by a single argument passed to a JSON function.
+    /// For example, the call JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1)
+    /// contains two moves: {MoveType::ConstKey, "b"} and {MoveType::ConstIndex, 1}.
+    /// Keys and indices can be nonconst, in this case they are calculated for each row.
     enum class MoveType
     {
         Key,
@@ -177,6 +192,8 @@ private:
     };
 
     using Iterator = typename JSONParser::Iterator;
+
+    /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
     bool moveIteratorToElementByIndex(Iterator & it, int index)
     {
         if (JSONParser::isArray(it))
@@ -230,6 +247,7 @@ private:
         return false;
     }
 
+    /// Performs moves of types MoveType::Key and MoveType::ConstKey.
     bool moveIteratorToElementByKey(Iterator & it, const String & key)
     {
         if (JSONParser::isObject(it))
@@ -265,7 +283,7 @@ template <typename JSONParser>
 class JSONHasImpl
 {
 public:
-    static DataTypePtr getType(const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &) { return std::make_shared<DataTypeUInt8>(); }
 
     using Iterator = typename JSONParser::Iterator;
     static bool addValueToColumn(IColumn & dest, const Iterator &)
@@ -276,7 +294,7 @@ public:
     }
 
     static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const Block &, const ColumnNumbers &, size_t) {}
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
 
@@ -284,7 +302,7 @@ template <typename JSONParser>
 class JSONLengthImpl
 {
 public:
-    static DataTypePtr getType(const ColumnsWithTypeAndName &)
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
     {
         return std::make_shared<DataTypeUInt64>();
     }
@@ -324,7 +342,7 @@ public:
     }
 
     static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const Block &, const ColumnNumbers &, size_t) {}
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
 
@@ -332,7 +350,7 @@ template <typename JSONParser>
 class JSONKeyImpl
 {
 public:
-    static DataTypePtr getType(const ColumnsWithTypeAndName &)
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
     {
         return std::make_shared<DataTypeString>();
     }
@@ -349,7 +367,7 @@ public:
     }
 
     static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const Block &, const ColumnNumbers &, size_t) {}
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
 
@@ -357,7 +375,7 @@ template <typename JSONParser>
 class JSONTypeImpl
 {
 public:
-    static DataTypePtr getType(const ColumnsWithTypeAndName &)
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
     {
         static const std::vector<std::pair<String, Int8>> values = {
             {"Array", '['},
@@ -366,7 +384,7 @@ public:
             {"Integer", 'l'},
             {"Float", 'd'},
             {"Bool", 'b'},
-            {"Null", 0},
+            {"Null", 0}, /// the default value for the column.
         };
         return std::make_shared<DataTypeEnum<Int8>>(values);
     }
@@ -398,7 +416,7 @@ public:
     }
 
     static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const Block &, const ColumnNumbers &, size_t) {}
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
 
@@ -406,7 +424,7 @@ template <typename JSONParser, typename NumberType, bool convert_bool_to_integer
 class JSONExtractNumericImpl
 {
 public:
-    static DataTypePtr getType(const ColumnsWithTypeAndName &)
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
     {
         return std::make_shared<DataTypeNumber<NumberType>>();
     }
@@ -437,7 +455,7 @@ public:
     }
 
     static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const Block &, const ColumnNumbers &, size_t) {}
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
 template <typename JSONParser>
@@ -466,7 +484,7 @@ template <typename JSONParser>
 class JSONExtractBoolImpl
 {
 public:
-    static DataTypePtr getType(const ColumnsWithTypeAndName &)
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
     {
         return std::make_shared<DataTypeUInt8>();
     }
@@ -483,7 +501,7 @@ public:
     }
 
     static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const Block &, const ColumnNumbers &, size_t) {}
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
 
@@ -491,7 +509,7 @@ template <typename JSONParser>
 class JSONExtractStringImpl
 {
 public:
-    static DataTypePtr getType(const ColumnsWithTypeAndName &)
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
     {
         return std::make_shared<DataTypeString>();
     }
@@ -509,7 +527,7 @@ public:
     }
 
     static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const Block &, const ColumnNumbers &, size_t) {}
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 };
 
 
@@ -517,7 +535,7 @@ template <typename JSONParser>
 class JSONExtractRawImpl
 {
 public:
-    static DataTypePtr getType(const ColumnsWithTypeAndName &)
+    static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
     {
         return std::make_shared<DataTypeString>();
     }
@@ -536,7 +554,7 @@ public:
     }
 
     static constexpr size_t num_extra_arguments = 0;
-    static void prepare(const Block &, const ColumnNumbers &, size_t) {}
+    static void prepare(const char *, const Block &, const ColumnNumbers &, size_t) {}
 
 private:
     static void traverse(const Iterator & it, WriteBuffer & buf)
@@ -627,22 +645,24 @@ class JSONExtractImpl
 public:
     static constexpr size_t num_extra_arguments = 1;
 
-    static DataTypePtr getType(const ColumnsWithTypeAndName & arguments)
+    static DataTypePtr getType(const char * function_name, const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 2)
-            throw Exception{"Function JSONExtract requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception{"Function " + String(function_name) + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        auto col_type_const = typeid_cast<const ColumnConst *>(arguments.back().column.get());
-        if (!col_type_const)
-            throw Exception{"Illegal non-const column " + arguments.back().column->getName() + " of the last argument of function JSONExtract",
+        const auto & col = arguments.back();
+        auto col_type_const = typeid_cast<const ColumnConst *>(col.column.get());
+        if (!col_type_const || !isString(col.type))
+            throw Exception{"The last argument of function " + String(function_name)
+                                + " should be a constant string specifying the data type, illegal value: " + col.column->getName(),
                             ErrorCodes::ILLEGAL_COLUMN};
 
         return DataTypeFactory::instance().get(col_type_const->getValue<String>());
     }
 
-    void prepare(const Block & block, const ColumnNumbers &, size_t result_pos)
+    void prepare(const char * function_name, const Block & block, const ColumnNumbers &, size_t result_pos)
     {
-        extract_tree = buildExtractTree(block.getByPosition(result_pos).type);
+        extract_tree = buildExtractTree(function_name, block.getByPosition(result_pos).type);
     }
 
     using Iterator = typename JSONParser::Iterator;
@@ -652,6 +672,7 @@ public:
     }
 
 private:
+    /// Node of the extract tree. We need a tree to extract complex values containing array, tuples or nullables.
     class Node
     {
     public:
@@ -902,7 +923,7 @@ private:
         std::unordered_map<StringRef, size_t> name_to_index_map;
     };
 
-    std::unique_ptr<Node> buildExtractTree(const DataTypePtr & type)
+    std::unique_ptr<Node> buildExtractTree(const char * function_name, const DataTypePtr & type)
     {
         switch (type->getTypeId())
         {
@@ -918,21 +939,31 @@ private:
             case TypeIndex::Float64: return std::make_unique<NumericNode<Float64>>();
             case TypeIndex::String: return std::make_unique<StringNode>();
             case TypeIndex::FixedString: return std::make_unique<FixedStringNode>();
-            case TypeIndex::Enum8: return std::make_unique<EnumNode<Int8>>(static_cast<const DataTypeEnum8 &>(*type).getValues());
-            case TypeIndex::Enum16: return std::make_unique<EnumNode<Int16>>(static_cast<const DataTypeEnum16 &>(*type).getValues());
-            case TypeIndex::Nullable: return std::make_unique<NullableNode>(buildExtractTree(static_cast<const DataTypeNullable &>(*type).getNestedType()));
-            case TypeIndex::Array: return std::make_unique<ArrayNode>(buildExtractTree(static_cast<const DataTypeArray &>(*type).getNestedType()));
+            case TypeIndex::Enum8:
+                return std::make_unique<EnumNode<Int8>>(static_cast<const DataTypeEnum8 &>(*type).getValues());
+            case TypeIndex::Enum16:
+                return std::make_unique<EnumNode<Int16>>(static_cast<const DataTypeEnum16 &>(*type).getValues());
+            case TypeIndex::Nullable:
+            {
+                return std::make_unique<NullableNode>(
+                    buildExtractTree(function_name, static_cast<const DataTypeNullable &>(*type).getNestedType()));
+            }
+            case TypeIndex::Array:
+            {
+                return std::make_unique<ArrayNode>(
+                    buildExtractTree(function_name, static_cast<const DataTypeArray &>(*type).getNestedType()));
+            }
             case TypeIndex::Tuple:
             {
                 const auto & tuple = static_cast<const DataTypeTuple &>(*type);
                 const auto & tuple_elements = tuple.getElements();
                 std::vector<std::unique_ptr<Node>> elements;
                 for (const auto & tuple_element : tuple_elements)
-                    elements.emplace_back(buildExtractTree(tuple_element));
+                    elements.emplace_back(buildExtractTree(function_name, tuple_element));
                 return std::make_unique<TupleNode>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
             }
             default:
-                throw Exception{"Unsupported return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception{"Function " + String(function_name) + " doesn't support the return type schema: " + type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
     }
 
