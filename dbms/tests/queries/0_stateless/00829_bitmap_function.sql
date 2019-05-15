@@ -1,4 +1,4 @@
--- USE test;
+USE test;
 SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5]));
 SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
 SELECT bitmapToArray(bitmapOr(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])));
