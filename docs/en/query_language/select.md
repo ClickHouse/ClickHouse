@@ -519,16 +519,16 @@ Each time a query is run with the same `JOIN`, the subquery is run again because
 In some cases, it is more efficient to use `IN` instead of `JOIN`.
 Among the various types of `JOIN`, the most efficient is `ANY LEFT JOIN`, then `ANY INNER JOIN`. The least efficient are `ALL LEFT JOIN` and `ALL INNER JOIN`.
 
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](dicts/external_dicts.md).
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](dicts/external_dicts.md).
 
-**Memory limitations**
+**Memory Limitations**
 
-ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_subquery>` and create a hash table for it in RAM. If you need to restrict join operation memory consumption use the following settings:
+ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_subquery>` and creates a hash table for it in RAM. If you need to restrict join operation memory consumption use the following settings:
 
 - [max_rows_in_join](../operations/settings/query_complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
 - [max_bytes_in_join](../operations/settings/query_complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
 
-When one of these limits is reached, ClickHouse acts as the [join_overflow_mode](../operations/settings/query_complexity.md#settings-join_overflow_mode) setting instructs.
+When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](../operations/settings/query_complexity.md#settings-join_overflow_mode) setting instructs.
 
 #### Processing of Empty or NULL Cells
 

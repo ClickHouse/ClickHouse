@@ -75,7 +75,7 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of 
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Sets the maximum volume or RAM (in bytes) that can be used by [GROUP BY](../../query_language/select.md#select-group-by-clause) operation. If memory consumption is bigger than the value of this setting, ClickHouse dumps operation data to the storage disk and continues query processing.
+Sets the maximum volume of RAM in bytes that can be used by the [GROUP BY](../../query_language/select.md#select-group-by-clause) operation. The setting is used to avoid the out of memory situations. If memory consumption is bigger than the value of this setting, ClickHouse dumps operation state to the storage disk and continues query processing.
 
 Possible values:
 
@@ -207,22 +207,22 @@ What to do when the amount of data exceeds one of the limits: 'throw' or 'break'
 
 ## max_rows_in_join {#settings-max_rows_in_join}
 
-Limits number of rows in the hash table that is used when joining tables.
+Limits the number of rows in the hash table that is used when joining tables.
 
-This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and [Join engine](../table_engines/join.md) functioning.
+This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md) functioning.
 
 ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
 
 Possible values:
 
 - Positive integer.
-- 0 — Memory control is disabled.
+- 0 — Rows control is disabled.
 
 Default value: 0.
 
 ## max_bytes_in_join {#settings-max_bytes_in_join}
 
-Limits number of bytes in the hash table that is used when joining tables.
+Limits hash table size in bytes that is used when joining tables.
 
 This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md) functioning.
 
@@ -253,7 +253,7 @@ Default value: `THROW`.
 
 **See Also**
 
-- [SELECT ... JOIN](../../query_language/select.md#select-join)
+- [JOIN Clause](../../query_language/select.md#select-join)
 - [Join engine](../table_engines/join.md)
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->
