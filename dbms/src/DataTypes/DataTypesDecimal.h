@@ -1,4 +1,6 @@
 #pragma once
+#include <cmath>
+
 #include <common/arithmeticOverflow.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
@@ -318,7 +320,11 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     using FromFieldType = typename FromDataType::FieldType;
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
+    {
+        if (std::isinf(value) || std::isnan(value))
+            throw Exception("Decimal convert overflow. Cannot convert infinity or NaN into decimal", ErrorCodes::DECIMAL_OVERFLOW);
         return value * ToDataType::getScaleMultiplier(scale);
+    }
     else
     {
         if constexpr (std::is_same_v<FromFieldType, UInt64>)
