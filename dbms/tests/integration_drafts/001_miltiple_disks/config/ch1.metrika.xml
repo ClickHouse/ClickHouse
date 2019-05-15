@@ -2,6 +2,6 @@
         <macros>
                 <cluster>test_cluster</cluster>
                 <shard>0</shard>
-                <replica>ch2</replica>
+                <replica>ch1</replica>
         </macros>
 </yandex>
