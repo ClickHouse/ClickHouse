@@ -1317,6 +1317,21 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if constexpr (pipeline_with_processors)
         {
+            /// Unify streams. They must have same headers.
+            if (streams.size() > 1)
+            {
+                /// Unify streams in case they have different headers.
+                auto first_header = streams.at(0)->getHeader();
+                for (size_t i = 1; i < streams.size(); ++i)
+                {
+                    auto & stream = streams[i];
+                    auto header = stream->getHeader();
+                    auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
+                    if (!blocksHaveEqualStructure(first_header, header))
+                        stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
+                }
+            }
+
             Processors sources;
             sources.reserve(streams.size());
 
