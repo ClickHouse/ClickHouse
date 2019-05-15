@@ -668,6 +668,22 @@ inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, uns
     scale += exponent;
 }
 
+template <typename T>
+inline void readCSVDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    char maybe_quote = *buf.position();
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        ++buf.position();
+
+    readDecimalText(buf, x, precision, scale, false);
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        assertChar(maybe_quote, buf);
+}
 
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
