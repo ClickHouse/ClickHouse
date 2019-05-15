@@ -75,7 +75,7 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of 
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Sets the maximum volume of RAM in bytes that can be used by the [GROUP BY](../../query_language/select.md#select-group-by-clause) operation. The setting is used to avoid the out of memory situations. If memory consumption is bigger than the value of this setting, ClickHouse dumps operation state to the storage disk and continues query processing.
+Sets the maximum volume of RAM in bytes that can be used by the [GROUP BY](../../query_language/select.md#select-group-by-clause) operation. The setting is used to avoid the out of memory situations. If memory consumption is bigger than the value of this setting, ClickHouse dumps operation state to the storage disk and continues query processing with much lower performance then in RAM. Memory consumption is calculated at local server even if the query is distributed.
 
 Possible values:
 
