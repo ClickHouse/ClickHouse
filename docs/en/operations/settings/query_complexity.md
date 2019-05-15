@@ -211,6 +211,8 @@ Limits the number of rows in the hash table that is used when joining tables.
 
 This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md) functioning.
 
+If query contains some joins, ClickHouse checks this setting for every intermediate result.
+
 ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
 
 Possible values:
@@ -225,6 +227,8 @@ Default value: 0.
 Limits hash table size in bytes that is used when joining tables.
 
 This settings applies to [SELECT ... JOIN](../../query_language/select.md#select-join) operations and the [Join table engine](../table_engines/join.md) functioning.
+
+If query contains some joins, ClickHouse checks this setting for every intermediate result.
 
 ClickHouse can proceed with different actions when the limit is reached. Use the [join_overflow_mode](#settings-join_overflow_mode) settings to choose the action.
 
