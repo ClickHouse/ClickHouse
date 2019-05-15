@@ -711,11 +711,11 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ## Parquet {#data-format-parquet}
 
-[Apache Parquet](http://parquet.apache.org/) format. ClickHouse supports read and write operations for this format.
+[Apache Parquet](http://parquet.apache.org/) is a columnar storage format available to any project in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
 ### Data Types Matching
 
-Some of the Parquet data types are not supported. The table below shows the supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
+The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
 
 | Parquet data type (`INSERT`) | ClickHouse data type | Parquet data type (`SELECT`)
 | -------------------- | ------------------ | ---- |
@@ -735,13 +735,15 @@ Some of the Parquet data types are not supported. The table below shows the supp
 | — | [FixedString](../data_types/fixedstring.md) | `STRING` |
 | `DECIMAL` | [Decimal](../data_types/decimal.md) | `DECIMAL` |
 
-ClickHouse supports some kinds of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
+ClickHouse supports configurable precision of `Decimal` type. The `INSERT` query treats the Parquet `DECIMAL` type as the ClickHouse `Decimal128` type.
 
-Data types of a ClickHouse table columns can be different then the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+Unsupported Parquet data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
+
+Data types of a ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
 ### Inserting and Selecting Data
 
-ClickHouse doesn't connect to [HDFS](https://en.wikipedia.org/wiki/Apache_Hadoop) to get data from it. You should take the Parquet data file and then you can insert Parquet data into some ClickHouse table by the following command:
+ClickHouse doesn't connect to [Hadoop Distributed File System](https://en.wikipedia.org/wiki/Apache_Hadoop) to get data from it. You should take the Parquet data file and then you can insert Parquet data into some ClickHouse table by the following command:
 
 ```
 cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
