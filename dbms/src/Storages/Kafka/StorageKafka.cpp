@@ -125,8 +125,15 @@ void StorageKafka::startup()
     for (size_t i = 0; i < num_consumers; ++i)
     {
         // Make buffer available
-        pushBuffer(createBuffer());
-        ++num_created_consumers;
+        try
+        {
+            pushBuffer(createBuffer());
+            ++num_created_consumers;
+        }
+        catch (cppkafka::Exception &)
+        {
+            tryLogCurrentException(log);
+        }
     }
 
     // Start the reader thread
