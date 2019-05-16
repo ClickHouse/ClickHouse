@@ -409,9 +409,13 @@ void PipelineExecutor::executeImpl(ThreadPool * pool)
             pool->schedule([this]
             {
                 ExecutionState * state = nullptr;
-                while (!finished && task_queue.pop(state))
+
+                while (!finished)
                 {
-                    state->job();
+                    while (task_queue.pop(state))
+                    {
+                        state->job();
+                    }
                 }
             });
         }
