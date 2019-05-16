@@ -129,11 +129,10 @@ void PipelineExecutor::addChildlessProcessorsToQueue()
     }
 }
 
-template <typename TQueue>
-void PipelineExecutor::processFinishedExecutionQueue(TQueue & queue)
+void PipelineExecutor::processFinishedExecutionQueue()
 {
     UInt64 finished_job = graph.size();
-    while (queue.pop(finished_job))
+    while (finished_execution_queue.pop(finished_job))
     {
         if (graph[finished_job].execution_state->exception)
             std::rethrow_exception(graph[finished_job].execution_state->exception);
@@ -143,16 +142,15 @@ void PipelineExecutor::processFinishedExecutionQueue(TQueue & queue)
     }
 }
 
-template <typename TQueue>
-void PipelineExecutor::processFinishedExecutionQueueSafe(TQueue & queue, ThreadPool * pool)
+void PipelineExecutor::processFinishedExecutionQueueSafe()
 {
-    if (pool)
-    {
-        /// std::lock_guard lock(finished_execution_mutex);
-        processFinishedExecutionQueue(queue);
-    }
-    else
-        processFinishedExecutionQueue(queue);
+//    if (pool)
+//    {
+//        /// std::lock_guard lock(finished_execution_mutex);
+//        processFinishedExecutionQueue(queue);
+//    }
+//    else
+    processFinishedExecutionQueue();
 }
 
 bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge)
@@ -190,21 +188,17 @@ static void executeJob(IProcessor * processor)
     }
 }
 
-template <typename TQueue>
-void PipelineExecutor::addJob(UInt64 pid, TQueue & queue, ThreadPool * pool)
+void PipelineExecutor::addJob(UInt64 pid)
 {
-    if (pool)
+    if (!threads.empty())
     {
         if (!graph[pid].execution_state)
             graph[pid].execution_state = std::make_unique<ExecutionState>();
 
-        auto job = [this, pid, &queue, processor = graph[pid].processor, &exception = graph[pid].execution_state->exception]()
+        auto job = [this, pid, processor = graph[pid].processor, &exception = graph[pid].execution_state->exception]()
         {
             SCOPE_EXIT(
-                    {
-                        /// std::lock_guard lock(finished_execution_mutex);
-                        queue.push(pid);
-                    }
+                    while (!finished_execution_queue.push(pid));
                     event_counter.notify()
             );
 
@@ -214,13 +208,13 @@ void PipelineExecutor::addJob(UInt64 pid, TQueue & queue, ThreadPool * pool)
             }
             catch (...)
             {
+                /// Note: It's important to save exception before pushing pid to finished_execution_queue
                 exception = std::current_exception();
             }
         };
 
         graph[pid].execution_state->job = std::move(job);
 
-        /// pool->schedule(std::move(job));
         while (!task_queue.push(graph[pid].execution_state.get()));
         ++num_tasks_to_wait;
     }
@@ -228,7 +222,7 @@ void PipelineExecutor::addJob(UInt64 pid, TQueue & queue, ThreadPool * pool)
     {
         /// Execute task in main thread.
         executeJob(graph[pid].processor);
-        queue.push(pid);
+        while (!finished_execution_queue.push(pid));
     }
 }
 
@@ -271,8 +265,7 @@ void PipelineExecutor::expandPipeline(UInt64 pid)
     }
 }
 
-template <typename TQueue>
-void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, TQueue & queue, ThreadPool * pool)
+void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
 {
     auto & node = graph[pid];
     auto status = node.processor->prepare();
@@ -310,7 +303,7 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, TQueue & queue, 
         case IProcessor::Status::Ready:
         {
             node.status = ExecStatus::Executing;
-            addJob(pid, queue, pool);
+            addJob(pid);
             break;
         }
         case IProcessor::Status::Async:
@@ -338,42 +331,40 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, TQueue & queue, 
     }
 }
 
-template <typename TQueue>
-void PipelineExecutor::processPrepareQueue(TQueue & queue, ThreadPool * pool)
+void PipelineExecutor::processPrepareQueue()
 {
     while (!prepare_queue.empty())
     {
         UInt64 proc = prepare_queue.front();
         prepare_queue.pop();
 
-        prepareProcessor(proc, false, queue, pool);
+        prepareProcessor(proc, false);
     }
 }
 
-template <typename TQueue>
-void PipelineExecutor::processAsyncQueue(TQueue & queue, ThreadPool * pool)
+void PipelineExecutor::processAsyncQueue()
 {
     UInt64 num_processors = processors.size();
     for (UInt64 node = 0; node < num_processors; ++node)
         if (graph[node].status == ExecStatus::Async)
-            prepareProcessor(node, true, queue, pool);
+            prepareProcessor(node, true);
 }
 
-void PipelineExecutor::execute(ThreadPool * pool)
+void PipelineExecutor::execute(size_t num_threads)
 {
     addChildlessProcessorsToQueue();
 
     try
     {
         /// Wait for all tasks to finish in case of exception.
-        /// pool->wait shouldn't throw because pool uses exception-handled tasks.
         SCOPE_EXIT(
                 finished = true;
-                if (pool)
-                    pool->wait();
+
+                for (auto & thread : threads)
+                    thread.join();
         );
 
-        executeImpl(pool);
+        executeImpl(num_threads);
     }
     catch (Exception & exception)
     {
@@ -395,27 +386,33 @@ void PipelineExecutor::execute(ThreadPool * pool)
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void PipelineExecutor::executeImpl(ThreadPool * pool)
+void PipelineExecutor::executeImpl(size_t num_threads)
 {
+    /// No need to make task_queue longer than num_threads.
+    /// Therefore, finished_execution_queue can't be longer than num_threads too.
+    task_queue.reserve_unsafe(num_threads);
+    finished_execution_queue.reserve_unsafe(num_threads);
 
-    /// Queue of processes which have finished execution. Must me used with mutex if executing with pool.
-    finished_execution_queue.reserve_unsafe(graph.size() * 2);
-    task_queue.reserve_unsafe(graph.size() * 2);
-
-    if (pool)
+    if (num_threads > 1)
     {
-        for (size_t i = 0; i < 16; ++i)
+        /// For single thread execution will execute jobs in main thread.
+
+        threads.reserve(num_threads);
+
+        for (size_t i = 0; i < num_threads; ++i)
         {
-            pool->schedule([this]
+            threads.emplace_back([this]
             {
                 ExecutionState * state = nullptr;
 
                 while (!finished)
                 {
                     while (task_queue.pop(state))
-                    {
                         state->job();
-                    }
+
+                    /// Note: we don't wait in thread like in ordinary thread pool.
+                    /// Probably, it's better to add waiting on condition variable.
+                    /// But not will avoid it to escape extra locking.
                 }
             });
         }
@@ -423,15 +420,20 @@ void PipelineExecutor::executeImpl(ThreadPool * pool)
 
     while (!cancelled)
     {
-        processFinishedExecutionQueueSafe(finished_execution_queue, nullptr);
-        processPrepareQueue(finished_execution_queue, pool);
-        processAsyncQueue(finished_execution_queue, pool);
+        processFinishedExecutionQueueSafe();
+        processPrepareQueue();
+        processAsyncQueue();
 
         if (prepare_queue.empty())
         {
             /// For single-thread executor.
-            if (!pool && !finished_execution_queue.empty())
-                continue;
+            if (num_threads == 1)
+            {
+                if (!finished_execution_queue.empty())
+                    continue;
+                else
+                    break;
+            }
 
             if (num_tasks_to_wait > num_waited_tasks)
             {

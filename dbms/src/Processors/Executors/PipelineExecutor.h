@@ -48,8 +48,10 @@ private:
         Edges backEdges;
 
         ExecStatus status = ExecStatus::New;
-        IProcessor::Status last_processor_status;
+        IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
         std::unique_ptr<ExecutionState> execution_state;
+
+        Node() { execution_state = std::make_unique<ExecutionState>(); }
     };
 
     using Nodes = std::vector<Node>;
@@ -58,15 +60,14 @@ private:
 
     using Queue = std::queue<UInt64>;
     using TaskQueue = boost::lockfree::queue<ExecutionState *>;
+    using FinishedJobsQueue = boost::lockfree::queue<UInt64>;
 
     /// Queue of processes which we want to call prepare. Is used only in main thread.
     Queue prepare_queue;
+    /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
     TaskQueue task_queue;
-
-    using FinishedJobsQueue = boost::lockfree::queue<UInt64>;
+    /// Queue with tasks which have finished execution.
     FinishedJobsQueue finished_execution_queue;
-
-    /// std::mutex finished_execution_mutex;
 
     EventCounter event_counter;
 
@@ -76,9 +77,11 @@ private:
     std::atomic_bool cancelled;
     std::atomic_bool finished;
 
+    std::vector<std::thread> threads;
+
 public:
     explicit PipelineExecutor(Processors processors);
-    void execute(ThreadPool * pool = nullptr);
+    void execute(size_t num_threads);
 
     String getName() const { return "PipelineExecutor"; }
 
@@ -97,29 +100,18 @@ private:
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToQueue();
-
-    template <typename TQueue>
-    void processFinishedExecutionQueue(TQueue & queue);
-
-    template <typename TQueue>
-    void processFinishedExecutionQueueSafe(TQueue & queue, ThreadPool * pool);
-
+    void processFinishedExecutionQueue();
+    void processFinishedExecutionQueueSafe();
     bool addProcessorToPrepareQueueIfUpdated(Edge & edge);
+    void processPrepareQueue();
+    void processAsyncQueue();
 
-    template <typename TQueue>
-    void processPrepareQueue(TQueue & queue, ThreadPool * pool);
-
-    template <typename TQueue>
-    void processAsyncQueue(TQueue & queue, ThreadPool * pool);
-
-    template <typename TQueue>
-    void addJob(UInt64 pid, TQueue & queue, ThreadPool * pool);
+    void addJob(UInt64 pid);
     void addAsyncJob(UInt64 pid);
 
-    template <typename TQueue>
-    void prepareProcessor(size_t pid, bool async, TQueue & queue, ThreadPool * pool);
+    void prepareProcessor(size_t pid, bool async);
 
-    void executeImpl(ThreadPool * pool);
+    void executeImpl(size_t num_threads);
 
     String dumpPipeline() const;
 };
