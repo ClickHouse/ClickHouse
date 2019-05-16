@@ -9,6 +9,6 @@ if (NOT HAVE_AVX2)
 endif ()
 
 option (USE_SIMDJSON "Use simdjson" ON)
-
-set (SIMDJSON_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/simdjson/include")
 set (SIMDJSON_LIBRARY "simdjson")
+
+message(STATUS "Using simdjson=${USE_SIMDJSON}: ${SIMDJSON_LIBRARY}")
