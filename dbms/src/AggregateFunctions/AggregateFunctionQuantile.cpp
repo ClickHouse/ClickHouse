@@ -46,7 +46,9 @@ static constexpr bool supportDecimal()
     return std::is_same_v<Function<Float32, false>, FuncQuantile<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantiles<Float32, false>> ||
         std::is_same_v<Function<Float32, false>, FuncQuantileExact<Float32, false>> ||
-        std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>>;
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExact<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantileExactWeighted<Float32, false>> ||
+        std::is_same_v<Function<Float32, false>, FuncQuantilesExactWeighted<Float32, false>>;
 }
 
 
