@@ -49,7 +49,7 @@ static bool isCompatible(const IAST & node)
 {
     if (const auto * function = node.as<ASTFunction>())
     {
-        if (function->parameters)
+        if (function->parameters)   /// Parametric aggregate functions
             return false;
 
         if (!function->arguments)
@@ -87,9 +87,8 @@ static bool isCompatible(const IAST & node)
 
     if (const auto * literal = node.as<ASTLiteral>())
     {
-        /// Foreign databases often have no support for Array and Tuple literals.
-        if (literal->value.getType() == Field::Types::Array
-            || literal->value.getType() == Field::Types::Tuple)
+        /// Foreign databases often have no support for Array. But Tuple literals are passed to support IN clause.
+        if (literal->value.getType() == Field::Types::Array)
             return false;
 
         return true;
