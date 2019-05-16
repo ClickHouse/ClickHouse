@@ -620,15 +620,13 @@ void executeQuery(
             if (set_query_id)
                 set_query_id(context.getClientInfo().current_query_id);
 
-
             pipeline.setOutput(std::move(out));
 
-            auto executor = pipeline.execute();
             {
-                ThreadPool pool(context.getSettingsRef().max_threads,
-                        std::make_unique<ThreadGroupThreadPoolCallbacks>(CurrentThread::getGroup()));
-                executor->execute(&pool);
+                auto executor = pipeline.execute();
+                executor->execute(context.getSettingsRef().max_threads);
             }
+
             pipeline.finalize();
         }
     }

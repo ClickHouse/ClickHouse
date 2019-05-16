@@ -399,10 +399,20 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
         threads.reserve(num_threads);
 
+        auto thread_group = CurrentThread::getGroup();
+
         for (size_t i = 0; i < num_threads; ++i)
         {
-            threads.emplace_back([this]
+            threads.emplace_back([this, thread_group]
             {
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+                SCOPE_EXIT(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                );
+
                 ExecutionState * state = nullptr;
 
                 while (!finished)
