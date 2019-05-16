@@ -52,6 +52,15 @@ void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, W
 }
 
 template <typename T>
+bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+{
+    UInt32 unread_scale = scale;
+    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
+    x *= getScaleMultiplier(unread_scale);
+    return done;
+}
+
+template <typename T>
 void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
 {
     UInt32 unread_scale = scale;
