@@ -131,11 +131,14 @@ void PipelineExecutor::processFinishedExecutionQueue()
 {
     while (!finished_execution_queue.empty())
     {
-        UInt64 proc = finished_execution_queue.front();
+        auto finished_job = finished_execution_queue.front();
         finished_execution_queue.pop();
 
-        graph[proc].status = ExecStatus::Preparing;
-        prepare_queue.push(proc);
+        if (finished_job.exception)
+            std::rethrow_exception(finished_job.exception);
+
+        graph[finished_job.node].status = ExecStatus::Preparing;
+        prepare_queue.push(finished_job.node);
     }
 }
 
@@ -143,7 +146,6 @@ void PipelineExecutor::processFinishedExecutionQueueSafe(ThreadPool * pool)
 {
     if (pool)
     {
-        exception_handler.throwIfException();
         std::lock_guard lock(finished_execution_mutex);
         processFinishedExecutionQueue();
     }
@@ -192,25 +194,45 @@ void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
     {
         auto job = [this, pid, processor = graph[pid].processor]()
         {
+            FinishedJob finished_job =
+            {
+                    .node = pid,
+                    .exception = nullptr
+            };
+
             SCOPE_EXIT(
-                {
-                    std::lock_guard lock(finished_execution_mutex);
-                    finished_execution_queue.push(pid);
-                }
-                event_counter.notify()
+                    {
+                        std::lock_guard lock(finished_execution_mutex);
+                        finished_execution_queue.push(finished_job);
+                    }
+                    event_counter.notify()
             );
 
-            executeJob(processor);
+            try
+            {
+                executeJob(processor);
+            }
+            catch (...)
+            {
+                finished_job.exception = std::current_exception();
+            }
         };
 
-        pool->schedule(createExceptionHandledJob(std::move(job), exception_handler));
+        pool->schedule(std::move(job));
         ++num_tasks_to_wait;
     }
     else
     {
         /// Execute task in main thread.
+
+        FinishedJob finished_job =
+        {
+                .node = pid,
+                .exception = nullptr
+        };
+
         executeJob(graph[pid].processor);
-        finished_execution_queue.push(pid);
+        finished_execution_queue.push(finished_job);
     }
 }
 
