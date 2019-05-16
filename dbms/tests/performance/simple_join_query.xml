@@ -1,7 +1,7 @@
 <test>
     <name>Simple Join Query</name>
 
-    <type>once</type>
+    <type>loop</type>
 
     <stop_conditions>
         <all_of>
