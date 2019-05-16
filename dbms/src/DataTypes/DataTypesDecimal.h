@@ -180,6 +180,7 @@ public:
 
     void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, precision, scale, csv); }
     static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv = false);
+    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
     static T getScaleMultiplier(UInt32 scale);
 
 private:
