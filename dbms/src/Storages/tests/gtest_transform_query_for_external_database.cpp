@@ -12,15 +12,25 @@
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/StorageMemory.h>
+#include <Functions/registerFunctions.h>
+
+
+using namespace DB;
+
+
+void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
+{
+    ParserSelectQuery parser;
+    ASTPtr ast = parseQuery(parser, query, 1000);
+    std::string transformed_query = transformQueryForExternalDatabase(*ast, columns, IdentifierQuotingStyle::DoubleQuotes, "test", "table", context);
+
+    EXPECT_EQ(transformed_query, expected);
+}
 
 
 TEST(transformQueryForExternalDatabase, InWithSingleElement)
 {
-    using namespace DB;
-
-    std::string query = "SELECT column FROM test.table WHERE 1 IN (1)";   /// Parentheses around rhs of IN must be retained after transformation.
-    ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, query, 1000);
+    registerFunctions();
 
     Context context = Context::createGlobal();
     DatabasePtr database = std::make_shared<DatabaseMemory>("test");
@@ -29,7 +39,6 @@ TEST(transformQueryForExternalDatabase, InWithSingleElement)
     context.addDatabase("test", database);
     context.setCurrentDatabase("test");
 
-    std::string transformed_query = transformQueryForExternalDatabase(*ast, columns, IdentifierQuotingStyle::DoubleQuotes, "test", "table", context);
-
-    EXPECT_EQ(transformed_query, "SELECT \"column\" FROM \"test\".\"table\"  WHERE 1 IN (1)");
+    check("SELECT column FROM test.table WHERE 1 IN (1)", "SELECT \"column\" FROM \"test\".\"table\"  WHERE 1 IN (1)", context, columns);
+    check("SELECT column FROM test.table WHERE column IN (1, 2)", "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" IN (1, 2)", context, columns);
 }
