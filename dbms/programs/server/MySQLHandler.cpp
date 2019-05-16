@@ -85,7 +85,7 @@ void MySQLHandler::run()
         }
 
         authenticate(handshake_response, scramble);
-        OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0, 0, "");
+        OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
         packet_sender->sendPacket(ok_packet, true);
 
         while (true)
@@ -323,7 +323,7 @@ void MySQLHandler::comInitDB(const String & payload)
     String database = payload.substr(1);
     LOG_DEBUG(log, "Setting current database to " << database);
     connection_context.setCurrentDatabase(database);
-    packet_sender->sendPacket(OK_Packet(0, capabilities, 0, 0, 0, 1, ""), true);
+    packet_sender->sendPacket(OK_Packet(0, capabilities, 0, 0, 1), true);
 }
 
 void MySQLHandler::comFieldList(const String & payload)
@@ -339,12 +339,12 @@ void MySQLHandler::comFieldList(const String & payload)
         );
         packet_sender->sendPacket(column_definition);
     }
-    packet_sender->sendPacket(OK_Packet(0xfe, capabilities, 0, 0, 0, 0, ""), true);
+    packet_sender->sendPacket(OK_Packet(0xfe, capabilities, 0, 0, 0), true);
 }
 
 void MySQLHandler::comPing()
 {
-    packet_sender->sendPacket(OK_Packet(0x0, capabilities, 0, 0, 0, 0, ""), true);
+    packet_sender->sendPacket(OK_Packet(0x0, capabilities, 0, 0, 0), true);
 }
 
 void MySQLHandler::comQuery(const String & payload)
@@ -356,7 +356,7 @@ void MySQLHandler::comQuery(const String & payload)
     ReadBufferFromMemory query(payload.data() + 1, payload.size() - 1);
     executeQuery(query, *out, true, connection_context, set_content_type, nullptr);
     if (!with_output)
-        packet_sender->sendPacket(OK_Packet(0x00, capabilities, 0, 0, 0, 0, ""), true);
+        packet_sender->sendPacket(OK_Packet(0x00, capabilities, 0, 0, 0), true);
 }
 
 }

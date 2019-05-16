@@ -12,7 +12,7 @@ void registerOutputFormatMySQL(FormatFactory & factory)
         const Context & context,
         const FormatSettings &)
     {
-        return std::make_shared<MySQLBlockOutputStream>(buf, sample, context.client_capabilities, const_cast<Context &>(context).sequence_id);
+        return std::make_shared<MySQLBlockOutputStream>(buf, sample, const_cast<Context &>(context));
     });
 }
 
