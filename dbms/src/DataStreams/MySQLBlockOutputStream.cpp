@@ -65,7 +65,8 @@ void MySQLBlockOutputStream::writeSuffix()
             packet_sender->sendPacket(EOF_Packet(0, 0), true);
 }
 
-void MySQLBlockOutputStream::flush() {
+void MySQLBlockOutputStream::flush()
+{
     packet_sender->out->next();
 }
 
