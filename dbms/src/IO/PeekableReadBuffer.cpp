@@ -6,6 +6,7 @@ namespace DB
 PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t unread_limit_ /* = default_limit*/)
         : sub_buf(sub_buf_), unread_limit(unread_limit_)
 {
+    padded = sub_buf.isPadded();
     /// Read from sub-buffer
     Buffer & sub_working = sub_buf.buffer();
     BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
