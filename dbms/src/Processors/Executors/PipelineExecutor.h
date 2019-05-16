@@ -47,14 +47,21 @@ private:
 
     Nodes graph;
 
+    struct FinishedJob
+    {
+        UInt64 node;
+        std::exception_ptr exception;
+    };
+
     using Queue = std::queue<UInt64>;
+    using FinishedJobsQueue = std::queue<FinishedJob>;
 
     /// Queue of processes which we want to call prepare. Is used only in main thread.
     Queue prepare_queue;
     /// Queue of processes which have finished execution. Must me used with mutex if executing with pool.
-    Queue finished_execution_queue;
+    FinishedJobsQueue finished_execution_queue;
     std::mutex finished_execution_mutex;
-    ExceptionHandler exception_handler;
+
     EventCounter event_counter;
 
     UInt64 num_waited_tasks = 0;
