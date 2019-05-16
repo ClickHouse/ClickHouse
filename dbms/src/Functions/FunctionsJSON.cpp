@@ -1,7 +1,7 @@
 #include <Functions/FunctionsJSON.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
-#include <Core/CpuId.h>
+#include <Common/CpuId.h>
 
 
 namespace DB
