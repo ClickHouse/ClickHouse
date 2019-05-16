@@ -32,6 +32,6 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers LIMIT 1000000000</query>
-    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers LIMIT 10000</query>
+    <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers</query>
+    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers</query>
 </test>
