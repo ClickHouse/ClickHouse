@@ -31,10 +31,12 @@ const size_t MAX_PACKET_LENGTH = (1 << 24) - 1; // 16 mb
 const size_t SCRAMBLE_LENGTH = 20;
 const size_t AUTH_PLUGIN_DATA_PART_1_LENGTH = 8;
 const size_t MYSQL_ERRMSG_SIZE = 512;
+const size_t PACKET_HEADER_SIZE = 4;
+const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
 
 namespace Authentication
 {
-    const String CachingSHA2 = "caching_sha2_password";
+    const String SHA256 = "sha256_password"; /// Caching SHA2 plugin is not used because it would be possible to authenticate knowing hash from users.xml.
 }
 
 enum CharacterSet
@@ -152,6 +154,7 @@ public:
     size_t & sequence_id;
     ReadBuffer * in;
     WriteBuffer * out;
+    size_t max_packet_size = MAX_PACKET_LENGTH;
 
     /// For reading and writing.
     PacketSender(ReadBuffer & in, WriteBuffer & out, size_t & sequence_id, const String logger_name)
@@ -185,10 +188,10 @@ public:
 
             in->readStrict(reinterpret_cast<char *>(&payload_length), 3);
 
-            if (payload_length > MAX_PACKET_LENGTH)
+            if (payload_length > max_packet_size)
             {
                 std::ostringstream tmp;
-                tmp << "Received packet with payload larger than MAX_PACKET_LENGTH: " << payload_length;
+                tmp << "Received packet with payload larger than max_packet_size: " << payload_length;
                 throw ProtocolError(tmp.str(), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
             }
 
@@ -205,7 +208,7 @@ public:
             LOG_TRACE(log, "Received packet. Sequence-id: " << packet_sequence_id << ", payload length: " << payload_length);
 
             copyData(*in, static_cast<WriteBuffer &>(buf), payload_length);
-        } while (payload_length == MAX_PACKET_LENGTH);
+        } while (payload_length == max_packet_size);
 
         return std::move(buf.str());
     }
@@ -223,7 +226,7 @@ public:
         size_t pos = 0;
         do
         {
-            size_t payload_length = std::min(payload.length() - pos, MAX_PACKET_LENGTH);
+            size_t payload_length = std::min(payload.length() - pos, max_packet_size);
 
             LOG_TRACE(log, "Writing packet of size " << payload_length << " with sequence-id " << static_cast<int>(sequence_id));
             LOG_TRACE(log, packetToText(payload));
@@ -300,7 +303,7 @@ public:
         result.append(1, auth_plugin_data.size());
         result.append(10, 0x0);
         result.append(auth_plugin_data.substr(AUTH_PLUGIN_DATA_PART_1_LENGTH, auth_plugin_data.size() - AUTH_PLUGIN_DATA_PART_1_LENGTH));
-        result.append(Authentication::CachingSHA2);
+        result.append(Authentication::SHA256);
         result.append(1, 0x0);
         return result;
     }

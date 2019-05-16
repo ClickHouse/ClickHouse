@@ -14,6 +14,7 @@ MySQLBlockOutputStream::MySQLBlockOutputStream(WriteBuffer & buf, const Block & 
     , context(context)
     , packet_sender(new PacketSender(buf, context.sequence_id, "MySQLBlockOutputStream"))
 {
+    packet_sender->max_packet_size = context.max_packet_size;
 }
 
 void MySQLBlockOutputStream::writePrefix()

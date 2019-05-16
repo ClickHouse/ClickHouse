@@ -487,6 +487,7 @@ public:
     /// MySQL wire protocol state.
     size_t sequence_id = 0;
     uint32_t client_capabilities = 0;
+    size_t max_packet_size = 0;
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
