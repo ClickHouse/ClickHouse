@@ -184,10 +184,10 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
                     /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
                     const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
-                    bool in_with_single_argument = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
+                    bool extra_parents_around_in_rhs = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
                         && !(second_arg_func && second_arg_func->name == "tuple");
 
-                    if (in_with_single_argument)
+                    if (extra_parents_around_in_rhs)
                     {
                         settings.ostr << '(';
                         arguments->children[1]->formatImpl(settings, state, nested_need_parens);
