@@ -27,6 +27,8 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
         consumer->poll(5s);
         consumer->resume();
     }
+
+    stalled = false;
 }
 
 void ReadBufferFromKafkaConsumer::unsubscribe()
@@ -38,6 +40,12 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
 /// Do commit messages implicitly after we processed the previous batch.
 bool ReadBufferFromKafkaConsumer::nextImpl()
 {
+    /// NOTE: ReadBuffer was implemented with a immutable buffer contents in mind.
+    ///       If we failed to poll any message once - don't try again.
+    ///       Otherwise, the |poll_timeout| expectations get flawn.
+    if (stalled)
+        return false;
+
     if (current == messages.end())
     {
         commit();
@@ -48,7 +56,10 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
     }
 
     if (messages.empty() || current == messages.end())
+    {
+        stalled = true;
         return false;
+    }
 
     if (auto err = current->get_error())
     {
