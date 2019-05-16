@@ -96,7 +96,9 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
-
+    - 'JDBC': 'operations/table_engines/jdbc.md'
+    - 'ODBC': 'operations/table_engines/odbc.md'
+    
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
@@ -148,6 +150,7 @@ nav:
     - 'remote': 'query_language/table_functions/remote.md'
     - 'url': 'query_language/table_functions/url.md'
     - 'jdbc': 'query_language/table_functions/jdbc.md'
+    - 'odbc': 'query_language/table_functions/odbc.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
     - 'Внешние словари':

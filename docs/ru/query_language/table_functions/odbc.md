@@ -1,4 +1,4 @@
-# odbc {#table_functions-odbc}
+# odbc
 
 Returns table that is connected via ODBC driver.
 
