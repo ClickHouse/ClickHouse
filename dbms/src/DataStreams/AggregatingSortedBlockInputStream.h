@@ -1,6 +1,7 @@
 #pragma once
 
 #include <common/logger_useful.h>
+#include <memory>
 
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
@@ -12,6 +13,8 @@
 
 namespace DB
 {
+
+class Arena;
 
 /** Merges several sorted streams to one.
   * During this for each group of consecutive identical values of the primary key (the columns by which the data is sorted),
@@ -62,6 +65,9 @@ private:
     /** Insert all values of current row for simple aggregate functions
      */
     void insertSimpleAggregationResult(MutableColumns & merged_columns);
+
+    /// Memory pool for SimpleAggregateFunction.
+    std::unique_ptr<Arena> arena;
 
     /// Stores information for aggregation of SimpleAggregateFunction columns
     struct SimpleAggregateDescription
