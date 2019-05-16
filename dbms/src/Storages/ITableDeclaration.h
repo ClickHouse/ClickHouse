@@ -13,11 +13,11 @@ namespace DB
 class ITableDeclaration
 {
 public:
-    virtual const ColumnsDescription & getColumns() const { return columns; }
-    virtual void setColumns(ColumnsDescription columns_);
+    const ColumnsDescription & getColumns() const;
+    void setColumns(ColumnsDescription columns_);
 
-    virtual const IndicesDescription & getIndicesDescription() const { return indices; }
-    virtual void setIndicesDescription(IndicesDescription indices_);
+    const IndicesDescription & getIndices() const;
+    void setIndices(IndicesDescription indices_);
 
     /// NOTE: These methods should include virtual columns, but should NOT include ALIAS columns
     /// (they are treated separately).
