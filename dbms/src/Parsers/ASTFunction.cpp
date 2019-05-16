@@ -141,7 +141,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             }
         }
 
-        /** need_parens - do I need parentheses around the expression with the operator.
+        /** need_parens - do we need parentheses around the expression with the operator.
           * They are needed only if this expression is included in another expression with the operator.
           */
 
@@ -182,7 +182,19 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                         && (name == "like" || name == "notLike")
                         && highlightStringLiteralWithMetacharacters(arguments->children[1], settings, "%_");
 
-                    if (!special_hilite)
+                    /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
+                    const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
+                    bool in_with_single_argument = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn")
+                        && !(second_arg_func && second_arg_func->name == "tuple");
+
+                    if (in_with_single_argument)
+                    {
+                        settings.ostr << '(';
+                        arguments->children[1]->formatImpl(settings, state, nested_need_parens);
+                        settings.ostr << ')';
+                    }
+
+                    if (!special_hilite && !in_with_single_argument)
                         arguments->children[1]->formatImpl(settings, state, nested_need_parens);
 
                     if (frame.need_parens)
