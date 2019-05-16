@@ -1,3 +1,5 @@
+SET allow_simdjson=1;
+
 SELECT '--JSONLength--';
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}');
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
