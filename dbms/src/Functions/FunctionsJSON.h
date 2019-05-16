@@ -130,38 +130,39 @@ public:
         {
             bool ok = parser.parse(reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1);
 
-            auto it = parser.getRoot();
-            for (const auto j : ext::range(0, moves.size()))
+            if (ok)
             {
-                if (!ok)
-                    break;
+                auto it = parser.getRoot();
 
                 /// Perform moves.
-                switch (moves[j].type)
+                for (size_t j = 0; (j != moves.size()) && ok; ++j)
                 {
-                    case MoveType::ConstIndex:
-                        ok = moveIteratorToElementByIndex(it, moves[j].index);
-                        break;
-                    case MoveType::ConstKey:
-                        ok = moveIteratorToElementByKey(it, moves[j].key);
-                        break;
-                    case MoveType::Index:
+                    switch (moves[j].type)
                     {
-                        const Field field = (*block.getByPosition(arguments[j + 1]).column)[i];
-                        ok = moveIteratorToElementByIndex(it, field.get<Int64>());
-                        break;
-                    }
-                    case MoveType::Key:
-                    {
-                        const Field field = (*block.getByPosition(arguments[j + 1]).column)[i];
-                        ok = moveIteratorToElementByKey(it, field.get<String>().data());
-                        break;
+                        case MoveType::ConstIndex:
+                            ok = moveIteratorToElementByIndex(it, moves[j].index);
+                            break;
+                        case MoveType::ConstKey:
+                            ok = moveIteratorToElementByKey(it, moves[j].key);
+                            break;
+                        case MoveType::Index:
+                        {
+                            const Field field = (*block.getByPosition(arguments[j + 1]).column)[i];
+                            ok = moveIteratorToElementByIndex(it, field.get<Int64>());
+                            break;
+                        }
+                        case MoveType::Key:
+                        {
+                            const Field field = (*block.getByPosition(arguments[j + 1]).column)[i];
+                            ok = moveIteratorToElementByKey(it, field.get<String>().data());
+                            break;
+                        }
                     }
                 }
-            }
 
-            if (ok)
-                ok = impl.addValueToColumn(*to, it);
+                if (ok)
+                    ok = impl.addValueToColumn(*to, it);
+            }
 
             /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
             if (!ok)
