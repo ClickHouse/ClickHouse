@@ -41,25 +41,18 @@ private:
 
         ExecStatus status = ExecStatus::New;
         IProcessor::Status last_processor_status;
+        std::unique_ptr<std::exception_ptr> exception;
     };
 
     using Nodes = std::vector<Node>;
 
     Nodes graph;
 
-    struct FinishedJob
-    {
-        UInt64 node;
-        std::exception_ptr exception;
-    };
-
     using Queue = std::queue<UInt64>;
-    using FinishedJobsQueue = std::queue<FinishedJob>;
 
     /// Queue of processes which we want to call prepare. Is used only in main thread.
     Queue prepare_queue;
-    /// Queue of processes which have finished execution. Must me used with mutex if executing with pool.
-    FinishedJobsQueue finished_execution_queue;
+
     std::mutex finished_execution_mutex;
 
     EventCounter event_counter;
@@ -90,14 +83,27 @@ private:
 
     /// Pipeline execution related methods.
     void addChildlessProcessorsToQueue();
-    void processFinishedExecutionQueue();
-    void processFinishedExecutionQueueSafe(ThreadPool * pool);
+
+    template <typename TQueue>
+    void processFinishedExecutionQueue(TQueue & queue);
+
+    template <typename TQueue>
+    void processFinishedExecutionQueueSafe(TQueue & queue, ThreadPool * pool);
+
     bool addProcessorToPrepareQueueIfUpdated(Edge & edge);
-    void processPrepareQueue(ThreadPool * pool);
-    void processAsyncQueue(ThreadPool * pool);
-    void addJob(UInt64 pid, ThreadPool * pool);
+
+    template <typename TQueue>
+    void processPrepareQueue(TQueue & queue, ThreadPool * pool);
+
+    template <typename TQueue>
+    void processAsyncQueue(TQueue & queue, ThreadPool * pool);
+
+    template <typename TQueue>
+    void addJob(UInt64 pid, TQueue & queue, ThreadPool * pool);
     void addAsyncJob(UInt64 pid);
-    void prepareProcessor(size_t pid, bool async, ThreadPool * pool);
+
+    template <typename TQueue>
+    void prepareProcessor(size_t pid, bool async, TQueue & queue, ThreadPool * pool);
 
     void executeImpl(ThreadPool * pool);
 

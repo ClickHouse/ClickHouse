@@ -7,6 +7,8 @@
 #include <ext/scope_guard.h>
 #include <Common/CurrentThread.h>
 
+#include <boost/lockfree/queue.hpp>
+
 namespace DB
 {
 
@@ -127,30 +129,30 @@ void PipelineExecutor::addChildlessProcessorsToQueue()
     }
 }
 
-void PipelineExecutor::processFinishedExecutionQueue()
+template <typename TQueue>
+void PipelineExecutor::processFinishedExecutionQueue(TQueue & queue)
 {
-    while (!finished_execution_queue.empty())
+    UInt64 finished_job = graph.size();
+    while (queue.pop(finished_job))
     {
-        auto finished_job = finished_execution_queue.front();
-        finished_execution_queue.pop();
+        if (*graph[finished_job].exception)
+            std::rethrow_exception(*graph[finished_job].exception);
 
-        if (finished_job.exception)
-            std::rethrow_exception(finished_job.exception);
-
-        graph[finished_job.node].status = ExecStatus::Preparing;
-        prepare_queue.push(finished_job.node);
+        graph[finished_job].status = ExecStatus::Preparing;
+        prepare_queue.push(finished_job);
     }
 }
 
-void PipelineExecutor::processFinishedExecutionQueueSafe(ThreadPool * pool)
+template <typename TQueue>
+void PipelineExecutor::processFinishedExecutionQueueSafe(TQueue & queue, ThreadPool * pool)
 {
     if (pool)
     {
         std::lock_guard lock(finished_execution_mutex);
-        processFinishedExecutionQueue();
+        processFinishedExecutionQueue(queue);
     }
     else
-        processFinishedExecutionQueue();
+        processFinishedExecutionQueue(queue);
 }
 
 bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge)
@@ -188,22 +190,20 @@ static void executeJob(IProcessor * processor)
     }
 }
 
-void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
+template <typename TQueue>
+void PipelineExecutor::addJob(UInt64 pid, TQueue & queue, ThreadPool * pool)
 {
     if (pool)
     {
-        auto job = [this, pid, processor = graph[pid].processor]()
-        {
-            FinishedJob finished_job =
-            {
-                    .node = pid,
-                    .exception = nullptr
-            };
+        if (!graph[pid].exception)
+            graph[pid].exception = std::make_unique<std::exception_ptr>();
 
+        auto job = [this, pid, &queue, processor = graph[pid].processor, &exception = *graph[pid].exception]()
+        {
             SCOPE_EXIT(
                     {
-                        std::lock_guard lock(finished_execution_mutex);
-                        finished_execution_queue.push(finished_job);
+                        /// std::lock_guard lock(finished_execution_mutex);
+                        queue.push(pid);
                     }
                     event_counter.notify()
             );
@@ -214,7 +214,7 @@ void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
             }
             catch (...)
             {
-                finished_job.exception = std::current_exception();
+                exception = std::current_exception();
             }
         };
 
@@ -224,15 +224,8 @@ void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
     else
     {
         /// Execute task in main thread.
-
-        FinishedJob finished_job =
-        {
-                .node = pid,
-                .exception = nullptr
-        };
-
         executeJob(graph[pid].processor);
-        finished_execution_queue.push(finished_job);
+        queue.push(pid);
     }
 }
 
@@ -275,7 +268,8 @@ void PipelineExecutor::expandPipeline(UInt64 pid)
     }
 }
 
-void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, ThreadPool * pool)
+template <typename TQueue>
+void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, TQueue & queue, ThreadPool * pool)
 {
     auto & node = graph[pid];
     auto status = node.processor->prepare();
@@ -313,7 +307,7 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, ThreadPool * poo
         case IProcessor::Status::Ready:
         {
             node.status = ExecStatus::Executing;
-            addJob(pid, pool);
+            addJob(pid, queue, pool);
             break;
         }
         case IProcessor::Status::Async:
@@ -341,24 +335,25 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, ThreadPool * poo
     }
 }
 
-void PipelineExecutor::processPrepareQueue(ThreadPool * pool)
+template <typename TQueue>
+void PipelineExecutor::processPrepareQueue(TQueue & queue, ThreadPool * pool)
 {
     while (!prepare_queue.empty())
     {
         UInt64 proc = prepare_queue.front();
         prepare_queue.pop();
 
-        prepareProcessor(proc, false, pool);
-
+        prepareProcessor(proc, false, queue, pool);
     }
 }
 
-void PipelineExecutor::processAsyncQueue(ThreadPool * pool)
+template <typename TQueue>
+void PipelineExecutor::processAsyncQueue(TQueue & queue, ThreadPool * pool)
 {
     UInt64 num_processors = processors.size();
     for (UInt64 node = 0; node < num_processors; ++node)
         if (graph[node].status == ExecStatus::Async)
-            prepareProcessor(node, true, pool);
+            prepareProcessor(node, true, queue, pool);
 }
 
 void PipelineExecutor::execute(ThreadPool * pool)
@@ -398,11 +393,16 @@ void PipelineExecutor::execute(ThreadPool * pool)
 
 void PipelineExecutor::executeImpl(ThreadPool * pool)
 {
+    using FinishedJobsQueue = boost::lockfree::queue<UInt64>;
+
+    /// Queue of processes which have finished execution. Must me used with mutex if executing with pool.
+    FinishedJobsQueue finished_execution_queue(graph.size() * 2);
+
     while (!cancelled)
     {
-        processFinishedExecutionQueueSafe(pool);
-        processPrepareQueue(pool);
-        processAsyncQueue(pool);
+        processFinishedExecutionQueueSafe(finished_execution_queue, nullptr);
+        processPrepareQueue(finished_execution_queue, pool);
+        processAsyncQueue(finished_execution_queue, pool);
 
         if (prepare_queue.empty())
         {
