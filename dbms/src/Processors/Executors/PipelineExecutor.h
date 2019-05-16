@@ -5,6 +5,9 @@
 #include <mutex>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
+#include <common/logger_useful.h>
+
+#include <boost/lockfree/queue.hpp>
 
 namespace DB
 {
@@ -17,7 +20,7 @@ private:
     struct Edge
     {
         UInt64 to = std::numeric_limits<UInt64>::max();
-        UInt64 version = 1;
+        UInt64 version = 0;
         UInt64 prev_version = 0;
     };
 
@@ -33,6 +36,14 @@ private:
         Async
     };
 
+    struct ExecutionState
+    {
+        std::exception_ptr exception;
+        std::function<void()> job;
+        size_t num_executed_jobs = 0;
+        UInt64 execution_time_ns = 0;
+    };
+
     struct Node
     {
         IProcessor * processor = nullptr;
@@ -40,27 +51,26 @@ private:
         Edges backEdges;
 
         ExecStatus status = ExecStatus::New;
-        IProcessor::Status last_processor_status;
+        IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
+        std::unique_ptr<ExecutionState> execution_state;
+
+        Node() { execution_state = std::make_unique<ExecutionState>(); }
     };
 
     using Nodes = std::vector<Node>;
 
     Nodes graph;
 
-    struct FinishedJob
-    {
-        UInt64 node;
-        std::exception_ptr exception;
-    };
-
     using Queue = std::queue<UInt64>;
-    using FinishedJobsQueue = std::queue<FinishedJob>;
+    using TaskQueue = boost::lockfree::queue<ExecutionState *>;
+    using FinishedJobsQueue = boost::lockfree::queue<UInt64>;
 
     /// Queue of processes which we want to call prepare. Is used only in main thread.
     Queue prepare_queue;
-    /// Queue of processes which have finished execution. Must me used with mutex if executing with pool.
+    /// Queue with pointers to tasks. Each thread will concurrently read from it until finished flag is set.
+    TaskQueue task_queue;
+    /// Queue with tasks which have finished execution.
     FinishedJobsQueue finished_execution_queue;
-    std::mutex finished_execution_mutex;
 
     EventCounter event_counter;
 
@@ -68,10 +78,18 @@ private:
     UInt64 num_tasks_to_wait = 0;
 
     std::atomic_bool cancelled;
+    std::atomic_bool finished;
+
+    std::vector<std::thread> threads;
+
+    std::mutex task_mutex;
+    std::condition_variable task_condvar;
+
+    Poco::Logger * log = &Poco::Logger::get("PipelineExecutor");
 
 public:
     explicit PipelineExecutor(Processors processors);
-    void execute(ThreadPool * pool = nullptr);
+    void execute(size_t num_threads);
 
     String getName() const { return "PipelineExecutor"; }
 
@@ -91,15 +109,17 @@ private:
     /// Pipeline execution related methods.
     void addChildlessProcessorsToQueue();
     void processFinishedExecutionQueue();
-    void processFinishedExecutionQueueSafe(ThreadPool * pool);
+    void processFinishedExecutionQueueSafe();
     bool addProcessorToPrepareQueueIfUpdated(Edge & edge);
-    void processPrepareQueue(ThreadPool * pool);
-    void processAsyncQueue(ThreadPool * pool);
-    void addJob(UInt64 pid, ThreadPool * pool);
-    void addAsyncJob(UInt64 pid);
-    void prepareProcessor(size_t pid, bool async, ThreadPool * pool);
+    void processPrepareQueue();
+    void processAsyncQueue();
 
-    void executeImpl(ThreadPool * pool);
+    void addJob(UInt64 pid);
+    void addAsyncJob(UInt64 pid);
+
+    void prepareProcessor(size_t pid, bool async);
+
+    void executeImpl(size_t num_threads);
 
     String dumpPipeline() const;
 };

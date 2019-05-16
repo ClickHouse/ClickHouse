@@ -7,6 +7,9 @@
 #include <ext/scope_guard.h>
 #include <Common/CurrentThread.h>
 
+#include <boost/lockfree/queue.hpp>
+#include <Common/Stopwatch.h>
+
 namespace DB
 {
 
@@ -26,7 +29,7 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
 }
 
 PipelineExecutor::PipelineExecutor(Processors processors)
-    : processors(std::move(processors)), cancelled(false)
+    : processors(std::move(processors)), cancelled(false), finished(false)
 {
     buildGraph();
 }
@@ -129,28 +132,32 @@ void PipelineExecutor::addChildlessProcessorsToQueue()
 
 void PipelineExecutor::processFinishedExecutionQueue()
 {
+    UInt64 finished_job = graph.size();
     while (!finished_execution_queue.empty())
     {
-        auto finished_job = finished_execution_queue.front();
-        finished_execution_queue.pop();
+        /// Should be successful as single consumer is used.
+        while (finished_execution_queue.pop(finished_job));
 
-        if (finished_job.exception)
-            std::rethrow_exception(finished_job.exception);
+        ++num_waited_tasks;
+        ++graph[finished_job].execution_state->num_executed_jobs;
 
-        graph[finished_job.node].status = ExecStatus::Preparing;
-        prepare_queue.push(finished_job.node);
+        if (graph[finished_job].execution_state->exception)
+            std::rethrow_exception(graph[finished_job].execution_state->exception);
+
+        graph[finished_job].status = ExecStatus::Preparing;
+        prepare_queue.push(finished_job);
     }
 }
 
-void PipelineExecutor::processFinishedExecutionQueueSafe(ThreadPool * pool)
+void PipelineExecutor::processFinishedExecutionQueueSafe()
 {
-    if (pool)
-    {
-        std::lock_guard lock(finished_execution_mutex);
-        processFinishedExecutionQueue();
-    }
-    else
-        processFinishedExecutionQueue();
+//    if (pool)
+//    {
+//        /// std::lock_guard lock(finished_execution_mutex);
+//        processFinishedExecutionQueue(queue);
+//    }
+//    else
+    processFinishedExecutionQueue();
 }
 
 bool PipelineExecutor::addProcessorToPrepareQueueIfUpdated(Edge & edge)
@@ -188,51 +195,46 @@ static void executeJob(IProcessor * processor)
     }
 }
 
-void PipelineExecutor::addJob(UInt64 pid, ThreadPool * pool)
+void PipelineExecutor::addJob(UInt64 pid)
 {
-    if (pool)
+    if (!threads.empty())
     {
-        auto job = [this, pid, processor = graph[pid].processor]()
-        {
-            FinishedJob finished_job =
-            {
-                    .node = pid,
-                    .exception = nullptr
-            };
+        if (!graph[pid].execution_state)
+            graph[pid].execution_state = std::make_unique<ExecutionState>();
 
+        auto job = [this, pid, processor = graph[pid].processor, execution_state = graph[pid].execution_state.get()]()
+        {
             SCOPE_EXIT(
-                    {
-                        std::lock_guard lock(finished_execution_mutex);
-                        finished_execution_queue.push(finished_job);
-                    }
+                    while (!finished_execution_queue.push(pid));
                     event_counter.notify()
             );
 
             try
             {
+                Stopwatch watch;
                 executeJob(processor);
+                execution_state->execution_time_ns += watch.elapsed();
             }
             catch (...)
             {
-                finished_job.exception = std::current_exception();
+                /// Note: It's important to save exception before pushing pid to finished_execution_queue
+                execution_state->exception = std::current_exception();
             }
         };
 
-        pool->schedule(std::move(job));
+        graph[pid].execution_state->job = std::move(job);
+
+        while (!task_queue.push(graph[pid].execution_state.get()))
+            sleep(0);
+
+        task_condvar.notify_one();
         ++num_tasks_to_wait;
     }
     else
     {
         /// Execute task in main thread.
-
-        FinishedJob finished_job =
-        {
-                .node = pid,
-                .exception = nullptr
-        };
-
         executeJob(graph[pid].processor);
-        finished_execution_queue.push(finished_job);
+        while (!finished_execution_queue.push(pid));
     }
 }
 
@@ -275,7 +277,7 @@ void PipelineExecutor::expandPipeline(UInt64 pid)
     }
 }
 
-void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, ThreadPool * pool)
+void PipelineExecutor::prepareProcessor(UInt64 pid, bool async)
 {
     auto & node = graph[pid];
     auto status = node.processor->prepare();
@@ -313,7 +315,7 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, ThreadPool * poo
         case IProcessor::Status::Ready:
         {
             node.status = ExecStatus::Executing;
-            addJob(pid, pool);
+            addJob(pid);
             break;
         }
         case IProcessor::Status::Async:
@@ -341,40 +343,42 @@ void PipelineExecutor::prepareProcessor(UInt64 pid, bool async, ThreadPool * poo
     }
 }
 
-void PipelineExecutor::processPrepareQueue(ThreadPool * pool)
+void PipelineExecutor::processPrepareQueue()
 {
     while (!prepare_queue.empty())
     {
         UInt64 proc = prepare_queue.front();
         prepare_queue.pop();
 
-        prepareProcessor(proc, false, pool);
-
+        prepareProcessor(proc, false);
     }
 }
 
-void PipelineExecutor::processAsyncQueue(ThreadPool * pool)
+void PipelineExecutor::processAsyncQueue()
 {
     UInt64 num_processors = processors.size();
     for (UInt64 node = 0; node < num_processors; ++node)
         if (graph[node].status == ExecStatus::Async)
-            prepareProcessor(node, true, pool);
+            prepareProcessor(node, true);
 }
 
-void PipelineExecutor::execute(ThreadPool * pool)
+void PipelineExecutor::execute(size_t num_threads)
 {
     addChildlessProcessorsToQueue();
 
     try
     {
         /// Wait for all tasks to finish in case of exception.
-        /// pool->wait shouldn't throw because pool uses exception-handled tasks.
         SCOPE_EXIT(
-                if (pool)
-                    pool->wait();
+                finished = true;
+
+                task_condvar.notify_all();
+
+                for (auto & thread : threads)
+                    thread.join();
         );
 
-        executeImpl(pool);
+        executeImpl(num_threads);
     }
     catch (Exception & exception)
     {
@@ -396,19 +400,87 @@ void PipelineExecutor::execute(ThreadPool * pool)
         throw Exception("Pipeline stuck. Current state:\n" + dumpPipeline(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void PipelineExecutor::executeImpl(ThreadPool * pool)
+void PipelineExecutor::executeImpl(size_t num_threads)
 {
+    /// No need to make task_queue longer than num_threads.
+    /// Therefore, finished_execution_queue can't be longer than num_threads too.
+    task_queue.reserve_unsafe(num_threads);
+    finished_execution_queue.reserve_unsafe(num_threads);
+
+    if (num_threads > 1)
+    {
+        /// For single thread execution will execute jobs in main thread.
+
+        threads.reserve(num_threads);
+
+        auto thread_group = CurrentThread::getGroup();
+
+        for (size_t i = 0; i < num_threads; ++i)
+        {
+            threads.emplace_back([this, thread_group, thread_number = i]
+            {
+                ThreadStatus thread_status;
+
+                if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+                SCOPE_EXIT(
+                        if (thread_group)
+                            CurrentThread::detachQueryIfNotDetached();
+                );
+
+                UInt64 total_time_ns = 0;
+                UInt64 execution_time_ns = 0;
+                UInt64 wait_time_ns = 0;
+
+                Stopwatch total_time_watch;
+
+                ExecutionState * state = nullptr;
+
+                while (!finished)
+                {
+                    while (task_queue.pop(state))
+                    {
+                        Stopwatch execution_time_watch;
+                        state->job();
+                        execution_time_ns += execution_time_watch.elapsed();
+                    }
+
+                    /// Note: we don't wait in thread like in ordinary thread pool.
+                    /// Probably, it's better to add waiting on condition variable.
+                    /// But not will avoid it to escape extra locking.
+
+                    /// std::unique_lock lock(task_mutex);
+                    /// task_condvar.wait(lock);
+                }
+
+                total_time_ns = total_time_watch.elapsed();
+                wait_time_ns = total_time_ns - execution_time_ns;
+
+                LOG_TRACE(log, "Thread " << thread_number << " finished."
+                               << " Total time: " << (total_time_ns / 1e9) << " sec."
+                               << " Execution time: " << (execution_time_ns / 1e9) << " sec."
+                               << " Wait time: " << (wait_time_ns / 1e9) << "sec.");
+            });
+        }
+    }
+
     while (!cancelled)
     {
-        processFinishedExecutionQueueSafe(pool);
-        processPrepareQueue(pool);
-        processAsyncQueue(pool);
+        processFinishedExecutionQueueSafe();
+        processPrepareQueue();
+        processAsyncQueue();
 
         if (prepare_queue.empty())
         {
             /// For single-thread executor.
-            if (!pool && !finished_execution_queue.empty())
-                continue;
+            if (num_threads == 1)
+            {
+                if (!finished_execution_queue.empty())
+                    continue;
+                else
+                    break;
+            }
 
             if (num_tasks_to_wait > num_waited_tasks)
             {
@@ -427,6 +499,14 @@ void PipelineExecutor::executeImpl(ThreadPool * pool)
 
 String PipelineExecutor::dumpPipeline() const
 {
+    for (auto & node : graph)
+    {
+        if (node.execution_state)
+            node.processor->setDescription(
+                    "(" + std::to_string(node.execution_state->num_executed_jobs) + ", "
+                    + std::to_string(node.execution_state->execution_time_ns / 1e9) + " sec.)");
+    }
+
     std::vector<IProcessor::Status> statuses;
     std::vector<IProcessor *> proc_list;
     statuses.reserve(graph.size());
