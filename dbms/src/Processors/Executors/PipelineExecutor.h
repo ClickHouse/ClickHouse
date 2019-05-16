@@ -6,6 +6,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
 
+#include <boost/lockfree/queue.hpp>
+
 namespace DB
 {
 
@@ -33,6 +35,12 @@ private:
         Async
     };
 
+    struct ExecutionState
+    {
+        std::exception_ptr exception;
+        std::function<void()> job;
+    };
+
     struct Node
     {
         IProcessor * processor = nullptr;
@@ -41,7 +49,7 @@ private:
 
         ExecStatus status = ExecStatus::New;
         IProcessor::Status last_processor_status;
-        std::unique_ptr<std::exception_ptr> exception;
+        std::unique_ptr<ExecutionState> execution_state;
     };
 
     using Nodes = std::vector<Node>;
@@ -49,11 +57,16 @@ private:
     Nodes graph;
 
     using Queue = std::queue<UInt64>;
+    using TaskQueue = boost::lockfree::queue<ExecutionState *>;
 
     /// Queue of processes which we want to call prepare. Is used only in main thread.
     Queue prepare_queue;
+    TaskQueue task_queue;
 
-    std::mutex finished_execution_mutex;
+    using FinishedJobsQueue = boost::lockfree::queue<UInt64>;
+    FinishedJobsQueue finished_execution_queue;
+
+    /// std::mutex finished_execution_mutex;
 
     EventCounter event_counter;
 
@@ -61,6 +74,7 @@ private:
     UInt64 num_tasks_to_wait = 0;
 
     std::atomic_bool cancelled;
+    std::atomic_bool finished;
 
 public:
     explicit PipelineExecutor(Processors processors);

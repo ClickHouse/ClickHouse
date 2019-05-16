@@ -28,7 +28,7 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
 }
 
 PipelineExecutor::PipelineExecutor(Processors processors)
-    : processors(std::move(processors)), cancelled(false)
+    : processors(std::move(processors)), cancelled(false), finished(false)
 {
     buildGraph();
 }
@@ -135,8 +135,8 @@ void PipelineExecutor::processFinishedExecutionQueue(TQueue & queue)
     UInt64 finished_job = graph.size();
     while (queue.pop(finished_job))
     {
-        if (*graph[finished_job].exception)
-            std::rethrow_exception(*graph[finished_job].exception);
+        if (graph[finished_job].execution_state->exception)
+            std::rethrow_exception(graph[finished_job].execution_state->exception);
 
         graph[finished_job].status = ExecStatus::Preparing;
         prepare_queue.push(finished_job);
@@ -148,7 +148,7 @@ void PipelineExecutor::processFinishedExecutionQueueSafe(TQueue & queue, ThreadP
 {
     if (pool)
     {
-        std::lock_guard lock(finished_execution_mutex);
+        /// std::lock_guard lock(finished_execution_mutex);
         processFinishedExecutionQueue(queue);
     }
     else
@@ -195,10 +195,10 @@ void PipelineExecutor::addJob(UInt64 pid, TQueue & queue, ThreadPool * pool)
 {
     if (pool)
     {
-        if (!graph[pid].exception)
-            graph[pid].exception = std::make_unique<std::exception_ptr>();
+        if (!graph[pid].execution_state)
+            graph[pid].execution_state = std::make_unique<ExecutionState>();
 
-        auto job = [this, pid, &queue, processor = graph[pid].processor, &exception = *graph[pid].exception]()
+        auto job = [this, pid, &queue, processor = graph[pid].processor, &exception = graph[pid].execution_state->exception]()
         {
             SCOPE_EXIT(
                     {
@@ -218,7 +218,10 @@ void PipelineExecutor::addJob(UInt64 pid, TQueue & queue, ThreadPool * pool)
             }
         };
 
-        pool->schedule(std::move(job));
+        graph[pid].execution_state->job = std::move(job);
+
+        /// pool->schedule(std::move(job));
+        while (!task_queue.push(graph[pid].execution_state.get()));
         ++num_tasks_to_wait;
     }
     else
@@ -365,6 +368,7 @@ void PipelineExecutor::execute(ThreadPool * pool)
         /// Wait for all tasks to finish in case of exception.
         /// pool->wait shouldn't throw because pool uses exception-handled tasks.
         SCOPE_EXIT(
+                finished = true;
                 if (pool)
                     pool->wait();
         );
@@ -393,10 +397,25 @@ void PipelineExecutor::execute(ThreadPool * pool)
 
 void PipelineExecutor::executeImpl(ThreadPool * pool)
 {
-    using FinishedJobsQueue = boost::lockfree::queue<UInt64>;
 
     /// Queue of processes which have finished execution. Must me used with mutex if executing with pool.
-    FinishedJobsQueue finished_execution_queue(graph.size() * 2);
+    finished_execution_queue.reserve_unsafe(graph.size() * 2);
+    task_queue.reserve_unsafe(graph.size() * 2);
+
+    if (pool)
+    {
+        for (size_t i = 0; i < 16; ++i)
+        {
+            pool->schedule([this]
+            {
+                ExecutionState * state = nullptr;
+                while (!finished && task_queue.pop(state))
+                {
+                    state->job();
+                }
+            });
+        }
+    }
 
     while (!cancelled)
     {
@@ -423,6 +442,8 @@ void PipelineExecutor::executeImpl(ThreadPool * pool)
             }
         }
     }
+
+    finished = true;
 }
 
 String PipelineExecutor::dumpPipeline() const
