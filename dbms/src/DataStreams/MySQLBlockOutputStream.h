@@ -14,7 +14,7 @@ namespace DB
 class MySQLBlockOutputStream : public IBlockOutputStream
 {
 public:
-    MySQLBlockOutputStream(WriteBuffer & buf, const Block & header, const uint32_t capabilities, size_t & sequence_id);
+    MySQLBlockOutputStream(WriteBuffer & buf, const Block & header, Context & context);
 
     Block getHeader() const { return header; }
 
@@ -26,7 +26,7 @@ public:
     void flush();
 private:
     Block header;
-    uint32_t capabilities;
+    Context & context;
     std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
     FormatSettings format_settings;
 };

@@ -446,16 +446,25 @@ class OK_Packet : public WritePacket
     uint8_t header;
     uint32_t capabilities;
     uint64_t affected_rows;
-    uint64_t last_insert_id;
     int16_t warnings = 0;
     uint32_t status_flags;
-    String info;
     String session_state_changes;
+    String info;
 public:
-    OK_Packet(uint8_t header, uint32_t capabilities, uint64_t affected_rows, uint64_t last_insert_id, uint32_t status_flags,
-              int16_t warnings, String session_state_changes)
-        : header(header), capabilities(capabilities), affected_rows(affected_rows), last_insert_id(last_insert_id), warnings(warnings),
-          status_flags(status_flags), session_state_changes(std::move(session_state_changes))
+    OK_Packet(uint8_t header,
+        uint32_t capabilities,
+        uint64_t affected_rows,
+        uint32_t status_flags,
+        int16_t warnings,
+        String session_state_changes = "",
+        String info = "")
+        : header(header)
+        , capabilities(capabilities)
+        , affected_rows(affected_rows)
+        , warnings(warnings)
+        , status_flags(status_flags)
+        , session_state_changes(std::move(session_state_changes))
+        , info(info)
     {
     }
 
@@ -464,7 +473,7 @@ public:
         String result;
         result.append(1, header);
         result.append(writeLengthEncodedNumber(affected_rows));
-        result.append(writeLengthEncodedNumber(last_insert_id));
+        result.append(writeLengthEncodedNumber(0)); /// last insert-id
 
         if (capabilities & CLIENT_PROTOCOL_41)
         {
