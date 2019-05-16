@@ -38,6 +38,7 @@ private:
     Poco::Logger * log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
+    bool stalled = false;
 
     Messages messages;
     Messages::const_iterator current;
