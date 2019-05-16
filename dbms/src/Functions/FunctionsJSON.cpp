@@ -1,8 +1,5 @@
 #include <Functions/FunctionsJSON.h>
-#include <Functions/DummyJSONParser.h>
-#include <Functions/SimdJSONParser.h>
-#include <Functions/RapidJSONParser.h>
-#include <Common/CpuId.h>
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -10,19 +7,18 @@ namespace DB
 
 void registerFunctionsJSON(FunctionFactory & factory)
 {
-#if USE_SIMDJSON
-    if (Cpu::CpuFlagsCache::have_AVX2)
-    {
-        registerFunctionsJSONTemplate<SimdJSONParser>(factory);
-        return;
-    }
-#endif
-
-#if USE_RAPIDJSON
-    registerFunctionsJSONTemplate<RapidJSONParser>(factory);
-#else
-    registerFunctionsJSONTemplate<DummyJSONParser>(factory);
-#endif
+    factory.registerFunction<FunctionJSON<NameJSONHas, JSONHasImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONLength, JSONLengthImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONKey, JSONKeyImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONType, JSONTypeImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractInt, JSONExtractInt64Impl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractUInt, JSONExtractUInt64Impl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractFloat, JSONExtractFloat64Impl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractBool, JSONExtractBoolImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractString, JSONExtractStringImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtract, JSONExtractImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractRaw, JSONExtractRawImpl>>();
 }
 
 }

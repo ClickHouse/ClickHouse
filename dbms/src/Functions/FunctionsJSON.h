@@ -1,8 +1,13 @@
 #pragma once
 
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
+#include <Functions/DummyJSONParser.h>
+#include <Functions/SimdJSONParser.h>
+#include <Functions/RapidJSONParser.h>
+#include <Common/config.h>
+#include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -18,6 +23,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Interpreters/Context.h>
 #include <ext/range.h>
 
 
@@ -36,12 +42,14 @@ namespace ErrorCodes
 /// after that there are any number of arguments specifying path to a desired part from the JSON's root.
 /// For example,
 /// select JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1) = -100
-template <typename Name, template<typename> typename Impl, typename JSONParser>
+template <typename Name, template<typename> typename Impl>
 class FunctionJSON : public IFunction
 {
 public:
+    static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionJSON>(context_); }
+    FunctionJSON(const Context & context_) : context(context_) {}
+
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionJSON>(); }
     String getName() const override { return Name::name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -49,221 +57,246 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        return Impl<JSONParser>::getType(Name::name, arguments);
+        return Impl<DummyJSONParser>::getType(Name::name, arguments);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count) override
     {
-        MutableColumnPtr to{block.getByPosition(result_pos).type->createColumn()};
-        to->reserve(input_rows_count);
-
-        if (arguments.size() < 1)
-            throw Exception{"Function " + getName() + " requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        const auto & first_column = block.getByPosition(arguments[0]);
-        if (!isString(first_column.type))
-            throw Exception{"The first argument of function " + getName() + " should be a string containing JSON, illegal type: " + first_column.type->getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        const ColumnPtr & arg_json = first_column.column;
-        auto col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
-        auto col_json_string
-            = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
-
-        if (!col_json_string)
-            throw Exception{"Illegal column " + arg_json->getName(), ErrorCodes::ILLEGAL_COLUMN};
-
-        const ColumnString::Chars & chars = col_json_string->getChars();
-        const ColumnString::Offsets & offsets = col_json_string->getOffsets();
-
-        /// Prepare list of moves.
-        std::vector<Move> moves;
-        constexpr size_t num_extra_arguments = Impl<JSONParser>::num_extra_arguments;
-        const size_t num_moves = arguments.size() - num_extra_arguments - 1;
-        moves.reserve(num_moves);
-        for (const auto i : ext::range(0, num_moves))
+        /// Choose JSONParser.
+#if USE_SIMDJSON
+        if (context.getSettings().allow_simdjson && Cpu::CpuFlagsCache::have_AVX2)
         {
-            const auto & column = block.getByPosition(arguments[i + 1]);
-            if (!isString(column.type) && !isInteger(column.type))
-                throw Exception{"The argument " + std::to_string(i + 2) + " of function " + getName()
-                                    + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-            if (column.column->isColumnConst())
-            {
-                const auto & column_const = static_cast<const ColumnConst &>(*column.column);
-                if (isString(column.type))
-                    moves.emplace_back(MoveType::ConstKey, column_const.getField().get<String>());
-                else
-                    moves.emplace_back(MoveType::ConstIndex, column_const.getField().get<Int64>());
-            }
-            else
-            {
-                if (isString(column.type))
-                    moves.emplace_back(MoveType::Key, "");
-                else
-                    moves.emplace_back(MoveType::Index, 0);
-            }
+            Executor<SimdJSONParser>::run(block, arguments, result_pos, input_rows_count);
+            return;
         }
-
-        /// Preallocate memory in parser if necessary.
-        JSONParser parser;
-        if (parser.need_preallocate)
-        {
-            size_t max_size = 0;
-            for (const auto i : ext::range(0, input_rows_count))
-                if (max_size < offsets[i] - offsets[i - 1])
-                    max_size = offsets[i] - offsets[i - 1];
-
-            if (max_size < 1)
-                max_size = 1;
-
-            parser.preallocate(max_size);
-        }
-
-        Impl<JSONParser> impl;
-
-        /// prepare() does Impl-specific preparation before handling each row.
-        impl.prepare(Name::name, block, arguments, result_pos);
-
-        for (const auto i : ext::range(0, input_rows_count))
-        {
-            bool ok = parser.parse(reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1);
-
-            if (ok)
-            {
-                auto it = parser.getRoot();
-
-                /// Perform moves.
-                for (size_t j = 0; (j != moves.size()) && ok; ++j)
-                {
-                    switch (moves[j].type)
-                    {
-                        case MoveType::ConstIndex:
-                            ok = moveIteratorToElementByIndex(it, moves[j].index);
-                            break;
-                        case MoveType::ConstKey:
-                            ok = moveIteratorToElementByKey(it, moves[j].key);
-                            break;
-                        case MoveType::Index:
-                        {
-                            const Field field = (*block.getByPosition(arguments[j + 1]).column)[i];
-                            ok = moveIteratorToElementByIndex(it, field.get<Int64>());
-                            break;
-                        }
-                        case MoveType::Key:
-                        {
-                            const Field field = (*block.getByPosition(arguments[j + 1]).column)[i];
-                            ok = moveIteratorToElementByKey(it, field.get<String>().data());
-                            break;
-                        }
-                    }
-                }
-
-                if (ok)
-                    ok = impl.addValueToColumn(*to, it);
-            }
-
-            /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
-            if (!ok)
-                to->insertDefault();
-        }
-        block.getByPosition(result_pos).column = std::move(to);
+#endif
+#if USE_RAPIDJSON
+        Executor<RapidJSONParser>::run(block, arguments, result_pos, input_rows_count);
+#else
+        Executor<DummyJSONParser>::run(block, arguments, result_pos, input_rows_count);
+#endif
     }
 
 private:
-    /// Represents a move of a JSON iterator described by a single argument passed to a JSON function.
-    /// For example, the call JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1)
-    /// contains two moves: {MoveType::ConstKey, "b"} and {MoveType::ConstIndex, 1}.
-    /// Keys and indices can be nonconst, in this case they are calculated for each row.
-    enum class MoveType
-    {
-        Key,
-        Index,
-        ConstKey,
-        ConstIndex,
-    };
-    struct Move
-    {
-        Move(MoveType type_, size_t index_ = 0) : type(type_), index(index_) {}
-        Move(MoveType type_, const String & key_) : type(type_), key(key_) {}
-        MoveType type;
-        size_t index = 0;
-        String key;
-    };
+    const Context & context;
 
-    using Iterator = typename JSONParser::Iterator;
-
-    /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
-    bool moveIteratorToElementByIndex(Iterator & it, int index)
+    template <typename JSONParser>
+    class Executor
     {
-        if (JSONParser::isArray(it))
+    public:
+        static void run(Block & block, const ColumnNumbers & arguments, size_t result_pos, size_t input_rows_count)
         {
-            if (!JSONParser::downToArray(it))
-                return false;
-            size_t steps;
-            if (index > 0)
+            MutableColumnPtr to{block.getByPosition(result_pos).type->createColumn()};
+            to->reserve(input_rows_count);
+
+            if (arguments.size() < 1)
+                throw Exception{"Function " + String(Name::name) + " requires at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+            const auto & first_column = block.getByPosition(arguments[0]);
+            if (!isString(first_column.type))
+                throw Exception{"The first argument of function " + String(Name::name) + " should be a string containing JSON, illegal type: " + first_column.type->getName(),
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+            const ColumnPtr & arg_json = first_column.column;
+            auto col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
+            auto col_json_string
+                = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
+
+            if (!col_json_string)
+                throw Exception{"Illegal column " + arg_json->getName(), ErrorCodes::ILLEGAL_COLUMN};
+
+            const ColumnString::Chars & chars = col_json_string->getChars();
+            const ColumnString::Offsets & offsets = col_json_string->getOffsets();
+
+            /// Prepare list of moves.
+            std::vector<Move> moves;
+            constexpr size_t num_extra_arguments = Impl<JSONParser>::num_extra_arguments;
+            const size_t num_moves = arguments.size() - num_extra_arguments - 1;
+            moves.reserve(num_moves);
+            for (const auto i : ext::range(0, num_moves))
             {
-                steps = index - 1;
+                const auto & column = block.getByPosition(arguments[i + 1]);
+                if (!isString(column.type) && !isInteger(column.type))
+                    throw Exception{"The argument " + std::to_string(i + 2) + " of function " + String(Name::name)
+                                        + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
+                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+                if (column.column->isColumnConst())
+                {
+                    const auto & column_const = static_cast<const ColumnConst &>(*column.column);
+                    if (isString(column.type))
+                        moves.emplace_back(MoveType::ConstKey, column_const.getField().get<String>());
+                    else
+                        moves.emplace_back(MoveType::ConstIndex, column_const.getField().get<Int64>());
+                }
+                else
+                {
+                    if (isString(column.type))
+                        moves.emplace_back(MoveType::Key, "");
+                    else
+                        moves.emplace_back(MoveType::Index, 0);
+                }
             }
-            else
+
+            /// Preallocate memory in parser if necessary.
+            JSONParser parser;
+            if (parser.need_preallocate)
             {
-                size_t length = 1;
-                Iterator it2 = it;
-                while (JSONParser::next(it2))
-                    ++length;
-                steps = index + length;
+                size_t max_size = 0;
+                for (const auto i : ext::range(0, input_rows_count))
+                    if (max_size < offsets[i] - offsets[i - 1])
+                        max_size = offsets[i] - offsets[i - 1];
+
+                if (max_size < 1)
+                    max_size = 1;
+
+                parser.preallocate(max_size);
             }
-            while (steps--)
+
+            Impl<JSONParser> impl;
+
+            /// prepare() does Impl-specific preparation before handling each row.
+            impl.prepare(Name::name, block, arguments, result_pos);
+
+            for (const auto i : ext::range(0, input_rows_count))
             {
-                if (!JSONParser::next(it))
+                bool ok = parser.parse(reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1);
+
+                if (ok)
+                {
+                    auto it = parser.getRoot();
+
+                    /// Perform moves.
+                    for (size_t j = 0; (j != moves.size()) && ok; ++j)
+                    {
+                        switch (moves[j].type)
+                        {
+                            case MoveType::ConstIndex:
+                                ok = moveIteratorToElementByIndex(it, moves[j].index);
+                                break;
+                            case MoveType::ConstKey:
+                                ok = moveIteratorToElementByKey(it, moves[j].key);
+                                break;
+                            case MoveType::Index:
+                            {
+                                const Field field = (*block.getByPosition(arguments[j + 1]).column)[i];
+                                ok = moveIteratorToElementByIndex(it, field.get<Int64>());
+                                break;
+                            }
+                            case MoveType::Key:
+                            {
+                                const Field field = (*block.getByPosition(arguments[j + 1]).column)[i];
+                                ok = moveIteratorToElementByKey(it, field.get<String>().data());
+                                break;
+                            }
+                        }
+                    }
+
+                    if (ok)
+                        ok = impl.addValueToColumn(*to, it);
+                }
+
+                /// We add default value (=null or zero) if something goes wrong, we don't throw exceptions in these JSON functions.
+                if (!ok)
+                    to->insertDefault();
+            }
+            block.getByPosition(result_pos).column = std::move(to);
+        }
+
+    private:
+        /// Represents a move of a JSON iterator described by a single argument passed to a JSON function.
+        /// For example, the call JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1)
+        /// contains two moves: {MoveType::ConstKey, "b"} and {MoveType::ConstIndex, 1}.
+        /// Keys and indices can be nonconst, in this case they are calculated for each row.
+        enum class MoveType
+        {
+            Key,
+            Index,
+            ConstKey,
+            ConstIndex,
+        };
+        struct Move
+        {
+            Move(MoveType type_, size_t index_ = 0) : type(type_), index(index_) {}
+            Move(MoveType type_, const String & key_) : type(type_), key(key_) {}
+            MoveType type;
+            size_t index = 0;
+            String key;
+        };
+
+        using Iterator = typename JSONParser::Iterator;
+
+        /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
+        static bool moveIteratorToElementByIndex(Iterator & it, int index)
+        {
+            if (JSONParser::isArray(it))
+            {
+                if (!JSONParser::downToArray(it))
                     return false;
+                size_t steps;
+                if (index > 0)
+                {
+                    steps = index - 1;
+                }
+                else
+                {
+                    size_t length = 1;
+                    Iterator it2 = it;
+                    while (JSONParser::next(it2))
+                        ++length;
+                    steps = index + length;
+                }
+                while (steps--)
+                {
+                    if (!JSONParser::next(it))
+                        return false;
+                }
+                return true;
             }
-            return true;
-        }
-        if (JSONParser::isObject(it))
-        {
-            if (!JSONParser::downToObject(it))
-                return false;
-            size_t steps;
-            if (index > 0)
+            if (JSONParser::isObject(it))
             {
-                steps = index - 1;
-            }
-            else
-            {
-                size_t length = 1;
-                Iterator it2 = it;
-                while (JSONParser::nextKeyValue(it2))
-                    ++length;
-                steps = index + length;
-            }
-            while (steps--)
-            {
-                if (!JSONParser::nextKeyValue(it))
+                if (!JSONParser::downToObject(it))
                     return false;
+                size_t steps;
+                if (index > 0)
+                {
+                    steps = index - 1;
+                }
+                else
+                {
+                    size_t length = 1;
+                    Iterator it2 = it;
+                    while (JSONParser::nextKeyValue(it2))
+                        ++length;
+                    steps = index + length;
+                }
+                while (steps--)
+                {
+                    if (!JSONParser::nextKeyValue(it))
+                        return false;
+                }
+                return true;
             }
-            return true;
+            return false;
         }
-        return false;
-    }
 
-    /// Performs moves of types MoveType::Key and MoveType::ConstKey.
-    bool moveIteratorToElementByKey(Iterator & it, const String & key)
-    {
-        if (JSONParser::isObject(it))
+        /// Performs moves of types MoveType::Key and MoveType::ConstKey.
+        static bool moveIteratorToElementByKey(Iterator & it, const String & key)
         {
-            StringRef current_key;
-            if (!JSONParser::downToObject(it, current_key))
-                return false;
-            do
+            if (JSONParser::isObject(it))
             {
-                if (current_key == key)
-                    return true;
-            } while (JSONParser::nextKeyValue(it, current_key));
+                StringRef current_key;
+                if (!JSONParser::downToObject(it, current_key))
+                    return false;
+                do
+                {
+                    if (current_key == key)
+                        return true;
+                } while (JSONParser::nextKeyValue(it, current_key));
+            }
+            return false;
         }
-        return false;
-    }
+    };
 };
 
 
@@ -1065,23 +1098,5 @@ private:
         return the_instance;
     }
 };
-
-
-template <typename JSONParser>
-void registerFunctionsJSONTemplate(FunctionFactory & factory)
-{
-    factory.registerFunction<FunctionJSON<NameJSONHas, JSONHasImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONLength, JSONLengthImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONKey, JSONKeyImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONType, JSONTypeImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtractInt, JSONExtractInt64Impl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtractUInt, JSONExtractUInt64Impl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtractFloat, JSONExtractFloat64Impl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtractBool, JSONExtractBoolImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtractString, JSONExtractStringImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtract, JSONExtractImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl, JSONParser>>();
-    factory.registerFunction<FunctionJSON<NameJSONExtractRaw, JSONExtractRawImpl, JSONParser>>();
-}
 
 }
