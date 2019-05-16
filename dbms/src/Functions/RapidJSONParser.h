@@ -126,16 +126,18 @@ struct RapidJSONParser
 
         bool parentScopeIsObject() const { return parent_scope_is_object; }
 
-        bool isInteger() const { return value->IsInt64(); }
-        bool isFloat() const { return value->IsDouble(); }
+        bool isInt64() const { return value->IsInt64(); }
+        bool isUInt64() const { return value->IsUint64(); }
+        bool isDouble() const { return value->IsDouble(); }
         bool isBool() const { return value->IsBool(); }
         bool isString() const { return value->IsString(); }
         bool isArray() const { return value->IsArray(); }
         bool isObject() const { return value->IsObject(); }
         bool isNull() const { return value->IsNull(); }
 
-        Int64 getInteger() const { return value->GetInt64(); }
-        double getFloat() const { return value->GetDouble(); }
+        Int64 getInt64() const { return value->GetInt64(); }
+        UInt64 getUInt64() const { return value->GetUint64(); }
+        double getDouble() const { return value->GetDouble(); }
         bool getBool() const { return value->GetBool(); }
         StringRef getString() const { return {value->GetString(), value->GetStringLength()}; }
 
@@ -164,8 +166,9 @@ struct RapidJSONParser
     static bool next(Iterator & it) { return it.next(); }
     static bool nextKeyValue(Iterator & it) { return it.nextKeyValue(); }
     static bool nextKeyValue(Iterator & it, StringRef & key) { return it.nextKeyValue(key); }
-    static bool isInteger(const Iterator & it) { return it.isInteger(); }
-    static bool isFloat(const Iterator & it) { return it.isFloat(); }
+    static bool isInt64(const Iterator & it) { return it.isInt64(); }
+    static bool isUInt64(const Iterator & it) { return it.isUInt64(); }
+    static bool isDouble(const Iterator & it) { return it.isDouble(); }
     static bool isString(const Iterator & it) { return it.isString(); }
     static bool isArray(const Iterator & it) { return it.isArray(); }
     static bool isObject(const Iterator & it) { return it.isObject(); }
@@ -173,8 +176,9 @@ struct RapidJSONParser
     static bool isNull(const Iterator & it) { return it.isNull(); }
     static StringRef getKey(const Iterator & it) { return it.getKey(); }
     static StringRef getString(const Iterator & it) { return it.getString(); }
-    static Int64 getInteger(const Iterator & it) { return it.getInteger(); }
-    static double getFloat(const Iterator & it) { return it.getFloat(); }
+    static Int64 getInt64(const Iterator & it) { return it.getInt64(); }
+    static UInt64 getUInt64(const Iterator & it) { return it.getUInt64(); }
+    static double getDouble(const Iterator & it) { return it.getDouble(); }
     static bool getBool(const Iterator & it) { return it.getBool(); }
 
 private:

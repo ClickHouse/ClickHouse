@@ -73,20 +73,6 @@ struct SimdJSONParser
         return it.next();
     }
 
-    static bool isInteger(const Iterator & it) { return it.is_integer(); }
-
-    static bool isFloat(const Iterator & it) { return it.is_double(); }
-
-    static bool isString(const Iterator & it) { return it.is_string(); }
-
-    static bool isArray(const Iterator & it) { return it.is_array(); }
-
-    static bool isObject(const Iterator & it) { return it.is_object(); }
-
-    static bool isBool(const Iterator & it) { return it.get_type() == 't' || it.get_type() == 'f'; }
-
-    static bool isNull(const Iterator & it) { return it.get_type() == 'n'; }
-
     static StringRef getKey(const Iterator & it)
     {
         Iterator it2 = it;
@@ -94,12 +80,19 @@ struct SimdJSONParser
         return StringRef{it2.get_string(), it2.get_string_length()};
     }
 
+    static bool isInt64(const Iterator & it) { return it.is_integer(); }
+    static bool isUInt64(const Iterator &) { return false; /* See https://github.com/lemire/simdjson/issues/68 */ }
+    static bool isDouble(const Iterator & it) { return it.is_double(); }
+    static bool isString(const Iterator & it) { return it.is_string(); }
+    static bool isArray(const Iterator & it) { return it.is_array(); }
+    static bool isObject(const Iterator & it) { return it.is_object(); }
+    static bool isBool(const Iterator & it) { return it.get_type() == 't' || it.get_type() == 'f'; }
+    static bool isNull(const Iterator & it) { return it.get_type() == 'n'; }
+
     static StringRef getString(const Iterator & it) { return StringRef{it.get_string(), it.get_string_length()}; }
-
-    static Int64 getInteger(const Iterator & it) { return it.get_integer(); }
-
-    static double getFloat(const Iterator & it) { return it.get_double(); }
-
+    static Int64 getInt64(const Iterator & it) { return it.get_integer(); }
+    static UInt64 getUInt64(const Iterator &) { return 0; /* isUInt64() never returns true */ }
+    static double getDouble(const Iterator & it) { return it.get_double(); }
     static bool getBool(const Iterator & it) { return it.get_type() == 't'; }
 
 private:
