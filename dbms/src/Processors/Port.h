@@ -231,10 +231,11 @@ public:
 
     void setNeeded()
     {
-        if (version)
+        assumeConnected();
+
+        if (!state->isNeeded() && version)
             ++(*version);
 
-        assumeConnected();
         state->setNeeded();
     }
 

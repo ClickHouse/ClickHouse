@@ -218,6 +218,11 @@ public:
 
     /// Debug output.
     void dump() const;
+
+    std::string description;
+
+    void setDescription(const std::string & description_) { description = description_; }
+    const std::string & getDescription() const { return description; }
 };
 
 
