@@ -14,13 +14,18 @@ a
 --JSONType--
 Object
 Array
---JSONExtract<type>--
-hello
-hello
+--JSONExtract<numeric>--
 -100
 200
 300
 1
+--JSONExtractString--
+hello
+hello
+\n\0
+☺
+
+
 --JSONExtract (generic)--
 ('hello',[-100,200,300])
 ('hello',[-100,200,300])
@@ -36,8 +41,14 @@ hello
 -100
 200
 \N
+1
 Thursday
 Friday
+--JSONExtractKeysAndValues--
+[('a','hello')]
+[('b',[-100,200,300])]
+[('a','hello'),('b','world')]
+[('a',5),('b',7),('c',11)]
 --JSONExtractRaw--
 {"a":"hello","b":[-100,200,300]}
 "hello"
@@ -50,8 +61,5 @@ Friday
 
 {"passed":true}
 {}
---JSONExtractKeysAndValues--
-[('a','hello')]
-[('b',[-100,200,300])]
-[('a','hello'),('b','world')]
-[('a',5),('b',7),('c',11)]
+"\\n\\u0000"
+"☺"
