@@ -988,9 +988,7 @@ void ExpressionAnalyzer::collectUsedColumns()
         for (const auto & name : source_columns)
             avaliable_columns.insert(name.name);
 
-        /** You also need to ignore the identifiers of the columns that are obtained by JOIN.
-        * (Do not assume that they are required for reading from the "left" table).
-        */
+        /// Add columns obtained by JOIN (if needed).
         columns_added_by_join.clear();
         for (const auto & joined_column : analyzed_join.available_joined_columns)
         {
@@ -1000,7 +998,9 @@ void ExpressionAnalyzer::collectUsedColumns()
 
             if (required.count(name))
             {
-                columns_added_by_join.push_back(joined_column);
+                /// Optimisation: do not add columns needed only in JOIN ON section.
+                if (columns_context.nameInclusion(name) > analyzed_join.rightKeyInclusion(name))
+                    columns_added_by_join.push_back(joined_column);
                 required.erase(name);
             }
         }

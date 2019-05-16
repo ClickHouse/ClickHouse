@@ -27,7 +27,7 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
 }
 
 
-BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size) const
+BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size, UInt64 rows_portion_size) const
 {
     const auto & input_getter = getCreators(name).first;
     if (!input_getter)
@@ -50,7 +50,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.template_settings.row_format = settings.format_schema_rows;
     format_settings.template_settings.row_between_delimiter = settings.format_schema_rows_between_delimiter;
 
-    return input_getter(buf, sample, context, max_block_size, format_settings);
+    return input_getter(buf, sample, context, max_block_size, rows_portion_size, format_settings);
 }
 
 

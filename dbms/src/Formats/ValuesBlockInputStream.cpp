@@ -33,9 +33,9 @@ namespace ErrorCodes
 
 
 ValuesBlockInputStream::ValuesBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_,
-                                               const FormatSettings & format_settings, UInt64 max_block_size_)
-        : istr(istr_), header(header_), context(std::make_unique<Context>(context_)),
-          format_settings(format_settings), max_block_size(max_block_size_), num_columns(header.columns())
+                                               const FormatSettings & format_settings, UInt64 max_block_size_, UInt64 rows_portion_size_)
+        : istr(istr_), header(header_), context(std::make_unique<Context>(context_)), format_settings(format_settings),
+          max_block_size(max_block_size_), rows_portion_size(rows_portion_size_), num_columns(header.columns())
 {
     templates.resize(header.columns());
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
@@ -46,8 +46,15 @@ Block ValuesBlockInputStream::readImpl()
 {
     MutableColumns columns = header.cloneEmptyColumns();
 
-    for (size_t rows_in_block = 0; rows_in_block < max_block_size; ++rows_in_block)
+    for (size_t rows_in_block = 0, batch = 0; rows_in_block < max_block_size; ++rows_in_block, ++batch)
     {
+        if (rows_portion_size && batch == rows_portion_size)
+        {
+            batch = 0;
+            if (!checkTimeLimit() || isCancelled())
+                break;
+        }
+
         try
         {
             skipWhitespaceIfAny(istr);
@@ -168,7 +175,7 @@ ValuesBlockInputStream::parseExpression(IColumn & column, size_t column_idx, boo
 
     Expected expected;
 
-    // TODO make tokenizer to work with buffers, not only with continuous memory
+    // TODO make tokenizer work with buffers, not only with continuous memory
     Tokens tokens(istr.position(), istr.buffer().end());
     TokenIterator token_iterator(tokens);
 
@@ -240,9 +247,10 @@ void registerInputFormatValues(FormatFactory & factory)
         const Block & sample,
         const Context & context,
         UInt64 max_block_size,
+        UInt64 rows_portion_size,
         const FormatSettings & settings)
     {
-        return std::make_shared<ValuesBlockInputStream>(buf, sample, context, settings, max_block_size);
+        return std::make_shared<ValuesBlockInputStream>(buf, sample, context, settings, max_block_size, rows_portion_size);
     });
 }
 

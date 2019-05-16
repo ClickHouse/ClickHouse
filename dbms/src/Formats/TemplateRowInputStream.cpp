@@ -318,11 +318,12 @@ void registerInputFormatTemplate(FormatFactory & factory)
                 const Block & sample,
                 const Context &,
                 UInt64 max_block_size,
+                UInt64 rows_portion_size,
                 const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                     std::make_shared<TemplateRowInputStream>(buf, sample, settings, ignore_spaces),
-                    sample, max_block_size, settings);
+                    sample, max_block_size, rows_portion_size, settings);
         });
     }
 }

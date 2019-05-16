@@ -4,7 +4,7 @@
 
     <stop_conditions>
         <any_of>
-            <min_time_not_changing_for_ms>1000</min_time_not_changing_for_ms>
+            <max_speed_not_changing_for_ms>1000</max_speed_not_changing_for_ms>
             <total_time_ms>5000</total_time_ms>
         </any_of>
     </stop_conditions>
@@ -32,6 +32,6 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers LIMIT 1000000000</query>
-    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers LIMIT 10000</query>
+    <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers</query>
+    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers</query>
 </test>

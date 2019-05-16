@@ -325,11 +325,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Block & sample,
             const Context &,
             UInt64 max_block_size,
+            UInt64 rows_portion_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, false, false, settings),
-                sample, max_block_size, settings);
+                sample, max_block_size, rows_portion_size, settings);
         });
     }
 
@@ -340,11 +341,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Block & sample,
             const Context &,
             UInt64 max_block_size,
+            UInt64 rows_portion_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, false, settings),
-                sample, max_block_size, settings);
+                sample, max_block_size, rows_portion_size, settings);
         });
     }
 
@@ -355,11 +357,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Block & sample,
             const Context &,
             UInt64 max_block_size,
+            UInt64 rows_portion_size,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, true, settings),
-                sample, max_block_size, settings);
+                sample, max_block_size, rows_portion_size, settings);
         });
     }
 }
