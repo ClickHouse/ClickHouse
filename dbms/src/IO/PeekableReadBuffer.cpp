@@ -62,7 +62,13 @@ bool PeekableReadBuffer::peekNext()
     {
         /// Switch to reading from own memory
         size_t pos_offset = peeked_size + this->offset();
-        if (useSubbufferOnly()) pos_offset = bytes_to_copy;
+        if (useSubbufferOnly())
+        {
+            if (checkpoint)
+                pos_offset = bytes_to_copy;
+            else
+                pos_offset = 0;
+        }
         BufferBase::set(memory.data(), peeked_size + bytes_to_copy, pos_offset);
 
     }
@@ -237,13 +243,13 @@ PeekableReadBuffer::~PeekableReadBuffer()
         sub_buf.position() = pos;
 }
 
-BufferWithOwnMemory<ReadBuffer> PeekableReadBuffer::takeUnreadData()
+std::shared_ptr<BufferWithOwnMemory<ReadBuffer>> PeekableReadBuffer::takeUnreadData()
 {
     if (!currentlyReadFromOwnMemory())
-        return BufferWithOwnMemory<ReadBuffer>(0);
+        return std::make_shared<BufferWithOwnMemory<ReadBuffer>>(0);
     size_t unread_size = memory.data() + peeked_size - pos;
-    BufferWithOwnMemory<ReadBuffer> unread(unread_size);
-    memcpy(unread.buffer().begin(), pos, unread_size);
+    auto unread = std::make_shared<BufferWithOwnMemory<ReadBuffer>>(unread_size);
+    memcpy(unread->buffer().begin(), pos, unread_size);
     peeked_size = 0;
     checkpoint = nullptr;
     checkpoint_in_own_memory = false;
