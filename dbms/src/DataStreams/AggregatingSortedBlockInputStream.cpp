@@ -1,6 +1,8 @@
 #include <DataStreams/AggregatingSortedBlockInputStream.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 
 
 namespace DB
@@ -22,7 +24,7 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
         ColumnWithTypeAndName & column = header.safeGetByPosition(i);
 
         /// We leave only states of aggregate functions.
-        if (!startsWith(column.type->getName(), "AggregateFunction"))
+        if (!dynamic_cast<const DataTypeAggregateFunction *>(column.type.get()) && !dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
         {
             column_numbers_not_to_aggregate.push_back(i);
             continue;
@@ -40,7 +42,17 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
             continue;
         }
 
-        column_numbers_to_aggregate.push_back(i);
+        if (auto simple_aggr = dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()))
+        {
+            // simple aggregate function
+            SimpleAggregateDescription desc{simple_aggr->getFunction(), i};
+            columns_to_simple_aggregate.emplace_back(std::move(desc));
+        }
+        else
+        {
+            // standard aggregate function
+            column_numbers_to_aggregate.push_back(i);
+        }
     }
 }
 
@@ -91,7 +103,11 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
 
         /// if there are enough rows accumulated and the last one is calculated completely
         if (key_differs && merged_rows >= max_block_size)
+        {
+            /// Write the simple aggregation result for the previous group.
+            insertSimpleAggregationResult(merged_columns);
             return;
+        }
 
         queue.pop();
 
@@ -110,6 +126,14 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
             for (auto & column_to_aggregate : columns_to_aggregate)
                 column_to_aggregate->insertDefault();
 
+            /// Write the simple aggregation result for the previous group.
+            if (merged_rows > 0)
+                insertSimpleAggregationResult(merged_columns);
+
+            /// Reset simple aggregation states for next row
+            for (auto & desc : columns_to_simple_aggregate)
+                desc.createState();
+
             ++merged_rows;
         }
 
@@ -127,6 +151,9 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
         }
     }
 
+    /// Write the simple aggregation result for the previous group.
+    insertSimpleAggregationResult(merged_columns);
+
     finished = true;
 }
 
@@ -137,6 +164,21 @@ void AggregatingSortedBlockInputStream::addRow(SortCursor & cursor)
     {
         size_t j = column_numbers_to_aggregate[i];
         columns_to_aggregate[i]->insertMergeFrom(*cursor->all_columns[j], cursor->pos);
+    }
+
+    for (auto & desc : columns_to_simple_aggregate)
+    {
+        auto & col = cursor->all_columns[desc.column_number];
+        desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, nullptr);
+    }
+}
+
+void AggregatingSortedBlockInputStream::insertSimpleAggregationResult(MutableColumns & merged_columns)
+{
+    for (auto & desc : columns_to_simple_aggregate)
+    {
+        desc.function->insertResultInto(desc.state.data(), *merged_columns[desc.column_number]);
+        desc.destroyState();
     }
 }
 

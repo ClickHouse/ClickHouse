@@ -47,7 +47,7 @@ parser.add_argument('--login', type=str,
 
 args = parser.parse_args()
 
-github = query.Query(args.token)
+github = query.Query(args.token, 50)
 repo = local.Local(args.repo, args.remote, github.get_default_branch())
 
 stables = repo.get_stables()[-args.number:] # [(branch name, base)]
