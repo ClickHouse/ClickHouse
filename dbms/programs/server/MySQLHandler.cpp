@@ -57,6 +57,10 @@ void MySQLHandler::run()
 
         HandshakeResponse handshake_response = finishHandshake();
         connection_context.client_capabilities = handshake_response.capability_flags;
+        if (handshake_response.max_packet_size)
+            connection_context.max_packet_size = handshake_response.max_packet_size;
+        if (!connection_context.max_packet_size)
+            connection_context.max_packet_size = MAX_PACKET_LENGTH;
 
         LOG_DEBUG(log, "Capabilities: " << handshake_response.capability_flags
                                         << "\nmax_packet_size: "
@@ -135,51 +139,59 @@ void MySQLHandler::run()
 }
 
 /** Reads 3 bytes, finds out whether it is SSLRequest or HandshakeResponse packet, starts secure connection, if it is SSLRequest.
- *  Using ReadBufferFromPocoSocket would be less convenient here, because we would have to resize internal buffer many times to prevent reading SSL handshake.
+ *  Reading is performed from socket instead of ReadBuffer to prevent reading part of SSL handshake.
  *  If we read it from socket, it will be impossible to start SSL connection using Poco. Size of SSLRequest packet payload is 32 bytes, thus we can read at most 36 bytes.
  */
 MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
 {
     HandshakeResponse packet;
-    char b[100]; /// Buffer for SSLRequest or HandshakeResponse.
+    size_t packet_size = PACKET_HEADER_SIZE + SSL_REQUEST_PAYLOAD_SIZE;
+
+    /// Buffer for SSLRequest or part of HandshakeResponse.
+    char buf[packet_size];
     size_t pos = 0;
-    while (pos < 3)
-    {
-        int ret = socket().receiveBytes(b + pos, 36 - pos);
-        if (ret == 0)
+
+    /// Reads at least count and at most packet_size bytes.
+    auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
+        while (pos < count)
         {
-            throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3.", ErrorCodes::CANNOT_READ_ALL_DATA);
+            int ret = socket().receiveBytes(buf + pos, packet_size - pos);
+            if (ret == 0)
+            {
+                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3.", ErrorCodes::CANNOT_READ_ALL_DATA);
+            }
+            pos += ret;
         }
-        pos += ret;
-    }
+    };
+    read_bytes(3); /// We can find out whether it is SSLRequest of HandshakeResponse by first 3 bytes.
 
-    size_t packet_size = *reinterpret_cast<uint32_t *>(b) & 0xFFFFFFu;
-    LOG_TRACE(log, "packet size: " << packet_size);
+    size_t payload_size = *reinterpret_cast<uint32_t *>(buf) & 0xFFFFFFu;
+    LOG_TRACE(log, "payload size: " << payload_size);
 
-    /// Check if it is SSLRequest.
-    if (packet_size == 32)
+    if (payload_size == SSL_REQUEST_PAYLOAD_SIZE)
     {
+        read_bytes(packet_size); /// Reading rest SSLRequest.
+        SSLRequest ssl_request;
+        ssl_request.readPayload(String(buf + PACKET_HEADER_SIZE, pos - PACKET_HEADER_SIZE));
+        connection_context.client_capabilities = ssl_request.capability_flags;
+        connection_context.max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
         secure_connection = true;
         ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
         in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
         out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
         connection_context.sequence_id = 2;
         packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.sequence_id, "MySQLHandler");
+        packet_sender->max_packet_size = connection_context.max_packet_size;
         packet_sender->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
     }
     else
     {
         /// Reading rest of HandshakeResponse.
-        while (pos < 4 + packet_size)
-        {
-            int ret = socket().receiveBytes(b + pos, 4 + packet_size - pos);
-            if (ret == 0)
-            {
-                throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: " + std::to_string(4 + packet_size) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
-            }
-            pos += ret;
-        }
-        packet.readPayload(std::string(b + 4, packet_size));
+        packet_size = PACKET_HEADER_SIZE + payload_size;
+        WriteBufferFromOwnString buf_for_handshake_response;
+        buf_for_handshake_response.write(buf, pos);
+        copyData(*packet_sender->in, buf_for_handshake_response, packet_size - pos);
+        packet.readPayload(buf_for_handshake_response.str().substr(PACKET_HEADER_SIZE));
         packet_sender->sequence_id++;
     }
     return packet;
@@ -201,9 +213,9 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
 
     String auth_response;
     AuthSwitchResponse response;
-    if (handshake_response.auth_plugin_name != Authentication::CachingSHA2)
+    if (handshake_response.auth_plugin_name != Authentication::SHA256)
     {
-        packet_sender->sendPacket(AuthSwitchRequest(Authentication::CachingSHA2, scramble + '\0'), true);
+        packet_sender->sendPacket(AuthSwitchRequest(Authentication::SHA256, scramble + '\0'), true);
         packet_sender->receivePacket(response);
         auth_response = response.value;
         LOG_TRACE(log, "Authentication method mismatch.");
@@ -213,13 +225,6 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         auth_response = handshake_response.auth_response;
         LOG_TRACE(log, "Authentication method match.");
     }
-
-    /// Caching SHA2 plugin is used instead of SHA256 only because it can work without OpenSLL.
-    /// Fast auth path is not used, because otherwise it would be possible to authenticate using data from users.xml.
-    packet_sender->sendPacket(AuthMoreData("\4"), true);
-
-    packet_sender->receivePacket(response);
-    auth_response = response.value;
 
     auto getOpenSSLError = []() -> String
     {
@@ -232,7 +237,7 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         return errors_str;
     };
 
-    if (auth_response == "\2")
+    if (auth_response == "\1")
     {
         LOG_TRACE(log, "Client requests public key.");
         /// Client requests public key.
@@ -261,15 +266,14 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
 
     String password;
 
-    LOG_TRACE(log, "auth response: " << auth_response);
+    LOG_TRACE(log, "auth response: " << auth_response << " len: " <<auth_response.length());
 
     /** Decrypt password, if it's not empty.
      *  The original intention was that the password is a string[NUL] but this never got enforced properly so now we have to accept that
      *  an empty packet is a blank password, thus the check for auth_response.empty() has to be made too.
      *  https://github.com/mysql/mysql-server/blob/8.0/sql/auth/sql_authentication.cc#L4017
      */
-
-    if (!secure_connection && !(auth_response.empty() || (auth_response.size() == 1 && auth_response[0] == '\0')))
+    if (!secure_connection && (!auth_response.empty() && auth_response != "\0"))
     {
         LOG_TRACE(log, "Received nonempty password");
         auto ciphertext = reinterpret_cast<unsigned char *>(auth_response.data());
@@ -299,8 +303,7 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
 
     if (!password.empty())
     {
-        /// remove terminating null byte
-        password.pop_back();
+        password.pop_back(); /// terminating null byte
     }
 
     try
