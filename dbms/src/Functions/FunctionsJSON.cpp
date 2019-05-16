@@ -1,6 +1,7 @@
 #include <Functions/FunctionsJSON.h>
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
+#include <Functions/RapidJSONParser.h>
 #include <Common/CpuId.h>
 
 
@@ -16,7 +17,12 @@ void registerFunctionsJSON(FunctionFactory & factory)
         return;
     }
 #endif
+
+#if USE_RAPIDJSON
+    registerFunctionsJSONTemplate<RapidJSONParser>(factory);
+#else
     registerFunctionsJSONTemplate<DummyJSONParser>(factory);
+#endif
 }
 
 }
