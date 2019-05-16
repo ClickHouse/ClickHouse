@@ -23,6 +23,7 @@ SELECT JSONExtractInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 1);
 SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2);
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1);
 SELECT JSONExtractBool('{"passed": true}', 'passed');
+SELECT JSONExtractBool('"HX-=');
 
 SELECT '--JSONExtractString--';
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');
