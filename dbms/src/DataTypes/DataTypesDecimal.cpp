@@ -61,10 +61,13 @@ bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision,
 }
 
 template <typename T>
-void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv)
 {
     UInt32 unread_scale = scale;
-    readDecimalText(istr, x, precision, unread_scale);
+    if (csv)
+        readCSVDecimalText(istr, x, precision, unread_scale);
+    else
+        readDecimalText(istr, x, precision, unread_scale);
     x *= getScaleMultiplier(unread_scale);
 }
 
@@ -76,6 +79,13 @@ void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, co
     static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
+template <typename T>
+void DataTypeDecimal<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    T x;
+    readText(x, istr, true);
+    static_cast<ColumnType &>(column).getData().push_back(x);
+}
 
 template <typename T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
