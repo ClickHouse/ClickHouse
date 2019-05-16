@@ -383,8 +383,9 @@ public:
             {"Array", '['},
             {"Object", '{'},
             {"String", '"'},
-            {"Integer", 'l'},
-            {"Float", 'd'},
+            {"Int64", 'i'},
+            {"UInt64", 'u'},
+            {"Double", 'd'},
             {"Bool", 'b'},
             {"Null", 0}, /// the default value for the column.
         };
@@ -395,9 +396,11 @@ public:
     static bool addValueToColumn(IColumn & dest, const Iterator & it)
     {
         UInt8 type;
-        if (JSONParser::isInteger(it))
-            type = 'l';
-        else if (JSONParser::isFloat(it))
+        if (JSONParser::isInt64(it))
+            type = 'i';
+        else if (JSONParser::isUInt64(it))
+            type = 'u';
+        else if (JSONParser::isDouble(it))
             type = 'd';
         else if (JSONParser::isBool(it))
             type = 'b';
@@ -436,14 +439,19 @@ public:
     {
         NumberType value;
 
-        if (JSONParser::isInteger(it))
+        if (JSONParser::isInt64(it))
         {
-            if (!accurate::convertNumeric(JSONParser::getInteger(it), value))
+            if (!accurate::convertNumeric(JSONParser::getInt64(it), value))
                 return false;
         }
-        else if (JSONParser::isFloat(it))
+        else if (JSONParser::isUInt64(it))
         {
-            if (!accurate::convertNumeric(JSONParser::getFloat(it), value))
+            if (!accurate::convertNumeric(JSONParser::getUInt64(it), value))
+                return false;
+        }
+        else if (JSONParser::isDouble(it))
+        {
+            if (!accurate::convertNumeric(JSONParser::getDouble(it), value))
                 return false;
         }
         else if (JSONParser::isBool(it) && std::is_integral_v<NumberType> && convert_bool_to_integer)
@@ -599,10 +607,19 @@ struct JSONExtractTree
         {
             auto & col_vec = static_cast<ColumnVector<Type> &>(dest);
 
-            if (JSONParser::isInteger(it))
+            if (JSONParser::isInt64(it))
             {
-                size_t value = static_cast<Type>(JSONParser::getInteger(it));
-                if (!only_values.count(value))
+                Type value;
+                if (!accurate::convertNumeric(JSONParser::getInt64(it), value) || !only_values.count(value))
+                    return false;
+                col_vec.insertValue(value);
+                return true;
+            }
+
+            if (JSONParser::isUInt64(it))
+            {
+                Type value;
+                if (!accurate::convertNumeric(JSONParser::getUInt64(it), value) || !only_values.count(value))
                     return false;
                 col_vec.insertValue(value);
                 return true;
@@ -965,14 +982,19 @@ public:
 private:
     static void traverse(const Iterator & it, WriteBuffer & buf)
     {
-        if (JSONParser::isInteger(it))
+        if (JSONParser::isInt64(it))
         {
-            writeIntText(JSONParser::getInteger(it), buf);
+            writeIntText(JSONParser::getInt64(it), buf);
             return;
         }
-        if (JSONParser::isFloat(it))
+        if (JSONParser::isUInt64(it))
         {
-            writeFloatText(JSONParser::getFloat(it), buf);
+            writeIntText(JSONParser::getUInt64(it), buf);
+            return;
+        }
+        if (JSONParser::isDouble(it))
+        {
+            writeFloatText(JSONParser::getDouble(it), buf);
             return;
         }
         if (JSONParser::isBool(it))

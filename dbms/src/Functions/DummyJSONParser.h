@@ -29,8 +29,9 @@ struct DummyJSONParser
     static bool next(Iterator &) { return false; }
     static bool nextKeyValue(Iterator &) { return false; }
     static bool nextKeyValue(Iterator &, StringRef &) { return false; }
-    static bool isInteger(const Iterator &) { return false; }
-    static bool isFloat(const Iterator &) { return false; }
+    static bool isInt64(const Iterator &) { return false; }
+    static bool isUInt64(const Iterator &) { return false; }
+    static bool isDouble(const Iterator &) { return false; }
     static bool isString(const Iterator &) { return false; }
     static bool isArray(const Iterator &) { return false; }
     static bool isObject(const Iterator &) { return false; }
@@ -38,8 +39,9 @@ struct DummyJSONParser
     static bool isNull(const Iterator &) { return false; }
     static StringRef getKey(const Iterator &) { return {}; }
     static StringRef getString(const Iterator &) { return {}; }
-    static Int64 getInteger(const Iterator &) { return 0; }
-    static double getFloat(const Iterator &) { return 0; }
+    static Int64 getInt64(const Iterator &) { return 0; }
+    static UInt64 getUInt64(const Iterator &) { return 0; }
+    static double getDouble(const Iterator &) { return 0; }
     static bool getBool(const Iterator &) { return false; }
 };
 
