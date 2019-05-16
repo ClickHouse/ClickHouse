@@ -355,9 +355,8 @@ void MySQLHandler::comQuery(const String & payload)
     };
     ReadBufferFromMemory query(payload.data() + 1, payload.size() - 1);
     executeQuery(query, *out, true, connection_context, set_content_type, nullptr);
-    if (!with_output) {
+    if (!with_output)
         packet_sender->sendPacket(OK_Packet(0x00, capabilities, 0, 0, 0, 0, ""), true);
-    }
 }
 
 }
