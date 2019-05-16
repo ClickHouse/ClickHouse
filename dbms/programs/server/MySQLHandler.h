@@ -36,13 +36,13 @@ private:
     /// Enables SSL, if client requested.
     MySQLProtocol::HandshakeResponse finishHandshake();
 
-    void comQuery(String payload);
+    void comQuery(const String & payload);
 
-    void comFieldList(String payload);
+    void comFieldList(const String & payload);
 
     void comPing();
 
-    void comInitDB(String payload);
+    void comInitDB(const String & payload);
 
     static String generateScramble();
 
@@ -52,7 +52,7 @@ private:
     Poco::Logger * log;
     Context connection_context;
 
-    MySQLProtocol::PacketSender packet_sender;
+    std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
 
     uint32_t connection_id = 0;
 

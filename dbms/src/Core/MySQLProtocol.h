@@ -5,11 +5,14 @@
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
 #include <Core/Types.h>
 #include <Poco/RandomStream.h>
 #include <Poco/Net/StreamSocket.h>
 #include <random>
 #include <sstream>
+#include <common/logger_useful.h>
+#include <Poco/Logger.h>
 
 /// Implementation of MySQL wire protocol
 
@@ -146,15 +149,25 @@ public:
 class PacketSender
 {
 public:
-    size_t sequence_id = 0;
+    size_t & sequence_id;
+    ReadBuffer * in;
+    WriteBuffer * out;
 
-    PacketSender() = default;
-
-    explicit PacketSender(Poco::Net::StreamSocket & socket, size_t sequence_id=0)
+    /// For reading and writing.
+    PacketSender(ReadBuffer & in, WriteBuffer & out, size_t & sequence_id, const String logger_name)
         : sequence_id(sequence_id)
-        , in(std::make_shared<ReadBufferFromPocoSocket>(socket))
-        , out(std::make_shared<WriteBufferFromPocoSocket>(socket))
-        , log(&Poco::Logger::get("MySQLHandler"))
+        , in(&in)
+        , out(&out)
+        , log(&Poco::Logger::get(logger_name))
+    {
+    }
+
+    /// For writing.
+    PacketSender(WriteBuffer & out, size_t & sequence_id, const String logger_name)
+        : sequence_id(sequence_id)
+        , in(nullptr)
+        , out(&out)
+        , log(&Poco::Logger::get(logger_name))
     {
     }
 
@@ -237,9 +250,6 @@ public:
 private:
     /// Converts packet to text. Is used for debug output.
     static String packetToText(String payload);
-
-    std::shared_ptr<ReadBuffer> in;
-    std::shared_ptr<WriteBuffer> out;
 
     Poco::Logger * log;
 };

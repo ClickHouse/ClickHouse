@@ -1,4 +1,5 @@
 #include <DataStreams/copyData.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Interpreters/executeQuery.h>
@@ -34,8 +35,11 @@ uint32_t MySQLHandler::last_connection_id = 0;
 void MySQLHandler::run()
 {
     connection_context = server.context();
+    connection_context.setDefaultFormat("MySQL");
 
-    packet_sender = PacketSender(socket());
+    in = std::make_shared<ReadBufferFromPocoSocket>(socket());
+    out = std::make_shared<WriteBufferFromPocoSocket>(socket());
+    packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.sequence_id, "MySQLHandler");
 
     try
     {
@@ -47,11 +51,12 @@ void MySQLHandler::run()
          */
         Handshake handshake(connection_id, VERSION_STRING, scramble + '\0');
 
-        packet_sender.sendPacket<Handshake>(handshake, true);
+        packet_sender->sendPacket<Handshake>(handshake, true);
 
         LOG_TRACE(log, "Sent handshake");
 
         HandshakeResponse handshake_response = finishHandshake();
+        connection_context.client_capabilities = handshake_response.capability_flags;
 
         LOG_DEBUG(log, "Capabilities: " << handshake_response.capability_flags
                                         << "\nmax_packet_size: "
@@ -81,12 +86,12 @@ void MySQLHandler::run()
 
         authenticate(handshake_response, scramble);
         OK_Packet ok_packet(0, handshake_response.capability_flags, 0, 0, 0, 0, "");
-        packet_sender.sendPacket(ok_packet, true);
+        packet_sender->sendPacket(ok_packet, true);
 
         while (true)
         {
-            packet_sender.resetSequenceId();
-            String payload = packet_sender.receivePacketPayload();
+            packet_sender->resetSequenceId();
+            String payload = packet_sender->receivePacketPayload();
             int command = payload[0];
             LOG_DEBUG(log, "Received command: " << std::to_string(command) << ". Connection id: " << connection_id << ".");
             try
@@ -119,7 +124,7 @@ void MySQLHandler::run()
             catch (const Exception & exc)
             {
                 log->log(exc);
-                packet_sender.sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
+                packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
             }
         }
     }
@@ -129,35 +134,42 @@ void MySQLHandler::run()
     }
 }
 
+/** Reads 3 bytes, finds out whether it is SSLRequest or HandshakeResponse packet, starts secure connection, if it is SSLRequest.
+ *  Using ReadBufferFromPocoSocket would be less convenient here, because we would have to resize internal buffer many times to prevent reading SSL handshake.
+ *  If we read it from socket, it will be impossible to start SSL connection using Poco. Size of SSLRequest packet payload is 32 bytes, thus we can read at most 36 bytes.
+ */
 MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
 {
-    /** Size of SSLRequest packet is 32 bytes.
-     *  If we read more, then we will read part of SSL handshake, and it will be impossible to start SSL connection using Poco.
-     */
     HandshakeResponse packet;
-    char b[100]; /// Client can send either SSLRequest or HandshakeResponse.
+    char b[100]; /// Buffer for SSLRequest or HandshakeResponse.
     size_t pos = 0;
     while (pos < 3)
     {
         int ret = socket().receiveBytes(b + pos, 36 - pos);
         if (ret == 0)
         {
-            throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 36.", ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception("Cannot read all data. Bytes read: " + std::to_string(pos) + ". Bytes expected: 3.", ErrorCodes::CANNOT_READ_ALL_DATA);
         }
         pos += ret;
     }
 
-    size_t packet_size = *reinterpret_cast<uint32_t *>(b) & 0xFFFFFF;
+    size_t packet_size = *reinterpret_cast<uint32_t *>(b) & 0xFFFFFFu;
     LOG_TRACE(log, "packet size: " << packet_size);
+
+    /// Check if it is SSLRequest.
     if (packet_size == 32)
     {
-        ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-        packet_sender = PacketSender(*ss, 2);
         secure_connection = true;
-        packet_sender.receivePacket(packet);
+        ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
+        in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
+        out = std::make_shared<WriteBufferFromPocoSocket>(*ss);
+        connection_context.sequence_id = 2;
+        packet_sender = std::make_shared<PacketSender>(*in, *out, connection_context.sequence_id, "MySQLHandler");
+        packet_sender->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
     }
     else
     {
+        /// Reading rest of HandshakeResponse.
         while (pos < 4 + packet_size)
         {
             int ret = socket().receiveBytes(b + pos, 4 + packet_size - pos);
@@ -168,7 +180,7 @@ MySQLProtocol::HandshakeResponse MySQLHandler::finishHandshake()
             pos += ret;
         }
         packet.readPayload(std::string(b + 4, packet_size));
-        packet_sender.sequence_id++;
+        packet_sender->sequence_id++;
     }
     return packet;
 }
@@ -191,8 +203,8 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     AuthSwitchResponse response;
     if (handshake_response.auth_plugin_name != Authentication::CachingSHA2)
     {
-        packet_sender.sendPacket(AuthSwitchRequest(Authentication::CachingSHA2, scramble + '\0'), true);
-        packet_sender.receivePacket(response);
+        packet_sender->sendPacket(AuthSwitchRequest(Authentication::CachingSHA2, scramble + '\0'), true);
+        packet_sender->receivePacket(response);
         auth_response = response.value;
         LOG_TRACE(log, "Authentication method mismatch.");
     }
@@ -204,9 +216,9 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
 
     /// Caching SHA2 plugin is used instead of SHA256 only because it can work without OpenSLL.
     /// Fast auth path is not used, because otherwise it would be possible to authenticate using data from users.xml.
-    packet_sender.sendPacket(AuthMoreData("\4"), true);
+    packet_sender->sendPacket(AuthMoreData("\4"), true);
 
-    packet_sender.receivePacket(response);
+    packet_sender->receivePacket(response);
     auth_response = response.value;
 
     auto getOpenSSLError = []() -> String
@@ -238,8 +250,8 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
         LOG_TRACE(log, "Key: " << pem);
 
         AuthMoreData data(pem);
-        packet_sender.sendPacket(data, true);
-        packet_sender.receivePacket(response);
+        packet_sender->sendPacket(data, true);
+        packet_sender->receivePacket(response);
         auth_response = response.value;
     }
     else
@@ -301,20 +313,20 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     catch (const Exception & exc)
     {
         LOG_ERROR(log, "Authentication for user " << handshake_response.username << " failed.");
-        packet_sender.sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
+        packet_sender->sendPacket(ERR_Packet(exc.code(), "00000", exc.message()), true);
         throw;
     }
 }
 
-void MySQLHandler::comInitDB(String payload)
+void MySQLHandler::comInitDB(const String & payload)
 {
     String database = payload.substr(1);
     LOG_DEBUG(log, "Setting current database to " << database);
     connection_context.setCurrentDatabase(database);
-    packet_sender.sendPacket(OK_Packet(0, capabilities, 0, 0, 0, 1, ""), true);
+    packet_sender->sendPacket(OK_Packet(0, capabilities, 0, 0, 0, 1, ""), true);
 }
 
-void MySQLHandler::comFieldList(String payload)
+void MySQLHandler::comFieldList(const String & payload)
 {
     ComFieldList packet;
     packet.readPayload(payload);
@@ -325,78 +337,26 @@ void MySQLHandler::comFieldList(String payload)
         ColumnDefinition column_definition(
             database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
         );
-        packet_sender.sendPacket(column_definition);
+        packet_sender->sendPacket(column_definition);
     }
-    packet_sender.sendPacket(OK_Packet(0xfe, capabilities, 0, 0, 0, 0, ""), true);
+    packet_sender->sendPacket(OK_Packet(0xfe, capabilities, 0, 0, 0, 0, ""), true);
 }
 
 void MySQLHandler::comPing()
 {
-    packet_sender.sendPacket(OK_Packet(0x0, capabilities, 0, 0, 0, 0, ""), true);
+    packet_sender->sendPacket(OK_Packet(0x0, capabilities, 0, 0, 0, 0, ""), true);
 }
 
-void MySQLHandler::comQuery(String payload)
+void MySQLHandler::comQuery(const String & payload)
 {
-    BlockIO res = executeQuery(payload.substr(1), connection_context);
-    FormatSettings format_settings;
-    if (res.in)
-    {
-        LOG_TRACE(log, "Executing query with output.");
-
-        Block header = res.in->getHeader();
-        packet_sender.sendPacket(LengthEncodedNumber(header.columns()));
-
-        for (const ColumnWithTypeAndName & column : header.getColumnsWithTypeAndName())
-        {
-            ColumnDefinition column_definition(column.name, CharacterSet::binary, std::numeric_limits<uint32_t>::max(),
-                                               ColumnType::MYSQL_TYPE_STRING, 0, 0);
-            packet_sender.sendPacket(column_definition);
-
-            LOG_TRACE(log, "Sent " << column.name << " column definition");
-        }
-
-        LOG_TRACE(log, "Sent columns definitions.");
-
-        if (!(capabilities & Capability::CLIENT_DEPRECATE_EOF))
-        {
-            packet_sender.sendPacket(EOF_Packet(0, 0));
-        }
-
-        while (Block block = res.in->read())
-        {
-            size_t rows = block.rows();
-
-            for (size_t i = 0; i < rows; i++)
-            {
-                ResultsetRow row_packet;
-                for (ColumnWithTypeAndName & column : block)
-                {
-                    column.column = column.column->convertToFullColumnIfConst();
-
-                    String column_value;
-                    WriteBufferFromString ostr(column_value);
-
-                    LOG_TRACE(log, "Sending value of type " << column.type->getName() << " of column " << column.column->getName());
-
-                    column.type->serializeAsText(*column.column.get(), i, ostr, format_settings);
-                    ostr.finish();
-
-                    row_packet.appendColumn(std::move(column_value));
-                }
-                packet_sender.sendPacket(row_packet);
-            }
-        }
-
-        LOG_TRACE(log, "Sent rows.");
-    }
-
-    if (capabilities & CLIENT_DEPRECATE_EOF)
-    {
-        packet_sender.sendPacket(OK_Packet(0xfe, capabilities, 0, 0, 0, 0, ""), true);
-    }
-    else
-    {
-        packet_sender.sendPacket(EOF_Packet(0, 0), true);
+    bool with_output = false;
+    std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
+        with_output = true;
+    };
+    ReadBufferFromMemory query(payload.data() + 1, payload.size() - 1);
+    executeQuery(query, *out, true, connection_context, set_content_type, nullptr);
+    if (!with_output) {
+        packet_sender->sendPacket(OK_Packet(0x00, capabilities, 0, 0, 0, 0, ""), true);
     }
 }
 

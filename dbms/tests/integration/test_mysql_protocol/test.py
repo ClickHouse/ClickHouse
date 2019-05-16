@@ -47,8 +47,8 @@ def test_mysql_client(mysql_client, server_address):
     # type: (Container, str) -> None
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
-        -e "select 1 as a;"
-        -e "select 'тест' as b;"
+        -e "SELECT 1 as a;"
+        -e "SELECT 'тест' as b;"
     '''.format(host=server_address, port=server_port), demux=True)
 
     assert stdout == 'a\n1\nb\nтест\n'
@@ -70,6 +70,18 @@ def test_mysql_client(mysql_client, server_address):
     assert stdout == 'count()\n1\n'
     assert stderr == "mysql: [Warning] Using a password on the command line interface can be insecure.\n" \
                      "ERROR 81 (00000) at line 1: Database system2 doesn't exist\n"
+
+    code, (stdout, stderr) = mysql_client.exec_run('''
+        mysql --protocol tcp -h {host} -P {port} default -u default --password=123
+        -e "CREATE DATABASE x;"
+        -e "USE x;"
+        -e "CREATE TABLE table1 (a UInt32) ENGINE = Memory;"
+        -e "INSERT INTO table1 VALUES (0), (1), (5);"
+        -e "INSERT INTO table1 VALUES (0), (1), (5);"
+        -e "SELECT * FROM table1 ORDER BY a;"
+    '''.format(host=server_address, port=server_port), demux=True)
+
+    assert stdout == 'a\n0\n0\n1\n1\n5\n5\n'
 
 
 def test_python_client(server_address):
@@ -95,6 +107,14 @@ def test_python_client(server_address):
         client.select_db('system2')
 
     assert exc_info.value.args == (81, "Database system2 doesn't exist")
+
+    client.select_db('x')
+    cursor = client.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("TRUNCATE TABLE table1")
+    cursor.execute("INSERT INTO table1 VALUES (1), (3)")
+    cursor.execute("INSERT INTO table1 VALUES (1), (4)")
+    cursor.execute("SELECT * FROM table1 ORDER BY a")
+    assert cursor.fetchall() == [{'a': '1'}, {'a': '1'}, {'a': '3'}, {'a': '4'}]
 
 
 def test_golang_client(server_address, golang_container):
