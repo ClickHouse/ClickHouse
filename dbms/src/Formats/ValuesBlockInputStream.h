@@ -32,14 +32,14 @@ public:
     void readPrefix() override { }
     void readSuffix() override { }
 
-    bool read(MutableColumns & columns);
-
 private:
     typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
 
     Block readImpl() override;
+    void readValue(IColumn & column, size_t column_idx, bool generate_template);
 
-    Field parseExpression(MutableColumns & columns, size_t column_idx, bool generate_template);
+    void parseExpression(IColumn & column, size_t column_idx, bool generate_template);
+    inline void assertDelimAfterValue(size_t column_idx);
 
 private:
     PeekableReadBuffer istr;
@@ -47,8 +47,9 @@ private:
     std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
     UInt64 max_block_size;
-    UInt64 rows_in_block = 0;
+    size_t num_columns;
     size_t total_rows = 0;
+
     ParserExpression parser;
     ConstantExpressionTemplates templates;
 };

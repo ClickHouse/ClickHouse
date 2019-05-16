@@ -48,7 +48,7 @@ public:
     /// If position is in own memory, returns buffer with data, which were extracted from sub-buffer,
     /// but not from this buffer, so the data will not be lost after destruction of this buffer.
     /// If position is in sub-buffer, returns empty buffer.
-    BufferWithOwnMemory<ReadBuffer> takeUnreadData();
+    std::shared_ptr<BufferWithOwnMemory<ReadBuffer>> takeUnreadData();
     void assertCanBeDistructed() const;
 
 private:
