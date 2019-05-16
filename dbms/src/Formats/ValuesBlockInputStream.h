@@ -30,7 +30,7 @@ public:
 
 
     void readPrefix() override { }
-    void readSuffix() override { }
+    void readSuffix() override { istr.assertCanBeDistructed(); }
 
 private:
     typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
