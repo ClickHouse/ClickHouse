@@ -5,15 +5,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-echo "SELECT 1 IN 1" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN (1)" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN (1, 2)" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN f(1)" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN (f(1))" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN (f(1), f(2))" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN f(1, 2)" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN 1 + 1" | $CLICKHOUSE_FORMAT # This is quite strange
-echo "SELECT 1 IN 'hello'" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN f('hello')" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN ('hello', 'world')" | $CLICKHOUSE_FORMAT
-echo "SELECT 1 IN f('hello', 'world')" | $CLICKHOUSE_FORMAT
+format="$CLICKHOUSE_FORMAT --oneline"
+
+echo "SELECT 1 IN 1" | $format
+echo "SELECT 1 IN (1)" | $format
+echo "SELECT 1 IN (1, 2)" | $format
+echo "SELECT 1 IN f(1)" | $format
+echo "SELECT 1 IN (f(1))" | $format
+echo "SELECT 1 IN (f(1), f(2))" | $format
+echo "SELECT 1 IN f(1, 2)" | $format
+echo "SELECT 1 IN 1 + 1" | $format
+echo "SELECT 1 IN 'hello'" | $format
+echo "SELECT 1 IN f('hello')" | $format
+echo "SELECT 1 IN ('hello', 'world')" | $format
+echo "SELECT 1 IN f('hello', 'world')" | $format
+echo "SELECT 1 IN (SELECT 1)" | $format
