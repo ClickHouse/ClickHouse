@@ -47,7 +47,7 @@ public:
     virtual void setIndicesDescription(IndicesDescription indices_) override { data.setIndicesDescription(std::move(indices_)); }
 
     virtual const ConstraintsDescription & getConstraintsDescription() const override { return data.getConstraintsDescription(); }
-    virtual void setConstraintsDescription(ConstraintsDescription constraints_) override { data.setConstraintsDescription(constraints_; )}
+    virtual void setConstraintsDescription(ConstraintsDescription constraints_) override { data.setConstraintsDescription(constraints_); }
 
     NameAndTypePair getColumn(const String & column_name) const override { return data.getColumn(column_name); }
     bool hasColumn(const String & column_name) const override { return data.hasColumn(column_name); }
