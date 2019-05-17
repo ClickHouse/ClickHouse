@@ -60,6 +60,10 @@ If the string contains a set of bytes that is not UTF-8, then the behavior is un
 
 Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
+## toValidUTF8
+
+Returns string where all invalid UTF-8 characters are replaced by replacement character `�` (U+FFFD). If there are many invalid characters subsequently, it is collapsed them to one replacement character.
+
 ## reverse
 
 Reverses the string (as a sequence of bytes).
