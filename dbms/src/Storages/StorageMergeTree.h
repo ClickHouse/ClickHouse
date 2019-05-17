@@ -32,8 +32,6 @@ public:
     std::string getDatabaseName() const override { return database_name; }
 
     bool supportsIndexForIn() const override { return true; }
-    virtual const ConstraintsDescription & getConstraints() const override { return data.getConstraints(); }
-    virtual void setConstraints(ConstraintsDescription constraints_) override { data.setConstraints(constraints_); }
 
     BlockInputStreams read(
         const Names & column_names,
