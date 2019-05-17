@@ -269,6 +269,11 @@ protected:
         children.push_back(child);
     }
 
+    /** Check limits.
+      * But only those that can be checked within each separate stream.
+      */
+    bool checkTimeLimit();
+
 private:
     bool enabled_extremes = false;
 
@@ -296,10 +301,9 @@ private:
 
     void updateExtremes(Block & block);
 
-    /** Check limits and quotas.
+    /** Check quotas.
       * But only those that can be checked within each separate stream.
       */
-    bool checkTimeLimit();
     void checkQuota(Block & block);
 
     size_t checkDepthImpl(size_t max_depth, size_t level) const;

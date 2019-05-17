@@ -14,11 +14,11 @@ namespace DB
 class ITableDeclaration
 {
 public:
-    virtual const ColumnsDescription & getColumns() const { return columns; }
-    virtual void setColumns(ColumnsDescription columns_);
+    const ColumnsDescription & getColumns() const;
+    void setColumns(ColumnsDescription columns_);
 
-    virtual const IndicesDescription & getIndicesDescription() const { return indices; }
-    virtual void setIndicesDescription(IndicesDescription indices_);
+    const IndicesDescription & getIndices() const;
+    void setIndices(IndicesDescription indices_);
 
     virtual const ConstraintsDescription & getConstraintsDescription() const { return constraints; }
     virtual void setConstraintsDescription(ConstraintsDescription constraints_);
