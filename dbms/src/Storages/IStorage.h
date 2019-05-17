@@ -120,69 +120,23 @@ public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
     /// the query. If will_add_new_data is true, this means that the query will add new data to the table
     /// (INSERT or a parts merge).
-    TableStructureReadLockHolder lockStructureForShare(bool will_add_new_data, const String & query_id)
-    {
-        TableStructureReadLockHolder result;
-        if (will_add_new_data)
-            result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Read, query_id);
-        result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
-
-        if (is_dropped)
-            throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
-        return result;
-    }
+    TableStructureReadLockHolder lockStructureForShare(bool will_add_new_data, const String & query_id);
 
     /// Acquire this lock at the start of ALTER to lock out other ALTERs and make sure that only you
     /// can modify the table structure. It can later be upgraded to the exclusive lock.
-    TableStructureWriteLockHolder lockAlterIntention(const String & query_id)
-    {
-        TableStructureWriteLockHolder result;
-        result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
-
-        if (is_dropped)
-            throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
-        return result;
-    }
+    TableStructureWriteLockHolder lockAlterIntention(const String & query_id);
 
     /// Upgrade alter intention lock and make sure that no new data is inserted into the table.
     /// This is used by the ALTER MODIFY of the MergeTree storage to consistently determine
     /// the set of parts that needs to be altered.
-    void lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
-    {
-        if (!lock_holder.alter_intention_lock)
-            throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.",
-                ErrorCodes::LOGICAL_ERROR);
-
-        lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-    }
+    void lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id);
 
     /// Upgrade alter intention lock to the full exclusive structure lock. This is done by ALTER queries
     /// to ensure that no other query uses the table structure and it can be safely changed.
-    void lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
-    {
-        if (!lock_holder.alter_intention_lock)
-            throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.",
-                ErrorCodes::LOGICAL_ERROR);
-
-        if (!lock_holder.new_data_structure_lock)
-            lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-        lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
-    }
+    void lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id);
 
     /// Acquire the full exclusive lock immediately. No other queries can run concurrently.
-    TableStructureWriteLockHolder lockExclusively(const String & query_id)
-    {
-        TableStructureWriteLockHolder result;
-        result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
-
-        if (is_dropped)
-            throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
-
-        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-        result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
-
-        return result;
-    }
+    TableStructureWriteLockHolder lockExclusively(const String & query_id);
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
