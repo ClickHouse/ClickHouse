@@ -400,7 +400,7 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
     {
         columns = as_storage->getColumns();
         indices = as_storage->getIndices();
-        constraints = as_storage->getConstraintsDescription();
+        constraints = as_storage->getConstraints();
     }
     else if (create.select)
     {
