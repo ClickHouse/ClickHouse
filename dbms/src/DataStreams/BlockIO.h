@@ -2,6 +2,8 @@
 
 #include <DataStreams/IBlockStream_fwd.h>
 
+#include <functional>
+
 
 namespace DB
 {
