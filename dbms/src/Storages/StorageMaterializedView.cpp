@@ -11,6 +11,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/StorageFactory.h>
 

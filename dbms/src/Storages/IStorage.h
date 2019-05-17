@@ -1,18 +1,19 @@
 #pragma once
 
-#include <Common/Exception.h>
-#include <Common/RWLock.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Databases/IDatabase.h>
-#include <Storages/ITableDeclaration.h>
-#include <Storages/TableStructureLockHolder.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Interpreters/CancellationCode.h>
-#include <shared_mutex>
-#include <memory>
-#include <optional>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/TableStructureLockHolder.h>
 #include <Common/ActionLock.h>
+#include <Common/Exception.h>
+#include <Common/RWLock.h>
+
+#include <optional>
+#include <shared_mutex>
 
 
 namespace DB
@@ -25,21 +26,10 @@ namespace ErrorCodes
 }
 
 class Context;
-class IBlockInputStream;
-class IBlockOutputStream;
 
 using StorageActionBlockType = size_t;
 
-using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockInputStreams = std::vector<BlockInputStreamPtr>;
-
 class ASTCreateQuery;
-
-class IStorage;
-
-using StoragePtr = std::shared_ptr<IStorage>;
-using StorageWeakPtr = std::weak_ptr<IStorage>;
 
 struct Settings;
 
@@ -48,42 +38,85 @@ class MutationCommands;
 class PartitionCommands;
 
 
-/** Storage. Responsible for
+/** Storage. Describes the table. Responsible for
   * - storage of the table data;
   * - the definition in which files (or not in files) the data is stored;
   * - data lookups and appends;
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, private boost::noncopyable, public ITableDeclaration
+class IStorage : public std::enable_shared_from_this<IStorage>
 {
 public:
+    IStorage() = default;
+    explicit IStorage(ColumnsDescription columns_);
+
+    virtual ~IStorage() = default;
+    IStorage(const IStorage &) = delete;
+    IStorage & operator=(const IStorage &) = delete;
+
     /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
 
     /// The name of the table.
     virtual std::string getTableName() const = 0;
-    virtual std::string getDatabaseName() const { return {}; }  // FIXME: should be abstract method.
+    virtual std::string getDatabaseName() const { return {}; }  // FIXME: should be an abstract method!
 
-    /** Returns true if the storage receives data from a remote server or servers. */
+    /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
-    /** Returns true if the storage supports queries with the SAMPLE section. */
+    /// Returns true if the storage supports queries with the SAMPLE section.
     virtual bool supportsSampling() const { return false; }
 
-    /** Returns true if the storage supports queries with the FINAL section. */
+    /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
 
-    /** Returns true if the storage supports queries with the PREWHERE section. */
+    /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
+    /// Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas.
     virtual bool supportsReplication() const { return false; }
 
-    /** Returns true if the storage supports deduplication of inserted data blocks . */
+    /// Returns true if the storage supports deduplication of inserted data blocks.
     virtual bool supportsDeduplication() const { return false; }
 
 
+public: /// thread-unsafe part
+    const ColumnsDescription & getColumns() const;
+    void setColumns(ColumnsDescription columns_);
+
+    const IndicesDescription & getIndices() const;
+    void setIndices(IndicesDescription indices_);
+
+    /// NOTE: these methods should include virtual columns,
+    ///       but should NOT include ALIAS columns (they are treated separately).
+    virtual NameAndTypePair getColumn(const String & column_name) const;
+    virtual bool hasColumn(const String & column_name) const;
+
+    Block getSampleBlock() const;
+    Block getSampleBlockNonMaterialized() const;
+    Block getSampleBlockForColumns(const Names & column_names) const; /// including virtual and alias columns.
+
+    /// Verify that all the requested names are in the table and are set correctly:
+    /// list of names is not empty and the names do not repeat.
+    void check(const Names & column_names) const;
+
+    /// Check that all the requested names are in the table and have the correct types.
+    void check(const NamesAndTypesList & columns) const;
+
+    /// Check that all names from the intersection of `names` and `columns` are in the table and have the same types.
+    void check(const NamesAndTypesList & columns, const Names & column_names) const;
+
+    /// Check that the data block contains all the columns of the table with the correct types,
+    /// contains only the columns of the table, and all the columns are different.
+    /// If |need_all| is set, then checks that all the columns of the table are in the block.
+    void check(const Block & block, bool need_all = false) const;
+
+private:
+    ColumnsDescription columns;
+    IndicesDescription indices;
+
+public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
     /// the query. If will_add_new_data is true, this means that the query will add new data to the table
     /// (INSERT or a parts merge).
@@ -335,9 +368,6 @@ public:
     /// Returns additional columns that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
 
-    using ITableDeclaration::ITableDeclaration;
-    using std::enable_shared_from_this<IStorage>::shared_from_this;
-
 private:
     /// You always need to take the next three locks in this order.
 
@@ -356,8 +386,5 @@ private:
     /// and in share mode by other queries.
     mutable RWLock structure_lock = RWLockImpl::create();
 };
-
-/// table name -> table
-using Tables = std::map<String, StoragePtr>;
 
 }
