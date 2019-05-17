@@ -35,6 +35,7 @@ void registerAggregateFunctionMLMethod(AggregateFunctionFactory &);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &);
 void registerAggregateFunctionMoving(AggregateFunctionFactory &);
+void registerAggregateFunctionIncrementalClustering(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
@@ -77,6 +78,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionEntropy(factory);
         registerAggregateFunctionSimpleLinearRegression(factory);
         registerAggregateFunctionMoving(factory);
+        registerAggregateFunctionIncrementalClustering(factory);
     }
 
     {
