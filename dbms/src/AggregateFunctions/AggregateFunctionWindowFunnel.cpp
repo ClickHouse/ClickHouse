@@ -16,7 +16,7 @@ namespace
 
 template <template <typename> class Data>
 AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params)
-{   
+{
     if (params.size() != 1)
         throw Exception{"Aggregate function " + name + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
