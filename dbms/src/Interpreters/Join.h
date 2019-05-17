@@ -18,7 +18,7 @@
 #include <Columns/ColumnFixedString.h>
 
 #include <DataStreams/SizeLimits.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <variant>
 #include <common/constexpr_helpers.h>
 

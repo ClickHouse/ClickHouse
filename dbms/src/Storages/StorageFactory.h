@@ -1,7 +1,9 @@
 #pragma once
 
 #include <Common/NamePrompter.h>
-#include <Storages/IStorage.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
 #include <ext/singleton.h>
 #include <unordered_map>
 
