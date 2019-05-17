@@ -7,14 +7,16 @@ namespace DB
 
 /** name CHECK logical_expr
  */
-class ASTConstraintDeclaration : public IAST {
+class ASTConstraintDeclaration : public IAST
+{
 public:
     String name;
     IAST *expr;
 
     String getID(char) const override { return "Constraint"; }
 
-    ASTPtr clone() const override {
+    ASTPtr clone() const override
+    {
         auto res = std::make_shared<ASTConstraintDeclaration>();
 
         res->name = name;
@@ -25,7 +27,8 @@ public:
         return res;
     }
 
-    void formatImpl(const FormatSettings &s, FormatState &state, FormatStateStacked frame) const override {
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override
+    {
         frame.need_parens = false;
         std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
