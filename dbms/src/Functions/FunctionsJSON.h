@@ -108,50 +108,12 @@ private:
             const ColumnString::Chars & chars = col_json_string->getChars();
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
-            /// Prepare list of moves.
-            std::vector<Move> moves;
-            constexpr size_t num_extra_arguments = Impl<JSONParser>::num_extra_arguments;
-            const size_t num_moves = arguments.size() - num_extra_arguments - 1;
-            moves.reserve(num_moves);
-            for (const auto i : ext::range(0, num_moves))
-            {
-                const auto & column = block.getByPosition(arguments[i + 1]);
-                if (!isString(column.type) && !isInteger(column.type))
-                    throw Exception{"The argument " + std::to_string(i + 2) + " of function " + String(Name::name)
-                                        + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-                if (column.column->isColumnConst())
-                {
-                    const auto & column_const = static_cast<const ColumnConst &>(*column.column);
-                    if (isString(column.type))
-                        moves.emplace_back(MoveType::ConstKey, column_const.getField().get<String>());
-                    else
-                        moves.emplace_back(MoveType::ConstIndex, column_const.getField().get<Int64>());
-                }
-                else
-                {
-                    if (isString(column.type))
-                        moves.emplace_back(MoveType::Key, "");
-                    else
-                        moves.emplace_back(MoveType::Index, 0);
-                }
-            }
+            std::vector<Move> moves = prepareListOfMoves(block, arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
             if (parser.need_preallocate)
-            {
-                size_t max_size = 0;
-                for (const auto i : ext::range(0, input_rows_count))
-                    if (max_size < offsets[i] - offsets[i - 1])
-                        max_size = offsets[i] - offsets[i - 1];
-
-                if (max_size < 1)
-                    max_size = 1;
-
-                parser.preallocate(max_size);
-            }
+                parser.preallocate(calculateMaxSize(offsets));
 
             Impl<JSONParser> impl;
 
@@ -160,7 +122,8 @@ private:
 
             for (const auto i : ext::range(0, input_rows_count))
             {
-                bool ok = parser.parse(reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1);
+                StringRef json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
+                bool ok = parser.parse(json);
 
                 if (ok)
                 {
@@ -215,6 +178,7 @@ private:
             ConstKey,
             ConstIndex,
         };
+
         struct Move
         {
             Move(MoveType type_, size_t index_ = 0) : type(type_), index(index_) {}
@@ -224,6 +188,39 @@ private:
             String key;
         };
 
+        static std::vector<Move> prepareListOfMoves(Block & block, const ColumnNumbers & arguments)
+        {
+            constexpr size_t num_extra_arguments = Impl<JSONParser>::num_extra_arguments;
+            const size_t num_moves = arguments.size() - num_extra_arguments - 1;
+            std::vector<Move> moves;
+            moves.reserve(num_moves);
+            for (const auto i : ext::range(0, num_moves))
+            {
+                const auto & column = block.getByPosition(arguments[i + 1]);
+                if (!isString(column.type) && !isInteger(column.type))
+                    throw Exception{"The argument " + std::to_string(i + 2) + " of function " + String(Name::name)
+                                        + " should be a string specifying key or an integer specifying index, illegal type: " + column.type->getName(),
+                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+                if (column.column->isColumnConst())
+                {
+                    const auto & column_const = static_cast<const ColumnConst &>(*column.column);
+                    if (isString(column.type))
+                        moves.emplace_back(MoveType::ConstKey, column_const.getField().get<String>());
+                    else
+                        moves.emplace_back(MoveType::ConstIndex, column_const.getField().get<Int64>());
+                }
+                else
+                {
+                    if (isString(column.type))
+                        moves.emplace_back(MoveType::Key, "");
+                    else
+                        moves.emplace_back(MoveType::Index, 0);
+                }
+            }
+            return moves;
+        }
+
         using Iterator = typename JSONParser::Iterator;
 
         /// Performs moves of types MoveType::Index and MoveType::ConstIndex.
@@ -231,51 +228,17 @@ private:
         {
             if (JSONParser::isArray(it))
             {
-                if (!JSONParser::downToArray(it))
-                    return false;
-                size_t steps;
                 if (index > 0)
-                {
-                    steps = index - 1;
-                }
+                    return JSONParser::arrayElementByIndex(it, index - 1);
                 else
-                {
-                    size_t length = 1;
-                    Iterator it2 = it;
-                    while (JSONParser::next(it2))
-                        ++length;
-                    steps = index + length;
-                }
-                while (steps--)
-                {
-                    if (!JSONParser::next(it))
-                        return false;
-                }
-                return true;
+                    return JSONParser::arrayElementByIndex(it, JSONParser::sizeOfArray(it) + index);
             }
             if (JSONParser::isObject(it))
             {
-                if (!JSONParser::downToObject(it))
-                    return false;
-                size_t steps;
                 if (index > 0)
-                {
-                    steps = index - 1;
-                }
+                    return JSONParser::objectMemberByIndex(it, index - 1);
                 else
-                {
-                    size_t length = 1;
-                    Iterator it2 = it;
-                    while (JSONParser::nextKeyValue(it2))
-                        ++length;
-                    steps = index + length;
-                }
-                while (steps--)
-                {
-                    if (!JSONParser::nextKeyValue(it))
-                        return false;
-                }
-                return true;
+                    return JSONParser::objectMemberByIndex(it, JSONParser::sizeOfObject(it) + index);
             }
             return false;
         }
@@ -284,17 +247,20 @@ private:
         static bool moveIteratorToElementByKey(Iterator & it, const String & key)
         {
             if (JSONParser::isObject(it))
-            {
-                StringRef current_key;
-                if (!JSONParser::downToObject(it, current_key))
-                    return false;
-                do
-                {
-                    if (current_key == key)
-                        return true;
-                } while (JSONParser::nextKeyValue(it, current_key));
-            }
+                return JSONParser::objectMemberByName(it, key);
             return false;
+        }
+
+        static size_t calculateMaxSize(const ColumnString::Offsets & offsets)
+        {
+            size_t max_size = 0;
+            for (const auto i : ext::range(0, offsets.size()))
+                if (max_size < offsets[i] - offsets[i - 1])
+                    max_size = offsets[i] - offsets[i - 1];
+
+            if (max_size < 1)
+                max_size = 1;
+            return max_size;
         }
     };
 };
@@ -347,27 +313,9 @@ public:
     {
         size_t size;
         if (JSONParser::isArray(it))
-        {
-            size = 0;
-            Iterator it2 = it;
-            if (JSONParser::downToArray(it2))
-            {
-                do
-                    ++size;
-                while (JSONParser::next(it2));
-            }
-        }
+            size = JSONParser::sizeOfArray(it);
         else if (JSONParser::isObject(it))
-        {
-            size = 0;
-            Iterator it2 = it;
-            if (JSONParser::downToObject(it2))
-            {
-                do
-                    ++size;
-                while (JSONParser::nextKeyValue(it2));
-            }
-        }
+            size = JSONParser::sizeOfObject(it);
         else
             return false;
 
@@ -393,7 +341,7 @@ public:
     using Iterator = typename JSONParser::Iterator;
     static bool addValueToColumn(IColumn & dest, const Iterator & it)
     {
-        if (!JSONParser::parentScopeIsObject(it))
+        if (!JSONParser::isObjectMember(it))
             return false;
         StringRef key = JSONParser::getKey(it);
         ColumnString & col_str = static_cast<ColumnString &>(dest);
@@ -705,7 +653,7 @@ struct JSONExtractTree
                 return false;
 
             Iterator it2 = it;
-            if (!JSONParser::downToArray(it2))
+            if (!JSONParser::firstArrayElement(it2))
                 return false;
 
             ColumnArray & col_arr = static_cast<ColumnArray &>(dest);
@@ -720,7 +668,7 @@ struct JSONExtractTree
                 else
                     data.insertDefault();
             }
-            while (JSONParser::next(it2));
+            while (JSONParser::nextArrayElement(it2));
 
             if (!were_valid_elements)
             {
@@ -770,7 +718,7 @@ struct JSONExtractTree
             if (JSONParser::isArray(it))
             {
                 Iterator it2 = it;
-                if (!JSONParser::downToArray(it2))
+                if (!JSONParser::firstArrayElement(it2))
                     return false;
 
                 size_t index = 0;
@@ -782,7 +730,7 @@ struct JSONExtractTree
                         tuple.getColumn(index).insertDefault();
                     ++index;
                 }
-                while (JSONParser::next(it2));
+                while (JSONParser::nextArrayElement(it2));
 
                 set_size(old_size + static_cast<size_t>(were_valid_elements));
                 return were_valid_elements;
@@ -793,7 +741,7 @@ struct JSONExtractTree
                 if (name_to_index_map.empty())
                 {
                     Iterator it2 = it;
-                    if (!JSONParser::downToObject(it2))
+                    if (!JSONParser::firstObjectMember(it2))
                         return false;
 
                     size_t index = 0;
@@ -805,13 +753,13 @@ struct JSONExtractTree
                             tuple.getColumn(index).insertDefault();
                         ++index;
                     }
-                    while (JSONParser::nextKeyValue(it2));
+                    while (JSONParser::nextObjectMember(it2));
                 }
                 else
                 {
                     Iterator it2 = it;
                     StringRef key;
-                    if (!JSONParser::downToObject(it2, key))
+                    if (!JSONParser::firstObjectMember(it2, key))
                         return false;
 
                     do
@@ -823,7 +771,7 @@ struct JSONExtractTree
                                 were_valid_elements = true;
                         }
                     }
-                    while (JSONParser::nextKeyValue(it2, key));
+                    while (JSONParser::nextObjectMember(it2, key));
                 }
 
                 set_size(old_size + static_cast<size_t>(were_valid_elements));
@@ -965,7 +913,7 @@ public:
 
         StringRef key;
         Iterator it2 = it;
-        if (!JSONParser::downToObject(it2, key))
+        if (!JSONParser::firstObjectMember(it2, key))
             return false;
 
         do
@@ -973,7 +921,7 @@ public:
             if (extract_tree->addValueToColumn(col_value, it2))
                 col_key.insertData(key.data, key.size);
         }
-        while (JSONParser::nextKeyValue(it2, key));
+        while (JSONParser::nextObjectMember(it2, key));
 
         if (col_tuple.size() == old_size)
             return false;
@@ -1047,10 +995,10 @@ private:
         {
             writeChar('[', buf);
             Iterator it2 = it;
-            if (JSONParser::downToArray(it2))
+            if (JSONParser::firstArrayElement(it2))
             {
                 traverse(it2, buf);
-                while (JSONParser::next(it2))
+                while (JSONParser::nextArrayElement(it2))
                 {
                     writeChar(',', buf);
                     traverse(it2, buf);
@@ -1064,12 +1012,12 @@ private:
             writeChar('{', buf);
             Iterator it2 = it;
             StringRef key;
-            if (JSONParser::downToObject(it2, key))
+            if (JSONParser::firstObjectMember(it2, key))
             {
                 writeJSONString(key, buf, format_settings());
                 writeChar(':', buf);
                 traverse(it2, buf);
-                while (JSONParser::nextKeyValue(it2, key))
+                while (JSONParser::nextObjectMember(it2, key))
                 {
                     writeChar(',', buf);
                     writeJSONString(key, buf, format_settings());
