@@ -9,19 +9,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
-#include <ext/range.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
 
 struct ComparePairFirst final
 {
@@ -194,15 +186,6 @@ public:
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params)
     {
-        for (const auto i : ext::range(1, arguments.size()))
-        {
-            auto cond_arg = arguments[i].get();
-            if (!isUInt8(cond_arg))
-                throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) + " of aggregate function "
-                        + getName() + ", must be UInt8",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
         events_size = arguments.size() - 1;
         window = params.at(0).safeGet<UInt64>();
     }
