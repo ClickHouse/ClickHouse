@@ -13,7 +13,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-
 namespace DB
 {
 
@@ -33,10 +32,11 @@ struct ComparePairFirst final
     }
 };
 
+static constexpr auto max_events = 32;
+template <typename T>
 struct AggregateFunctionWindowFunnelData
 {
-    static constexpr auto max_events = 32;
-    using TimestampEvent = std::pair<UInt32, UInt8>;
+    using TimestampEvent = std::pair<T, UInt8>;
 
     static constexpr size_t bytes_on_stack = 64;
     using TimestampEvents = PODArray<TimestampEvent, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
@@ -51,7 +51,7 @@ struct AggregateFunctionWindowFunnelData
         return events_list.size();
     }
 
-    void add(UInt32 timestamp, UInt8 event)
+    void add(T timestamp, UInt8 event)
     {
         // Since most events should have already been sorted by timestamp.
         if (sorted && events_list.size() > 0 && events_list.back().first > timestamp)
@@ -119,7 +119,7 @@ struct AggregateFunctionWindowFunnelData
         events_list.clear();
         events_list.reserve(size);
 
-        UInt32 timestamp;
+        T timestamp;
         UInt8 event;
 
         for (size_t i = 0; i < size; ++i)
@@ -137,11 +137,12 @@ struct AggregateFunctionWindowFunnelData
   * Usage:
   * - windowFunnel(window)(timestamp, cond1, cond2, cond3, ....)
   */
+template <typename T, typename Data>
 class AggregateFunctionWindowFunnel final
-    : public IAggregateFunctionDataHelper<AggregateFunctionWindowFunnelData, AggregateFunctionWindowFunnel>
+    : public IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>
 {
 private:
-    UInt32 window;
+    UInt64 window;
     UInt8 events_size;
 
 
@@ -149,22 +150,24 @@ private:
     // The level path must be 1---2---3---...---check_events_size, find the max event level that statisfied the path in the sliding window.
     // If found, returns the max event level, else return 0.
     // The Algorithm complexity is O(n).
-    UInt8 getEventLevel(const AggregateFunctionWindowFunnelData & data) const
+    UInt8 getEventLevel(const Data & data) const
     {
         if (data.size() == 0)
             return 0;
         if (events_size == 1)
             return 1;
 
-        const_cast<AggregateFunctionWindowFunnelData &>(data).sort();
+        const_cast<Data &>(data).sort();
 
-        // events_timestamp stores the timestamp that latest i-th level event happen withing time window after previous level event.
-        // timestamp defaults to -1, which unsigned timestamp value never meet
-        std::vector<Int32> events_timestamp(events_size, -1);
+        /// events_timestamp stores the timestamp that latest i-th level event happen withing time window after previous level event.
+        /// timestamp defaults to -1, which unsigned timestamp value never meet
+        /// there may be some bugs when UInt64 type timstamp overflows Int64, but it works on most cases.
+        std::vector<Int64> events_timestamp(events_size, -1);
         for (const auto & pair : data.events_list)
         {
-            const auto & timestamp = pair.first;
+            const T & timestamp = pair.first;
             const auto & event_idx = pair.second - 1;
+
             if (event_idx == 0)
                 events_timestamp[0] = timestamp;
             else if (events_timestamp[event_idx - 1] >= 0 && timestamp <= events_timestamp[event_idx - 1] + window)
@@ -189,13 +192,8 @@ public:
     }
 
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionWindowFunnelData, AggregateFunctionWindowFunnel>(arguments, params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params)
     {
-        const auto time_arg = arguments.front().get();
-        if (!WhichDataType(time_arg).isDateTime() && !WhichDataType(time_arg).isUInt32())
-            throw Exception{"Illegal type " + time_arg->getName() + " of first argument of aggregate function " + getName()
-                + ", must be DateTime or UInt32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
         for (const auto i : ext::range(1, arguments.size()))
         {
             auto cond_arg = arguments[i].get();
@@ -217,7 +215,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        const auto timestamp = static_cast<const ColumnVector<UInt32> *>(columns[0])->getData()[row_num];
+        const auto timestamp = static_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
         // reverse iteration and stable sorting are needed for events that are qualified by more than one condition.
         for (auto i = events_size; i > 0; --i)
         {
