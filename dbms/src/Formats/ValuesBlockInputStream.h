@@ -31,7 +31,7 @@ public:
 
 
     void readPrefix() override { }
-    void readSuffix() override { istr.assertCanBeDistructed(); }
+    void readSuffix() override { istr.assertCanBeDestructed(); }
 
 private:
     typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;

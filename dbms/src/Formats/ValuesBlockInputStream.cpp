@@ -65,7 +65,7 @@ Block ValuesBlockInputStream::readImpl()
             for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
             {
                 skipWhitespaceIfAny(istr);
-                istr.setCheckpoint();
+                PeekableReadBufferCheckpoint checkpoint(istr);
 
                 bool parse_separate_value = true;
                 if (templates[column_idx])
@@ -95,8 +95,6 @@ Block ValuesBlockInputStream::readImpl()
                 /// so it makes possible to parse next rows much faster if expressions in next rows have the same structure
                 if (parse_separate_value)
                     readValue(*columns[column_idx], column_idx, rows_in_block == 0);
-
-                istr.dropCheckpoint();
             }
 
             skipWhitespaceIfAny(istr);
