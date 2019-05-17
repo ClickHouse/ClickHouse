@@ -497,11 +497,11 @@ The default value is 7500.
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
 
 
-## load_balancing
+## load_balancing {#settings-load_balancing}
 
 Specifies the algorithm of replicas selection that is used for distributed query processing.
 
-Performing the distributed query in replicated setup, ClickHouse should define an order that will be used for sending the query to replicas. ClickHouse supports the following algorithms of choosing replicas:
+ClickHouse supports the following algorithms of choosing replicas:
 
 - [Random](#load_balancing-random) (by default)
 - [Nearest hostname](#load_balancing-nearest_hostname)
@@ -550,6 +550,17 @@ load_balancing = first_or_random
 This algorithm chooses the first replica in order or a random replica if the first one is unavailable. It is effective in cross-replication topology setups, but it useless in other configurations.
 
 The `first or random` algorithm solves the problem of the `in order` algorithm. The problem is: if one replica goes down, the next one handles twice the usual load while remaining ones handle usual traffic. When using the `first or random` algorithm, the load on replicas is leveled.
+
+## prefer_localhost_replica {#settings-prefer_localhost_replica}
+
+Enables/disables preferable using the localhost replica when processing distributed queries.
+
+Possible values:
+
+- 1 — ClickHouse always sends a query to the localhost replica if it exists.
+- 0 — ClickHouse uses the balancing strategy specified by the [load_balancing](#settings-load_balancing) setting.
+
+Default value: 1.
 
 ## totals_mode
 
