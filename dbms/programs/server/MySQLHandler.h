@@ -28,6 +28,7 @@ public:
             , public_key(public_key)
             , private_key(private_key)
     {
+        log->setLevel("information");
     }
 
     void run() final;
