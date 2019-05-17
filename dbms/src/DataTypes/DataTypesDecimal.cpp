@@ -6,7 +6,7 @@
 #include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/readFloatText.h>
+#include <IO/readDecimalText.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
@@ -49,6 +49,15 @@ void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, W
 {
     T value = static_cast<const ColumnType &>(column).getData()[row_num];
     writeText(value, scale, ostr);
+}
+
+template <typename T>
+bool DataTypeDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+{
+    UInt32 unread_scale = scale;
+    bool done = tryReadDecimalText(istr, x, precision, unread_scale);
+    x *= getScaleMultiplier(unread_scale);
+    return done;
 }
 
 template <typename T>

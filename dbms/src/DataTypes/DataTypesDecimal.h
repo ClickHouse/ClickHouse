@@ -1,4 +1,6 @@
 #pragma once
+#include <cmath>
+
 #include <common/arithmeticOverflow.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
@@ -178,6 +180,7 @@ public:
 
     void readText(T & x, ReadBuffer & istr, bool csv = false) const { readText(x, istr, precision, scale, csv); }
     static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv = false);
+    static bool tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
     static T getScaleMultiplier(UInt32 scale);
 
 private:
@@ -319,7 +322,11 @@ convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
     using FromFieldType = typename FromDataType::FieldType;
 
     if constexpr (std::is_floating_point_v<FromFieldType>)
+    {
+        if (!std::isfinite(value))
+            throw Exception("Decimal convert overflow. Cannot convert infinity or NaN to decimal", ErrorCodes::DECIMAL_OVERFLOW);
         return value * ToDataType::getScaleMultiplier(scale);
+    }
     else
     {
         if constexpr (std::is_same_v<FromFieldType, UInt64>)
