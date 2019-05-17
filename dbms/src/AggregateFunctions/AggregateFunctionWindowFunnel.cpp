@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
+#include <ext/range.h>
+
 
 namespace DB
 {
@@ -12,9 +14,15 @@ namespace DB
 namespace
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 template <template <typename> class Data>
 AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params)
-{
+{   
     if (params.size() != 1)
         throw Exception{"Aggregate function " + name + " requires exactly one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
@@ -23,6 +31,14 @@ AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & nam
 
     if (arguments.size() > max_events + 1)
         throw Exception("Too many event arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    for (const auto i : ext::range(1, arguments.size()))
+    {
+        auto cond_arg = arguments[i].get();
+        if (!isUInt8(cond_arg))
+            throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) + " of aggregate function "
+                    + name + ", must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+    }
 
     AggregateFunctionPtr res(createWithUnsignedIntegerType<AggregateFunctionWindowFunnel, Data>(*arguments[0], arguments, params));
     WhichDataType which(arguments.front().get());
