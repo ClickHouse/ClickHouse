@@ -20,8 +20,8 @@ public:
     const IndicesDescription & getIndices() const;
     void setIndices(IndicesDescription indices_);
 
-    virtual const ConstraintsDescription & getConstraintsDescription() const { return constraints; }
-    virtual void setConstraintsDescription(ConstraintsDescription constraints_);
+    virtual const ConstraintsDescription & getConstraints() const { return constraints; }
+    virtual void setConstraints(ConstraintsDescription constraints_);
 
     /// NOTE: These methods should include virtual columns, but should NOT include ALIAS columns
     /// (they are treated separately).

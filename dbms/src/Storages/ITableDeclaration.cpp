@@ -46,7 +46,7 @@ void ITableDeclaration::setIndices(IndicesDescription indices_)
     indices = std::move(indices_);
 }
 
-void ITableDeclaration::setConstraintsDescription(ConstraintsDescription constraints_)
+void ITableDeclaration::setConstraints(ConstraintsDescription constraints_)
 {
     constraints = std::move(constraints_);
 }
