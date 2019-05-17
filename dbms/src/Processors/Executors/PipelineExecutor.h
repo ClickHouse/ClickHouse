@@ -79,6 +79,9 @@ private:
 
     std::vector<std::thread> threads;
 
+    std::mutex task_mutex;
+    std::condition_variable task_condvar;
+
 public:
     explicit PipelineExecutor(Processors processors);
     void execute(size_t num_threads);

@@ -215,7 +215,10 @@ void PipelineExecutor::addJob(UInt64 pid)
 
         graph[pid].execution_state->job = std::move(job);
 
-        while (!task_queue.push(graph[pid].execution_state.get()));
+        while (!task_queue.push(graph[pid].execution_state.get()))
+            sleep(0);
+
+        task_condvar.notify_one();
         ++num_tasks_to_wait;
     }
     else
@@ -360,6 +363,8 @@ void PipelineExecutor::execute(size_t num_threads)
         SCOPE_EXIT(
                 finished = true;
 
+                task_condvar.notify_all();
+
                 for (auto & thread : threads)
                     thread.join();
         );
@@ -423,6 +428,9 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                     /// Note: we don't wait in thread like in ordinary thread pool.
                     /// Probably, it's better to add waiting on condition variable.
                     /// But not will avoid it to escape extra locking.
+
+                    std::unique_lock lock(task_mutex);
+                    task_condvar.wait(lock);
                 }
             });
         }
@@ -458,8 +466,6 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             }
         }
     }
-
-    finished = true;
 }
 
 String PipelineExecutor::dumpPipeline() const
