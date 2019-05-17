@@ -134,6 +134,8 @@ void PipelineExecutor::processFinishedExecutionQueue()
     UInt64 finished_job = graph.size();
     while (finished_execution_queue.pop(finished_job))
     {
+        ++graph[finished_job].execution_state->num_executed_jobs;
+
         if (graph[finished_job].execution_state->exception)
             std::rethrow_exception(graph[finished_job].execution_state->exception);
 
@@ -470,6 +472,12 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
 String PipelineExecutor::dumpPipeline() const
 {
+    for (auto & node : graph)
+    {
+        if (node.execution_state)
+            node.processor->setDescription("(" + std::to_string(node.execution_state->num_executed_jobs) + ")");
+    }
+
     std::vector<IProcessor::Status> statuses;
     std::vector<IProcessor *> proc_list;
     statuses.reserve(graph.size());

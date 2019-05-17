@@ -39,6 +39,7 @@ private:
     {
         std::exception_ptr exception;
         std::function<void()> job;
+        size_t num_executed_jobs = 0;
     };
 
     struct Node
