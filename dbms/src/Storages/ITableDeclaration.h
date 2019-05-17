@@ -2,6 +2,7 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/ConstraintsDescription.h>
 
 
 namespace DB
@@ -18,6 +19,9 @@ public:
 
     virtual const IndicesDescription & getIndicesDescription() const { return indices; }
     virtual void setIndicesDescription(IndicesDescription indices_);
+
+    virtual const ConstraintsDescription & getConstraintsDescription() const { return constraints; }
+    virtual void setConstraintsDescription(ConstraintsDescription constraints_);
 
     /// NOTE: These methods should include virtual columns, but should NOT include ALIAS columns
     /// (they are treated separately).
@@ -57,6 +61,7 @@ public:
 private:
     ColumnsDescription columns;
     IndicesDescription indices;
+    ConstraintsDescription constraints;
 };
 
 }
