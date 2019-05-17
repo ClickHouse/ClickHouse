@@ -23,7 +23,7 @@ extern const UInt8 length_of_utf8_sequence[256];
 
 struct ToValidUTF8Impl
 {
-    static void processOne(const char * begin, const char * end, WriteBuffer & write_buffer)
+    static void toValidUTF8One(const char * begin, const char * end, WriteBuffer & write_buffer)
     {
         static constexpr std::string_view replacement = "\xEF\xBF\xBD";
 
@@ -116,7 +116,7 @@ struct ToValidUTF8Impl
         {
             const char * haystack_data = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t haystack_size = offsets[i] - prev_offset - 1;
-            processOne(haystack_data, haystack_data + haystack_size, write_buffer);
+            toValidUTF8One(haystack_data, haystack_data + haystack_size, write_buffer);
             writeChar(0, write_buffer);
             res_offsets[i] = write_buffer.count();
             prev_offset = offsets[i];
