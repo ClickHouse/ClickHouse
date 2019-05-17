@@ -49,7 +49,7 @@ public:
     /// but not from this buffer, so the data will not be lost after destruction of this buffer.
     /// If position is in sub-buffer, returns empty buffer.
     std::shared_ptr<BufferWithOwnMemory<ReadBuffer>> takeUnreadData();
-    void assertCanBeDistructed() const;
+    void assertCanBeDestructed() const;
 
 private:
 
@@ -59,6 +59,7 @@ private:
     inline bool currentlyReadFromOwnMemory() const;
     inline bool checkpointInOwnMemory() const;
 
+    // TODO add unit test for PeekableReadBuffer and remove this method
     void checkStateCorrect() const;
 
     /// Makes possible to append `bytes_to_append` bytes to data in own memory.
@@ -72,6 +73,16 @@ private:
     size_t peeked_size = 0;
     Position checkpoint = nullptr;
     bool checkpoint_in_own_memory = false;
+};
+
+
+class PeekableReadBufferCheckpoint : boost::noncopyable
+{
+    PeekableReadBuffer & buf;
+public:
+    explicit PeekableReadBufferCheckpoint(PeekableReadBuffer & buf_) : buf(buf_) { buf.setCheckpoint(); }
+    ~PeekableReadBufferCheckpoint() { buf.dropCheckpoint(); }
+
 };
 
 }

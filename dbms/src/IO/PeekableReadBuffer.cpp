@@ -268,7 +268,7 @@ bool PeekableReadBuffer::checkpointInOwnMemory() const
     return checkpoint_in_own_memory;
 }
 
-void PeekableReadBuffer::assertCanBeDistructed() const
+void PeekableReadBuffer::assertCanBeDestructed() const
 {
     if (peeked_size && pos != memory.data() + peeked_size)
         throw DB::Exception("There are data, which were extracted from sub-buffer, but not from peekable buffer: "
