@@ -240,7 +240,7 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     if (auth_response == "\1")
     {
         LOG_TRACE(log, "Client requests public key.");
-        /// Client requests public key.
+
         BIO * mem = BIO_new(BIO_s_mem());
         if (PEM_write_bio_RSA_PUBKEY(mem, public_key) != 1)
         {
@@ -265,8 +265,6 @@ void MySQLHandler::authenticate(const HandshakeResponse & handshake_response, co
     }
 
     String password;
-
-    LOG_TRACE(log, "auth response: " << auth_response << " len: " <<auth_response.length());
 
     /** Decrypt password, if it's not empty.
      *  The original intention was that the password is a string[NUL] but this never got enforced properly so now we have to accept that

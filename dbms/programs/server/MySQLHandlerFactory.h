@@ -56,6 +56,7 @@ public:
         EVP_PKEY * p = X509_get_pubkey(x509);
         public_key = EVP_PKEY_get1_RSA(p);
         X509_free(x509);
+        EVP_PKEY_free(p);
         fclose(fp);
 
         String privateKeyFile = config.getString(privateKeyFileProperty);
