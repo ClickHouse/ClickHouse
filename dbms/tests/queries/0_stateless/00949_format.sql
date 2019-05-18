@@ -35,3 +35,6 @@ select format('Hello {} World {} {}{}', 'first', 'second', 'third') from system.
 select format('Hello {0} World {1} {2}{3}', 'first', 'second', 'third') from system.numbers limit 2; -- { serverError 49 }
 
 select 50 = length(format((select arrayStringConcat(arrayMap(x ->'{', range(101)))), ''));  -- { serverError 49 }
+
+select format('{}{}{}', materialize(toFixedString('a', 1)), materialize(toFixedString('b', 1)), materialize(toFixedString('c', 1))) == 'abc';
+select format('{}{}{}', materialize(toFixedString('a', 1)), materialize('b'), materialize(toFixedString('c', 1))) == 'abc';

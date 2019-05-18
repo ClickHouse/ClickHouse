@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -77,6 +78,7 @@ public:
         auto col_res = ColumnString::create();
         std::vector<const ColumnString::Chars *> data(arguments.size() - 1);
         std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
+        std::vector<size_t> fixed_string_N(arguments.size() - 1);
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             const ColumnPtr column = block.getByPosition(arguments[i]).column;
@@ -85,12 +87,17 @@ public:
                 data[i - 1] = std::addressof(col->getChars());
                 offsets[i - 1] = std::addressof(col->getOffsets());
             }
+            else if (const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(column.get()))
+            {
+                data[i - 1] = std::addressof(fixed_col->getChars());
+                fixed_string_N[i - 1] = fixed_col->getN();
+            }
             else
                 throw Exception(
                     "Illegal column " + column->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        Impl::vector(std::move(pattern), data, offsets, col_res->getChars(), col_res->getOffsets(), input_rows_count);
+        Impl::vector(std::move(pattern), data, offsets, fixed_string_N, col_res->getChars(), col_res->getOffsets(), input_rows_count);
 
         block.getByPosition(result).column = std::move(col_res);
     }
@@ -120,6 +127,7 @@ struct FormatImpl
         String pattern,
         const std::vector<const ColumnString::Chars *> & data,
         const std::vector<const ColumnString::Offsets *> & offsets,
+        const std::vector<size_t> & fixed_string_N,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
@@ -264,8 +272,22 @@ struct FormatImpl
             for (size_t j = 1; j < substrings.size(); ++j)
             {
                 UInt64 arg = index_positions[j - 1];
-                UInt64 arg_offset = (*offsets[arg])[i - 1];
-                UInt64 size = (*offsets[arg])[i] - arg_offset - 1;
+                auto offset_ptr = offsets[arg];
+                UInt64 arg_offset;
+                UInt64 size;
+                if (offset_ptr)
+                {
+                    arg_offset = (*offset_ptr)[i - 1];
+                    size = (*offset_ptr)[i] - arg_offset - 1;
+                }
+                else
+                {
+                    arg_offset = fixed_string_N[arg] * i;
+                    size = fixed_string_N[arg];
+                    std::cout << arg_offset << ' ' << arg << ' ' << std::string(reinterpret_cast<const char *>(data[arg]->data()), data[arg]->size()) << ' ' << data[arg]->size() << ' ' << size << std::endl;
+                }
+
+
                 memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, data[arg]->data() + arg_offset, size);
                 offset += size;
                 memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, substrings[j].data(), substrings[j].size());
