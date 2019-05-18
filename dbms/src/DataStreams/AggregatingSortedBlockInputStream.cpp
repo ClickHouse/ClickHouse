@@ -47,6 +47,9 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
         {
             // simple aggregate function
             SimpleAggregateDescription desc{simple_aggr->getFunction(), i};
+            if (desc.function->allocatesMemoryInArena())
+                allocatesMemoryInArena = true;
+
             columns_to_simple_aggregate.emplace_back(std::move(desc));
         }
         else
@@ -135,7 +138,8 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
             for (auto & desc : columns_to_simple_aggregate)
                 desc.createState();
 
-            arena = std::make_unique<Arena>();
+            if (allocatesMemoryInArena)
+                arena = std::make_unique<Arena>();
 
             ++merged_rows;
         }
