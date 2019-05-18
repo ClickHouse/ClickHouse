@@ -299,7 +299,7 @@ SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ## СУБД
 
 
-### MySQL
+### MySQL {#dicts-external_dicts_dict_sources-mysql}
 
 Пример настройки:
 

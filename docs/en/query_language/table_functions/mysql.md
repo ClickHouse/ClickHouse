@@ -1,29 +1,12 @@
+# mysql
 
-# MySQL
+Allows to perform `SELECT` queries on data that is stored on a remote MySQL server.
 
-The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
-
-## Creating a Table
-
-```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-(
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
-    ...
-    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
-    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
-) ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
+```
+mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-See the detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
-
-The table structure should not be the same as the original MySQL table structure:
-
-- Names of columns should be the same as in the original MySQL table, but you can use any set of columns in any order.
-- Types of columns may differ from the original MySQL table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) the value into the ClickHouse data type.
-
-**Engine Parameters**
+**Parameters**
 
 - `host:port` — MySQL server address.
 - `database` — Remote database name.
@@ -40,6 +23,10 @@ The table structure should not be the same as the original MySQL table structure
 At this time, simple `WHERE` clauses such as ` =, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+
+**Returned Value**
+
+A table object with the same columns as the original MySQL table.
 
 ## Usage Example
 
@@ -66,28 +53,20 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Table in ClickHouse, getting data from the MySQL table:
+Selection of the data from ClickHouse:
 
 ```sql
-CREATE TABLE mysql_table
-(
-    `float_nullable` Nullable(Float32),
-    `int_id` Int32
-)
-ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
-```
-```sql
-SELECT * FROM mysql_table6
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 ```text
-┌─float_nullable─┬─int_id─┐
-│           ᴺᵁᴸᴸ │      1 │
-└────────────────┴────────┘
+┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴────────────────┘
 ```
 
 ## See Also
 
-- [The 'mysql' table function](../../query_language/table_functions/mysql.md)
-- [Using MySQL as a source of extenal dictionary](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+- [The 'MySQL' table engine](../../operations/table_engines/mysql.md)
+- [Using MySQL as a source of extenal dictionary](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/mysql/) <!--hide-->
