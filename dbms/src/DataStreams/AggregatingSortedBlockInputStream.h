@@ -66,7 +66,10 @@ private:
      */
     void insertSimpleAggregationResult(MutableColumns & merged_columns);
 
-    /// Memory pool for SimpleAggregateFunction.
+    /// Does SimpleAggregateFunction allocates memory in arena?
+    bool allocatesMemoryInArena = false;
+    /// Memory pool for SimpleAggregateFunction
+    /// (only when allocatesMemoryInArena == true).
     std::unique_ptr<Arena> arena;
 
     /// Stores information for aggregation of SimpleAggregateFunction columns
