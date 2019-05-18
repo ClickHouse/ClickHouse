@@ -81,7 +81,7 @@ public:
     virtual bool supportsDeduplication() const { return false; }
 
 
-public: /// thread-unsafe part
+public: /// thread-unsafe part. lockStructure must be acquired
     const ColumnsDescription & getColumns() const;
     void setColumns(ColumnsDescription columns_);
 
