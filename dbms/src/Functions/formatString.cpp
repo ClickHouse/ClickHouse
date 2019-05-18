@@ -253,7 +253,8 @@ struct FormatImpl
                 std::remove_if(
                     str.begin(),
                     str.end(),
-                    [&i, &should_delete, &str](char) {
+                    [&i, &should_delete, &str](char)
+                    {
                         bool is_double_brace = (str[i] == '{' && str[i + 1] == '{') || (str[i] == '}' && str[i + 1] == '}');
                         ++i;
                         if (is_double_brace && should_delete)
