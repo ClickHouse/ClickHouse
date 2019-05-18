@@ -822,6 +822,43 @@ DISTINCT is not supported if SELECT has at least one array column.
 
 `DISTINCT` works with [NULL](syntax.md) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` only occur once.
 
+ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
+
+The sample table:
+
+```text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 1 │ 2 │
+│ 3 │ 3 │
+│ 2 │ 4 │
+└───┴───┘
+```
+
+When selecting data by the `SELECT DISTINCT a FROM t1 ORDER BY b ASC` query, we get the following result:
+
+```text
+┌─a─┐
+│ 2 │
+│ 1 │
+│ 3 │
+└───┘
+```
+
+If we change the direction of ordering `SELECT DISTINCT a FROM t1 ORDER BY b DESC`, we get the following result:
+
+```text
+┌─a─┐
+│ 3 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+Row `2, 4` was cut before sorting.
+
+Take into account this implementation specificity when programming queries.
+
 ### LIMIT Clause
 
 `LIMIT m` allows you to select the first `m` rows from the result.

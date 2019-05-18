@@ -18,10 +18,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 See the detailed description of the [CREATE TABLE](../../query_language/create.md#create-table-query) query.
 
-The table structure should not be the same as the original MySQL table structure:
+The table structure can be not the same as the original MySQL table structure:
 
-- Names of columns should be the same as in the original MySQL table, but you can use any set of columns in any order.
-- Types of columns may differ from the original MySQL table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) the value into the ClickHouse data type.
+- Names of columns should be the same as in the original MySQL table, but you can use just some of these columns in any order.
+- Types of columns may differ from the types in the original MySQL table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values into the ClickHouse data types.
 
 **Engine Parameters**
 
