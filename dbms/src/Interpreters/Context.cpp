@@ -1866,6 +1866,29 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
 }
 
 
+bool Context::checkEmptyParamSubstitution() const
+{
+    return params_substitution.empty();
+}
+
+
+void Context::setParamSubstitution(const String & name, const String & value)
+{
+    auto lock = getLock();
+    if (!params_substitution.insert({name, value}).second) {
+        throw Exception("Expected various names of parameter field --param_{name}={value}", ErrorCodes::BAD_ARGUMENTS);
+    };
+}
+
+
+NameToNameMap Context::getParamSubstitution() const
+{
+    if (!params_substitution.empty())
+        return params_substitution;
+    throw Exception("Context haven't query parameters", ErrorCodes::LOGICAL_ERROR);
+}
+
+
 #if USE_EMBEDDED_COMPILER
 
 std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const

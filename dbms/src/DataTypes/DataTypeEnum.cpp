@@ -167,6 +167,14 @@ void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & is
 }
 
 template <typename Type>
+void DataTypeEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    std::string field_name;
+    readString(field_name, istr);
+    static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(field_name)));
+}
+
+template <typename Type>
 void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings);

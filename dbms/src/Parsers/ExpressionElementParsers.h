@@ -242,6 +242,17 @@ private:
 };
 
 
+/** A substitution expression.
+  * Parse query with parameter expression {name:type}.
+  */
+class ParserSubstitutionExpression : public IParserBase
+{
+protected:
+    const char * getName() const { return "substitution"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
 /** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
   */
 class ParserExpressionElement : public IParserBase

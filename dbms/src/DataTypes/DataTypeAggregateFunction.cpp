@@ -216,6 +216,14 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
+void DataTypeAggregateFunction::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    String s;
+    readString(s, istr);
+    deserializeFromString(function, column, s);
+}
+
+
 void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeJSONString(serializeToString(function, column, row_num), ostr, settings);

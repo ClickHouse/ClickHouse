@@ -76,7 +76,6 @@ int main(int, char **)
 
         if (token.isEnd())
             break;
-
         writeChar(' ', out);
 
         auto it = hilite.find(token.type);

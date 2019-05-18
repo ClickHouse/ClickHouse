@@ -223,6 +223,18 @@ void IDataType::serializeAsText(const IColumn & column, size_t row_num, WriteBuf
     }
 }
 
+void IDataType::deserializeAsWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (custom_text_serialization)
+    {
+        custom_text_serialization->deserializeWholeText(column, istr, settings);
+    }
+    else
+    {
+        deserializeWholeText(column, istr, settings);
+    }
+}
+
 void IDataType::serializeAsTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (custom_text_serialization)

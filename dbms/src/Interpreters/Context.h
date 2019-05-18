@@ -145,6 +145,9 @@ private:
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
+    NameToNameMap params_substitution;   /// Dictionary with query parameters for prepared statements.
+                                                     /// (key=name, value)
+
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
                                    /// logger, some query identification information, profiling guards, etc. This field is
@@ -466,6 +469,11 @@ public:
     using SessionKey = std::pair<String, String>;
 
     SampleBlockCache & getSampleBlockCache() const;
+
+    /// Query parameters for prepared statements.
+    bool checkEmptyParamSubstitution() const;
+    NameToNameMap getParamSubstitution() const;
+    void setParamSubstitution(const String & name, const String & value);
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
