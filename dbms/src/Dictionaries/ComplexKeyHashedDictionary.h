@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
+#include <Core/Block.h>
 #include <common/StringRef.h>
 #include <ext/range.h>
 #include "DictionaryStructure.h"

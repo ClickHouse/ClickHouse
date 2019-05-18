@@ -6,6 +6,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/IStorage_fwd.h>
 #include <Poco/File.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -19,9 +20,6 @@ namespace DB
 {
 
 class Context;
-
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 struct Settings;
 

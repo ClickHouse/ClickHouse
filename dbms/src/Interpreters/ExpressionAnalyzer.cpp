@@ -39,6 +39,7 @@
 #include <Storages/StorageJoin.h>
 
 #include <DataStreams/copyData.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Dictionaries/IDictionary.h>
 
