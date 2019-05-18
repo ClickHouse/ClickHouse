@@ -15,6 +15,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSubquery.h>
 
@@ -1199,6 +1200,42 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 }
 
 
+bool ParserSubstitutionExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (pos->type != TokenType::OpeningFiguredBracket)
+        return false;
+
+    auto old_pos = ++pos;
+    String s_name, s_type;
+
+    while (pos.isValid() && pos->type != TokenType::Colon)
+        ++pos;
+
+    if (pos->type != TokenType::Colon)
+    {
+        expected.add(pos, "colon between name and type");
+        return false;
+    }
+
+    s_name = String(old_pos->begin, pos->begin);
+    old_pos = ++pos;
+
+    while (pos.isValid() && pos->type != TokenType::ClosingFiguredBracket)
+        ++pos;
+
+    if (pos->type != TokenType::ClosingFiguredBracket)
+    {
+        expected.add(pos, "closing figured bracket");
+        return false;
+    }
+
+    s_type = String(old_pos->begin, pos->begin);
+    ++pos;
+    node = std::make_shared<ASTQueryParameter>(s_name, s_type);
+    return true;
+}
+
+
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserSubquery().parse(pos, node, expected)
@@ -1218,7 +1255,8 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
-        || ParserCompoundIdentifier().parse(pos, node, expected);
+        || ParserCompoundIdentifier().parse(pos, node, expected)
+        || ParserSubstitutionExpression().parse(pos, node, expected);
 }
 
 

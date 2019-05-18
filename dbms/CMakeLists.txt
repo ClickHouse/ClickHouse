@@ -87,7 +87,7 @@ endif ()
 add_subdirectory (src)
 
 set(dbms_headers)
-set(dbms_sources)
+set(dbms_sources src/Interpreters/ReplaceQueryParameterVisitor.cpp src/Interpreters/ReplaceQueryParameterVisitor.h)
 
 include(../cmake/dbms_glob_sources.cmake)
 

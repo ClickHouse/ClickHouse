@@ -511,6 +511,12 @@ void HTTPHandler::processQuery(
         else if (param_could_be_skipped(it->first))
         {
         }
+        else if (startsWith(it->first, "param_"))
+        {
+            /// Save name and values of substitution in dictionary.
+            String param_name = it->first.substr(strlen("param_"));
+            context.setParamSubstitution(param_name, it->second);
+        }
         else
         {
             /// All other query parameters are treated as settings.
