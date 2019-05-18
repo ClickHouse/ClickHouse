@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/FieldToDataType.h>
 
 namespace DB
 {
@@ -107,7 +108,8 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll()
         throw Exception("Cannot evaluate template " + result_column_name + ", block structure:\n" + evaluated.dumpStructure(),
                         ErrorCodes::CANNOT_EVALUATE_EXPRESSION_TEMPLATE);
 
-    return evaluated.getByName(result_column_name).column;
+
+    return evaluated.getByName(result_column_name).column->convertToFullColumnIfConst();
 }
 
 std::pair<String, NamesAndTypesList>
@@ -148,7 +150,7 @@ ConstantExpressionTemplate::replaceLiteralsWithDummyIdentifiers(TokenIterator & 
             if (parser.parse(begin, ast, expected))
             {
                 Field & value = ast->as<ASTLiteral &>().value;
-                type = DataTypeFactory::instance().get(value.getTypeName());
+                type = applyVisitor(FieldToDataType(), value);
             }
         }
 
