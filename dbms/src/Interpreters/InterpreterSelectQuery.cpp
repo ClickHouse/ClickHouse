@@ -1511,7 +1511,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
             settings.max_bytes_before_external_sort, context.getTemporaryPath());
     };
 
-    if (settings.optimize_pk_order && !query.groupBy() && !order_descr.empty())
+    if (settings.optimize_pk_order && !query.groupBy() && !order_descr.empty() && !query.final())
     {
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
         {
