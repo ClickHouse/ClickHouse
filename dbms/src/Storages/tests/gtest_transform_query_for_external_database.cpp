@@ -18,6 +18,29 @@
 using namespace DB;
 
 
+/// NOTE How to do better?
+struct State
+{
+    Context context{Context::createGlobal()};
+    NamesAndTypesList columns{{"column", std::make_shared<DataTypeUInt8>()}};
+
+    State()
+    {
+        registerFunctions();
+        DatabasePtr database = std::make_shared<DatabaseMemory>("test");
+        database->attachTable("table", StorageMemory::create("table", ColumnsDescription{columns}));
+        context.addDatabase("test", database);
+        context.setCurrentDatabase("test");
+    }
+};
+
+State & state()
+{
+    static State res;
+    return res;
+}
+
+
 void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
 {
     ParserSelectQuery parser;
@@ -28,33 +51,25 @@ void check(const std::string & query, const std::string & expected, const Contex
 }
 
 
-TEST(transformQueryForExternalDatabase, InWithSingleElement)
+TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 {
-    registerFunctions();
-
-    Context context = Context::createGlobal();
-    DatabasePtr database = std::make_shared<DatabaseMemory>("test");
-    NamesAndTypesList columns{{"column", std::make_shared<DataTypeUInt8>()}};
-    database->attachTable("table", StorageMemory::create("table", ColumnsDescription{columns}));
-    context.addDatabase("test", database);
-    context.setCurrentDatabase("test");
-
-    check("SELECT column FROM test.table WHERE 1 IN (1)", "SELECT \"column\" FROM \"test\".\"table\"  WHERE 1 IN (1)", context, columns);
-    check("SELECT column FROM test.table WHERE column IN (1, 2)", "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" IN (1, 2)", context, columns);
-    check("SELECT column FROM test.table WHERE column NOT IN ('hello', 'world')", "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" NOT IN ('hello', 'world')", context, columns);
+    check("SELECT column FROM test.table WHERE 1 IN (1)",
+          "SELECT \"column\" FROM \"test\".\"table\"  WHERE 1 IN (1)",
+          state().context, state().columns);
+    check("SELECT column FROM test.table WHERE column IN (1, 2)",
+          "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" IN (1, 2)",
+          state().context, state().columns);
+    check("SELECT column FROM test.table WHERE column NOT IN ('hello', 'world')",
+          "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" NOT IN ('hello', 'world')",
+          state().context, state().columns);
 }
 
-TEST(transformQueryForExternalDatabase, Like)
+TEST(TransformQueryForExternalDatabase, Like)
 {
-    registerFunctions();
-
-    Context context = Context::createGlobal();
-    DatabasePtr database = std::make_shared<DatabaseMemory>("test");
-    NamesAndTypesList columns{{"column", std::make_shared<DataTypeUInt8>()}};
-    database->attachTable("table", StorageMemory::create("table", ColumnsDescription{columns}));
-    context.addDatabase("test", database);
-    context.setCurrentDatabase("test");
-
-    check("SELECT column FROM test.table WHERE column LIKE '%hello%'", "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" LIKE '%hello%'", context, columns);
-    check("SELECT column FROM test.table WHERE column NOT LIKE 'w%rld'", "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" NOT LIKE 'w%rld'", context, columns);
+    check("SELECT column FROM test.table WHERE column LIKE '%hello%'",
+          "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" LIKE '%hello%'",
+          state().context, state().columns);
+    check("SELECT column FROM test.table WHERE column NOT LIKE 'w%rld'",
+          "SELECT \"column\" FROM \"test\".\"table\"  WHERE \"column\" NOT LIKE 'w%rld'",
+          state().context, state().columns);
 }
