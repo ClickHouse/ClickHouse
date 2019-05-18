@@ -84,6 +84,8 @@ protected:
 
     void convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,
                                 BlockInputStreamPtr & source_stream, QueryProcessingStage::Enum processed_stage);
+
+    bool isVirtualColumn(const String & column_name) const override;
 };
 
 }

@@ -98,11 +98,6 @@ template <typename, typename> struct GreatestBaseImpl;
 template <typename, typename> struct ModuloImpl;
 
 
-template <typename T> struct NativeType { using Type = T; };
-template <> struct NativeType<Decimal32> { using Type = Int32; };
-template <> struct NativeType<Decimal64> { using Type = Int64; };
-template <> struct NativeType<Decimal128> { using Type = Int128; };
-
 /// Binary operations for Decimals need scale args
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
 /// *   no agrs scale. ScaleR = Scale1 + Scale2;

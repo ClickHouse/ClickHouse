@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <cstddef>
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -10,21 +12,21 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 
-/** Further refinment of the properties of data type.
-  *
-  * Contains methods for serialization/deserialization.
-  * Implementations of this interface represent a data type domain (example: IPv4)
-  *  which is a refinement of the exsitgin type with a name and specific text
-  *  representation.
-  *
-  * IDataTypeDomain is totally immutable object. You can always share them.
+/** Allow to customize an existing data type and set a different name and/or text serialization/deserialization methods.
+ * See use in IPv4 and IPv6 data types, and also in SimpleAggregateFunction.
   */
-class IDataTypeDomain
+class IDataTypeCustomName
 {
 public:
-    virtual ~IDataTypeDomain() {}
+    virtual ~IDataTypeCustomName() {}
 
-    virtual const char* getName() const = 0;
+    virtual String getName() const = 0;
+};
+
+class IDataTypeCustomTextSerialization
+{
+public:
+    virtual ~IDataTypeCustomTextSerialization() {}
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
@@ -54,6 +56,33 @@ public:
     /** Text serialization for putting into the XML format.
       */
     virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const = 0;
+};
+
+using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
+using DataTypeCustomTextSerializationPtr = std::unique_ptr<const IDataTypeCustomTextSerialization>;
+
+/** Describe a data type customization
+ */
+struct DataTypeCustomDesc
+{
+    DataTypeCustomNamePtr name;
+    DataTypeCustomTextSerializationPtr text_serialization;
+
+    DataTypeCustomDesc(DataTypeCustomNamePtr name_, DataTypeCustomTextSerializationPtr text_serialization_)
+            : name(std::move(name_)), text_serialization(std::move(text_serialization_)) {}
+};
+
+using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
+
+/** A simple implementation of IDataTypeCustomName
+ */
+class DataTypeCustomFixedName : public IDataTypeCustomName
+{
+private:
+    String name;
+public:
+    DataTypeCustomFixedName(String name_) : name(name_) {}
+    String getName() const override { return name; }
 };
 
 } // namespace DB

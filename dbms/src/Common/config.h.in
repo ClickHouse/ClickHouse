@@ -25,6 +25,8 @@
 #cmakedefine01 USE_BROTLI
 #cmakedefine01 USE_SSL
 #cmakedefine01 USE_HYPERSCAN
+#cmakedefine01 USE_SIMDJSON
+#cmakedefine01 USE_RAPIDJSON
 #cmakedefine01 USE_LFALLOC
 #cmakedefine01 USE_LFALLOC_RANDOM_HINT
 
