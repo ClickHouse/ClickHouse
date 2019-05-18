@@ -42,9 +42,10 @@ AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & nam
         return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>(arguments, params);
     else if (which.isDateTime())
         return std::make_shared<AggregateFunctionWindowFunnel<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>(arguments, params);
-    
-    throw Exception{"Illegal type " + arguments.front().get()->getName() + " of first argument of aggregate function " 
-        + name + ", must be Number, Date, DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+    throw Exception{"Illegal type " + arguments.front().get()->getName()
+            + " of first argument of aggregate function " + name + ", must be Unsigned Number, Date, DateTime",
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 }
 
 }
