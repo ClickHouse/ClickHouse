@@ -54,6 +54,7 @@ struct SelectQueryInfo
     /// If set to true, the query from MergeTree will return a set of streams,
     /// each of them will read data in sorted by sorting key order.
     bool do_not_steal_task = false;
+    bool read_in_pk_order = false;
 
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)

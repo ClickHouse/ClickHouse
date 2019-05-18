@@ -587,7 +587,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             virt_column_names,
             settings);
     }
-    else if (settings.optimize_pk_order)
+    else if (settings.optimize_pk_order && query_info.read_in_pk_order)
     {
         std::vector<String> add_columns = data.sorting_key_expr->getRequiredColumns();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
