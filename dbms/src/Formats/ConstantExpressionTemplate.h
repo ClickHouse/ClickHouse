@@ -18,7 +18,7 @@ public:
     ColumnPtr evaluateAll();
 
 private:
-    std::pair<String, NamesAndTypesList> replaceLiteralsWithDummyIdentifiers(TokenIterator & begin, TokenIterator & end);
+    std::pair<String, NamesAndTypesList> replaceLiteralsWithDummyIdentifiers(TokenIterator & begin, TokenIterator & end, const IDataType & result_column_type);
 
     static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr);
 
@@ -29,6 +29,9 @@ private:
     ExpressionActionsPtr actions_on_literals;
     Block literals;
     MutableColumns columns;
+
+    /// For expressions without literals (e.g. "now()")
+    size_t rows_count = 0;
 
 };
 
