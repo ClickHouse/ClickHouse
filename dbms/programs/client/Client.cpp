@@ -1555,7 +1555,7 @@ private:
         size_t pos = s.find('_') + 1;
         /// Cut two first dash "--" and divide arg from name and value
         return std::make_pair(s.substr(2, pos - 2), s.substr(pos));
-    }	
+    }
 
 public:
     void init(int argc, char ** argv)
@@ -1707,7 +1707,8 @@ public:
                 ("param_", po::value<std::string>(), "name and value of substitution")
         ;
 
-        for (size_t i = 0; i < param_arguments.size(); ++i) {
+        for (size_t i = 0; i < param_arguments.size(); ++i)
+        {
             po::parsed_options parsed_param = po::command_line_parser(
                     param_arguments[i].size(), param_arguments[i].data()).options(param_description).extra_parser(
                     parseParam).run();
@@ -1718,7 +1719,8 @@ public:
             try {
                 String param = param_options["param_"].as<std::string>();
                 size_t pos = param.find('=');
-                if (pos != String::npos && pos + 1 != param.size()) {
+                if (pos != String::npos && pos + 1 != param.size())
+                {
                     if (!params_substitution.insert({param.substr(0, pos), param.substr(pos + 1)}).second)
                         throw Exception("Expected various names of parameter field --param_{name}={value}", ErrorCodes::BAD_ARGUMENTS);
                 } else
