@@ -361,7 +361,6 @@ struct FormatImpl
                     }
                 }
 
-
                 memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, data[arg]->data() + arg_offset, size);
                 offset += size;
                 memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, substrings[j].data(), substrings[j].size());
