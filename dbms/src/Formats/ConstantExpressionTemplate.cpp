@@ -140,6 +140,7 @@ ConstantExpressionTemplate::replaceLiteralsWithDummyIdentifiers(TokenIterator & 
         else if (t.type == TokenType::StringLiteral)
         {
             type = std::make_shared<DataTypeString>();
+            ++begin;
         }
         else if (t.type == TokenType::OpeningSquareBracket)
         {
