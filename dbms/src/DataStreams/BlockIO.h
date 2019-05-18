@@ -1,7 +1,8 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
+
+#include <functional>
 
 
 namespace DB

@@ -3,6 +3,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/typeid_cast.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <ext/map.h>
 #include <ext/range.h>
 #include <ext/size.h>
