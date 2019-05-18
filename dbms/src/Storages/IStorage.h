@@ -335,6 +335,9 @@ public:
     /// Returns additional columns that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
 
+    /// Returns names of primary key + secondary sorting columns
+    virtual Names getSortingKeyColumns() const { return {}; }
+
 protected:
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
