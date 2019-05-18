@@ -1496,6 +1496,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
 
         // in order to read blocks in fixed order
         query_info.do_not_steal_task = true;
+        query_info.read_in_pk_order = true;
         if (order_direction == -1)
         {
             pipeline.transform([&](auto & stream)
@@ -1510,7 +1511,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
             settings.max_bytes_before_external_sort, context.getTemporaryPath());
     };
 
-    if (settings.optimize_pk_order && !query.groupBy())
+    if (settings.optimize_pk_order && !query.groupBy() && !order_descr.empty())
     {
         if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
         {
