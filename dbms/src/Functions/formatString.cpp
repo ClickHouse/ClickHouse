@@ -37,8 +37,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
-
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -49,10 +47,10 @@ public:
                     + ", should be at least 1",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (arguments.size() > Impl::ArgumentThreshold)
+        if (arguments.size() > Impl::argument_threshold)
             throw Exception(
                 "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                    + ", should be at most " + std::to_string(Impl::ArgumentThreshold),
+                    + ", should be at most " + std::to_string(Impl::argument_threshold),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto arg_idx : ext::range(0, arguments.size()))
@@ -69,7 +67,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const ColumnPtr c0 = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & c0 = block.getByPosition(arguments[0]).column;
         const ColumnConst * c0_const_string = typeid_cast<const ColumnConst *>(&*c0);
 
         if (!c0_const_string)
@@ -78,14 +76,21 @@ public:
         String pattern = c0_const_string->getValue<String>();
 
         auto col_res = ColumnString::create();
+        /// Data for ColumnString and ColumnFixed. Nullptr means no data, it is const string
         std::vector<const ColumnString::Chars *> data(arguments.size() - 1);
+        /// Offsets for ColumnString, nullptr is an indicator that there is a fixed string rather than ColumnString
         std::vector<const ColumnString::Offsets *> offsets(arguments.size() - 1);
+
+        /// For savings N to fixed strings
         std::vector<size_t> fixed_string_N(arguments.size() - 1);
+
+        std::vector<String> constant_strings(arguments.size() - 1);
+
         bool has_column_string = false;
         bool has_column_fixed_string = false;
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            const ColumnPtr column = block.getByPosition(arguments[i]).column;
+            const ColumnPtr & column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
                 has_column_string = true;
@@ -98,6 +103,10 @@ public:
                 data[i - 1] = std::addressof(fixed_col->getChars());
                 fixed_string_N[i - 1] = fixed_col->getN();
             }
+            else if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
+            {
+                constant_strings[i - 1] = const_col->getValue<String>();
+            }
             else
                 throw Exception(
                     "Illegal column " + column->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -105,16 +114,16 @@ public:
 
         if (has_column_string && has_column_fixed_string)
             Impl::template vector<true, true>(
-                std::move(pattern), data, offsets, fixed_string_N, col_res->getChars(), col_res->getOffsets(), input_rows_count);
+                std::move(pattern), data, offsets, fixed_string_N, constant_strings, col_res->getChars(), col_res->getOffsets(), input_rows_count);
         else if (!has_column_string && has_column_fixed_string)
             Impl::template vector<false, true>(
-                std::move(pattern), data, offsets, fixed_string_N, col_res->getChars(), col_res->getOffsets(), input_rows_count);
+                std::move(pattern), data, offsets, fixed_string_N, constant_strings, col_res->getChars(), col_res->getOffsets(), input_rows_count);
         else if (has_column_string && !has_column_fixed_string)
             Impl::template vector<true, false>(
-                std::move(pattern), data, offsets, fixed_string_N, col_res->getChars(), col_res->getOffsets(), input_rows_count);
+                std::move(pattern), data, offsets, fixed_string_N, constant_strings, col_res->getChars(), col_res->getOffsets(), input_rows_count);
         else
-            Impl::template vector<true, true>(
-                std::move(pattern), data, offsets, fixed_string_N, col_res->getChars(), col_res->getOffsets(), input_rows_count);
+            Impl::template vector<false, false>(
+                std::move(pattern), data, offsets, fixed_string_N, constant_strings, col_res->getChars(), col_res->getOffsets(), input_rows_count);
         block.getByPosition(result).column = std::move(col_res);
     }
 };
@@ -122,8 +131,8 @@ public:
 
 struct FormatImpl
 {
-    static constexpr size_t ArgumentThreshold = 1024;
-    static constexpr size_t RightPadding = 15;
+    static constexpr size_t argument_threshold = 1024;
+    static constexpr size_t right_padding = 15;
 
     static void parseNumber(const String & description, UInt64 l, UInt64 r, UInt64 & res)
     {
@@ -133,24 +142,25 @@ struct FormatImpl
             if (!isNumericASCII(description[pos]))
                 throw Exception("Not a number in curly braces at position " + std::to_string(pos), ErrorCodes::LOGICAL_ERROR);
             res = res * 10 + description[pos] - '0';
-            if (res >= ArgumentThreshold)
+            if (res >= argument_threshold)
                 throw Exception(
-                    "Too big number for arguments, must be at most " + std::to_string(ArgumentThreshold), ErrorCodes::LOGICAL_ERROR);
+                    "Too big number for arguments, must be at most " + std::to_string(argument_threshold), ErrorCodes::LOGICAL_ERROR);
         }
     }
 
     template <bool HasColumnString, bool HasColumnFixedString>
     static inline void vector(
         String pattern,
-        const std::vector<const ColumnString::Chars *> & data,
-        const std::vector<const ColumnString::Offsets *> & offsets,
-        const std::vector<size_t> & fixed_string_N,
+        [[maybe_unused]] /* Because all consts don't have data */ const std::vector<const ColumnString::Chars *> & data,
+        [[maybe_unused]] /* Because all fixed don't have offsets */ const std::vector<const ColumnString::Offsets *> & offsets,
+        [[maybe_unused]] /* Because sometimes !HasColumnFixedString */ const std::vector<size_t> & fixed_string_N,
+        [[maybe_unused]] /* Because sometimes !HasColumnFixedString && !HasColumnString */ const std::vector<String> & constant_strings,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         size_t input_rows_count)
     {
-        /// The subsequent indexes of strings we should use. e.g `Hello world {1} {3} {1} {0}` this array will be filled with [1, 3, 1, 0, ... (garbage)].
-        UInt64 index_positions[ArgumentThreshold];
+        /// The subsequent indexes of strings we should use. e.g `Hello world {1} {3} {1} {0}` this array will be filled with [1, 3, 1, 0, ... (garbage)] but without constant indices.
+        UInt64 index_positions[argument_threshold];
         UInt64 * index_positions_ptr = index_positions;
 
         /// Is current position is after open curly brace.
@@ -164,11 +174,38 @@ struct FormatImpl
 
         /// Vector of substrings of pattern that will be copied to the ans, not string view because of escaping and iterators invalidation.
         /// These are exactly what is between {} tokens, for `Hello {} world {}` we will have [`Hello `, ` world `, ``].
-        std::vector<std::string> substrings;
+        std::vector<String> substrings;
 
         /// Left position of adding substrings, just to the closed brace position or the start of the string.
         /// Invariant --- the start of substring is in this position.
         size_t start_pos = 0;
+
+        /// A flag to decide whether we should glue the constant strings.
+        bool glue_to_next = false;
+
+        /// Handling double braces (escaping).
+        auto double_brace_removal = [](String & str)
+        {
+            size_t i = 0;
+            bool should_delete = true;
+            str.erase(
+                std::remove_if(
+                    str.begin(),
+                    str.end(),
+                    [&i, &should_delete, &str](char)
+                    {
+                        bool is_double_brace = (str[i] == '{' && str[i + 1] == '{') || (str[i] == '}' && str[i + 1] == '}');
+                        ++i;
+                        if (is_double_brace && should_delete)
+                        {
+                            should_delete = false;
+                            return true;
+                        }
+                        should_delete = true;
+                        return false;
+                    }),
+                str.end());
+        };
 
         for (size_t i = 0; i < pattern.size(); ++i)
         {
@@ -185,7 +222,14 @@ struct FormatImpl
                 if (is_open_curly)
                     throw Exception("Two open curly braces without close one at position " + std::to_string(i), ErrorCodes::LOGICAL_ERROR);
 
-                substrings.emplace_back(pattern.data() + start_pos, i - start_pos);
+                String to_add = String(pattern.data() + start_pos, i - start_pos);
+                double_brace_removal(to_add);
+                if (!glue_to_next)
+                    substrings.emplace_back(to_add);
+                else
+                    substrings.back() += to_add;
+
+                glue_to_next = false;
 
                 is_open_curly = true;
                 last_open = i + 1;
@@ -212,7 +256,6 @@ struct FormatImpl
                     if (index_if_plain >= offsets.size())
                         throw Exception("Argument is too big for formatting", ErrorCodes::LOGICAL_ERROR);
                     *index_positions_ptr = index_if_plain++;
-                    ++index_positions_ptr;
                 }
                 else
                 {
@@ -229,8 +272,16 @@ struct FormatImpl
                             "Argument is too big for formatting. Note that indexing starts from zero", ErrorCodes::LOGICAL_ERROR);
 
                     *index_positions_ptr = arg;
-                    ++index_positions_ptr;
                 }
+
+                /// Constant string
+                if (!data[*index_positions_ptr])
+                {
+                    glue_to_next = true;
+                    substrings.back() += constant_strings[*index_positions_ptr];
+                }
+                else
+                    ++index_positions_ptr;
 
                 start_pos = i + 1;
             }
@@ -239,38 +290,22 @@ struct FormatImpl
         if (is_open_curly)
             throw Exception("Last open curly brace is not closed", ErrorCodes::LOGICAL_ERROR);
 
-        substrings.emplace_back(pattern.data() + start_pos, pattern.size() - start_pos);
+        String to_add = String(pattern.data() + start_pos, pattern.size() - start_pos);
+        double_brace_removal(to_add);
 
+        if (!glue_to_next)
+            substrings.emplace_back(to_add);
+        else
+            substrings.back() += to_add;
 
         UInt64 final_size = 0;
 
-        for (std::string & str : substrings)
+        for (String & str : substrings)
         {
-            /// Handling double braces (escaping).
-            size_t i = 0;
-            bool should_delete = true;
-            str.erase(
-                std::remove_if(
-                    str.begin(),
-                    str.end(),
-                    [&i, &should_delete, &str](char)
-                    {
-                        bool is_double_brace = (str[i] == '{' && str[i + 1] == '{') || (str[i] == '}' && str[i + 1] == '}');
-                        ++i;
-                        if (is_double_brace && should_delete)
-                        {
-                            should_delete = false;
-                            return true;
-                        }
-                        should_delete = true;
-                        return false;
-                    }),
-                str.end());
-
             /// To use memcpySmallAllowReadWriteOverflow15 for substrings we should allocate a bit more to each string.
             /// That was chosen due to perfomance issues.
             if (!str.empty())
-                str.reserve(str.size() + RightPadding);
+                str.reserve(str.size() + right_padding);
             final_size += str.size();
         }
 
@@ -279,7 +314,12 @@ struct FormatImpl
 
         /// Strings without null termination.
         for (size_t i = 1; i < substrings.size(); ++i)
-            final_size += data[index_positions[i - 1]]->size() - input_rows_count;
+        {
+            final_size += data[index_positions[i - 1]]->size();
+            /// Fixed strings do not have zero terminating character.
+            if (offsets[index_positions[i - 1]])
+                final_size -= input_rows_count;
+        }
 
         /// Null termination characters.
         final_size += input_rows_count;
@@ -294,6 +334,10 @@ struct FormatImpl
             offset += substrings[0].size();
             for (size_t j = 1; j < substrings.size(); ++j)
             {
+                /// All strings are constant, we should have substrings.size() == 1
+                if constexpr (!HasColumnString && !HasColumnFixedString)
+                    __builtin_unreachable();
+
                 UInt64 arg = index_positions[j - 1];
                 auto offset_ptr = offsets[arg];
                 UInt64 arg_offset = 0;
