@@ -12,6 +12,7 @@ class ColumnVector;
 using ColumnUInt8 = ColumnVector<UInt8>;
 
 class MergeTreeReader;
+class MergeTreeIndexGranularity;
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.

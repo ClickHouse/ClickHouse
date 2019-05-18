@@ -7,6 +7,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <IO/ReadBufferFromFile.h>
 
 
 namespace DB
@@ -57,6 +58,9 @@ private:
     std::condition_variable cond;
     Logger * log;
     ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
+
+    /// Read insert query and insert settings for backward compatible.
+    void readQueryAndSettings(ReadBuffer & in, Settings & insert_settings, std::string & insert_query) const;
 };
 
 }
