@@ -86,11 +86,13 @@ public:
             const ColumnPtr column = block.getByPosition(arguments[i]).column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
+                has_column_string = true;
                 data[i - 1] = std::addressof(col->getChars());
                 offsets[i - 1] = std::addressof(col->getOffsets());
             }
             else if (const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(column.get()))
             {
+                has_column_fixed_string = true;
                 data[i - 1] = std::addressof(fixed_col->getChars());
                 fixed_string_N[i - 1] = fixed_col->getN();
             }
