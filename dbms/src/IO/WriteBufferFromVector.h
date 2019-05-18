@@ -51,6 +51,7 @@ public:
         }
     }
 
+    /// Append to vector instead of rewrite.
     struct AppendModeTag {};
     WriteBufferFromVector(VectorType & vector_, AppendModeTag)
         : WriteBuffer(nullptr, 0), vector(vector_)
