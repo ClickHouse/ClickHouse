@@ -143,7 +143,7 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_check("CHECK");
 
     ParserIdentifier name_p;
-    ParserLogicalOrExpression  expression_p;
+    ParserLogicalOrExpression expression_p;
 
     ASTPtr name;
     ASTPtr expr;
