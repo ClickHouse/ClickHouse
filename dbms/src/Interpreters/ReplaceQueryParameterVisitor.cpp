@@ -1,11 +1,8 @@
-#include <stdlib.h>
-
 #include <Common/typeid_cast.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Columns/IColumn.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Columns/IColumn.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTLiteral.h>
@@ -15,7 +12,8 @@
 namespace DB
 {
 
-namespace ErrorCodes {
+namespace ErrorCodes
+{
     extern const int UNKNOWN_IDENTIFIER;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -48,7 +46,7 @@ void ReplaceQueryParameterVisitor::visitQP(ASTPtr & ast)
     const auto data_type = DataTypeFactory::instance().get(ast_param->type);
 
     auto temp_column_ptr = data_type->createColumn();
-    IColumn &temp_column = *temp_column_ptr;
+    IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
     data_type->deserializeAsWholeText(temp_column, read_buffer, format_settings);

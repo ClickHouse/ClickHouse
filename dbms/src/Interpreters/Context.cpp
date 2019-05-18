@@ -1875,9 +1875,8 @@ bool Context::checkEmptyParamSubstitution() const
 void Context::setParamSubstitution(const String & name, const String & value)
 {
     auto lock = getLock();
-    if (!params_substitution.insert({name, value}).second) {
+    if (!params_substitution.insert({name, value}).second)
         throw Exception("Expected various names of parameter field --param_{name}={value}", ErrorCodes::BAD_ARGUMENTS);
-    };
 }
 
 
