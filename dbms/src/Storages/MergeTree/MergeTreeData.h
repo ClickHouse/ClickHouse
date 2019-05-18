@@ -332,6 +332,7 @@ public:
                   const String & full_path_,
                   const ColumnsDescription & columns_,
                   const IndicesDescription & indices_,
+                  const ConstraintsDescription & constraints_,
                   Context & context_,
                   const String & date_column_name,
                   const ASTPtr & partition_by_ast_,

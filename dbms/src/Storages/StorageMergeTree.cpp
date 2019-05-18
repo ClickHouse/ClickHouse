@@ -53,6 +53,7 @@ StorageMergeTree::StorageMergeTree(
     const String & table_name_,
     const ColumnsDescription & columns_,
     const IndicesDescription & indices_,
+    const ConstraintsDescription & constraints_,
     bool attach,
     Context & context_,
     const String & date_column_name,
@@ -66,7 +67,7 @@ StorageMergeTree::StorageMergeTree(
     bool has_force_restore_data_flag)
         : MergeTreeData(database_name_, table_name_,
             path_ + escapeForFileName(table_name_) + '/',
-            columns_, indices_,
+            columns_, indices_, constraints_,
             context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
             sample_by_ast_, ttl_table_ast_, merging_params_,
             settings_, false, attach),
