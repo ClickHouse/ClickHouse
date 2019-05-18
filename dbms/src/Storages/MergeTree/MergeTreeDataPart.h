@@ -30,9 +30,9 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_);
+    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_, size_t data_part_id_ = 0);
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
+    MergeTreeDataPart(MergeTreeData & storage_, const String & name_, size_t data_part_id_ = 0);
 
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
@@ -92,6 +92,9 @@ struct MergeTreeDataPart
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
     mutable String relative_path;
 
+    /// Is used in reading in pk_order
+    size_t data_part_id = 0;
+
     size_t rows_count = 0;
     std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
                                             /// Is used from several threads without locks (it is changed with ALTER).
@@ -142,6 +145,11 @@ struct MergeTreeDataPart
     String getNameWithState() const
     {
         return name + " (state " + stateString() + ")";
+    }
+
+    void setDataPartId(size_t data_part_id_)
+    {
+        data_part_id = data_part_id_;
     }
 
     /// Returns true if state of part is one of affordable_states
