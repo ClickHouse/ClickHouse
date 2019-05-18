@@ -669,7 +669,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         socket,
                         new Poco::Net::TCPServerParams));
 
-                    LOG_INFO(log, "Listening tcp: " + address.toString());
+                    LOG_INFO(log, "Listening for connections with native protocol (tcp): " + address.toString());
                 }
 
                 /// TCP with SSL
@@ -686,7 +686,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         server_pool,
                         socket,
                         new Poco::Net::TCPServerParams));
-                    LOG_INFO(log, "Listening tcp_secure: " + address.toString());
+                    LOG_INFO(log, "Listening for connections with secure native protocol (tcp_secure): " + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
@@ -711,7 +711,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening interserver http: " + address.toString());
+                    LOG_INFO(log, "Listening for replica communication (interserver) http://" + address.toString());
                 }
 
                 if (config().has("interserver_https_port"))
@@ -728,7 +728,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening interserver https: " + address.toString());
+                    LOG_INFO(log, "Listening for secure replica communication (interserver) https://" + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                             ErrorCodes::SUPPORT_IS_DISABLED};
@@ -747,7 +747,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         socket,
                         new Poco::Net::TCPServerParams));
 
-                    LOG_INFO(log, "Listening mysql: " + address.toString());
+                    LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
                 }
             }
             catch (const Poco::Exception & e)
