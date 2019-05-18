@@ -349,7 +349,7 @@ public:
     ASTPtr getSortingKeyAST() const override { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const override { return primary_key_expr_ast; }
     ASTPtr getSamplingKeyAST() const override { return sample_by_ast; }
-    
+
     Names getColumnsRequiredForPartitionKey() const override { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
     Names getColumnsRequiredForSortingKey() const override { return sorting_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
