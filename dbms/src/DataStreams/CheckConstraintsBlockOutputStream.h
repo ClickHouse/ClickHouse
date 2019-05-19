@@ -19,13 +19,11 @@ public:
     CheckConstraintsBlockOutputStream(
             const BlockOutputStreamPtr & output_,
             const Block & header_,
-            const ConstraintsDescription & constraints_,
-            const Context & context_)
+            const ConstraintsDescription & constraints_)
             : output(output_),
               header(header_),
               constraints(constraints_),
-              expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList())),
-              context(context_)
+              expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
     { }
 
     Block getHeader() const override { return header; }
@@ -43,6 +41,5 @@ private:
     Block header;
     const ConstraintsDescription constraints;
     const ConstraintsExpressions expressions;
-    const Context & context;
 };
 }
