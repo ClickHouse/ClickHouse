@@ -20,10 +20,12 @@ struct ConstraintsDescription
 
     static ConstraintsDescription parse(const String & str);
 
-    ConstraintsExpressions getExpressions(const Context & context, const NamesAndTypesList & source_columns_) const {
+    ConstraintsExpressions getExpressions(const Context & context, const NamesAndTypesList & source_columns_) const
+    {
         ConstraintsExpressions res;
         res.reserve(constraints.size());
-        for (const auto & constraint : constraints) {
+        for (const auto & constraint : constraints)
+        {
             ASTPtr expr = constraint->expr->clone();
             auto syntax_result = SyntaxAnalyzer(context).analyze(expr, source_columns_);
             res.push_back(ExpressionAnalyzer(constraint->expr->clone(), syntax_result, context).getActions(false));
