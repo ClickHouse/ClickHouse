@@ -15,6 +15,7 @@ class ASTLiteral : public ASTWithAlias
 public:
     Field value;
 
+    ASTLiteral(Field && value_) : value(value_) {}
     ASTLiteral(const Field & value_) : value(value_) {}
 
     /** Get the text that identifies this element. */
