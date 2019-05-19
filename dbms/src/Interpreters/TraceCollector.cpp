@@ -28,9 +28,8 @@ namespace DB
 
             bool is_last;
             DB::readIntBinary(is_last, in);
-            if (is_last) {
+            if (is_last)
                 break;
-            }
 
             std::string query_id;
             Backtrace backtrace;
