@@ -59,6 +59,8 @@ SystemLogs::~SystemLogs()
         query_thread_log->shutdown();
     if (part_log)
         part_log->shutdown();
+    if (trace_log)
+        trace_log->shutdown();
 }
 
 }

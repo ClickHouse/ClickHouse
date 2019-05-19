@@ -3,7 +3,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Quota.h>
 #include <Common/CurrentThread.h>
-
+#include <Common/Sleep.h>
 
 namespace ProfileEvents
 {
@@ -255,13 +255,7 @@ static void limitProgressingSpeed(size_t total_progress_size, size_t max_speed_i
     if (desired_microseconds > total_elapsed_microseconds)
     {
         UInt64 sleep_microseconds = desired_microseconds - total_elapsed_microseconds;
-        ::timespec sleep_ts;
-        sleep_ts.tv_sec = sleep_microseconds / 1000000;
-        sleep_ts.tv_nsec = sleep_microseconds % 1000000 * 1000;
-
-        /// NOTE: Returns early in case of a signal. This is considered normal.
-        /// NOTE: It's worth noting that this behavior affects kill of queries.
-        ::nanosleep(&sleep_ts, nullptr);
+        SleepForMicroseconds(sleep_microseconds);
 
         ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_microseconds);
     }
