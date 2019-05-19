@@ -82,3 +82,6 @@
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
 	url = https://github.com/lemire/simdjson.git
+[submodule "contrib/rapidjson"]
+	path = contrib/rapidjson
+	url = https://github.com/Tencent/rapidjson
