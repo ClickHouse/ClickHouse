@@ -6,7 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/Sleep.h>
+#include <common/Sleep.h>
 #include <IO/WriteHelpers.h>
 #include <port/clock.h>
 

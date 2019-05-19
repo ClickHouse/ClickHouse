@@ -3,7 +3,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Quota.h>
 #include <Common/CurrentThread.h>
-#include <Common/Sleep.h>
+#include <common/Sleep.h>
 
 namespace ProfileEvents
 {
