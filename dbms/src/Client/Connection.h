@@ -12,8 +12,7 @@
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 
 #include <IO/ConnectionTimeouts.h>

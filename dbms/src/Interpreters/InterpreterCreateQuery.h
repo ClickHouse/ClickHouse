@@ -2,6 +2,7 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Common/ThreadPool.h>
@@ -13,8 +14,6 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTExpressionList;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 
 /** Allows to create new table or database,
