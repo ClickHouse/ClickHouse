@@ -19,7 +19,8 @@ public:
     CheckConstraintsBlockOutputStream(
             const BlockOutputStreamPtr & output_,
             const Block & header_,
-            const ConstraintsDescription & constraints_)
+            const ConstraintsDescription & constraints_,
+            const Context & context_)
             : output(output_),
               header(header_),
               constraints(constraints_),
