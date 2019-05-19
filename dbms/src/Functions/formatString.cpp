@@ -148,21 +148,14 @@ struct FormatImpl
         }
     }
 
-    template <bool HasColumnString, bool HasColumnFixedString>
-    static inline void vector(
-        String pattern,
-        [[maybe_unused]] /* Because all consts don't have data */ const std::vector<const ColumnString::Chars *> & data,
-        [[maybe_unused]] /* Because all fixed don't have offsets */ const std::vector<const ColumnString::Offsets *> & offsets,
-        [[maybe_unused]] /* Because sometimes !HasColumnFixedString */ const std::vector<size_t> & fixed_string_N,
-        [[maybe_unused]] /* Because sometimes !HasColumnFixedString && !HasColumnString */ const std::vector<String> & constant_strings,
-        ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+    static inline void init(
+        const String & pattern,
+        const std::vector<const ColumnString::Chars *> & data,
+        size_t argument_number,
+        const std::vector<String> & constant_strings,
+        UInt64 * index_positions_ptr,
+        std::vector<String> & substrings)
     {
-        /// The subsequent indexes of strings we should use. e.g `Hello world {1} {3} {1} {0}` this array will be filled with [1, 3, 1, 0, ... (garbage)] but without constant indices.
-        UInt64 index_positions[argument_threshold];
-        UInt64 * index_positions_ptr = index_positions;
-
         /// Is current position is after open curly brace.
         bool is_open_curly = false;
         /// The position of last open token.
@@ -171,10 +164,6 @@ struct FormatImpl
         /// Is formatting in a plain {} token.
         std::optional<bool> is_plain_numbering;
         UInt64 index_if_plain = 0;
-
-        /// Vector of substrings of pattern that will be copied to the ans, not string view because of escaping and iterators invalidation.
-        /// These are exactly what is between {} tokens, for `Hello {} world {}` we will have [`Hello `, ` world `, ``].
-        std::vector<String> substrings;
 
         /// Left position of adding substrings, just to the closed brace position or the start of the string.
         /// Invariant --- the start of substring is in this position.
@@ -253,7 +242,7 @@ struct FormatImpl
                         throw Exception(
                             "Cannot switch from automatic field numbering to manual field specification", ErrorCodes::LOGICAL_ERROR);
                     is_plain_numbering = true;
-                    if (index_if_plain >= offsets.size())
+                    if (index_if_plain >= argument_number)
                         throw Exception("Argument is too big for formatting", ErrorCodes::LOGICAL_ERROR);
                     *index_positions_ptr = index_if_plain++;
                 }
@@ -267,21 +256,22 @@ struct FormatImpl
                     UInt64 arg;
                     parseNumber(pattern, last_open, i, arg);
 
-                    if (arg >= offsets.size())
+                    if (arg >= argument_number)
                         throw Exception(
                             "Argument is too big for formatting. Note that indexing starts from zero", ErrorCodes::LOGICAL_ERROR);
 
                     *index_positions_ptr = arg;
                 }
 
-                /// Constant string
+                /// Constant string.
                 if (!data[*index_positions_ptr])
                 {
+                    /// The next string should be glued to last `A {} C`.format('B') -> `A B C`.
                     glue_to_next = true;
                     substrings.back() += constant_strings[*index_positions_ptr];
                 }
                 else
-                    ++index_positions_ptr;
+                    ++index_positions_ptr; /// Otherwise we commit arg number and proceed.
 
                 start_pos = i + 1;
             }
@@ -297,6 +287,26 @@ struct FormatImpl
             substrings.emplace_back(to_add);
         else
             substrings.back() += to_add;
+    }
+
+    template <bool HasColumnString, bool HasColumnFixedString>
+    static inline void vector(
+        String pattern,
+        const std::vector<const ColumnString::Chars *> & data,
+        const std::vector<const ColumnString::Offsets *> & offsets,
+        [[maybe_unused]] /* Because sometimes !HasColumnFixedString */ const std::vector<size_t> & fixed_string_N,
+        const std::vector<String> & constant_strings,
+        ColumnString::Chars & res_data,
+        ColumnString::Offsets & res_offsets,
+        size_t input_rows_count)
+    {
+        /// The subsequent indexes of strings we should use. e.g `Hello world {1} {3} {1} {0}` this array will be filled with [1, 3, 1, 0, ... (garbage)] but without constant indices.
+        UInt64 index_positions[argument_threshold];
+        /// Vector of substrings of pattern that will be copied to the ans, not string view because of escaping and iterators invalidation.
+        /// These are exactly what is between {} tokens, for `Hello {} world {}` we will have [`Hello `, ` world `, ``].
+        std::vector<String> substrings;
+
+        init(pattern, data, offsets.size(), constant_strings, index_positions, substrings);
 
         UInt64 final_size = 0;
 
@@ -332,39 +342,39 @@ struct FormatImpl
         {
             memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, substrings[0].data(), substrings[0].size());
             offset += substrings[0].size();
-            for (size_t j = 1; j < substrings.size(); ++j)
+            /// All strings are constant, we should have substrings.size() == 1.
+            if constexpr (HasColumnString || HasColumnFixedString)
             {
-                /// All strings are constant, we should have substrings.size() == 1
-                if constexpr (!HasColumnString && !HasColumnFixedString)
-                    __builtin_unreachable();
-
-                UInt64 arg = index_positions[j - 1];
-                auto offset_ptr = offsets[arg];
-                UInt64 arg_offset = 0;
-                UInt64 size = 0;
-
-                if constexpr (HasColumnString)
+                for (size_t j = 1; j < substrings.size(); ++j)
                 {
-                    if (!HasColumnFixedString || offset_ptr)
-                    {
-                        arg_offset = (*offset_ptr)[i - 1];
-                        size = (*offset_ptr)[i] - arg_offset - 1;
-                    }
-                }
+                    UInt64 arg = index_positions[j - 1];
+                    auto offset_ptr = offsets[arg];
+                    UInt64 arg_offset = 0;
+                    UInt64 size = 0;
 
-                if constexpr (HasColumnFixedString)
-                {
-                    if (!HasColumnString || !offset_ptr)
+                    if constexpr (HasColumnString)
                     {
-                        arg_offset = fixed_string_N[arg] * i;
-                        size = fixed_string_N[arg];
+                        if (!HasColumnFixedString || offset_ptr)
+                        {
+                            arg_offset = (*offset_ptr)[i - 1];
+                            size = (*offset_ptr)[i] - arg_offset - 1;
+                        }
                     }
-                }
 
-                memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, data[arg]->data() + arg_offset, size);
-                offset += size;
-                memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, substrings[j].data(), substrings[j].size());
-                offset += substrings[j].size();
+                    if constexpr (HasColumnFixedString)
+                    {
+                        if (!HasColumnString || !offset_ptr)
+                        {
+                            arg_offset = fixed_string_N[arg] * i;
+                            size = fixed_string_N[arg];
+                        }
+                    }
+
+                    memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, data[arg]->data() + arg_offset, size);
+                    offset += size;
+                    memcpySmallAllowReadWriteOverflow15(res_data.data() + offset, substrings[j].data(), substrings[j].size());
+                    offset += substrings[j].size();
+                }
             }
             res_data[offset] = '\0';
             ++offset;
