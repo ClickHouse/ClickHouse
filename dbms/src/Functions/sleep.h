@@ -4,7 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/FieldVisitors.h>
-#include <Common/Sleep.h>
+#include <common/Sleep.h>
 #include <IO/WriteHelpers.h>
 
 

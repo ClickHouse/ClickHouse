@@ -19,7 +19,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
-#include <Common/Sleep.h>
+#include <common/Sleep.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
