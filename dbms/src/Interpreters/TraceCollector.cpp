@@ -1,5 +1,6 @@
 #include "TraceCollector.h"
 
+#include <common/Sleep.h>
 #include <common/Backtrace.h>
 #include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
@@ -8,15 +9,12 @@
 #include <Common/QueryProfiler.h>
 #include <Interpreters/TraceLog.h>
 
-
 namespace DB
 {
-    LazyPipe trace_pipe;
 
-    TraceCollector::TraceCollector(TraceLog * trace_log, std::future<void>&& stop_future)
+    TraceCollector::TraceCollector(std::shared_ptr<TraceLog> trace_log)
         : log(&Logger::get("TraceCollector"))
         , trace_log(trace_log)
-        , stop_future(std::move(stop_future))
     {
     }
 
@@ -24,23 +22,23 @@ namespace DB
     {
         DB::ReadBufferFromFileDescriptor in(trace_pipe.fds_rw[0]);
 
-        while (stop_future.wait_for(std::chrono::milliseconds(1)) == std::future_status::timeout)
+        while (true)
         {
-            Backtrace backtrace;
+            SleepForMicroseconds(1);
+
+            bool is_last;
+            DB::readIntBinary(is_last, in);
+            if (is_last) {
+                break;
+            }
+
             std::string query_id;
+            Backtrace backtrace;
             TimerType timer_type;
 
-            try {
-                DB::readPODBinary(backtrace, in);
-                DB::readStringBinary(query_id, in);
-                DB::readIntBinary(timer_type, in);
-            }
-            catch (...)
-            {
-                /// Pipe was closed - looks like server is about to shutdown
-                /// Let us wait for stop_future
-                continue;
-            }
+            DB::readStringBinary(query_id, in);
+            DB::readPODBinary(backtrace, in);
+            DB::readIntBinary(timer_type, in);
 
             if (trace_log != nullptr)
             {

@@ -1,11 +1,11 @@
 #pragma once
 
+#include <common/Pipe.h>
 #include <common/Backtrace.h>
 #include <common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <Interpreters/TraceCollector.h>
 
 #include <signal.h>
 #include <time.h>
@@ -19,11 +19,15 @@ namespace Poco
 namespace DB
 {
 
+extern LazyPipe trace_pipe;
+
 enum class TimerType : UInt8
 {
     Real,
     Cpu,
 };
+
+void CloseQueryTraceStream();
 
 namespace
 {
@@ -41,14 +45,16 @@ namespace
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const Backtrace backtrace(signal_context);
 
-        DB::writePODBinary(backtrace, out);
+        DB::writeIntBinary(false, out);
         DB::writeStringBinary(query_id, out);
+        DB::writePODBinary(backtrace, out);
         DB::writeIntBinary(timer_type, out);
         out.next();
     }
 
     const UInt32 TIMER_PRECISION = 1e9;
 }
+
 
 template <typename ProfilerImpl>
 class QueryProfilerBase
