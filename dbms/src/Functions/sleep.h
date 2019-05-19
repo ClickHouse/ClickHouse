@@ -87,7 +87,8 @@ public:
             if (seconds > 3.0)   /// The choice is arbitrary
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
-            SleepForSeconds(seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size));
+            UInt64 microseconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
+            SleepForMicroseconds(microseconds);
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
