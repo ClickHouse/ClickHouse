@@ -3,7 +3,6 @@
 #include <future>
 #include <Poco/Runnable.h>
 #include <Poco/Logger.h>
-#include <common/Pipe.h>
 #include <ext/singleton.h>
 #include <Interpreters/Context.h>
 
@@ -15,14 +14,11 @@ namespace DB
     {
     private:
         Logger * log;
-        TraceLog * trace_log;
-        std::future<void> stop_future;
+        std::shared_ptr<TraceLog> trace_log;
 
     public:
-        TraceCollector(TraceLog * trace_log, std::future<void>&& stop_future);
+        TraceCollector(std::shared_ptr<TraceLog> trace_log);
 
         void run() override;
     };
-
-    extern LazyPipe trace_pipe;
 }

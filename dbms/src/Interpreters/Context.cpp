@@ -1,6 +1,5 @@
 #include <map>
 #include <set>
-#include <future>
 #include <optional>
 #include <memory>
 #include <Poco/Mutex.h>
@@ -158,7 +157,6 @@ struct ContextShared
 
     Poco::Thread trace_collector_thread;                    /// Thread collecting traces from threads executing queries
     std::unique_ptr<Poco::Runnable> trace_collector;
-    std::promise<void> trace_collector_stop;                /// Promise to stop trace_collector_thread;
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -295,19 +293,22 @@ struct ContextShared
         schedule_pool.reset();
         ddl_worker.reset();
 
-        /// Close trace pipe - definitely nobody needs to write there after
-        /// databases shutdown
-        trace_pipe.close();
+        /// Trace collector is only initialized in server program
+        if (trace_collector != nullptr) {
+            /// Stop trace collector
+            CloseQueryTraceStream();
+            trace_collector_thread.join();
 
-        /// Stop trace collector
-        trace_collector_stop.set_value();
-        trace_collector_thread.join();
+            /// Close trace pipe - definitely nobody needs to write there after
+            /// databases shutdown
+            trace_pipe.close();
+        }
     }
 
-    void initializeTraceCollector(TraceLog * trace_log)
+    void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
     {
         trace_pipe.open();
-        trace_collector.reset(new TraceCollector(trace_log, trace_collector_stop.get_future()));
+        trace_collector.reset(new TraceCollector(trace_log));
         trace_collector_thread.start(*trace_collector);
     }
 
@@ -1702,14 +1703,14 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
     return shared->system_logs->part_log;
 }
 
-TraceLog * Context::getTraceLog()
+std::shared_ptr<TraceLog> Context::getTraceLog()
 {
     auto lock = getLock();
 
     if (!shared->system_logs || !shared->system_logs->trace_log)
         return nullptr;
 
-    return shared->system_logs->trace_log.get();
+    return shared->system_logs->trace_log;
 }
 
 

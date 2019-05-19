@@ -424,7 +424,7 @@ public:
     std::shared_ptr<QueryLog> getQueryLog();
     std::shared_ptr<QueryThreadLog> getQueryThreadLog();
 
-    TraceLog * getTraceLog();
+    std::shared_ptr<TraceLog> getTraceLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.

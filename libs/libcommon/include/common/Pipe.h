@@ -14,7 +14,7 @@ struct LazyPipe
 
     LazyPipe() = default;
 
-    void open()
+    virtual void open()
     {
         for (int &fd : fds_rw)
         {
@@ -37,7 +37,7 @@ struct LazyPipe
 #endif
     }
 
-    void close() {
+    virtual void close() {
         for (int fd : fds_rw)
         {
             if (fd >= 0)
@@ -47,15 +47,17 @@ struct LazyPipe
         }
     }
 
-    ~LazyPipe()
-    {
-        close();
-    }
+    virtual ~LazyPipe() = default;
 };
 
 struct Pipe : public LazyPipe {
     Pipe()
     {
         open();
+    }
+
+    ~Pipe()
+    {
+        close();
     }
 };
