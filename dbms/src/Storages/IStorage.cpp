@@ -47,6 +47,16 @@ void IStorage::setIndices(IndicesDescription indices_)
     indices = std::move(indices_);
 }
 
+const ConstraintsDescription & IStorage::getConstraints() const
+{
+    return constraints;
+}
+
+void IStorage::setConstraints(ConstraintsDescription constraints_)
+{
+    constraints = std::move(constraints_);
+}
+
 NameAndTypePair IStorage::getColumn(const String & column_name) const
 {
     /// By default, we assume that there are no virtual columns in the storage.
