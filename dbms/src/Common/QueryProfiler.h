@@ -58,18 +58,6 @@ public:
         : log(&Logger::get("QueryProfiler"))
         , pause_signal(pause_signal)
     {
-        struct sigevent sev;
-        sev.sigev_notify = SIGEV_THREAD_ID;
-        sev.sigev_signo = pause_signal;
-        sev._sigev_un._tid = thread_id;
-        if (timer_create(clock_type, &sev, &timer_id))
-            throw Poco::Exception("Failed to create thread timer");
-
-        struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
-        struct itimerspec timer_spec = {.it_interval = interval, .it_value = interval};
-        if (timer_settime(timer_id, 0, &timer_spec, nullptr))
-            throw Poco::Exception("Failed to set thread timer");
-
         struct sigaction sa{};
         sa.sa_sigaction = ProfilerImpl::signalHandler;
         sa.sa_flags = SA_SIGINFO | SA_RESTART;
@@ -82,6 +70,18 @@ public:
 
         if (sigaction(pause_signal, &sa, previous_handler))
             throw Poco::Exception("Failed to setup signal handler for query profiler");
+
+        struct sigevent sev;
+        sev.sigev_notify = SIGEV_THREAD_ID;
+        sev.sigev_signo = pause_signal;
+        sev._sigev_un._tid = thread_id;
+        if (timer_create(clock_type, &sev, &timer_id))
+            throw Poco::Exception("Failed to create thread timer");
+
+        struct timespec interval{.tv_sec = period / TIMER_PRECISION, .tv_nsec = period % TIMER_PRECISION};
+        struct itimerspec timer_spec = {.it_interval = interval, .it_value = interval};
+        if (timer_settime(timer_id, 0, &timer_spec, nullptr))
+            throw Poco::Exception("Failed to set thread timer");
     }
 
     ~QueryProfilerBase()

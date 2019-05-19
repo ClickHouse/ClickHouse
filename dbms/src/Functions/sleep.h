@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/FieldVisitors.h>
+#include <Common/Sleep.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -86,8 +87,7 @@ public:
             if (seconds > 3.0)   /// The choice is arbitrary
                 throw Exception("The maximum sleep time is 3 seconds. Requested: " + toString(seconds), ErrorCodes::TOO_SLOW);
 
-            UInt64 useconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
-            ::usleep(useconds);
+            SleepForSeconds(seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size));
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.

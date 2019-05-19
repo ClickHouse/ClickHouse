@@ -38,12 +38,11 @@ struct LazyPipe
     }
 
     void close() {
-        for (int &fd : fds_rw)
+        for (int fd : fds_rw)
         {
             if (fd >= 0)
             {
                 ::close(fd);
-                fd = -1;
             }
         }
     }
