@@ -1,7 +1,7 @@
 
 # AggregatingMergeTree
 
-该引擎继承自 [MergeTree](mergetree.md)，并改变了数据片段的合并逻辑。 ClickHouse 会将相同主键的所有行（在一个数据片段内）替换为单个存储一系列统计函数状态的行。
+该引擎继承自 [MergeTree](mergetree.md)，并改变了数据片段的合并逻辑。 ClickHouse 会将相同主键的所有行（在一个数据片段内）替换为单个存储一系列聚合函数状态的行。
 
 可以使用 `AggregatingMergeTree` 表来做增量数据统计聚合，包括物化视图的数据聚合。
 
@@ -49,8 +49,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## SELECT 和 INSERT
 
-插入数据，需使用带有统计 -State- 函数的 [INSERT SELECT](../../query_language/insert_into.md) 语句。
-从 `AggregatingMergeTree` 表中查询数据时，需使用 `GROUP BY` 子句并且要使用与插入时相同的统计函数，但后缀要改为 `-Merge` 。
+插入数据，需使用带有聚合 -State- 函数的 [INSERT SELECT](../../query_language/insert_into.md) 语句。
+从 `AggregatingMergeTree` 表中查询数据时，需使用 `GROUP BY` 子句并且要使用与插入时相同的聚合函数，但后缀要改为 `-Merge` 。
 
 在 `SELECT` 查询的结果中，对于 ClickHouse 的所有输出格式 `AggregateFunction` 类型的值都实现了特定的二进制表示法。如果直接用 `SELECT` 导出这些数据，例如如用 `TabSeparated` 格式，那么这些导出数据也能直接用 `INSERT` 语句加载导入。
 
