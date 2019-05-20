@@ -53,6 +53,12 @@ public:
                     + ", should be at least 2.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        if (arguments.size() > FormatImpl::argument_threshold)
+            throw Exception(
+                "Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                    + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
