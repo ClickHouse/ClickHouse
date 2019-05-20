@@ -17,7 +17,7 @@
 namespace DB
 {
 
-bool StorageSystemPartsBase::hasStateColumn(const Names & column_names)
+bool StorageSystemPartsBase::hasStateColumn(const Names & column_names) const
 {
     bool has_state_column = false;
     Names real_column_names;
@@ -37,192 +37,173 @@ bool StorageSystemPartsBase::hasStateColumn(const Names & column_names)
     return has_state_column;
 }
 
-
-class StoragesInfoStream
+MergeTreeData::DataPartsVector
+StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const
 {
-public:
-    StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context, bool has_state_column)
-        : query_id(context.getCurrentQueryId())
-        , has_state_column(has_state_column)
+    using State = MergeTreeData::DataPartState;
+    if (need_inactive_parts)
     {
-        /// Will apply WHERE to subset of columns and then add more columns.
-        /// This is kind of complicated, but we use WHERE to do less work.
+        /// If has_state_column is requested, return all states.
+        if (!has_state_column)
+            return data->getDataPartsVector({State::Committed, State::Outdated}, &state);
 
-        Block block_to_filter;
+        return data->getAllDataPartsVector(&state);
+    }
 
-        MutableColumnPtr table_column_mut = ColumnString::create();
-        MutableColumnPtr engine_column_mut = ColumnString::create();
-        MutableColumnPtr active_column_mut = ColumnUInt8::create();
+    return data->getDataPartsVector({State::Committed}, &state);
+}
 
+StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context)
+    : query_id(context.getCurrentQueryId())
+{
+    /// Will apply WHERE to subset of columns and then add more columns.
+    /// This is kind of complicated, but we use WHERE to do less work.
+
+    Block block_to_filter;
+
+    MutableColumnPtr table_column_mut = ColumnString::create();
+    MutableColumnPtr engine_column_mut = ColumnString::create();
+    MutableColumnPtr active_column_mut = ColumnUInt8::create();
+
+    {
+        Databases databases = context.getDatabases();
+
+        /// Add column 'database'.
+        MutableColumnPtr database_column_mut = ColumnString::create();
+        for (const auto & database : databases)
         {
-            Databases databases = context.getDatabases();
-
-            /// Add column 'database'.
-            MutableColumnPtr database_column_mut = ColumnString::create();
-            for (const auto & database : databases)
-            {
-                if (context.hasDatabaseAccessRights(database.first))
-                    database_column_mut->insert(database.first);
-            }
-            block_to_filter.insert(ColumnWithTypeAndName(
-                std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
-
-            /// Filter block_to_filter with column 'database'.
-            VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
-            rows = block_to_filter.rows();
-
-            /// Block contains new columns, update database_column.
-            ColumnPtr database_column_ = block_to_filter.getByName("database").column;
-
-            if (rows)
-            {
-                /// Add columns 'table', 'engine', 'active'
-
-                IColumn::Offsets offsets(rows);
-
-                for (size_t i = 0; i < rows; ++i)
-                {
-                    String database_name = (*database_column_)[i].get<String>();
-                    const DatabasePtr database = databases.at(database_name);
-
-                    offsets[i] = i ? offsets[i - 1] : 0;
-                    for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
-                    {
-                        String table_name = iterator->name();
-                        StoragePtr storage = iterator->table();
-                        String engine_name = storage->getName();
-
-                        if (!dynamic_cast<MergeTreeData *>(storage.get()))
-                            continue;
-
-                        storages[std::make_pair(database_name, iterator->name())] = storage;
-
-                        /// Add all combinations of flag 'active'.
-                        for (UInt64 active : {0, 1})
-                        {
-                            table_column_mut->insert(table_name);
-                            engine_column_mut->insert(engine_name);
-                            active_column_mut->insert(active);
-                        }
-
-                        offsets[i] += 2;
-                    }
-                }
-
-                for (size_t i = 0; i < block_to_filter.columns(); ++i)
-                {
-                    ColumnPtr & column = block_to_filter.safeGetByPosition(i).column;
-                    column = column->replicate(offsets);
-                }
-            }
+            if (context.hasDatabaseAccessRights(database.first))
+                database_column_mut->insert(database.first);
         }
+        block_to_filter.insert(ColumnWithTypeAndName(
+            std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
-        block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
-        block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
-        block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
+        /// Filter block_to_filter with column 'database'.
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        rows = block_to_filter.rows();
+
+        /// Block contains new columns, update database_column.
+        ColumnPtr database_column_ = block_to_filter.getByName("database").column;
 
         if (rows)
         {
-            /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
-            VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
-            rows = block_to_filter.rows();
+            /// Add columns 'table', 'engine', 'active'
+
+            IColumn::Offsets offsets(rows);
+
+            for (size_t i = 0; i < rows; ++i)
+            {
+                String database_name = (*database_column_)[i].get<String>();
+                const DatabasePtr database = databases.at(database_name);
+
+                offsets[i] = i ? offsets[i - 1] : 0;
+                for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
+                {
+                    String table_name = iterator->name();
+                    StoragePtr storage = iterator->table();
+                    String engine_name = storage->getName();
+
+                    if (!dynamic_cast<MergeTreeData *>(storage.get()))
+                        continue;
+
+                    storages[std::make_pair(database_name, iterator->name())] = storage;
+
+                    /// Add all combinations of flag 'active'.
+                    for (UInt64 active : {0, 1})
+                    {
+                        table_column_mut->insert(table_name);
+                        engine_column_mut->insert(engine_name);
+                        active_column_mut->insert(active);
+                    }
+
+                    offsets[i] += 2;
+                }
+            }
+
+            for (size_t i = 0; i < block_to_filter.columns(); ++i)
+            {
+                ColumnPtr & column = block_to_filter.safeGetByPosition(i).column;
+                column = column->replicate(offsets);
+            }
         }
-
-        database_column = block_to_filter.getByName("database").column;
-        table_column = block_to_filter.getByName("table").column;
-        active_column = block_to_filter.getByName("active").column;
-
-        next_row = 0;
     }
 
-    StorageSystemPartsBase::StoragesInfo next()
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(engine_column_mut), std::make_shared<DataTypeString>(), "engine"));
+    block_to_filter.insert(ColumnWithTypeAndName(std::move(active_column_mut), std::make_shared<DataTypeUInt8>(), "active"));
+
+    if (rows)
     {
-        StorageSystemPartsBase::StoragesInfo info;
-        info.storage = nullptr;
-
-        while (next_row < rows)
-        {
-
-            info.database = (*database_column)[next_row].get<String>();
-            info.table = (*table_column)[next_row].get<String>();
-
-            auto isSameTable = [&info, this] (size_t row) -> bool
-            {
-                return (*database_column)[row].get<String>() == info.database &&
-                       (*table_column)[row].get<String>() == info.table;
-            };
-
-            /// What 'active' value we need.
-            bool need[2]{}; /// [active]
-            for (; next_row < rows && isSameTable(next_row); ++next_row)
-            {
-                bool active = (*active_column)[next_row].get<UInt64>() != 0;
-                need[active] = true;
-            }
-
-            info.storage = storages.at(std::make_pair(info.database, info.table));
-
-            try
-            {
-                /// For table not to be dropped and set of columns to remain constant.
-                info.table_lock = info.storage->lockStructureForShare(false, query_id);
-            }
-            catch (const Exception & e)
-            {
-                /** There are case when IStorage::drop was called,
-                  *  but we still own the object.
-                  * Then table will throw exception at attempt to lock it.
-                  * Just skip the table.
-                  */
-                if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                    continue;
-
-                throw;
-            }
-
-            info.engine = info.storage->getName();
-
-            info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
-            if (!info.data)
-                throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
-
-            using State = MergeTreeDataPart::State;
-            auto & all_parts_state = info.all_parts_state;
-            auto & all_parts = info.all_parts;
-
-            if (need[0])
-            {
-                /// If has_state_column is requested, return all states.
-                if (!has_state_column)
-                    all_parts = info.data->getDataPartsVector({State::Committed, State::Outdated}, &all_parts_state);
-                else
-                    all_parts = info.data->getAllDataPartsVector(&all_parts_state);
-            }
-            else
-                all_parts = info.data->getDataPartsVector({State::Committed}, &all_parts_state);
-
-            break;
-        }
-
-        return info;
+        /// Filter block_to_filter with columns 'database', 'table', 'engine', 'active'.
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
+        rows = block_to_filter.rows();
     }
 
-private:
-    String query_id;
+    database_column = block_to_filter.getByName("database").column;
+    table_column = block_to_filter.getByName("table").column;
+    active_column = block_to_filter.getByName("active").column;
 
-    bool has_state_column;
+    next_row = 0;
+}
 
-    ColumnPtr database_column;
-    ColumnPtr table_column;
-    ColumnPtr active_column;
+StoragesInfo StoragesInfoStream::next()
+{
+    StoragesInfo info;
+    info.storage = nullptr;
 
-    size_t next_row;
-    size_t rows;
+    while (next_row < rows)
+    {
 
-    using StoragesMap = std::map<std::pair<String, String>, StoragePtr>;
-    StoragesMap storages;
-};
+        info.database = (*database_column)[next_row].get<String>();
+        info.table = (*table_column)[next_row].get<String>();
 
+        auto isSameTable = [&info, this] (size_t row) -> bool
+        {
+            return (*database_column)[row].get<String>() == info.database &&
+                   (*table_column)[row].get<String>() == info.table;
+        };
+
+        /// We may have two rows per table which differ in 'active' value.
+        /// If rows with 'active = 0' were not filtered out, this means we
+        /// must collect the inactive parts. Remember this fact in StoragesInfo.
+        for (; next_row < rows && isSameTable(next_row); ++next_row)
+        {
+            const auto active = (*active_column)[next_row].get<UInt64>();
+            if (active == 0)
+                info.need_inactive_parts = true;
+        }
+
+        info.storage = storages.at(std::make_pair(info.database, info.table));
+
+        try
+        {
+            /// For table not to be dropped and set of columns to remain constant.
+            info.table_lock = info.storage->lockStructureForShare(false, query_id);
+        }
+        catch (const Exception & e)
+        {
+            /** There are case when IStorage::drop was called,
+              *  but we still own the object.
+              * Then table will throw exception at attempt to lock it.
+              * Just skip the table.
+              */
+            if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                continue;
+
+            throw;
+        }
+
+        info.engine = info.storage->getName();
+
+        info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
+        if (!info.data)
+            throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
+
+        break;
+    }
+
+    return info;
+}
 
 BlockInputStreams StorageSystemPartsBase::read(
         const Names & column_names,
@@ -234,7 +215,7 @@ BlockInputStreams StorageSystemPartsBase::read(
 {
     bool has_state_column = hasStateColumn(column_names);
 
-    StoragesInfoStream stream(query_info, context, has_state_column);
+    StoragesInfoStream stream(query_info, context);
 
     /// Create the result.
 
