@@ -12,14 +12,24 @@ ENGINE = Memory;
 
 INSERT INTO sequence SELECT 1, number = 0 ? 'A' : (number < 1000000 ? 'B' : 'C'), number FROM numbers(1000001);
 
-SELECT userID
+SELECT 'ABC'
 FROM sequence
 GROUP BY userID
 HAVING sequenceMatch('(?1).*(?2).*(?3)')(toDateTime(EventTime), eventType = 'A', eventType = 'B', eventType = 'C');
 
-SELECT userID
+SELECT 'ABA'
 FROM sequence
 GROUP BY userID
 HAVING sequenceMatch('(?1).*(?2).*(?3)')(toDateTime(EventTime), eventType = 'A', eventType = 'B', eventType = 'A');
+
+SELECT 'ABBC'
+FROM sequence
+GROUP BY userID
+HAVING sequenceMatch('(?1).*(?2).*(?3).*(?4)')(EventTime, eventType = 'A', eventType = 'B', eventType = 'B',eventType = 'C');
+
+SELECT 'CBA'
+FROM sequence
+GROUP BY userID
+HAVING sequenceMatch('(?1).*(?2).*(?3)')(EventTime, eventType = 'C', eventType = 'B', eventType = 'A');
 
 DROP TABLE sequence;
