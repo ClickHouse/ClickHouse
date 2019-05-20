@@ -194,10 +194,10 @@ private:
     struct PatternAction final
     {
         PatternActionType type;
-        std::uint32_t extra;
+        std::uint64_t extra;
 
         PatternAction() = default;
-        PatternAction(const PatternActionType type, const std::uint32_t extra = 0) : type{type}, extra{extra} {}
+        PatternAction(const PatternActionType type, const std::uint64_t extra = 0) : type{type}, extra{extra} {}
     };
 
     static constexpr size_t bytes_on_stack = 64;
@@ -432,7 +432,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeLessOrEqual)
             {
-                if (events_it->first <= static_cast<UInt64>(base_it->first + action_it->extra))
+                if (events_it->first <= base_it->first + action_it->extra)
                 {
                     /// condition satisfied, move onto next action
                     back_stack.emplace(action_it, events_it, base_it);
@@ -444,7 +444,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeLess)
             {
-                if (events_it->first < static_cast<UInt64>(base_it->first < action_it->extra))
+                if (events_it->first < base_it->first + action_it->extra)
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -455,7 +455,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeGreaterOrEqual)
             {
-                if (events_it->first >= static_cast<UInt64>(base_it->first + action_it->extra))
+                if (events_it->first >= base_it->first + action_it->extra)
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -466,7 +466,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeGreater)
             {
-                if (events_it->first > static_cast<UInt64>(base_it->first + action_it->extra))
+                if (events_it->first > base_it->first + action_it->extra)
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
