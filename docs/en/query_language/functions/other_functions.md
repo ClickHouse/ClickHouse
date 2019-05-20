@@ -12,19 +12,17 @@ Extracts trailing part of a string after the last slash or backslash. This funct
 basename( expr )
 ```
 
-Backslashes should be escaped in `expr`.
-
 **Parameters**
 
-`expr` — Expression, resulting in the [String](../../data_types/string.md)-type value.
+- `expr` — Expression, resulting in the [String](../../data_types/string.md)-type value. All the backslashes must be escaped in the resulting value.
 
-**Returned value**
+**Returned Value**
 
-A string-type value that contains:
+A String-type value that contains:
 
 - Trailing part of a string after the last slash or backslash in it.
 
-    If the input string contains a path, ending with slash or backslash, for example, `\` or `\home\`, the function returns an empty string.
+    If the input string contains a path, ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
 
 - Original string if there are no slashes or backslashes in it.
 
