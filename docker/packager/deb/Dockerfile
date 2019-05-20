@@ -12,7 +12,6 @@ RUN apt-get --allow-unauthenticated update -y \
 
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
 RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
-RUN add-apt-repository -y ppa:jonathonf/gcc-9.0
 
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -21,8 +20,6 @@ RUN apt-get --allow-unauthenticated update -y \
             g++-7 \
             gcc-8 \
             g++-8 \
-            gcc-9 \
-            g++-9 \
             clang-6.0 \
             lld-6.0 \
             libclang-6.0-dev \
