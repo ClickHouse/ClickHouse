@@ -62,7 +62,28 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
 ## toValidUTF8
 
-Returns string where all invalid UTF-8 characters are replaced by replacement character `�` (U+FFFD). If there are many invalid characters subsequently, it is collapsed to one replacement character.
+Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
+
+```
+toValidUTF8( input_string )
+```
+
+Parameters:
+
+- input_string — Any set of bytes represented as the [String](../../data_types/string.md) data type object.
+
+Returned value: Valid UTF-8 string.
+
+### Example
+
+```sql
+SELECT toValidUTF8('\x00\xF0\x80\x80\x80')
+```
+```text
+┌─toValidUTF8('\0����')─┐
+│ �                     │
+└───────────────────────┘
+```
 
 ## reverse
 
