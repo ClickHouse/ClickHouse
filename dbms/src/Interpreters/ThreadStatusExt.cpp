@@ -154,10 +154,12 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.query_start_time = query_start_time;
     elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
 
-    elem.read_rows = progress_in.rows.load(std::memory_order_relaxed);
-    elem.read_bytes = progress_in.bytes.load(std::memory_order_relaxed);
-    elem.written_rows = progress_out.rows.load(std::memory_order_relaxed);
-    elem.written_bytes = progress_out.bytes.load(std::memory_order_relaxed);
+    elem.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
+    elem.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
+    
+    /// TODO: Use written_rows and written_bytes when run time progress is implemented
+    elem.written_rows = progress_out.read_rows.load(std::memory_order_relaxed);
+    elem.written_bytes = progress_out.read_bytes.load(std::memory_order_relaxed);
     elem.memory_usage = memory_tracker.get();
     elem.peak_memory_usage = memory_tracker.getPeak();
 

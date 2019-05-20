@@ -15,11 +15,11 @@ class WriteBuffer;
 /// See Progress.
 struct ProgressValues
 {
-    size_t rows;
-    size_t bytes;
-    size_t total_rows;
-    size_t write_rows;
-    size_t write_bytes;
+    size_t read_rows;
+    size_t read_bytes;
+    size_t total_rows_to_read;
+    size_t written_rows;
+    size_t written_bytes;
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
@@ -28,21 +28,21 @@ struct ProgressValues
 
 struct ReadProgress
 {
-    size_t rows;
-    size_t bytes;
-    size_t total_rows;
+    size_t read_rows;
+    size_t read_bytes;
+    size_t total_rows_to_read;
 
-    ReadProgress(size_t rows_, size_t bytes_, size_t total_rows_ = 0)
-        : rows(rows_), bytes(bytes_), total_rows(total_rows_) {}
+    ReadProgress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
+        : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
 };
 
 struct WriteProgress
 {
-    size_t write_rows;
-    size_t write_bytes;
+    size_t written_rows;
+    size_t written_bytes;
 
-    WriteProgress(size_t write_rows_, size_t write_bytes_)
-        : write_rows(write_rows_), write_bytes(write_bytes_) {}
+    WriteProgress(size_t written_rows_, size_t written_bytes_)
+        : written_rows(written_rows_), written_bytes(written_bytes_) {}
 };
 
 /** Progress of query execution.
@@ -51,26 +51,26 @@ struct WriteProgress
   */
 struct Progress
 {
-    std::atomic<size_t> rows {0};        /// Rows (source) processed.
-    std::atomic<size_t> bytes {0};       /// Bytes (uncompressed, source) processed.
+    std::atomic<size_t> read_rows {0};        /// Rows (source) processed.
+    std::atomic<size_t> read_bytes {0};       /// Bytes (uncompressed, source) processed.
 
     /** How much rows must be processed, in total, approximately. Non-zero value is sent when there is information about some new part of job.
       * Received values must be summed to get estimate of total rows to process.
       * Used for rendering progress bar on client.
       */
-    std::atomic<size_t> total_rows {0};
+    std::atomic<size_t> total_rows_to_read {0};
 
 
-    std::atomic<size_t> write_rows {0};
-    std::atomic<size_t> write_bytes {0};
+    std::atomic<size_t> written_rows {0};
+    std::atomic<size_t> written_bytes {0};
 
     Progress() {}
-    Progress(size_t rows_, size_t bytes_, size_t total_rows_ = 0)
-        : rows(rows_), bytes(bytes_), total_rows(total_rows_) {}
+    Progress(size_t read_rows_, size_t read_bytes_, size_t total_rows_to_read_ = 0)
+        : read_rows(read_rows_), read_bytes(read_bytes_), total_rows_to_read(total_rows_to_read_) {}
     Progress(ReadProgress read_progress)
-        : rows(read_progress.rows), bytes(read_progress.bytes), total_rows(read_progress.total_rows) {}
+        : read_rows(read_progress.read_rows), read_bytes(read_progress.read_bytes), total_rows_to_read(read_progress.total_rows_to_read) {}
     Progress(WriteProgress write_progress)
-        : write_rows(write_progress.write_rows), write_bytes(write_progress.write_bytes)  {}
+        : written_rows(write_progress.written_rows), written_bytes(write_progress.written_bytes)  {}
 
     void read(ReadBuffer & in, UInt64 server_revision);
     void write(WriteBuffer & out, UInt64 client_revision) const;
@@ -80,33 +80,33 @@ struct Progress
     /// Each value separately is changed atomically (but not whole object).
     bool incrementPiecewiseAtomically(const Progress & rhs)
     {
-        rows += rhs.rows;
-        bytes += rhs.bytes;
-        total_rows += rhs.total_rows;
-        write_rows += rhs.write_rows;
-        write_bytes += rhs.write_bytes;
+        read_rows += rhs.read_rows;
+        read_bytes += rhs.read_bytes;
+        total_rows_to_read += rhs.total_rows_to_read;
+        written_rows += rhs.written_rows;
+        written_bytes += rhs.written_bytes;
 
-        return rhs.rows || rhs.write_rows ? true : false;
+        return rhs.read_rows || rhs.written_rows ? true : false;
     }
 
     void reset()
     {
-        rows = 0;
-        bytes = 0;
-        total_rows = 0;
-        write_rows = 0;
-        write_bytes = 0;
+        read_rows = 0;
+        read_bytes = 0;
+        total_rows_to_read = 0;
+        written_rows = 0;
+        written_bytes = 0;
     }
 
     ProgressValues getValues() const
     {
         ProgressValues res;
 
-        res.rows = rows.load(std::memory_order_relaxed);
-        res.bytes = bytes.load(std::memory_order_relaxed);
-        res.total_rows = total_rows.load(std::memory_order_relaxed);
-        res.write_rows = write_rows.load(std::memory_order_relaxed);
-        res.write_bytes = write_bytes.load(std::memory_order_relaxed);
+        res.read_rows = read_rows.load(std::memory_order_relaxed);
+        res.read_bytes = read_bytes.load(std::memory_order_relaxed);
+        res.total_rows_to_read = total_rows_to_read.load(std::memory_order_relaxed);
+        res.written_rows = written_rows.load(std::memory_order_relaxed);
+        res.written_bytes = written_bytes.load(std::memory_order_relaxed);
 
         return res;
     }
@@ -115,22 +115,22 @@ struct Progress
     {
         ProgressValues res;
 
-        res.rows = rows.fetch_and(0);
-        res.bytes = bytes.fetch_and(0);
-        res.total_rows = total_rows.fetch_and(0);
-        res.write_rows = write_rows.fetch_and(0);
-        res.write_bytes = write_bytes.fetch_and(0);
+        res.read_rows = read_rows.fetch_and(0);
+        res.read_bytes = read_bytes.fetch_and(0);
+        res.total_rows_to_read = total_rows_to_read.fetch_and(0);
+        res.written_rows = written_rows.fetch_and(0);
+        res.written_bytes = written_bytes.fetch_and(0);
 
         return res;
     }
 
     Progress & operator=(Progress && other)
     {
-        rows = other.rows.load(std::memory_order_relaxed);
-        bytes = other.bytes.load(std::memory_order_relaxed);
-        total_rows = other.total_rows.load(std::memory_order_relaxed);
-        write_rows = other.write_rows.load(std::memory_order_relaxed);
-        write_bytes = other.write_bytes.load(std::memory_order_relaxed);
+        read_rows = other.read_rows.load(std::memory_order_relaxed);
+        read_bytes = other.read_bytes.load(std::memory_order_relaxed);
+        total_rows_to_read = other.total_rows_to_read.load(std::memory_order_relaxed);
+        written_rows = other.written_rows.load(std::memory_order_relaxed);
+        written_bytes = other.written_bytes.load(std::memory_order_relaxed);
 
         return *this;
     }

@@ -10,38 +10,38 @@ namespace DB
 {
 void ProgressValues::read(ReadBuffer & in, UInt64 server_revision)
 {
-    size_t new_rows = 0;
-    size_t new_bytes = 0;
-    size_t new_total_rows = 0;
-    size_t new_write_rows = 0;
-    size_t new_write_bytes = 0;
+    size_t new_read_rows = 0;
+    size_t new_read_bytes = 0;
+    size_t new_total_rows_to_read = 0;
+    size_t new_written_rows = 0;
+    size_t new_written_bytes = 0;
 
-    readVarUInt(new_rows, in);
-    readVarUInt(new_bytes, in);
-    readVarUInt(new_total_rows, in);
+    readVarUInt(new_read_rows, in);
+    readVarUInt(new_read_bytes, in);
+    readVarUInt(new_total_rows_to_read, in);
     if (server_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
-        readVarUInt(new_write_rows, in);
-        readVarUInt(new_write_bytes, in);
+        readVarUInt(new_written_rows, in);
+        readVarUInt(new_written_bytes, in);
     }
 
-    this->rows = new_rows;
-    this->bytes = new_bytes;
-    this->total_rows = new_total_rows;
-    this->write_rows = new_write_rows;
-    this->write_bytes = new_write_bytes;
+    this->read_rows = new_read_rows;
+    this->read_bytes = new_read_bytes;
+    this->total_rows_to_read = new_total_rows_to_read;
+    this->written_rows = new_written_rows;
+    this->written_bytes = new_written_bytes;
 }
 
 
 void ProgressValues::write(WriteBuffer & out, UInt64 client_revision) const
 {
-    writeVarUInt(this->rows, out);
-    writeVarUInt(this->bytes, out);
-    writeVarUInt(this->total_rows, out);
+    writeVarUInt(this->read_rows, out);
+    writeVarUInt(this->read_bytes, out);
+    writeVarUInt(this->total_rows_to_read, out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_WRITE_INFO)
     {
-        writeVarUInt(this->write_rows, out);
-        writeVarUInt(this->write_bytes, out);
+        writeVarUInt(this->written_rows, out);
+        writeVarUInt(this->written_bytes, out);
     }
 }
 
@@ -51,15 +51,15 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     ///  of 64-bit integers after interpretation by JavaScript.
 
     writeCString("{\"read_rows\":\"", out);
-    writeText(this->rows, out);
+    writeText(this->read_rows, out);
     writeCString("\",\"read_bytes\":\"", out);
-    writeText(this->bytes, out);
+    writeText(this->read_bytes, out);
     writeCString("\",\"written_rows\":\"", out);
-    writeText(this->write_rows, out);
+    writeText(this->written_rows, out);
     writeCString("\",\"written_bytes\":\"", out);
-    writeText(this->write_bytes, out);
-    writeCString("\",\"rows_in_set\":\"", out);
-    writeText(this->total_rows, out);
+    writeText(this->written_bytes, out);
+    writeCString("\",\"total_rows_to_read\":\"", out);
+    writeText(this->total_rows_to_read, out);
     writeCString("\"}", out);
 }
 
@@ -68,11 +68,11 @@ void Progress::read(ReadBuffer & in, UInt64 server_revision)
     ProgressValues values;
     values.read(in, server_revision);
 
-    rows.store(values.rows, std::memory_order_relaxed);
-    bytes.store(values.bytes, std::memory_order_relaxed);
-    total_rows.store(values.total_rows, std::memory_order_relaxed);
-    write_rows.store(values.write_rows, std::memory_order_relaxed);
-    write_bytes.store(values.write_bytes, std::memory_order_relaxed);
+    read_rows.store(values.read_rows, std::memory_order_relaxed);
+    read_bytes.store(values.read_bytes, std::memory_order_relaxed);
+    total_rows_to_read.store(values.total_rows_to_read, std::memory_order_relaxed);
+    written_rows.store(values.written_rows, std::memory_order_relaxed);
+    written_bytes.store(values.written_bytes, std::memory_order_relaxed);
 }
 
 void Progress::write(WriteBuffer & out, UInt64 client_revision) const
