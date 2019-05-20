@@ -148,7 +148,9 @@ def run_tests_array(all_tests_with_params):
             elif not args.zookeeper and 'zookeeper' in name:
                 print(MSG_SKIPPED + " - no zookeeper")
                 skipped_total += 1
-            elif not args.shard and 'shard' in name:
+            elif not args.shard and ('shard' in name
+                    or 'distributed' in name
+                    or 'global' in name):
                 print(MSG_SKIPPED + " - no shard")
                 skipped_total += 1
             elif not args.no_long and 'long' in name:
