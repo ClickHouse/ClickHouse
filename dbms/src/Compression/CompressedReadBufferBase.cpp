@@ -38,7 +38,6 @@ namespace ErrorCodes
 }
 
 using Checksum = CityHash_v1_0_2::uint128;
-static constexpr auto CHECKSUM_SIZE{sizeof(Checksum)};
 
 
 /// Validate checksum of data, and if it mismatches, find out possible reason and throw exception.
@@ -102,7 +101,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         return 0;
 
     Checksum checksum;
-    compressed_in->readStrict(reinterpret_cast<char *>(&checksum), CHECKSUM_SIZE);
+    compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(Checksum));
 
     UInt8 header_size = ICompressionCodec::getHeaderSize();
     own_compressed_buffer.resize(header_size);
@@ -128,7 +127,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
                         + ". Most likely corrupted data.",
                         ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
-    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + CHECKSUM_SIZE);
+    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
 
     /// Is whole compressed block located in 'compressed_in->' buffer?
     if (compressed_in->offset() >= header_size &&
@@ -148,7 +147,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (!disable_checksum)
         validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
 
-    return size_compressed_without_checksum + CHECKSUM_SIZE;
+    return size_compressed_without_checksum + sizeof(Checksum);
 }
 
 
