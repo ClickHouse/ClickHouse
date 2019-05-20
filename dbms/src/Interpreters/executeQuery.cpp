@@ -336,8 +336,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
                     {
                         /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
-                        elem.result_rows = counting_stream->getProgress().rows;
-                        elem.result_bytes = counting_stream->getProgress().bytes;
+                        elem.result_rows = counting_stream->getProgress().read_rows;
+                        elem.result_bytes = counting_stream->getProgress().read_bytes;
                     }
                 }
 
