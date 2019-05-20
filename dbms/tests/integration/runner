@@ -7,6 +7,7 @@ import argparse
 import logging
 import signal
 import subprocess
+import sys
 
 CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../../"))
@@ -86,9 +87,15 @@ if __name__ == "__main__":
     # should be removed manually when not needed
     subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
 
-    cmd = "docker run {net} -it --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
+    # enable tty mode & interactive for docker if we have real tty
+    tty = ""
+    if sys.stdout.isatty() and sys.stdin.isatty():
+        tty = "-it"
+
+    cmd = "docker run {net} {tty} --rm --name {name} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse --volume={name}_volume:/var/lib/docker -e PYTEST_OPTS='{opts}' {img} {command}".format(
         net=net,
+        tty=tty,
         bin=args.binary,
         bridge_bin=args.bridge_binary,
         cfg=args.configs_dir,
