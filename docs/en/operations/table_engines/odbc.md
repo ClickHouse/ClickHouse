@@ -2,7 +2,7 @@
 
 Allows ClickHouse to connect to external databases via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-To implement ODBC connection, ClickHouse uses the separate program `clickhouse-odbc-bridge`. ClickHouse starts this program automatically when it is required. The ODBC bridge program is installed by the same package as the `clickhouse-server`. ClickHouse uses the ODBC bridge program because it is unsafe to load ODBC driver. In case of problems with ODBC driver it can crash the `clickhouse-server`.
+To implement ODBC connection safely, ClickHouse uses the separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from the `clickhouse-server` program, the problems in the driver can crash the ClickHouse server. ClickHouse starts the `clickhouse-odbc-bridge` program automatically when it is required. The ODBC bridge program is installed by the same package as the `clickhouse-server`.
 
 This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
