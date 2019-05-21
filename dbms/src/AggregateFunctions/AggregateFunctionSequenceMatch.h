@@ -60,7 +60,7 @@ struct AggregateFunctionSequenceMatchData final
         }
     }
 
-    void merge(const AggregateFunctionSequenceMatchData & other)
+    void NO_SANITIZE_UNDEFINED merge(const AggregateFunctionSequenceMatchData & other)
     {
         const auto size = events_list.size();
 
