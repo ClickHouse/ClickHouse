@@ -39,11 +39,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
+    void rename(const String & /* new_path_to_db */, const String & new_database_name, const String & new_table_name) override;
 
     void updateDependencies() override;
 
@@ -56,18 +52,15 @@ private:
     const String brokers;
     const String group;
     const String format_name;
-    // Optional row delimiter for generating char delimited stream
-    // in order to make various input stream parsers happy.
-    char row_delimiter;
+    char row_delimiter; /// optional row delimiter for generating char delimited stream in order to make various input stream parsers happy.
     const String schema_name;
-    /// Total number of consumers
-    size_t num_consumers;
-    /// Maximum block size for insertion into this table
-    UInt64 max_block_size;
-    /// Number of actually created consumers.
+    size_t num_consumers; /// total number of consumers
+    UInt64 max_block_size; /// maximum block size for insertion into this table
+
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
-    size_t num_created_consumers = 0;
+    size_t num_created_consumers = 0; /// number of actually created consumers.
+
     Poco::Logger * log;
 
     // Consumer list
