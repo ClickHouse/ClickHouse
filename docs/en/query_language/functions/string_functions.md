@@ -77,13 +77,14 @@ Returned value: Valid UTF-8 string.
 ### Example
 
 ```sql
-SELECT toValidUTF8('\x00\xF0\x80\x80\x80')
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80')
 ```
 ```text
-┌─toValidUTF8('\0����')─┐
-│ �                     │
-└───────────────────────┘
+┌─toValidUTF8('a����')─┐
+│ a�                   │
+└──────────────────────┘
 ```
+
 
 ## reverse
 
