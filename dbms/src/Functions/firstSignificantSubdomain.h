@@ -3,7 +3,9 @@
 #include <Functions/domain.h>
 #include <common/find_symbols.h>
 #include <Common/config.h>
-#include <Functions/tldLookup.h>
+#if USE_GPERF
+#    include <Functions/tldLookup.h>
+#endif
 
 namespace DB
 {
