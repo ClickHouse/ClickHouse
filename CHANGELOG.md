@@ -4,24 +4,21 @@
 * Add locks for ASOF lookup data cause it has multithreaded access. Replace some macro code with templates. [#4875](https://github.com/yandex/ClickHouse/pull/4875) ([Artem Zuikov](https://github.com/4ertus2))
 * Fixed potential null pointer dereference in `clickhouse-copier`. [#4900](https://github.com/yandex/ClickHouse/pull/4900) ([proller](https://github.com/proller))
 * Fix bug in codecs parameters detection in `ALTER MODIFY` of codec without type of column. [#4883](https://github.com/yandex/ClickHouse/pull/4883) ([alesapin](https://github.com/alesapin))
-* Functions cutQueryStringAndFragment() and queryStringAndFragment() now works correctly when url contains a fragment and no query. [#4894](https://github.com/yandex/ClickHouse/pull/4894) ([Vitaly Baranov](https://github.com/vitlibar))
 * Fix bug in `ReadBufferAIO` which was not able to seek backwards after EOF (now it can). In case of concurrent `SELECT` query some threads may "steal" portions of read-data from other threads and seek backwards in buffers. It leads to `Can't adjust last granule` error in rare cases if setting `min_bytes_to_use_direct_io` was set to positive number. [#4897](https://github.com/yandex/ClickHouse/pull/4897) ([alesapin](https://github.com/alesapin))
-* Fix bug with additional file seek and read when block already in uncompressed cached. [#4913](https://github.com/yandex/ClickHouse/pull/4913) ([alesapin](https://github.com/alesapin))
-* Fixed wrong argument types for aggregate functions with low cardinality arguments. https://github.com/yandex/ClickHouse/issues/4919 [#4922](https://github.com/yandex/ClickHouse/pull/4922) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* If multiple joins are enabled there were an error on query with JOIN + ARRAY JOIN [#4938](https://github.com/yandex/ClickHouse/pull/4938) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix bug with additional file seek and read when block already in uncompressed cache. [#4913](https://github.com/yandex/ClickHouse/pull/4913) ([alesapin](https://github.com/alesapin))
+* Fixed error on query with JOIN + ARRAY JOIN [#4938](https://github.com/yandex/ClickHouse/pull/4938) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix hanging on start of the server when a dictionary depends on another dictionary via a database with engine=Dictionary. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
-* Set alias for external table (right part of GLOBAL JOIN) to be able to resolve its columns. [#4969](https://github.com/yandex/ClickHouse/pull/4969) ([Artem Zuikov](https://github.com/4ertus2))
 * Partially fix distributed_product_mode=local. It's possible to allow columns of local tables in where/having/order by/... via table aliases. Throw exception if table does not have alias. There's not possible to access to the columns without table aliases yet. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
 * Function `toISOWeek` returned wrong results for year 1970. [#4988](https://github.com/yandex/ClickHouse/pull/4988) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Now follower replicas would not send queries to leader if they receive them from DDL. [#4991](https://github.com/yandex/ClickHouse/pull/4991) ([alesapin](https://github.com/alesapin))
 * Fix wrong result for 'select distinct' with multiple streams (ex. leaded by join) [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
-* The `max_partitions_per_insert_block` field is of `size_t` type, rather than `Boolean` [#5028](https://github.com/yandex/ClickHouse/pull/5028) ([Mohammad Hossein Sekhavat](https://github.com/mhsekhavat))
 
 ### Build/Testing/Packaging Improvement
 * Further improvement of the docker-based test machinery ... [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
 *  [#4937](https://github.com/yandex/ClickHouse/pull/4937) ([alesapin](https://github.com/alesapin))
 * Tests: Allow use any test database (remove test.hardcode where it possible) [#5008](https://github.com/yandex/ClickHouse/pull/5008) ([proller](https://github.com/proller))
 * Fix ubsan errors [#5037](https://github.com/yandex/ClickHouse/pull/5037) ([Vitaly Baranov](https://github.com/vitlibar))
+* Yandex LFAlloc was added to ClickHouse to allocate MarkCache and UncompressedCache data in different ways to catch segfaults more reliable [#4995](https://github.com/yandex/ClickHouse/pull/4995) ([Danila Kutenin](https://github.com/danlark1))
 
 ### Improvement
 * Disable push-down to right table in left join, left table in right join, and both tables in full join. [#4846](https://github.com/yandex/ClickHouse/pull/4846) ([Ivan](https://github.com/abyss7))
@@ -32,7 +29,6 @@
 * Use another allocator for MarkCache and UncompressedCache to catch segfaults faster. I had to move functions to inline definition because otherwise I would need to copy-paste a lot of code, for now the code is fully reused but compilation time can increase a bit [#4928](https://github.com/yandex/ClickHouse/pull/4928) ([Danila Kutenin](https://github.com/danlark1))
 * Deduplicate pointers in ASTSelectQuery and its children cause they could became not consistent. Leave one copy + positions map. [#4952](https://github.com/yandex/ClickHouse/pull/4952) ([Artem Zuikov](https://github.com/4ertus2))
 * Added support for non-constant and negative size and length arguments for function 'substringUTF8'. [#4989](https://github.com/yandex/ClickHouse/pull/4989) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Yandex LFAlloc was added to ClickHouse to allocate MarkCache and UncompressedCache data in different ways to catch segfaults more reliable [#4995](https://github.com/yandex/ClickHouse/pull/4995) ([Danila Kutenin](https://github.com/danlark1))
 * Now block size in rows is bounded by fixed granularity. [#5052](https://github.com/yandex/ClickHouse/pull/5052) ([alesapin](https://github.com/alesapin))
 
 ### Other
