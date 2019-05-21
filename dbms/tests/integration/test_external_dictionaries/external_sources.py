@@ -379,7 +379,7 @@ class SourceHTTPS(SourceHTTPBase):
 class SourceAerospike(ExternalSource):
     def get_source_str(self, table_name):
         return '''
-            <aerspike>
+            <aerospike>
                 <host>{host}</host>
                 <port>{port}</port>
             </aerospike>
