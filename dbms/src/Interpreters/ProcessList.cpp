@@ -403,7 +403,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.read_rows         = progress_in.read_rows;
     res.read_bytes        = progress_in.read_bytes;
     res.total_rows        = progress_in.total_rows_to_read;
-    
+
     /// TODO: Use written_rows and written_bytes when real time progress is implemented
     res.written_rows      = progress_out.read_rows;
     res.written_bytes     = progress_out.read_bytes;
