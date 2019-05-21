@@ -226,7 +226,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
         set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
         # FIXME: glibc-compatibility may be non-static in some builds!
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} ${ClickHouse_BINARY_DIR}/libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
     endif ()
 
     # Add Libc. GLIBC is actually a collection of interdependent libraries.
@@ -328,6 +328,7 @@ include (cmake/find_base64.cmake)
 include (cmake/find_hyperscan.cmake)
 include (cmake/find_lfalloc.cmake)
 include (cmake/find_simdjson.cmake)
+include (cmake/find_rapidjson.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)

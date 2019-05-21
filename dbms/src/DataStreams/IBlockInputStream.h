@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/SizeLimits.h>
 #include <IO/Progress.h>
@@ -21,13 +22,9 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
 }
 
-class IBlockInputStream;
 class ProcessListElement;
 class QuotaForIntervals;
 class QueryStatus;
-
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
-using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
 /** Callback to track the progress of the query.
   * Used in IBlockInputStream and Context.
