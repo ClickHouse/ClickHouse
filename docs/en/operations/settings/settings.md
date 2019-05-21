@@ -643,7 +643,7 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 Enables or disables:
 
-1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the short syntax to the clear syntax.
+1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the short syntax to the clear syntax. If the setting value is 0, ClickHouse doesn't process queries with the short syntax, and throws an exception.
 2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
 
 Possible values:

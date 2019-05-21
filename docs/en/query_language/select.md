@@ -450,7 +450,11 @@ See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) descriptio
 
 #### Multiple JOIN
 
-ClickHouse supports multiple `JOIN` operations in one query. Creating a query, you can use the following types of syntax:
+Performing queries, ClickHouse rewrites multiple joins into the combination of two-table joins and processes them sequentially. If there are four tables for join ClickHouse joins the first and the second, then joins the result with the third table, and at the last step, it joins the fourth one.
+
+If a query contains `WHERE`, `PREWHERE`, `GROUP` and `ORDER BY` clauses, ClickHouse tries to push down filters from these clauses into the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
+
+Creating a query, you can use the following types of syntax:
 
 1. Clear syntax.
 
