@@ -1,15 +1,15 @@
 
 # AggregatingMergeTree
 
-The engine inherits from [MergeTree](mergetree.md), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key with a single row (within a one data part) that stores a combination of states of aggregate functions.
+该引擎继承自 [MergeTree](mergetree.md)，并改变了数据片段的合并逻辑。 ClickHouse 会将相同主键的所有行（在一个数据片段内）替换为单个存储一系列聚合函数状态的行。
 
-You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
+可以使用 `AggregatingMergeTree` 表来做增量数据统计聚合，包括物化视图的数据聚合。
 
-The engine processes all columns with [AggregateFunction](../../data_types/nested_data_structures/aggregatefunction.md) type.
+引擎需使用 [AggregateFunction](../../data_types/nested_data_structures/aggregatefunction.md) 类型来处理所有列。
 
-It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
+如果要按一组规则来合并减少行数，则使用 `AggregatingMergeTree` 是合适的。
 
-## Creating a Table
+## 建表
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -24,16 +24,16 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md).
+语句参数的说明，请参阅 [语句描述](../../query_language/create.md)。
 
-**Query clauses**
+**子句**
 
-When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
+创建 `AggregatingMergeTree` 表时，需用跟创建 `MergeTree` 表一样的[子句](mergetree.md)。
 
-<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
+<details markdown="1"><summary>已弃用的建表方法</summary>
 
-!!! attention
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! 注意
+    不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -44,19 +44,19 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
-All of the parameters have the same meaning as in `MergeTree`.
+上面的所有参数跟 `MergeTree` 中的一样。
 </details>
 
-## SELECT and INSERT
+## SELECT 和 INSERT
 
-To insert data, use [INSERT SELECT](../../query_language/insert_into.md) query with aggregate -State- functions..
-When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge` suffix.
+插入数据，需使用带有聚合 -State- 函数的 [INSERT SELECT](../../query_language/insert_into.md) 语句。
+从 `AggregatingMergeTree` 表中查询数据时，需使用 `GROUP BY` 子句并且要使用与插入时相同的聚合函数，但后缀要改为 `-Merge` 。
 
-In the results of `SELECT` query the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
+在 `SELECT` 查询的结果中，对于 ClickHouse 的所有输出格式 `AggregateFunction` 类型的值都实现了特定的二进制表示法。如果直接用 `SELECT` 导出这些数据，例如如用 `TabSeparated` 格式，那么这些导出数据也能直接用 `INSERT` 语句加载导入。
 
-## Example of an Aggregated Materialized View
+## 聚合物化视图的示例
 
-`AggregatingMergeTree` materialized view that watches the `test.visits` table:
+创建一个跟踪 `test.visits` 表的 `AggregatingMergeTree` 物化视图：
 
 ``` sql
 CREATE MATERIALIZED VIEW test.basic
@@ -70,15 +70,15 @@ FROM test.visits
 GROUP BY CounterID, StartDate;
 ```
 
-Inserting of data into the `test.visits` table.
+向 `test.visits` 表中插入数据。
 
 ``` sql
 INSERT INTO test.visits ...
 ```
 
-The data are inserted in both the table and view `test.basic` that will perform the aggregation.
+数据会同时插入到表和视图中，并且视图 `test.basic` 会将里面的数据聚合。
 
-To get the aggregated data, we need to execute a query such as `SELECT ... GROUP BY ...` from the view `test.basic`:
+要获取聚合数据，我们需要在 `test.basic` 视图上执行类似 `SELECT ... GROUP BY ...` 这样的查询 ：
 
 ``` sql
 SELECT
@@ -90,4 +90,4 @@ GROUP BY StartDate
 ORDER BY StartDate;
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->

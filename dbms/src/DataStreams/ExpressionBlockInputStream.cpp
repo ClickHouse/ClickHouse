@@ -9,6 +9,8 @@ ExpressionBlockInputStream::ExpressionBlockInputStream(const BlockInputStreamPtr
     : expression(expression_)
 {
     children.push_back(input);
+    cached_header = children.back()->getHeader();
+    expression->execute(cached_header, true);
 }
 
 String ExpressionBlockInputStream::getName() const { return "Expression"; }
@@ -23,9 +25,7 @@ Block ExpressionBlockInputStream::getTotals()
 
 Block ExpressionBlockInputStream::getHeader() const
 {
-    Block res = children.back()->getHeader();
-    expression->execute(res, true);
-    return res;
+    return cached_header.cloneEmpty();
 }
 
 Block ExpressionBlockInputStream::readImpl()

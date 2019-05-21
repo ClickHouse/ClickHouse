@@ -100,7 +100,10 @@ endif ()
 
 find_package (Threads)
 
-target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
+if(CCTZ_INCLUDE_DIR)
+    target_include_directories(common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
+endif()
+
 target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
@@ -111,12 +114,15 @@ if(NOT USE_INTERNAL_POCO_LIBRARY)
     target_include_directories (common SYSTEM BEFORE PUBLIC ${Poco_Foundation_INCLUDE_DIR})
 endif()
 
+if(CCTZ_LIBRARY)
+    target_link_libraries(common PRIVATE ${CCTZ_LIBRARY})
+endif()
+
 target_link_libraries (common
         PUBLIC
     ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
         PRIVATE
-    ${CCTZ_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
