@@ -551,13 +551,41 @@ public:
             if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevSamp)
                 dst.push_back(sqrt(data.getSample(src_scale * 2)));
             if constexpr (StatFunc::kind == StatisticsFunctionKind::skewPop)
-                dst.push_back(data.getMoment3(src_scale * 3) / pow(data.getPopulation(src_scale * 2), 1.5));
+            {
+                Float64 var_value = data.getPopulation(src_scale * 2);
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment3(src_scale * 3) / pow(var_value, 1.5));
+                else
+                    dst.push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
             if constexpr (StatFunc::kind == StatisticsFunctionKind::skewSamp)
-                dst.push_back(data.getMoment3(src_scale * 3) / pow(data.getSample(src_scale * 2), 1.5));
+            {
+                Float64 var_value = data.getSample(src_scale * 2);
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment3(src_scale * 3) / pow(var_value, 1.5));
+                else
+                    dst.push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
             if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtPop)
-                dst.push_back(data.getMoment4(src_scale * 4) / pow(data.getPopulation(src_scale * 2), 2));
+            {
+                Float64 var_value = data.getPopulation(src_scale * 2);
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment4(src_scale * 4) / pow(var_value, 2));
+                else
+                    dst.push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
             if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtSamp)
-                dst.push_back(data.getMoment4(src_scale * 4) / pow(data.getSample(src_scale * 2), 2));
+            {
+                Float64 var_value = data.getSample(src_scale * 2);
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment4(src_scale * 4) / pow(var_value, 2));
+                else
+                    dst.push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
         }
         else
         {
@@ -570,13 +598,41 @@ public:
             if constexpr (StatFunc::kind == StatisticsFunctionKind::stddevSamp)
                 dst.push_back(sqrt(data.getSample()));
             if constexpr (StatFunc::kind == StatisticsFunctionKind::skewPop)
-                dst.push_back(data.getMoment3() / pow(data.getPopulation(), 1.5));
+            {
+                ResultType var_value = data.getPopulation();
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment3() / pow(var_value, 1.5));
+                else
+                    dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
+            }
             if constexpr (StatFunc::kind == StatisticsFunctionKind::skewSamp)
-                dst.push_back(data.getMoment3() / pow(data.getSample(), 1.5));
+            {
+                ResultType var_value = data.getSample();
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment3() / pow(var_value, 1.5));
+                else
+                    dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
+            }
             if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtPop)
-                dst.push_back(data.getMoment4() / pow(data.getPopulation(), 2));
+            {
+                ResultType var_value = data.getPopulation();
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment4() / pow(var_value, 2));
+                else
+                    dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
+            }
             if constexpr (StatFunc::kind == StatisticsFunctionKind::kurtSamp)
-                dst.push_back(data.getMoment4() / pow(data.getSample(), 2));
+            {
+                ResultType var_value = data.getSample();
+
+                if (var_value > 0)
+                    dst.push_back(data.getMoment4() / pow(var_value, 2));
+                else
+                    dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
+            }
             if constexpr (StatFunc::kind == StatisticsFunctionKind::covarPop)
                 dst.push_back(data.getPopulation());
             if constexpr (StatFunc::kind == StatisticsFunctionKind::covarSamp)
