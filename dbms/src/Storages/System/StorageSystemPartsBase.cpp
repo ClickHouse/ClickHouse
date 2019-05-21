@@ -149,7 +149,6 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 StoragesInfo StoragesInfoStream::next()
 {
     StoragesInfo info;
-    info.storage = nullptr;
 
     while (next_row < rows)
     {

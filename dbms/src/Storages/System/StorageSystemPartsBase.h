@@ -13,15 +13,15 @@ class Context;
 
 struct StoragesInfo
 {
-    StoragePtr storage;
+    StoragePtr storage = nullptr;
     TableStructureReadLockHolder table_lock;
 
     String database;
     String table;
     String engine;
 
-    bool need_inactive_parts;
-    MergeTreeData * data;
+    bool need_inactive_parts = false;
+    MergeTreeData * data = nullptr;
 
     operator bool() const { return storage != nullptr; }
     MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
