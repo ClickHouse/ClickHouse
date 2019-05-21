@@ -14,8 +14,8 @@
 * Fix wrong result for 'select distinct' with multiple streams (ex. leaded by join) [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Build/Testing/Packaging Improvement
-* Further improvement of the docker-based test machinery ... [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
-*  [#4937](https://github.com/yandex/ClickHouse/pull/4937) ([alesapin](https://github.com/alesapin))
+* Fixed test failures when running clickhouse-server on different host [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
+* Tests: Disable color control sequences in non tty environment. [#4937](https://github.com/yandex/ClickHouse/pull/4937) ([alesapin](https://github.com/alesapin))
 * Tests: Allow use any test database (remove test.hardcode where it possible) [#5008](https://github.com/yandex/ClickHouse/pull/5008) ([proller](https://github.com/proller))
 * Fix ubsan errors [#5037](https://github.com/yandex/ClickHouse/pull/5037) ([Vitaly Baranov](https://github.com/vitlibar))
 * Yandex LFAlloc was added to ClickHouse to allocate MarkCache and UncompressedCache data in different ways to catch segfaults more reliable [#4995](https://github.com/yandex/ClickHouse/pull/4995) ([Danila Kutenin](https://github.com/danlark1))
@@ -29,7 +29,7 @@
 * Use another allocator for MarkCache and UncompressedCache to catch segfaults faster. I had to move functions to inline definition because otherwise I would need to copy-paste a lot of code, for now the code is fully reused but compilation time can increase a bit [#4928](https://github.com/yandex/ClickHouse/pull/4928) ([Danila Kutenin](https://github.com/danlark1))
 * Deduplicate pointers in ASTSelectQuery and its children cause they could became not consistent. Leave one copy + positions map. [#4952](https://github.com/yandex/ClickHouse/pull/4952) ([Artem Zuikov](https://github.com/4ertus2))
 * Added support for non-constant and negative size and length arguments for function 'substringUTF8'. [#4989](https://github.com/yandex/ClickHouse/pull/4989) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Now block size in rows is bounded by fixed granularity. [#5052](https://github.com/yandex/ClickHouse/pull/5052) ([alesapin](https://github.com/alesapin))
+* Use fixed_granularity as upper bound for adaptive granularity. Now block size in rows is bounded by fixed granularity. [#5052](https://github.com/yandex/ClickHouse/pull/5052) ([alesapin](https://github.com/alesapin))
 
 ### Other
 * Python util to help with backports and changelogs. [#4949](https://github.com/yandex/ClickHouse/pull/4949) ([Ivan](https://github.com/abyss7))
@@ -38,15 +38,15 @@
 * HTTP header `Query-Id` was renamed to `X-ClickHouse-Query-Id` for consistency. [#4972](https://github.com/yandex/ClickHouse/pull/4972) ([Mikhail ](https://github.com/fandyushin))
 
 ### Performance Improvement
-* Previously all of the AsofRowRefs were protected by a single mutex per Join object, which is obviously not ideal from a performance perspective as joinBlock becomes essentially single threaded (for the non-asof case this can be called by multiple threads simultaneously on their own blocks as they do not modify the state of the Join object). I moved the lock into the SortedLookupVector instead, which distributes them between the different keys. The reason for the need of the lock is that the AsofRowRefs only sorts it's contents when it's required (and therefore isn't strictly read-only, but is accessed in the JoinBlock stage of the Join). However, it is logically read-only, as the user should not observe any changes, merely the faster lookup. ... [#4924](https://github.com/yandex/ClickHouse/pull/4924) ([Martijn Bakker](https://github.com/Gladdy))
+* Significant speedup of ASOF join [#4924](https://github.com/yandex/ClickHouse/pull/4924) ([Martijn Bakker](https://github.com/Gladdy))
 * Use radixSort instead of std::sort for ASOF JOIN values. [#4993](https://github.com/yandex/ClickHouse/pull/4993) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### New Feature
 * Implements TTL for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
 * Add setting `index_granularity_bytes` for MergeTree* tables family. ... [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
-* Using brotli compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail ](https://github.com/fandyushin))
+* Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail ](https://github.com/fandyushin))
 * Added a new aggregate function leastSqr(x, y) which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* isValidUTF8 function added for validating if the set of bytes is correctly utf-8 encoded. ... [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
+* Added new function isValidUTF8 for validating is the set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
 * Add new load balancing policy for picking replicas (first_or_random). Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
 
 
@@ -55,9 +55,8 @@
 ### Bug fixes
 * Fixed possible crash in bitmap* functions #5220  [#5228](https://github.com/yandex/ClickHouse/pull/5228) ([Andy Yang](https://github.com/andyyzh))
 * Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Fixed error Set for IN is not created yet in case of using single LowCardinality column in the left part of IN. This error happened if LowCardinality column was the part of primary key. #5031 [#5154](https://github.com/yandex/ClickHouse/pull/5154) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Fixed error `Set for IN is not created yet in case of using single LowCardinality column in the left part of IN`. This error happened if LowCardinality column was the part of primary key. #5031 [#5154](https://github.com/yandex/ClickHouse/pull/5154) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Modification retention function: If a row satisfies both the first and NTH condition, only the first satisfied condition is added to the data state. Now all conditions that satisfy in a row of data are added to the data state. [#5119](https://github.com/yandex/ClickHouse/pull/5119) ([小路](https://github.com/nicelulu))
-* Something bizarre happens if we have default move-constructor without default move-assignment: segfaults without stacktraces deep inside allocators.  [#5143](https://github.com/yandex/ClickHouse/pull/5143) ([Ivan](https://github.com/abyss7))
 
 
 ## ClickHouse release 19.5.3.8, 2019-04-18
