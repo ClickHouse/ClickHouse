@@ -43,11 +43,8 @@ def test_startup_without_zookeeper(start_cluster):
 
     time.sleep(5)
     assert node1.query("SELECT COUNT(*) from test_table") == "3\n"
-    try:
-       node1.query("INSERT INTO test_table VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)")
-       assert False, "Insert passed without zookeeper"
-    except:
-       pass
+    with pytest.raises(Exception):
+        node1.query("INSERT INTO test_table VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)")
 
     node1.restart_clickhouse()
     time.sleep(5)
