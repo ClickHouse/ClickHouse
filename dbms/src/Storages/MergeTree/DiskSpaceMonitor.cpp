@@ -22,10 +22,31 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
+
+        bool has_space_ratio = config.has(disk_config_prefix + ".keep_free_space_ratio");
+
+        if (config.has(disk_config_prefix + ".keep_free_space_bytes") && has_space_ratio)
+            throw Exception("Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified",
+                            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
         UInt64 keep_free_space_bytes = config.getUInt64(disk_config_prefix + ".keep_free_space_bytes", 0);
+
         String path;
         if (config.has(disk_config_prefix + ".path"))
             path = config.getString(disk_config_prefix + ".path");
+
+        if (has_space_ratio) {
+            auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
+            if (ratio < 0 || ratio > 1)
+                throw Exception("'keep_free_space_ratio' have to be between 0 and 1",
+                                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            String tmp_path = path;
+            if (tmp_path.empty())
+                tmp_path = default_path;
+
+            // Create tmp disk for getting total disk space.
+            keep_free_space_bytes = static_cast<UInt64>(Disk("tmp", tmp_path, 0).getTotalSpace() * ratio);
+        }
 
         if (disk_name == default_disk_name)
         {
@@ -135,9 +156,10 @@ DiskSpaceMonitor::ReservationPtr Schema::Volume::reserve(UInt64 expected_size) c
         return {};
 
     size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
-    for (size_t i = 0; i != disks.size(); ++i)
+    size_t disks_num = disks.size();
+    for (size_t i = 0; i != disks_num; ++i)
     {
-        size_t index = (start_from + i) % disks.size();
+        size_t index = (start_from + i) % disks_num;
         auto reservation = DiskSpaceMonitor::tryToReserve(disks[index], expected_size);
 
         if (reservation && *reservation)
