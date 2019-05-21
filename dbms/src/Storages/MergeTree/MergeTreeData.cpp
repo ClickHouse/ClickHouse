@@ -190,7 +190,7 @@ MergeTreeData::MergeTreeData(
         version_file_path = getFullPathOnDisk(schema.getAnyDisk()) + "format_version.txt";
 
     ///@TODO_IGR ASK LOGIC
-    auto version_file_exists = Poco::File(version_file_path).exists();
+    bool version_file_exists = Poco::File(version_file_path).exists();
 
     // When data path or file not exists, ignore the format_version check
     if (!attach || !version_file_exists)
