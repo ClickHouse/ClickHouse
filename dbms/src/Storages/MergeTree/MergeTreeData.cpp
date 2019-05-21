@@ -2607,7 +2607,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 
 DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expected_size)
 {
-    constexpr UInt64 SIZE_1MB = 1ull << 20; ///@TODO_IGR ASK Is it OK?
+    constexpr UInt64 SIZE_1MB = 1ull << 20u; ///@TODO_IGR ASK Is it OK?
     constexpr UInt64 MAGIC_CONST = 1;
 
     if (expected_size < SIZE_1MB)
@@ -2617,8 +2617,7 @@ DiskSpaceMonitor::ReservationPtr MergeTreeData::reserveSpaceForPart(UInt64 expec
     if (reservation)
         return reservation;
 
-    throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(expected_size) + " requested, "
-                    + formatReadableSizeWithBinarySuffix(schema.getMaxUnreservedFreeSpace()) + " available",
+    throw Exception("Not enough free disk space to reserve: " + formatReadableSizeWithBinarySuffix(expected_size) + " requested",
                     ErrorCodes::NOT_ENOUGH_SPACE);
 }
 

@@ -1050,8 +1050,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     /// Can throw an exception.
     DiskSpaceMonitor::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_merge);
-    if (!reserved_space)
-        throw Exception("TMP MSG", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR FIX
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
@@ -1183,8 +1181,6 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     /// Can throw an exception.
     DiskSpaceMonitor::ReservationPtr reserved_space = reserveSpaceForPart(estimated_space_for_result);
-    if (!reserved_space)
-        throw Exception("TMP MSG", ErrorCodes::NOT_ENOUGH_SPACE); ///@TODO_IGR FIX
 
     auto table_lock = lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
