@@ -370,7 +370,7 @@ try
     Poco::Logger * log = &Poco::Logger::get("PerformanceTestSuite");
     if (options.count("help"))
     {
-        std::cout << "Usage: " << argv[0] << " [options] [test_file ...] [tests_folder]\n";
+        std::cout << "Usage: " << argv[0] << " [options]\n";
         std::cout << desc << "\n";
         return 0;
     }

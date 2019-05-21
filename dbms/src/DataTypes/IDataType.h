@@ -575,6 +575,13 @@ inline bool isInteger(const T & data_type)
 }
 
 template <typename T>
+inline bool isFloat(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isFloat();
+}
+
+template <typename T>
 inline bool isNumber(const T & data_type)
 {
     WhichDataType which(data_type);
