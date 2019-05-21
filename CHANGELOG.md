@@ -1,15 +1,17 @@
 ## ClickHouse release 19.6.2.11, 2019-05-13
 
 ### Backward Incompatible Change
-* HTTP header `Query-Id` was renamed to `X-ClickHouse-Query-Id` for consistency. [#4972](https://github.com/yandex/ClickHouse/pull/4972) ([Mikhail ](https://github.com/fandyushin))
+* HTTP header `Query-Id` was renamed to `X-ClickHouse-Query-Id` for consistency. [#4972](https://github.com/yandex/ClickHouse/pull/4972) ([Mikhail](https://github.com/fandyushin))
 
 ### New Feature
 * Implements TTL for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
-* Add setting `index_granularity_bytes` for MergeTree* tables family. ... [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
-* Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail ](https://github.com/fandyushin))
+* Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail](https://github.com/fandyushin))
 * Added a new aggregate function leastSqr(x, y) which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
 * Added new function isValidUTF8 for validating is the set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
 * Add new load balancing policy for picking replicas (first_or_random). Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
+
+### Experimental features
+* Add setting `index_granularity_bytes` for MergeTree* tables family. ... [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
 
 ### Bug Fix
 * Fixed potential null pointer dereference in `clickhouse-copier`. [#4900](https://github.com/yandex/ClickHouse/pull/4900) ([proller](https://github.com/proller))
@@ -47,10 +49,10 @@
 ## ClickHouse release 19.5.4.22, 2019-05-13
 
 ### Bug fixes
-* Fixed possible crash in bitmap* functions #5220  [#5228](https://github.com/yandex/ClickHouse/pull/5228) ([Andy Yang](https://github.com/andyyzh))
+* Fixed possible crash in bitmap* functions #5220 [#5228](https://github.com/yandex/ClickHouse/pull/5228) ([Andy Yang](https://github.com/andyyzh))
 * Fixed very rare data race condition that could happen when executing a query with UNION ALL involving at least two SELECTs from system.columns, system.tables, system.parts, system.parts_tables or tables of Merge family and performing ALTER of columns of the related tables concurrently. [#5189](https://github.com/yandex/ClickHouse/pull/5189) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Fixed error `Set for IN is not created yet in case of using single LowCardinality column in the left part of IN`. This error happened if LowCardinality column was the part of primary key. #5031 [#5154](https://github.com/yandex/ClickHouse/pull/5154) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* Modification retention function: If a row satisfies both the first and NTH condition, only the first satisfied condition is added to the data state. Now all conditions that satisfy in a row of data are added to the data state. [#5119](https://github.com/yandex/ClickHouse/pull/5119) ([小路](https://github.com/nicelulu))
+* Modification of retention function: If a row satisfies both the first and NTH condition, only the first satisfied condition is added to the data state. Now all conditions that satisfy in a row of data are added to the data state. [#5119](https://github.com/yandex/ClickHouse/pull/5119) ([小路](https://github.com/nicelulu))
 
 
 ## ClickHouse release 19.5.3.8, 2019-04-18
