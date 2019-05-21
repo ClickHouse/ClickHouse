@@ -1719,7 +1719,7 @@ DiskSelector & Context::getDiskSelector() const
         constexpr auto config_name = "storage_configuration.disks";
         auto & config = getConfigRef();
 
-        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, getPath());
+        shared->merge_tree_disk_selector = std::make_unique<DiskSelector>(config, config_name, getPath() + "data/");
     }
     return *shared->merge_tree_disk_selector;
 }
