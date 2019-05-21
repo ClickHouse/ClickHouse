@@ -237,7 +237,7 @@ SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config,
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
             throw Exception("Schema name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
         schemas.emplace(name, Schema{config, config_prefix + "." + name, disks});
-        LOG_INFO(logger, "Storage schema " << name << " Sloaded");
+        LOG_INFO(logger, "Storage schema " << name << " loaded");
     }
 
     constexpr auto default_schema_name = "default";
