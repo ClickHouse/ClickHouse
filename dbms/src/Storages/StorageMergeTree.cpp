@@ -1002,7 +1002,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
         const auto & source_part_disk = name_to_disk[source_part_name];
 
         LOG_DEBUG(log, "Checking data");
-        MergeTreeData::MutableDataPartPtr part = loadPartAndFixMetadata(source_part_disk, source_part_name);
+        MergeTreeData::MutableDataPartPtr part = loadPartAndFixMetadata(source_part_disk, source_dir + source_part_name);
 
         LOG_INFO(log, "Attaching part " << source_part_name << " from " << getFullPathOnDisk(source_part_disk));
         renameTempPartAndAdd(part, &increment);
