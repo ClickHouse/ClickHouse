@@ -36,110 +36,19 @@ namespace ErrorCodes
 }
 
 
-template <typename T>
-struct VarMoments
-{
-    T m0{};
-    T m1{};
-    T m2{};
-
-    void add(T x)
-    {
-        ++m0;
-        m1 += x;
-        m2 += x * x;
-    }
-
-    void merge(const VarMoments & rhs)
-    {
-        m0 += rhs.m0;
-        m1 += rhs.m1;
-        m2 += rhs.m2;
-    }
-
-    void write(WriteBuffer & buf) const
-    {
-        writePODBinary(*this, buf);
-    }
-
-    void read(ReadBuffer & buf)
-    {
-        readPODBinary(*this, buf);
-    }
-
-    T NO_SANITIZE_UNDEFINED getPopulation() const
-    {
-        return (m2 - m1 * m1 / m0) / m0;
-    }
-
-    T NO_SANITIZE_UNDEFINED getSample() const
-    {
-        if (m0 == 0)
-            return std::numeric_limits<T>::quiet_NaN();
-        return (m2 - m1 * m1 / m0) / (m0 - 1);
-    }
-};
-
-template <typename T>
-struct VarMomentsDecimal
-{
-    using NativeType = typename T::NativeType;
-
-    UInt64 m0{};
-    NativeType m1{};
-    NativeType m2{};
-
-    void add(NativeType x)
-    {
-        ++m0;
-        m1 += x;
-
-        NativeType tmp; /// scale' = 2 * scale
-        if (common::mulOverflow(x, x, tmp) || common::addOverflow(m2, tmp, m2))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-    }
-
-    void merge(const VarMomentsDecimal & rhs)
-    {
-        m0 += rhs.m0;
-        m1 += rhs.m1;
-
-        if (common::addOverflow(m2, rhs.m2, m2))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-    }
-
-    void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
-    void read(ReadBuffer & buf) { readPODBinary(*this, buf); }
-
-    Float64 getPopulation(UInt32 scale) const
-    {
-        if (m0 == 0)
-            return std::numeric_limits<Float64>::infinity();
-
-        NativeType tmp;
-        if (common::mulOverflow(m1, m1, tmp) ||
-            common::subOverflow(m2, NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
-    }
-
-    Float64 getSample(UInt32 scale) const
-    {
-        if (m0 == 0)
-            return std::numeric_limits<Float64>::quiet_NaN();
-        if (m0 == 1)
-            return std::numeric_limits<Float64>::infinity();
-
-        NativeType tmp;
-        if (common::mulOverflow(m1, m1, tmp) ||
-            common::subOverflow(m2, NativeType(tmp / m0), tmp))
-            throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-        return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / (m0 - 1), scale);
-    }
-};
-
+/**
+    Calculating univariate central moments
+    Levels:
+        level 2 (pop & samp): var, stddev
+        level 3: skewness
+        level 4: kurtosis
+    References:
+        https://en.wikipedia.org/wiki/Moment_(mathematics)
+        https://en.wikipedia.org/wiki/Skewness
+        https://en.wikipedia.org/wiki/Kurtosis
+*/
 template <typename T, size_t _level>
-struct HighOrderMoments
+struct VarMoments
 {
     T m[_level + 1]{};
 
@@ -152,7 +61,7 @@ struct HighOrderMoments
         if constexpr (_level >= 4) m[4] += x * x * x * x;
     }
 
-    void merge(const HighOrderMoments & rhs)
+    void merge(const VarMoments & rhs)
     {
         m[0] += rhs.m[0];
         m[1] += rhs.m[1];
@@ -210,15 +119,8 @@ struct HighOrderMoments
     }
 };
 
-/**
-    Calculating high-order central moments
-    References:
-    https://en.wikipedia.org/wiki/Moment_(mathematics)
-    https://en.wikipedia.org/wiki/Skewness
-    https://en.wikipedia.org/wiki/Kurtosis
-*/
 template <typename T, size_t _level>
-struct HighOrderMomentsDecimal
+struct VarMomentsDecimal
 {
     using NativeType = typename T::NativeType;
 
@@ -249,7 +151,7 @@ struct HighOrderMomentsDecimal
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
     }
 
-    void merge(const HighOrderMomentsDecimal & rhs)
+    void merge(const VarMomentsDecimal & rhs)
     {
         m0 += rhs.m0;
         getM(1) += rhs.getM(1);
@@ -322,6 +224,13 @@ struct HighOrderMomentsDecimal
     }
 };
 
+/**
+    Calculating multivariate central moments
+    Levels:
+        level 2 (pop & samp): covar
+    References:
+        https://en.wikipedia.org/wiki/Moment_(mathematics)
+*/
 template <typename T>
 struct CovarMoments
 {
@@ -433,11 +342,7 @@ struct StatFuncOneArg
     using Type1 = T;
     using Type2 = T;
     using ResultType = std::conditional_t<std::is_same_v<T, Float32>, Float32, Float64>;
-    using Data = std::conditional_t<
-        _level <= 2,
-        std::conditional_t<IsDecimalNumber<T>, VarMomentsDecimal<Decimal128>, VarMoments<ResultType>>,
-        std::conditional_t<IsDecimalNumber<T>, HighOrderMomentsDecimal<Decimal128, _level>, HighOrderMoments<ResultType, _level>>
-    >;
+    using Data = std::conditional_t<IsDecimalNumber<T>, VarMomentsDecimal<Decimal128, _level>, VarMoments<ResultType, _level>>;
 
     static constexpr StatisticsFunctionKind kind = _kind;
     static constexpr UInt32 num_args = 1;
