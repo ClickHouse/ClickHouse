@@ -182,7 +182,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
 {
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type);
+        ColumnDescription column(column_name, data_type, false);
         if (default_expression)
         {
             column.default_desc.kind = default_kind;
@@ -384,8 +384,8 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
                 column_to_command_idx[column_name] = i;
 
                 /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-                columns.add(ColumnDescription(
-                    column_name, command.data_type ? command.data_type : std::make_shared<DataTypeUInt8>()));
+                columns.add(
+                    ColumnDescription(column_name, command.data_type ? command.data_type : std::make_shared<DataTypeUInt8>(), false));
 
                 if (command.default_expression)
                 {

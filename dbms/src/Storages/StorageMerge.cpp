@@ -50,9 +50,11 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage{columns_},
-    name(name_), source_database(source_database_),
-    table_name_regexp(table_name_regexp_), global_context(context_)
+    : IStorage(columns_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    , name(name_)
+    , source_database(source_database_)
+    , table_name_regexp(table_name_regexp_)
+    , global_context(context_)
 {
 }
 
@@ -60,44 +62,29 @@ StorageMerge::StorageMerge(
 /// NOTE: structure of underlying tables as well as their set are not constant,
 ///       so the results of these methods may become obsolete after the call.
 
-bool StorageMerge::isVirtualColumn(const String & column_name) const
-{
-    if (column_name != "_table")
-        return false;
-
-    return !IStorage::hasColumn(column_name);
-}
-
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
-    if (IStorage::hasColumn(column_name))
-        return IStorage::getColumn(column_name);
+    if (!IStorage::hasColumn(column_name))
+    {
+        auto first_table = getFirstTable([](auto &&) { return true; });
+        if (first_table)
+            return first_table->getColumn(column_name);
+    }
 
-    /// virtual column of the Merge table itself
-    if (column_name == "_table")
-        return { column_name, std::make_shared<DataTypeString>() };
-
-    /// virtual (and real) columns of the underlying tables
-    auto first_table = getFirstTable([](auto &&) { return true; });
-    if (first_table)
-        return first_table->getColumn(column_name);
-
-    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+    return IStorage::getColumn(column_name);
 }
+
 
 bool StorageMerge::hasColumn(const String & column_name) const
 {
-    if (column_name == "_table")
-        return true;
+    if (!IStorage::hasColumn(column_name))
+    {
+        auto first_table = getFirstTable([](auto &&) { return true; });
+        if (first_table)
+            return first_table->hasColumn(column_name);
+    }
 
-    if (IStorage::hasColumn(column_name))
-        return true;
-
-    auto first_table = getFirstTable([](auto &&) { return true; });
-    if (first_table)
-        return first_table->hasColumn(column_name);
-
-    return false;
+    return true;
 }
 
 
@@ -196,7 +183,7 @@ BlockInputStreams StorageMerge::read(
 
     for (const auto & column_name : column_names)
     {
-        if (isVirtualColumn(column_name))
+        if (column_name == "_table" && isVirtualColumn(column_name))
             has_table_virtual_column = true;
         else
             real_column_names.push_back(column_name);
