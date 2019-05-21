@@ -1,7 +1,8 @@
 FROM ubuntu:18.04
+# yandex/clickhouse-integration-tests-runner
 
-
-RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --force-yes \
+RUN apt-get update \
+    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     ca-certificates \
     bash \
     btrfs-progs \
@@ -21,8 +22,11 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes -
     libicu-dev \
     bsdutils \
     curl \
-    llvm-6.0 \
-    llvm-6.0-dev
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/* \
+    && apt-get clean
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -31,12 +35,6 @@ RUN pip install pytest docker-compose==1.22.0 docker dicttoxml kazoo PyMySQL psy
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 17.09.1-ce
-
-ENV TSAN_OPTIONS 'halt_on_error=1 history_size=7'
-ENV UBSAN_OPTIONS 'print_stacktrace=1'
-ENV ASAN_SYMBOLIZER_PATH /usr/lib/llvm-6.0/bin/llvm-symbolizer
-ENV UBSAN_SYMBOLIZER_PATH /usr/lib/llvm-6.0/bin/llvm-symbolizer
-ENV LLVM_SYMBOLIZER_PATH /usr/lib/llvm-6.0/bin/llvm-symbolizer
 
 RUN set -eux; \
 	\
