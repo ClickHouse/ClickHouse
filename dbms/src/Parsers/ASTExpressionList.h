@@ -24,7 +24,7 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void formatImplMultiline(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 
-    bool empty_separator = false;
+    bool empty_separator;
 };
 
 }
