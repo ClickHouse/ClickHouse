@@ -4,46 +4,46 @@
     <disks>
         <default> <!-- path for deafult disk is provided in main config -->
             <keep_free_space_bytes>0</keep_free_space_bytes>
-        </default>    
+        </default>
         <jbod1>
             <path>/jbod1/</path> <!-- trailing slash is mandatory -->
             <keep_free_space_bytes>1000000</keep_free_space_bytes>
-        </jbod1>    
+        </jbod1>
         <jbod2>
             <path>/jbod2/</path>
             <keep_free_space_bytes>1000000</keep_free_space_bytes>
-        </jbod2>       
+        </jbod2>
         <external>
             <path>/external/</path>
             <keep_free_space_bytes>1000000</keep_free_space_bytes>
-        </external>       
+        </external>
     </disks>
 
     <schemas>
         <!-- default: store on jbod1-->
         <default>
-            <volume> 
+            <volume>
                 <disk>jbod1</disk>
-                <max_data_part_size_bytes>1000000</max_data_part_size_bytes> 
+                <max_data_part_size_bytes>10000000</max_data_part_size_bytes>
                 <!-- Q: how it will behave if the only disk has max_data_part_size_bytes limitation? -->
             </volume>
         </default>
 
         <!-- store local by default, store big parts on external -->
-        <default_disk_with_external> 
-            <volume> 
+        <default_disk_with_external>
+            <volume>
                 <!-- names for the volumes should be added to allow moving parts between volumed with DDL commands -->
                 <disk>default</disk>
-                <max_data_part_size_bytes>1000000</max_data_part_size_bytes>
+                <max_data_part_size_bytes>10000000</max_data_part_size_bytes>
             </volume>
             <volume>
                 <disk>external</disk>
-                <max_data_part_size_bytes>10000000</max_data_part_size_bytes>
+                <max_data_part_size_bytes>100000000</max_data_part_size_bytes>
             </volume>
         </default_disk_with_external>
 
         <!-- store on JBOD by default (round-robin), store bif parts on external -->
-        <jbod_with_external> 
+        <jbod_with_external>
             <volume>
                 <disk>jbod1</disk>
                 <disk>jbod2</disk>
