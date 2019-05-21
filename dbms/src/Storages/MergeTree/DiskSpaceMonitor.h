@@ -170,6 +170,8 @@ public:
         {
             /// Just make reservation if size is 0
             if (size == 0) {
+                std::lock_guard lock(DiskSpaceMonitor::mutex);
+                reserves = &DiskSpaceMonitor::reserved[disk_ptr->getName()];
                 ++reserves->reservation_count;
                 valid = true;
                 return;
