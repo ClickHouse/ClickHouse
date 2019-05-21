@@ -112,7 +112,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
             for (const auto &it : checksums.files)
             {
                 String file_name = it.first;
-                String path = part->getFullPath() + part_name + "/" + file_name;
+                String path = part->getFullPath() + file_name;
                 all_part_files_size += Poco::File(path).getSize();
             }
             writeBinary(all_part_files_size, out);
@@ -124,7 +124,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         {
             String file_name = it.first;
 
-            String path = part->getFullPath() + part_name + "/" + file_name;
+            String path = part->getFullPath() + file_name;
 
             UInt64 size = Poco::File(path).getSize();
 
