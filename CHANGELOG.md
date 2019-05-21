@@ -1,24 +1,26 @@
 ## ClickHouse release 19.6.2.11, 2019-05-13
 
+### Backward Incompatible Change
+* HTTP header `Query-Id` was renamed to `X-ClickHouse-Query-Id` for consistency. [#4972](https://github.com/yandex/ClickHouse/pull/4972) ([Mikhail ](https://github.com/fandyushin))
+
+### New Feature
+* Implements TTL for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
+* Add setting `index_granularity_bytes` for MergeTree* tables family. ... [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
+* Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail ](https://github.com/fandyushin))
+* Added a new aggregate function leastSqr(x, y) which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
+* Added new function isValidUTF8 for validating is the set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
+* Add new load balancing policy for picking replicas (first_or_random). Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
+
 ### Bug Fix
-* Add locks for ASOF lookup data cause it has multithreaded access. Replace some macro code with templates. [#4875](https://github.com/yandex/ClickHouse/pull/4875) ([Artem Zuikov](https://github.com/4ertus2))
 * Fixed potential null pointer dereference in `clickhouse-copier`. [#4900](https://github.com/yandex/ClickHouse/pull/4900) ([proller](https://github.com/proller))
-* Fix bug in codecs parameters detection in `ALTER MODIFY` of codec without type of column. [#4883](https://github.com/yandex/ClickHouse/pull/4883) ([alesapin](https://github.com/alesapin))
-* Fix bug in `ReadBufferAIO` which was not able to seek backwards after EOF (now it can). In case of concurrent `SELECT` query some threads may "steal" portions of read-data from other threads and seek backwards in buffers. It leads to `Can't adjust last granule` error in rare cases if setting `min_bytes_to_use_direct_io` was set to positive number. [#4897](https://github.com/yandex/ClickHouse/pull/4897) ([alesapin](https://github.com/alesapin))
-* Fix bug with additional file seek and read when block already in uncompressed cache. [#4913](https://github.com/yandex/ClickHouse/pull/4913) ([alesapin](https://github.com/alesapin))
 * Fixed error on query with JOIN + ARRAY JOIN [#4938](https://github.com/yandex/ClickHouse/pull/4938) ([Artem Zuikov](https://github.com/4ertus2))
 * Fix hanging on start of the server when a dictionary depends on another dictionary via a database with engine=Dictionary. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
 * Partially fix distributed_product_mode=local. It's possible to allow columns of local tables in where/having/order by/... via table aliases. Throw exception if table does not have alias. There's not possible to access to the columns without table aliases yet. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
-* Function `toISOWeek` returned wrong results for year 1970. [#4988](https://github.com/yandex/ClickHouse/pull/4988) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Now follower replicas would not send queries to leader if they receive them from DDL. [#4991](https://github.com/yandex/ClickHouse/pull/4991) ([alesapin](https://github.com/alesapin))
 * Fix wrong result for 'select distinct' with multiple streams (ex. leaded by join) [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
 
-### Build/Testing/Packaging Improvement
-* Fixed test failures when running clickhouse-server on different host [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
-* Tests: Disable color control sequences in non tty environment. [#4937](https://github.com/yandex/ClickHouse/pull/4937) ([alesapin](https://github.com/alesapin))
-* Tests: Allow use any test database (remove test.hardcode where it possible) [#5008](https://github.com/yandex/ClickHouse/pull/5008) ([proller](https://github.com/proller))
-* Fix ubsan errors [#5037](https://github.com/yandex/ClickHouse/pull/5037) ([Vitaly Baranov](https://github.com/vitlibar))
-* Yandex LFAlloc was added to ClickHouse to allocate MarkCache and UncompressedCache data in different ways to catch segfaults more reliable [#4995](https://github.com/yandex/ClickHouse/pull/4995) ([Danila Kutenin](https://github.com/danlark1))
+### Performance Improvement
+* Significant speedup of ASOF join [#4924](https://github.com/yandex/ClickHouse/pull/4924) ([Martijn Bakker](https://github.com/Gladdy))
+* Use radixSort instead of std::sort for ASOF JOIN values. [#4993](https://github.com/yandex/ClickHouse/pull/4993) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Improvement
 * Disable push-down to right table in left join, left table in right join, and both tables in full join. [#4846](https://github.com/yandex/ClickHouse/pull/4846) ([Ivan](https://github.com/abyss7))
@@ -31,23 +33,15 @@
 * Added support for non-constant and negative size and length arguments for function 'substringUTF8'. [#4989](https://github.com/yandex/ClickHouse/pull/4989) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Use fixed_granularity as upper bound for adaptive granularity. Now block size in rows is bounded by fixed granularity. [#5052](https://github.com/yandex/ClickHouse/pull/5052) ([alesapin](https://github.com/alesapin))
 
+### Build/Testing/Packaging Improvement
+* Fixed test failures when running clickhouse-server on different host [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
+* Tests: Disable color control sequences in non tty environment. [#4937](https://github.com/yandex/ClickHouse/pull/4937) ([alesapin](https://github.com/alesapin))
+* Tests: Allow use any test database (remove test.hardcode where it possible) [#5008](https://github.com/yandex/ClickHouse/pull/5008) ([proller](https://github.com/proller))
+* Fix ubsan errors [#5037](https://github.com/yandex/ClickHouse/pull/5037) ([Vitaly Baranov](https://github.com/vitlibar))
+* Yandex LFAlloc was added to ClickHouse to allocate MarkCache and UncompressedCache data in different ways to catch segfaults more reliable [#4995](https://github.com/yandex/ClickHouse/pull/4995) ([Danila Kutenin](https://github.com/danlark1))
+
 ### Other
 * Python util to help with backports and changelogs. [#4949](https://github.com/yandex/ClickHouse/pull/4949) ([Ivan](https://github.com/abyss7))
-
-### Backward Incompatible Change
-* HTTP header `Query-Id` was renamed to `X-ClickHouse-Query-Id` for consistency. [#4972](https://github.com/yandex/ClickHouse/pull/4972) ([Mikhail ](https://github.com/fandyushin))
-
-### Performance Improvement
-* Significant speedup of ASOF join [#4924](https://github.com/yandex/ClickHouse/pull/4924) ([Martijn Bakker](https://github.com/Gladdy))
-* Use radixSort instead of std::sort for ASOF JOIN values. [#4993](https://github.com/yandex/ClickHouse/pull/4993) ([Artem Zuikov](https://github.com/4ertus2))
-
-### New Feature
-* Implements TTL for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
-* Add setting `index_granularity_bytes` for MergeTree* tables family. ... [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
-* Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail ](https://github.com/fandyushin))
-* Added a new aggregate function leastSqr(x, y) which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
-* Added new function isValidUTF8 for validating is the set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
-* Add new load balancing policy for picking replicas (first_or_random). Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
 
 
 ## ClickHouse release 19.5.4.22, 2019-05-13
