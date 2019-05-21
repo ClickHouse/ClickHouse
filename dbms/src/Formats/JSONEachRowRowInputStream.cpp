@@ -275,38 +275,46 @@ void registerChunkGetterJSONEachRow(FormatFactory & factory)
         DB::Memory<> & memory,
         size_t min_size)
     {
+        skipWhitespaceIfAny(in);
         char * begin_pos = in.position();
         size_t balance = 0;
         bool quotes = false;
-        // если размер in.working_buffer  слишком мал, то, наверное,  надо сохранить промежуточный результат
-        while (balance != 0 || in.position() < begin_pos + min_size) {
-            char * next_token = find_first_symbols<'{', '}', '\\', '"'>(in.position(), in.buffer().end());
-            if (next_token == in.buffer().end())
-                return false;
-            else if (*next_token == '{') {
-                if (!quotes)
-                    ++balance;
-                in.position() = next_token + 1;
-            }
-            else if (*next_token == '}') {
-                if (!quotes)
-                    --balance;
-                in.position() = next_token + 1;
-            } else if (*next_token == '\\') {
-                // check buffer end here?
-                in.position() = next_token + 2;
-            } else if (*next_token == '"') {
-                quotes ^= 1;
-                in.position() = next_token + 1;
+        memory.resize(0);
+        while (!safeInBuffer(in, memory, begin_pos)
+                && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size)) {
+            if (quotes) {
+                in.position() = find_first_symbols<'\\', '"'>(in.position(), in.buffer().end());
+                if (*in.position() == '\\') {
+                    ++in.position();
+                    if (!safeInBuffer(in, memory, begin_pos)) {
+                        ++in.position();
+                    } else {
+                        return false;
+                    }
+                } else if (*in.position() == '"') {
+                    ++in.position();
+                    quotes = false;
+                }
             } else {
-                // throw exception ?
-                return false;
+                in.position() = find_first_symbols<'{', '}', '\\', '"'>(in.position(), in.buffer().end());
+                if (*in.position() == '{') {
+                    ++balance;
+                    ++in.position();
+                } else if (*in.position() == '}') {
+                    --balance;
+                    ++in.position();
+                } else if (*in.position() == '\\') {
+                    ++in.position();
+                    if (!safeInBuffer(in, memory, begin_pos)) {
+                        ++in.position();
+                    }
+                } else if (*in.position() == '"') {
+                    quotes = true;
+                    ++in.position();
+                }
             }
         }
-        memory.resize(in.position() - begin_pos);
-        memcpy(memory.data(), begin_pos, in.position() - begin_pos);
-        StringRef view(begin_pos, in.position() - begin_pos);
-        // std::cerr << "Parsed " << view << " | " << std::this_thread::get_id() << '\n';
+        safeInBuffer(in, memory, begin_pos, true);
         return true;
     });
 }

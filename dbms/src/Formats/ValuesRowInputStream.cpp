@@ -178,49 +178,30 @@ void registerChunkGetterValues(FormatFactory & factory)
             int balance = 0;
             bool quoted = false;
             memory.resize(0);
-            while (!in.eof() && (balance || memory.size() + in.position() - begin_pos < static_cast<Int64>(min_size))) {
+            while (!safeInBuffer(in, memory, begin_pos)
+                    && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size)) {
                 in.position() = find_first_symbols<'\\', '\'', ')', '('>(in.position(), in.buffer().end());
-                if (in.hasPendingData()) {
-                    if (*in.position() == '\\') {
-                        in.position() += 2;
-                    } else if (*in.position() == '\'') {
-                        quoted ^= true;
+                if (*in.position() == '\\') {
+                    ++in.position();
+                    if (!safeInBuffer(in, memory, begin_pos))
                         ++in.position();
-                    } else if (*in.position() == ')') {
-                        ++in.position();
-                        if (!quoted)
-                            --balance;
-                    } else if (*in.position() == '(') {
-                        ++in.position();
-                        if (!quoted)
-                            ++balance;
-                    }
-                }
-                if (!in.hasPendingData()) {
-                    // fill memory with buffer data
-                    size_t old_size = memory.size();
-                    memory.resize(old_size + in.position() - begin_pos);
-                    memcpy(memory.data() + old_size, begin_pos, in.position() - begin_pos);
-                    if (in.eof()) {
-                        begin_pos = in.position();
-                        break;
-                    }
-                    begin_pos = in.position();
+                } else if (*in.position() == '\'') {
+                    quoted ^= true;
+                    ++in.position();
+                } else if (*in.position() == ')') {
+                    ++in.position();
+                    if (!quoted)
+                        --balance;
+                } else if (*in.position() == '(') {
+                    ++in.position();
+                    if (!quoted)
+                        ++balance;
                 }
             }
-            // if we read block smaller than min_size and eof happens
-            if (in.eof() && balance)
-                return false;
-            size_t old_size = memory.size();
-            memory.resize(old_size + in.position() - begin_pos);
-            memcpy(memory.data() + old_size, begin_pos, in.position() - begin_pos);
+            safeInBuffer(in, memory, begin_pos, true);
             if (!in.eof() && *in.position() == ',') {
                 ++in.position();
             }
-            /*
-            StringRef view(memory.data(), memory.size());
-            std::cerr << "Values parsed " << view << " | " << std::this_thread::get_id() << '\n';
-            */
             return true;
         });
 }

@@ -219,9 +219,8 @@ void registerChunkGetterTSKV(FormatFactory & factory)
             char * begin_pos = in.position();
             bool end_of_line = false;
             memory.resize(0);
-            // StringRef view_buffer(in.buffer().begin(), in.buffer().size());
-            // std::cerr << "Buffer : " << view_buffer << " | " << std::this_thread::get_id() << '\n';
-            while (!safeInBuffer(in, memory, begin_pos) && (!end_of_line || memory.size() + in.position() - begin_pos < static_cast<Int64>(min_size))) {
+            while (!safeInBuffer(in, memory, begin_pos)
+                    && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size)) {
                 in.position() = find_first_symbols<'\\','\r', '\n'>(in.position(), in.buffer().end());
                 if (*in.position() == '\\') {
                     ++in.position();
@@ -233,9 +232,6 @@ void registerChunkGetterTSKV(FormatFactory & factory)
                 }
             }
             safeInBuffer(in, memory, begin_pos, true);
-            // std::cerr << "Memory size " << memory.size() << "\n";
-            StringRef view(memory.data(), memory.size());
-            // std::cerr << "Values parsed " << view << " | " << std::this_thread::get_id() << '\n';
             return true;
         });
     }

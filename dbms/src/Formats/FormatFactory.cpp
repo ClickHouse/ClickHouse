@@ -50,12 +50,12 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
-    // std::cerr << "error on kek " << name << "\n";
     const auto & chunk_getter = getCreators(name).getChunk;
-    bool enable_parallel = settings.enable_parallel_reading;
-    enable_parallel = true;
-    if (false || (enable_parallel && chunk_getter)) {
-        size_t max_threads_to_use = settings.max_threads_for_parallel_reading; // get it from normal place
+    if (settings.enable_parallel_reading
+            && !settings.input_format_defaults_for_omitted_fields
+            && chunk_getter)
+    {
+        size_t max_threads_to_use = settings.max_threads_for_parallel_reading;
         BlockInputStreams streams;
         streams.reserve(max_threads_to_use);
         std::vector<std::unique_ptr<ReadBuffer>> buffers;
@@ -66,11 +66,9 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
             streams.emplace_back(input_getter(*buffers.back(), sample, context, max_block_size, format_settings));
         }
         auto union_stream = std::make_shared<UnionBlockInputStream>(std::move(streams), nullptr, max_threads_to_use);
-        // TODO wrap it with setter
         union_stream->buffers = std::move(buffers);
         return union_stream;
     }
-    // std::cerr << "not kek\n";
 
     return input_getter(buf, sample, context, max_block_size, format_settings);
 }

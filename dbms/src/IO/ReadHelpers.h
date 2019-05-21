@@ -909,6 +909,5 @@ void skipToNextLineOrEOF(ReadBuffer & buf);
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
 bool safeInBuffer(ReadBuffer & in, DB::Memory<> & memory, char * & begin_pos, bool force = false);
-
 }
 

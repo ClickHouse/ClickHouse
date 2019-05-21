@@ -1039,4 +1039,5 @@ bool safeInBuffer(ReadBuffer & in, DB::Memory<> & memory, char * & begin_pos, bo
     }
     return false;
 }
+
 }

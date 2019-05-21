@@ -38,7 +38,6 @@ AddingDefaultsBlockInputStream::AddingDefaultsBlockInputStream(const BlockInputS
       context(context_)
 {
     children.push_back(input);
-    // std::cerr << children.back()->getName() << "\n";
     header = input->getHeader();
 }
 
@@ -53,7 +52,6 @@ Block AddingDefaultsBlockInputStream::readImpl()
         return res;
 
     const BlockMissingValues & block_missing_values = children.back()->getMissingValues();
-    // std::cerr << "Got " << block_missing_values.size() << " missed values\n";
     if (block_missing_values.empty())
         return res;
 
