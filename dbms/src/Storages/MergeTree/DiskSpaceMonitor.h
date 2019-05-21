@@ -169,7 +169,8 @@ public:
             : size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size), disk_ptr(std::move(disk_ptr_)) ///@TODO_IGR ASK DiskSpaceReservedForMerge?
         {
             /// Just make reservation if size is 0
-            if (size == 0) {
+            if (size == 0)
+            {
                 std::lock_guard lock(DiskSpaceMonitor::mutex);
                 reserves = &DiskSpaceMonitor::reserved[disk_ptr->getName()];
                 ++reserves->reservation_count;

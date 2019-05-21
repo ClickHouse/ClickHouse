@@ -122,10 +122,9 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
     {
         max_data_part_size = std::numeric_limits<UInt64>::max();
     }
-    constexpr UInt64 SIZE_8MB = 1ull << 23;
-    if (max_data_part_size < SIZE_8MB) {
+    constexpr UInt64 SIZE_8MB = 8ull << 20u;
+    if (max_data_part_size < SIZE_8MB)
         LOG_WARNING(logger, "Volume max_data_part_size is too low (" << max_data_part_size << " < " << SIZE_8MB << ")");
-    }
 }
 
 DiskSpaceMonitor::ReservationPtr Schema::Volume::reserve(UInt64 expected_size) const
