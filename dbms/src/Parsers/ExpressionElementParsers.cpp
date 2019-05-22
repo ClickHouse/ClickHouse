@@ -919,6 +919,7 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    Pos literal_begin = pos;
     bool negative = false;
 
     if (pos->type == TokenType::Minus)
@@ -981,8 +982,10 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             res = uint_value;
     }
 
-    ++pos;
-    node = std::make_shared<ASTLiteral>(res);
+    auto literal = std::make_shared<ASTLiteral>(res);
+    literal->begin = literal_begin;
+    literal->end = ++pos;
+    node = literal;
     return true;
 }
 
@@ -1003,8 +1006,10 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     res = x;
-    ++pos;
-    node = std::make_shared<ASTLiteral>(res);
+    auto literal = std::make_shared<ASTLiteral>(res);
+    literal->begin = pos;
+    literal->end = ++pos;
+    node = literal;
     return true;
 }
 
@@ -1033,8 +1038,10 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
         return false;
     }
 
-    ++pos;
-    node = std::make_shared<ASTLiteral>(s);
+    auto literal = std::make_shared<ASTLiteral>(s);
+    literal->begin = pos;
+    literal->end = ++pos;
+    node = literal;
     return true;
 }
 
@@ -1043,6 +1050,8 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 {
     if (pos->type != TokenType::OpeningSquareBracket)
         return false;
+
+    Pos literal_begin = pos;
 
     Array arr;
 
@@ -1056,8 +1065,10 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         {
             if (pos->type == TokenType::ClosingSquareBracket)
             {
-                ++pos;
-                node = std::make_shared<ASTLiteral>(arr);
+                auto literal = std::make_shared<ASTLiteral>(arr);
+                literal->begin = literal_begin;
+                literal->end = ++pos;
+                node = literal;
                 return true;
             }
             else if (pos->type == TokenType::Comma)
