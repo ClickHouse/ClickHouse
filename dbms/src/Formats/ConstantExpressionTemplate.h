@@ -24,10 +24,13 @@ private:
 private:
     std::vector<String> tokens;
     std::vector<size_t> token_after_literal_idx;
+
     String result_column_name;
     ExpressionActionsPtr actions_on_literals;
     Block literals;
     MutableColumns columns;
+
+    std::vector<char> need_special_parser;
 
     /// For expressions without literals (e.g. "now()")
     size_t rows_count = 0;

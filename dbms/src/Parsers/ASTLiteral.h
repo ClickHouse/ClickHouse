@@ -4,6 +4,7 @@
 #include <Common/FieldVisitors.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/TokenIterator.h>
+#include <optional>
 
 
 namespace DB

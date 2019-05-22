@@ -45,20 +45,17 @@ public:
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        for (auto & child : ast->children)
-        {
-            auto literal = std::dynamic_pointer_cast<ASTLiteral>(child);
-            if (!literal || !literal->begin || !literal->end)
-                continue;
+        auto literal = std::dynamic_pointer_cast<ASTLiteral>(ast);
+        if (!literal || !literal->begin || !literal->end)
+            return;
 
-            // TODO don't replace constant arguments of functions such as CAST(x, 'type')
-            // TODO ensure column_name is unique (there was no _dummy_x identifier in expression)
-            String column_name = "_dummy_" + std::to_string(data.size());
-            data.emplace_back(literal, column_name);
-            child = std::make_shared<ASTIdentifier>(column_name);
-        }
+        // TODO don't replace constant arguments of functions such as CAST(x, 'type')
+        // TODO ensure column_name is unique (there was no _dummy_x identifier in expression)
+        String column_name = "_dummy_" + std::to_string(data.size());
+        data.emplace_back(literal, column_name);
+        ast = std::make_shared<ASTIdentifier>(column_name);
     }
-    static bool needChildVisit(ASTPtr &, const ASTPtr & child) { return !child->as<ASTLiteral>(); }
+    static bool needChildVisit(ASTPtr & node, const ASTPtr &) { return !node->as<ASTLiteral>(); }
 };
 
 using ReplaceLiteralsVisitor = ReplaceLiteralsMatcher::Visitor;
@@ -74,6 +71,9 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(const IDataType & result_
     ReplaceLiteralsVisitor::Data replaced_literals;
     ReplaceLiteralsVisitor(replaced_literals).visit(expression);
 
+    token_after_literal_idx.reserve(replaced_literals.size());
+    need_special_parser.resize(replaced_literals.size(), true);
+
     std::sort(replaced_literals.begin(), replaced_literals.end(), [](const LiteralInfo & a, const LiteralInfo & b)
     {
         return a.literal->begin.value() < b.literal->begin.value();
@@ -81,8 +81,9 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(const IDataType & result_
 
     bool allow_nulls = result_column_type.isNullable();
     TokenIterator prev_end = expression_begin;
-    for (const auto & info : replaced_literals)
+    for (size_t i = 0; i < replaced_literals.size(); ++i)
     {
+        const LiteralInfo & info = replaced_literals[i];
         if (info.literal->begin.value() < prev_end)
             throw Exception("Cannot replace literals", ErrorCodes::CANNOT_CREATE_EXPRESSION_TEMPLATE);
 
@@ -94,10 +95,19 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(const IDataType & result_
         token_after_literal_idx.push_back(tokens.size());
 
         DataTypePtr type = applyVisitor(FieldToDataType(), info.literal->value);
+
+        WhichDataType type_info(type);
+        if (type_info.isNativeInt())
+            type = std::make_shared<DataTypeInt64>();
+        else if (type_info.isNativeUInt())
+            type = std::make_shared<DataTypeUInt64>();
+        else
+            need_special_parser[i] = false;
+
         /// Allow literal to be NULL, if result column has nullable type
         // TODO also allow NULL literals inside functions, which return not NULL for NULL arguments,
         //  even if result_column_type is not nullable
-        if (allow_nulls)
+        if (allow_nulls && type->canBeInsideNullable())
             type = makeNullable(type);
 
         literals.insert({nullptr, type, info.dummy_column_name});
@@ -126,6 +136,7 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
     size_t cur_column = 0;
     try
     {
+        ParserNumber parser;
         size_t cur_token = 0;
         while (cur_column < literals.columns())
         {
@@ -137,9 +148,34 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
                 assertString(tokens[cur_token++], istr);
             }
             skipWhitespaceIfAny(istr);
-            // TODO parse numbers more carefully: check actual type of number
+
             const IDataType & type = *literals.getByPosition(cur_column).type;
-            type.deserializeAsTextQuoted(*columns[cur_column], istr, settings);
+            if (need_special_parser[cur_column])
+            {
+                Tokens tokens_number(istr.position(), istr.buffer().end());
+                TokenIterator iterator(tokens_number);
+                Expected expected;
+                ASTPtr ast;
+                if (!parser.parse(iterator, ast, expected))
+                    throw DB::Exception("Cannot parse literal", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
+                istr.position() = const_cast<char *>(iterator->begin);
+                Field number = ast->as<ASTLiteral&>().value;
+
+                WhichDataType type_info(type);
+                if ((number.getType() == Field::Types::UInt64  && type_info.isUInt64() )
+                 || (number.getType() == Field::Types::Int64   && type_info.isInt64()  )
+                 || (number.getType() == Field::Types::Float64 && type_info.isFloat64()))
+                {
+                    columns[cur_column]->insert(number);
+                }
+                else
+                    throw DB::Exception("Cannot parse literal", ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE);
+            }
+            else
+            {
+                type.deserializeAsTextQuoted(*columns[cur_column], istr, settings);
+            }
+
             ++cur_column;
         }
         while (cur_token < tokens.size())
