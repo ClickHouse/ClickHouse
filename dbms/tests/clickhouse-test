@@ -100,7 +100,7 @@ def print_err(*args):
 def report_failure(name, msg):
     print(msg)
     # If stderr is not the same as stdout, duplicate the test name there.
-    if os.fstat(0) != os.fstat(1):
+    if os.fstat(2) != os.fstat(1):
         print_err(name, ":", msg)
 
 SERVER_DIED = False
