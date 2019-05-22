@@ -12,8 +12,8 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-ENV TSAN_OPTIONS 'halt_on_error=1 history_size=7'
-ENV UBSAN_OPTIONS 'print_stacktrace=1'
-ENV ASAN_SYMBOLIZER_PATH /usr/lib/llvm-6.0/bin/llvm-symbolizer
-ENV UBSAN_SYMBOLIZER_PATH /usr/lib/llvm-6.0/bin/llvm-symbolizer
-ENV LLVM_SYMBOLIZER_PATH /usr/lib/llvm-6.0/bin/llvm-symbolizer
+RUN echo "TSAN_OPTIONS='halt_on_error=1 history_size=7'" >> /etc/environment; \
+    echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
+    echo "ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
+    echo "UBSAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
+    echo "LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment;
