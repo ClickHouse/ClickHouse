@@ -68,8 +68,8 @@ public:
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
     NamesAndTypesList getAliasesAndVirtuals() const;
-    /// ordinary + materialized + aliases + virtuals.
-    NamesAndTypesList getAll() const;
+    NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
+    NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + virtuals.
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
@@ -88,8 +88,6 @@ public:
             throw Exception("Cannot modify ColumnDescription for column " + column_name + ": column name cannot be changed", ErrorCodes::LOGICAL_ERROR);
     }
 
-    /// ordinary + materialized.
-    NamesAndTypesList getAllPhysical() const;
     Names getNamesOfPhysical() const;
     bool hasPhysical(const String & column_name) const;
     NameAndTypePair getPhysical(const String & column_name) const;
