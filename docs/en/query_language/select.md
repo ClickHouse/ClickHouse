@@ -452,7 +452,7 @@ See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) descriptio
 
 Performing queries, ClickHouse rewrites multiple joins into the combination of two-table joins and processes them sequentially. If there are four tables for join ClickHouse joins the first and the second, then joins the result with the third table, and at the last step, it joins the fourth one.
 
-If a query contains `WHERE`, `PREWHERE`, `GROUP` and `ORDER BY` clauses, ClickHouse tries to push down filters from these clauses into the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
+If a query contains `WHERE` clause, ClickHouse tries to push down filters from this clause into the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
 
 We recommend the `JOIN ON` or `JOIN USING` syntax for creating a query. For example:
 
