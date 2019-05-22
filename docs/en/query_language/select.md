@@ -454,23 +454,19 @@ Performing queries, ClickHouse rewrites multiple joins into the combination of t
 
 If a query contains `WHERE`, `PREWHERE`, `GROUP` and `ORDER BY` clauses, ClickHouse tries to push down filters from these clauses into the intermediate join. If it cannot apply the filter to each intermediate join, ClickHouse applies the filters after all joins are completed.
 
-Creating a query, you can use the following types of syntax:
+We recommend the `JOIN ON` or `JOIN USING` syntax for creating a query. For example:
 
-1. Clear syntax.
+```
+SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a
+```
 
-    You must clearly define each join operation. This is recommended way of writing a query.
-
-    For example, `SELECT * FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t1.a = t3.a`.
-
-2. Short syntax.
-
-    You can use comma separated list of tables for join. Works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting.
+Also, you can use comma separated list of tables for join. Works only with the [allow_experimental_cross_to_join_conversion = 1](../operations/settings/settings.md#settings-allow_experimental_cross_to_join_conversion) setting.
 
     For example, `SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a`
 
 Don't mix these syntaxes.
 
-ClickHouse doesn't support the short syntax directly, so we don't recommend to use this syntax. The algorithm tries to rewrite the query in terms of `CROSS` and `INNER` `JOIN` clauses and then proceeds the query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats comma as an `INNER JOIN` clause and converts it to `CROSS JOIN` when the algorithm cannot guaranty that `INNER JOIN` returns required data.
+ClickHouse doesn't support the syntax with commas directly, so we don't recommend to use it. The algorithm tries to rewrite the query in terms of `CROSS` and `INNER` `JOIN` clauses and then proceeds the query processing. When rewriting the query, ClickHouse tries to optimize performance and memory consumption. By default, ClickHouse treats comma as an `INNER JOIN` clause and converts it to `CROSS JOIN` when the algorithm cannot guaranty that `INNER JOIN` returns required data.
 
 #### ANY or ALL Strictness
 
