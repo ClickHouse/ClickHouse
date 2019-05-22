@@ -3,6 +3,7 @@
 #include <optional>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/IndicesDescription.h>
 
 
@@ -89,7 +90,6 @@ struct AlterCommand
     bool isMutable() const;
 };
 
-class IStorage;
 class Context;
 
 class AlterCommands : public std::vector<AlterCommand>

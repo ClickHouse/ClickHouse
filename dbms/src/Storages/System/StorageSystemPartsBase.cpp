@@ -259,7 +259,7 @@ NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) co
     if (column_name == "_state")
         return NameAndTypePair("_state", std::make_shared<DataTypeString>());
 
-    return ITableDeclaration::getColumn(column_name);
+    return IStorage::getColumn(column_name);
 }
 
 bool StorageSystemPartsBase::hasColumn(const String & column_name) const
@@ -267,7 +267,7 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
     if (column_name == "_state")
         return true;
 
-    return ITableDeclaration::hasColumn(column_name);
+    return IStorage::hasColumn(column_name);
 }
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)

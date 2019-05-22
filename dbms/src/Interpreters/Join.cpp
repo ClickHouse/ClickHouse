@@ -377,11 +377,11 @@ namespace
     template <typename Map, typename KeyGetter>
     struct Inserter<ASTTableJoin::Strictness::Any, Map, KeyGetter>
     {
-        static ALWAYS_INLINE void insert(const Join &, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
+        static ALWAYS_INLINE void insert(const Join & join, Map & map, KeyGetter & key_getter, Block * stored_block, size_t i, Arena & pool)
         {
             auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
-            if (emplace_result.isInserted() || emplace_result.getMapped().overwrite)
+            if (emplace_result.isInserted() || join.anyTakeLastRow())
                 new (&emplace_result.getMapped()) typename Map::mapped_type(stored_block, i);
         }
     };
@@ -397,17 +397,8 @@ namespace
                 new (&emplace_result.getMapped()) typename Map::mapped_type(stored_block, i);
             else
             {
-                /** The first element of the list is stored in the value of the hash table, the rest in the pool.
-                 * We will insert each time the element into the second place.
-                 * That is, the former second element, if it was, will be the third, and so on.
-                 */
-                auto elem = pool.alloc<typename Map::mapped_type>();
-                auto & mapped = emplace_result.getMapped();
-
-                elem->next = mapped.next;
-                mapped.next = elem;
-                elem->block = stored_block;
-                elem->row_num = i;
+                /// The first element of the list is stored in the value of the hash table, the rest in the pool.
+                emplace_result.getMapped().insert({stored_block, i}, pool);
             }
         }
     };
@@ -659,9 +650,9 @@ void addFoundRow(const typename Map::mapped_type & mapped, AddedColumns & added,
 
     if constexpr (STRICTNESS == ASTTableJoin::Strictness::All)
     {
-        for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(mapped); current != nullptr; current = current->next)
+        for (auto it = mapped.begin(); it.ok(); ++it)
         {
-            added.appendFromBlock(*current->block, current->row_num);
+            added.appendFromBlock(*it->block, it->row_num);
             ++current_offset;
         }
     }
@@ -1078,10 +1069,7 @@ void Join::joinGet(Block & block, const String & column_name) const
 
     if (kind == ASTTableJoin::Kind::Left && strictness == ASTTableJoin::Strictness::Any)
     {
-        if (any_take_last_row)
-            joinGetImpl(block, column_name, std::get<MapsAnyOverwrite>(maps));
-        else
-            joinGetImpl(block, column_name, std::get<MapsAny>(maps));
+        joinGetImpl(block, column_name, std::get<MapsAny>(maps));
     }
     else
         throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
@@ -1156,10 +1144,10 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 {
     static void add(const Mapped & mapped, size_t & rows_added, MutableColumns & columns_right)
     {
-        for (auto current = &static_cast<const typename Mapped::Base_t &>(mapped); current != nullptr; current = current->next)
+        for (auto it = mapped.begin(); it.ok(); ++it)
         {
             for (size_t j = 0; j < columns_right.size(); ++j)
-                columns_right[j]->insertFrom(*current->block->getByPosition(j).column.get(), current->row_num);
+                columns_right[j]->insertFrom(*it->block->getByPosition(j).column.get(), it->row_num);
 
             ++rows_added;
         }
