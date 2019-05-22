@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Core/Types.h>
 #include <IO/DelimitedReadBuffer.h>
 #include <common/logger_useful.h>
 
@@ -32,6 +33,11 @@ public:
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.
 
     auto pollTimeout() { return poll_timeout; }
+
+    // Return values for the message that's being read.
+    String currentTopic() { return current[-1].get_topic(); }
+    String currentKey() { return current[-1].get_key(); }
+    auto currentOffset() { return current[-1].get_offset(); }
 
 private:
     using Messages = std::vector<cppkafka::Message>;

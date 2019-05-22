@@ -91,9 +91,9 @@ public: /// thread-unsafe part. lockStructure must be acquired
     virtual NameAndTypePair getColumn(const String & column_name) const;
     virtual bool hasColumn(const String & column_name) const;
 
-    Block getSampleBlock() const;
-    Block getSampleBlockNonMaterialized() const;
-    Block getSampleBlockForColumns(const Names & column_names) const; /// including virtual and alias columns.
+    Block getSampleBlock() const; /// ordinary + materialized.
+    Block getSampleBlockNonMaterialized() const; /// ordinary.
+    Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
 
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
