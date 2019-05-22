@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/IDataTypeDomain.h>
+#include <DataTypes/DataTypeCustom.h>
 
 namespace DB
 {
@@ -10,12 +10,12 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 
-/** Simple DataTypeDomain that uses serializeText/deserializeText
+/** Simple IDataTypeCustomTextSerialization that uses serializeText/deserializeText
  * for all serialization and deserialization. */
-class DataTypeDomainWithSimpleSerialization : public IDataTypeDomain
+class DataTypeCustomSimpleTextSerialization : public IDataTypeCustomTextSerialization
 {
 public:
-    virtual ~DataTypeDomainWithSimpleSerialization() override;
+    virtual ~DataTypeCustomSimpleTextSerialization() override;
 
     // Methods that subclasses must override in order to get full serialization/deserialization support.
     virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override = 0;
