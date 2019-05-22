@@ -1,10 +1,9 @@
 #pragma once
 
-#include <string>
 #include <cassandra.h>
 #include <Core/Block.h>
 #include <DataStreams/IBlockInputStream.h>
-#include "ExternalResultDescription.h"
+#include <Core/ExternalResultDescription.h>
 
 
 namespace DB
@@ -27,8 +26,9 @@ namespace DB
     private:
         Block readImpl() override;
 
-        CassSession * session,
-        const std::string & query_str;
+        CassSession * session;
+        CassStatement * statement;
+        String query_str;
         const size_t max_block_size;
         ExternalResultDescription description;
         const CassResult * result;

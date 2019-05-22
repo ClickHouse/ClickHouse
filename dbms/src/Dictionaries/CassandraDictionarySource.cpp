@@ -35,6 +35,8 @@ namespace DB
 #if USE_CASSANDRA
 
 #    include <cassandra.h>
+#    include <IO/WriteHelpers.h>
+#    include "CassandraBlockInputStream.h"
 
 namespace DB
 {
@@ -106,7 +108,13 @@ std::string CassandraDictionarySource::toConnectionString(const std::string &hos
     return host + (port != 0 ? ":" + std::to_string(port) : "");
 }
 
-BlockInputStreamPtr CassandraDict
+BlockInputStreamPtr CassandraDictionarySource::loadAll() {
+    return std::make_shared<CassandraBlockInputStream>(nullptr, "", sample_block, max_block_size);
+}
+
+std::string CassandraDictionarySource::toString() const {
+    return "Cassandra: " + /*db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + */ host + ':' + DB::toString(port);
+}
 
 
 }
