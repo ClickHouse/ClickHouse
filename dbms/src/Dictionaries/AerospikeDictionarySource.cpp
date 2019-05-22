@@ -4,7 +4,32 @@
 
 namespace DB
 {
- // code here
+    namespace ErrorCodes
+    {
+        extern const int SUPPORT_IS_DISABLED;
+    }
+
+    void registerDictionarySourceAerospike(DictionarySourceFactory & factory)
+    {
+        auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                    const Poco::Util::AbstractConfiguration & config,
+                                     const std::string & config_prefix,
+                                     Block & sample_block,
+                                     const Context & /* context */) -> DictionarySourcePtr {
+#if USE_POCO_REDIS
+        return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".aerospike", sample_block);
+#else
+        (void)dict_struct;
+        (void)config;
+        (void)config_prefix;
+        (void)sample_block;
+        throw Exception{"Dictionary source of type `aerospike` is disabled because poco library was built without aerospike support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+        };
+        factory.registerSource("aserospike", createTableSource);
+    }
+
 }
 
 #if USE_AEROSPIKE
@@ -19,19 +44,35 @@ namespace DB
 {
     AerospikeDictionarySource::AerospikeDictionarySource(
         const DB::DictionaryStructure& dict_struct,
+        const std::string& host,
+        UInt16 port,
         as_config * config,
         const DB::Block& sample_block)
         : dict_struct{dict_struct}
+		, host{host}
+		, port{port}
         , sample_block{sample_block}
     {
-        std::vector<as_host> hosts;
-        hosts.assign(static_cast<as_host *>(config->hosts->list), static_cast<as_host *>(config->hosts->list) + config->hosts->size);
-        host.assign(hosts[0].name);
-        port = hosts[0].port;
+        // std::vector<as_host> hosts;
+        // hosts.assign(static_cast<as_host *>(config->hosts->list), static_cast<as_host *>(config->hosts->list) + config->hosts->size);
         aerospike_init(&client, config);
     }
 
     static const size_t max_block_size = 8192;
+
+	AerospikeDictionarySource::AerospikeDictionarySource(
+		const DictionaryStructure & dict_struct,
+		const Poco::Util::AbstractConfiguration & config,
+		const std::string & config_prefix,
+		Block & sample_block)
+		: AerospikeDictionarySource(
+			dict_struct,
+			config.getString(config_prefix + ".host"),
+			config.getUInt(config_prefix + ".port"),
+			nullptr,
+			sample_block)
+	{
+	}
 
     AerospikeDictionarySource::AerospikeDictionarySource(const DB::AerospikeDictionarySource& other)
         : dict_struct{other.dict_struct}

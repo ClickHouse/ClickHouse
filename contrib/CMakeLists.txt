@@ -307,6 +307,7 @@ endif()
 
 if (USE_AEROSPIKE)
     add_subdirectory (aerospike-cmake)
+    # target_include_directories(aerospike BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif()
 
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)

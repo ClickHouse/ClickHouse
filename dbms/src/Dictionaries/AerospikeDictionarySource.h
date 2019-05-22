@@ -15,8 +15,16 @@ class AerospikeDictionarySource final : public IDictionarySource
 public:
     AerospikeDictionarySource(
         const DictionaryStructure & dict_struct,
+        const std::string& host,
+        UInt16 port,
         as_config * config,
         const Block & sample_block);
+    
+    AerospikeDictionarySource(
+        const DictionaryStructure & dict_struct,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        Block & sample_block);
 
     AerospikeDictionarySource(const AerospikeDictionarySource & other);
 
@@ -31,9 +39,16 @@ public:
 
     bool supportsSelectiveLoad() const override { return true; }
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+	/// @TODO(glebx777): fix it
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override {
+            throw Exception{"Method loadKeys is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+	}
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+	BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
+	{
+            //Aerospke does not support native indexing
+            throw Exception{"Method loadKeys is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+	}
 
     /// @todo: for Aerospike, modification date can somehow be determined from the `_id` object field
     bool isModified() const override { return true; }

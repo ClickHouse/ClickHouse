@@ -104,11 +104,32 @@ set(HEADERS
     ${AEROSPIKE_SOURCE_DIR}/include/aerospike/version.h
 )
 
-add_library(aerospike ${LINK_MODE}  ${SRCS} ${HEADERS})
+# add_library(aerospike ${LINK_MODE} ${SRCS} ${HEADERS})
+add_library(aerospike STATIC ${SRCS} ${HEADERS})
+
+# find_package(OpenSSL QUIET)
+# if(OPENSSL_FOUND)
+#     message(STATUS "Aerospike using OpenSSL from ${OPENSSL_ROOT_DIR}")
+#     message("Library: ${OPENSSL_LIBRARIES}")
+# else()
+#     message("Aerospike OpenSSL not found")
+# endif()
+
+
+message(STATUS "Aerospike using OpenSSL from ${OPENSSL_LIBRARIES}")
+target_link_libraries(aerospike ${OPENSSL_LIBRARIES})
+
+
+message(STATUS "Aerospike include dir OpenSSL from ${OPENSSL_INCLUDE_DIR}")
+target_include_directories(aerospike PRIVATE ${OPENSSL_INCLUDE_DIR})
 
 target_include_directories(aerospike
-        SYSTEM PUBLIC ${AEROSPIKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/contrib/aerospike/modules/common/src/include ${CMAKE_SOURCE_DIR}/contrib/aerospike/modules/mod-lua/src/include
-        )
+        SYSTEM PUBLIC
+        ${AEROSPIKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/contrib/aerospike/modules/common/src/include
+        ${CMAKE_SOURCE_DIR}/contrib/aerospike/modules/mod-lua/src/include
+#        ${OPENSSL_ROOT_DIR}/include/openssl/include
+)
 #($<BUILD_INTERFACE:${AEROSPIKE_SOURCE_DIR}/include>
 #    $<INSTALL_INTERFACE:src/include>
 #    PRIVATE ${AEROSPIKE_SOURCE_DIR}/main
