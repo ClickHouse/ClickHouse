@@ -1028,10 +1028,12 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-bool safeInBuffer(ReadBuffer & in, DB::Memory<> & memory, char * & begin_pos, bool force) {
-    if (force || !in.hasPendingData()) {
+bool safeInBuffer(ReadBuffer & in, DB::Memory<> & memory, char * & begin_pos, bool force)
+{
+    if (force || !in.hasPendingData())
+    {
         size_t old_size = memory.size();
-        memory.resize(old_size + in.position() - begin_pos);
+        memory.resize(old_size + static_cast<size_t>(in.position() - begin_pos));
         memcpy(memory.data() + old_size, begin_pos, in.position() - begin_pos);
         bool res = in.eof();
         begin_pos = in.position();

@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <ext/singleton.h>
 #include <Core/Types.h>
+
 #include <IO/BufferWithOwnMemory.h>
 
 namespace DB
@@ -29,6 +30,12 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
   */
 class FormatFactory final : public ext::singleton<FormatFactory>
 {
+public:
+    using ChunkCreator = std::function<bool(
+        ReadBuffer & buf,
+        DB::Memory<> & memory,
+        size_t min_size)>;
+
 private:
     using InputCreator = std::function<BlockInputStreamPtr(
         ReadBuffer & buf,
@@ -43,22 +50,13 @@ private:
         const Context & context,
         const FormatSettings & settings)>;
 
-    // TODO rename me please
-    using ChunkCreator = std::function<bool(
-            const FormatSettings & format_settings,
-            ReadBuffer & in,
-            DB::Memory<> & memory,
-            size_t min_size)>;
-
-
-    // TODO rename fields now it works like backward compatibility hack
-    struct Creators {
+    struct Creators
+    {
         InputCreator first;
         OutputCreator second;
         ChunkCreator getChunk;
     };
 
-    // using Creators = std::pair<InputCreator, OutputCreator>;
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:

@@ -373,62 +373,56 @@ void registerInputFormatCSV(FormatFactory & factory)
 
 void registerChunkGetterCSV(FormatFactory & factory)
 {
-    for (auto name : {"CSV"})
+    factory.registerChunkGetter("CSV", [](
+        ReadBuffer & in,
+        DB::Memory<> & memory,
+        size_t min_size)
     {
-        factory.registerChunkGetter(name, [](
-            const FormatSettings &,
-            ReadBuffer & in,
-            DB::Memory<> & memory,
-            size_t min_size)
+        skipWhitespacesAndTabs(in);
+        char * begin_pos = in.position();
+        bool quotes = false;
+        bool end_of_line = false;
+        memory.resize(0);
+        while (!safeInBuffer(in, memory, begin_pos)
+                && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
         {
-            skipWhitespacesAndTabs(in);
-            char * begin_pos = in.position();
-            bool quotes = false;
-            bool end_of_line = false;
-            memory.resize(0);
-            while (!safeInBuffer(in, memory, begin_pos)
-                    && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size)) {
-                in.position() = find_first_symbols<'"','\r', '\n'>(in.position(), in.buffer().end());
-                if (*in.position() == '"') {
-                    if (quotes) {
-                        ++in.position();
-                        if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '"')
-                            ++in.position();
-                        else
-                            quotes = false;
-                    } else {
-                        quotes = true;
-                        ++in.position();
-                    }
-                } else if (!quotes) {
-                    end_of_line = true;
-                    // some ugly copy paste
-                    if (*in.position() == '\n')
-                    {
-                        ++in.position();
-                        if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '\r')
-                            ++in.position();
-                    }
-                    else if (*in.position() == '\r')
-                    {
-                        ++in.position();
-                        if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '\n')
-                            ++in.position();
-                        else
-                            throw Exception("Cannot parse CSV format: found \\r (CR) not followed by \\n (LF)."
-                                " Line must end by \\n (LF) or \\r\\n (CR LF) or \\n\\r.", ErrorCodes::INCORRECT_DATA);
-                    }
-                    else if (!safeInBuffer(in, memory, begin_pos))
-                        throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
-
-                } else {
+            if (quotes)
+            {
+                in.position() = find_first_symbols<'"'>(in.position(), in.buffer().end());
+                if (*in.position() == '"')
+                {
                     ++in.position();
+                    if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '"')
+                        ++in.position();
+                    else
+                        quotes = false;
+                }
+            } else
+            {
+                in.position() = find_first_symbols<'"','\r', '\n'>(in.position(), in.buffer().end());
+                if (*in.position() == '"')
+                {
+                    quotes = true;
+                    ++in.position();
+                } else if (*in.position() == '\n')
+                {
+                    end_of_line = true;
+                    ++in.position();
+                    if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '\r')
+                        ++in.position();
+                } else if (*in.position() == '\r')
+                {
+                    end_of_line = true;
+                    ++in.position();
+                    if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '\n')
+                        ++in.position();
                 }
             }
-            safeInBuffer(in, memory, begin_pos, true);
-            return true;
-        });
-    }
-
+        }
+        safeInBuffer(in, memory, begin_pos, true);
+        return true;
+    });
 }
+
+
 }

@@ -165,44 +165,48 @@ void registerInputFormatValues(FormatFactory & factory)
 
 void registerChunkGetterValues(FormatFactory & factory)
 {
-        factory.registerChunkGetter("Values", [](
-            const FormatSettings &,
-            ReadBuffer & in,
-            DB::Memory<> & memory,
-            size_t min_size)
+    factory.registerChunkGetter("Values", [](
+        ReadBuffer & in,
+        DB::Memory<> & memory,
+        size_t min_size)
+    {
+        skipWhitespaceIfAny(in);
+        if (in.eof() || *in.position() == ';')
+            return false;
+        char * begin_pos = in.position();
+        int balance = 0;
+        bool quoted = false;
+        memory.resize(0);
+        while (!safeInBuffer(in, memory, begin_pos)
+                && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
         {
-            skipWhitespaceIfAny(in);
-            if (in.eof() || *in.position() == ';')
-                return false;
-            char * begin_pos = in.position();
-            int balance = 0;
-            bool quoted = false;
-            memory.resize(0);
-            while (!safeInBuffer(in, memory, begin_pos)
-                    && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size)) {
-                in.position() = find_first_symbols<'\\', '\'', ')', '('>(in.position(), in.buffer().end());
-                if (*in.position() == '\\') {
-                    ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos))
-                        ++in.position();
-                } else if (*in.position() == '\'') {
-                    quoted ^= true;
-                    ++in.position();
-                } else if (*in.position() == ')') {
-                    ++in.position();
-                    if (!quoted)
-                        --balance;
-                } else if (*in.position() == '(') {
-                    ++in.position();
-                    if (!quoted)
-                        ++balance;
-                }
-            }
-            safeInBuffer(in, memory, begin_pos, true);
-            if (!in.eof() && *in.position() == ',') {
+            in.position() = find_first_symbols<'\\', '\'', ')', '('>(in.position(), in.buffer().end());
+            if (*in.position() == '\\')
+            {
                 ++in.position();
+                if (!safeInBuffer(in, memory, begin_pos))
+                    ++in.position();
+            } else if (*in.position() == '\'')
+            {
+                quoted ^= true;
+                ++in.position();
+            } else if (*in.position() == ')')
+            {
+                ++in.position();
+                if (!quoted)
+                    --balance;
+            } else if (*in.position() == '(')
+            {
+                ++in.position();
+                if (!quoted)
+                    ++balance;
             }
-            return true;
-        });
+        }
+        safeInBuffer(in, memory, begin_pos, true);
+        if (!in.eof() && *in.position() == ',')
+            ++in.position();
+        return true;
+    });
 }
+
 }

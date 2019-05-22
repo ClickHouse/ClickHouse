@@ -58,8 +58,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     {
         size_t max_threads_to_use = settings.max_threads_for_parallel_reading;
         BlockInputStreams streams;
-        std::vector<std::unique_ptr<ReadBuffer>> buffers;
         streams.reserve(max_threads_to_use);
+        std::vector<std::unique_ptr<ReadBuffer>> buffers;
         buffers.reserve(max_threads_to_use);
         auto buf_mutex = std::make_shared<std::mutex>();
         for (size_t i = 0; i < max_threads_to_use; ++i)

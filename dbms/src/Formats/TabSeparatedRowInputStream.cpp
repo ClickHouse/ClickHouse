@@ -384,37 +384,29 @@ void registerChunkGetterTabSeparated(FormatFactory & factory)
     for (auto name : {"TabSeparated", "TSV"})
     {
         factory.registerChunkGetter(name, [](
-            const FormatSettings &,
             ReadBuffer & in,
             DB::Memory<> & memory,
             size_t min_size)
         {
             char * begin_pos = in.position();
             bool end_of_line = false;
-            //std::cerr << "Tab got parsed\n";
-            //StringRef buffer(in.buffer().begin(), in.buffer().end() - in.buffer().begin());
-            //std::cerr << buffer << "kek\n";
             memory.resize(0);
-            while (!safeInBuffer(in, memory, begin_pos) && (!end_of_line || memory.size() + in.position() - begin_pos < static_cast<Int64>(min_size))) {
+            while (!safeInBuffer(in, memory, begin_pos)
+                    && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
+            {
                 in.position() = find_first_symbols<'\\', '\r', '\n'>(in.position(), in.buffer().end());
-                if (*in.position() == '\\') {
+                if (*in.position() == '\\')
+                {
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos)) {
+                    if (!safeInBuffer(in, memory, begin_pos))
                         ++in.position();
-                    } else {
-                        return false;
-                    }
-                } else if (*in.position() == '\n') {
-                    end_of_line = true;
-                    ++in.position();
-                } else if (*in.position() == '\r') {
+                } else if (*in.position() == '\n' || *in.position() == '\r')
+                {
                     end_of_line = true;
                     ++in.position();
                 }
             }
             safeInBuffer(in, memory, begin_pos, true);
-            // StringRef view(memory.data(), memory.size());
-            // std::cerr << "Tab parsed " << view << " | " << std::this_thread::get_id() << '\n';
             return true;
         });
     }

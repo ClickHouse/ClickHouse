@@ -270,7 +270,6 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
 void registerChunkGetterJSONEachRow(FormatFactory & factory)
 {
     factory.registerChunkGetter("JSONEachRow", [](
-        const FormatSettings &,
         ReadBuffer & in,
         DB::Memory<> & memory,
         size_t min_size)
@@ -281,34 +280,39 @@ void registerChunkGetterJSONEachRow(FormatFactory & factory)
         bool quotes = false;
         memory.resize(0);
         while (!safeInBuffer(in, memory, begin_pos)
-                && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size)) {
-            if (quotes) {
+                && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
+        {
+            if (quotes)
+            {
                 in.position() = find_first_symbols<'\\', '"'>(in.position(), in.buffer().end());
-                if (*in.position() == '\\') {
+                if (*in.position() == '\\')
+                {
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos)) {
+                    if (!safeInBuffer(in, memory, begin_pos))
                         ++in.position();
-                    } else {
-                        return false;
-                    }
-                } else if (*in.position() == '"') {
+                } else if (*in.position() == '"')
+                {
                     ++in.position();
                     quotes = false;
                 }
-            } else {
+            } else
+            {
                 in.position() = find_first_symbols<'{', '}', '\\', '"'>(in.position(), in.buffer().end());
-                if (*in.position() == '{') {
+                if (*in.position() == '{')
+                {
                     ++balance;
                     ++in.position();
-                } else if (*in.position() == '}') {
+                } else if (*in.position() == '}')
+                {
                     --balance;
                     ++in.position();
-                } else if (*in.position() == '\\') {
+                } else if (*in.position() == '\\')
+                {
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos)) {
+                    if (!safeInBuffer(in, memory, begin_pos))
                         ++in.position();
-                    }
-                } else if (*in.position() == '"') {
+                } else if (*in.position() == '"')
+                {
                     quotes = true;
                     ++in.position();
                 }

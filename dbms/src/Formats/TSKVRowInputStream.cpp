@@ -208,34 +208,32 @@ void registerInputFormatTSKV(FormatFactory & factory)
 
 void registerChunkGetterTSKV(FormatFactory & factory)
 {
-    for (auto name : {"TSKV"})
+    factory.registerChunkGetter("TSKV", [](
+        ReadBuffer & in,
+        DB::Memory<> & memory,
+        size_t min_size)
     {
-        factory.registerChunkGetter(name, [](
-            const FormatSettings &,
-            ReadBuffer & in,
-            DB::Memory<> & memory,
-            size_t min_size)
+        char * begin_pos = in.position();
+        bool end_of_line = false;
+        memory.resize(0);
+        while (!safeInBuffer(in, memory, begin_pos)
+                && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
         {
-            char * begin_pos = in.position();
-            bool end_of_line = false;
-            memory.resize(0);
-            while (!safeInBuffer(in, memory, begin_pos)
-                    && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size)) {
-                in.position() = find_first_symbols<'\\','\r', '\n'>(in.position(), in.buffer().end());
-                if (*in.position() == '\\') {
+            in.position() = find_first_symbols<'\\','\r', '\n'>(in.position(), in.buffer().end());
+            if (*in.position() == '\\')
+            {
+                ++in.position();
+                if (!safeInBuffer(in, memory, begin_pos))
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos))
-                        ++in.position();
-                } else if (*in.position() == '\n' || *in.position() == '\r') {
-                    end_of_line = true;
-                    ++in.position();
-                }
+            } else if (*in.position() == '\n' || *in.position() == '\r')
+            {
+                end_of_line = true;
+                ++in.position();
             }
-            safeInBuffer(in, memory, begin_pos, true);
-            return true;
-        });
-    }
-
+        }
+        safeInBuffer(in, memory, begin_pos, true);
+        return true;
+    });
 }
 
 
