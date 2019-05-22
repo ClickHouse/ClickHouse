@@ -1,4 +1,4 @@
-set(AEROSPIKE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/aerospike/src)
+set(AEROSPIKE_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/aerospike/src)
 
 set(SRCS
     ${AEROSPIKE_SOURCE_DIR}/main/aerospike/_bin.c
@@ -126,8 +126,8 @@ target_include_directories(aerospike PRIVATE ${OPENSSL_INCLUDE_DIR})
 target_include_directories(aerospike
         SYSTEM PUBLIC
         ${AEROSPIKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/contrib/aerospike/modules/common/src/include
-        ${CMAKE_SOURCE_DIR}/contrib/aerospike/modules/mod-lua/src/include
+        ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/common/src/include
+        ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/mod-lua/src/include
 #        ${OPENSSL_ROOT_DIR}/include/openssl/include
 )
 #($<BUILD_INTERFACE:${AEROSPIKE_SOURCE_DIR}/include>

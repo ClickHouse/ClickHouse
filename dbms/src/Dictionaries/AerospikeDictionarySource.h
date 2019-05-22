@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
+#include <Core/Block.h>
 #if USE_AEROSPIKE
 
 #    include "DictionaryStructure.h"
