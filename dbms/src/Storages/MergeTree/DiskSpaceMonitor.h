@@ -311,7 +311,11 @@ public:
             return *this;
         }
 
+        /// Returns valid reservation or null
         DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
+
+        /// Returns valid reservation or null
+        DiskSpaceMonitor::ReservationPtr reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const;
 
         UInt64 getMaxUnreservedFreeSpace() const;
 
@@ -324,12 +328,10 @@ public:
 
     using Volumes = std::vector<Volume>;
 
-    Schema(Volumes volumes_)
-        : volumes(std::move(volumes_))
-    {
-    }
+    Schema(const String & name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+           const DiskSelector & disks);
 
-    Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disks);
+    Schema(const String & name_, Volumes volumes_) : volumes(std::move(volumes_)), name(name_) { }
 
     Disks getDisks() const;
 
@@ -337,7 +339,11 @@ public:
 
     UInt64 getMaxUnreservedFreeSpace() const;
 
+    /// Returns valid reservation or null
     DiskSpaceMonitor::ReservationPtr reserve(UInt64 expected_size) const;
+
+    /// Returns valid reservation or null
+    DiskSpaceMonitor::ReservationPtr reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const;
 
     /// Reserves 0 bytes on disk with max available space
     /// Do not use this function when it is possible to predict size!!!
@@ -345,17 +351,20 @@ public:
 
 private:
     Volumes volumes;
+    String name;
 };
+
+using SchemaPtr = std::shared_ptr<const Schema>;
 
 class SchemaSelector
 {
 public:
     SchemaSelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks);
 
-    const Schema & operator[](const String & name) const;
+    const SchemaPtr & operator[](const String & name) const;
 
 private:
-    std::map<String, Schema> schemas;
+    std::map<String, SchemaPtr> schemas;
 };
 
 }

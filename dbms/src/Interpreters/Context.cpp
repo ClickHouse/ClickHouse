@@ -1725,7 +1725,7 @@ DiskSelector & Context::getDiskSelector() const
 }
 
 
-const Schema & Context::getSchema(const String & name) const
+const SchemaPtr & Context::getSchema(const String & name) const
 {
     auto lock = getLock();
 

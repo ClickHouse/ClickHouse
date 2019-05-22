@@ -601,13 +601,15 @@ public:
 
     Strings getDataPaths() const override;
 
-    DiskSpaceMonitor::ReservationPtr reserveSpaceAtDisk(UInt64 expected_size);
+    DiskSpaceMonitor::ReservationPtr reserveSpace(UInt64 expected_size);
+
+    DiskSpaceMonitor::ReservationPtr reserveSpaceAtDisk(const DiskPtr & disk, UInt64 expected_size);
 
     DiskSpaceMonitor::ReservationPtr reserveSpaceForPart(UInt64 expected_size);
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
-    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() { return schema.reserveOnMaxDiskWithoutReservation(); }
+    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() { return schema->reserveOnMaxDiskWithoutReservation(); }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -685,7 +687,7 @@ protected:
     String database_name;
     String table_name;
 
-    Schema schema;
+    SchemaPtr schema;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;

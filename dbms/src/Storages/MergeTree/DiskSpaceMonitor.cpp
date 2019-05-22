@@ -35,7 +35,8 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
         if (config.has(disk_config_prefix + ".path"))
             path = config.getString(disk_config_prefix + ".path");
 
-        if (has_space_ratio) {
+        if (has_space_ratio)
+        {
             auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
             if (ratio < 0 || ratio > 1)
                 throw Exception("'keep_free_space_ratio' have to be between 0 and 1",
@@ -168,6 +169,30 @@ DiskSpaceMonitor::ReservationPtr Schema::Volume::reserve(UInt64 expected_size) c
     return {};
 }
 
+DiskSpaceMonitor::ReservationPtr Schema::Volume::reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const
+{
+    /// This volume can not store files which size greater than max_data_part_size
+    /// Reserve and Warn it
+
+    if (expected_size > max_data_part_size)
+        LOG_WARNING(&Logger::get("StorageSchema"), "Volume max_data_part_size limit exceed: " << expected_size);
+
+    size_t disks_num = disks.size();
+    for (size_t i = 0; i != disks_num; ++i)
+    {
+        if (disks[i] != disk) {
+            continue;
+        }
+        auto reservation = DiskSpaceMonitor::tryToReserve(disks[i], expected_size);
+
+        if (reservation && *reservation)
+            return reservation;
+        return {};
+    }
+    LOG_DEBUG(&Logger::get("StorageSchema"), "Volume has no disk " << disk->getName());
+    return {};
+}
+
 UInt64 Schema::Volume::getMaxUnreservedFreeSpace() const
 {
     UInt64 res = 0;
@@ -176,17 +201,18 @@ UInt64 Schema::Volume::getMaxUnreservedFreeSpace() const
     return res;
 }
 
-Schema::Schema(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disks)
+Schema::Schema(const String & name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+               const DiskSelector & disks) : name(name_)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
-    for (const auto & name : keys)
+    for (const auto & attr_name : keys)
     {
         if (!startsWith(name, "volume"))
-            throw Exception("Unknown element in config: " + config_prefix + "." + name + ", must be 'volume'",
+            throw Exception("Unknown element in config: " + config_prefix + "." + attr_name + ", must be 'volume'",
                             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-        volumes.emplace_back(config, config_prefix + "." + name, disks);
+        volumes.emplace_back(config, config_prefix + "." + attr_name, disks);
     }
     if (volumes.empty())
         throw Exception("Schema must contain at least one Volume", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
@@ -205,6 +231,16 @@ DiskPtr Schema::getAnyDisk() const
 {
     /// Schema must contain at least one Volume
     /// Volume must contain at least one Disk
+    if (volumes.empty())
+    {
+        LOG_ERROR(&Logger::get("StorageSchema"), "No volumes at schema " << name);
+        throw Exception("Schema has no Volumes. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
+    }
+    if (volumes[0].disks.empty())
+    {
+        LOG_ERROR(&Logger::get("StorageSchema"), "No Disks at volume 0 at schema " << name);
+        throw Exception("Schema Volume 1 has no Disks. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
+    }
     return volumes[0].disks[0];
 }
 
@@ -221,6 +257,17 @@ DiskSpaceMonitor::ReservationPtr Schema::reserve(UInt64 expected_size) const
     for (const auto & volume : volumes)
     {
         auto reservation = volume.reserve(expected_size);
+        if (reservation)
+            return reservation;
+    }
+    return {};
+}
+
+DiskSpaceMonitor::ReservationPtr Schema::reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const
+{
+    for (const auto & volume : volumes)
+    {
+        auto reservation = volume.reserveAtDisk(disk, expected_size);
         if (reservation)
             return reservation;
     }
@@ -257,18 +304,20 @@ SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config,
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
             throw Exception("Schema name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        schemas.emplace(name, Schema{config, config_prefix + "." + name, disks});
+        schemas.emplace(name, std::make_shared<Schema>(name, config, config_prefix + "." + name, disks));
         LOG_INFO(logger, "Storage schema " << name << " loaded");
     }
 
     constexpr auto default_schema_name = "default";
     constexpr auto default_disk_name = "default";
     if (schemas.find(default_schema_name) == schemas.end())
-        schemas.emplace(default_schema_name, Schema(Schema::Volumes{{std::vector<DiskPtr>{disks[default_disk_name]},
-                                                                     std::numeric_limits<UInt64>::max()}}));
+        schemas.emplace(default_schema_name,
+                        std::make_shared<Schema>(default_schema_name,
+                                                 Schema::Volumes{{std::vector<DiskPtr>{disks[default_disk_name]},
+                                                                  std::numeric_limits<UInt64>::max()}}));
 }
 
-const Schema & SchemaSelector::operator[](const String & name) const
+const SchemaPtr &  SchemaSelector::operator[](const String & name) const
 {
     auto it = schemas.find(name);
     if (it == schemas.end())
