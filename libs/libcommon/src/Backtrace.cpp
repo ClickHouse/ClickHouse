@@ -15,7 +15,6 @@
 
 #if USE_UNWIND
 #define UNW_LOCAL_ONLY
-#define _LIBUNWIND_NO_HEAP
 #include <libunwind.h>
 #endif
 
