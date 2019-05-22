@@ -217,7 +217,7 @@ if (OS_LINUX AND NOT UNBUNDLED AND (GLIBC_COMPATIBILITY OR USE_LIBCXX))
         set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
         # FIXME: glibc-compatibility may be non-static in some builds!
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} ${CMAKE_CURRENT_BINARY_DIR}/libs/libglibc-compatibility/libglibc-compatibility${${CMAKE_POSTFIX_VARIABLE}}.a")
     endif ()
 
     # Add Libc. GLIBC is actually a collection of interdependent libraries.
