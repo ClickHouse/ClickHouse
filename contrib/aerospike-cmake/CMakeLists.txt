@@ -104,8 +104,11 @@ set(HEADERS
     ${AEROSPIKE_SOURCE_DIR}/include/aerospike/version.h
 )
 
+add_headers_and_sources(aerospike ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/common/src/main/aerospike)
+add_headers_and_sources(aerospike ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/common/src/main/citrusleaf)
+
 # add_library(aerospike ${LINK_MODE} ${SRCS} ${HEADERS})
-add_library(aerospike STATIC ${SRCS} ${HEADERS})
+add_library(aerospike ${SRCS} ${HEADERS} ${aerospike_sources})
 
 # find_package(OpenSSL QUIET)
 # if(OPENSSL_FOUND)
@@ -115,9 +118,10 @@ add_library(aerospike STATIC ${SRCS} ${HEADERS})
 #     message("Aerospike OpenSSL not found")
 # endif()
 
+target_compile_definitions(aerospike PRIVATE _GNU_SOURCE)
 
 message(STATUS "Aerospike using OpenSSL from ${OPENSSL_LIBRARIES}")
-target_link_libraries(aerospike ${OPENSSL_LIBRARIES})
+target_link_libraries(aerospike PRIVATE ${OPENSSL_LIBRARIES})
 
 
 message(STATUS "Aerospike include dir OpenSSL from ${OPENSSL_INCLUDE_DIR}")
