@@ -193,7 +193,7 @@ SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY 
 Q5. The percentage of delays by carrier for 2007
 
 ``` sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -225,7 +225,7 @@ SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year = 2007 GR
 Q6. The previous request for a broader range of years, 2000-2008
 
 ``` sql
-SELECT Carrier, c, c2, c*1000/c2 as c3
+SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
     SELECT
@@ -262,7 +262,7 @@ FROM
 (
     select
         Year,
-        count(*)*1000 as c1
+        count(*)*100 as c1
     from ontime
     WHERE DepDelay>10
     GROUP BY Year
