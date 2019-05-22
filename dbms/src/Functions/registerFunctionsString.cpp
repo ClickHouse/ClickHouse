@@ -18,6 +18,7 @@ void registerFunctionUpperUTF8(FunctionFactory &);
 void registerFunctionReverse(FunctionFactory &);
 void registerFunctionReverseUTF8(FunctionFactory &);
 void registerFunctionsConcat(FunctionFactory &);
+void registerFunctionFormat(FunctionFactory &);
 void registerFunctionSubstring(FunctionFactory &);
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
@@ -46,6 +47,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionReverse(factory);
     registerFunctionReverseUTF8(factory);
     registerFunctionsConcat(factory);
+    registerFunctionFormat(factory);
     registerFunctionSubstring(factory);
     registerFunctionAppendTrailingCharIfAbsent(factory);
     registerFunctionStartsWith(factory);
