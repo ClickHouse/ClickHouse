@@ -5,8 +5,6 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/SharedReadBuffer.h>
-#include <iostream>
-#include <shared_mutex>
 #include <DataStreams/UnionBlockInputStream.h>
 
 
@@ -39,7 +37,6 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 
     const Settings & settings = context.getSettingsRef();
 
-    // TODO add settings for parallel reading
     FormatSettings format_settings;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
@@ -66,7 +63,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
         for (size_t i = 0; i < max_threads_to_use; ++i)
         {
             buffers.emplace_back(std::make_unique<SharedReadBuffer>(buf, buf_mutex, chunk_getter, settings.min_bytes_in_chunk));
-            streams.emplace_back(input_getter(*buffers.back(), sample, context, max_block_size, format_settings));
+            streams.emplace_back(input_getter(*buffers.back(), sample, context, rows_portion_size, max_block_size, format_settings));
         }
         auto union_stream = std::make_shared<UnionBlockInputStream>(std::move(streams), nullptr, max_threads_to_use);
         union_stream->buffers = std::move(buffers);
@@ -151,7 +148,7 @@ void registerOutputFormatParquet(FormatFactory & factory);
 void registerInputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory);
 
-/// Chunk Getter  bad name
+/// Formats chunk getters for parallel reading
 
 void registerChunkGetterJSONEachRow(FormatFactory & factory);
 void registerChunkGetterTabSeparated(FormatFactory & factory);
