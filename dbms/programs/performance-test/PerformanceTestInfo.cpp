@@ -219,15 +219,20 @@ void PerformanceTestInfo::getStopConditions(XMLConfigurationPtr config)
 void PerformanceTestInfo::extractAuxiliaryQueries(XMLConfigurationPtr config)
 {
     if (config->has("create_query"))
+    {
         create_and_fill_queries = getMultipleValuesFromConfig(*config, "", "create_query");
+    }
 
-    if (config->has("fill_query")) {
+    if (config->has("fill_query"))
+    {
         auto fill_queries = getMultipleValuesFromConfig(*config, "", "fill_query");
         create_and_fill_queries.insert(create_and_fill_queries.end(), fill_queries.begin(), fill_queries.end());
     }
 
     if (config->has("drop_query"))
+    {
         drop_queries = getMultipleValuesFromConfig(*config, "", "drop_query");
+    }
 }
 
 }
