@@ -7,37 +7,19 @@ if(COMPILER_CLANG)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-builtin-requires-header")
 endif()
 
+add_headers_and_sources(glibc_compatibility .)
+add_headers_and_sources(glibc_compatibility musl)
+list(APPEND glibc_compatibility_sources musl/syscall.s musl/longjmp.s)
 
-set(GLIBC_COMPATIBILITY_SOURCES
-glibc-compatibility.c
-musl/pipe2.c
-musl/fallocate.c
-musl/longjmp.s
-musl/vasprintf.c
-musl/lgamma.c
-musl/posix_spawn.c
-musl/futimens.c
-musl/syscall.s
-musl/syscall_ret.c
-musl/sched_cpucount.c
-musl/glob.c
-musl/exp2f.c
-musl/pwritev.c
-musl/getrandom.c
-musl/fcntl.c
-musl/timespec_get.c
-musl/sched_getcpu.c
-)
-
+list(REMOVE_ITEM glibc_compatibility_sources musl/getentropy.c)
 if(HAVE_SYS_RANDOM_H)
-    list(APPEND GLIBC_COMPATIBILITY_SOURCES musl/getentropy.c)
+    list(APPEND glibc_compatibility_sources musl/getentropy.c)
 endif()
 
 if(MAKE_STATIC_LIBRARIES)
-    set(GLIBC_COMPATIBILITY_SOURCES ${GLIBC_COMPATIBILITY_SOURCES}
-        libcxxabi/cxa_thread_atexit.cpp)
+    list(APPEND glibc_compatibility_sources libcxxabi/cxa_thread_atexit.cpp)
 endif()
 
-add_library(glibc-compatibility ${GLIBC_COMPATIBILITY_SOURCES})
+add_library(glibc-compatibility ${glibc_compatibility_sources})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)
