@@ -444,7 +444,7 @@ public:
     const DiskPtr & getDisk(const String & name) const;
 
     /// Provides storage politics schemes
-    const Schema & getSchema(const String & name) const;
+    const SchemaPtr & getSchema(const String & name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
