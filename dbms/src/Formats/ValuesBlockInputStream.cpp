@@ -204,7 +204,7 @@ ValuesBlockInputStream::parseExpression(IColumn & column, size_t column_idx, boo
                                 ErrorCodes::LOGICAL_ERROR);
         try
         {
-            templates[column_idx] = ConstantExpressionTemplate(type, TokenIterator(tokens), token_iterator, *context);
+            templates[column_idx] = ConstantExpressionTemplate(type, TokenIterator(tokens), token_iterator, ast, *context);
             istr.rollbackToCheckpoint();
             templates[column_idx].value().parseExpression(istr, format_settings);
             assertDelimAfterValue(column_idx);
