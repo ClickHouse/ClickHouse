@@ -2,6 +2,8 @@
 
 #include <common/logger_useful.h>
 
+#include <Poco/Net/NetException.h>
+
 
 namespace DB
 {
@@ -17,7 +19,19 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
 
     LOG_TRACE((&Logger::get("WriteBufferToHTTP")), "Sending request to " << uri.toString());
 
-    ostr = &session->sendRequest(request);
+    /* ostr = &session->sendRequest(request); */
+    try
+    {
+        ostr = &session->sendRequest(request);
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        auto log = &Logger::get("IOHTTP");
+        LOG_DEBUG(log, "reason: " << e.displayText());
+        session->reset();
+        // Retry once
+        ostr = &session->sendRequest(request);
+    }
 }
 
 void WriteBufferFromHTTP::finalize()

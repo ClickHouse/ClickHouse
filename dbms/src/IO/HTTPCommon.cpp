@@ -20,6 +20,7 @@
 #endif
 
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Util/Application.h>
 
 #include <tuple>
@@ -196,7 +197,21 @@ PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const Connecti
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response)
 {
-    auto istr = &session.receiveResponse(response);
+    std::istream * istr;
+
+    try
+    {
+        istr = &session.receiveResponse(response);
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        auto log = &Logger::get("IOHTTP");
+        LOG_DEBUG(log, "reason: " << e.displayText());
+        session.reset();
+        // Retry once
+        istr = &session.receiveResponse(response);
+    }
+
     auto status = response.getStatus();
 
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
