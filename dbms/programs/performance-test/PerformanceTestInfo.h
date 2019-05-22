@@ -51,7 +51,6 @@ private:
     void processSubstitutions(XMLConfigurationPtr config);
     void getExecutionType(XMLConfigurationPtr config);
     void getStopConditions(XMLConfigurationPtr config);
-    void getMetrics(XMLConfigurationPtr config);
     void extractAuxiliaryQueries(XMLConfigurationPtr config);
 };
 
