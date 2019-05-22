@@ -11,15 +11,14 @@ namespace DB
 class ConstantExpressionTemplate
 {
 public:
-    ConstantExpressionTemplate(const IDataType & result_column_type, TokenIterator begin, TokenIterator end, const Context & context);
+    ConstantExpressionTemplate(const IDataType & result_column_type, TokenIterator expression_begin, TokenIterator expression_end,
+                               const ASTPtr & expression, const Context & context);
 
     void parseExpression(ReadBuffer & istr, const FormatSettings & settings);
 
     ColumnPtr evaluateAll();
 
 private:
-    std::pair<String, NamesAndTypesList> replaceLiteralsWithDummyIdentifiers(TokenIterator & begin, TokenIterator & end, const IDataType & result_column_type);
-
     static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr);
 
 private:
