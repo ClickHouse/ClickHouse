@@ -328,10 +328,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 if (!only_consts)
                 {
                     /// We are in the part of the tree that we are not going to compute. You just need to define types.
-                    /// Do not subquery and create sets. We treat "IN" as "ignore" function.
+                    /// Do not subquery and create sets. We treat "IN" as "ignoreExceptNull" function.
 
                     actions_stack.addAction(ExpressionAction::applyFunction(
-                            FunctionFactory::instance().get("ignore", context),
+                            FunctionFactory::instance().get("ignoreExceptNull", context),
                             { node->arguments->children.at(0)->getColumnName() },
                             getColumnName()));
                 }

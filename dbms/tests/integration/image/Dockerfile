@@ -1,7 +1,8 @@
 FROM ubuntu:18.04
+# yandex/clickhouse-integration-tests-runner
 
-
-RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes --force-yes \
+RUN apt-get update \
+    && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     ca-certificates \
     bash \
     btrfs-progs \
@@ -20,7 +21,12 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes -
     libreadline-dev \
     libicu-dev \
     bsdutils \
-    curl
+    curl \
+    && rm -rf \
+        /var/lib/apt/lists/* \
+        /var/cache/debconf \
+        /tmp/* \
+    && apt-get clean
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -62,4 +68,5 @@ RUN set -x \
 VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD []
+CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
+

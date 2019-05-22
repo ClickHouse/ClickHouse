@@ -12,15 +12,24 @@ namespace Poco
     }
 }
 
+namespace boost
+{
+    namespace program_options
+    {
+        class options_description;
+    }
+}
+
+
 namespace DB
 {
 
 class IColumn;
-class Field;
+
 
 /** Settings of query execution.
   */
-struct Settings
+struct Settings : public SettingsCollection<Settings>
 {
     /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
     /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
@@ -33,7 +42,7 @@ struct Settings
       *  but we are not going to do it, because settings is used everywhere as static struct fields.
       */
 
-#define APPLY_FOR_SETTINGS(M) \
+#define LIST_OF_SETTINGS(M) \
     M(SettingUInt64, min_compress_block_size, 65536, "The actual size of the block to compress, if the uncompressed data less than max_compress_block_size is no less than this value and no less than the volume of data for one mark.") \
     M(SettingUInt64, max_compress_block_size, 1048576, "The maximum size of blocks of uncompressed data before compressing for writing to a table.") \
     M(SettingUInt64, max_block_size, DEFAULT_BLOCK_SIZE, "Maximum block size for reading") \
@@ -41,6 +50,7 @@ struct Settings
     M(SettingUInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, "Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.") \
     M(SettingUInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), "Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.") \
     M(SettingMaxThreads, max_threads, 0, "The maximum number of threads to execute the request. By default, it is determined automatically.") \
+    M(SettingMaxThreads, max_alter_threads, 0, "The maximum number of threads to execute the ALTER requests. By default, it is determined automatically.") \
     M(SettingUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "The maximum size of the buffer to read from the filesystem.") \
     M(SettingUInt64, max_distributed_connections, 1024, "The maximum number of connections for distributed processing of one query (should be greater than max_threads).") \
     M(SettingUInt64, max_query_size, 262144, "Which part of the query can be read into RAM for parsing (the remaining data for INSERT, if any, is read later)") \
@@ -153,7 +163,8 @@ struct Settings
     \
     M(SettingBool, add_http_cors_header, false, "Write add http CORS header.") \
     \
-    M(SettingBool, input_format_skip_unknown_fields, false, "Skip columns with unknown names from input data (it works for JSONEachRow and TSKV formats).") \
+    M(SettingBool, input_format_skip_unknown_fields, false, "Skip columns with unknown names from input data (it works for JSONEachRow, CSVWithNames, TSVWithNames and TSKV formats).") \
+    M(SettingBool, input_format_with_names_use_header, false, "For TSVWithNames and CSVWithNames input formats this controls whether format parser is to assume that column data appear in the input exactly as they are specified in the header.") \
     M(SettingBool, input_format_import_nested_json, false, "Map nested JSON data to nested tables (it works for JSONEachRow format).") \
     M(SettingBool, input_format_defaults_for_omitted_fields, false, "For input data calculate default expressions for omitted fields (it works for JSONEachRow format).") \
     \
@@ -195,6 +206,7 @@ struct Settings
     M(SettingUInt64, insert_distributed_timeout, 0, "Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. Zero value means no timeout.") \
     M(SettingInt64, distributed_ddl_task_timeout, 180, "Timeout for DDL query responses from all hosts in cluster. Negative value means infinite.") \
     M(SettingMilliseconds, stream_flush_interval_ms, 7500, "Timeout for flushing data from streaming storages.") \
+    M(SettingMilliseconds, stream_poll_timeout_ms, 500, "Timeout for polling data from streaming storages.") \
     M(SettingString, format_schema, "", "Schema identifier (used by schema-based formats)") \
     M(SettingBool, insert_allow_materialized_columns, 0, "If setting is enabled, Allow materialized columns in INSERT.") \
     M(SettingSeconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, "HTTP connection timeout.") \
@@ -216,25 +228,25 @@ struct Settings
     \
     M(SettingUInt64, max_rows_to_read, 0, "Limit on read rows from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.") \
     M(SettingUInt64, max_bytes_to_read, 0, "Limit on read bytes (after decompression) from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.") \
-    M(SettingOverflowMode<false>, read_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, read_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_rows_to_group_by, 0, "") \
-    M(SettingOverflowMode<true>, group_by_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingUInt64, max_bytes_before_external_group_by, 0, "") \
     \
     M(SettingUInt64, max_rows_to_sort, 0, "") \
     M(SettingUInt64, max_bytes_to_sort, 0, "") \
-    M(SettingOverflowMode<false>, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingUInt64, max_bytes_before_external_sort, 0, "") \
     M(SettingUInt64, max_bytes_before_remerge_sort, 1000000000, "In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.") \
     \
     M(SettingUInt64, max_result_rows, 0, "Limit on result size in rows. Also checked for intermediate data sent from remote servers.") \
     M(SettingUInt64, max_result_bytes, 0, "Limit on result size in bytes (uncompressed). Also checked for intermediate data sent from remote servers.") \
-    M(SettingOverflowMode<false>, result_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, result_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     /* TODO: Check also when merging and finalizing aggregate functions. */ \
     M(SettingSeconds, max_execution_time, 0, "") \
-    M(SettingOverflowMode<false>, timeout_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, timeout_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, min_execution_speed, 0, "Minimum number of execution rows per second.") \
     M(SettingUInt64, max_execution_speed, 0, "Maximum number of execution rows per second.") \
@@ -256,20 +268,20 @@ struct Settings
     \
     M(SettingUInt64, max_rows_in_set, 0, "Maximum size of the set (in number of elements) resulting from the execution of the IN section.") \
     M(SettingUInt64, max_bytes_in_set, 0, "Maximum size of the set (in bytes in memory) resulting from the execution of the IN section.") \
-    M(SettingOverflowMode<false>, set_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, set_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).") \
     M(SettingUInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).") \
-    M(SettingOverflowMode<false>, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, join_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     M(SettingBool, join_any_take_last_row, false, "When disabled (default) ANY JOIN will take the first found row for a key. When enabled, it will take the last row seen if there are multiple rows for the same key.") \
     \
     M(SettingUInt64, max_rows_to_transfer, 0, "Maximum size (in rows) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.") \
     M(SettingUInt64, max_bytes_to_transfer, 0, "Maximum size (in uncompressed bytes) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.") \
-    M(SettingOverflowMode<false>, transfer_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, transfer_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_rows_in_distinct, 0, "Maximum number of elements during execution of DISTINCT.") \
     M(SettingUInt64, max_bytes_in_distinct, 0, "Maximum total size of state (in uncompressed bytes) in memory for the execution of DISTINCT.") \
-    M(SettingOverflowMode<false>, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
+    M(SettingOverflowMode, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.") \
     \
     M(SettingUInt64, max_memory_usage, 0, "Maximum memory usage for processing of single query. Zero means unlimited.") \
     M(SettingUInt64, max_memory_usage_for_user, 0, "Maximum memory usage for processing all concurrently running queries for the user. Zero means unlimited.") \
@@ -311,51 +323,26 @@ struct Settings
     M(SettingBool, allow_experimental_data_skipping_indices, false, "If it is set to true, data skipping indices can be used in CREATE TABLE/ALTER TABLE queries.") \
     \
     M(SettingBool, allow_hyperscan, true, "Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.") \
+    M(SettingBool, allow_simdjson, 1, "Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.") \
     \
-    M(SettingUInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.") \
+    M(SettingUInt64, max_partitions_per_insert_block, 100, "Limit maximum number of partitions in single INSERTed block. Zero means unlimited. Throw exception if the block contains too many partitions. This setting is a safety threshold, because using large number of partitions is a common misconception.")
 
-#define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
-    TYPE NAME {DEFAULT};
-
-    APPLY_FOR_SETTINGS(DECLARE)
-
-#undef DECLARE
-
-    /// Set setting by name.
-    void set(const String & name, const Field & value);
-
-    /// Set setting by name. Read value, serialized in binary form from buffer (for inter-server communication).
-    void set(const String & name, ReadBuffer & buf);
-
-    /// Skip value, serialized in binary form in buffer.
-    void ignore(const String & name, ReadBuffer & buf);
-
-    /// Set setting by name. Read value in text form from string (for example, from configuration file or from URL parameter).
-    void set(const String & name, const String & value);
-
-    /// Get setting by name. Converts value to String.
-    String get(const String & name) const;
-
-    bool tryGet(const String & name, String & value) const;
+    DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
-      * The profile can also be set using the `set` functions, like the profile setting.
-      */
+     * The profile can also be set using the `set` functions, like the profile setting.
+     */
     void setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config);
 
     /// Load settings from configuration file, at "path" prefix in configuration.
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
-    /// Read settings from buffer. They are serialized as list of contiguous name-value pairs, finished with empty name.
-    /// If readonly=1 is set, ignore read settings.
-    void deserialize(ReadBuffer & buf);
-
-    /// Write changed settings to buffer. (For example, to be sent to remote server.)
-    void serialize(WriteBuffer & buf) const;
-
     /// Dumps profile events to two columns of type Array(String)
     void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
-};
 
+    /// Adds program options to set the settings from a command line.
+    /// (Don't forget to call notify() on the `variables_map` after parsing it!)
+    void addProgramOptions(boost::program_options::options_description & options);
+};
 
 }

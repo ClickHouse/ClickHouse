@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/UTF8Helpers.h>
+#include <Core/Defines.h>
 #include <ext/range.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>

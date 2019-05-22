@@ -4,13 +4,14 @@
 
 #include <Core/QueryProcessingStage.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/TableStructureLockHolder.h>
 
 
 namespace Poco { class Logger; }

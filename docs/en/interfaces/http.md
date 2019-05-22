@@ -133,8 +133,7 @@ You can use the internal ClickHouse compression format when transmitting data. T
 If you specified `compress=1` in the URL, the server compresses the data it sends you.
 If you specified `decompress=1` in the URL, the server decompresses the same data that you pass in the `POST` method.
 
-It is also possible to use standard `gzip`-based [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). To send a `POST` request compressed using `gzip`, append the request header `Content-Encoding: gzip`.
-In order for ClickHouse to compress the response using `gzip`, you must append `Accept-Encoding: gzip` to the request headers, and enable the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the compression level of the data with the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting.
+You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression). To send a `POST` request compressed, append the request header `Content-Encoding: compression_method`. In order for ClickHouse to compress the response, you must append `Accept-Encoding: compression_method`. ClickHouse supports `gzip`, `br`, `deflate` [https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens]. To enable HTTP compression, you must use the ClickHouse [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) setting. You can configure the compression level of the data with the [http_zlib_compression_level](#settings-http_zlib_compression_level) setting for all the compression methods.
 
 You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
 

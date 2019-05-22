@@ -57,17 +57,25 @@ StorageMerge::StorageMerge(
 }
 
 
-/// NOTE Structure of underlying tables as well as their set are not constant,
-///  so the results of these methods may become obsolete after the call.
+/// NOTE: structure of underlying tables as well as their set are not constant,
+///       so the results of these methods may become obsolete after the call.
+
+bool StorageMerge::isVirtualColumn(const String & column_name) const
+{
+    if (column_name != "_table")
+        return false;
+
+    return !IStorage::hasColumn(column_name);
+}
 
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
+    if (IStorage::hasColumn(column_name))
+        return IStorage::getColumn(column_name);
+
     /// virtual column of the Merge table itself
     if (column_name == "_table")
         return { column_name, std::make_shared<DataTypeString>() };
-
-    if (IStorage::hasColumn(column_name))
-        return IStorage::getColumn(column_name);
 
     /// virtual (and real) columns of the underlying tables
     auto first_table = getFirstTable([](auto &&) { return true; });
@@ -188,7 +196,7 @@ BlockInputStreams StorageMerge::read(
 
     for (const auto & column_name : column_names)
     {
-        if (column_name == "_table")
+        if (isVirtualColumn(column_name))
             has_table_virtual_column = true;
         else
             real_column_names.push_back(column_name);
@@ -402,7 +410,7 @@ void StorageMerge::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
     auto new_columns = getColumns();
-    auto new_indices = getIndicesDescription();
+    auto new_indices = getIndices();
     params.apply(new_columns);
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(new_columns);
