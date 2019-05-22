@@ -1,0 +1,47 @@
+<test>
+    <name>test_hits</name>
+    <type>loop</type>
+    
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS datasets.hits_v1</create_query>
+
+    <fill_query>INSERT INTO table_{format} SELECT * FROM datasets.hits_v1</fill_query>
+
+    <stop_conditions>
+        <all_of>
+            <iterations>3</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
+        <any_of>
+            <iterations>5000</iterations>
+            <total_time_ms>60000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+        <min_time/>
+    </main_metric>
+
+    <substitutions>
+        <substitution>
+            <name>format</name>
+            <values>
+                <value>TabSeparated</value>
+                <value>TabSeparatedWithNames</value>
+                <value>TabSeparatedWithNamesAndTypes</value>
+                <value>CSV</value>
+                <value>CSVWithNames</value>
+                <value>Values</value>
+                <value>JSONEachRow</value>
+                <value>TSKV</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <preconditions>
+        <table_exists>datasets.hits_v1</table_exists>
+    </preconditions>
+
+<query>SELECT * FROM table_{format}</query>
+
+<drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
+</test>
