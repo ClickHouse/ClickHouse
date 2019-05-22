@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
+#include <Core/Block.h>
 
 #if USE_CASSANDRA
 
@@ -34,9 +35,25 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    bool supportsSelectiveLoad() const override { return true; }
+
+    bool isModified() const override { return true; }
+
+    ///Not yet supported
+    bool hasUpdateField() const override { return false; }
+
+    DictionarySourcePtr clone() const override { return std::make_unique<CassandraDictionarySource>(*this); }
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+        
+    BlockInputStreamPtr loadUpdatedAll() override
+    {
+        throw Exception{"Method loadUpdatedAll is unsupported for CassandraDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
+
+    std::string toString() const override;
 
 private:
     static std::string toConnectionString(const std::string& host, const UInt16 port);
