@@ -17,6 +17,7 @@ import psycopg2
 import requests
 import base64
 import pymongo
+import urllib
 
 import docker
 from docker.errors import ContainerError
@@ -497,6 +498,14 @@ class ClickHouseInstance:
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, *args, **kwargs):
         return self.client.get_query_request(*args, **kwargs)
+
+    # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
+        return self.client.query_and_get_error(sql, stdin, timeout, settings, user)
+
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    def http_query(self, sql, data=None):
+        return urllib.urlopen("http://"+self.ip_address+":8123/?query="+urllib.quote(sql,safe=''), data).read()
 
     def restart_clickhouse(self, stop_start_wait_sec=5):
         if not self.stay_alive:

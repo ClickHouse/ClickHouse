@@ -7,8 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
@@ -93,8 +92,7 @@ public:
                         StoragePtr storage = iterator->table();
                         String engine_name = storage->getName();
 
-                        if (!dynamic_cast<StorageMergeTree *>(&*storage) &&
-                            !dynamic_cast<StorageReplicatedMergeTree *>(&*storage))
+                        if (!dynamic_cast<MergeTreeData *>(storage.get()))
                             continue;
 
                         storages[std::make_pair(database_name, iterator->name())] = storage;
@@ -184,20 +182,9 @@ public:
 
             info.engine = info.storage->getName();
 
-            info.data = nullptr;
-
-            if (auto merge_tree = dynamic_cast<StorageMergeTree *>(&*info.storage))
-            {
-                info.data = &merge_tree->getData();
-            }
-            else if (auto replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(&*info.storage))
-            {
-                info.data = &replicated_merge_tree->getData();
-            }
-            else
-            {
+            info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
+            if (!info.data)
                 throw Exception("Unknown engine " + info.engine, ErrorCodes::LOGICAL_ERROR);
-            }
 
             using State = MergeTreeDataPart::State;
             auto & all_parts_state = info.all_parts_state;
@@ -272,7 +259,7 @@ NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) co
     if (column_name == "_state")
         return NameAndTypePair("_state", std::make_shared<DataTypeString>());
 
-    return ITableDeclaration::getColumn(column_name);
+    return IStorage::getColumn(column_name);
 }
 
 bool StorageSystemPartsBase::hasColumn(const String & column_name) const
@@ -280,7 +267,7 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
     if (column_name == "_state")
         return true;
 
-    return ITableDeclaration::hasColumn(column_name);
+    return IStorage::hasColumn(column_name);
 }
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)

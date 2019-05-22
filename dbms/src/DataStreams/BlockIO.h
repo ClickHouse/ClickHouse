@@ -1,7 +1,8 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/IBlockStream_fwd.h>
+
+#include <functional>
 
 
 namespace DB
@@ -43,6 +44,9 @@ struct BlockIO
 
     BlockIO & operator= (const BlockIO & rhs)
     {
+        if (this == &rhs)
+            return *this;
+
         out.reset();
         in.reset();
         process_list_entry.reset();

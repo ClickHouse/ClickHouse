@@ -1,7 +1,6 @@
 #include "ClusterCopier.h"
 
 #include <chrono>
-
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
@@ -13,14 +12,11 @@
 #include <Poco/FileChannel.h>
 #include <Poco/SplitterChannel.h>
 #include <Poco/Util/HelpFormatter.h>
-
 #include <boost/algorithm/string.hpp>
 #include <pcg_random.hpp>
-
 #include <common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <daemon/OwnPatternFormatter.h>
-
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -61,11 +57,13 @@
 #include <DataStreams/NullBlockOutputStream.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Storages/registerStorages.h>
 #include <Storages/StorageDistributed.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Databases/DatabaseMemory.h>
 #include <Common/StatusFile.h>
 
@@ -500,9 +498,6 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
                         ErrorCodes::BAD_ARGUMENTS);
     }
 
-    ASTPtr arguments_ast = engine.arguments->clone();
-    ASTs & arguments = arguments_ast->children;
-
     if (isExtendedDefinitionStorage(storage_ast))
     {
         if (storage.partition_by)
@@ -515,6 +510,12 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     {
         bool is_replicated = startsWith(engine.name, "Replicated");
         size_t min_args = is_replicated ? 3 : 1;
+
+        if (!engine.arguments)
+            throw Exception("Expected arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
+
+        ASTPtr arguments_ast = engine.arguments->clone();
+        ASTs & arguments = arguments_ast->children;
 
         if (arguments.size() < min_args)
             throw Exception("Expected at least " + toString(min_args) + " arguments in " + storage_str, ErrorCodes::BAD_ARGUMENTS);
@@ -894,6 +895,28 @@ public:
         }
     }
 
+    void uploadTaskDescription(const std::string & task_path, const std::string & task_file, const bool force)
+    {
+        auto local_task_description_path = task_path + "/description";
+
+        String task_config_str;
+        {
+            ReadBufferFromFile in(task_file);
+            readStringUntilEOF(task_config_str, in);
+        }
+        if (task_config_str.empty())
+            return;
+
+        auto zookeeper = context.getZooKeeper();
+
+        zookeeper->createAncestors(local_task_description_path);
+        auto code = zookeeper->tryCreate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
+        if (code && force)
+            zookeeper->createOrUpdate(local_task_description_path, task_config_str, zkutil::CreateMode::Persistent);
+
+        LOG_DEBUG(log, "Task description " << ((code && !force) ? "not " : "") << "uploaded to " << local_task_description_path << " with result " << code << " ("<< zookeeper->error2string(code) << ")");
+    }
+
     void reloadTaskDescription()
     {
         auto zookeeper = context.getZooKeeper();
@@ -1201,7 +1224,8 @@ protected:
 
         auto new_columns_list = std::make_shared<ASTColumns>();
         new_columns_list->set(new_columns_list->columns, new_columns);
-        new_columns_list->set(new_columns_list->indices, query_ast->as<ASTCreateQuery>()->columns_list->indices->clone());
+        if (auto indices = query_ast->as<ASTCreateQuery>()->columns_list->indices)
+            new_columns_list->set(new_columns_list->indices, indices->clone());
 
         new_query.replace(new_query.columns_list, new_columns_list);
 
@@ -2031,7 +2055,7 @@ private:
 
     ConfigurationPtr task_cluster_initial_config;
     ConfigurationPtr task_cluster_current_config;
-    Coordination::Stat task_descprtion_current_stat;
+    Coordination::Stat task_descprtion_current_stat{};
 
     std::unique_ptr<TaskCluster> task_cluster;
 
@@ -2103,6 +2127,10 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
 
     options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
                           .argument("task-path").binding("task-path"));
+    options.addOption(Poco::Util::Option("task-file", "", "path to task file for uploading in ZooKeeper to task-path")
+                          .argument("task-file").binding("task-file"));
+    options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists")
+                          .argument("task-upload-force").binding("task-upload-force"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
                           .binding("safe-mode"));
     options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
@@ -2142,6 +2170,7 @@ void ClusterCopierApp::mainImpl()
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     static const std::string default_database = "_local";
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
@@ -2153,6 +2182,11 @@ void ClusterCopierApp::mainImpl()
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
+
+    auto task_file = config().getString("task-file", "");
+    if (!task_file.empty())
+        copier->uploadTaskDescription(task_path, task_file, config().getBool("task-upload-force", false));
+
     copier->init();
     copier->process();
 }

@@ -71,12 +71,12 @@ String DatabaseAndTableWithAlias::getQualifiedNamePrefix(bool with_dot) const
 
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query)
 {
-    if (!select_query.tables)
+    if (!select_query.tables())
         return {};
 
     std::vector<const ASTTableExpression *> tables_expression;
 
-    for (const auto & child : select_query.tables->children)
+    for (const auto & child : select_query.tables()->children)
     {
         const auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
 
@@ -89,10 +89,10 @@ std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelec
 
 static const ASTTableExpression * getTableExpression(const ASTSelectQuery & select, size_t table_number)
 {
-    if (!select.tables)
+    if (!select.tables())
         return {};
 
-    const auto & tables_in_select_query = select.tables->as<ASTTablesInSelectQuery &>();
+    const auto & tables_in_select_query = select.tables()->as<ASTTablesInSelectQuery &>();
     if (tables_in_select_query.children.size() <= table_number)
         return {};
 
@@ -151,7 +151,7 @@ std::vector<TableWithColumnNames> getDatabaseAndTablesWithColumnNames(const ASTS
 {
     std::vector<TableWithColumnNames> tables_with_columns;
 
-    if (select_query.tables && !select_query.tables->children.empty())
+    if (select_query.tables() && !select_query.tables()->children.empty())
     {
         String current_database = context.getCurrentDatabase();
 

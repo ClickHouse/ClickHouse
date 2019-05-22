@@ -5,6 +5,7 @@
 #include <variant>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Core/Block.h>
 #include <Common/HashTable/HashMap.h>
 #include <ext/range.h>
 #include "DictionaryStructure.h"

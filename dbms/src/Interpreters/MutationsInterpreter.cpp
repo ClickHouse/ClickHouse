@@ -1,8 +1,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Storages/StorageMergeTree.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
@@ -45,15 +44,14 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
 
     auto select = std::make_shared<ASTSelectQuery>();
 
-    select->select_expression_list = std::make_shared<ASTExpressionList>();
-    select->children.push_back(select->select_expression_list);
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
     auto count_func = std::make_shared<ASTFunction>();
     count_func->name = "count";
     count_func->arguments = std::make_shared<ASTExpressionList>();
-    select->select_expression_list->children.push_back(count_func);
+    select->select()->children.push_back(count_func);
 
     if (commands.size() == 1)
-        select->where_expression = commands[0].predicate->clone();
+        select->setExpression(ASTSelectQuery::Expression::WHERE, commands[0].predicate->clone());
     else
     {
         auto coalesced_predicates = std::make_shared<ASTFunction>();
@@ -64,9 +62,8 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
         for (const MutationCommand & command : commands)
             coalesced_predicates->arguments->children.push_back(command.predicate->clone());
 
-        select->where_expression = std::move(coalesced_predicates);
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
     }
-    select->children.push_back(select->where_expression);
 
     auto context_copy = context;
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
@@ -88,12 +85,8 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
 
 static NameSet getKeyColumns(const StoragePtr & storage)
 {
-    const MergeTreeData * merge_tree_data = nullptr;
-    if (auto merge_tree = dynamic_cast<StorageMergeTree *>(storage.get()))
-        merge_tree_data = &merge_tree->getData();
-    else if (auto replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
-        merge_tree_data = &replicated_merge_tree->getData();
-    else
+    const MergeTreeData * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
+    if (!merge_tree_data)
         return {};
 
     NameSet key_columns;
@@ -344,10 +337,9 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     auto select = std::make_shared<ASTSelectQuery>();
 
-    select->select_expression_list = std::make_shared<ASTExpressionList>();
-    select->children.push_back(select->select_expression_list);
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
     for (const auto & column_name : stages[0].output_columns)
-        select->select_expression_list->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
     if (!stages[0].filters.empty())
     {
@@ -363,8 +355,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             coalesced_predicates->arguments->children = stages[0].filters;
             where_expression = std::move(coalesced_predicates);
         }
-        select->where_expression = where_expression;
-        select->children.push_back(where_expression);
+        select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
 
     interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, SelectQueryOptions().analyze(dry_run));

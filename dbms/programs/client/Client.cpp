@@ -217,11 +217,12 @@ private:
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (config().has(#NAME) && !context.getSettingsRef().NAME.changed) \
-            context.setSetting(#NAME, config().getString(#NAME));
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
+        for (auto && setting : context.getSettingsRef())
+        {
+            const String & name = setting.getName().toString();
+            if (config().has(name) && !setting.isChanged())
+                setting.setValue(config().getString(name));
+        }
 
         /// Set path for format schema files
         if (config().has("format_schema_path"))
@@ -479,6 +480,17 @@ private:
         }
         else
         {
+            /// This is intended for testing purposes.
+            if (config().getBool("always_load_suggestion_data", false))
+            {
+#if USE_READLINE
+                SCOPE_EXIT({ Suggest::instance().finalize(); });
+                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+#else
+                throw Exception("Command line suggestions cannot work without readline", ErrorCodes::BAD_ARGUMENTS);
+#endif
+            }
+
             query_id = config().getString("query_id", "");
             nonInteractive();
 
@@ -797,14 +809,32 @@ private:
         written_progress_chars = 0;
         written_first_block = false;
 
-        connection->forceConnected();
+        {
+            /// Temporarily apply query settings to context.
+            std::optional<Settings> old_settings;
+            SCOPE_EXIT({ if (old_settings) context.setSettings(*old_settings); });
+            auto apply_query_settings = [&](const IAST & settings_ast)
+            {
+                if (!old_settings)
+                    old_settings.emplace(context.getSettingsRef());
+                context.applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
+            };
+            const auto * insert = parsed_query->as<ASTInsertQuery>();
+            if (insert && insert->settings_ast)
+                apply_query_settings(*insert->settings_ast);
+            /// FIXME: try to prettify this cast using `as<>()`
+            const auto * with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get());
+            if (with_output && with_output->settings_ast)
+                apply_query_settings(*with_output->settings_ast);
 
-        /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
-        const auto * insert_query = parsed_query->as<ASTInsertQuery>();
-        if (insert_query && !insert_query->select)
-            processInsertQuery();
-        else
-            processOrdinaryQuery();
+            connection->forceConnected();
+
+            /// INSERT query for which data transfer is needed (not an INSERT SELECT) is processed separately.
+            if (insert && !insert->select)
+                processInsertQuery();
+            else
+                processOrdinaryQuery();
+        }
 
         /// Do not change context (current DB, settings) in case of an exception.
         if (!got_exception)
@@ -817,7 +847,7 @@ private:
                     if (change.name == "profile")
                         current_profile = change.value.safeGet<String>();
                     else
-                        context.setSetting(change.name, change.value);
+                        context.applySettingChange(change);
                 }
             }
 
@@ -964,8 +994,6 @@ private:
         {
             if (!insert->format.empty())
                 current_format = insert->format;
-            if (insert->settings_ast)
-                InterpreterSetQuery(insert->settings_ast, context).executeForCurrentContext();
         }
 
         BlockInputStreamPtr block_input = context.getInputFormat(
@@ -1248,10 +1276,6 @@ private:
                     const auto & id = query_with_output->format->as<ASTIdentifier &>();
                     current_format = id.name;
                 }
-                if (query_with_output->settings_ast)
-                {
-                    InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
-                }
             }
 
             if (has_vertical_output_suffix)
@@ -1510,7 +1534,7 @@ private:
 
     void showClientVersion()
     {
-        std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
+        std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
 
 public:
@@ -1591,8 +1615,6 @@ public:
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
-
         /// Main commandline options related to client functionality and all parameters from Settings.
         po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
@@ -1616,6 +1638,7 @@ public:
             ("database,d", po::value<std::string>(), "database")
             ("pager", po::value<std::string>(), "pager")
             ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+            ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
@@ -1634,9 +1657,9 @@ public:
             ("compression", po::value<bool>(), "enable or disable compression")
             ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
-            APPLY_FOR_SETTINGS(DECLARE_SETTING)
         ;
-#undef DECLARE_SETTING
+
+        context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
         po::options_description external_description("External tables options");
@@ -1652,6 +1675,8 @@ public:
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
+        po::notify(options);
+
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
@@ -1702,15 +1727,14 @@ public:
             }
         }
 
-        /// Extract settings from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)                \
-        if (options.count(#NAME))                                        \
-        {                                                                \
-            context.setSetting(#NAME, options[#NAME].as<std::string>()); \
-            config().setString(#NAME, options[#NAME].as<std::string>()); \
+        /// Copy settings-related program options to config.
+        /// TODO: Is this code necessary?
+        for (const auto & setting : context.getSettingsRef())
+        {
+            const String name = setting.getName().toString();
+            if (options.count(name))
+                config().setString(name, options[name].as<std::string>());
         }
-        APPLY_FOR_SETTINGS(EXTRACT_SETTING)
-#undef EXTRACT_SETTING
 
         if (options.count("config-file") && options.count("config"))
             throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
@@ -1769,6 +1793,13 @@ public:
             server_logs_file = options["server_logs_file"].as<std::string>();
         if (options.count("disable_suggestion"))
             config().setBool("disable_suggestion", true);
+        if (options.count("always_load_suggestion_data"))
+        {
+            if (options.count("disable_suggestion"))
+                throw Exception("Command line parameters disable_suggestion (-A) and always_load_suggestion_data cannot be specified simultaneously",
+                    ErrorCodes::BAD_ARGUMENTS);
+            config().setBool("always_load_suggestion_data", true);
+        }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     }

@@ -18,10 +18,10 @@ namespace ErrorCodes
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
   */
-class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
+class ColumnConst final : public COWHelper<IColumn, ColumnConst>
 {
 private:
-    friend class COWPtrHelper<IColumn, ColumnConst>;
+    friend class COWHelper<IColumn, ColumnConst>;
 
     WrappedPtr data;
     size_t s;

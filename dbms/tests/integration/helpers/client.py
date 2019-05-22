@@ -40,6 +40,10 @@ class Client:
         return CommandRequest(command, stdin, timeout, ignore_error)
 
 
+    def query_and_get_error(self, sql, stdin=None, timeout=None, settings=None, user=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user).get_error()
+
+
 class QueryTimeoutExceedException(Exception):
     pass
 
@@ -89,3 +93,20 @@ class CommandRequest:
             raise QueryRuntimeException('Client failed! Return code: {}, stderr: {}'.format(self.process.returncode, stderr))
 
         return stdout
+
+
+    def get_error(self):
+        self.process.wait()
+        self.stdout_file.seek(0)
+        self.stderr_file.seek(0)
+
+        stdout = self.stdout_file.read()
+        stderr = self.stderr_file.read()
+
+        if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
+            raise QueryTimeoutExceedException('Client timed out!')
+
+        if (self.process.returncode == 0):
+            raise QueryRuntimeException('Client expected to be failed but was succeeded! stdout: {}'.format(stdout))
+
+        return stderr
