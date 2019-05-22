@@ -30,6 +30,8 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✗ |
 
+You can control some format processing parameters by the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
+
 ## TabSeparated {#tabseparated}
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
@@ -346,11 +348,11 @@ CREATE TABLE IF NOT EXISTS example_table
 ) ENGINE = Memory;
 ```
 
-- If `insert_sample_with_metadata = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
-- If `insert_sample_with_metadata = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
+- If `input_format_defaults_for_omitted_fields = 0`, then the default value for `x` and `a` equals `0` (as the default value for the `UInt32` data type).
+- If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 !!! note "Warning"
-    Use this option carefully. Enabling it negatively affects the performance of the ClickHouse server.
+    When inserting data with `insert_sample_with_metadata = 1`, ClickHouse consumes more computational resources, compared to insertion with `insert_sample_with_metadata = 0`.
 
 ### Selecting Data
 
@@ -646,9 +648,9 @@ See also [Format Schema](#formatschema).
 
 Protobuf - is a [Protocol Buffers](https://developers.google.com/protocol-buffers/) format.
 
-ClickHouse supports both `proto2` and `proto3`. Repeated/optional/required fields are supported.
-
 This format requires an external format schema. The schema is cached between queries.
+ClickHouse supports both `proto2` and `proto3` syntaxes. Repeated/optional/required fields are supported.
+
 Usage examples:
 
 ```sql
@@ -659,7 +661,7 @@ SELECT * FROM test.table FORMAT Protobuf SETTINGS format_schema = 'schemafile:Me
 cat protobuf_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT Protobuf SETTINGS format_schema='schemafile:MessageType'"
 ```
 
-Where the file `schemafile.proto` looks like this:
+where the file `schemafile.proto` looks like this:
 
 ```
 syntax = "proto3";
@@ -691,17 +693,23 @@ message MessageType {
 ```
 
 ClickHouse tries to find a column named `x.y.z` (or `x_y_z` or `X.y_Z` and so on).
-Nested messages are suitable to input or output a [nested data structures](../data_types/nested_data_structures/nested/).
+Nested messages are suitable to input or output a [nested data structures](../data_types/nested_data_structures/nested.md).
 
-Default values defined in a `proto2` protobuf schema like this
+Default values defined in a protobuf schema like this
 
 ```
+syntax = "proto2";
+
 message MessageType {
   optional int32 result_per_page = 3 [default = 10];
 }
 ```
 
 are not applied; the [table defaults](../query_language/create.md#create-default-values) are used instead of them.
+
+ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
+It means before every message should be written its length as a [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints).
+See also [how to read/write length-delimited protobuf messages in popular languages](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
 
 ## Format Schema {#formatschema}
 

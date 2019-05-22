@@ -283,8 +283,7 @@ SOFTWARE.
         memset(buf + len + 1, 0, 16);
         check_packed(_mm_loadu_si128(reinterpret_cast<__m128i *>(buf + 1)));
 
-        /* Reduce error vector, error_reduced = 0xFFFF if error == 0 */
-        return _mm_movemask_epi8(_mm_cmpeq_epi8(error, _mm_set1_epi8(0))) == 0xFFFF;
+        return _mm_testz_si128(error, error);
     }
 #endif
 
@@ -316,13 +315,13 @@ SOFTWARE.
     }
 };
 
-struct NameValidUTF8
+struct NameIsValidUTF8
 {
     static constexpr auto name = "isValidUTF8";
 };
-using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameValidUTF8, UInt8>;
+using FunctionValidUTF8 = FunctionStringOrArrayToT<ValidUTF8Impl, NameIsValidUTF8, UInt8>;
 
-void registerFunctionValidUTF8(FunctionFactory & factory)
+void registerFunctionIsValidUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionValidUTF8>();
 }

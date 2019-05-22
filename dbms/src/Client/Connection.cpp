@@ -401,7 +401,7 @@ void Connection::sendQuery(
     if (settings)
         settings->serialize(*out);
     else
-        writeStringBinary("", *out);
+        writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
 
     writeVarUInt(stage, *out);
     writeVarUInt(static_cast<bool>(compression), *out);

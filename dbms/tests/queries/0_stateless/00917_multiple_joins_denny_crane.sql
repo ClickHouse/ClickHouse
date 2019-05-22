@@ -1,11 +1,7 @@
-USE test;
-
 DROP TABLE IF EXISTS ANIMAL;
 
 CREATE TABLE ANIMAL ( ANIMAL Nullable(String) ) engine = TinyLog;
 INSERT INTO ANIMAL (ANIMAL) VALUES ('CAT'), ('FISH'), ('DOG'), ('HORSE'), ('BIRD');
-
-set enable_optimize_predicate_expression = 0;
 
 select * from (
 select x.b x, count(distinct x.c) ANIMAL

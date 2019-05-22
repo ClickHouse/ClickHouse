@@ -28,6 +28,7 @@ void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitmap(AggregateFunctionFactory &);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
+void registerAggregateFunctionMLMethod(AggregateFunctionFactory &);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
 void registerAggregateFunctionLeastSqr(AggregateFunctionFactory &);
 
@@ -40,7 +41,7 @@ void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory 
 
 void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory);
-
+void registerAggregateFunctionTimeSeriesGroupSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctions()
 {
     {
@@ -69,6 +70,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
+        registerAggregateFunctionTimeSeriesGroupSum(factory);
+        registerAggregateFunctionMLMethod(factory);
         registerAggregateFunctionEntropy(factory);
         registerAggregateFunctionLeastSqr(factory);
     }

@@ -3,7 +3,7 @@
 Creating db_name databases
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ```
 
 `A database` is just a directory for tables.
@@ -17,8 +17,8 @@ The `CREATE TABLE` query can have several forms.
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec] [TTL expr2],
     ...
 ) ENGINE = engine
 ```
@@ -79,6 +79,13 @@ When using the ALTER query to add new columns, old data for these columns is not
 If you add a new column to a table but later change its default expression, the values used for old data will change (for data where values were not stored on the disk). Note that when running background merges, data for columns that are missing in one of the merging parts is written to the merged part.
 
 It is not possible to set default values for elements in nested data structures.
+
+### TTL expression
+
+Can be specified only for MergeTree-family tables. An expression for setting storage time for values. It must depends on `Date` or `DateTime` column and has one `Date` or `DateTime` column as a result. Example:
+    `TTL date + INTERVAL 1 DAY`
+
+You are not allowed to set TTL for key columns. For more details, see [TTL for columns and tables](../operations/table_engines/mergetree.md)
 
 ## Column Compression Codecs
 
