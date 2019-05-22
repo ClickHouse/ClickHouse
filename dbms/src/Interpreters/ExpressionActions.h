@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Interpreters/Context.h>
-#include <Common/config.h>
-#include <Common/SipHash.h>
-#include <Core/Settings.h>
-#include <Core/Names.h>
-#include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/Names.h>
+#include <Core/Settings.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <Interpreters/Context.h>
+#include <Common/SipHash.h>
+#include <Common/config.h>
 
-#include <unordered_set>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -36,9 +37,6 @@ using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 class ExpressionActions;
 

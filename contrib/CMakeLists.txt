@@ -120,6 +120,9 @@ if (USE_INTERNAL_SSL_LIBRARY)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     set (POCO_SKIP_OPENSSL_FIND 1)
+
+    add_library(OpenSSL::Crypto ALIAS ${OPENSSL_CRYPTO_LIBRARY})
+    add_library(OpenSSL::SSL ALIAS ${OPENSSL_SSL_LIBRARY})
 endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
@@ -144,6 +147,7 @@ endif()
 
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_subdirectory (unixodbc-cmake)
+    add_library(ODBC::ODBC ALIAS ${ODBC_LIBRARIES})
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
@@ -223,7 +227,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (ENABLE_TESTS 0)
     set (POCO_ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
-    if (MSVC)
+    if (MSVC OR NOT USE_POCO_DATAODBC)
         set (ENABLE_DATA_ODBC 0 CACHE INTERNAL "") # TODO (build fail)
     endif ()
     add_subdirectory (poco)
@@ -308,6 +312,10 @@ endif()
 
 if (USE_INTERNAL_HYPERSCAN_LIBRARY)
     add_subdirectory (hyperscan)
+endif()
+
+if (USE_SIMDJSON)
+    add_subdirectory (simdjson-cmake)
 endif()
 
 if (USE_CASSANDRA)

@@ -36,10 +36,10 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
 #include <Storages/StorageDistributed.h>
-#include <Storages/StorageMemory.h>
 #include <Storages/StorageJoin.h>
 
 #include <DataStreams/copyData.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Dictionaries/IDictionary.h>
 
@@ -514,13 +514,14 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
                                                             columns_added_by_join_list));
 }
 
-static void appendRequiredColumns(NameSet & required_columns, const Block & sample, const AnalyzedJoin & analyzed_join)
+static void appendRequiredColumns(
+    NameSet & required_columns, const Block & sample, const Names & key_names_right, const JoinedColumnsList & columns_added_by_join)
 {
-    for (auto & column : analyzed_join.key_names_right)
+    for (auto & column : key_names_right)
         if (!sample.has(column))
             required_columns.insert(column);
 
-    for (auto & column : analyzed_join.columns_from_joined_table)
+    for (auto & column : columns_added_by_join)
         if (!sample.has(column.name_and_type.name))
             required_columns.insert(column.name_and_type.name);
 }
@@ -607,7 +608,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             Names action_columns = joined_block_actions->getRequiredColumns();
             NameSet required_columns(action_columns.begin(), action_columns.end());
 
-            appendRequiredColumns(required_columns, joined_block_actions->getSampleBlock(), analyzed_join);
+            appendRequiredColumns(
+                required_columns, joined_block_actions->getSampleBlock(), analyzed_join.key_names_right, columns_added_by_join);
 
             Names original_columns = analyzed_join.getOriginalColumnNames(required_columns);
 
@@ -987,9 +989,7 @@ void ExpressionAnalyzer::collectUsedColumns()
         for (const auto & name : source_columns)
             avaliable_columns.insert(name.name);
 
-        /** You also need to ignore the identifiers of the columns that are obtained by JOIN.
-        * (Do not assume that they are required for reading from the "left" table).
-        */
+        /// Add columns obtained by JOIN (if needed).
         columns_added_by_join.clear();
         for (const auto & joined_column : analyzed_join.available_joined_columns)
         {
@@ -999,7 +999,9 @@ void ExpressionAnalyzer::collectUsedColumns()
 
             if (required.count(name))
             {
-                columns_added_by_join.push_back(joined_column);
+                /// Optimisation: do not add columns needed only in JOIN ON section.
+                if (columns_context.nameInclusion(name) > analyzed_join.rightKeyInclusion(name))
+                    columns_added_by_join.push_back(joined_column);
                 required.erase(name);
             }
         }
