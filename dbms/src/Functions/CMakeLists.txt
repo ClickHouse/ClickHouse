@@ -7,7 +7,7 @@ add_headers_and_sources(clickhouse_functions .)
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
 
-add_library(clickhouse_functions ${LINK_MODE} ${clickhouse_functions_sources})
+add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
@@ -60,12 +60,20 @@ if(USE_BASE64)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
 endif()
 
-if (USE_XXHASH)
+if(USE_XXHASH)
     target_link_libraries(clickhouse_functions PRIVATE ${XXHASH_LIBRARY})
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${XXHASH_INCLUDE_DIR})
 endif()
 
-if (USE_HYPERSCAN)
-    target_link_libraries (clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
-    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
-endif ()
+if(USE_HYPERSCAN)
+    target_link_libraries(clickhouse_functions PRIVATE ${HYPERSCAN_LIBRARY})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${HYPERSCAN_INCLUDE_DIR})
+endif()
+
+if(USE_SIMDJSON)
+    target_link_libraries(clickhouse_functions PRIVATE ${SIMDJSON_LIBRARY})
+endif()
+
+if(USE_RAPIDJSON)
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()

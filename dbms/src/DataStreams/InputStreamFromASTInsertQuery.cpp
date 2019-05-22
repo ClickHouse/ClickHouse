@@ -7,6 +7,8 @@
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IStorage.h>
+
 
 namespace DB
 {
@@ -49,10 +51,10 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     res_stream = context.getInputFormat(format, *input_buffer_contacenated, header, context.getSettings().max_insert_block_size);
 
-    auto columns_description = ColumnsDescription::loadFromContext(context, ast_insert_query->database, ast_insert_query->table);
-    if (columns_description)
+    if (context.getSettingsRef().input_format_defaults_for_omitted_fields)
     {
-        auto column_defaults = columns_description->getDefaults();
+        StoragePtr storage = context.getTable(ast_insert_query->database, ast_insert_query->table);
+        auto column_defaults = storage->getColumns().getDefaults();
         if (!column_defaults.empty())
             res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, context);
     }

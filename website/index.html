@@ -92,6 +92,11 @@
         <div class="clear"></div>
     </div>
 </div>
+<div id="announcement" class="colored-block">
+     <div class="page">
+         Upcoming ClickHouse Meetups: <a class="announcement-link" href="https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/events/261110652/" rel="external nofollow" target="_blank">San Francisco</a> on June 4 and <a class="announcement-link" href="https://www.huodongxing.com/event/2483759276200" rel="external nofollow" target="_blank">Beijing</a> on June 8
+     </div>
+</div>
 <div class="page">
     <h2 id="slogan">ClickHouse. Just makes you think faster.</h2>
 
@@ -398,8 +403,8 @@
 
     <code id="packages-install">
 <pre>
-sudo apt-get install dirmngr    # optional
-sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
+sudo apt-get install dirmngr
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4
 
 echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
@@ -442,6 +447,8 @@ clickhouse-client
         <li>Follow official <a
                href="https://twitter.com/ClickHouseDB"
                rel="external nofollow" target="_blank">Twitter account</a>.</li>
+        <li>Open <a href="https://github.com/yandex/ClickHouse/issues/new/choose"
+                    rel="external nofollow" target="_blank">GitHub issue</a> if you have a bug report or feature request.</li>
         <li>Or email Yandex ClickHouse team directly at
             <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
             You can also <a href="https://forms.yandex.com/surveys/meet-yandex-clickhouse-team/" target="_blank" rel="external nofollow">fill this form</a> to meet us in person.</li>

@@ -1,15 +1,14 @@
 #include <Functions/IFunction.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/TableStructureLockHolder.h>
 
 namespace DB
 {
 class Context;
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 class Join;
 using JoinPtr = std::shared_ptr<Join>;
 
-class FunctionJoinGet final : public IFunction, public std::enable_shared_from_this<FunctionJoinGet>
+class FunctionJoinGet final : public IFunction
 {
 public:
     static constexpr auto name = "joinGet";

@@ -489,31 +489,18 @@ Keys for server/client settings:
 ```
 
 
-## part_log
+## part_log {#server_settings-part-log}
 
 Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
-Queries are logged in the ClickHouse table, not in a separate file.
-
-Columns in the log:
-
-- event_time – Date of the event.
-- duration_ms – Duration of the event.
-- event_type – Type of event. 1 – new data part; 2 – merge result; 3 – data part downloaded from replica; 4 – data part deleted.
-- database_name – The name of the database.
-- table_name – Name of the table.
-- part_name – Name of the data part.
-- partition_id – The identifier of the partition.
-- size_in_bytes – Size of the data part in bytes.
-- merged_from – An array of names of data parts that make up the merge (also used when downloading a merged part).
-- merge_time_ms – Time spent on the merge.
+Queries are logged in the [system.part_log](../system_tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
-- database – Name of the database.
-- table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
-- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 **Example**
 
@@ -541,18 +528,18 @@ The path to the directory containing data.
 ```
 
 
-## query_log
+## query_log {#server_settings-query-log}
 
 Setting for logging queries received with the [log_queries=1](../settings/settings.md) setting.
 
-Queries are logged in the ClickHouse table, not in a separate file.
+Queries are logged in the [system.query_log](../system_tables.md#system_tables-query-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
-- database – Name of the database.
-- table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
-- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
+- `database` – Name of the database.
+- `table` – Name of the system table the queries will be logged in.
+- `partition_by` – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md) for a system table.
+- `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -677,34 +664,55 @@ Path to the file that contains:
 ```
 
 
-## zookeeper
+## zookeeper {#server-settings_zookeeper}
 
-Configuration of ZooKeeper servers.
+Contains settings that allow ClickHouse to interact with [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
-ClickHouse uses ZooKeeper for storing replica metadata when using replicated tables.
+ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this parameter section can be omitted.
 
-This parameter can be omitted if replicated tables are not used.
+This parameter section contains the following parameters:
 
-For more information, see the section "[Replication](../../operations/table_engines/replication.md)".
+- `node` — ZooKeeper endpoint. You can set a few endpoints.
 
-**Example**
+    For example:
+
+    ```xml
+    <node index="1">
+        <host>example_host</host>
+        <port>2181</port>
+    </node>
+    ```
+
+    The `index` attribute specifies an order of node, when trying to connect to ZooKeeper cluster.
+
+- `session_timeout` — Maximum timeout for client session in milliseconds.
+- `root` — ZNode, that is used as root for znodes used by ClickHouse server. Optional.
+- `identity` — User and password, required by ZooKeeper to give access to requested znodes. Optional.
+
+**Example configuration**
 
 ```xml
 <zookeeper>
-    <node index="1">
+    <node>
         <host>example1</host>
         <port>2181</port>
     </node>
-    <node index="2">
+    <node>
         <host>example2</host>
         <port>2181</port>
     </node>
-    <node index="3">
-        <host>example3</host>
-        <port>2181</port>
-    </node>
+    <session_timeout_ms>30000</session_timeout_ms>
+    <!-- Optional. Chroot suffix. Should exist. -->
+    <root>/path/to/zookeeper/node</root>
+    <!-- Optional. Zookeeper digest ACL string. -->
+    <identity>user:password</identity>
 </zookeeper>
 ```
+
+**See Also**
+
+- [Replication](../../operations/table_engines/replication.md)
+- [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 

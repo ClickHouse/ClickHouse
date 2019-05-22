@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
     extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
+    extern const int NETWORK_ERROR;
 }
 
 
@@ -587,12 +588,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
             return socket_address;
         };
 
-        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, bool secure = 0)
+        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure = 0)
         {
                auto address = make_socket_address(host, port);
-#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION <= 0x02000000 // TODO: fill correct version
+#if !defined(POCO_CLICKHOUSE_PATCH) || POCO_VERSION < 0x01090100
                if (secure)
-                   /// Bug in old poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
+                   /// Bug in old (<1.9.1) poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
                    /// https://github.com/pocoproject/poco/pull/2257
                    socket.bind(address, /* reuseAddress = */ true);
                else
@@ -611,13 +612,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
+            uint16_t listen_port = 0;
             try
             {
                 /// HTTP
                 if (config().has("http_port"))
                 {
                     Poco::Net::ServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("http_port"));
+                    listen_port = config().getInt("http_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -634,7 +637,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
 #if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
+                    listen_port = config().getInt("https_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -654,7 +658,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("tcp_port"))
                 {
                     Poco::Net::ServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port"));
+                    listen_port = config().getInt("tcp_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
@@ -671,7 +676,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
 #if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
+                    listen_port = config().getInt("tcp_port_secure");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
@@ -694,7 +700,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("interserver_http_port"))
                 {
                     Poco::Net::ServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_http_port"));
+                    listen_port = config().getInt("interserver_http_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -710,7 +717,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 {
 #if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
-                    auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_https_port"), /* secure = */ true);
+                    listen_port = config().getInt("interserver_https_port");
+                    auto address = socket_bind_listen(socket, listen_host, listen_port, /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
@@ -726,16 +734,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #endif
                 }
             }
-            catch (const Poco::Net::NetException & e)
+            catch (const Poco::Exception & e)
             {
+                std::string message = "Listen [" + listen_host + "]:" + std::to_string(listen_port) + " failed: " + std::to_string(e.code()) + ": " + e.what() + ": " + e.message();
                 if (listen_try)
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.code() << ": " << e.what() << ": " << e.message()
+                    LOG_ERROR(log, message
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                         "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
                         " Example for disabled IPv4: <listen_host>::</listen_host>");
                 else
-                    throw;
+                    throw Exception{message, ErrorCodes::NETWORK_ERROR};
             }
         }
 

@@ -1,5 +1,4 @@
 SET enable_debug_queries = 1;
-USE test;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
