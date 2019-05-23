@@ -27,7 +27,7 @@ namespace DB
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         };
-        factory.registerSource("aserospike", createTableSource);
+        factory.registerSource("aerospike", createTableSource);
     }
 
 }
