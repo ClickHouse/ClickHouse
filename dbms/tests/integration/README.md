@@ -43,7 +43,7 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
-$ ./runner --binary $HOME/ClickHouse/dbms/programs/clickhouse --configs-dir $HOME/ClickHouse/dbms/programs/server/ 'test_odbc_interaction -ss'
+$ ./runner --binary $HOME/ClickHouse/dbms/programs/clickhouse  --bridge-binary $HOME/ClickHouse/dbms/programs/clickhouse-odbc-bridge --configs-dir $HOME/ClickHouse/dbms/programs/server/ 'test_odbc_interaction -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
@@ -69,7 +69,9 @@ Path to binary and configs maybe specified via env variables:
 ```
 $ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/dbms/programs/server/
 $ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/dbms/programs/clickhouse
+$ export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=$HOME/ClickHouse/dbms/programs/clickhouse-odbc-bridge
 $ ./runner 'test_odbc_interaction'
+$ # or ./runner '-v -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
@@ -79,6 +81,9 @@ collected 6 items
 test_odbc_interaction/test.py ......                                     [100%]
 ==================== 6 passed, 1 warnings in 96.33 seconds =====================
 ```
+
+You can just open shell inside a container by overwritting the command:
+./runner --command=bash
 
 ### Adding new tests
 
