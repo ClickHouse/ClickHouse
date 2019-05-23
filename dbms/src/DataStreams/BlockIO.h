@@ -15,14 +15,14 @@ struct BlockIO
     BlockIO(const BlockIO &) = default;
     ~BlockIO() = default;
 
-    BlockOutputStreamPtr out;
-    BlockInputStreamPtr in;
-
     /** process_list_entry should be destroyed after in and after out,
       *  since in and out contain pointer to objects inside process_list_entry (query-level MemoryTracker for example),
       *  which could be used before destroying of in and out.
       */
     std::shared_ptr<ProcessListEntry> process_list_entry;
+
+    BlockOutputStreamPtr out;
+    BlockInputStreamPtr in;
 
     /// Callbacks for query logging could be set here.
     std::function<void(IBlockInputStream *, IBlockOutputStream *)>    finish_callback;
