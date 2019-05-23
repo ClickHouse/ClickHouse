@@ -3,6 +3,8 @@
 # If you have "no space left" error, you can change the location of temporary files with BUILDPLACE environment variable.
 
 # Advanced usage:
+# Test gcc-9:
+# env DIST=disco EXTRAPACKAGES="gcc-9 g++-9" DEB_CC=gcc-9 DEB_CXX=g++-9 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
 # Test gcc-8:
 # env DIST=bionic EXTRAPACKAGES="gcc-8 g++-8" DEB_CC=gcc-8 DEB_CXX=g++-8 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
 # Clang6 build:
