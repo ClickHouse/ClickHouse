@@ -1,4 +1,4 @@
-#include <Common/config.h>
+#    include <Common/config.h>
 #if USE_AEROSPIKE
 
 #    include <sstream>

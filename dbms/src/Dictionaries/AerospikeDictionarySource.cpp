@@ -49,8 +49,8 @@ namespace DB
         as_config * config,
         const DB::Block& sample_block)
         : dict_struct{dict_struct}
-		, host{host}
-		, port{port}
+        , host{host}
+        , port{port}
         , sample_block{sample_block}
     {
         // std::vector<as_host> hosts;
@@ -60,19 +60,19 @@ namespace DB
 
     static const size_t max_block_size = 8192;
 
-	AerospikeDictionarySource::AerospikeDictionarySource(
-		const DictionaryStructure & dict_struct,
-		const Poco::Util::AbstractConfiguration & config,
-		const std::string & config_prefix,
-		Block & sample_block)
-		: AerospikeDictionarySource(
-			dict_struct,
-			config.getString(config_prefix + ".host"),
-			config.getUInt(config_prefix + ".port"),
-			nullptr,
-			sample_block)
-	{
-	}
+    AerospikeDictionarySource::AerospikeDictionarySource(
+        const DictionaryStructure & dict_struct,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        Block & sample_block)
+        : AerospikeDictionarySource(
+            dict_struct,
+            config.getString(config_prefix + ".host"),
+            config.getUInt(config_prefix + ".port"),
+            nullptr,
+            sample_block)
+    {
+    }
 
     AerospikeDictionarySource::AerospikeDictionarySource(const DB::AerospikeDictionarySource& other)
         : dict_struct{other.dict_struct}
