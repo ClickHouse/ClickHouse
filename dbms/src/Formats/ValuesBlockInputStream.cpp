@@ -33,9 +33,10 @@ namespace ErrorCodes
 
 
 ValuesBlockInputStream::ValuesBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_,
-                                               const FormatSettings & format_settings, UInt64 max_block_size_)
-        : istr(istr_), header(header_), context(std::make_unique<Context>(context_)),
-          format_settings(format_settings), max_block_size(max_block_size_), num_columns(header.columns())
+                                               const FormatSettings & format_settings, UInt64 max_block_size_, UInt64 rows_portion_size_)
+        : istr(istr_), header(header_), context(std::make_unique<Context>(context_)), format_settings(format_settings),
+          max_block_size(max_block_size_), rows_portion_size(rows_portion_size_), num_columns(header.columns()),
+          attempts_to_generate_template(num_columns), rows_parsed_using_template(num_columns)
 {
     templates.resize(header.columns());
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
@@ -58,38 +59,15 @@ Block ValuesBlockInputStream::readImpl()
             for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
             {
                 skipWhitespaceIfAny(istr);
-                istr.setCheckpoint();
+                PeekableReadBufferCheckpoint checkpoint{istr};
 
-                bool parse_separate_value = true;
-                if (templates[column_idx])
-                {
-                    /// Try to parse expression using template if one was successfully generated while parsing the first row
-                    try
-                    {
-                        templates[column_idx].value().parseExpression(istr, format_settings);
-                        assertDelimAfterValue(column_idx);
-                        parse_separate_value = false;
-                    }
-                    catch (DB::Exception & e)
-                    {
-                        if (e.code() != ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
-                            throw;
-                        /// Expression in the current row is not match generated on the first row template.
-                        /// Evaluate expressions, which were parsed using this template.
-                        columns[column_idx] = std::move(*templates[column_idx].value().evaluateAll()).mutate();
-                        /// Do not use the template anymore and fallback to slow SQL parser
-                        templates[column_idx].reset();
-                        istr.rollbackToCheckpoint();
-                    }
-                }
+                bool parse_separate_value = !parseExpressionUsingTemplate(columns[column_idx], column_idx);
 
                 /// Parse value using fast streaming parser for literals and slow SQL parser for expressions.
                 /// If there is SQL expression in the first row, template of this expression will be generated,
                 /// so it makes possible to parse next rows much faster if expressions in next rows have the same structure
                 if (parse_separate_value)
-                    readValue(*columns[column_idx], column_idx, rows_in_block == 0);
-
-                istr.dropCheckpoint();
+                    readValue(*columns[column_idx], column_idx, shouldGenerateNewTemplate(column_idx));
             }
 
             skipWhitespaceIfAny(istr);
@@ -109,10 +87,14 @@ Block ValuesBlockInputStream::readImpl()
     /// Evaluate expressions, which were parsed using templates, if any
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        if (templates[i])
-        {
+        if (!templates[i] || !templates[i].value().rowsCount())
+            continue;
+        if (columns[i]->empty())
             columns[i] = std::move(*templates[i].value().evaluateAll()).mutate();
-            templates[i].reset();
+        else
+        {
+            ColumnPtr evaluated = templates[i].value().evaluateAll();
+            columns[i]->insertRangeFrom(*evaluated, 0, evaluated->size());
         }
     }
 
@@ -120,6 +102,40 @@ Block ValuesBlockInputStream::readImpl()
         return {};
 
     return header.cloneWithColumns(std::move(columns));
+}
+
+bool ValuesBlockInputStream::parseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
+{
+    if (templates[column_idx])
+    {
+        /// Try to parse expression using template if one was successfully generated while parsing the first row
+        try
+        {
+            templates[column_idx].value().parseExpression(istr, format_settings);
+            assertDelimAfterValue(column_idx);
+            ++rows_parsed_using_template[column_idx];
+            return true;
+        }
+        catch (DB::Exception & e)
+        {
+            if (e.code() != ErrorCodes::CANNOT_PARSE_EXPRESSION_USING_TEMPLATE)
+                throw;
+            /// Expression in the current row is not match generated on the first row template.
+            /// Evaluate expressions, which were parsed using this template.
+            if (column->empty())
+                column = std::move(*templates[column_idx].value().evaluateAll()).mutate();
+            else
+            {
+                ColumnPtr evaluated = templates[column_idx].value().evaluateAll();
+                column->insertRangeFrom(*evaluated, 0, evaluated->size());
+            }
+            /// Do not use the template anymore and fallback to slow SQL parser
+            templates[column_idx].reset();
+            ++attempts_to_generate_template[column_idx];
+            istr.rollbackToCheckpoint();
+        }
+    }
+    return false;
 }
 
 void ValuesBlockInputStream::readValue(IColumn & column, size_t column_idx, bool generate_template)
@@ -232,6 +248,23 @@ void ValuesBlockInputStream::assertDelimAfterValue(size_t column_idx)
         assertChar(',', istr);
     else
         assertChar(')', istr);
+}
+
+bool ValuesBlockInputStream::shouldGenerateNewTemplate(size_t column_idx)
+{
+    // TODO better heuristic
+    constexpr size_t max_attempts = 3;
+    constexpr size_t rows_per_attempt = 10;
+    if (attempts_to_generate_template[column_idx] < max_attempts)
+        return true;
+    if (rows_parsed_using_template[column_idx] / attempts_to_generate_template[column_idx] < rows_per_attempt)
+    {
+        /// Try again
+        attempts_to_generate_template[column_idx] = 0;
+        rows_parsed_using_template[column_idx] = 0;
+        return true;
+    }
+    return false;
 }
 
 
