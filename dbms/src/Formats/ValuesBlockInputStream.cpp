@@ -136,7 +136,7 @@ void ValuesBlockInputStream::readValue(IColumn & column, size_t column_idx, bool
     }
     catch (const Exception & e)
     {
-        if (!format_settings.values.interpret_expressions)
+        if (!format_settings.values.interpret_expressions && !(format_settings.values.deduce_templates_of_expressions && generate_template))
             throw;
 
         /** The normal streaming parser could not parse the value.
@@ -197,7 +197,7 @@ ValuesBlockInputStream::parseExpression(IColumn & column, size_t column_idx, boo
 
     istr.position() = const_cast<char *>(token_iterator->begin);
 
-    if (generate_template)
+    if (format_settings.values.deduce_templates_of_expressions && generate_template)
     {
         if (templates[column_idx])
             throw DB::Exception("Template for column " + std::to_string(column_idx) + " already exists and it was not evaluated yet",
@@ -212,6 +212,8 @@ ValuesBlockInputStream::parseExpression(IColumn & column, size_t column_idx, boo
         }
         catch (...)
         {
+            if (!format_settings.values.interpret_expressions)
+                throw;
             /// Continue parsing without template
             templates[column_idx].reset();
             istr.position() = const_cast<char *>(token_iterator->begin);
