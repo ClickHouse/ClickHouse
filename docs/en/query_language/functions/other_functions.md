@@ -4,6 +4,55 @@
 
 Returns a string with the name of the host that this function was performed on. For distributed processing, this is the name of the remote server host, if the function is performed on a remote server.
 
+## basename
+
+Extracts trailing part of a string after the last slash or backslash. This function if often used to extract the filename from the path.
+
+```
+basename( expr )
+```
+
+**Parameters**
+
+- `expr` — Expression, resulting in the [String](../../data_types/string.md)-type value. All the backslashes must be escaped in the resulting value.
+
+**Returned Value**
+
+A String-type value that contains:
+
+- Trailing part of a string after the last slash or backslash in it.
+
+    If the input string contains a path, ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
+
+- Original string if there are no slashes or backslashes in it.
+
+**Example**
+
+```sql
+SELECT 'some/long/path/to/file' AS a, basename(a)
+```
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+```sql
+SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
+```
+```text
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
+```
+```sql
+SELECT 'some-file-name' AS a, basename(a)
+```
+```text
+┌─a──────────────┬─basename('some-file-name')─┐
+│ some-file-name │ some-file-name             │
+└────────────────┴────────────────────────────┘
+```
+
 ## visibleWidth(x)
 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
