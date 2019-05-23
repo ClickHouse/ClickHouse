@@ -16,8 +16,8 @@ namespace DB
                                      const std::string & config_prefix,
                                      Block & sample_block,
                                      const Context & /* context */) -> DictionarySourcePtr {
-#if USE_POCO_REDIS
-        return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".aerospike", sample_block);
+#if USE_AEROSPIKE
+        return std::make_unique<AerospikeDictionarySource>(dict_struct, config, config_prefix + ".aerospike", sample_block);
 #else
         (void)dict_struct;
         (void)config;
