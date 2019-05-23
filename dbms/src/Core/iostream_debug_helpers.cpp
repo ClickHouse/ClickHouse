@@ -110,17 +110,20 @@ std::ostream & operator<<(std::ostream & stream, const IAST & what)
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what) {
+std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what)
+{
     stream << "ExpressionAction(" << what.toString() << ")";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what) {
+std::ostream & operator<<(std::ostream & stream, const ExpressionActions & what)
+{
     stream << "ExpressionActions(" << what.dumpActions() << ")";
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & what) {
+std::ostream & operator<<(std::ostream & stream, const SyntaxAnalyzerResult & what)
+{
     stream << "SyntaxAnalyzerResult{";
     stream << "storage=" << what.storage << "; ";
     if (!what.source_columns.empty())

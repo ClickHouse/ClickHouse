@@ -68,7 +68,7 @@ void evaluateMissingDefaults(Block & block,
     // They can intersect with columns added in PREWHERE
     // test 00950_default_prewhere
     // CLICKHOUSE-4523
-    for(auto & delete_column : copy_block.getNamesAndTypesList())
+    for (const auto & delete_column : copy_block.getNamesAndTypesList())
     {
         if (std::find(required_source_columns.begin(), required_source_columns.end(), delete_column.name) == required_source_columns.end())
         {
