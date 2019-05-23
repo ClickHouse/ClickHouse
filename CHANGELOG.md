@@ -25,7 +25,7 @@
 * Use radixSort instead of std::sort for ASOF JOIN values. [#4993](https://github.com/yandex/ClickHouse/pull/4993) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Improvement
-* Disable push-down to right table in left join, left table in right join, and both tables in full join. [#4846](https://github.com/yandex/ClickHouse/pull/4846) ([Ivan](https://github.com/abyss7))
+* Disable push-down to right table in left join, left table in right join, and both tables in full join. This fixes wrong JOIN results in some cases. [#4846](https://github.com/yandex/ClickHouse/pull/4846) ([Ivan](https://github.com/abyss7))
 * Copier: auto upload task configuration from --task-file option [#4876](https://github.com/yandex/ClickHouse/pull/4876) ([proller](https://github.com/proller))
 * Added typos handler for storage factory and table functions factory. [#4891](https://github.com/yandex/ClickHouse/pull/4891) ([Danila Kutenin](https://github.com/danlark1))
 * Support asterisks and qualified asterisks for multiple joins without subqueries [#4898](https://github.com/yandex/ClickHouse/pull/4898) ([Artem Zuikov](https://github.com/4ertus2))
