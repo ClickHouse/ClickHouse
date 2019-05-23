@@ -311,6 +311,7 @@ if (USE_BASE64)
 endif()
 
 if (USE_AEROSPIKE)
+    add_subdirectory (aerospike/modules/luajit)
     add_subdirectory (aerospike-cmake)
     # target_include_directories(aerospike BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif()

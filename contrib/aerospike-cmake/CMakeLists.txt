@@ -104,12 +104,17 @@ set(HEADERS
     ${AEROSPIKE_SOURCE_DIR}/include/aerospike/version.h
 )
 
+#configure_file ( ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/luajit/src/luaconf.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/luaconf.h)
+#add_headers_and_sources(aerospike ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/luajit/src)
+
 add_headers_and_sources(aerospike ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/common/src/main/aerospike)
 add_headers_and_sources(aerospike ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/common/src/main/citrusleaf)
+add_headers_and_sources(aerospike ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/mod-lua/src/main)
 
 # add_library(aerospike ${LINK_MODE} ${SRCS} ${HEADERS})
 add_library(aerospike ${SRCS} ${HEADERS} ${aerospike_sources})
 
+target_include_directories(aerospike PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/aerospike/modules/luajit/src ${ClickHouse_BINARY_DIR}/contrib/aerospike/modules/luajit) # ${CMAKE_CURRENT_BINARY_DIR}/include/)
 # find_package(OpenSSL QUIET)
 # if(OPENSSL_FOUND)
 #     message(STATUS "Aerospike using OpenSSL from ${OPENSSL_ROOT_DIR}")
@@ -119,13 +124,22 @@ add_library(aerospike ${SRCS} ${HEADERS} ${aerospike_sources})
 # endif()
 
 target_compile_definitions(aerospike PRIVATE _GNU_SOURCE)
+target_compile_definitions(aerospike PRIVATE USE_LUAJIT=1)
 
 message(STATUS "Aerospike using OpenSSL from ${OPENSSL_LIBRARIES}")
 target_link_libraries(aerospike PRIVATE ${OPENSSL_LIBRARIES})
+target_link_libraries(aerospike PRIVATE ${LINE_EDITING_LIBS})
+message (STATUS "line editing ${LINE_EDITING_LIBS}")
 
+target_link_libraries(aerospike PRIVATE liblua)
 
 message(STATUS "Aerospike include dir OpenSSL from ${OPENSSL_INCLUDE_DIR}")
 target_include_directories(aerospike PRIVATE ${OPENSSL_INCLUDE_DIR})
+
+if (READLINE_INCLUDE_DIR)
+    message (STATUS "readline ${READLINE_INCLUDE_DIR}")
+    target_include_directories (aerospike PRIVATE ${READLINE_INCLUDE_DIR})
+endif ()
 
 target_include_directories(aerospike
         SYSTEM PUBLIC
