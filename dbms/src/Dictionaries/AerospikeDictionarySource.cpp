@@ -86,7 +86,7 @@ namespace DB
 
     BlockInputStreamPtr AerospikeDictionarySource::loadAll() {
         as_scan scanner;
-        as_scan_init(&scanner, "namespace", "set");
+        as_scan_init(&scanner, "test", "test_set");
         as_error err;
         std::vector<as_key> keys;
 
