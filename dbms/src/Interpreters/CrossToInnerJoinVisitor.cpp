@@ -4,6 +4,7 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/QueryNormalizer.h> // for functionIsInOperator
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -120,6 +121,12 @@ public:
         {
             /// leave other comparisons as is
         }
+        else if (functionIsInOperator(node.name)) /// IN, NOT IN
+        {
+            if (auto ident = node.arguments->children.at(0)->as<ASTIdentifier>())
+                if (size_t min_table = checkIdentifier(*ident))
+                    asts_to_join_on[min_table].push_back(ast);
+        }
         else
         {
             ands_only = false;
@@ -200,6 +207,26 @@ private:
             if (tables[table_pos].canAttachOnExpression())
                 return table_pos;
         }
+        return 0;
+    }
+
+    size_t checkIdentifier(const ASTIdentifier & identifier)
+    {
+        size_t best_match = 0;
+        size_t berst_table_pos = 0;
+
+        for (size_t i = 0; i < tables.size(); ++i)
+        {
+            size_t match = IdentifierSemantic::canReferColumnToTable(identifier, tables[i].table);
+            if (match > best_match)
+            {
+                best_match = match;
+                berst_table_pos = i;
+            }
+        }
+
+        if (best_match && tables[berst_table_pos].canAttachOnExpression())
+            return berst_table_pos;
         return 0;
     }
 };
