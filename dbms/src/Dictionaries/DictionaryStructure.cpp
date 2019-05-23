@@ -408,34 +408,78 @@ String unescapeString(const String & string)
     return string;
 }
 
-void buildXMLRecursive(
+
+/*
+ * buildConfigurationFromKeyValueFunction build layered configuration recursively from key-value function.
+ * key-value function can has arbitrary nesting.
+ * The algorithm could be described in the following way:
+ * Function at each level consists of elements. Each element is a pair or a function.
+ * 1) For each pair element `p` at the current level append to the configuration next content (in terms of XML)
+ *    '<name>value</name>', where name = p.first, value = p.second.
+ * 2) For each function element `f` at the current level get corresponding configuration from subfunction
+ *    and append to the current configuration next content (in terms of XML)
+ *    <name>
+ *        `conf`
+ *    </name>
+ *    where name = f.first, conf = buildRecursive(f->second)
+ *
+ *    For example, let's say func = F1(ARG1 1, F2(ARG2 2, ARG4 4), ARG3 3)
+ *    The corresponding configuration should be
+ *    <F1>
+ *        <ARG1>1</ARG1>
+ *        <F2>
+ *            <ARG2>2</ARG2>
+ *            <ARG4>4</ARG4>
+ *        </F2>
+ *        <ARG3>3</ARG3>
+ *    </F1>
+ */
+void buildConfigurationFromKeyValueFunction(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTKeyValueFunction * func)
 {
-    if (func == nullptr)
-        return;
+    std::string msg = __PRETTY_FUNCTION__;
+    if (func == nullptr || func->children.size() == 0 || func->children[0].get() == nullptr)
+    {
+        std::string msg = __PRETTY_FUNCTION__;
+        if (func == nullptr)
+            msg += ": KeyValueFunction pointer is nullptr";
+        else if (func->children.size() == 0)
+            msg += ": KeyValueFunction has no ast elements in children vector";
+        else if (func->children[0].get() == nullptr)
+            msg += ": KeyValueFunction has nullptr element in children vector";
+        throw Exception(msg, ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+    }
 
     AutoPtr<Element> xml_element(doc->createElement(func->name));
     root->appendChild(xml_element);
-    const ASTExpressionList * ast_expr_list = typeid_cast<const ASTExpressionList *>(func->children[0].get());
-    for (size_t index = 0; index != ast_expr_list->children.size(); ++index)
+    const ASTExpressionList & ast_expr_list = typeid_cast<const ASTExpressionList &>(*func->children[0].get());
+    for (size_t index = 0; index != ast_expr_list.children.size(); ++index)
     {
-        const IAST * ast_element = ast_expr_list->children[index].get();
+        const IAST * ast_element = ast_expr_list.children[index].get();
+        if (ast_element == nullptr)
+            throw Exception(msg + ": element with index " + std::to_string(index) + " is nullptr",
+                            ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
         if (ast_element->getID() == "pair")
         {
-            const ASTPair * pair = typeid_cast<const ASTPair *>(ast_element);
-            AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
+            const ASTPair & pair = typeid_cast<const ASTPair &>(*ast_element);
+            if (pair.second == nullptr)
+                throw Exception(msg + ": value of element with index " + std::to_string(index) + " is nullptr",
+                                ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
+            AutoPtr<Element> current_xml_element(doc->createElement(pair.first));
             xml_element->appendChild(current_xml_element);
-            const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(pair->second.get());
-            auto str_literal = applyVisitor(FieldVisitorToString(), literal->value);
+            const ASTLiteral & literal = typeid_cast<const ASTLiteral &>(*pair.second.get());
+            auto str_literal = applyVisitor(FieldVisitorToString(), literal.value);
             AutoPtr<Text> value(doc->createTextNode(unescapeString(str_literal)));
             current_xml_element->appendChild(value);
         }
         else if (startsWith(ast_element->getID(), "KeyValueFunction"))
         {
             const ASTKeyValueFunction * current_func = typeid_cast<const ASTKeyValueFunction *>(ast_element);
-            buildXMLRecursive(doc, xml_element, current_func);
+            buildConfigurationFromKeyValueFunction(doc, xml_element, current_func);
         }
         else
             throw Exception("Source KeyValueFunction may contain only pair or another KeyValueFunction",
@@ -444,15 +488,16 @@ void buildXMLRecursive(
 }
 
 
-void addSourceFieldsFromAST(
+void buildSourceConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTCreateQuery & create)
 {
     if (create.dictionary_source == nullptr || create.dictionary_source->source == nullptr)
-        return; // TODO: maybe it would be great throw an exception
+        throw Exception(std::string(__PRETTY_FUNCTION__) + ": source pointer is nullptr",
+                        ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
-    buildXMLRecursive(doc, root, create.dictionary_source->source);
+    buildConfigurationFromKeyValueFunction(doc, root, create.dictionary_source->source);
 }
 
 
@@ -473,7 +518,7 @@ void addSourceFieldsFromAST(
  *    </cache>
  *  </layout>
  */
-void addLayoutFieldsFromAST(
+void buildLayoutConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTDictionaryLayout * layout)
@@ -507,7 +552,7 @@ void addLayoutFieldsFromAST(
  *    <max>100</max>
  *  </lifetime>
  */
-void addLifetimeFieldsFromAST(
+void buildLifetimeConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTDictionaryLifetime * lifetime)
@@ -554,7 +599,7 @@ void addAdditionalColumnFields(
  *  <range_min><name>startDate</name></range_min>
  *  <range_max><name>endDate</name></range_max>
  */
-void addRangeFieldsFromAST(
+void buildRangeConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTDictionaryRange * range)
@@ -578,7 +623,7 @@ void addRangeFieldsFromAST(
 }
 
 
-void addPrimaryKeyFieldsFromAST(
+void buildPrimaryKeyConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const IAST * primary_key)
@@ -597,7 +642,7 @@ void addPrimaryKeyFieldsFromAST(
 }
 
 
-void addCompositeKeyFieldsFromAST(
+void buildCompositeKeyConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const IAST * composite_key)
@@ -628,7 +673,7 @@ void addCompositeKeyFieldsFromAST(
 }
 
 
-void addStructureFieldsFromAST(
+void buildStructureConfiguration(
     AutoPtr<Document> doc,
     AutoPtr<Element> root,
     const ASTCreateQuery & create)
@@ -640,9 +685,9 @@ void addStructureFieldsFromAST(
     AutoPtr<Element> structure_element(doc->createElement("structure"));
     root->appendChild(structure_element);
     if (source->primary_key)
-        addPrimaryKeyFieldsFromAST(doc, structure_element, source->primary_key);
+        buildPrimaryKeyConfiguration(doc, structure_element, source->primary_key);
     else if (source->composite_key)
-        addCompositeKeyFieldsFromAST(doc, structure_element, source->composite_key);
+        buildCompositeKeyConfiguration(doc, structure_element, source->composite_key);
     else
         throw Exception("Either primary or composite key should be defined", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
@@ -650,7 +695,7 @@ void addStructureFieldsFromAST(
         throw Exception("Can't construct configuration without columns declaration", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
 
     if (source->range)
-        addRangeFieldsFromAST(doc, structure_element, source->range);
+        buildRangeConfiguration(doc, structure_element, source->range);
 
     const ASTExpressionList * columns = create.columns_list->columns;
     for (size_t index = 0; index != columns->children.size(); ++index)
@@ -718,10 +763,10 @@ Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(cons
     name_element->appendChild(dict_text);
     current_dictionary->appendChild(name_element);
 
-    addSourceFieldsFromAST(xml_document, current_dictionary, create);
-    addLayoutFieldsFromAST(xml_document, current_dictionary, create.dictionary_source->layout);
-    addStructureFieldsFromAST(xml_document, current_dictionary, create);
-    addLifetimeFieldsFromAST(xml_document, current_dictionary, create.dictionary_source->lifetime);
+    buildSourceConfiguration(xml_document, current_dictionary, create);
+    buildLayoutConfiguration(xml_document, current_dictionary, create.dictionary_source->layout);
+    buildStructureConfiguration(xml_document, current_dictionary, create);
+    buildLifetimeConfiguration(xml_document, current_dictionary, create.dictionary_source->lifetime);
 
     conf->load(xml_document);
     return conf;
