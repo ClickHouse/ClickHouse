@@ -110,7 +110,7 @@ public:
                 return "pool is null";
         }
 
-        void disconnect() { if(data) { data->conn.disconnect();} };
+        void disconnect() { if(data) { decrementRefCount(); data->conn.disconnect();} };
 
         friend class Pool;
 
