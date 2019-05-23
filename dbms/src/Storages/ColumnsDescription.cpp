@@ -246,13 +246,22 @@ NamesAndTypesList ColumnsDescription::getMaterialized() const
     return ret;
 }
 
-NamesAndTypesList ColumnsDescription::getAliasesAndVirtuals() const
+NamesAndTypesList ColumnsDescription::getAliases() const
 {
     NamesAndTypesList ret;
     for (const auto & col : columns)
-        if (col.default_desc.kind == ColumnDefaultKind::Alias || col.is_virtual)
+        if (col.default_desc.kind == ColumnDefaultKind::Alias)
             ret.emplace_back(col.name, col.type);
     return ret;
+}
+
+NamesAndTypesList ColumnsDescription::getVirtuals() const
+{
+    NamesAndTypesList result;
+    for (const auto & column : columns)
+        if (column.is_virtual)
+            result.emplace_back(column.name, column.type);
+    return result;
 }
 
 NamesAndTypesList ColumnsDescription::getAll() const

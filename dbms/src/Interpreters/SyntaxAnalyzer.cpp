@@ -75,8 +75,10 @@ void collectSourceColumns(const ASTSelectQuery * select_query, StoragePtr storag
 
         if (select_query)
         {
-            const auto & storage_aliases = storage->getColumns().getAliasesAndVirtuals();
+            const auto & storage_aliases = storage->getColumns().getAliases();
+            const auto & storage_virtuals = storage->getColumns().getVirtuals();
             source_columns.insert(source_columns.end(), storage_aliases.begin(), storage_aliases.end());
+            source_columns.insert(source_columns.end(), storage_virtuals.begin(), storage_virtuals.end());
         }
     }
 }

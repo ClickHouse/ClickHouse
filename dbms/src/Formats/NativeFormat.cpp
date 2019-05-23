@@ -14,6 +14,7 @@ void registerInputFormatNative(FormatFactory & factory)
         const Context &,
         UInt64 /* max_block_size */,
         UInt64 /* min_read_rows */,
+        FormatFactory::BufferCallback /* callback */,
         const FormatSettings &)
     {
         return std::make_shared<NativeBlockInputStream>(buf, sample, 0);

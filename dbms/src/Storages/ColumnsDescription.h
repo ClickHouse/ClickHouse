@@ -67,7 +67,8 @@ public:
 
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
-    NamesAndTypesList getAliasesAndVirtuals() const;
+    NamesAndTypesList getAliases() const;
+    NamesAndTypesList getVirtuals() const;
     NamesAndTypesList getAllPhysical() const; /// ordinary + materialized.
     NamesAndTypesList getAll() const; /// ordinary + materialized + aliases + virtuals.
 
