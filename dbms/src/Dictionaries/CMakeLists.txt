@@ -37,6 +37,7 @@ endif()
 
 if(USE_POCO_MONGODB)
     target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_MongoDB_LIBRARY})
+    target_link_libraries(clickhouse_dictionaries PRIVATE /root/ClickHouse/contrib/poco/Foundation/include/)
 endif()
 
 add_subdirectory(Embedded)
