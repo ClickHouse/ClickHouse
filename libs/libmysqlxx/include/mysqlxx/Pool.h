@@ -110,6 +110,8 @@ public:
                 return "pool is null";
         }
 
+        void disconnect() { if(data) { data->conn.disconnect();} };
+
         friend class Pool;
 
     private:

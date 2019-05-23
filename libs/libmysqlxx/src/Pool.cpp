@@ -174,7 +174,6 @@ void Pool::Entry::forceConnected() const
         throw Poco::RuntimeException("Tried to access NULL database connection.");
 
     Poco::Util::Application & app = Poco::Util::Application::instance();
-
     if (data->conn.ping())
         return;
 
