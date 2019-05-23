@@ -58,12 +58,12 @@ toValidUTF8( input_string )
 ### Пример
 
 ```sql
-SELECT toValidUTF8('\x61\xF0\x80\x80\x80')
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ```
 ```text
-┌─toValidUTF8('a����')─┐
-│ a�                   │
-└──────────────────────┘
+┌─toValidUTF8('a����b')─┐
+│ a�b                   │
+└───────────────────────┘
 ```
 
 
