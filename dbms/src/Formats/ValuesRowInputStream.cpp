@@ -156,12 +156,12 @@ void registerInputFormatValues(FormatFactory & factory)
         const Context & context,
         UInt64 max_block_size,
         UInt64 rows_portion_size,
-        FormatFactory::BufferCallback /* callback */,
+        FormatFactory::ReadCallback callback,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
             std::make_shared<ValuesRowInputStream>(buf, sample, context, settings),
-            sample, max_block_size, rows_portion_size, settings);
+            sample, max_block_size, rows_portion_size, callback, settings);
     });
 }
 

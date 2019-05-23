@@ -1,5 +1,7 @@
 #include <Storages/Kafka/KafkaBlockInputStream.h>
 
+#include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
@@ -52,7 +54,7 @@ void KafkaBlockInputStream::readPrefixImpl()
     rows_portion_size = std::max(rows_portion_size, 1ul);
 
     auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support
-    auto buffer_callback = [this]
+    auto read_callback = [this]
     {
         const auto * sub_buffer = buffer->subBufferAs<ReadBufferFromKafkaConsumer>();
         virtual_columns[0]->insert(sub_buffer->currentTopic());  // "topic"
@@ -61,7 +63,7 @@ void KafkaBlockInputStream::readPrefixImpl()
     };
 
     auto child = FormatFactory::instance().getInput(
-        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, rows_portion_size, buffer_callback);
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, rows_portion_size, read_callback);
     child->setLimits(limits);
     addChild(child);
 
@@ -70,10 +72,18 @@ void KafkaBlockInputStream::readPrefixImpl()
 
 Block KafkaBlockInputStream::readImpl()
 {
-    /// FIXME: materialize MATERIALIZED columns here.
     Block block = children.back()->read();
-    /// TODO: add virtual columns here
-    return block;
+    Block virtual_block = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneWithColumns(std::move(virtual_columns));
+    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneEmptyColumns();
+
+    for (const auto & column : virtual_block.getColumnsWithTypeAndName())
+        block.insert(column);
+
+    /// FIXME: materialize MATERIALIZED columns here.
+
+    return ConvertingBlockInputStream(
+               context, std::make_shared<OneBlockInputStream>(block), getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Name)
+        .read();
 }
 
 void KafkaBlockInputStream::readSuffixImpl()

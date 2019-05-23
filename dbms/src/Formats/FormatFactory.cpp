@@ -34,7 +34,7 @@ BlockInputStreamPtr FormatFactory::getInput(
     const Context & context,
     UInt64 max_block_size,
     UInt64 rows_portion_size,
-    BufferCallback callback) const
+    ReadCallback callback) const
 {
     const auto & input_getter = getCreators(name).first;
     if (!input_getter)
