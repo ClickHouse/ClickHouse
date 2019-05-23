@@ -144,16 +144,16 @@ namespace DB
 
     BlockInputStreamPtr RedisDictionarySource::loadAll()
     {
-        LOG_ERROR(&Logger::get("Redis"), "Redis in loadAll");
+        LOG_INFO(&Logger::get("Redis"), "Redis in loadAll");
 
         Poco::Redis::Command command_for_keys("KEYS");
         command_for_keys << "*";
-        LOG_ERROR(&Logger::get("Redis"), "Command for keys: " + command_for_keys.toString());
+        LOG_INFO(&Logger::get("Redis"), "Command for keys: " + command_for_keys.toString());
 
         Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(command_for_keys);
 
-        LOG_ERROR(&Logger::get("Redis"), "Command for keys executed");
-        LOG_ERROR(&Logger::get("Redis"), "KEYS: " + keys.toString());
+        LOG_INFO(&Logger::get("Redis"), "Command for keys executed");
+        LOG_INFO(&Logger::get("Redis"), "KEYS: " + keys.toString());
 
         if (storage_type == RedisStorageType::HASH_MAP && dict_struct.key->size() == 2)
         {
@@ -163,13 +163,13 @@ namespace DB
                 Poco::Redis::Command command_for_secondary_keys("HKEYS");
                 command_for_secondary_keys.addRedisType(key);
                 Poco::Redis::Array reply_for_primary_key = client->execute<Poco::Redis::Array>(command_for_secondary_keys);
-                LOG_ERROR(&Logger::get("Redis"), "Command for hkeys executed");
+                LOG_INFO(&Logger::get("Redis"), "Command for hkeys executed");
 
                 Poco::SharedPtr<Poco::Redis::Array> primary_with_secondary;
                 primary_with_secondary->addRedisType(key);
                 for (const auto & secondary_key : reply_for_primary_key)
                     primary_with_secondary->addRedisType(secondary_key);
-                LOG_ERROR(&Logger::get("Redis"), "HKEYS: " + primary_with_secondary->toString());
+                LOG_INFO(&Logger::get("Redis"), "HKEYS: " + primary_with_secondary->toString());
                 hkeys.add(*primary_with_secondary);
             }
             keys = hkeys;
@@ -181,7 +181,7 @@ namespace DB
 
     BlockInputStreamPtr RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
-        LOG_ERROR(&Logger::get("Redis"), "Redis in loadIds");
+        LOG_INFO(&Logger::get("Redis"), "Redis in loadIds");
 
         if (storage_type != RedisStorageType::SIMPLE)
             throw Exception{"Cannot use loadIds with \'simple\' storage type", ErrorCodes::UNSUPPORTED_METHOD};
@@ -194,7 +194,7 @@ namespace DB
         for (UInt64 id : ids)
             keys << static_cast<Int64>(id);
 
-        LOG_ERROR(&Logger::get("Redis"), "KEYS: " + keys.toString());
+        LOG_INFO(&Logger::get("Redis"), "KEYS: " + keys.toString());
 
         return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }

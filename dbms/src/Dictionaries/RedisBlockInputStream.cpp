@@ -60,7 +60,7 @@ namespace DB
         template <typename T>
         void insertNumber(IColumn & column, const Poco::Redis::RedisType::Ptr & value, const std::string & name)
         {
-            LOG_ERROR(&Logger::get("Redis"), "Got value: " + value->toString() + "with type=" +
+            LOG_INFO(&Logger::get("Redis"), "Got value: " + value->toString() + "with type=" +
                 ", isInteger=" + DB::toString(value->isInteger()) +
                 ", isSimpleString=" + DB::toString(value->isSimpleString()) +
                 ", isBulkString=" + DB::toString(value->isBulkString()) +
@@ -223,7 +223,7 @@ namespace DB
 
         for (size_t i = 0; i < 5; ++i)
             if (description.sample_block.columns() >= i + 1)
-                LOG_ERROR(&Logger::get("Redis"), description.sample_block.getByPosition(i).dumpStructure());
+                LOG_INFO(&Logger::get("Redis"), description.sample_block.getByPosition(i).dumpStructure());
 
         const size_t size = description.sample_block.columns();
 //        const size_t size = 2;
