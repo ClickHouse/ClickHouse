@@ -110,8 +110,8 @@ namespace
 
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("LinearRegression", createAggregateFunctionMLMethod<FuncLinearRegression>);
-    factory.registerFunction("LogisticRegression", createAggregateFunctionMLMethod<FuncLogisticRegression>);
+    factory.registerFunction("linearRegression", createAggregateFunctionMLMethod<FuncLinearRegression>);
+    factory.registerFunction("logisticRegression", createAggregateFunctionMLMethod<FuncLogisticRegression>);
 }
 
 LinearModelData::LinearModelData(

@@ -30,7 +30,7 @@ void registerAggregateFunctionsBitmap(AggregateFunctionFactory &);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory &);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
-void registerAggregateFunctionLeastSqr(AggregateFunctionFactory &);
+void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
@@ -73,7 +73,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionTSgroupSum(factory);
         registerAggregateFunctionMLMethod(factory);
         registerAggregateFunctionEntropy(factory);
-        registerAggregateFunctionLeastSqr(factory);
+        registerAggregateFunctionSimpleLinearRegression(factory);
     }
 
     {
