@@ -125,6 +125,7 @@ target_include_directories(aerospike PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/ae
 
 target_compile_definitions(aerospike PRIVATE _GNU_SOURCE)
 target_compile_definitions(aerospike PRIVATE USE_LUAJIT=1)
+target_compile_definitions(aerospike PRIVATE USE_XDR=1)
 
 message(STATUS "Aerospike using OpenSSL from ${OPENSSL_LIBRARIES}")
 target_link_libraries(aerospike PRIVATE ${OPENSSL_LIBRARIES})
@@ -136,10 +137,10 @@ target_link_libraries(aerospike PRIVATE liblua)
 message(STATUS "Aerospike include dir OpenSSL from ${OPENSSL_INCLUDE_DIR}")
 target_include_directories(aerospike PRIVATE ${OPENSSL_INCLUDE_DIR})
 
-if (READLINE_INCLUDE_DIR)
-    message (STATUS "readline ${READLINE_INCLUDE_DIR}")
-    target_include_directories (aerospike PRIVATE ${READLINE_INCLUDE_DIR})
-endif ()
+# if (READLINE_INCLUDE_DIR)
+#    message (STATUS "readline ${READLINE_INCLUDE_DIR}")
+#    target_include_directories (aerospike PRIVATE ${READLINE_INCLUDE_DIR})
+# endif ()
 
 target_include_directories(aerospike
         SYSTEM PUBLIC
