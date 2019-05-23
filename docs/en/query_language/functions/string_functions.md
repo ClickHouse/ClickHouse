@@ -75,14 +75,21 @@ Parameters:
 Returned value: Valid UTF-8 string.
 
 ### Example
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
+
+SELECT toValidUTF8('a����b')
+
+┌─toValidUTF8('a����b')─┐
+│ a�b              │
+└──────────────────┘
 
 ```sql
-SELECT toValidUTF8('\x61\xF0\x80\x80\x80')
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ```
 ```text
-┌─toValidUTF8('a����')─┐
-│ a�                   │
-└──────────────────────┘
+┌─toValidUTF8('a����b')─┐
+│ a�b                   │
+└───────────────────────┘
 ```
 
 
