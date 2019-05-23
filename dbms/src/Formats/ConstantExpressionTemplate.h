@@ -18,6 +18,8 @@ public:
 
     ColumnPtr evaluateAll();
 
+    size_t rowsCount() const { return rows_count; }
+
 private:
     static void addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr);
 

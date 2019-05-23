@@ -213,7 +213,7 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll()
         throw Exception("Cannot evaluate template " + result_column_name + ", block structure:\n" + evaluated.dumpStructure(),
                         ErrorCodes::CANNOT_EVALUATE_EXPRESSION_TEMPLATE);
 
-
+    rows_count = 0;
     return evaluated.getByName(result_column_name).column->convertToFullColumnIfConst();
 }
 
