@@ -29,7 +29,7 @@ void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitmap(AggregateFunctionFactory &);
 void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
-void registerAggregateFunctionLeastSqr(AggregateFunctionFactory &);
+void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
@@ -70,7 +70,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
         registerAggregateFunctionEntropy(factory);
-        registerAggregateFunctionLeastSqr(factory);
+        registerAggregateFunctionSimpleLinearRegression(factory);
     }
 
     {
