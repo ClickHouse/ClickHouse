@@ -307,7 +307,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
            const Context & context,
            UInt64 max_block_size,
            UInt64 rows_portion_size,
-           FormatFactory::BufferCallback /* callback */,
+           FormatFactory::ReadCallback callback,
            const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
@@ -315,6 +315,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
                 sample,
                 max_block_size,
                 rows_portion_size,
+                callback,
                 settings);
         });
 }

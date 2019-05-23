@@ -28,9 +28,15 @@ BlockInputStreamFromRowInputStream::BlockInputStreamFromRowInputStream(
     const Block & sample_,
     UInt64 max_block_size_,
     UInt64 rows_portion_size_,
+    FormatFactory::ReadCallback callback,
     const FormatSettings & settings)
-    : row_input(row_input_), sample(sample_), max_block_size(max_block_size_), rows_portion_size(rows_portion_size_),
-    allow_errors_num(settings.input_allow_errors_num), allow_errors_ratio(settings.input_allow_errors_ratio)
+    : row_input(row_input_)
+    , sample(sample_)
+    , max_block_size(max_block_size_)
+    , rows_portion_size(rows_portion_size_)
+    , read_callback(callback)
+    , allow_errors_num(settings.input_allow_errors_num)
+    , allow_errors_ratio(settings.input_allow_errors_ratio)
 {
 }
 
@@ -73,6 +79,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
                 RowReadExtension info;
                 if (!row_input->read(columns, info))
                     break;
+                read_callback();
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {

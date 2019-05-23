@@ -457,12 +457,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Context &,
             UInt64 max_block_size,
             UInt64 rows_portion_size,
-            FormatFactory::BufferCallback /* callback */,
+            FormatFactory::ReadCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, false, false, settings),
-                sample, max_block_size, rows_portion_size, settings);
+                sample, max_block_size, rows_portion_size, callback, settings);
         });
     }
 
@@ -474,12 +474,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Context &,
             UInt64 max_block_size,
             UInt64 rows_portion_size,
-            FormatFactory::BufferCallback /* callback */,
+            FormatFactory::ReadCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, false, settings),
-                sample, max_block_size, rows_portion_size, settings);
+                sample, max_block_size, rows_portion_size, callback, settings);
         });
     }
 
@@ -491,12 +491,12 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             const Context &,
             UInt64 max_block_size,
             UInt64 rows_portion_size,
-            FormatFactory::BufferCallback /* callback */,
+            FormatFactory::ReadCallback callback,
             const FormatSettings & settings)
         {
             return std::make_shared<BlockInputStreamFromRowInputStream>(
                 std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, true, settings),
-                sample, max_block_size, rows_portion_size, settings);
+                sample, max_block_size, rows_portion_size, callback, settings);
         });
     }
 }

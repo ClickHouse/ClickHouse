@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/IRowInputStream.h>
 
@@ -24,6 +25,7 @@ public:
         const Block & sample_,
         UInt64 max_block_size_,
         UInt64 rows_portion_size_,
+        FormatFactory::ReadCallback callback,
         const FormatSettings & settings);
 
     void readPrefix() override { row_input->readPrefix(); }
@@ -45,6 +47,7 @@ private:
     Block sample;
     UInt64 max_block_size;
     UInt64 rows_portion_size;
+    FormatFactory::ReadCallback read_callback;
     BlockMissingValues block_missing_values;
 
     UInt64 allow_errors_num;
