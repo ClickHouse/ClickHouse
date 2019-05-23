@@ -36,10 +36,13 @@ private:
     typedef std::vector<std::optional<ConstantExpressionTemplate>> ConstantExpressionTemplates;
 
     Block readImpl() override;
+    bool parseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx);
     void readValue(IColumn & column, size_t column_idx, bool generate_template);
 
     void parseExpression(IColumn & column, size_t column_idx, bool generate_template);
     inline void assertDelimAfterValue(size_t column_idx);
+
+    bool shouldGenerateNewTemplate(size_t column_idx);
 
 private:
     PeekableReadBuffer istr;
@@ -49,6 +52,9 @@ private:
     UInt64 max_block_size;
     size_t num_columns;
     size_t total_rows = 0;
+
+    std::vector<size_t> attempts_to_generate_template;
+    std::vector<size_t> rows_parsed_using_template;
 
     ParserExpression parser;
     ConstantExpressionTemplates templates;
