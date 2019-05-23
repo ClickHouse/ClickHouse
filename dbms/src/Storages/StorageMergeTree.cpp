@@ -698,10 +698,10 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
         /// Clear old parts. It is unnecessary to do it more than once a second.
         if (auto lock = time_after_previous_cleanup.compareAndRestartDeferred(1))
         {
-            data.clearOldPartsFromFilesystem();
             {
                 /// TODO: Implement tryLockStructureForShare.
                 auto lock_structure = lockStructureForShare(false, "");
+                data.clearOldPartsFromFilesystem();
                 data.clearOldTemporaryDirectories();
             }
             clearOldMutations();
