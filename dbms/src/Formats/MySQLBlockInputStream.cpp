@@ -20,8 +20,8 @@ namespace ErrorCodes
 
 
 MySQLBlockInputStream::MySQLBlockInputStream(
-    const mysqlxx::PoolWithFailover::Entry & entry, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size)
-    : entry{entry}, query{this->entry->query(query_str)}, result{query.use()}, max_block_size{max_block_size}
+    const mysqlxx::PoolWithFailover::Entry & entry, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size, const bool auto_close)
+    : entry{entry}, query{this->entry->query(query_str)}, result{query.use()}, max_block_size{max_block_size}, auto_close{auto_close}
 {
     if (sample_block.columns() != result.getNumFields())
         throw Exception{"mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while "
@@ -93,7 +93,11 @@ Block MySQLBlockInputStream::readImpl()
 {
     auto row = result.fetch();
     if (!row)
+    {
+    	if (auto_close)
+    		entry.disconnect();
         return {};
+    }
 
     MutableColumns columns(description.sample_block.columns());
     for (const auto i : ext::range(0, columns.size()))
@@ -126,7 +130,8 @@ Block MySQLBlockInputStream::readImpl()
 
         row = result.fetch();
     }
-
+    if (auto_close)
+		entry.disconnect();
     return description.sample_block.cloneWithColumns(std::move(columns));
 }
 
