@@ -1,22 +1,22 @@
 <test>
     <name>test_select_format</name>
-
-    <type>once</type>
+    <type>loop</type>
 
     <stop_conditions>
+        <all_of>
+            <iterations>5</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>5000<average_speed_not_changing_for_ms>
-            <total_time_ms>30000</total_time_ms>
+            <iterations>100</iterations>
+            <total_time_ms>60000</total_time_ms>
         </any_of>
     </stop_conditions>
 
-    <metrics>
-        <!-- For running one inifinite query -->
-        <max_rows_per_second />
-        <max_bytes_per_second />
-        <avg_rows_per_second />
-        <avg_bytes_per_second />
-    </metrics>
+    <main_metric>
+        <min_time/>
+    </main_metric>
+
 
     <substitutions>
         <substitution>
