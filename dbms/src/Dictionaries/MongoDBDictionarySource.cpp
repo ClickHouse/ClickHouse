@@ -42,6 +42,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 #    include <Poco/MongoDB/ObjectId.h>
 #    include <Poco/Util/AbstractConfiguration.h>
 #    include <Poco/Version.h>
+#    include "Poco/URI.h"
 
 // only after poco
 // naming conflict:
@@ -165,7 +166,35 @@ authenticate(Poco::MongoDB::Connection & connection, const std::string & databas
     }
 }
 #    endif
+    
+auto  getConnection(const std::string & host,UInt16 port,const std::string & uri)
+{   
+    if(uri.empty()){
+       //cout << "Getting connection with IP:PORT format.";
+       auto conn= std::make_shared<Poco::MongoDB::Connection>(host, port);
+       return conn;
+    }
+    else {
+       //cout << "Getting connection with URI format.";
+       Poco::MongoDB::Connection::SocketFactory SF;
+       auto conn= std::make_shared<Poco::MongoDB::Connection>(uri,SF);
+       return conn;
+    }
+    
+}
 
+std::string getDB(const std::string & tempuri){
+  if(tempuri.empty()){
+      return tempuri;
+  }
+  else {
+      Poco::URI theURI(tempuri);
+      std::string databaseName = theURI.getPath();
+      if (!databaseName.empty() && databaseName[0] == '/') databaseName.erase(0, 1);
+      if (databaseName.empty()) databaseName = "admin";
+      return databaseName;
+  }
+}
 
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct,
@@ -176,6 +205,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     const std::string & method,
     const std::string & db,
     const std::string & collection,
+    const std::string & uri,
     const Block & sample_block)
     : dict_struct{dict_struct}
     , host{host}
@@ -185,21 +215,23 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     , method{method}
     , db{db}
     , collection{collection}
+    , uri{uri}
     , sample_block{sample_block}
-    , connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}
+    /*, connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}*/
+    , connection{getConnection(host,port,uri)}
 {
-    if (!user.empty())
-    {
-#    if POCO_VERSION >= 0x01070800
-        Poco::MongoDB::Database poco_db(db);
-        if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
-            throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
-#    else
-        authenticate(*connection, db, user, password);
-#    endif
-    }
+      if (uri.empty())
+      {
+  #    if POCO_VERSION >= 0x01070800
+           Poco::MongoDB::Database poco_db(db);
+           if (!poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method))
+              throw Exception("Cannot authenticate in MongoDB, incorrect user "+user+" or password "+password, ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+  #    else
+        Poco::MongoDB::Database poco_db();
+        poco_db.authenticate(*connection, db, user, password);
+  #    endif
+      }
 }
-
 
 MongoDBDictionarySource::MongoDBDictionarySource(
     const DictionaryStructure & dict_struct,
@@ -208,13 +240,14 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     Block & sample_block)
     : MongoDBDictionarySource(
           dict_struct,
-          config.getString(config_prefix + ".host"),
-          config.getUInt(config_prefix + ".port"),
+          config.getString(config_prefix + ".host",""),
+          config.getUInt(config_prefix + ".port",0),
           config.getString(config_prefix + ".user", ""),
           config.getString(config_prefix + ".password", ""),
           config.getString(config_prefix + ".method", ""),
-          config.getString(config_prefix + ".db", ""),
+          config.getString(config_prefix + ".db", getDB(config.getString(config_prefix + ".uri",""))),
           config.getString(config_prefix + ".collection"),
+	      config.getString(config_prefix + ".uri",""),
           sample_block)
 {
 }
@@ -229,6 +262,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(const MongoDBDictionarySource &
                               other.method,
                               other.db,
                               other.collection,
+			                  other.uri,
                               other.sample_block}
 {
 }
