@@ -1,25 +1,25 @@
 <test>
     <name>test_read_formats</name>
-    <type>loop</type>
+    <type>once</type>
     
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
 
     <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits</fill_query>
 
     <stop_conditions>
-        <all_of>
-            <iterations>3</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
         <any_of>
-            <iterations>5000</iterations>
-            <total_time_ms>60000</total_time_ms>
+            <average_speed_not_changing_for_ms>5000<average_speed_not_changing_for_ms>
+            <total_time_ms>30000</total_time_ms>
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
+    <metrics>
+        <!-- For running one inifinite query -->
+        <max_rows_per_second />
+        <max_bytes_per_second />
+        <avg_rows_per_second />
+        <avg_bytes_per_second />
+    </metrics>
 
     <substitutions>
         <substitution>
