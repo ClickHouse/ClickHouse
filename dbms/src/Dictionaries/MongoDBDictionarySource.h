@@ -35,6 +35,7 @@ class MongoDBDictionarySource final : public IDictionarySource
         const std::string & method,
         const std::string & db,
         const std::string & collection,
+        const std::string & uri,
         const Block & sample_block);
 
 public:
@@ -80,6 +81,7 @@ private:
     const std::string method;
     const std::string db;
     const std::string collection;
+    const std::string uri;
     Block sample_block;
 
     std::shared_ptr<Poco::MongoDB::Connection> connection;
