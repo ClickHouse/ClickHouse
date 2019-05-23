@@ -41,7 +41,7 @@ std::ostream & operator<<(std::ostream & stream, const IAST & what);
 
 std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what);
 
-class ExpressionAction;
+struct ExpressionAction;
 std::ostream & operator<<(std::ostream & stream, const ExpressionAction & what);
 
 class ExpressionActions;
