@@ -2,9 +2,9 @@
     <name>test_read_formats</name>
     <type>loop</type>
     
-    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS datasets.hits_v1</create_query>
+    <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
 
-    <fill_query>INSERT INTO table_{format} SELECT * FROM datasets.hits_v1</fill_query>
+    <fill_query>INSERT INTO table_{format} SELECT * FROM test.hits</fill_query>
 
     <stop_conditions>
         <all_of>
@@ -38,7 +38,7 @@
     </substitutions>
 
     <preconditions>
-        <table_exists>datasets.hits_v1</table_exists>
+        <table_exists>test.hits</table_exists>
     </preconditions>
 
 <query>SELECT * FROM table_{format}</query>
