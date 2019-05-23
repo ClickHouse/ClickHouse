@@ -86,8 +86,8 @@ def kafka_produce_protobuf_messages(topic, start_index, num_messages):
 
 # Since everything is async and shaky when receiving messages from Kafka,
 # we may want to try and check results multiple times in a loop.
-def  kafka_check_result(result, check=False):
-    fpath = p.join(p.dirname(__file__), 'test_kafka_json.reference')
+def  kafka_check_result(result, check=False, ref_file='test_kafka_json.reference'):
+    fpath = p.join(p.dirname(__file__), ref_file)
     with open(fpath) as reference:
         if check:
             assert TSV(result) == TSV(reference)
@@ -363,6 +363,35 @@ def test_kafka_flush_on_big_message(kafka_cluster):
             break
 
     assert int(result) == kafka_messages*batch_messages, 'ClickHouse lost some messages: {}'.format(result)
+
+
+def test_kafka_virtual_columns(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS
+                kafka_broker_list = 'kafka1:19092',
+                kafka_topic_list = 'json',
+                kafka_group_name = 'json',
+                kafka_format = 'JSONEachRow';
+        ''')
+
+    messages = ''
+    for i in range(25):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+    kafka_produce('json', [messages])
+
+    messages = ''
+    for i in range(25, 50):
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+    kafka_produce('json', [messages])
+
+    result = ''
+    for i in range(50):
+        result += instance.query('SELECT _key, key, _topic, value, _offset FROM test.kafka')
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True, 'test_kafka_virtual.reference')
 
 
 if __name__ == '__main__':
