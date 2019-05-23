@@ -27,7 +27,14 @@ const FormatFactory::Creators & FormatFactory::getCreators(const String & name) 
 }
 
 
-BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & buf, const Block & sample, const Context & context, UInt64 max_block_size, UInt64 rows_portion_size) const
+BlockInputStreamPtr FormatFactory::getInput(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    const Context & context,
+    UInt64 max_block_size,
+    UInt64 rows_portion_size,
+    BufferCallback callback) const
 {
     const auto & input_getter = getCreators(name).first;
     if (!input_getter)
@@ -47,7 +54,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
 
-    return input_getter(buf, sample, context, max_block_size, rows_portion_size, format_settings);
+    return input_getter(
+        buf, sample, context, max_block_size, rows_portion_size, callback ? callback : [] {}, format_settings);
 }
 
 

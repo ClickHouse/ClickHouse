@@ -24,6 +24,9 @@ class WriteBuffer;
   */
 class FormatFactory final : public ext::singleton<FormatFactory>
 {
+public:
+    using BufferCallback = std::function<void()>;
+
 private:
     using InputCreator = std::function<BlockInputStreamPtr(
         ReadBuffer & buf,
@@ -31,6 +34,7 @@ private:
         const Context & context,
         UInt64 max_block_size,
         UInt64 rows_portion_size,
+        BufferCallback callback,
         const FormatSettings & settings)>;
 
     using OutputCreator = std::function<BlockOutputStreamPtr(
@@ -44,8 +48,14 @@ private:
     using FormatsDictionary = std::unordered_map<String, Creators>;
 
 public:
-    BlockInputStreamPtr getInput(const String & name, ReadBuffer & buf,
-        const Block & sample, const Context & context, UInt64 max_block_size, UInt64 rows_portion_size = 0) const;
+    BlockInputStreamPtr getInput(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        const Context & context,
+        UInt64 max_block_size,
+        UInt64 rows_portion_size = 0,
+        BufferCallback callback = {}) const;
 
     BlockOutputStreamPtr getOutput(const String & name, WriteBuffer & buf,
         const Block & sample, const Context & context) const;

@@ -16,6 +16,8 @@ KafkaBlockInputStream::KafkaBlockInputStream(
 
     if (!storage.getSchemaName().empty())
         context.setSetting("format_schema", storage.getSchemaName());
+
+    virtual_columns = storage.getSampleBlockForColumns({"_topic", "_key", "_offset"}).cloneEmptyColumns();
 }
 
 KafkaBlockInputStream::~KafkaBlockInputStream()
@@ -50,8 +52,16 @@ void KafkaBlockInputStream::readPrefixImpl()
     rows_portion_size = std::max(rows_portion_size, 1ul);
 
     auto non_virtual_header = storage.getSampleBlockNonMaterialized(); /// FIXME: add materialized columns support
+    auto buffer_callback = [this]
+    {
+        const auto * sub_buffer = buffer->subBufferAs<ReadBufferFromKafkaConsumer>();
+        virtual_columns[0]->insert(sub_buffer->currentTopic());  // "topic"
+        virtual_columns[1]->insert(sub_buffer->currentKey());    // "key"
+        virtual_columns[2]->insert(sub_buffer->currentOffset()); // "offset"
+    };
+
     auto child = FormatFactory::instance().getInput(
-        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, rows_portion_size);
+        storage.getFormatName(), *buffer, non_virtual_header, context, max_block_size, rows_portion_size, buffer_callback);
     child->setLimits(limits);
     addChild(child);
 

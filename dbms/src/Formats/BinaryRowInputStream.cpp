@@ -65,6 +65,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
         const Context &,
         UInt64 max_block_size,
         UInt64 rows_portion_size,
+        FormatFactory::BufferCallback /* callback */,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
@@ -78,6 +79,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
         const Context &,
         UInt64 max_block_size,
         UInt64 rows_portion_size,
+        FormatFactory::BufferCallback /* callback */,
         const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(

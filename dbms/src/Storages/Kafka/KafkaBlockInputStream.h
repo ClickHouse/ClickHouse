@@ -28,6 +28,7 @@ private:
     UInt64 max_block_size;
 
     BufferPtr buffer;
+    MutableColumns virtual_columns;
     bool broken = true, claimed = false;
 };
 

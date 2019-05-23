@@ -35,9 +35,9 @@ public:
     auto pollTimeout() { return poll_timeout; }
 
     // Return values for the message that's being read.
-    String currentTopic() { return current[-1].get_topic(); }
-    String currentKey() { return current[-1].get_key(); }
-    auto currentOffset() { return current[-1].get_offset(); }
+    String currentTopic() const { return current[-1].get_topic(); }
+    String currentKey() const { return current[-1].get_key(); }
+    auto currentOffset() const { return current[-1].get_offset(); }
 
 private:
     using Messages = std::vector<cppkafka::Message>;
