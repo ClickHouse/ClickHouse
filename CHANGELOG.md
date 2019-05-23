@@ -30,7 +30,7 @@
 * Added typos handler for storage factory and table functions factory. [#4891](https://github.com/yandex/ClickHouse/pull/4891) ([Danila Kutenin](https://github.com/danlark1))
 * Support asterisks and qualified asterisks for multiple joins without subqueries [#4898](https://github.com/yandex/ClickHouse/pull/4898) ([Artem Zuikov](https://github.com/4ertus2))
 * Make missing column error message more user friendly. [#4915](https://github.com/yandex/ClickHouse/pull/4915) ([Artem Zuikov](https://github.com/4ertus2))
-* Use another allocator for MarkCache and UncompressedCache to catch segfaults faster. I had to move functions to inline definition because otherwise I would need to copy-paste a lot of code, for now the code is fully reused but compilation time can increase a bit [#4928](https://github.com/yandex/ClickHouse/pull/4928) ([Danila Kutenin](https://github.com/danlark1))
+* Use another allocator for MarkCache and UncompressedCache to catch segfaults faster. [#4928](https://github.com/yandex/ClickHouse/pull/4928) ([Danila Kutenin](https://github.com/danlark1))
 * Deduplicate pointers in ASTSelectQuery and its children cause they could became not consistent. Leave one copy + positions map. [#4952](https://github.com/yandex/ClickHouse/pull/4952) ([Artem Zuikov](https://github.com/4ertus2))
 * Added support for non-constant and negative size and length arguments for function 'substringUTF8'. [#4989](https://github.com/yandex/ClickHouse/pull/4989) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Use fixed_granularity as upper bound for adaptive granularity. Now block size in rows is bounded by fixed granularity. [#5052](https://github.com/yandex/ClickHouse/pull/5052) ([alesapin](https://github.com/alesapin))
