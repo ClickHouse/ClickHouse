@@ -701,10 +701,10 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
             break;
 
         case AttributeUnderlyingType::Decimal32:
-            setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal128>());
+            setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>());
             break;
         case AttributeUnderlyingType::Decimal64:
-            setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal128>());
+            setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>());
             break;
         case AttributeUnderlyingType::Decimal128:
             setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>());

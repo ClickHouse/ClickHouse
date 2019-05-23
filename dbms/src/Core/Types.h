@@ -170,6 +170,46 @@ template <> struct NativeType<Decimal32> { using Type = Int32; };
 template <> struct NativeType<Decimal64> { using Type = Int64; };
 template <> struct NativeType<Decimal128> { using Type = Int128; };
 
+inline const char * getTypeName(TypeIndex idx)
+{
+    switch (idx)
+    {
+        case TypeIndex::Nothing:    return "Nothing";
+        case TypeIndex::UInt8:      return TypeName<UInt8>::get();
+        case TypeIndex::UInt16:     return TypeName<UInt16>::get();
+        case TypeIndex::UInt32:     return TypeName<UInt32>::get();
+        case TypeIndex::UInt64:     return TypeName<UInt64>::get();
+        case TypeIndex::UInt128:    return "UInt128";
+        case TypeIndex::Int8:       return TypeName<Int8>::get();
+        case TypeIndex::Int16:      return TypeName<Int16>::get();
+        case TypeIndex::Int32:      return TypeName<Int32>::get();
+        case TypeIndex::Int64:      return TypeName<Int64>::get();
+        case TypeIndex::Int128:     return TypeName<Int128>::get();
+        case TypeIndex::Float32:    return TypeName<Float32>::get();
+        case TypeIndex::Float64:    return TypeName<Float64>::get();
+        case TypeIndex::Date:       return "Date";
+        case TypeIndex::DateTime:   return "DateTime";
+        case TypeIndex::String:     return TypeName<String>::get();
+        case TypeIndex::FixedString: return "FixedString";
+        case TypeIndex::Enum8:      return "Enum8";
+        case TypeIndex::Enum16:     return "Enum16";
+        case TypeIndex::Decimal32:  return TypeName<Decimal32>::get();
+        case TypeIndex::Decimal64:  return TypeName<Decimal64>::get();
+        case TypeIndex::Decimal128: return TypeName<Decimal128>::get();
+        case TypeIndex::UUID:       return "UUID";
+        case TypeIndex::Array:      return "Array";
+        case TypeIndex::Tuple:      return "Tuple";
+        case TypeIndex::Set:        return "Set";
+        case TypeIndex::Interval:   return "Interval";
+        case TypeIndex::Nullable:   return "Nullable";
+        case TypeIndex::Function:   return "Function";
+        case TypeIndex::AggregateFunction: return "AggregateFunction";
+        case TypeIndex::LowCardinality: return "LowCardinality";
+    }
+
+    __builtin_unreachable();
+}
+
 }
 
 /// Specialization of `std::hash` for the Decimal<T> types.
