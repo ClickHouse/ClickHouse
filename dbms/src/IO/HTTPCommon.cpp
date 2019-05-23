@@ -80,7 +80,7 @@ void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeout
 
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
 
-        session->setHost(DNSResolver::instance().resolveHost(host).toString());
+        session->setHost(host);
         session->setPort(port);
 
         /// doesn't work properly without patch
