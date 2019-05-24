@@ -1,22 +1,21 @@
 
 #include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/FieldToDataType.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Formats/ConstantExpressionTemplate.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/FieldToDataType.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Functions/FunctionsConversion.h>
+
 
 namespace DB
 {
@@ -28,10 +27,9 @@ namespace ErrorCodes
     extern const int CANNOT_EVALUATE_EXPRESSION_TEMPLATE;
 }
 
-class ReplaceLiteralsMatcher
+class ReplaceLiteralsVisitor
 {
 public:
-    using Visitor = InDepthNodeVisitor<ReplaceLiteralsMatcher, true>;
 
     struct LiteralInfo
     {
@@ -41,25 +39,63 @@ public:
         String dummy_column_name;
     };
 
-    using Data = std::vector<LiteralInfo>;
+    using LiteralsInfo = std::vector<LiteralInfo>;
 
-    static void visit(ASTPtr & ast, Data & data)
+    LiteralsInfo replaced_literals;
+    const Context & context;
+
+    explicit ReplaceLiteralsVisitor(const Context & context_) : context(context_) { }
+
+    void visit(ASTPtr & ast)
+    {
+        if (visitIfLiteral(ast))
+            return;
+        if (auto function = ast->as<ASTFunction>())
+            visit(*function);
+        else
+            visitChildren(ast, {});
+    }
+
+private:
+    void visitChildren(ASTPtr & ast, const ColumnNumbers & dont_visit_children)
+    {
+        for (size_t i = 0; i < ast->children.size(); ++i)
+            if (std::find(dont_visit_children.begin(), dont_visit_children.end(), i) == dont_visit_children.end())
+                visit(ast->children[i]);
+    }
+
+    void visit(ASTFunction & function)
+    {
+        /// Do not replace literals which must be constant
+        ColumnNumbers dont_visit_children;
+        FunctionBuilderPtr builder = FunctionFactory::instance().get(function.name, context);
+
+        if (auto default_builder = dynamic_cast<DefaultFunctionBuilder*>(builder.get()))
+            dont_visit_children = default_builder->getArgumentsThatAreAlwaysConstant();
+        else if (dynamic_cast<FunctionBuilderCast*>(builder.get()))
+            dont_visit_children.push_back(1);
+
+        visitChildren(function.arguments, dont_visit_children);
+    }
+
+    bool visitIfLiteral(ASTPtr & ast)
     {
         auto literal = std::dynamic_pointer_cast<ASTLiteral>(ast);
-        if (!literal || !literal->begin || !literal->end)
-            return;
-
-        // TODO don't replace constant arguments of functions such as CAST(x, 'type')
-        // TODO ensure column_name is unique (there was no _dummy_x identifier in expression)
-        String column_name = "_dummy_" + std::to_string(data.size());
-        data.emplace_back(literal, column_name);
-        ast = std::make_shared<ASTIdentifier>(column_name);
+        if (!literal)
+            return false;
+        if (literal->begin && literal->end)
+        {
+            // TODO ensure column_name is unique (there was no _dummy_x identifier in expression)
+            String column_name = "_dummy_" + std::to_string(replaced_literals.size());
+            replaced_literals.emplace_back(literal, column_name);
+            ast = std::make_shared<ASTIdentifier>(column_name);
+        }
+        return true;
     }
-    static bool needChildVisit(ASTPtr & node, const ASTPtr &) { return !node->as<ASTLiteral>(); }
 };
 
-using ReplaceLiteralsVisitor = ReplaceLiteralsMatcher::Visitor;
-using LiteralInfo = ReplaceLiteralsMatcher::LiteralInfo;
+using LiteralInfo = ReplaceLiteralsVisitor::LiteralInfo;
+using LiteralsInfo = ReplaceLiteralsVisitor::LiteralsInfo;
 
 
 ConstantExpressionTemplate::ConstantExpressionTemplate(const IDataType & result_column_type,
@@ -67,9 +103,9 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(const IDataType & result_
                                                        const ASTPtr & expression_, const Context & context)
 {
     ASTPtr expression = expression_->clone();
-    addNodesToCastResult(result_column_type, expression);
-    ReplaceLiteralsVisitor::Data replaced_literals;
-    ReplaceLiteralsVisitor(replaced_literals).visit(expression);
+    ReplaceLiteralsVisitor visitor(context);
+    visitor.visit(expression);
+    LiteralsInfo replaced_literals = visitor.replaced_literals;
 
     token_after_literal_idx.reserve(replaced_literals.size());
     need_special_parser.resize(replaced_literals.size(), true);
@@ -122,7 +158,7 @@ ConstantExpressionTemplate::ConstantExpressionTemplate(const IDataType & result_
     }
 
     columns = literals.cloneEmptyColumns();
-
+    addNodesToCastResult(result_column_type, expression);
     result_column_name = expression->getColumnName();
 
     // TODO convert SyntaxAnalyzer and ExpressionAnalyzer exceptions to CANNOT_CREATE_EXPRESSION_TEMPLATE
