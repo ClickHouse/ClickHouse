@@ -22,5 +22,11 @@ You can use `substitions`, `create`, `fill` and `drop` queries to prepare test. 
 
 Take into account, that this tests will run in CI which consists of 56-cores and 512 RAM machines. Queries will be executed much faster than on local laptop.
 
+### How to run performance test
 
+You have to run clickhouse-server and after you can start testing:
 
+```
+$ clickhouse-performance-test --input-file my_lovely_test1.xml --input-file my_lovely_test2.xml
+$ clickhouse-performance-test --input-file /my_lovely_test_dir/
+```
