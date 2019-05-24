@@ -1,14 +1,14 @@
 ## ClickHouse release 19.6.2.11, 2019-05-13
 
 ### New Features
-* Implements TTL for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
+* TTL expressions for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
 * Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail](https://github.com/fandyushin))
-* Added a new aggregate function leastSqr(x, y) which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([hcz](https://github.com/hczhcz))
-* Added new function isValidUTF8 for checking whether a set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
-* Add new load balancing policy FIRST_OR_RANDOM which sends queries to the first specified host and if it's inaccessible send queries to random hosts of shard. Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
+* Added a new aggregate function `simpleLinearRegression(x, y)` which performs linear regression on points (x, y) and returns the parameters of the line. (from #4668) [#4917](https://github.com/yandex/ClickHouse/pull/4917) ([hcz](https://github.com/hczhcz))
+* Added new function `isValidUTF8` for checking whether a set of bytes is correctly utf-8 encoded. [#4934](https://github.com/yandex/ClickHouse/pull/4934) ([Danila Kutenin](https://github.com/danlark1))
+* Add new load balancing policy `first_or_random` which sends queries to the first specified host and if it's inaccessible send queries to random hosts of shard. Useful for cross-replication topology setups. [#5012](https://github.com/yandex/ClickHouse/pull/5012) ([nvartolomei](https://github.com/nvartolomei))
 
 ### Experimental Features
-* Add setting `index_granularity_bytes` for MergeTree* tables family. ... [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
+* Add setting `index_granularity_bytes` (adaptive index granularity) for MergeTree* tables family. [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
 
 ### Improvements
 * Disable push-down to right table in left join, left table in right join, and both tables in full join. This fixes wrong JOIN results in some cases. [#4846](https://github.com/yandex/ClickHouse/pull/4846) ([Ivan](https://github.com/abyss7))
