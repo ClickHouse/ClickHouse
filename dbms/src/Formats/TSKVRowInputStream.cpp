@@ -207,9 +207,9 @@ void registerInputFormatTSKV(FormatFactory & factory)
     });
 }
 
-void registerChunkGetterTSKV(FormatFactory & factory)
+void registerFileSegmentationEngineTSKV(FormatFactory & factory)
 {
-    factory.registerChunkGetter("TSKV", [](
+    factory.registerFileSegmentationEngine("TSKV", [](
         ReadBuffer & in,
         DB::Memory<> & memory,
         size_t min_size)

@@ -488,9 +488,9 @@ void registerInputFormatCSV(FormatFactory & factory)
     }
 }
 
-void registerChunkGetterCSV(FormatFactory & factory)
+void registerFileSegmentationEngineCSV(FormatFactory & factory)
 {
-    factory.registerChunkGetter("CSV", [](
+    factory.registerFileSegmentationEngine("CSV", [](
         ReadBuffer & in,
         DB::Memory<> & memory,
         size_t min_size)
@@ -536,6 +536,7 @@ void registerChunkGetterCSV(FormatFactory & factory)
                 }
             }
         }
+        // std::cerr << StringRef(memory.data(), memory.size()) << "\n";
         safeInBuffer(in, memory, begin_pos, true);
         return true;
     });

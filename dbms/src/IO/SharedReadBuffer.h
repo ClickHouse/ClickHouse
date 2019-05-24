@@ -11,14 +11,14 @@ class SharedReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
     SharedReadBuffer(
-            ReadBuffer& in_,
-            std::shared_ptr<std::mutex>& mutex_,
-            FormatFactory::ChunkCreator getChunk_,
+            ReadBuffer & in_,
+            std::shared_ptr<std::mutex> & mutex_,
+            FormatFactory::FileSegmentationEngine file_segmentation_engine_,
             size_t min_size_)
         : BufferWithOwnMemory<ReadBuffer>(),
         mutex(mutex_),
         in(in_),
-        getChunk(getChunk_),
+        file_segmentation_engine(file_segmentation_engine_),
         min_size(min_size_)
     {
     }
@@ -26,20 +26,29 @@ public:
 private:
     bool nextImpl() override
     {
+        if (eof)
+            return false;
+
         std::lock_guard<std::mutex> lock(*mutex);
         if (in.eof())
+        {
+            eof = true;
             return false;
-        bool res = getChunk(in, memory, min_size);
+        }
+
+        bool res = file_segmentation_engine(in, memory, min_size);
         if (!res)
             return false;
+
         working_buffer = Buffer(memory.data(), memory.data() + memory.size());
         return true;
     }
 
 private:
+    bool eof = false;
     std::shared_ptr<std::mutex> mutex;
     ReadBuffer & in;
-    FormatFactory::ChunkCreator getChunk;
+    FormatFactory::FileSegmentationEngine file_segmentation_engine;
     size_t min_size;
 };
 }

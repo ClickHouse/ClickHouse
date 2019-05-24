@@ -26,7 +26,7 @@ class WriteBuffer;
 class FormatFactory final : public ext::singleton<FormatFactory>
 {
 public:
-    using ChunkCreator = std::function<bool(
+    using FileSegmentationEngine = std::function<bool(
         ReadBuffer & buf,
         DB::Memory<> & memory,
         size_t min_size)>;
@@ -48,9 +48,9 @@ private:
 
     struct Creators
     {
-        InputCreator first;
-        OutputCreator second;
-        ChunkCreator getChunk;
+        InputCreator input_creator;
+        OutputCreator output_creator;
+        FileSegmentationEngine file_segmentation_engine;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -65,7 +65,7 @@ public:
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
-    void registerChunkGetter(const String & name, ChunkCreator chunk_creator);
+    void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
 
     const FormatsDictionary & getAllFormats() const
     {

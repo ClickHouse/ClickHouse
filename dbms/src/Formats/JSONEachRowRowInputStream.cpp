@@ -268,9 +268,9 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     });
 }
 
-void registerChunkGetterJSONEachRow(FormatFactory & factory)
+void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
-    factory.registerChunkGetter("JSONEachRow", [](
+    factory.registerFileSegmentationEngine("JSONEachRow", [](
         ReadBuffer & in,
         DB::Memory<> & memory,
         size_t min_size)

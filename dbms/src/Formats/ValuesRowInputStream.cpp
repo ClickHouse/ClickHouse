@@ -165,9 +165,9 @@ void registerInputFormatValues(FormatFactory & factory)
     });
 }
 
-void registerChunkGetterValues(FormatFactory & factory)
+void registerFileSegmentationEngineValues(FormatFactory & factory)
 {
-    factory.registerChunkGetter("Values", [](
+    factory.registerFileSegmentationEngine("Values", [](
         ReadBuffer & in,
         DB::Memory<> & memory,
         size_t min_size)

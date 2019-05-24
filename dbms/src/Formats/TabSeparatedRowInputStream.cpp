@@ -498,11 +498,11 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
     }
 }
 
-void registerChunkGetterTabSeparated(FormatFactory & factory)
+void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     for (auto name : {"TabSeparated", "TSV"})
     {
-        factory.registerChunkGetter(name, [](
+        factory.registerFileSegmentationEngine(name, [](
             ReadBuffer & in,
             DB::Memory<> & memory,
             size_t min_size)
