@@ -336,7 +336,7 @@ public:
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     /// Choose any disk.
-    auto disk = schema->getAnyDisk();
+    auto disk = storage_policy->getAnyDisk();
     MergeTreeMutationEntry entry(commands, getFullPathOnDisk(disk), insert_increment.get());
     String file_name;
     {
@@ -489,7 +489,7 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            UInt64 disk_space = schema->getMaxUnreservedFreeSpace();
+            UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
@@ -580,7 +580,7 @@ bool StorageMergeTree::tryMutatePart()
     std::optional<CurrentlyMergingPartsTagger> tagger;
     {
         /// DataPArt can be store only at one disk. Get Max of free space at all disks
-        UInt64 disk_space = schema->getMaxUnreservedFreeSpace();
+        UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
 
         std::lock_guard lock(currently_merging_mutex);
 
@@ -975,7 +975,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
     {
         LOG_DEBUG(log, "Looking for parts for partition " << partition_id << " in " << source_dir);
         ActiveDataPartSet active_parts(format_version);
-        const auto disks = schema->getDisks();
+        const auto disks = storage_policy->getDisks();
         for (const DiskPtr & disk : disks)
         {
             const auto full_path = getFullPathOnDisk(disk);

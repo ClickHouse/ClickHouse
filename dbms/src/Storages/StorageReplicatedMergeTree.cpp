@@ -3002,7 +3002,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             for (const DataPartPtr & part : data_parts)
                 partition_ids.emplace(part->info.partition_id);
 
-            UInt64 disk_space = schema->getMaxUnreservedFreeSpace();
+            UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
 
             for (const String & partition_id : partition_ids)
             {
@@ -3029,7 +3029,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             }
             else
             {
-                UInt64 disk_space = schema->getMaxUnreservedFreeSpace();
+                UInt64 disk_space = storage_policy->getMaxUnreservedFreeSpace();
                 String partition_id = getPartitionIDFromQuery(partition, query_context);
                 selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
@@ -3555,7 +3555,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
         ActiveDataPartSet active_parts(format_version);
 
         std::set<String> part_names;
-        const auto disks = schema->getDisks();
+        const auto disks = storage_policy->getDisks();
         for (const DiskPtr & disk : disks)
         {
             const auto full_path = getFullPathOnDisk(disk);

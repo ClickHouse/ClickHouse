@@ -443,8 +443,10 @@ public:
     /// Provides storage disks
     const DiskPtr & getDisk(const String & name) const;
 
+    StoragePolicySelector & getStoragePolicySelector() const;
+
     /// Provides storage politics schemes
-    const SchemaPtr & getSchema(const String & name) const;
+    const StoragePolicyPtr & getStoragePolicy(const String &name) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;

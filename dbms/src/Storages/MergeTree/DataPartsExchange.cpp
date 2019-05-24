@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
-    extern const int UNKNOWN_ACTION;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 namespace DataPartsExchange
@@ -62,7 +62,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     else if (protocol_version == "1")
         part_name = params.get("part_name");
     else
-        throw Exception("Unsupported protocol version", ErrorCodes::UNKNOWN_ACTION); ///@TODO_IGR ASK Is it true error code?
+        throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
     static std::atomic_uint total_sends {0};
 
@@ -232,10 +232,11 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         auto reservation = data.reserveSpaceForPart(sum_files_size);
         return downloadPart(part_name, replica_path, to_detached, tmp_prefix_, std::move(reservation), in);
     }
-    catch (...) ///@TODO_IGR catch exception
+    catch (const Exception & e) ///@TODO_IGR ASK maybe catch connection and others error here
     {
         if (!protocol_error)
             throw;
+        LOG_WARNING(log, "Looks like old ClickHouse version node. Trying to use fetch protocol version 0"); ///@TODO_IGR ASK new msg
     }
 
     /// Protocol error

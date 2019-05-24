@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 
+#include <set>
+
 #include <Common/escapeForFileName.h>
 #include <Poco/File.h>
 
@@ -88,17 +90,23 @@ void DiskSelector::add(const DiskPtr & disk)
     disks.emplace(disk->getName(), disk);
 }
 
-Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector)
+StoragePolicy::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const DiskSelector & disk_selector)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
-    for (const auto & name : keys)
+    Logger * logger = &Logger::get("StorageConfiguration");
+
+    for (const auto & disk : keys)
     {
-        if (startsWith(name, "disk"))
+        if (startsWith(disk, "disk"))
         {
-            auto disk_name = config.getString(config_prefix + "." + name);
+            auto disk_name = config.getString(config_prefix + "." + disk);
             disks.push_back(disk_selector[disk_name]);
+        }
+        else
+        {
+            LOG_WARNING(logger, "Unused param " << config_prefix << '.' << disk);
         }
     }
 
@@ -112,8 +120,6 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
         throw Exception("Only one of 'max_data_part_size_bytes' and 'max_data_part_size_ratio' should be specified",
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
     }
-
-    Logger * logger = &Logger::get("StorageConfiguration");
 
     if (has_max_bytes)
     {
@@ -144,12 +150,13 @@ Schema::Volume::Volume(const Poco::Util::AbstractConfiguration & config, const s
     {
         max_data_part_size = std::numeric_limits<UInt64>::max();
     }
-    constexpr UInt64 SIZE_8MB = 8ull << 20u;
-    if (max_data_part_size < SIZE_8MB)
-        LOG_WARNING(logger, "Volume max_data_part_size is too low (" << max_data_part_size << " < " << SIZE_8MB << ")");
+    constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
+    if (max_data_part_size < MIN_PART_SIZE)
+        LOG_WARNING(logger, "Volume max_data_part_size is too low (" << formatReadableSizeWithBinarySuffix(max_data_part_size) <<
+                            " < " << formatReadableSizeWithBinarySuffix(MIN_PART_SIZE) << ")");
 }
 
-DiskSpaceMonitor::ReservationPtr Schema::Volume::reserve(UInt64 expected_size) const
+DiskSpaceMonitor::ReservationPtr StoragePolicy::Volume::reserve(UInt64 expected_size) const
 {
     /// This volume can not store files which size greater than max_data_part_size
 
@@ -163,19 +170,19 @@ DiskSpaceMonitor::ReservationPtr Schema::Volume::reserve(UInt64 expected_size) c
         size_t index = (start_from + i) % disks_num;
         auto reservation = DiskSpaceMonitor::tryToReserve(disks[index], expected_size);
 
-        if (reservation && *reservation)
+        if (reservation && reservation->isValid())
             return reservation;
     }
     return {};
 }
 
-DiskSpaceMonitor::ReservationPtr Schema::Volume::reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const
+DiskSpaceMonitor::ReservationPtr StoragePolicy::Volume::reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const
 {
     /// This volume can not store files which size greater than max_data_part_size
     /// Reserve and Warn it
 
     if (expected_size > max_data_part_size)
-        LOG_WARNING(&Logger::get("StorageSchema"), "Volume max_data_part_size limit exceed: " << expected_size);
+        LOG_WARNING(&Logger::get("StoragePolicy"), "Volume max_data_part_size limit exceed: " << expected_size);
 
     size_t disks_num = disks.size();
     for (size_t i = 0; i != disks_num; ++i)
@@ -185,15 +192,15 @@ DiskSpaceMonitor::ReservationPtr Schema::Volume::reserveAtDisk(const DiskPtr & d
         }
         auto reservation = DiskSpaceMonitor::tryToReserve(disks[i], expected_size);
 
-        if (reservation && *reservation)
+        if (reservation && reservation->isValid())
             return reservation;
         return {};
     }
-    LOG_DEBUG(&Logger::get("StorageSchema"), "Volume has no disk " << disk->getName());
+    LOG_DEBUG(&Logger::get("StoragePolicy"), "Volume has no disk " << disk->getName());
     return {};
 }
 
-UInt64 Schema::Volume::getMaxUnreservedFreeSpace() const
+UInt64 StoragePolicy::Volume::getMaxUnreservedFreeSpace() const
 {
     UInt64 res = 0;
     for (const auto & disk : disks)
@@ -201,7 +208,7 @@ UInt64 Schema::Volume::getMaxUnreservedFreeSpace() const
     return res;
 }
 
-Schema::Schema(const String & name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
+StoragePolicy::StoragePolicy(const String & name_, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
                const DiskSelector & disks) : name(name_)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -209,16 +216,29 @@ Schema::Schema(const String & name_, const Poco::Util::AbstractConfiguration & c
 
     for (const auto & attr_name : keys)
     {
-        if (!startsWith(name, "volume"))
+        if (!startsWith(attr_name, "volume"))
             throw Exception("Unknown element in config: " + config_prefix + "." + attr_name + ", must be 'volume'",
                             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
         volumes.emplace_back(config, config_prefix + "." + attr_name, disks);
     }
     if (volumes.empty())
-        throw Exception("Schema must contain at least one Volume", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        throw Exception("StoragePolicy must contain at least one Volume", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
+    /// Check that disks are unique in Policy
+    std::set<String> disk_names;
+    for (const auto & volume : volumes)
+    {
+        for (const auto & disk : volume.disks)
+        {
+            if (disk_names.find(disk->getName()) != disk_names.end())
+                throw Exception("StoragePolicy disks must not be repeated: " + disk->getName(), ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
+            disk_names.insert(disk->getName());
+        }
+    }
 }
 
-Schema::Disks Schema::getDisks() const
+StoragePolicy::Disks StoragePolicy::getDisks() const
 {
     Disks res;
     for (const auto & volume : volumes)
@@ -227,24 +247,24 @@ Schema::Disks Schema::getDisks() const
     return res;
 }
 
-DiskPtr Schema::getAnyDisk() const
+DiskPtr StoragePolicy::getAnyDisk() const
 {
-    /// Schema must contain at least one Volume
+    /// StoragePolicy must contain at least one Volume
     /// Volume must contain at least one Disk
     if (volumes.empty())
     {
-        LOG_ERROR(&Logger::get("StorageSchema"), "No volumes at schema " << name);
-        throw Exception("Schema has no Volumes. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
+        LOG_ERROR(&Logger::get("StoragePolicy"), "No volumes at StoragePolicy " << name);
+        throw Exception("StoragePolicy has no Volumes. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
     }
     if (volumes[0].disks.empty())
     {
-        LOG_ERROR(&Logger::get("StorageSchema"), "No Disks at volume 0 at schema " << name);
-        throw Exception("Schema Volume 1 has no Disks. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
+        LOG_ERROR(&Logger::get("StoragePolicy"), "No Disks at volume 0 at StoragePolicy " << name);
+        throw Exception("StoragePolicy Volume 1 has no Disks. it's a bug", ErrorCodes::NOT_ENOUGH_SPACE);
     }
     return volumes[0].disks[0];
 }
 
-UInt64 Schema::getMaxUnreservedFreeSpace() const
+UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 {
     UInt64 res = 0;
     for (const auto & volume : volumes)
@@ -252,7 +272,7 @@ UInt64 Schema::getMaxUnreservedFreeSpace() const
     return res;
 }
 
-DiskSpaceMonitor::ReservationPtr Schema::reserve(UInt64 expected_size) const
+DiskSpaceMonitor::ReservationPtr StoragePolicy::reserve(UInt64 expected_size) const
 {
     for (const auto & volume : volumes)
     {
@@ -263,7 +283,7 @@ DiskSpaceMonitor::ReservationPtr Schema::reserve(UInt64 expected_size) const
     return {};
 }
 
-DiskSpaceMonitor::ReservationPtr Schema::reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const
+DiskSpaceMonitor::ReservationPtr StoragePolicy::reserveAtDisk(const DiskPtr & disk, UInt64 expected_size) const
 {
     for (const auto & volume : volumes)
     {
@@ -274,7 +294,7 @@ DiskSpaceMonitor::ReservationPtr Schema::reserveAtDisk(const DiskPtr & disk, UIn
     return {};
 }
 
-DiskSpaceMonitor::ReservationPtr Schema::reserveOnMaxDiskWithoutReservation() const
+DiskSpaceMonitor::ReservationPtr StoragePolicy::reserveOnMaxDiskWithoutReservation() const
 {
     UInt64 max_space = 0;
     DiskPtr max_disk;
@@ -293,35 +313,35 @@ DiskSpaceMonitor::ReservationPtr Schema::reserveOnMaxDiskWithoutReservation() co
     return DiskSpaceMonitor::tryToReserve(max_disk, 0);
 }
 
-SchemaSelector::SchemaSelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks)
+StoragePolicySelector::StoragePolicySelector(const Poco::Util::AbstractConfiguration & config, const String& config_prefix, const DiskSelector & disks)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
 
-    Logger * logger = &Logger::get("SchemaSelector");
+    Logger * logger = &Logger::get("StoragePolicySelector");
 
     for (const auto & name : keys)
     {
         if (!std::all_of(name.begin(), name.end(), isWordCharASCII))
-            throw Exception("Schema name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        schemas.emplace(name, std::make_shared<Schema>(name, config, config_prefix + "." + name, disks));
-        LOG_INFO(logger, "Storage schema " << name << " loaded");
+            throw Exception("StoragePolicy name can contain only alphanumeric and '_' (" + name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+        policies.emplace(name, std::make_shared<StoragePolicy>(name, config, config_prefix + "." + name, disks));
+        LOG_INFO(logger, "Storage policy " << name << " loaded");
     }
 
-    constexpr auto default_schema_name = "default";
+    constexpr auto default_storage_policy_name = "default";
     constexpr auto default_disk_name = "default";
-    if (schemas.find(default_schema_name) == schemas.end())
-        schemas.emplace(default_schema_name,
-                        std::make_shared<Schema>(default_schema_name,
-                                                 Schema::Volumes{{std::vector<DiskPtr>{disks[default_disk_name]},
+    if (policies.find(default_storage_policy_name) == policies.end())
+        policies.emplace(default_storage_policy_name,
+                        std::make_shared<StoragePolicy>(default_storage_policy_name,
+                                                 StoragePolicy::Volumes{{std::vector<DiskPtr>{disks[default_disk_name]},
                                                                   std::numeric_limits<UInt64>::max()}}));
 }
 
-const SchemaPtr &  SchemaSelector::operator[](const String & name) const
+const StoragePolicyPtr &  StoragePolicySelector::operator[](const String & name) const
 {
-    auto it = schemas.find(name);
-    if (it == schemas.end())
-        throw Exception("Unknown schema " + name, ErrorCodes::UNKNOWN_SCHEMA);
+    auto it = policies.find(name);
+    if (it == policies.end())
+        throw Exception("Unknown StoragePolicy " + name, ErrorCodes::UNKNOWN_POLICY);
     return it->second;
 }
 
