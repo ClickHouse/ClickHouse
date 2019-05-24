@@ -202,8 +202,7 @@ private:
             LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
             LOG_INFO(
                 log,
-                "Preparing for run, have " << info.create_queries.size() << " create queries and " << info.fill_queries.size()
-                                           << " fill queries");
+                "Preparing for run, have " << info.create_and_fill_queries.size() << " create and fill queries");
             current.prepare();
             LOG_INFO(log, "Prepared");
             LOG_INFO(log, "Running test '" << info.test_name << "'");
