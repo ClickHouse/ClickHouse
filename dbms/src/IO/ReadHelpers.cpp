@@ -1030,13 +1030,13 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
 
 bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, char * & begin_pos, bool save_buffer_state)
 {
-    if (save_buffer_state || !in.hasPendingData())
+    if (save_buffer_state || !buf.hasPendingData())
     {
         size_t old_size = memory.size();
-        memory.resize(old_size + static_cast<size_t>(in.position() - begin_pos));
-        memcpy(memory.data() + old_size, begin_pos, in.position() - begin_pos);
-        bool res = in.eof();
-        begin_pos = in.position();
+        memory.resize(old_size + static_cast<size_t>(buf.position() - begin_pos));
+        memcpy(memory.data() + old_size, begin_pos, buf.position() - begin_pos);
+        bool res = buf.eof();
+        begin_pos = buf.position();
         return res;
     }
     return false;
