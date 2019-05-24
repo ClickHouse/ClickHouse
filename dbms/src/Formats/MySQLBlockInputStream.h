@@ -19,7 +19,7 @@ public:
         const std::string & query_str,
         const Block & sample_block,
         const UInt64 max_block_size,
-		const bool auto_close = false);
+        const bool auto_close = false);
 
     String getName() const override { return "MySQL"; }
 

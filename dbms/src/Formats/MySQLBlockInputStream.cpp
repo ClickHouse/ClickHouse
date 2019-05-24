@@ -94,8 +94,8 @@ Block MySQLBlockInputStream::readImpl()
     auto row = result.fetch();
     if (!row)
     {
-    	if (auto_close)
-    		entry.disconnect();
+        if (auto_close)
+           entry.disconnect();
         return {};
     }
 
@@ -131,7 +131,7 @@ Block MySQLBlockInputStream::readImpl()
         row = result.fetch();
     }
     if (auto_close)
-		entry.disconnect();
+        entry.disconnect();
     return description.sample_block.cloneWithColumns(std::move(columns));
 }
 
