@@ -115,7 +115,7 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
 }
 
 void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
-{  
+{
     auto & target = dict[name].output_creator;
     if (target)
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
