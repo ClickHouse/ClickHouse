@@ -1,0 +1,7 @@
+#pragma once
+
+#ifndef _PATH_TTY
+# define _PATH_TTY "/dev/tty"
+#endif
+
+#cmakedefine HAVE_READPASSPHRASE

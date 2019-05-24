@@ -9,6 +9,7 @@
 #include <Common/Exception.h>
 #include <common/setTerminalEcho.h>
 #include <ext/scope_guard.h>
+#include <readpassphrase.h>
 
 namespace DB
 {
@@ -17,6 +18,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/*
 /// Print string to screen even if stdout/stderr redirected
 static void tryPrintTTY(const std::string & string)
 {
@@ -33,6 +35,7 @@ static void tryPrintTTY(const std::string & string)
         return;
     }
 }
+*/
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
 {
@@ -62,14 +65,13 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     }
     if (password_prompt)
     {
-        tryPrintTTY("Password for user (" + user + "): ");
-
-        setTerminalEcho(false);
-        SCOPE_EXIT({ setTerminalEcho(true); });
-
-        std::getline(std::cin, password);
-
-        tryPrintTTY("\n");
+        std::string prompt{"Password for user (" + user + "): "};
+        char buf [5] = {};
+        int rppflags = 0;
+        if (readpassphrase(prompt.c_str(), buf, sizeof(buf), rppflags))
+        {
+            password = buf;
+        }
     }
     compression = config.getBool("compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
