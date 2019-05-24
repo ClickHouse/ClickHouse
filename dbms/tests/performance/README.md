@@ -15,7 +15,7 @@ There two types of performance tests:
 Type `once` should be used only for endless queries. Even if your query really
 long (10 seconds+), it's better to choose `loop` test.
 
-After you have choosen type, you have to specify `preconditions`. It contain
+After you have choosen type, you have to specify `preconditions`. It contains
 table names. Only `hits_100m_single`, `hits_10m_single`, `test.hits` are
 available in CI.
 
