@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <aerospike/aerospike.h>
 # include <aerospike/as_key.h>
 #include <Core/Block.h>
@@ -14,7 +15,7 @@ namespace DB
     public:
         AerospikeBlockInputStream(
             const aerospike& client,
-            std::vector<as_key> keys,
+            std::vector<std::unique_ptr<as_key>>&& keys,
             const Block & sample_block,
             const size_t max_block_size);
 
@@ -29,7 +30,7 @@ namespace DB
 
         size_t cursor = 0;
         aerospike client;
-        std::vector<as_key> keys;
+        std::vector<std::unique_ptr<as_key>> keys;
         const size_t max_block_size;
         ExternalResultDescription description;
         bool all_read = false;

@@ -33,7 +33,7 @@ namespace ErrorCodes
 
 AerospikeBlockInputStream::AerospikeBlockInputStream(
     const aerospike & client,
-    std::vector<as_key> keys,
+    std::vector<std::unique_ptr<as_key>>&& keys,
     const Block & sample_block,
     const size_t max_block_size)
     : client(client)
@@ -59,7 +59,7 @@ namespace
 
         void HandleRecord(const as_record& record) {
 
-            ++cursor;
+            ++num_rows;
             const auto & name = description.sample_block.getByPosition(0).name;
             insertKey(*((*columns)[0]), description.types[0].first, as_rec_key(&record._), &record, name); // TODO(gleb777) handle null result
 
@@ -262,8 +262,8 @@ Block AerospikeBlockInputStream::readImpl()
 
     TemporaryName recordsHandler(&columns, description, cursor);
     for (UInt32 i = 0; i < current_block_size; ++i) {
-        fprintf(stderr, "KEY VALUE: %s \n", keys[cursor + i].value.string.value);
-        as_key_init_value(as_batch_keyat(&batch, i), "test", "test_set", (as_key_value*)(&(keys[cursor + i].value)));
+        fprintf(stderr, "KEY VALUE: %s \n", keys[cursor + i]->value.string.value);
+        as_key_init_value(as_batch_keyat(&batch, i), "test", "test_set", (as_key_value*)(&(keys[cursor + i]->value)));
         fprintf(stderr, "KEY VALUE: %s \n", as_batch_keyat(&batch, i)->value.string.value);
     }
 
