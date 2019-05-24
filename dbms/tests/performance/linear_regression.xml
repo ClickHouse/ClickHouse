@@ -1,0 +1,40 @@
+<test>
+    <name>linear_regression</name>
+    <type>loop</type>
+
+    <stop_conditions>
+        <any_of>
+            <average_speed_not_changing_for_ms>3000</average_speed_not_changing_for_ms>
+            <total_time_ms>5000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+        <min_time/>
+    </main_metric>
+
+    <create_query>CREATE TABLE train_dataset(p1 Float64, p2 Float64, target Float64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE test_dataset(p1 Float64, p2 Float64) ENGINE = Memory</create_query>
+
+    <create_query>CREATE TABLE test_model engine = Memory as select linearRegressionState(0.001)(target, p1, p2) as state from train_dataset</create_query>
+
+    <fill_query>INSERT INTO train_dataset values (2.0, 1.0, 6.0), (3.0, -1.0, 6.0), (4.0, 2.0, 11.0), (-2.0, 1.0, -2.0)</fill_query>
+    <fill_query>INSERT INTO test_dataset values (1.0, 1.0), (5.0, -3.0)</fill_query>
+
+<!--    Проверяем, как работает fit-->
+    <query>with (SELECT linearRegressionState(0.001)(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
+
+<!--    Проверяем fit с Momentum -->
+    <query>with (SELECT linearRegressionState(0.001, 0.1, 1, 'Momentum')(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
+
+<!--    Проверяем fit с Nesterov-->
+    <query>with (SELECT linearRegressionState(0.001, 0.1, 1, 'Nesterov')(target, p1, p2) FROM train_dataset) as model select toColumnTypeName(model)</query>
+
+
+    <!--    Проверяем, как работает predict-->
+    <query>with (SELECT state FROM test_model) as model select evalMLMethod(model, p1, p2) from test_dataset</query>
+
+    <drop_query>DROP TABLE IF EXISTS train_dataset</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_dataset</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_model</drop_query>
+</test>
