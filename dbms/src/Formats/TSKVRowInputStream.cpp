@@ -221,6 +221,8 @@ void registerFileSegmentationEngineTSKV(FormatFactory & factory)
                 && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
         {
             in.position() = find_first_symbols<'\\','\r', '\n'>(in.position(), in.buffer().end());
+            if (in.position() == in.buffer().end())
+                continue;
             if (*in.position() == '\\')
             {
                 ++in.position();

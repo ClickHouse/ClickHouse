@@ -286,6 +286,8 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
             if (quotes)
             {
                 in.position() = find_first_symbols<'\\', '"'>(in.position(), in.buffer().end());
+                if (in.position() == in.buffer().end())
+                    continue;
                 if (*in.position() == '\\')
                 {
                     ++in.position();
@@ -299,6 +301,8 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
             } else
             {
                 in.position() = find_first_symbols<'{', '}', '\\', '"'>(in.position(), in.buffer().end());
+                if (in.position() == in.buffer().end())
+                    continue;
                 if (*in.position() == '{')
                 {
                     ++balance;

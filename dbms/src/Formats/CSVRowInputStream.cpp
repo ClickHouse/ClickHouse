@@ -506,6 +506,8 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
             if (quotes)
             {
                 in.position() = find_first_symbols<'"'>(in.position(), in.buffer().end());
+                if (in.position() == in.buffer().end())
+                    continue;
                 if (*in.position() == '"')
                 {
                     ++in.position();
@@ -517,6 +519,8 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
             } else
             {
                 in.position() = find_first_symbols<'"','\r', '\n'>(in.position(), in.buffer().end());
+                if (in.position() == in.buffer().end())
+                    continue;
                 if (*in.position() == '"')
                 {
                     quotes = true;
