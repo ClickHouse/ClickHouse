@@ -162,6 +162,9 @@ void ConstantExpressionTemplate::parseExpression(ReadBuffer & istr, const Format
                 Field number = ast->as<ASTLiteral&>().value;
 
                 WhichDataType type_info(type);
+                if (type_info.isNullable())
+                    type_info = WhichDataType(dynamic_cast<const DataTypeNullable &>(type).getNestedType());
+                // TODO also check type of Array(T), if T is arithmetic
                 if ((number.getType() == Field::Types::UInt64  && type_info.isUInt64())
                  || (number.getType() == Field::Types::Int64   && type_info.isInt64())
                  || (number.getType() == Field::Types::Float64 && type_info.isFloat64()))
