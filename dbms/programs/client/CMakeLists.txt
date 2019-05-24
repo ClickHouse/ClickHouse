@@ -5,7 +5,6 @@
 set(CLICKHOUSE_CLIENT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Client.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ConnectionParameters.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/readpassphrase.cpp
 )
 
 set(CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_common_config clickhouse_functions clickhouse_aggregate_functions clickhouse_common_io ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
@@ -17,6 +16,7 @@ configure_file(includes.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/includes.h)
 list(APPEND CLICKHOUSE_CLIENT_INCLUDE ${CLICKHOUSE_CLIENT_INCLUDE} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include/)
 if (NOT HAVE_READPASSPHRASE)
     # to allow #include <readpassphrase.h>
+    list(APPEND CLICKHOUSE_CLIENT_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/readpassphrase.cpp)
     list(APPEND CLICKHOUSE_CLIENT_INCLUDE ${CLICKHOUSE_CLIENT_INCLUDE} PRIVATE .)
 endif()
 

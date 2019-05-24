@@ -66,12 +66,9 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     if (password_prompt)
     {
         std::string prompt{"Password for user (" + user + "): "};
-        char buf [5] = {};
-        int rppflags = 0;
-        if (readpassphrase(prompt.c_str(), buf, sizeof(buf), rppflags))
-        {
-            password = buf;
-        }
+        char buf[1000] = {};
+        if (auto result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
+            password = result;
     }
     compression = config.getBool("compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
