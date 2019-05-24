@@ -41,6 +41,7 @@ ValuesBlockInputStream::ValuesBlockInputStream(ReadBuffer & istr_, const Block &
     templates.resize(header.columns());
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(istr);
+    const_cast<FormatSettings&>(this->format_settings).values.interpret_expressions = false;
 }
 
 Block ValuesBlockInputStream::readImpl()
