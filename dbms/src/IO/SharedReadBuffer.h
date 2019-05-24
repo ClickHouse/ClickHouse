@@ -7,6 +7,10 @@
 namespace DB
 {
 
+/** Allows many threads to read from single ReadBuffer 
+  * Each SharedReadBuffer has his own memory,
+  *  which he filles under shared mutex using FileSegmentationEngine.
+  */
 class SharedReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
@@ -45,10 +49,19 @@ private:
     }
 
 private:
-    bool eof = false;
+    // Pointer to common mutex.
     std::shared_ptr<std::mutex> mutex;
+
+    // Original ReadBuffer to read from.
     ReadBuffer & in;
+
+    // Function to fill working_buffer.
     FormatFactory::FileSegmentationEngine file_segmentation_engine;
+
+    // FileSegmentationEngine parameter.
     size_t min_chunk_size;
+
+    // Indicator of the eof. Save extra lock acquiring.
+    bool eof{false};
 };
 }
