@@ -21,7 +21,12 @@ Tests should use (create, drop, etc) only tables in `test` database that is assu
 
 If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`.
 
-Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper; `shard` is for tests that requires server to listen `127.0.0.*`; `long` is for tests that run slightly longer that one second.
+Some tests are marked with `zookeeper`, `shard` or `long` in their names.
+`zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that
+requires server to listen `127.0.0.*`; `distributed` or `global` have the same
+meaning. `long` is for tests that run slightly longer that one second. You can
+disable these groups of tests using `--no-zookeeper`, `--no-shard` and
+`--no-long` options, respectively.
 
 
 ## Known bugs
