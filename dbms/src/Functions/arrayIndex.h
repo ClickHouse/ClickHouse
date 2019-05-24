@@ -595,7 +595,7 @@ inline bool allowArrayIndex(const DataTypePtr & type0, const DataTypePtr & type1
     DataTypePtr data_type0 = removeNullable(type0);
     DataTypePtr data_type1 = removeNullable(type1);
 
-    return ((isNumber(data_type0) || isEnum(data_type0)) && isNumber(data_type1))
+    return ((isNativeNumber(data_type0) || isEnum(data_type0)) && isNativeNumber(data_type1))
         || data_type0->equals(*data_type1);
 }
 
