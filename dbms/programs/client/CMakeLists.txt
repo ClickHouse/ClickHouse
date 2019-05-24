@@ -14,8 +14,10 @@ set(CLICKHOUSE_CLIENT_INCLUDE SYSTEM PRIVATE ${READLINE_INCLUDE_DIR})
 include(CheckSymbolExists)
 check_symbol_exists(readpassphrase readpassphrase.h HAVE_READPASSPHRASE)
 configure_file(includes.h.in ${CMAKE_CURRENT_BINARY_DIR}/include/includes.h)
+list(APPEND CLICKHOUSE_CLIENT_INCLUDE ${CLICKHOUSE_CLIENT_INCLUDE} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include/)
 if (NOT HAVE_READPASSPHRASE)
-    list(APPEND CLICKHOUSE_CLIENT_INCLUDE ${CLICKHOUSE_CLIENT_INCLUDE} PRIVATE . ${CMAKE_CURRENT_BINARY_DIR}/include/)
+    # to allow #include <readpassphrase.h>
+    list(APPEND CLICKHOUSE_CLIENT_INCLUDE ${CLICKHOUSE_CLIENT_INCLUDE} PRIVATE .)
 endif()
 
 clickhouse_program_add(client)
