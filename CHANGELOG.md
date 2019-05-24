@@ -1,8 +1,5 @@
 ## ClickHouse release 19.6.2.11, 2019-05-13
 
-### Backward Incompatible Changes
-* HTTP header `Query-Id` was renamed to `X-ClickHouse-Query-Id` for consistency. [#4972](https://github.com/yandex/ClickHouse/pull/4972) ([Mikhail](https://github.com/fandyushin))
-
 ### New Features
 * Implements TTL for columns and tables. [#4212](https://github.com/yandex/ClickHouse/pull/4212) ([Anton Popov](https://github.com/CurtizJ))
 * Added support for `brotli` compression for HTTP responses (Accept-Encoding: br) [#4388](https://github.com/yandex/ClickHouse/pull/4388) ([Mikhail](https://github.com/fandyushin))
@@ -12,17 +9,6 @@
 
 ### Experimental Features
 * Add setting `index_granularity_bytes` for MergeTree* tables family. ... [#4826](https://github.com/yandex/ClickHouse/pull/4826) ([alesapin](https://github.com/alesapin))
-
-### Bug Fixes
-* Fixed potential null pointer dereference in `clickhouse-copier`. [#4900](https://github.com/yandex/ClickHouse/pull/4900) ([proller](https://github.com/proller))
-* Fixed error on query with JOIN + ARRAY JOIN [#4938](https://github.com/yandex/ClickHouse/pull/4938) ([Artem Zuikov](https://github.com/4ertus2))
-* Fixed hanging on start of the server when a dictionary depends on another dictionary via a database with engine=Dictionary. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
-* Partially fix distributed_product_mode=local. It's possible to allow columns of local tables in where/having/order by/... via table aliases. Throw exception if table does not have alias. There's not possible to access to the columns without table aliases yet. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
-* Fix wrong result for select distinct with join [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
-
-### Performance Improvements
-* Significant speedup of ASOF join [#4924](https://github.com/yandex/ClickHouse/pull/4924) ([Martijn Bakker](https://github.com/Gladdy))
-* Use radixSort instead of std::sort for ASOF JOIN values. [#4993](https://github.com/yandex/ClickHouse/pull/4993) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Improvements
 * Disable push-down to right table in left join, left table in right join, and both tables in full join. This fixes wrong JOIN results in some cases. [#4846](https://github.com/yandex/ClickHouse/pull/4846) ([Ivan](https://github.com/abyss7))
@@ -34,6 +20,20 @@
 * Deduplicate pointers in ASTSelectQuery and its children cause they could became not consistent. [#4952](https://github.com/yandex/ClickHouse/pull/4952) ([Artem Zuikov](https://github.com/4ertus2))
 * Added support for non-constant and negative size and length arguments for function 'substringUTF8'. [#4989](https://github.com/yandex/ClickHouse/pull/4989) ([alexey-milovidov](https://github.com/alexey-milovidov))
 * Use fixed_granularity as upper bound for adaptive granularity. Now block size in rows is bounded by fixed granularity. [#5052](https://github.com/yandex/ClickHouse/pull/5052) ([alesapin](https://github.com/alesapin))
+
+### Performance Improvements
+* Significant speedup of ASOF join [#4924](https://github.com/yandex/ClickHouse/pull/4924) ([Martijn Bakker](https://github.com/Gladdy))
+* Use radixSort instead of std::sort for ASOF JOIN values. [#4993](https://github.com/yandex/ClickHouse/pull/4993) ([Artem Zuikov](https://github.com/4ertus2))
+
+### Backward Incompatible Changes
+* HTTP header `Query-Id` was renamed to `X-ClickHouse-Query-Id` for consistency. [#4972](https://github.com/yandex/ClickHouse/pull/4972) ([Mikhail](https://github.com/fandyushin))
+
+### Bug Fixes
+* Fixed potential null pointer dereference in `clickhouse-copier`. [#4900](https://github.com/yandex/ClickHouse/pull/4900) ([proller](https://github.com/proller))
+* Fixed error on query with JOIN + ARRAY JOIN [#4938](https://github.com/yandex/ClickHouse/pull/4938) ([Artem Zuikov](https://github.com/4ertus2))
+* Fixed hanging on start of the server when a dictionary depends on another dictionary via a database with engine=Dictionary. [#4962](https://github.com/yandex/ClickHouse/pull/4962) ([Vitaly Baranov](https://github.com/vitlibar))
+* Partially fix distributed_product_mode=local. It's possible to allow columns of local tables in where/having/order by/... via table aliases. Throw exception if table does not have alias. There's not possible to access to the columns without table aliases yet. [#4986](https://github.com/yandex/ClickHouse/pull/4986) ([Artem Zuikov](https://github.com/4ertus2))
+* Fix wrong result for select distinct with join [#5001](https://github.com/yandex/ClickHouse/pull/5001) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Build/Testing/Packaging Improvements
 * Fixed test failures when running clickhouse-server on different host [#4713](https://github.com/yandex/ClickHouse/pull/4713) ([Vasily Nemkov](https://github.com/Enmk))
