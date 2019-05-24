@@ -257,7 +257,7 @@ bool ValuesBlockInputStream::shouldGenerateNewTemplate(size_t column_idx)
     constexpr size_t rows_per_attempt = 10;
     if (attempts_to_generate_template[column_idx] < max_attempts)
         return true;
-    if (rows_parsed_using_template[column_idx] / attempts_to_generate_template[column_idx] < rows_per_attempt)
+    if (rows_parsed_using_template[column_idx] / attempts_to_generate_template[column_idx] > rows_per_attempt)
     {
         /// Try again
         attempts_to_generate_template[column_idx] = 0;
