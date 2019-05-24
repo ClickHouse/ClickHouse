@@ -39,6 +39,7 @@ namespace DB
 #    include <aerospike/aerospike_scan.h>
 #    include <aerospike/as_scan.h>
 #    include <aerospike/as_record.h>
+// #include <aerospike/as_key.h>
 
 namespace DB
 {
@@ -46,16 +47,27 @@ namespace DB
         const DB::DictionaryStructure& dict_struct,
         const std::string& host,
         UInt16 port,
-        as_config * config,
+        as_config * /*uselessConfig*/,
         const DB::Block& sample_block)
         : dict_struct{dict_struct}
         , host{host}
         , port{port}
         , sample_block{sample_block}
     {
+        as_config config;
+        as_config_init(&config);
+        as_config_add_host(&config, host.c_str(), port);
         // std::vector<as_host> hosts;
         // hosts.assign(static_cast<as_host *>(config->hosts->list), static_cast<as_host *>(config->hosts->list) + config->hosts->size);
-        aerospike_init(&client, config);
+        aerospike_init(&client, &config);
+        
+        // Check connection
+        as_error err;
+        if (aerospike_connect(&client, &err) != AEROSPIKE_OK) {
+                fprintf(stderr, "error(%d) %s at [%s:%d] \n", err.code, err.message, err.file, err.line);
+        } else {
+                fprintf(stderr, "Connected to Aerospike. Host: %s port: %u", host.c_str(), port);
+        }
     }
 
     static const size_t max_block_size = 8192;
@@ -88,7 +100,7 @@ namespace DB
         as_scan scanner;
         as_scan_init(&scanner, "test", "test_set");
         as_error err;
-        std::vector<as_key> keys;
+        std::vector<std::unique_ptr<as_bytes>> keys;
 
         auto scannerCallback = [] (const as_val * p_val, void *keys) {
             if (!p_val) {
@@ -100,14 +112,20 @@ namespace DB
                 printf("scan callback returned non-as_record object");
                 return false;
             }
-            static_cast<std::vector<as_key>*>(keys)->push_back(record->key);
+            // std::vector<as_key>* tmp = reinterpret_cast<std::vector<as_key>*>(keys);
+            std::vector<std::unique_ptr<as_bytes>>& tmp = *static_cast<std::vector<std::unique_ptr<as_bytes>>*>(keys);
+            tmp.emplace_back(as_bytes_new_wrap(record->key.value.bytes.value, record->key.value.bytes.size, true)); // record->key -- correct object. FIXME: push_back and pointers casting
             return true;
         };
 
         if (aerospike_scan_foreach(&client, &err, nullptr, &scanner, scannerCallback, static_cast<void*>(&keys)) != AEROSPIKE_OK) {
             printf("error(%d) %s at [%s:%d]", err.code, err.message, err.file, err.line);
         }
-        return std::make_shared<AerospikeBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
+        // fprintf(stderr, "KEY VALUE: %s \n", keys[0]->value.string.value);
+        as_key key;
+        as_key_init_raw(&key, "test", "test_set", keys[0]->value, keys[0]->size);
+        fprintf(stderr, "KEY VALUE: %s \n", key.value.string.value);
+        return std::make_shared<AerospikeBlockInputStream>(client, std::vector<as_key>(), sample_block, max_block_size);
     }
 
     std::string AerospikeDictionarySource::toString() const {

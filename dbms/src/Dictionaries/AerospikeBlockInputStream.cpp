@@ -256,12 +256,15 @@ Block AerospikeBlockInputStream::readImpl()
     for (const auto i : ext::range(0, size))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
+    size_t current_block_size = std::min(max_block_size, keys.size());
     as_batch batch;
-    as_batch_inita(&batch, max_block_size);
+    as_batch_inita(&batch, current_block_size);
 
     TemporaryName recordsHandler(&columns, description, cursor);
-    for (UInt32 i = 0; i < std::min(max_block_size, keys.size()); ++i) {
-        as_key_init_value(as_batch_keyat(&batch, i), "namespace", "set", &keys[cursor + i].value);
+    for (UInt32 i = 0; i < current_block_size; ++i) {
+        fprintf(stderr, "KEY VALUE: %s \n", keys[cursor + i].value.string.value);
+        as_key_init_value(as_batch_keyat(&batch, i), "test", "test_set", (as_key_value*)(&(keys[cursor + i].value)));
+        fprintf(stderr, "KEY VALUE: %s \n", as_batch_keyat(&batch, i)->value.string.value);
     }
 
     const auto batchReadCallback = [] (const as_batch_read* results, uint32_t size, void* records_handler_) {
