@@ -580,5 +580,41 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+## leastSqr
+
+Performs simple linear regression.
+
+```
+leastSqr(array_x, array_y)
+```
+
+Parameters:
+
+- `array_x` — Values of dependent variable.
+- `array_y` — Values of explanatory variable.
+
+Returned value
+
+Parameters `(a, b)` of the resulting line `x=a*y + b`.
+
+**Examples**
+
+```sql
+SELECT arrayReduce('leastSqr', [0, 1, 2, 3], [0, 1, 2, 3])
+```
+```text
+┌─arrayReduce('leastSqr', [0, 1, 2, 3], [0, 1, 2, 3])─┐
+│ (1,0)                                               │
+└─────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT arrayReduce('leastSqr', [0, 1, 2, 3], [3, 4, 5, 6])
+```
+```text
+┌─arrayReduce('leastSqr', [0, 1, 2, 3], [3, 4, 5, 6])─┐
+│ (1,3)                                               │
+└─────────────────────────────────────────────────────┘
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->
