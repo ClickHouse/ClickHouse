@@ -17,7 +17,6 @@
 * Added typos handler for storage factory and table functions factory. [#4891](https://github.com/yandex/ClickHouse/pull/4891) ([Danila Kutenin](https://github.com/danlark1))
 * Support asterisks and qualified asterisks for multiple joins without subqueries [#4898](https://github.com/yandex/ClickHouse/pull/4898) ([Artem Zuikov](https://github.com/4ertus2))
 * Make missing column error message more user friendly. [#4915](https://github.com/yandex/ClickHouse/pull/4915) ([Artem Zuikov](https://github.com/4ertus2))
-* Deduplicate pointers in ASTSelectQuery and its children cause they could became not consistent. [#4952](https://github.com/yandex/ClickHouse/pull/4952) ([Artem Zuikov](https://github.com/4ertus2))
 
 ### Performance Improvements
 * Significant speedup of ASOF join [#4924](https://github.com/yandex/ClickHouse/pull/4924) ([Martijn Bakker](https://github.com/Gladdy))
