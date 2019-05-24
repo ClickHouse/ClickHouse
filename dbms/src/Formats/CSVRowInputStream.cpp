@@ -500,7 +500,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
         bool quotes = false;
         bool end_of_line = false;
         memory.resize(0);
-        while (!safeInBuffer(in, memory, begin_pos)
+        while (!eofWithSavingBufferState(in, memory, begin_pos)
                 && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_chunk_size))
         {
             if (quotes)
@@ -511,7 +511,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
                 if (*in.position() == '"')
                 {
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '"')
+                    if (!eofWithSavingBufferState(in, memory, begin_pos) && *in.position() == '"')
                         ++in.position();
                     else
                         quotes = false;
@@ -529,19 +529,19 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
                 {
                     end_of_line = true;
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '\r')
+                    if (!eofWithSavingBufferState(in, memory, begin_pos) && *in.position() == '\r')
                         ++in.position();
                 } else if (*in.position() == '\r')
                 {
                     end_of_line = true;
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos) && *in.position() == '\n')
+                    if (!eofWithSavingBufferState(in, memory, begin_pos) && *in.position() == '\n')
                         ++in.position();
                 }
             }
         }
         // std::cerr << StringRef(memory.data(), memory.size()) << "\n";
-        safeInBuffer(in, memory, begin_pos, true);
+        eofWithSavingBufferState(in, memory, begin_pos, true);
         return true;
     });
 }

@@ -1028,9 +1028,9 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-bool safeInBuffer(ReadBuffer & in, DB::Memory<> & memory, char * & begin_pos, bool force)
+bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, char * & begin_pos, bool save_buffer_state)
 {
-    if (force || !in.hasPendingData())
+    if (save_buffer_state || !in.hasPendingData())
     {
         size_t old_size = memory.size();
         memory.resize(old_size + static_cast<size_t>(in.position() - begin_pos));

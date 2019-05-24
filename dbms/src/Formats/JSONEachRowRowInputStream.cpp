@@ -280,7 +280,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
         size_t balance = 0;
         bool quotes = false;
         memory.resize(0);
-        while (!safeInBuffer(in, memory, begin_pos)
+        while (!eofWithSavingBufferState(in, memory, begin_pos)
                 && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_chunk_size))
         {
             if (quotes)
@@ -291,7 +291,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
                 if (*in.position() == '\\')
                 {
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos))
+                    if (!eofWithSavingBufferState(in, memory, begin_pos))
                         ++in.position();
                 } else if (*in.position() == '"')
                 {
@@ -314,7 +314,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
                 } else if (*in.position() == '\\')
                 {
                     ++in.position();
-                    if (!safeInBuffer(in, memory, begin_pos))
+                    if (!eofWithSavingBufferState(in, memory, begin_pos))
                         ++in.position();
                 } else if (*in.position() == '"')
                 {
@@ -323,7 +323,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
                 }
             }
         }
-        safeInBuffer(in, memory, begin_pos, true);
+        eofWithSavingBufferState(in, memory, begin_pos, true);
         return true;
     });
 }

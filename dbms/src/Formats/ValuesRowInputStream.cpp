@@ -179,7 +179,7 @@ void registerFileSegmentationEngineValues(FormatFactory & factory)
         int balance = 0;
         bool quoted = false;
         memory.resize(0);
-        while (!safeInBuffer(in, memory, begin_pos)
+        while (!eofWithSavingBufferState(in, memory, begin_pos)
                 && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_chunk_size))
         {
             in.position() = find_first_symbols<'\\', '\'', ')', '('>(in.position(), in.buffer().end());
@@ -188,7 +188,7 @@ void registerFileSegmentationEngineValues(FormatFactory & factory)
             if (*in.position() == '\\')
             {
                 ++in.position();
-                if (!safeInBuffer(in, memory, begin_pos))
+                if (!eofWithSavingBufferState(in, memory, begin_pos))
                     ++in.position();
             } else if (*in.position() == '\'')
             {
@@ -206,7 +206,7 @@ void registerFileSegmentationEngineValues(FormatFactory & factory)
                     ++balance;
             }
         }
-        safeInBuffer(in, memory, begin_pos, true);
+        eofWithSavingBufferState(in, memory, begin_pos, true);
         if (!in.eof() && *in.position() == ',')
             ++in.position();
         return true;

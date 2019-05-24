@@ -908,6 +908,10 @@ void skipToNextLineOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
-bool safeInBuffer(ReadBuffer & in, DB::Memory<> & memory, char * & begin_pos, bool force = false);
-}
+/** Return buffer eof() result.
+  * If there is no pending data in buffer or it was explicitly asked
+  *  save current state to memory.
+  */
+bool eofWithSavingBufferState(ReadBuffer & buf, DB::Memory<> & memory, char * & begin_pos, bool save_buffer_state = false);
 
+}
