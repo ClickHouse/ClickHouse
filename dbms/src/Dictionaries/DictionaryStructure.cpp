@@ -442,7 +442,6 @@ void buildConfigurationFromKeyValueFunction(
     std::string msg = __PRETTY_FUNCTION__;
     if (func == nullptr || func->children.size() == 0 || func->children[0].get() == nullptr)
     {
-        std::string msg = __PRETTY_FUNCTION__;
         if (func == nullptr)
             msg += ": KeyValueFunction pointer is nullptr";
         else if (func->children.size() == 0)
