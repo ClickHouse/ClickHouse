@@ -184,7 +184,6 @@ INSERT INTO datetime_t SELECT now()
 Ok.
 ```
 
-
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 Turns on/off the extended data exchange between a ClickHouse client and a ClickHouse server. This setting applies for `INSERT` queries.
@@ -202,13 +201,42 @@ For all other operations, ClickHouse doesn't apply the setting.
 !!! note "Note"
     The extended data exchange functionality consumes additional computing resources on the server and can reduce performance.
 
-**Possible values**
+Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
 
-**Default value:** 0.
+Default value: 0.
 
+## input_format_skip_unknown_fields {#settings-input_format_skip_unknown_fields}
+
+Enables or disables skipping of insertion of extra data.
+
+When writing data, ClickHouse throws an exception if input data contain columns that do not exist in the target table. If skipping is enabled, ClickHouse doesn't insert extra data and doesn't throw an exception.
+
+Supported formats: [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames), [TSKV](../../interfaces/formats.md#tskv).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 0.
+
+## input_format_with_names_use_header {#settings-input_format_with_names_use_header}
+
+Enables or disables checking the column order when inserting data.
+
+We recommend disabling check, if you are sure that the column order of the input data is the same as in the target table. It increases ClickHouse performance.
+
+Supported formats: [CSVWithNames](../../interfaces/formats.md#csvwithnames), [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames).
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
 
 ## join_default_strictness {#settings-join_default_strictness}
 
@@ -525,10 +553,6 @@ If the value is 1 or more, compilation occurs asynchronously in a separate threa
 Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
 The results of compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results, since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
-## input_format_skip_unknown_fields
-
-If the value is true, running INSERT skips input data from columns with unknown names. Otherwise, this situation will generate an exception.
-It works for JSONEachRow and TSKV formats.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
@@ -597,6 +621,20 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
+
+## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
+
+Enables or disables:
+
+1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
+2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->

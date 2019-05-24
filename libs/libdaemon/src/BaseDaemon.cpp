@@ -1087,7 +1087,7 @@ void BaseDaemon::initialize(Application & self)
     }
 
     /// Create pid file.
-    if (is_daemon && config().has("pid"))
+    if (config().has("pid"))
         pid.seed(config().getString("pid"));
 
     /// Change path for logging.

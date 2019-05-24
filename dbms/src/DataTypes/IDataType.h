@@ -1,9 +1,10 @@
 #pragma once
 
 #include <memory>
-#include <Common/COWPtr.h>
+#include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeCustom.h>
 
 
 namespace DB
@@ -12,13 +13,12 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-class IDataTypeDomain;
 class IDataType;
 struct FormatSettings;
 
 class IColumn;
-using ColumnPtr = COWPtr<IColumn>::Ptr;
-using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
+using ColumnPtr = COW<IColumn>::Ptr;
+using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
@@ -459,18 +459,19 @@ public:
 
 private:
     friend class DataTypeFactory;
-    /** Sets domain on existing DataType, can be considered as second phase
-      * of construction explicitly done by DataTypeFactory.
-      * Will throw an exception if domain is already set.
+    /** Customize this DataType
       */
-    void setDomain(const IDataTypeDomain* newDomain) const;
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
 
 private:
-    /** This is mutable to allow setting domain on `const IDataType` post construction,
-     * simplifying creation of domains for all types, without them even knowing
-     * of domain existence.
+    /** This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
      */
-    mutable IDataTypeDomain const* domain;
+    mutable DataTypeCustomNamePtr custom_name;
+    mutable DataTypeCustomTextSerializationPtr custom_text_serialization;
+
+public:
+    const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
+    const IDataTypeCustomTextSerialization * getCustomTextSerialization() const { return custom_text_serialization.get(); }
 };
 
 
@@ -571,6 +572,13 @@ inline bool isInteger(const T & data_type)
 {
     WhichDataType which(data_type);
     return which.isInt() || which.isUInt();
+}
+
+template <typename T>
+inline bool isFloat(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isFloat();
 }
 
 template <typename T>
