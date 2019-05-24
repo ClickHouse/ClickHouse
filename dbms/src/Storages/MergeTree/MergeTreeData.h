@@ -313,7 +313,7 @@ public:
     };
 
 
-    /// Attach the table corresponding to the directory in full_path inside schema (must end with /), with the given columns.
+    /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
     ///
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
@@ -355,6 +355,8 @@ public:
     Names getColumnsRequiredForPrimaryKey() const override { return primary_key_expr->getRequiredColumns(); }
     Names getColumnsRequiredForSampling() const override { return columns_required_for_sampling; }
     Names getColumnsRequiredForFinal() const override { return sorting_key_expr->getRequiredColumns(); }
+
+    StoragePolicyPtr getStoragePolicy() const override { return storage_policy; }
 
     bool supportsPrewhere() const override { return true; }
     bool supportsSampling() const override { return sample_by_ast != nullptr; }
@@ -609,7 +611,7 @@ public:
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes
-    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() { return schema->reserveOnMaxDiskWithoutReservation(); }
+    DiskSpaceMonitor::ReservationPtr reserveOnMaxDiskWithoutReservation() { return storage_policy->reserveOnMaxDiskWithoutReservation(); }
 
     MergeTreeDataFormatVersion format_version;
 
@@ -687,7 +689,7 @@ protected:
     String database_name;
     String table_name;
 
-    SchemaPtr schema;
+    StoragePolicyPtr storage_policy;
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;
