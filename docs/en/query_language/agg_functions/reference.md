@@ -593,7 +593,7 @@ Parameters:
 - `array_x` — Values of dependent variable.
 - `array_y` — Values of explanatory variable.
 
-Returned value
+Returned value:
 
 Parameters `(a, b)` of the resulting line `x=a*y + b`.
 
