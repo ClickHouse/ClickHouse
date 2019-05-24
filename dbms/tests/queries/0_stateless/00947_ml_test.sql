@@ -15,3 +15,13 @@ create table test.model engine = Memory as select linearRegressionState(0.03, 0.
 
 select ans > -67.0 and ans < -66.9 from
 (with (select state from test.model) as model select evalMLMethod(model, predict1, predict2) as ans from test.defaults limit 1);
+
+-- Check that returned weights are close to real
+select ans > 0.49 and ans < 0.51 from
+(select linearRegression(0.03, 0.00001, 2, 'Nesterov')(target, param1, param2) as ans from test.defaults limit 0, 1);
+
+select ans > -2.01 and ans < -1.99 from
+(select linearRegression(0.03, 0.00001, 2, 'Nesterov')(target, param1, param2) as ans from test.defaults limit 1, 1);
+
+select ans > 2.99 and ans < 3.01 from
+(select linearRegression(0.03, 0.00001, 2, 'Nesterov')(target, param1, param2) as ans from test.defaults limit 2, 1);

@@ -218,6 +218,7 @@ public:
     void
     predict(ColumnVector<Float64>::Container & container, Block & block, const ColumnNumbers & arguments, const Context & context) const;
 
+    void return_weights(IColumn & to) const;
 private:
     std::vector<Float64> weights;
     Float64 bias{0.0};
@@ -301,11 +302,12 @@ public:
         this->data(place).predict(column.getData(), block, arguments, context);
     }
 
+    /** This function is called if aggregate function without State modifier is selected in a query.
+     *  Inserts all weights of the model into the column 'to', so user may use such information if needed
+     */
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        std::ignore = place;
-        std::ignore = to;
-        throw std::runtime_error("not implemented");
+        this->data(place).return_weights(to);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
