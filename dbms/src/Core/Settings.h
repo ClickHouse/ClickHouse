@@ -104,7 +104,7 @@ struct Settings : public SettingsCollection<Settings>
     \
     M(SettingBool, enable_parallel_reading, true, "Enable parallel_reading for several data formats (JSON, TSV, TKSV, Values, CSV).") \
     M(SettingUInt64, max_threads_for_parallel_reading, 0, "The maximum number of threads to parallel reading. By default, it is set to max_threads.") \
-    M(SettingUInt64, min_chunk_size_for_parallel_reading, 0, "The minimum chunk size, which each thread tries to parse under mutex in parallel reading.") \
+    M(SettingUInt64, min_chunk_size_for_parallel_reading, 4, "The minimum chunk size, which each thread tries to parse under mutex in parallel reading.") \
     \
     M(SettingUInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), "If at least as many lines are read from one file, the reading can be parallelized.") \
     M(SettingUInt64, merge_tree_min_bytes_for_concurrent_read, (100 * 1024 * 1024), "If at least as many bytes are read from one file, the reading can be parallelized.") \
