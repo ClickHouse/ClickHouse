@@ -199,14 +199,14 @@ SELECT sleep(0.7) Format Null;
 OPTIMIZE TABLE test.adaptive_granularity_alter1 FINAL;
 SELECT 'Parts optimized';
 
-SELECT k, v2 FROM test.adaptive_granularity_alter1 WHERE k >= 100 OR k = 42;
+SELECT k, v2 FROM test.adaptive_granularity_alter1 WHERE k >= 100 OR k = 42 ORDER BY k;
 
 SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter1' and database='test' and active=1;
 
 SYSTEM SYNC REPLICA test.adaptive_granularity_alter2;
 SELECT 'Replica synced';
 
-SELECT k, v2 FROM test.adaptive_granularity_alter2 WHERE k >= 100 OR k = 42;
+SELECT k, v2 FROM test.adaptive_granularity_alter2 WHERE k >= 100 OR k = 42 ORDER BY k;
 
 SELECT sum(marks) from system.parts WHERE table = 'adaptive_granularity_alter2' and database='test' and active=1;
 
