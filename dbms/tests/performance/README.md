@@ -4,7 +4,7 @@ This directory contains `.xml`-files with performance tests for `clickhouse-perf
 
 ### How to write performance test
 
-First of all you should check existing tests that they don't cover your case. If there are no such tests than you should write your own.
+First of all you should check existing tests don't cover your case. If there are no such tests than you should write your own.
 
 There two types of performance tests:
 * First is executed in loop, and have tag `<type>loop</type>` in config.
