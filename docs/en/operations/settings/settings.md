@@ -622,5 +622,19 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 - [insert_quorum](#settings-insert_quorum)
 - [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
+## allow_experimental_cross_to_join_conversion {#settings-allow_experimental_cross_to_join_conversion}
+
+Enables or disables:
+
+1. Rewriting of queries with multiple [JOIN clauses](../../query_language/select.md#select-join) from the syntax with commas to the `JOIN ON/USING` syntax. If the setting value is 0, ClickHouse doesn't process queries with the syntax with commas, and throws an exception.
+2. Converting of `CROSS JOIN` into `INNER JOIN` if conditions of join allow it.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: 1.
+
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->
