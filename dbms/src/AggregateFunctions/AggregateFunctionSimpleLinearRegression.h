@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 template <typename X, typename Y, typename Ret>
-struct AggregateFunctionLeastSqrData final
+struct AggregateFunctionSimpleLinearRegressionData final
 {
     size_t count = 0;
     Ret sum_x = 0;
@@ -36,7 +36,7 @@ struct AggregateFunctionLeastSqrData final
         sum_xy += x * y;
     }
 
-    void merge(const AggregateFunctionLeastSqrData & other)
+    void merge(const AggregateFunctionSimpleLinearRegressionData & other)
     {
         count += other.count;
         sum_x += other.sum_x;
@@ -85,19 +85,19 @@ struct AggregateFunctionLeastSqrData final
 /// Calculates simple linear regression parameters.
 /// Result is a tuple (k, b) for y = k * x + b equation, solved by least squares approximation.
 template <typename X, typename Y, typename Ret = Float64>
-class AggregateFunctionLeastSqr final : public IAggregateFunctionDataHelper<
-    AggregateFunctionLeastSqrData<X, Y, Ret>,
-    AggregateFunctionLeastSqr<X, Y, Ret>
+class AggregateFunctionSimpleLinearRegression final : public IAggregateFunctionDataHelper<
+    AggregateFunctionSimpleLinearRegressionData<X, Y, Ret>,
+    AggregateFunctionSimpleLinearRegression<X, Y, Ret>
 >
 {
 public:
-    AggregateFunctionLeastSqr(
+    AggregateFunctionSimpleLinearRegression(
         const DataTypes & arguments,
         const Array & params
     ):
         IAggregateFunctionDataHelper<
-            AggregateFunctionLeastSqrData<X, Y, Ret>,
-            AggregateFunctionLeastSqr<X, Y, Ret>
+            AggregateFunctionSimpleLinearRegressionData<X, Y, Ret>,
+            AggregateFunctionSimpleLinearRegression<X, Y, Ret>
         > {arguments, params}
     {
         // notice: arguments has been checked before
@@ -105,7 +105,7 @@ public:
 
     String getName() const override
     {
-        return "leastSqr";
+        return "simpleLinearRegression";
     }
 
     const char * getHeaderFilePath() const override
@@ -120,12 +120,8 @@ public:
         Arena *
     ) const override
     {
-        auto col_x {
-            static_cast<const ColumnVector<X> *>(columns[0])
-        };
-        auto col_y {
-            static_cast<const ColumnVector<Y> *>(columns[1])
-        };
+        auto col_x = static_cast<const ColumnVector<X> *>(columns[0]);
+        auto col_y = static_cast<const ColumnVector<Y> *>(columns[1]);
 
         X x = col_x->getData()[row_num];
         Y y = col_y->getData()[row_num];
@@ -159,12 +155,14 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        DataTypes types {
+        DataTypes types
+        {
             std::make_shared<DataTypeNumber<Ret>>(),
             std::make_shared<DataTypeNumber<Ret>>(),
         };
 
-        Strings names {
+        Strings names
+        {
             "k",
             "b",
         };
