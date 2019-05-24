@@ -55,6 +55,9 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
             && file_segmentation_engine)
     {
         size_t max_threads_to_use = settings.max_threads_for_parallel_reading;
+        if (!max_threads_to_use)
+            max_threads_to_use = settings.max_threads;
+
         BlockInputStreams streams;
         std::vector<std::unique_ptr<ReadBuffer>> buffers;
         streams.reserve(max_threads_to_use);
@@ -62,7 +65,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
         auto buf_mutex = std::make_shared<std::mutex>();
         for (size_t i = 0; i < max_threads_to_use; ++i)
         {
-            buffers.emplace_back(std::make_unique<SharedReadBuffer>(buf, buf_mutex, file_segmentation_engine, settings.min_bytes_in_chunk));
+            buffers.emplace_back(std::make_unique<SharedReadBuffer>(buf, buf_mutex, file_segmentation_engine, settings.min_chunk_size_for_parallel_reading));
             streams.emplace_back(input_getter(*buffers.back(), sample, context, max_block_size, rows_portion_size, format_settings));
         }
         auto union_stream = std::make_shared<UnionBlockInputStream>(std::move(streams), nullptr, max_threads_to_use);

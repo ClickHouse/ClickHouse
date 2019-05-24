@@ -273,7 +273,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
     factory.registerFileSegmentationEngine("JSONEachRow", [](
         ReadBuffer & in,
         DB::Memory<> & memory,
-        size_t min_size)
+        size_t min_chunk_size)
     {
         skipWhitespaceIfAny(in);
         char * begin_pos = in.position();
@@ -281,7 +281,7 @@ void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
         bool quotes = false;
         memory.resize(0);
         while (!safeInBuffer(in, memory, begin_pos)
-                && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
+                && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_chunk_size))
         {
             if (quotes)
             {

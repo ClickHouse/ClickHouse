@@ -14,12 +14,12 @@ public:
             ReadBuffer & in_,
             std::shared_ptr<std::mutex> & mutex_,
             FormatFactory::FileSegmentationEngine file_segmentation_engine_,
-            size_t min_size_)
+            size_t min_chunk_size_)
         : BufferWithOwnMemory<ReadBuffer>(),
         mutex(mutex_),
         in(in_),
         file_segmentation_engine(file_segmentation_engine_),
-        min_size(min_size_)
+        min_chunk_size(min_chunk_size_)
     {
     }
 
@@ -36,7 +36,7 @@ private:
             return false;
         }
 
-        bool res = file_segmentation_engine(in, memory, min_size);
+        bool res = file_segmentation_engine(in, memory, min_chunk_size);
         if (!res)
             return false;
 
@@ -49,6 +49,6 @@ private:
     std::shared_ptr<std::mutex> mutex;
     ReadBuffer & in;
     FormatFactory::FileSegmentationEngine file_segmentation_engine;
-    size_t min_size;
+    size_t min_chunk_size;
 };
 }

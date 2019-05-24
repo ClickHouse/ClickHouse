@@ -170,7 +170,7 @@ void registerFileSegmentationEngineValues(FormatFactory & factory)
     factory.registerFileSegmentationEngine("Values", [](
         ReadBuffer & in,
         DB::Memory<> & memory,
-        size_t min_size)
+        size_t min_chunk_size)
     {
         skipWhitespaceIfAny(in);
         if (in.eof() || *in.position() == ';')
@@ -180,7 +180,7 @@ void registerFileSegmentationEngineValues(FormatFactory & factory)
         bool quoted = false;
         memory.resize(0);
         while (!safeInBuffer(in, memory, begin_pos)
-                && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
+                && (balance || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_chunk_size))
         {
             in.position() = find_first_symbols<'\\', '\'', ')', '('>(in.position(), in.buffer().end());
             if (in.position() == in.buffer().end())

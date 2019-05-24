@@ -493,7 +493,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     factory.registerFileSegmentationEngine("CSV", [](
         ReadBuffer & in,
         DB::Memory<> & memory,
-        size_t min_size)
+        size_t min_chunk_size)
     {
         skipWhitespacesAndTabs(in);
         char * begin_pos = in.position();
@@ -501,7 +501,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
         bool end_of_line = false;
         memory.resize(0);
         while (!safeInBuffer(in, memory, begin_pos)
-                && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_size))
+                && (!end_of_line || memory.size() + static_cast<size_t>(in.position() - begin_pos) < min_chunk_size))
         {
             if (quotes)
             {
