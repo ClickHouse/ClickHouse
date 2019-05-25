@@ -13,7 +13,7 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 - `table` — Remote table name.
 - `user` — MySQL user.
 - `password` — User password.
-- `replace_query` — Flag that sets query substitution `INSERT INTO` to `REPLACE INTO`. If `replace_query=1`, the query is replaced.
+- `replace_query` — If `replace_query=1`, the `REPLACE` query will be performed instead of `INSERT`.
 - `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
 
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See MySQL documentation to find which `on_duplicate_clause` you can use with `ON DUPLICATE KEY` clause.
