@@ -413,6 +413,9 @@ public:
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
+    /// Returns all detached parts
+    std::vector<DetachedPartInfo> getDetachedParts() const;
+
     /// Returns Committed parts
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
