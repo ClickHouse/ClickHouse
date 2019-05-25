@@ -3,7 +3,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
-#include <Columns/ColumnArray.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 #include "AggregateFunctionFactory.h"
