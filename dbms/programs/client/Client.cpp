@@ -1553,6 +1553,7 @@ private:
     static std::pair<String, String> parseParameter(const String & s)
     {
         size_t pos = s.find('_') + 1;
+        /// String begins with "--param_", so check is no needed
         /// Cut two first dash "--" and divide arg from name and value
         return {s.substr(2, pos - 2), s.substr(pos)};
     }
