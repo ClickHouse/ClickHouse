@@ -57,153 +57,88 @@ namespace DB
         using ValueType = ExternalResultDescription::ValueType;
         using RedisArray = Poco::Redis::Array;
 
-        template <typename T>
-        void insertNumber(IColumn & column, const Poco::Redis::RedisType::Ptr & value, const std::string & name)
+        std::string getStringOrThrow(const Poco::Redis::RedisType::Ptr & value, const std::string & column_name)
         {
-            LOG_INFO(&Logger::get("Redis"), "Got value: " + value->toString() + "with type=" +
-                ", isInteger=" + DB::toString(value->isInteger()) +
-                ", isSimpleString=" + DB::toString(value->isSimpleString()) +
-                ", isBulkString=" + DB::toString(value->isBulkString()) +
-                ", isArray=" + DB::toString(value->isArray()) +
-                ", isError=" + DB::toString(value->isError()));
+            LOG_INFO(&Logger::get("Redis"),
+                    "isNullableString=" + DB::toString(value->isBulkString()) +
+                    ", isSimpleString=" + DB::toString(value->isSimpleString()));
             switch (value->type())
             {
-                case Poco::Redis::RedisTypeTraits<Poco::Int64>::TypeId:
-                    static_cast<ColumnVector<T> &>(column).getData().push_back(
-                            static_cast<const Poco::Redis::Type<Poco::Int64> *>(value.get())->value());
-                    break;
-                case Poco::Redis::RedisTypeTraits<std::string>::TypeId:
-                    static_cast<ColumnVector<T> &>(column).getData().push_back(
-                            parse<T>(static_cast<const Poco::Redis::Type<std::string> *>(value.get())->value()));
-                    break;
                 case Poco::Redis::RedisTypeTraits<Poco::Redis::BulkString>::TypeId:
                 {
-                    const auto & bs =
-                            static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(value.get())->value();
+                    const auto & bs = static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(value.get())->value();
                     if (bs.isNull())
-                        static_cast<ColumnVector<T> &>(column).getData().emplace_back();
-                    else
-                        static_cast<ColumnVector<T> &>(column).getData().push_back(parse<T>(bs.value()));
-                    break;
+                        throw Exception{"Type mismatch, expected not null String for column " + column_name,
+                                        ErrorCodes::TYPE_MISMATCH};
+                    return bs.value();
                 }
+                case Poco::Redis::RedisTypeTraits<std::string>::TypeId:
+                    return static_cast<const Poco::Redis::Type<std::string> *>(value.get())->value();
                 default:
-                    throw Exception(
-                            "Type mismatch, expected a number, got " + value->toString() +
-                            " with type id = " + toString(value->type()) + " for column " + name,
-                            ErrorCodes::TYPE_MISMATCH);
+                    throw Exception{"Type mismatch, expected std::string, got type id = " + toString(value->type()) + " for column " + column_name,
+                                    ErrorCodes::TYPE_MISMATCH};
             }
+        }
+
+        template <typename T>
+        inline void insert(IColumn & column, const String & stringValue)
+        {
+            static_cast<ColumnVector<T> &>(column).insertValue(parse<T>(stringValue));
         }
 
         void insertValue(IColumn & column, const ValueType type, const Poco::Redis::RedisType::Ptr & value, const std::string & name)
         {
-            auto getStringIfCould = [&value, &name]()
-            {
-                switch (value->type())
-                {
-                    case Poco::Redis::RedisTypeTraits<Poco::Redis::BulkString>::TypeId:
-                    {
-                        const auto & bs = static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(value.get())->value();
-                        if (bs.isNull())
-                            throw Exception{"Type mismatch, expected not null String for column " + name,
-                                            ErrorCodes::TYPE_MISMATCH};
-                        return bs.value();
-                    }
-                    case Poco::Redis::RedisTypeTraits<std::string>::TypeId:
-                        return static_cast<const Poco::Redis::Type<std::string> *>(value.get())->value();
-                    default:
-                        throw Exception{"Type mismatch, expected std::string, got type id = " + toString(value->type()) + " for column " + name,
-                                        ErrorCodes::TYPE_MISMATCH};
-                }
-            };
-
-            auto getInt64IfCould = [&value]()
-            {
-                switch (value->type())
-                {
-                    case Poco::Redis::RedisTypeTraits<Int64>::TypeId:
-                    {
-                        return static_cast<const Poco::Redis::Type<Poco::Int64> *>(value.get())->value();
-                    }
-                    case Poco::Redis::RedisTypeTraits<std::string>::TypeId:
-                    {
-                        return parse<Int64>(
-                                static_cast<const Poco::Redis::Type<std::string> *>(value.get())->value());
-                    }
-                    case Poco::Redis::RedisTypeTraits<Poco::Redis::BulkString>::TypeId:
-                    {
-                        const auto & bs = static_cast<const Poco::Redis::Type<Poco::Redis::BulkString> *>(
-                                value.get())->value();
-                        if (bs.isNull())
-                            throw Exception{"Unexpected null value", ErrorCodes::TYPE_MISMATCH};
-                        return parse<Int64>(bs.value());
-                    }
-                    default:
-                    {
-                        throw Exception{"Type mismatch, cannot convert to Int64, got type id = " + toString(value->type()),
-                                        ErrorCodes::TYPE_MISMATCH};
-                    }
-                }
-            };
+            String stringValue = getStringOrThrow(value, name);
 
             switch (type)
             {
                 case ValueType::UInt8:
-                    insertNumber<UInt8>(column, value, name);
+                    insert<UInt8>(column, stringValue);
                     break;
                 case ValueType::UInt16:
-                    insertNumber<UInt16>(column, value, name);
+                    insert<UInt16>(column, stringValue);
                     break;
                 case ValueType::UInt32:
-                    insertNumber<UInt32>(column, value, name);
+                    insert<UInt32>(column, stringValue);
                     break;
                 case ValueType::UInt64:
-                    insertNumber<UInt64>(column, value, name);
+                    insert<UInt64>(column, stringValue);
                     break;
                 case ValueType::Int8:
-                    insertNumber<Int8>(column, value, name);
+                    insert<Int8>(column, stringValue);
                     break;
                 case ValueType::Int16:
-                    insertNumber<Int16>(column, value, name);
+                    insert<Int16>(column, stringValue);
                     break;
                 case ValueType::Int32:
-                    insertNumber<Int32>(column, value, name);
+                    insert<Int32>(column, stringValue);
                     break;
                 case ValueType::Int64:
-                    insertNumber<Int64>(column, value, name);
+                    insert<Int64>(column, stringValue);
                     break;
                 case ValueType::Float32:
-                    insertNumber<Float32>(column, value, name);
+                    insert<Float32>(column, stringValue);
                     break;
                 case ValueType::Float64:
-                    insertNumber<Float64>(column, value, name);
+                    insert<Float64>(column, stringValue);
                     break;
-
                 case ValueType::String:
-                {
-                    String string = getStringIfCould();
-                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
+                    insert<String>(column, stringValue);
                     break;
-                }
-
                 case ValueType::Date:
                 {
-                    Int64 int_value = getInt64IfCould();
-                    static_cast<ColumnUInt16 &>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
-                            static_cast<const Poco::Timestamp &>(int_value).epochTime())});
+                    static_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(stringValue).getDayNum());
                     break;
                 }
 
                 case ValueType::DateTime:
                 {
-                    Int64 int_value = getInt64IfCould();
-                    static_cast<ColumnUInt32 &>(column).getData().push_back(
-                            static_cast<const Poco::Timestamp &>(int_value).epochTime());
+                    static_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(stringValue)));
                     break;
                 }
                 case ValueType::UUID:
                 {
-                    String string = getStringIfCould();
-                    static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
+                    static_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(stringValue));
                     break;
                 }
             }
@@ -226,12 +161,6 @@ namespace DB
                 LOG_INFO(&Logger::get("Redis"), description.sample_block.getByPosition(i).dumpStructure());
 
         const size_t size = description.sample_block.columns();
-//        const size_t size = 2;
-//        if (size != description.sample_block.columns())
-//            throw Exception{"Unsupported number of columns for key-value storage: "
-//                            + DB::toString(description.sample_block.columns())
-//                            + " (expected: " + DB::toString(size) + ")",
-//                            ErrorCodes::LOGICAL_ERROR};
 
         MutableColumns columns(description.sample_block.columns());
 
